@@ -292,6 +292,38 @@ points at this URL, so it must stay alive and stably named forever.
   additive (never rename/drop what production code still reads), and new code
   must never rewrite existing records into shapes production can't read.
 
+### 3.2 Minimum iOS Builds (owner rule, 2026-08-09)
+
+The TestFlight app is a THIN SHELL: it loads the live UAT site
+(capacitor.config.json server.url). Web code is never bundled into the build,
+so every JS/HTML/CSS change ships instantly via a UAT roll (§3.1) with ZERO
+iOS builds. Firing `ios-beta.yml` costs a ~15-minute macOS run and forces the
+owner to update the app on every test device, so builds are rare and
+deliberate, never reflexive.
+
+**An iOS build is needed ONLY when the native surface changes:**
+- New or changed Swift plugin code (`native/td-geo/`, future plugins)
+- `native/capacitor.config.json` or `native/package.json` (plugin versions)
+- Info.plist entries, entitlements, app icon, or anything in `ios-beta.yml`
+  that patches the generated project
+
+**Everything else is a UAT roll, not a build.** If unsure, ask: does this
+change any file under `native/` or the workflow's project patching? No means
+no build.
+
+**Keep the native layer dumb so this stays true.** A Swift plugin exposes
+raw capability only (arm a region, buffer an event, report a fix); every
+decision, threshold, timer, and behavior lives in JS behind
+`Capacitor.registerPlugin`. TdGeo is the reference: park timing, fence radii,
+and replay logic are all in `js/geo-track.js`, tunable forever without a
+rebuild. Putting logic in Swift that could live in JS is a rule violation,
+it converts free UAT iterations into paid builds.
+
+**The floor is ~1 build/month:** TestFlight builds expire after 90 days, and
+the monthly keep-alive cron (`ios-beta.yml` schedule) already covers that.
+Batch pending native changes into the next needed build rather than firing
+one per change.
+
 ---
 
 ## 4. Branch Protection (One-Time Setup by Repo Owner)
