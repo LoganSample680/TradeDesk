@@ -260,42 +260,118 @@ function _scanHvacNumbers(room,opts){
 }
 
 // ── Floor plan SVG ───────────────────────────────────────────────────────────
+// Drawn to real drafting conventions (research 2026-08-09), because that is
+// what separates a professional plan from a toy one: walls as solid poché
+// (the double-line look), door gaps with quarter-circle swing arcs, windows
+// drawn IN the wall with glazing lines, dimensions pushed outside the wall,
+// and a north arrow when the compass grabbed a heading. RoomPlan hands us
+// clean parametric vectors, so the render is CAD-crisp where competitors
+// trace wobbly meshes.
 function _scanPlanSvg(sc,opts){
   const o=opts||{};
   const lens=o.lens||'plan';
   // story filters to one floor (multi-floor scans draw per-floor plans);
   // absent means everything, which is also every pre-multi-floor scan.
-  const rooms=(sc.rooms||[]).filter(r=>!o.story||Math.max(1,+r.story||1)===o.story);
+  // gidx maps each drawn room back to its index in sc.rooms, so roomClick
+  // handlers receive the ORIGINAL index even on a filtered floor.
+  const rooms=[],gidx=[];
+  (sc.rooms||[]).forEach((r,gi)=>{if(!o.story||Math.max(1,+r.story||1)===o.story){rooms.push(r);gidx.push(gi);}});
   if(!rooms.length)return '<svg viewBox="0 0 100 40"><text x="50" y="22" text-anchor="middle" font-size="8" fill="var(--text3,#6a6963)">No rooms captured</text></svg>';
-  // Bounds across all rooms.
   let minX=1e9,minZ=1e9,maxX=-1e9,maxZ=-1e9;
   rooms.forEach(r=>(r.poly||[]).forEach(([x,z])=>{minX=Math.min(minX,x);minZ=Math.min(minZ,z);maxX=Math.max(maxX,x);maxZ=Math.max(maxZ,z);}));
   if(minX>maxX)return '<svg viewBox="0 0 100 40"></svg>';
-  const pad=0.6,W=maxX-minX+pad*2,H=maxZ-minZ+pad*2;
-  const px=x=>((x-minX+pad)/W*100).toFixed(2);
-  const pz=z=>((z-minZ+pad)/H*100*(H/W)).toFixed(2);
-  const vh=(100*(H/W)).toFixed(2);
+  const pad=1.0,W=maxX-minX+pad*2,H=maxZ-minZ+pad*2;
+  const k=100/W;                                   // meters → viewBox units
+  const px=x=>+((x-minX+pad)*k).toFixed(2);
+  const pz=z=>+((z-minZ+pad)*k).toFixed(2);
+  const vh=(H*k).toFixed(2);
+  // Poché thickness: reads as a real ~5in wall at whole-house scale, clamped
+  // so a single small room doesn't render cartoon-fat walls.
+  const th=Math.max(0.9,Math.min(2.2,0.13*k));
+  const ink='var(--text,#1a1a18)',bg='var(--bg,#fff)';
   let s='<svg viewBox="0 0 100 '+vh+'" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg">';
+  // 1. Room fills first (tappable when the caller wires roomClick).
   rooms.forEach((r,ri)=>{
     const pts=(r.poly||[]).map(([x,z])=>px(x)+','+pz(z)).join(' ');
-    s+='<polygon points="'+pts+'" fill="var(--bg2,#f4f4f0)" stroke="var(--text2,#5f5e5a)" stroke-width="0.6" stroke-linejoin="round"/>';
-    // Wall dimension labels on the two longest walls, clutter kills small plans.
-    (r.walls||[]).slice().sort((a,b)=>b.len-a.len).slice(0,2).forEach(w=>{
-      s+='<text x="'+px((w.ax+w.bx)/2)+'" y="'+pz((w.az+w.bz)/2)+'" font-size="2.6" fill="var(--text3,#6a6963)" text-anchor="middle">'+_scanFtIn(w.len)+'</text>';
+    s+='<polygon points="'+pts+'" fill="'+bg+'" stroke="none"'+
+       (o.roomClick?' onclick="'+o.roomClick+'('+gidx[ri]+')" style="cursor:pointer"':'')+'/>';
+  });
+  // 2. Walls as solid poché segments; square caps close the corners.
+  rooms.forEach(r=>(r.walls||[]).forEach(w=>{
+    s+='<line x1="'+px(w.ax)+'" y1="'+pz(w.az)+'" x2="'+px(w.bx)+'" y2="'+pz(w.bz)+'" stroke="'+ink+'" stroke-width="'+th.toFixed(2)+'" stroke-linecap="square"/>';
+  }));
+  // 3. Openings punched into the poché: door gap + swing arc, window glazing.
+  rooms.forEach(r=>{
+    const cx0=(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
+    const cz0=(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
+    (r.walls||[]).forEach(w=>{
+      if(!w.len)return;
+      const ux=(w.bx-w.ax)/w.len,uz=(w.bz-w.az)/w.len;
+      let nx=-uz,nz=ux;
+      // Flip the normal to point INTO this room, so swings draw inward.
+      const mx=(w.ax+w.bx)/2,mz=(w.az+w.bz)/2;
+      if(nx*(cx0-mx)+nz*(cz0-mz)<0){nx=-nx;nz=-nz;}
+      const at=d=>[w.ax+ux*d,w.az+uz*d];
+      const punch=(d0,d1)=>{const[a1,b1]=at(d0),[a2,b2]=at(d1);
+        s+='<line x1="'+px(a1)+'" y1="'+pz(b1)+'" x2="'+px(a2)+'" y2="'+pz(b2)+'" stroke="'+bg+'" stroke-width="'+(th+0.35).toFixed(2)+'"/>';};
+      (w.doors||[]).forEach(d=>{
+        if(typeof d.off!=='number'||!d.w)return;
+        const d0=Math.max(0,Math.min(w.len-d.w,d.off-d.w/2)),d1=d0+d.w;
+        punch(d0,d1);
+        // Hinge at d0: thin leaf into the room + quarter swing arc back to d1.
+        const[hx,hz]=at(d0),[ex,ez]=[hx+nx*d.w,hz+nz*d.w],[tx,tz]=at(d1);
+        const rw=(d.w*k).toFixed(2);
+        s+='<line x1="'+px(hx)+'" y1="'+pz(hz)+'" x2="'+px(ex)+'" y2="'+pz(ez)+'" stroke="'+ink+'" stroke-width="0.28"/>';
+        s+='<path d="M '+px(ex)+' '+pz(ez)+' A '+rw+' '+rw+' 0 0 '+((ux*nz-uz*nx)>0?1:0)+' '+px(tx)+' '+pz(tz)+'" fill="none" stroke="'+ink+'" stroke-width="0.22" stroke-dasharray="0.7 0.5"/>';
+      });
+      (w.windows||[]).forEach(win=>{
+        if(typeof win.off!=='number'||!win.w)return;
+        const d0=Math.max(0,Math.min(w.len-win.w,win.off-win.w/2)),d1=d0+win.w;
+        punch(d0,d1);
+        // Glazing line + jamb caps across the wall thickness.
+        const[a1,b1]=at(d0),[a2,b2]=at(d1);
+        const hx2=nx*(th/k)/2,hz2=nz*(th/k)/2;
+        s+='<line x1="'+px(a1)+'" y1="'+pz(b1)+'" x2="'+px(a2)+'" y2="'+pz(b2)+'" stroke="'+ink+'" stroke-width="0.3"/>';
+        [[a1,b1],[a2,b2]].forEach(([qx,qz])=>{
+          s+='<line x1="'+px(qx-hx2)+'" y1="'+pz(qz-hz2)+'" x2="'+px(qx+hx2)+'" y2="'+pz(qz+hz2)+'" stroke="'+ink+'" stroke-width="0.3"/>';
+        });
+      });
     });
-    // Room label + area.
+  });
+  // 4. Dimensions on the two longest walls per room, pushed OUTSIDE the wall.
+  rooms.forEach(r=>{
+    const cx0=(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
+    const cz0=(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
+    (r.walls||[]).slice().sort((a,b)=>b.len-a.len).slice(0,2).forEach(w=>{
+      if(!w.len)return;
+      const mx=(w.ax+w.bx)/2,mz=(w.az+w.bz)/2;
+      const ux=(w.bx-w.ax)/w.len,uz=(w.bz-w.az)/w.len;
+      let nx=-uz,nz=ux;
+      if(nx*(cx0-mx)+nz*(cz0-mz)>0){nx=-nx;nz=-nz;}   // away from the room
+      const off=(th+2.0)/k;
+      s+='<text x="'+px(mx+nx*off)+'" y="'+(pz(mz+nz*off)+0.9)+'" font-size="2.5" fill="var(--text3,#6a6963)" text-anchor="middle">'+_scanFtIn(w.len)+'</text>';
+    });
+  });
+  // 5. Labels: name + the billing number (wall sq ft leads, owner 2026-08-09).
+  rooms.forEach((r,ri)=>{
     const cx=(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
     const cz=(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
-    s+='<text x="'+px(cx)+'" y="'+(+pz(cz)-1.6)+'" font-size="3.2" font-weight="700" fill="var(--text,#1a1a18)" text-anchor="middle">'+escHtml(r.label||'Room')+'</text>';
-    // Wall square feet leads (owner call 2026-08-09): it is the number the
-    // billing runs on. Floor sq ft stays in the takeoff lists.
-    s+='<text x="'+px(cx)+'" y="'+(+pz(cz)+2.2)+'" font-size="2.8" fill="var(--text2,#5f5e5a)" text-anchor="middle">'+Math.round(_scanSqFt(r.wallM2))+' wall sq ft</text>';
+    const g=o.roomClick?'<g onclick="'+o.roomClick+'('+gidx[ri]+')" style="cursor:pointer">':'<g>';
+    s+=g+'<text x="'+px(cx)+'" y="'+(pz(cz)-1.6)+'" font-size="3.2" font-weight="700" fill="'+ink+'" text-anchor="middle">'+escHtml(r.label||'Room')+'</text>'+
+      '<text x="'+px(cx)+'" y="'+(pz(cz)+2.2)+'" font-size="2.8" fill="var(--text2,#5f5e5a)" text-anchor="middle">'+Math.round(_scanSqFt(r.wallM2))+' wall sq ft</text></g>';
     if(lens==='electrical'){
       _scanOutletPlan(r).forEach(m=>{
         s+='<circle cx="'+px(m.x)+'" cy="'+pz(m.z)+'" r="1.1" fill="#D97706" stroke="#fff" stroke-width="0.3"/>';
       });
     }
   });
+  // 6. North arrow when the compass grabbed a heading at capture.
+  if(typeof sc.headingDeg==='number'&&sc.headingDeg>=0){
+    s+='<g transform="translate(95,5) rotate('+Math.round(sc.headingDeg)+')">'+
+       '<circle r="3" fill="none" stroke="var(--text3,#6a6963)" stroke-width="0.3"/>'+
+       '<path d="M 0 -2.2 L 1 1.6 L 0 0.7 L -1 1.6 Z" fill="'+ink+'"/>'+
+       '<text y="-4" font-size="2.2" fill="var(--text3,#6a6963)" text-anchor="middle">N</text></g>';
+  }
   // Photo pins: each shot taken during the scan knows exactly where the
   // camera stood (the pose rides along from the plugin), so the walkthrough
   // is literally ON the plan: tap a pin, see that spot.
@@ -306,9 +382,65 @@ function _scanPlanSvg(sc,opts){
       const cx=px(cam[12]),cz=pz(cam[14]);
       s+='<g onclick="_scanOpenPhoto(\''+o.scanId+'\','+i+')" style="cursor:pointer">'+
          '<circle cx="'+cx+'" cy="'+cz+'" r="2.2" fill="#185FA5" stroke="#fff" stroke-width="0.5"/>'+
-         '<text x="'+cx+'" y="'+(+cz+1.1)+'" font-size="2.6" fill="#fff" text-anchor="middle">'+(i+1)+'</text></g>';
+         '<text x="'+cx+'" y="'+(cz+1.1)+'" font-size="2.6" fill="#fff" text-anchor="middle">'+(i+1)+'</text></g>';
     });
   }
+  s+='</svg>';
+  return s;
+}
+// ── 3D dollhouse SVG ─────────────────────────────────────────────────────────
+// Hand-rolled isometric extrusion of the parametric walls: zero dependencies,
+// instant, printable, themeable. Multi-floor scans stack as an exploded
+// dollhouse (each story lifted with air under it), the premium look none of
+// the scanner apps ship from parametric data. Walls draw at partial height so
+// the camera always sees into the rooms, Matterport-style.
+function _scanDollhouseSvg(sc){
+  const rooms=(sc.rooms||[]);
+  if(!rooms.length)return '<svg viewBox="0 0 100 40"><text x="50" y="22" text-anchor="middle" font-size="8" fill="var(--text3,#6a6963)">No rooms captured</text></svg>';
+  const stories=_scanStories(sc);
+  const wh=1.35,explode=1.5;                      // partial wall height, story air gap
+  const lvlY=st=>stories.indexOf(Math.max(1,+st||1))*(wh+explode);
+  const iso=(x,z,y)=>[(x-z)*0.866,(x+z)*0.5-y];
+  const pal=['#DCE8F5','#E7F0DC','#F5E9D4','#EFE0EF','#E0EFEA','#F2E3DD'];
+  // Project everything once to find bounds.
+  let minU=1e9,minV=1e9,maxU=-1e9,maxV=-1e9;
+  const seen=p=>{minU=Math.min(minU,p[0]);maxU=Math.max(maxU,p[0]);minV=Math.min(minV,p[1]);maxV=Math.max(maxV,p[1]);};
+  rooms.forEach(r=>{
+    const y0=lvlY(r.story);
+    (r.poly||[]).forEach(([x,z])=>{seen(iso(x,z,y0));seen(iso(x,z,y0+wh));});
+  });
+  if(minU>maxU)return '<svg viewBox="0 0 100 40"></svg>';
+  const pad=0.8,SW=maxU-minU+pad*2,k=100/SW;
+  const P=(x,z,y)=>{const p=iso(x,z,y);return ((p[0]-minU+pad)*k).toFixed(2)+','+((p[1]-minV+pad)*k).toFixed(2);};
+  const vh=((maxV-minV+pad*2)*k).toFixed(2);
+  let s='<svg viewBox="0 0 100 '+vh+'" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg">';
+  // Ground floor first, each story up the stack; within a story: floor slab,
+  // then walls back-to-front (painter's algorithm on x+z depth).
+  stories.forEach(st=>{
+    const lvl=rooms.map((r,ri)=>({r,ri})).filter(q=>Math.max(1,+q.r.story||1)===st);
+    lvl.forEach(({r,ri})=>{
+      const y0=lvlY(st);
+      const pts=(r.poly||[]).map(([x,z])=>P(x,z,y0)).join(' ');
+      s+='<polygon points="'+pts+'" fill="'+pal[ri%pal.length]+'" stroke="#8a877f" stroke-width="0.25"/>';
+    });
+    const walls=[];
+    lvl.forEach(({r})=>(r.walls||[]).forEach(w=>walls.push({w,y0:lvlY(st)})));
+    walls.sort((a,b)=>((a.w.ax+a.w.bx)/2+(a.w.az+a.w.bz)/2)-((b.w.ax+b.w.bx)/2+(b.w.az+b.w.bz)/2));
+    walls.forEach(({w,y0})=>{
+      // Shade by facing so the box reads as a volume.
+      const dx=w.bx-w.ax,dz=w.bz-w.az;
+      const fill=Math.abs(dx)>=Math.abs(dz)?'#d9d6cf':'#c4c1ba';
+      s+='<polygon points="'+P(w.ax,w.az,y0)+' '+P(w.bx,w.bz,y0)+' '+P(w.bx,w.bz,y0+Math.min(wh,w.h||wh))+' '+P(w.ax,w.az,y0+Math.min(wh,w.h||wh))+'" fill="'+fill+'" stroke="#6d6a63" stroke-width="0.22"/>';
+    });
+    if(stories.length>1){
+      // Label each slab at its left edge.
+      let lx=1e9,lz=0;
+      lvl.forEach(({r})=>(r.poly||[]).forEach(([x,z])=>{if(x-z<lx){lx=x-z;lz=z;}}));
+      const a=lvl[0];let ax=0,az=0;
+      if(a){const p0=(a.r.poly||[])[0]||[0,0];ax=p0[0];az=p0[1];}
+      s+='<text x="2" y="'+((iso(ax,az,lvlY(st)+wh/2)[1]-minV+pad)*k).toFixed(2)+'" font-size="3" font-weight="700" fill="var(--text2,#5f5e5a)">Floor '+st+'</text>';
+    }
+  });
   s+='</svg>';
   return s;
 }
@@ -450,8 +582,12 @@ function openScanViewer(id){
   document.getElementById('_scan-view-ov')?.remove();
   const totalSqFt=Math.round(_scanSqFt((sc.rooms||[]).reduce((t,r)=>t+r.floorM2,0)));
   const totalWallSqFt=Math.round(_scanSqFt((sc.rooms||[]).reduce((t,r)=>t+r.wallM2,0)));
-  const tabs=[['plan','Plan'],['paint','Paint'],['electrical','Electrical'],['hvac','HVAC']];
+  const tabs=[['plan','Plan'],['3d','3D'],['paint','Paint'],['electrical','Electrical'],['hvac','HVAC']];
   let body='';
+  if(lens==='3d'){
+    body='<div style="font-size:12px;color:var(--text2);line-height:1.5">The dollhouse view, drawn straight from the measured walls'+(stories.length>1?', floors stacked with air between them':'')+'. Cutaway walls so you can see into every room.</div>'+
+      (sc.usdz&&_scanPlugin()?'<button class="btn btn-p" style="width:100%;margin-top:10px;padding:12px;font-weight:700" onclick="_scanViewUsdz(\''+sc.id+'\')">Open full 3D · walk it in AR</button>':'');
+  }
   if(lens==='paint'){
     const sub=!!sc._paintSubtract;
     body='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
@@ -477,7 +613,7 @@ function openScanViewer(id){
           '<span style="font-weight:700">'+escHtml(r.label)+'</span>'+
           '<span style="color:var(--text2)">'+n.volFt3+' ft³ · '+n.winSqFt+' sq ft glass · infil '+n.infiltSensBtuh+' BTU/h</span></div>';}).join('')+
       '<div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.5">Sizing estimate from scanned geometry + measured infiltration. <strong>Not for permit submission</strong>, permit-grade Manual J reports typically require ACCA-approved software. A blower door number beats any preset, and new-construction code already requires one (3 to 5 ACH50 by climate zone).</div>';
-  }else{
+  }else if(lens!=='3d'){
     const unlocked=scanUnlocked(sc);
     body='<div style="font-size:12px;color:var(--text2)">'+(sc.rooms||[]).length+' rooms · '+totalWallSqFt+' wall sq ft · '+totalSqFt+' sq ft floor'+((sc.photos||[]).length?' · '+(sc.photos||[]).length+' photos':'')+'</div>'+
       '<div style="font-size:11px;color:var(--text3);margin-top:6px">Hub status: '+(unlocked?'unlocked, client sees the full plan':'locked, client sees a blurred teaser'+(sc.price!=null?' at $'+sc.price:''))+'</div>'+
@@ -499,15 +635,17 @@ function openScanViewer(id){
     '</div>'+
     // Floor switcher only when the scan actually spans floors, one plan per
     // floor (the deterministic per-floor pattern; no cross-floor 3D guessing).
-    (stories.length>1?'<div style="display:flex;gap:6px;margin-bottom:10px">'+
+    // The 3D tab shows the whole exploded stack instead, so no chips there.
+    (stories.length>1&&lens!=='3d'?'<div style="display:flex;gap:6px;margin-bottom:10px">'+
       stories.map(st=>'<button onclick="_scanSetStory(\''+sc.id+'\','+st+')" class="btn btn-sm" style="flex:1;padding:7px;font-size:11px;font-weight:700;'+(story===st?'background:var(--text);color:var(--bg);border-color:var(--text)':'')+'">Floor '+st+'</button>').join('')+
     '</div>':'')+
     '<div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px;background:var(--bg2)">'+
-      _scanPlanSvg(sc,{lens,scanId:sc.id,story:(stories.length>1?story:null),
-        photos:(lens==='plan'?(sc.photos||[]).filter(p=>{
-          if(stories.length<2)return true;
-          const r=(sc.rooms||[])[p.room];return r&&Math.max(1,+r.story||1)===story;
-        }):null)})+
+      (lens==='3d'?_scanDollhouseSvg(sc)
+        :_scanPlanSvg(sc,{lens,scanId:sc.id,story:(stories.length>1?story:null),
+          photos:(lens==='plan'?(sc.photos||[]).filter(p=>{
+            if(stories.length<2)return true;
+            const r=(sc.rooms||[])[p.room];return r&&Math.max(1,+r.story||1)===story;
+          }):null)}))+
     '</div>'+
     body;
   ov.appendChild(m);document.body.appendChild(ov);

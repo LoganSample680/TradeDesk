@@ -553,6 +553,94 @@ test.describe('TdScan web half', () => {
     expect(r.kinds.join(' ')).toContain('GFCI');
   });
 
+  // Phase 1 of the beat-the-market design (research 2026-08-09): the 2D plan
+  // draws to real drafting conventions, and a hand-rolled isometric dollhouse
+  // gives 3D with zero dependencies.
+  test('the plan draws drafting conventions: poché walls, door swing arcs, window glazing, north arrow', async () => {
+    const r = await page.evaluate((raw) => {
+      const room = _scanParseRoom(raw, 'Kitchen');
+      const svg = _scanPlanSvg({ rooms: [room], headingDeg: 40 }, { lens: 'plan' });
+      return {
+        poche: /<line[^>]*stroke-width="1\.[0-9]+"[^>]*stroke-linecap="square"/.test(svg) || /stroke-linecap="square"/.test(svg),
+        swingArc: /<path d="M [\d. ]+A [\d. ]+/.test(svg) && /stroke-dasharray/.test(svg),
+        northArrow: /rotate\(40\)/.test(svg) && />N</.test(svg),
+        stillHasLabel: /Kitchen/.test(svg) && /352 wall sq ft/.test(svg),
+        dims: /12'0"/.test(svg),
+      };
+    }, fabricatedRoom());
+    expect(r.poche, 'walls render as solid poché with closed corners').toBe(true);
+    expect(r.swingArc, 'doors get the quarter-circle swing arc').toBe(true);
+    expect(r.northArrow, 'a captured heading draws the north arrow').toBe(true);
+    expect(r.stillHasLabel).toBe(true);
+    expect(r.dims, 'wall dimensions annotate the plan').toBe(true);
+  });
+
+  test('the dollhouse stacks floors with labels; a flat scan gets no floor labels; the viewer has a 3D tab', async () => {
+    const r = await page.evaluate((raw) => {
+      const before = scans.length;
+      try {
+        const r1 = _scanParseRoom(raw, 'Kitchen'); r1.story = 1;
+        const r2 = _scanParseRoom(raw, 'Bedroom'); r2.story = 2;
+        const two = _scanDollhouseSvg({ rooms: [r1, r2] });
+        const flat = _scanDollhouseSvg({ rooms: [_scanParseRoom(raw, 'Studio')] });
+        const sc = saveScan({ id: 'sc-3d', clientId: null, name: '3D', createdAt: new Date().toISOString(), rooms: [r1, r2], photos: [], price: null, purchasedAt: null });
+        _scanViewLens = '3d'; _scanViewStory = null;
+        openScanViewer(sc.id);
+        const html = document.getElementById('_scan-view-ov')?.innerHTML || '';
+        document.getElementById('_scan-view-ov')?.remove();
+        return {
+          // 2 rooms x 4 walls + 2 floor slabs = 10 polygons minimum.
+          twoPolys: (two.match(/<polygon/g) || []).length,
+          twoLabels: /Floor 1/.test(two) && /Floor 2/.test(two),
+          flatNoLabels: !/Floor 1/.test(flat),
+          viewerRenders: /Dollhouse|dollhouse/.test(html) && /<polygon/.test(html),
+          tabPresent: />3D</.test(html),
+        };
+      } finally { scans.length = before; saveAll(); _scanViewLens = null; _scanViewStory = null; }
+    }, fabricatedRoom());
+    expect(r.twoPolys).toBeGreaterThanOrEqual(10);
+    expect(r.twoLabels, 'stacked stories are labeled').toBe(true);
+    expect(r.flatNoLabels, 'one story needs no labels').toBe(true);
+    expect(r.viewerRenders, 'the 3D tab renders the dollhouse').toBe(true);
+    expect(r.tabPresent).toBe(true);
+  });
+
+  test('the builder plan navigates by tap and the money pivots by room or by surface', async () => {
+    const r = await page.evaluate((raw) => {
+      const savedScans = scans.slice(), savedClients = clients.slice(), savedRates = S.scanRates;
+      try {
+        S.scanRates = { wall: 2, ceiling: 1, trimLf: 0, door: 0, window: 0 };
+        clients.push({ id: 77401, name: 'Pivot Client' });
+        const room = _scanParseRoom(raw, 'Kitchen');
+        scans.push({ id: 'sc-pivot', clientId: 77401, name: 'Pivot scan', createdAt: new Date().toISOString(), rooms: [room, { ...room, label: 'Bedroom' }], photos: [] });
+        openScanEstimate(clients.find(c => c.id === 77401));
+        const ov = () => document.getElementById('_se-ov');
+        const planClickable = /onclick="_seJumpRoom\(0\)"/.test(ov().innerHTML) && /onclick="_seJumpRoom\(1\)"/.test(ov().innerHTML);
+        const hasCards = !!document.getElementById('se-room-0') && !!document.getElementById('se-room-1');
+        _seSetView('surfaces');
+        const sHtml = ov().innerHTML;
+        // Walls on for both rooms by default: 352 x 2 = 704 sq ft at $2 = $1,408.
+        const surfaceRow = /Walls/.test(sHtml) && /704 sq ft across 2 rooms/.test(sHtml) && /\$1,408/.test(sHtml);
+        const cardsGone = !document.getElementById('se-room-0');
+        // Tapping a room on the plan from the surface view lands back on its card.
+        _seJumpRoom(1);
+        const jumped = !!document.getElementById('se-room-1');
+        ov()?.remove(); _seState = null;
+        return { planClickable, hasCards, surfaceRow, cardsGone, jumped };
+      } finally {
+        scans.length = 0; savedScans.forEach(x => scans.push(x));
+        clients.length = 0; savedClients.forEach(x => clients.push(x));
+        S.scanRates = savedRates; saveAll();
+        document.getElementById('_se-ov')?.remove(); _seState = null;
+      }
+    }, fabricatedRoom());
+    expect(r.planClickable, 'every room polygon is a tap target').toBe(true);
+    expect(r.hasCards).toBe(true);
+    expect(r.surfaceRow, 'the surface pivot rolls the same money up across rooms').toBe(true);
+    expect(r.cardsGone, 'surface view replaces the room cards').toBe(true);
+    expect(r.jumped, 'a plan tap from surface view returns to the room card').toBe(true);
+  });
+
   test('the estimate-type chooser leads with Scan Estimate', async () => {
     const r = await page.evaluate(() => {
       try {

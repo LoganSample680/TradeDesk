@@ -86,16 +86,16 @@ function _seRoomLines(r,st){
   if(_seIsElec()){
     const er=_scanElecRates();
     const n=_scanElectricalNumbers(r);
-    if(n.outlets)out.push({desc:r.label+' · receptacles (NEC-spaced)',qty:n.outlets,unit:'ea',rate:bake(+er.outlet||0),notes:'Count from scanned walls per NEC 210.52'+multNote});
-    if(n.switches)out.push({desc:r.label+' · switches',qty:n.switches,unit:'ea',rate:bake(+er.sw||0),notes:'One per entry'+multNote});
-    if(n.gfci)out.push({desc:r.label+' · GFCI protection',qty:1,unit:'lot',rate:bake(+er.gfci||0),notes:'GFCI-required room'+multNote});
+    if(n.outlets)out.push({k:'outlet',desc:r.label+' · receptacles (NEC-spaced)',qty:n.outlets,unit:'ea',rate:bake(+er.outlet||0),notes:'Count from scanned walls per NEC 210.52'+multNote});
+    if(n.switches)out.push({k:'sw',desc:r.label+' · switches',qty:n.switches,unit:'ea',rate:bake(+er.sw||0),notes:'One per entry'+multNote});
+    if(n.gfci)out.push({k:'gfci',desc:r.label+' · GFCI protection',qty:1,unit:'lot',rate:bake(+er.gfci||0),notes:'GFCI-required room'+multNote});
   }else{
     const rates=_scanRates();
     _SE_SURFS.forEach(s=>{
       if(!st.surf[s.k])return;
       const qty=_seQty(r,s.k);
       if(!qty)return;
-      out.push({desc:r.label+' · '+s.label.toLowerCase()+' ('+qty+' '+s.unit+')',qty,unit:s.unit,rate:bake(+rates[s.rateKey]||0),notes:'Measured by LiDAR scan'+multNote});
+      out.push({k:s.k,desc:r.label+' · '+s.label.toLowerCase()+' ('+qty+' '+s.unit+')',qty,unit:s.unit,rate:bake(+rates[s.rateKey]||0),notes:'Measured by LiDAR scan'+multNote});
     });
   }
   return out.map(l=>({...l,total:Math.round(l.qty*l.rate*100)/100,_byoSection:'Interior'}));
@@ -135,7 +135,7 @@ function _seRender(){
     const multChips=_SCANEST_MULTS.map(m=>
       '<button onclick="_seToggleMult('+i+',\''+m.k+'\')" class="btn btn-sm" style="padding:5px 9px;font-size:10px;'+(st.mults[m.k]?'background:#D97706;color:#fff;border-color:#D97706':'')+'">'+m.label+' +'+m.pct+'%'+(m.auto&&r.hM>=_SCANEST_HIGH_CEIL_M?' (measured)':'')+'</button>').join('');
     const elecLine=elec?('<div style="font-size:11px;color:var(--text2)">'+(()=>{const n=_scanElectricalNumbers(r);return n.outlets+' outlets · '+n.switches+' switch'+(n.switches>1?'es':'')+(n.gfci?' · GFCI':'');})()+'</div>'):'';
-    return '<div class="card" style="padding:12px 14px;'+(st.on?'':'opacity:.45')+'">'+
+    return '<div class="card" id="se-room-'+i+'" style="padding:12px 14px;transition:box-shadow .3s ease;'+(st.on?'':'opacity:.45')+'">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
         '<label style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:800;cursor:pointer"><input type="checkbox" '+(st.on?'checked':'')+' onchange="_seToggleRoom('+i+')" style="width:17px;height:17px;accent-color:var(--blue)">'+escHtml(r.label)+'</label>'+
         '<div style="font-size:13px;font-weight:800;color:var(--blue)">'+(st.on&&roomTotal?('$'+roomTotal.toLocaleString('en-US',{maximumFractionDigits:0})):'')+'</div>'+
@@ -146,6 +146,25 @@ function _seRender(){
               '<div style="display:flex;flex-wrap:wrap;gap:5px">'+multChips+'</div>'):'')+
     '</div>';
   }).join('');
+  const view=(_seState.view==='surfaces')?'surfaces':'rooms';
+  // By-surface rollup: the same priced lines regrouped across rooms, so the
+  // contractor can sanity-check "how much wall am I actually painting."
+  const agg={};
+  scan.rooms.forEach((r,i)=>{
+    const st=_seState.rooms[i];
+    if(st&&st.on)_seRoomLines(r,st).forEach(l=>{
+      const a=agg[l.k]||(agg[l.k]={qty:0,total:0,unit:l.unit,rooms:0});
+      a.qty+=l.qty;a.total+=l.total;a.rooms++;
+    });
+  });
+  const surfLabels={wall:'Walls',ceiling:'Ceilings',trim:'Trim',door:'Doors',window:'Windows',outlet:'Receptacles',sw:'Switches',gfci:'GFCI protection'};
+  const surfRows=Object.keys(agg).map(kk=>{
+    const a=agg[kk];
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">'+
+      '<div><div style="font-size:13px;font-weight:800">'+(surfLabels[kk]||kk)+'</div>'+
+      '<div style="font-size:11px;color:var(--text3)">'+a.qty.toLocaleString('en-US')+' '+a.unit+' across '+a.rooms+' room'+(a.rooms>1?'s':'')+'</div></div>'+
+      '<div style="font-size:14px;font-weight:800;color:var(--blue)">$'+Math.round(a.total).toLocaleString('en-US')+'</div></div>';
+  }).join('');
   const total=_seTotal();
   ov.innerHTML=
     '<div style="max-width:760px;margin:0 auto;padding:calc(20px + env(safe-area-inset-top,0px)) 16px 120px">'+
@@ -154,12 +173,28 @@ function _seRender(){
         '<div class="tbar-title">'+escHtml((c&&c.name)||'Client')+'</div></div>'+
         '<button class="btn btn-ghost" onclick="document.getElementById(\'_se-ov\').remove();_seState=null">Cancel</button>'+
       '</div>'+
-      '<div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--bg);margin-bottom:14px">'+_scanPlanSvg(scan,{lens:elec?'electrical':'plan'})+'</div>'+
+      // The plan IS the navigation (magicplan's best idea, research
+      // 2026-08-09): tap a room on the drawing and its card scrolls into
+      // view. Nobody in the paint space does plan-linked navigation.
+      // Multi-floor scans draw one plan per floor; overlaying stories on one
+      // 2D drawing collides the rooms.
+      _scanStories(scan).map(st=>
+        '<div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--bg);margin-bottom:14px">'+
+        (_scanStories(scan).length>1?'<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding:8px 12px 0">Floor '+st+'</div>':'')+
+        _scanPlanSvg(scan,{lens:elec?'electrical':'plan',roomClick:'_seJumpRoom',story:(_scanStories(scan).length>1?st:null)})+'</div>').join('')+
       '<div class="card" style="padding:12px 14px;margin-bottom:12px">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">'+(elec?'Device rates':'Production rates')+'</div>'+
         '<div style="display:flex;flex-wrap:wrap;gap:10px">'+rateInputs+'</div>'+
       '</div>'+
-      '<div style="display:flex;flex-direction:column;gap:10px">'+roomCards+'</div>'+
+      // Two lenses on the same money (PaintScout's Area/Surface pivot): by
+      // room for the client conversation, by surface for the sanity check.
+      '<div style="display:flex;gap:6px;margin-bottom:10px">'+
+        '<button class="btn btn-sm" style="flex:1;padding:8px;font-size:12px;font-weight:700;'+(view!=='surfaces'?'background:var(--blue);color:#fff;border-color:var(--blue)':'')+'" onclick="_seSetView(\'rooms\')">By room</button>'+
+        '<button class="btn btn-sm" style="flex:1;padding:8px;font-size:12px;font-weight:700;'+(view==='surfaces'?'background:var(--blue);color:#fff;border-color:var(--blue)':'')+'" onclick="_seSetView(\'surfaces\')">By surface</button>'+
+      '</div>'+
+      (view==='surfaces'
+        ?'<div class="card" style="padding:4px 14px">'+(surfRows||'<div style="font-size:12px;color:var(--text3);padding:10px 0">Nothing priced yet, turn on rooms and surfaces.</div>')+'</div>'
+        :'<div style="display:flex;flex-direction:column;gap:10px">'+roomCards+'</div>')+
     '</div>'+
     '<div style="position:fixed;left:0;right:0;bottom:0;background:var(--bg);border-top:1px solid var(--border);padding:12px 16px calc(12px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:12px;z-index:9101">'+
       '<div style="flex:1"><div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Estimate total</div>'+
@@ -173,6 +208,18 @@ function _seSetRate(k,v){
   r[k]=Math.max(0,+v||0);
   if(typeof saveAll==='function')saveAll();
   _seRender();
+}
+function _seSetView(v){if(_seState){_seState.view=v;_seRender();}}
+// Tap a room on the plan, land on its card (switches back to the room view
+// first if the surface rollup is up, a surface row has no single room).
+function _seJumpRoom(i){
+  if(!_seState)return;
+  if(_seState.view==='surfaces'){_seState.view='rooms';_seRender();}
+  const el=document.getElementById('se-room-'+i);
+  if(!el)return;
+  el.scrollIntoView({behavior:'smooth',block:'center'});
+  el.style.boxShadow='0 0 0 3px var(--blue)';
+  setTimeout(()=>{const e2=document.getElementById('se-room-'+i);if(e2)e2.style.boxShadow='';},900);
 }
 function _seToggleRoom(i){_seState.rooms[i].on=!_seState.rooms[i].on;_seRender();}
 function _seToggleSurf(i,k){_seState.rooms[i].surf[k]=!_seState.rooms[i].surf[k];_seRender();}
