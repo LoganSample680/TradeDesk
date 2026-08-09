@@ -581,6 +581,11 @@ function _commitProposalSent(){
     // which drives follow-up scheduling; the audit timeline and the exported
     // report need the time the client was actually sent the proposal.
     bid.sentAt=new Date().toISOString();
+    // Where the proposal was sent from. A contractor sends most of these standing
+    // in the driveway right after the walkthrough, so this is the site visit, and
+    // it is what makes 'where do I win vs lose' answerable by area. Without it the
+    // map's Proposals layer would always be empty. Fire-and-forget, never blocks.
+    if(typeof _stampGeo==='function')_stampGeo(bid);
     try{if(typeof logLifecycle==='function')logLifecycle('proposal_sent',{bidId:bid.id,clientId:bid.client_id});}catch(_e){}
     if(!bid.followupStage)bid.followupStage=1;
     bid.followup=addDays(todayKey(),3);
@@ -1082,8 +1087,8 @@ function showKpiChart(type){
     if(type==='profit'){
       const mInc=income.filter(r=>r.date&&r.date.startsWith(key)).reduce((s,r)=>s+r.amount,0);
       const mExp=expenses.filter(e=>e.date&&e.date.startsWith(key)).reduce((s,e)=>s+e.amount,0);
-      const mMi=mileage.filter(m=>m.date&&m.date.startsWith(key)).reduce((s,m)=>s+(m.miles||0),0);
-      val=Math.round(mInc-mExp-(mMi*IRS()));
+      const mMi=deductibleTrips(mileage).filter(m=>m.date&&m.date.startsWith(key)).reduce((s,m)=>s+(m.miles||0),0);
+      val=Math.round(mInc-mExp-(mMi*IRS(key)));
     } else if(type==='close'){
       const mWon=bids.filter(b=>b.status==='Closed Won'&&b.bid_date&&b.bid_date.startsWith(key)).length;
       const mLost=bids.filter(b=>(b.status==='Closed Lost'||b.status==='Abandoned')&&b.bid_date&&b.bid_date.startsWith(key)).length;
@@ -1201,8 +1206,14 @@ function markFUAbandoned(bidId,cid){
 }
 function tdPrint(){if(window._tdNativePrint){window._tdNativePrint();return;}window.print();}
 function goToTrackerTab(tab){
+  // Set the tab BEFORE navigating: goPg('pg-tracker') renders the page via
+  // renderTrackerTab(), which paints whatever trackerTab currently holds.
+  // The old goPg-then-setTimeout order painted the PREVIOUS tab first, then
+  // hard-cut to the target 150ms later (owner report 2026-08-08: "loads
+  // summary first then hard cuts over to mileage"). Now the page enters
+  // once, already on the right tab, under the standard page fade.
+  trackerTab=tab;
   goPg('pg-tracker');
-  setTimeout(()=>setTrTab(tab,document.getElementById('tr-t-'+tab)),150);
 }
 function goToExpenses(){goToTrackerTab('expenses');}
 function showWorkflowGate(msg,btnLabel,btnAction){

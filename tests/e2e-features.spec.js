@@ -1359,8 +1359,10 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
       const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
       const _origQrCache = window._qrHasSourceCached;
+      const _savedPlaces = places.slice();
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = false; } catch (e) {}
       _setVehicles([]); S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      places.length = 0;   // fresh account: no saved places either
       window._qrHasSourceCached = () => false; // fresh account: no QR code created yet
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
@@ -1369,6 +1371,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       const out = {
         cardShown: card && card.style.display !== 'none',
         hasVehicleItem: !!(card && /add your vehicles/i.test(card.textContent) && /_setupTodoGo\('vehicle'\)/.test(card.innerHTML)),
+        hasPlacesItem: !!(card && /home office & supply stops/i.test(card.textContent) && /_setupTodoGo\('places'\)/.test(card.innerHTML)),
         hasGetPaidItem: !!(card && /card payments/i.test(card.textContent)),
         hasLogoItem: !!(card && /add your logo/i.test(card.textContent)),
         hasTeamItem: !!(card && /add your crew/i.test(card.textContent) && /_setupTodoGo\('team'\)/.test(card.innerHTML)),
@@ -1381,6 +1384,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
         driveGrayed: !!(drive && drive.style.pointerEvents === 'none' && parseFloat(drive.style.opacity) < 1),
       };
       _setVehicles(_saved); S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      places.length = 0; _savedPlaces.forEach(p => places.push(p));
       window._qrHasSourceCached = _origQrCache;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
       return out;
@@ -1388,6 +1392,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
     if (r.skip) return;
     expect(r.cardShown, 'to-do card shows on a fresh account').toBe(true);
     expect(r.hasVehicleItem, 'Add-vehicle item present + wired').toBe(true);
+    expect(r.hasPlacesItem, 'Mark-your-places item present + wired').toBe(true);
     expect(r.hasGetPaidItem, 'Set-up-payments item present').toBe(true);
     expect(r.hasLogoItem, 'Add-logo item present').toBe(true);
     expect(r.hasTeamItem, 'Add-crew item present + wired to the chooser').toBe(true);
@@ -1399,14 +1404,21 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
     expect(r.driveGrayed, 'Drive button grayed + un-tappable').toBe(true);
   });
 
-  test('_renderDashSetupTodo: every CTA button (Add vehicle, Connect, Add logo, Set up, Create) has the smooth-transition class', async () => {
+  test('_renderDashSetupTodo: every CTA button (Add vehicle, Connect, Add logo, Set up, Create, Turn on) has the smooth-transition class', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
       const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
       const _origQrCache = window._qrHasSourceCached;
+      const _savedPlaces = places.slice();
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = false; } catch (e) {}
       _setVehicles([]); S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      places.length = 0;
       window._qrHasSourceCached = () => false;
+      // 'location' is the 7th item and, like QR, is noSkip: drive mileage and job
+      // hours are the whole time-tracking product and neither works without the
+      // permission. Pin the cache to 'prompt' (not granted) so the fresh-account
+      // case renders it as outstanding, the same way the QR cache is pinned.
+      const _origPerm = _geoPermCache; _geoPermCache = 'prompt';
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const ctas = card ? [...card.querySelectorAll('.td-setup-row button.td-setup-cta')] : [];
@@ -1417,13 +1429,15 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
         hasTransition: !!(cs && cs.transitionDuration && cs.transitionDuration !== '0s'),
       };
       _setVehicles(_saved); S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      places.length = 0; _savedPlaces.forEach(p => places.push(p));
       window._qrHasSourceCached = _origQrCache;
+      _geoPermCache = _origPerm;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
       return out;
     });
     if (r.skip) return;
-    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 5 CTAs (4 optional + QR)').toBe(5);
-    expect(r.allHaveClass, 'Add vehicle / Connect / Add logo / Set up / Create all carry the transition class').toBe(true);
+    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 7 CTAs (5 optional + QR + location)').toBe(7);
+    expect(r.allHaveClass, 'Add vehicle / Add places / Connect / Add logo / Set up / Create / Turn on all carry the transition class').toBe(true);
     expect(r.hasTransition, 'the CTA button has a real, non-zero CSS transition').toBe(true);
   });
 
@@ -1461,12 +1475,13 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedDone = S.setupDone, _origSave = window.saveAll;
       const _origQrCache = window._qrHasSourceCached;
       window.saveAll = () => {};
-      // Vehicle added (done); the two optional items skipped; QR marked done via
-      // its cache (it can't be skipped, so "everything clear" requires done:true,
-      // not skipped) → nothing left.
+      // Vehicle added (done); the four optional items skipped; QR and location
+      // marked done via their caches (NEITHER can be skipped, so "everything
+      // clear" requires done:true for both, not skipped) → nothing left.
       _setVehicles([{ id: 1, name: '2019 F-150' }]); S.vehiclesTs = Date.now();
-      S.setupSkipped = ['getpaid', 'logo', 'team']; S.setupDone = false;
+      S.setupSkipped = ['places', 'getpaid', 'logo', 'team']; S.setupDone = false;
       window._qrHasSourceCached = () => true;
+      const _origPerm2 = _geoPermCache; _geoPermCache = 'granted';
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const drive = document.getElementById('qa-drive-btn');
@@ -1478,6 +1493,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       const hiddenAfterDismiss = !!(card && card.style.display === 'none');
       window.saveAll = _origSave;
       window._qrHasSourceCached = _origQrCache;
+      _geoPermCache = _origPerm2;
       _setVehicles(_saved); S.vehiclesTs = _savedTs; S.setupSkipped = _savedSkip; S.setupDone = _savedDone;
       _renderDashSetupTodo();
       return { doneStateShown, driveEnabled, hiddenAfterDismiss };
@@ -1524,6 +1540,63 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
     });
     if (r.skip) return;
     expect(r.skippedList, 'qrcode never lands in setupSkipped, no matter how it\'s invoked').not.toContain('qrcode');
+  });
+
+  test('_renderDashSetupTodo: the places item clears on a real place, but not on the auto-migrated shop', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
+      const _savedPlaces = places.slice(), _savedSkip = S.setupSkipped, _origSave = window.saveAll;
+      window.saveAll = () => {};
+      S.setupSkipped = [];
+      const rowShown = () => {
+        _renderDashSetupTodo();
+        return /home office & supply stops/i.test(document.getElementById('dash-setup-todo').textContent || '');
+      };
+      // The shop lifted for free from the business address does NOT satisfy it.
+      places.length = 0;
+      places.push({ id: 1, name: 'Shop', kind: 'shop', lat: 1, lon: 2, confirmedBy: 'business-address' });
+      const shownWithAutoShop = rowShown();
+      // A receipt-born supply house DOES: that is a set-up place.
+      places.push({ id: 2, name: 'Ferguson', kind: 'supply', lat: 3, lon: 4, confirmedBy: 'expense' });
+      const shownWithSupply = rowShown();
+      // So does a hand-added home office on its own.
+      places.length = 0;
+      places.push({ id: 3, name: 'Home Office', kind: 'home_office', lat: 5, lon: 6, confirmedBy: 'manual' });
+      const shownWithHomeOffice = rowShown();
+      window.saveAll = _origSave; S.setupSkipped = _savedSkip;
+      places.length = 0; _savedPlaces.forEach(p => places.push(p));
+      _renderDashSetupTodo();
+      return { shownWithAutoShop, shownWithSupply, shownWithHomeOffice };
+    });
+    if (r.skip) return;
+    expect(r.shownWithAutoShop, 'the free auto-migrated shop alone leaves the item outstanding').toBe(true);
+    expect(r.shownWithSupply, 'a receipt-born supply house clears it').toBe(false);
+    expect(r.shownWithHomeOffice, 'a hand-added home office clears it').toBe(false);
+  });
+
+  test('_setupTodoGo("places"): lands on Books → Places with the Add modal open', async () => {
+    const r = await page.evaluate(() => new Promise((resolve) => {
+      if (typeof _setupTodoGo !== 'function') return resolve({ skip: true });
+      goPg('pg-dash');
+      _setupTodoGo('places');
+      setTimeout(() => {
+        resolve({
+          onTrackerPage: document.getElementById('pg-tracker')?.classList.contains('active'),
+          placesTabActive: document.getElementById('tr-t-places')?.classList.contains('active'),
+          placesPaneShown: document.getElementById('tr-places')?.style.display !== 'none',
+          modalOpen: !!document.getElementById('place-modal'),
+          addrSearchReady: !!document.getElementById('place-addr'),
+        });
+        document.getElementById('place-modal')?.remove();
+        goPg('pg-dash');
+      }, 300);
+    }));
+    if (r.skip) return;
+    expect(r.onTrackerPage, 'lands on pg-tracker (Books)').toBe(true);
+    expect(r.placesTabActive, 'the Places tab is selected').toBe(true);
+    expect(r.placesPaneShown, 'the Places pane is visible').toBe(true);
+    expect(r.modalOpen, 'the Add-a-location modal is already open').toBe(true);
+    expect(r.addrSearchReady, 'with the address search ready to type into').toBe(true);
   });
 
   test('_setupTodoGo("qrcode"): navigates to the QR codes page and focuses the label field', async () => {
@@ -2724,7 +2797,10 @@ test.describe('Employee dispatch and daily view', () => {
       // Seed a vehicle
       if (typeof S !== 'undefined') {
         if (!getVehicles().find(v => String(v.id) === 'veh-test-1')) {
-          _setVehicles([...getVehicles(), { id: 'veh-test-1', year: '2023', make: 'Ford', model: 'F-150' }]);
+          // crewDrivable: crew are only ever offered vehicles the owner has said
+          // they may drive (getCrewVehicles, off by default since 2026-08-01).
+          // Without the tag the picker correctly has nothing to show them.
+          _setVehicles([...getVehicles(), { id: 'veh-test-1', year: '2023', make: 'Ford', model: 'F-150', crewDrivable: true }]);
         }
       }
       // Clear today's vehicle selection
@@ -2944,6 +3020,140 @@ test.describe('Employee dispatch and daily view', () => {
     if (!result.fnExists) return;
     expect(result.hasBanner).toBe(true);
     assertNoErrors(page, 'invite landing banner');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SIGN-IN PASSWORD VISIBILITY TOGGLE
+// ════════════════════════════════════════════════════════════════════════════
+// Owner report, live on the preview: "the eye is backwards." The icon and the
+// field's actual visibility disagreed at every step, because _eyeSvg's two
+// SVGs were swapped under the covers. The one control a person checks before
+// trusting the rest of the sign-in form was lying to them: masked-with-an-
+// open-eye reads as "already showing," which is the opposite of true.
+//
+// This has zero coverage before this test, and the earlier fix in this same
+// PR for the dispatch gap-card select was ALSO invisible to its own tests
+// because they called the handler function directly instead of clicking the
+// rendered element. Same shape of bug, so this drives the real DOM: renders
+// the actual sign-in overlay via supaShowLogin, clicks the actual button, and
+// reads the actual input.type and rendered SVG back off the page.
+// ONE test, not four. It was four, split across separate test() blocks that
+// shared one overlay left open between them, and that is what actually broke
+// on CI: mockAllExternal's session reads as authenticated, and the moment a
+// real signed-in user is detected the app itself removes #supa-login-overlay
+// (js/cloud.js, the SIGNED_IN handler and the reconnect probe both call
+// document.getElementById('supa-login-overlay')?.remove()). That is correct
+// app behaviour, never leave a fake login screen open on a real session, and
+// it has nothing to do with the eye icon. But it means the overlay this test
+// forces open is living on borrowed time from the moment it exists, and the
+// unpredictable gap BETWEEN separate test() blocks (reporter overhead, CI
+// scheduling, whatever ran before) was long enough for it to lose the race:
+// shard 5 and shard 2 both died on the SECOND test, at the SAME line, with
+// the button resolved but "not visible" (removed out from under it), and
+// Playwright then reports every later test in the file as "context closed"
+// once the hung click exhausts its own 60s timeout.
+//
+// The fix is not to patch around the removal (that would hide a bug if the
+// removal ever became unconditional); it is to stop leaving state exposed to
+// an unbounded gap. Everything here runs back-to-back inside one test, so the
+// only elapsed time between "overlay exists" and "last click lands" is a
+// handful of fast, real Playwright actions, not whatever CI feels like taking
+// between two separate test() entries.
+test.describe('Sign-in password eye: icon matches what is actually on screen', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/');
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // The bug and the fix both live entirely inside _pwToggle/_eyeSvg: given an
+  // input id and a button id, derive the icon from the input's real type.
+  // The sign-in overlay is not part of that claim, it is just the one place
+  // in the app that happens to call these two functions, and going through
+  // it (supaShowLogin) ties the test to the login session/overlay lifecycle:
+  // a real, independently-timed async subsystem (token/session probing) that
+  // can legitimately tear the overlay down mid-test with no bug involved.
+  // Building the exact same markup on a blank div sideswipes that lifecycle
+  // entirely and tests the actual claim: click → field flips → icon follows.
+  test('masked shows the slashed eye; each click flips both the field and the icon together', async () => {
+    const rendered = await page.evaluate(() => {
+      if (typeof _pwToggle !== 'function' || typeof _eyeSvg !== 'function') return false;
+      const host = document.createElement('div');
+      host.id = 'eye-test-host';
+      // Fixed + top layer: appended to the end of body with no positioning, this
+      // sits in normal flow UNDER the app's real fixed mobile-tabbar (still
+      // rendered underneath, untouched, since the app itself was never navigated
+      // away from). The tabbar pins to the bottom of the viewport and intercepts
+      // the click there regardless of DOM order. Taking the fixture out of flow
+      // and above everything else is what actually isolates it from the live app.
+      host.style.cssText = 'position:fixed;top:8px;left:8px;z-index:2147483647;background:#fff;padding:8px';
+      host.innerHTML =
+        '<input type="password" id="eye-test-pass">' +
+        '<button type="button" id="eye-test-eye" aria-label="Show password" onclick="_pwToggle(\'eye-test-pass\',\'eye-test-eye\')">' + _eyeSvg(false) + '</button>';
+      document.body.appendChild(host);
+      return !!document.getElementById('eye-test-eye');
+    });
+    expect(rendered, 'the test fixture must actually render the toggle').toBe(true);
+
+    const readState = () => page.evaluate(() => {
+      const inp = document.getElementById('eye-test-pass');
+      const btn = document.getElementById('eye-test-eye');
+      return {
+        masked: inp ? inp.type === 'password' : null,
+        openEye: btn ? btn.innerHTML.includes('circle') : null,      // pupil = open eye
+        // The literal <line> element, not the bare substring: both icon variants
+        // carry stroke-linecap/stroke-linejoin attributes, which also contain
+        // "line" and made this always true regardless of which icon was shown.
+        slashed: btn ? btn.innerHTML.includes('<line') : null,       // diagonal = eye-off
+        ariaLabel: btn ? btn.getAttribute('aria-label') : null,
+      };
+    });
+
+    await test.step('at rest: masked, slashed eye', async () => {
+      const s = await readState();
+      expect(s.masked).toBe(true);
+      expect(s.slashed, 'masked password must show the eye-OFF icon').toBe(true);
+      expect(s.openEye).toBe(false);
+      expect(s.ariaLabel).toBe('Show password');
+    });
+
+    await test.step('click 1: reveals as text, open eye', async () => {
+      await page.click('#eye-test-eye');
+      const s = await readState();
+      expect(s.masked, 'the field must actually switch to type=text').toBe(false);
+      expect(s.openEye, 'visible password must show the open eye').toBe(true);
+      expect(s.slashed).toBe(false);
+      expect(s.ariaLabel).toBe('Hide password');
+    });
+
+    await test.step('click 2: masks again, slashed eye', async () => {
+      await page.click('#eye-test-eye');
+      const s = await readState();
+      expect(s.masked).toBe(true);
+      expect(s.slashed).toBe(true);
+      expect(s.openEye).toBe(false);
+      expect(s.ariaLabel).toBe('Show password');
+    });
+
+    await test.step('three more clicks: icon is a function of the field, never drifts from it', async () => {
+      // Guards the class of bug directly: the icon is DERIVED from the real
+      // input.type at every step, not a flag that can fall out of sync with it.
+      for (let i = 0; i < 3; i++) {
+        await page.click('#eye-test-eye');
+        const s = await readState();
+        expect(s.openEye).toBe(!s.masked);
+        expect(s.slashed).toBe(s.masked);
+      }
+    });
+
+    await page.evaluate(() => { document.getElementById('eye-test-host')?.remove(); });
+    assertNoErrors(page, 'password eye toggle');
   });
 });
 
@@ -3427,25 +3637,23 @@ test.describe('Crew tracking + payroll + dispatch routing + job profit', () => {
     expect(r.b).toBe(600);
   });
 
-  test('_geoParseHM + business-hours window are sane', async () => {
-    const r = await page.evaluate(() => {
-      if (typeof _geoParseHM !== 'function' || typeof _geoBusinessHoursNow !== 'function') return { fnExists: false };
-      S.trackStart = '00:00'; S.trackEnd = '24:00'; // exclusive upper bound ⇒ every minute is inside
-      return {
-        fnExists: true,
-        p1: _geoParseHM('07:00'),
-        p2: _geoParseHM('18:30'),
-        pNull: _geoParseHM(''),
-        allDay: _geoBusinessHoursNow(), // full-day window ⇒ always inside
-        isBool: typeof _geoBusinessHoursNow() === 'boolean',
-      };
-    });
-    if (!r.fnExists) return;
-    expect(r.p1).toBe(420);
-    expect(r.p2).toBe(1110);
-    expect(r.pNull).toBe(null);
-    expect(r.allDay).toBe(true);
-    expect(r.isBool).toBe(true);
+  test('the business-hours time lock is gone, tracking is never gated on a clock', async () => {
+    const r = await page.evaluate(() => ({
+      predicateGone: typeof _geoBusinessHoursNow === 'undefined',
+      parserGone: typeof _geoParseHM === 'undefined',
+      timerGone: typeof _geoHoursTimer === 'undefined',
+      // The window silently deleted the miles contractors care about most.
+      startGoneFromDefaults: !('trackStart' in S) || S.trackStart === undefined,
+      endGoneFromDefaults: !('trackEnd' in S) || S.trackEnd === undefined,
+      // startGeoTracking must no longer consult any clock.
+      startSrcHasNoClock: !/BusinessHours|trackStart|trackEnd/.test(String(startGeoTracking)),
+    }));
+    expect(r.predicateGone).toBe(true);
+    expect(r.parserGone).toBe(true);
+    expect(r.timerGone).toBe(true);
+    expect(r.startGoneFromDefaults).toBe(true);
+    expect(r.endGoneFromDefaults).toBe(true);
+    expect(r.startSrcHasNoClock).toBe(true);
   });
 
   test('_geoDistFt matches haversine miles × 5280', async () => {
@@ -3495,31 +3703,25 @@ test.describe('Crew tracking + payroll + dispatch routing + job profit', () => {
     expect(r.jobProfit).toBe(true);
   });
 
-  test('Settings crew-tracking inputs exist and load from S (no toggle, always on)', async () => {
+  test('Settings crew tracking: no toggle, no fence input, and no hours inputs', async () => {
     const r = await page.evaluate(() => {
       if (typeof loadSettingsForm !== 'function') return { fnExists: false };
-      S.trackStart = '06:30'; S.trackEnd = '17:15';
       try { loadSettingsForm(); } catch (e) {}
-      const tt = document.getElementById('set-team-tracking');
-      const gf = document.getElementById('set-geofence-ft');
-      const ts = document.getElementById('set-track-start');
-      const te = document.getElementById('set-track-end');
       return {
         fnExists: true,
-        toggleGone: !tt,                 // checkbox removed, tracking is mandatory
-        fenceInputGone: !gf,             // geofence radius hardcoded, input removed
-        teamTracking: S.teamTracking,    // forced on
-        exist: !!(ts && te),
-        start: ts && ts.value, end: te && te.value,
+        toggleGone: !document.getElementById('set-team-tracking'),  // tracking is mandatory
+        fenceInputGone: !document.getElementById('set-geofence-ft'), // radius hardcoded
+        startGone: !document.getElementById('set-track-start'),      // time lock removed
+        endGone: !document.getElementById('set-track-end'),
+        teamTracking: S.teamTracking,
       };
     });
     if (!r.fnExists) return;
     expect(r.toggleGone).toBe(true);
     expect(r.fenceInputGone).toBe(true);
+    expect(r.startGone).toBe(true);
+    expect(r.endGone).toBe(true);
     expect(r.teamTracking).toBe(true);
-    expect(r.exist).toBe(true);
-    expect(r.start).toBe('06:30');
-    expect(r.end).toBe('17:15');
   });
 
   test('renameDevice exists and zPrompt pre-fills a value', async () => {
@@ -3872,6 +4074,64 @@ test.describe('Workforce time intelligence', () => {
     // 'No tracked time today yet' is the empty-state string, its absence proves
     // the manual entry (mocked GPS entries are all empty) registered as cost.
     if (r && !r.error) expect(r.html).not.toContain('No tracked time today');
+  });
+
+  // Owner (2026-08-01): shop-based prefab/fab work is real job labor with
+  // nowhere to attach today. The fix lets a crew member manually clock into a
+  // job while the automatic tracker ALSO logs shop_time_entries for the same
+  // window (they are physically at the shop), and those are two independent
+  // streams with no shared knowledge of each other. Blind, that window gets
+  // paid twice: 2 real hours becomes 3 counted hours (1h shop + 2h "shop
+  // manually attributed to a job" double-billed). The manual entry should win
+  // (it says WHICH job), and the shop-overhead minutes should shrink by
+  // exactly the overlap, never below zero.
+  test('crew cost: a manual job clock-in overlapping automatic shop time is not paid twice', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _crewCostRender !== 'function') return null;
+      const orig = { timeEntries, supa: window._supa, supaEnabled: window.supaEnabled, supaUser: window._supaUser };
+      const T0 = Date.now() - 3 * 3600000;   // 3h ago, safely inside "today"
+      const EMP = 'emp-shopoverlap-1';
+      // Shop dwell: 2 real hours, T0 to T0+120m.
+      const shopRow = { employee_user_id: EMP, minutes: 120, arrived_at: new Date(T0).toISOString() };
+      // A manual job clock-in fully INSIDE that dwell: T0+30m to T0+90m (1h),
+      // the crew member prefabbing for a specific job while physically there.
+      timeEntries = timeEntries.filter(e => e.id !== 8970099);
+      // No scope tag: a shop-prompt clock-in is untagged, it's just job time.
+      timeEntries.push({
+        id: 8970099, job_id: 1, date: new Date(T0).toISOString().slice(0, 10),
+        start_time: new Date(T0 + 30 * 60000).toISOString(), end_time: new Date(T0 + 90 * 60000).toISOString(),
+        minutes: 60, logged_by_uid: EMP, logged_by_name: 'Test Crew',
+      });
+      const makeQ = (rows) => { const q = { _data: { data: rows } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.select = () => q; return q; };
+      window._supa = {
+        from: (tbl) => {
+          if (tbl === 'team_members') return makeQ([{ employee_user_id: EMP, name: 'Test Crew', email: '', pay_type: 'hourly', pay_rate: 30 }]);
+          if (tbl === 'shop_time_entries') return makeQ([shopRow]);
+          return makeQ([]);   // job_time_entries: none, isolates the shop/manual overlap
+        },
+      };
+      window.supaEnabled = () => true;
+      window._supaUser = window._supaUser || { id: 'owner-test' };
+      document.getElementById('_crew-cost-ov')?.remove();
+      let paidMin = null, html = '';
+      try {
+        _openCrewCost(); await _crewCostRender('today');
+        html = document.getElementById('_crew-cost-body')?.innerHTML || '';
+      } catch (e) { return { error: e.message }; }
+      document.getElementById('_crew-cost-ov')?.remove();
+      timeEntries = orig.timeEntries; window._supa = orig.supa; window.supaEnabled = orig.supaEnabled; window._supaUser = orig.supaUser;
+      // 2h loaded cost at $30 wage would show as $60 wage-only; 3h (the bug)
+      // would show $90. Read the rendered hours figure directly rather than
+      // re-deriving it, so the test proves what the OWNER actually sees.
+      const hoursMatch = html.match(/(\d+(?:\.\d+)?)h/);
+      return { html, hours: hoursMatch ? parseFloat(hoursMatch[1]) : null };
+    });
+    if (r && !r.error) {
+      expect(r.hours, 'rendered hours, html=' + r.html).not.toBeNull();
+      // 2.0h exactly: the 1h overlap must be subtracted from the shop side
+      // once, never doubled and never dropped entirely.
+      expect(r.hours).toBeCloseTo(2.0, 1);
+    }
   });
 
   // ── Job Profit: source filter excludes drive minutes from labor cost ─────
@@ -7985,8 +8245,50 @@ test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
       const jobLbl = document.getElementById('s-time-label').textContent;
       return { estLbl, jobLbl };
     });
-    expect(r.estLbl).toBe('Proposal visits');
+    expect(r.estLbl).toBe('Estimate visits');
     expect(r.jobLbl.toLowerCase()).toContain('start time');
+  });
+
+  // Owner-reported: booking a visit to give someone an estimate was hard to
+  // find, because every entry point into that flow said "Proposal" instead of
+  // "Estimate". A contractor thinking "I need to go give an estimate" has no
+  // reason to look for the word "proposal", that's the DOCUMENT stage, not the
+  // in-person visit. Renamed every entry point + the schedule page's own tab
+  // to say what it actually does. "Won proposal" (picking an accepted bid to
+  // turn into a scheduled JOB) is a real, different, correct use of the word
+  // and is deliberately untouched, as is the on-site "Proposal" quick-action
+  // button (jumps straight into writing the estimate right now, a different
+  // action from booking a future visit).
+  test('every entry point to scheduling an estimate visit says "Estimate", not "Proposal"', async () => {
+    const r = await page.evaluate(() => {
+      document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+      goPg('pg-schedule');
+      const tabText = document.getElementById('sched-tab-est').textContent.trim();
+      goPg('pg-dash');
+      // The client-detail "Proposals & jobs" tab button.
+      const cdBtn = document.getElementById('cdt-jobs-content')
+        ? [...document.getElementById('cdt-jobs-content').querySelectorAll('button')].find(b => /schedule/i.test(b.textContent))
+        : null;
+      // The client-detail "More" action-sheet row. A fresh, known-good client
+      // rather than reaching into clients[0]: thousands of tests run before
+      // this one in this shared-page file and clients[0] is whatever the last
+      // of them left behind, not something this test controls or should rely on.
+      const _tcId = Date.now() * 1000 + 771;
+      clients.push({ id: _tcId, name: 'Schedule-Label Test Client' });
+      currentClientId = _tcId;
+      let moreLabel = null;
+      if (typeof _cdMoreMenu === 'function' && currentClientId) {
+        _cdMoreMenu();
+        const sheet = document.querySelector('.zmodal-overlay .zmodal');
+        const row = sheet ? [...sheet.querySelectorAll('button')].find(b => /schedule/i.test(b.textContent)) : null;
+        moreLabel = row ? row.textContent.trim() : null;
+        document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+      }
+      return { tabText, cdBtnText: cdBtn ? cdBtn.textContent.trim() : null, moreLabel };
+    });
+    expect(r.tabText).toBe('Estimate');
+    expect(r.cdBtnText).toBe('+ Schedule estimate');
+    expect(r.moreLabel).toBe('Schedule estimate');
   });
 
   test('buildColorRow / selColor / #s-color-row: the permanently-hidden dead color picker is gone', async () => {

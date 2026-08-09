@@ -6,7 +6,8 @@
   "dependencies": {
     "@capacitor/core": "^7.0.0",
     "@capacitor/ios": "^7.0.0",
-    "@capacitor-community/background-geolocation": "latest"
+    "@capacitor-community/background-geolocation": "latest",
+    "@capacitor-community/apple-sign-in": "latest"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.0.0"

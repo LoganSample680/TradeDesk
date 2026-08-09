@@ -755,6 +755,14 @@ async function expSave(){
         deductible:catInfo2.deductible!==false,meals_50:!!(catInfo2.meals_50),
       };
       expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
+      // Only stamp an edit if it was never stamped. Re-stamping would move the
+      // pin to wherever they happened to be doing paperwork days later.
+      if(typeof _stampGeo==='function'&&expenses[idx]&&expenses[idx].lat==null)_stampGeo(expenses[idx]);
+      // A receipt is the only thing that can tell a crew lunch run from a
+      // personal one, and it rarely arrives while they are still in the car
+      // park. If this one belongs to a stop that was passed through as a
+      // detour, that day gets rebuilt now (mileage.js reviewDetourReceipts).
+      if(typeof reviewDetourReceipts==='function')reviewDetourReceipts();
       showToast('Expense updated, '+vendor+' '+fmt(amount),'✓');
       closeExpenseFlow();
       setTimeout(()=>{if(typeof renderExpenses==='function')renderExpenses();},0);
@@ -809,6 +817,11 @@ async function expSave(){
     deductible:catInfo.deductible!==false,meals_50:!!(catInfo.meals_50),
   });
   expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
+  // Where it was logged. Fire-and-forget: this never blocks or delays the save,
+  // and silently does nothing if location was never granted.
+  if(typeof _stampGeo==='function')_stampGeo(expenses.find(e=>e.id===expId));
+  // Same rebuild on a fresh receipt: see the edit path above.
+  if(typeof reviewDetourReceipts==='function')reviewDetourReceipts();
   showToast((new Date(date).getFullYear()<new Date().getFullYear()?'Back-tax expense':'Expense')+' saved: '+vendor+' '+fmt(amount),receipt_img?'📎':'🧾');
   if(cat==='tools'&&amount>=500)setTimeout(()=>showToast(svgIcon('💡')+' Equipment $'+amount.toFixed(0)+'+ may qualify for Section 179 immediate deduction, flag for your CPA','📋'),900);
   closeExpenseFlow();
@@ -827,7 +840,6 @@ function quickAction(type){
   });
   const todayEstimates=jobs.filter(j=>j.eventType==='estimate'&&j.start===tk);
   const pendingBids=bids.filter(b=>b.status==='Pending');
-  const wonUnscheduled=bids.filter(b=>b.status==='Closed Won'&&!jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id&&j.eventType!=='estimate'&&j.start>=tk));
 
   if(type==='drive'){
     // Mileage requires a vehicle on record (IRS: every trip log names a vehicle).
@@ -862,21 +874,78 @@ function quickAction(type){
     });
     showQuickPicker('Start Proposal','Which client?',options,'estimate',true);
   } else if(type==='schedule'){
-    if(!wonUnscheduled.length){
-      if(!bids.some(b=>b.status==='Closed Won')){
-        showWorkflowGate('No signed jobs to schedule. Close a proposal first.','Start Proposal','function(){quickAction(\'estimate\');}');return;
-      }
-      showWorkflowGate('All signed jobs are already scheduled. Check your calendar.','View Calendar','function(){goPg(\'pg-cal\');}');return;
-    }
-    const options=[];
-    wonUnscheduled.slice(0,8).forEach(b=>{
-      const c=getClientById(b.client_id);
-      if(c)options.push({label:c.name,sub:fmt(b.amount)+', won proposal',clientId:b.client_id,bidId:b.id,icon:'✓'});
-    });
-    showQuickPicker('Schedule Job','Which job to schedule?',options,'schedule',false);
+    _scheduleTypeChooser();
   } else if(type==='complete'){
     openCompleteJobModal();
   }
+}
+
+// The dashboard's Schedule tile used to only ever offer a JOB, pulled from a
+// won proposal, and dead-ended into a gate message ("No signed jobs to
+// schedule" / "All signed jobs are already scheduled") the moment there
+// wasn't one, with no path at all to book an ESTIMATE VISIT, the thing a
+// contractor actually does most days. Owner-reported. A fork, same pattern as
+// the setup checklist's "Add your crew" chooser: ask once, then go straight
+// to the right form. Both land on the calendar either way, this only decides
+// which tab.
+function _scheduleTypeChooser(){
+  document.getElementById('sched-type-chooser')?.remove();
+  // .zmodal-overlay/.zmodal, not a hand-built bottom sheet: that class pair is
+  // what every OTHER prompt in the app uses and centers on screen by default
+  // (index.html, align-items:center). The first version copied the setup
+  // checklist's "Add your crew" chooser, which is itself a bottom sheet, an
+  // exception rather than the norm, and it showed: this one needed to match
+  // openPlaceModal's centered .zmodal instead.
+  const ov=document.createElement('div');
+  ov.id='sched-type-chooser';ov.className='zmodal-overlay';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const box=document.createElement('div');
+  box.className='zmodal';
+  const opt=(icon,title,sub,onclick)=>'<button onclick="'+onclick+'" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:15px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:10px">'+
+    '<span style="width:36px;height:36px;flex-shrink:0;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:18px">'+svgIcon(icon,{size:18})+'</span>'+
+    '<span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+title+'</span><span style="display:block;font-size:11px;color:var(--text3);margin-top:2px;line-height:1.4">'+sub+'</span></span>'+
+  '</button>';
+  box.innerHTML=
+    '<div class="zmodal-title" style="text-align:center">What do you want to schedule?</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px;text-align:center">Both land on your calendar.</div>'+
+    opt('📋','Estimate visit','Book a walkthrough with a client or lead.',"document.getElementById('sched-type-chooser').remove();_scheduleEstimateQuick()")+
+    opt('✓','Job','Pull from a won proposal and pick a start date.',"document.getElementById('sched-type-chooser').remove();_scheduleJobQuick()");
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+}
+// General estimate-visit entry point, no client pre-picked: lands on the
+// Schedule page's Estimate tab (unlike schedFromDate, which is reached by
+// tapping an actual calendar date and hides the Job tab entirely, this comes
+// from the dashboard with no date in hand yet, so both tabs stay reachable in
+// case the tap was a misfire).
+function _scheduleEstimateQuick(){
+  schedType='estimate';
+  goPg('pg-schedule');
+  setTimeout(()=>{
+    const jobTab=document.getElementById('sched-tab-job');if(jobTab)jobTab.style.display='';
+    setSchedType('estimate',document.getElementById('sched-tab-est'));
+  },150);
+}
+// The original Schedule-tile behavior, unchanged, just reached one tap later
+// now that Estimate visit is offered alongside it. Recomputes wonUnscheduled
+// fresh here rather than reusing a value captured back when the tile was
+// tapped: the chooser sits in front of it now, and nothing should schedule
+// off a job list that is a user-decision-cycle stale.
+function _scheduleJobQuick(){
+  const tk=todayKey();
+  const wonUnscheduled=bids.filter(b=>b.status==='Closed Won'&&!jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id&&j.eventType!=='estimate'&&j.start>=tk));
+  if(!wonUnscheduled.length){
+    if(!bids.some(b=>b.status==='Closed Won')){
+      showWorkflowGate('No signed jobs to schedule. Close a proposal first.','Start Proposal','function(){quickAction(\'estimate\');}');return;
+    }
+    showWorkflowGate('All signed jobs are already scheduled. Check your calendar.','View Calendar','function(){goPg(\'pg-cal\');}');return;
+  }
+  const options=[];
+  wonUnscheduled.slice(0,8).forEach(b=>{
+    const c=getClientById(b.client_id);
+    if(c)options.push({label:c.name,sub:fmt(b.amount)+', won proposal',clientId:b.client_id,bidId:b.id,icon:'✓'});
+  });
+  showQuickPicker('Schedule Job','Which job to schedule?',options,'schedule',false);
 }
 
 function openCompleteJobModal(){
@@ -1245,7 +1314,7 @@ function setSchedType(type,btn){
   // the label and default differ, estimates default to a real time + the
   // past-now bump (validateEstimateTime), jobs start blank/optional.
   const timeLbl=document.getElementById('s-time-label');
-  if(timeLbl)timeLbl.innerHTML=isEst?'Proposal visits':'Start time <span style="font-weight:600">(optional)</span>';
+  if(timeLbl)timeLbl.innerHTML=isEst?'Estimate visits':'Start time <span style="font-weight:600">(optional)</span>';
   const timeInput=document.getElementById('s-time');if(timeInput)timeInput.value=isEst?'09:00':'';
   // Crew picker shows in BOTH estimate and job mode once a second person
   // exists (an estimate visit is still someone's appointment). It's ONE shared
@@ -1504,17 +1573,30 @@ function resetSched(){
 }
 
 function setTrTab(tab,btn){
+  const _switching=trackerTab!==tab;
   trackerTab=tab;
-  ['income','expenses','mileage','jobs','summary','hiring'].forEach(t=>{
-    const el=document.getElementById('tr-'+t);if(el)el.style.display=t===tab?'block':'none';
+  ['income','expenses','mileage','places','jobs','summary','hiring','map'].forEach(t=>{
+    const el=document.getElementById('tr-'+t);
+    if(el){
+      const _show=t===tab;
+      el.style.display=_show?'block':'none';
+      // §8 inline-panel standard: a tab switch is a reveal, never a hard cut.
+      // Restart the animation via reflow so rapid tab-hopping still fades.
+      if(_show&&_switching){
+        el.style.animation='none';void el.offsetWidth;
+        el.style.animation='td-pg-enter .18s cubic-bezier(.22,1,.36,1) both';
+      }
+    }
     const tb=document.getElementById('tr-t-'+t);if(tb)tb.classList.toggle('active',t===tab);
   });
   if(tab==='income')renderIncome();
   if(tab==='expenses')renderExpenses();
   if(tab==='mileage')renderAllMileage();
+  if(tab==='places'&&typeof renderPlaces==='function')renderPlaces();
   if(tab==='jobs')renderJobsHistory();
   if(tab==='summary'){renderSummary();renderJobSummary();renderMonthlyPL();}
   if(tab==='hiring')renderHiringCalc();
+  if(tab==='map'&&typeof renderGeoMap==='function')renderGeoMap();
 }
 function getTrackerYears(){
   const allDates=[
@@ -1560,7 +1642,9 @@ function renderMonthlyPL(){
   income.forEach(r=>{if(r.date)addMonth(mKey(r.date),'inc',r.amount);});
   payments.filter(p=>p.amount!==0&&p.date).forEach(p=>{addMonth(mKey(p.date),'inc',p.amount);});
   expenses.forEach(r=>{if(r.date)addMonth(mKey(r.date),'exp',r.amount);});
-  mileage.forEach(r=>{if(r.date)addMonth(mKey(r.date),'miles',r.miles||0);});
+  // deductibleTrips: an employee's own-car miles are owed to THEM, not deducted
+  // by the owner (mileage.js). Same filter at every one of these five sites.
+  deductibleTrips(mileage).forEach(r=>{if(r.date)addMonth(mKey(r.date),'miles',r.miles||0);});
 
   const keys=Object.keys(months).sort().reverse();
   if(!keys.length){el.innerHTML='<div class="empty">No data yet, log income and expenses to see monthly P&L.</div>';return;}
@@ -1866,7 +1950,6 @@ function _xlsByYear(headers,colWidths,items,getDate,buildDataRow,sumCols){
 function exportAllXLSX(){
   if(typeof XLSX==='undefined'){showToast('Export library loading, try again','⏳');return;}
   const biz=S.bname||'TradeDesk';
-  const rate=IRS();
   const wb=XLSX.utils.book_new();
 
   XLSX.utils.book_append_sheet(wb,_xlsByYear(
@@ -1914,7 +1997,7 @@ function exportAllXLSX(){
       {v:_xlsClean(m.from),t:'s',s:_xS.left},
       {v:_xlsClean(m.to),t:'s',s:_xS.left},
       {v:m.miles||0,t:'n',s:_xS.mi},
-      {v:(m.miles||0)*rate,t:'n',s:_xS.cur},
+      {v:(m.miles||0)*IRS(m.date),t:'n',s:_xS.cur},
       {v:_xlsClean(m.purpose),t:'s',s:_xS.left},
       {v:_xlsClean(m.client_name),t:'s',s:_xS.left},
     ],
@@ -1972,7 +2055,6 @@ function exportMileageCSV(){
   if(typeof XLSX==='undefined'){showToast('Export library loading, try again','⏳');return;}
   const yr=getExportYear();
   const biz=S.bname||'TradeDesk';
-  const rate=IRS();
   const filtered=(yr==='all'?mileage:mileage.filter(m=>m.date?.startsWith(yr)))
     .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const n=filtered.length;
@@ -1982,7 +2064,7 @@ function exportMileageCSV(){
     {v:_xlsClean(m.from),t:'s',s:_xS.left},
     {v:_xlsClean(m.to),t:'s',s:_xS.left},
     {v:m.miles||0,t:'n',s:_xS.mi},
-    {v:(m.miles||0)*rate,t:'n',s:_xS.cur},
+    {v:(m.miles||0)*IRS(m.date),t:'n',s:_xS.cur},
     {v:_xlsClean(m.purpose),t:'s',s:_xS.left},
     {v:_xlsClean(m.client_name),t:'s',s:_xS.left},
   ]);
@@ -2098,12 +2180,11 @@ function exportAllDataCSV(){
   );
 
   // Mileage: grouped by year, newest first
-  const rate=IRS();
   secByYear('MILEAGE',
     ['Date','Vehicle','From','To','Miles','IRS Deduction','Purpose','Client'],
     mileage, m=>m.date,
     m=>[q(m.date),q(m.vehicle),q(m.from),q(m.to),
-        (m.miles||0).toFixed(1),((m.miles||0)*rate).toFixed(2),q(m.purpose),q(m.client_name)].join(',')
+        (m.miles||0).toFixed(1),((m.miles||0)*IRS(m.date)).toFixed(2),q(m.purpose),q(m.client_name)].join(',')
   );
 
   // Time Entries
@@ -2166,13 +2247,13 @@ function exportPLCSV(){
   const filterYr=arr=>(yr==='all'?arr:arr.filter(r=>r.date?.startsWith(yr)));
   const yrInc=filterYr(income).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const yrExp=filterYr(expenses).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  const yrMil=filterYr(mileage);
+  const yrMil=deductibleTrips(filterYr(mileage));   // owner's vehicles only
   const yrPay=filterYr(payments).filter(p=>p.amount!==0).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const tIncBase=yrInc.reduce((s,r)=>s+(r.amount||0),0);
   const tIncPay=yrPay.reduce((s,p)=>s+(p.amount||0),0);
   const tInc=tIncBase+tIncPay;
   const tExp=yrExp.reduce((s,r)=>s+(r.amount||0),0);
-  const tMil=yrMil.reduce((s,m)=>s+(m.miles||0),0)*IRS();
+  const tMil=yrMil.reduce((s,m)=>s+(m.miles||0)*IRS(m.date),0);
   const net=tInc-tExp;
   const lines=[
     '"'+biz+', Profit & Loss, '+label+'"','',
@@ -2184,7 +2265,7 @@ function exportPLCSV(){
     ...yrExp.map(e=>{const c=IRS_EXPENSE_CATS.find(x=>x.id===e.cat)||{label:e.cat||'Other'};return[e.date||'','"'+(e.vendor||'').replace(/"/g,'""')+'"','"'+c.label+'"',(e.amount||0).toFixed(2)].join(',');}),
     ',,TOTAL EXPENSES,'+tExp.toFixed(2),'',
     '"MILEAGE DEDUCTION"','Miles,IRS Rate,Deduction,',
-    tMil>0?tMil.toFixed(1)+','+IRS().toFixed(3)+','+(tMil).toFixed(2)+',':'(none)','',
+    tMil>0?tMil.toFixed(1)+','+IRS(yr).toFixed(3)+','+(tMil).toFixed(2)+',':'(none)','',
     '"NET PROFIT"','"'+label+'",,'+net.toFixed(2),
   ];
   downloadFile((biz+' P&L '+label+'.csv').replace(/\s+/g,'_'),lines.join('\n'),'text/csv');
@@ -2197,7 +2278,7 @@ function exportTaxPDF(){
   const status=S.txStatus||'single';
   const yrIncome=income.filter(r=>r.date&&r.date.startsWith(yr)).sort((a,b)=>a.date.localeCompare(b.date));
   const yrExp=expenses.filter(r=>r.date&&r.date.startsWith(yr)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  const yrMiles=mileage.filter(r=>r.date&&r.date.startsWith(yr)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const yrMiles=deductibleTrips(mileage).filter(r=>r.date&&r.date.startsWith(yr)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const tInc=yrIncome.reduce((s,r)=>s+r.amount,0);
   const _vdX=(typeof _vehSchedC==='function')?_vehSchedC(yr):null; // one method per vehicle (IRS)
   const tExp=yrExp.reduce((s,r)=>s+r.amount,0)-(_vdX?_vdX.expAdjust:0);
@@ -2291,7 +2372,7 @@ function exportTaxPDF(){
   h+='<div class="box"><div class="bl">Mileage Deduction</div><div class="bv red">('+fmt(mileDed)+')</div></div>';
   h+='<div class="box"><div class="bl">Net SE Income</div><div class="bv blue">'+fmt(net)+'</div></div>';
   h+='<div class="box"><div class="bl">Miles Driven</div><div class="bv">'+tMiles.toFixed(1)+' mi</div></div>';
-  h+='<div class="box"><div class="bl">IRS Rate</div><div class="bv">$'+IRS().toFixed(3)+'/mi</div></div>';
+  h+='<div class="box"><div class="bl">IRS Rate</div><div class="bv">$'+IRS(yr).toFixed(3)+'/mi</div></div>';
   h+='</div></div>';
   // Tax breakdown
   const _pdfHomeStateName=(STATE_TAX[_pdfHome]?.name||_pdfHome||'State');
@@ -2352,9 +2433,9 @@ function exportTaxPDF(){
   });
   h+='<tr class="tr"><td colspan="5">Total</td><td style="text-align:right">('+fmt(tExp)+')</td></tr></tbody></table></div>';
   // Mileage
-  h+='<div class="sec"><div class="sec-t">Mileage Log, '+yrMiles.length+' trips at $'+IRS().toFixed(3)+'/mi</div>';
+  h+='<div class="sec"><div class="sec-t">Mileage Log, '+yrMiles.length+' trips at $'+IRS(yr).toFixed(3)+'/mi</div>';
   h+='<table><thead><tr><th>Date</th><th>Vehicle</th><th>Route</th><th>Purpose</th><th style="text-align:right">Miles</th><th style="text-align:right">Deduction</th></tr></thead><tbody>';
-  yrMiles.forEach(m=>{h+='<tr><td>'+(m.date||'')+'</td><td>'+(m.vehicle||'')+'</td><td>'+(m.from||'')+' - '+(m.to||'')+'</td><td>'+(m.purpose||'')+(m.client_name?' - '+m.client_name:'')+'</td><td style="text-align:right">'+((m.miles||0).toFixed(1))+'</td><td style="text-align:right;color:#791F1F">('+fmt((m.miles||0)*IRS())+')</td></tr>';});
+  yrMiles.forEach(m=>{h+='<tr><td>'+(m.date||'')+'</td><td>'+(m.vehicle||'')+'</td><td>'+(m.from||'')+' - '+(m.to||'')+'</td><td>'+(m.purpose||'')+(m.client_name?' - '+m.client_name:'')+'</td><td style="text-align:right">'+((m.miles||0).toFixed(1))+'</td><td style="text-align:right;color:#791F1F">('+fmt((m.miles||0)*IRS(m.date))+')</td></tr>';});
   h+='<tr class="tr"><td colspan="4">Total</td><td style="text-align:right">'+tMiles.toFixed(1)+'</td><td style="text-align:right">('+fmt(mileDed)+')</td></tr></tbody></table></div>';
   h+='<div class="note">Estimates only. Verify with a CPA before filing. Federal SE tax at 15.3% on 92.35% of net per Schedule SE.</div>';
   h+='</div></body></html>';
@@ -2584,10 +2665,13 @@ async function _openJobProfit(){
   // invisible to Job Profit entirely, even though the time was really saved.
   // null logged_by_uid means the owner, whose rate already keys off cid above.
   entries=entries.concat(timeEntries.map(e=>({employee_user_id:e.logged_by_uid||cid,job_id:e.job_id,minutes:e.minutes||0,source:'manual'})));
-  // Labor $ by bid id (on-site time only; drive is overhead, not job labor)
+  // Labor $ by bid id (on-site time only; drive is overhead, not job labor).
+  // These tests were `source==='drive'` exactly, which missed 'drive-personal'
+  // and charged a job for time spent driving. Off-job stops (lunch) are not job
+  // labor either and must not land on a bid.
   const laborByBid={};
   entries.forEach(en=>{
-    if(en.source==='drive')return;
+    if(_geoIsDriveSource(en.source)||_geoIsOffJobSource(en.source)||_geoIsPlaceSource(en.source))return;
     const job=jobs.find(j=>String(j.id)===String(en.job_id));
     const bidId=job?job.bid_id:en.job_id;
     if(bidId==null)return;
@@ -2597,7 +2681,7 @@ async function _openJobProfit(){
   // On-site minutes per bid (drive excluded from on-site calc)
   const onSiteMinByBid={};
   entries.forEach(en=>{
-    if(en.source==='drive')return;
+    if(_geoIsDriveSource(en.source)||_geoIsOffJobSource(en.source)||_geoIsPlaceSource(en.source))return;
     const job=jobs.find(j=>String(j.id)===String(en.job_id));
     const bidId=job?job.bid_id:en.job_id;
     if(bidId==null)return;
@@ -2738,21 +2822,58 @@ async function _crewCostRender(range){
   // owner's rate/name under cid.
   const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(_supaUser&&_supaUser.id);
   const manualEnts=timeEntries.filter(e=>e.start_time&&_ctDateStr(new Date(e.start_time))>=sinceStr)
-    .map(e=>({employee_user_id:e.logged_by_uid||cid,job_id:e.job_id,minutes:e.minutes||0,arrived_at:e.start_time,source:'manual'}));
+    .map(e=>({employee_user_id:e.logged_by_uid||cid,job_id:e.job_id,minutes:e.minutes||0,arrived_at:e.start_time,departed_at:e.end_time,source:'manual'}));
   const ents=data.entries.filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr).concat(manualEnts);
   const shopEnts=(data.shopEntries||[]).filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr);
   if(!ents.length&&!shopEnts.length){body.innerHTML='<div style="padding:10px 0">No tracked time '+label+' yet. Crew time appears here once they\'re on site with sharing enabled.</div>';return;}
-  // Business day length for unaccounted estimate
-  const _phm=s=>{const m=/^(\d{1,2}):(\d{2})$/.exec(s||'');return m?(+m[1])*60+(+m[2]):null;};
-  const _bst=_phm(S.trackStart||'07:00'),_ben=_phm(S.trackEnd||'18:00');
-  const bizDayMins=(_bst!=null&&_ben!=null&&_ben>_bst)?(_ben-_bst):660;
+  // Nominal work day for the unaccounted-time estimate. This used to derive from
+  // the configurable tracking window; that window is gone (tracking no longer
+  // has a time lock at all), so this is simply a display baseline, 11 hours.
+  const bizDayMins=660;
   // Aggregate by employee
   const byEmp={};
-  const _emp=uid=>{if(!byEmp[uid])byEmp[uid]={min:0,jobSiteMin:0,driveMin:0,shopMin:0,jobs:{},dayMins:{}};return byEmp[uid];};
+  const _emp=uid=>{if(!byEmp[uid])byEmp[uid]={min:0,jobSiteMin:0,driveMin:0,shopMin:0,offMin:0,placeMin:0,jobs:{},dayMins:{}};return byEmp[uid];};
+  // The automatic location clocks and a manual job clock-in run on two separate
+  // streams that never talk to each other, and a person doing job-specific work
+  // (prefab at the yard, picking up material at a supplier) is inside both at
+  // once: the geofence logs the dwell for attendance, the manual clock logs
+  // timeEntries for the job. Summed blind, that window gets paid twice, two
+  // hours of real work becomes four hours of paid time. The manual entry is the
+  // one that means something (it says WHICH job), so it wins: dwell minutes are
+  // trimmed by however much a manual clock already covered the same uid over
+  // the same wall-clock window, before either is added to paid totals.
+  //
+  // Applies to BOTH shop dwell and saved-place dwell, since the dashboard
+  // prompt now fires at either. Drive and job-fence entries are never trimmed:
+  // they happen at a different physical place and cannot genuinely overlap.
+  const manualWindows={};
+  manualEnts.forEach(en=>{
+    if(!en.employee_user_id||!en.arrived_at||!en.departed_at)return;
+    const a=Date.parse(en.arrived_at),b=Date.parse(en.departed_at);
+    if(!(b>a))return;
+    (manualWindows[en.employee_user_id]=manualWindows[en.employee_user_id]||[]).push([a,b]);
+  });
+  const _ccOverlapMs=(aStart,aEnd,windows)=>windows.reduce((sum,[bStart,bEnd])=>
+    sum+Math.max(0,Math.min(aEnd,bEnd)-Math.max(aStart,bStart)),0);
   ents.forEach(en=>{
     const uid=en.employee_user_id;if(!uid)return;
-    const e=_emp(uid);const m=en.minutes||0;e.min+=m;
-    if(en.source==='drive'){e.driveMin+=m;}else{
+    const e=_emp(uid);let m=en.minutes||0;
+    // Off-job time (lunch, an errand) is shown but never PAID: it stays out of
+    // e.min, which drives loaded cost and wage, and out of dayMins, which drives
+    // the overtime flag. Counting a lunch break as either is a payroll error.
+    if(_geoIsOffJobSource(en.source)){e.offMin+=m;return;}
+    // A saved-place dwell is trimmed by any manual clock covering it, same rule
+    // as the shop below: picking up material FOR a job and clocking that job is
+    // one span of work, not two.
+    if(_geoIsPlaceSource(en.source)&&en.arrived_at){
+      const a=Date.parse(en.arrived_at),b=en.departed_at?Date.parse(en.departed_at):a+m*60000;
+      m=Math.max(0,m-Math.min(m,Math.round(_ccOverlapMs(a,b,manualWindows[uid]||[])/60000)));
+    }
+    e.min+=m;
+    // Exact 'drive' missed 'drive-personal', so a personal-vehicle leg was
+    // counted as on-site labor and billed to whichever job it ended at.
+    if(_geoIsPlaceSource(en.source)){e.placeMin+=m;}
+    else if(_geoIsDriveSource(en.source)){e.driveMin+=m;}else{
       e.jobSiteMin+=m;
       const job=jobs.find(j=>String(j.id)===String(en.job_id));
       const bidId=job?job.bid_id:en.job_id;
@@ -2763,7 +2884,11 @@ async function _crewCostRender(range){
   });
   shopEnts.forEach(en=>{
     const uid=en.employee_user_id;if(!uid)return;
-    const e=_emp(uid);const m=en.minutes||0;e.min+=m;e.shopMin+=m;
+    const e=_emp(uid);const raw=en.minutes||0;
+    const a=Date.parse(en.arrived_at),b=en.departed_at?Date.parse(en.departed_at):a+raw*60000;
+    const overlapMin=Math.round(_ccOverlapMs(a,b,manualWindows[uid]||[])/60000);
+    const m=Math.max(0,raw-Math.min(raw,overlapMin));   // never below 0, never over raw
+    e.min+=m;e.shopMin+=m;
     const day=_ctDateStr(new Date(en.arrived_at));e.dayMins[day]=(e.dayMins[day]||0)+m;
   });
   // Revenue attribution + overtime per employee
@@ -2782,12 +2907,12 @@ async function _crewCostRender(range){
     const e=byEmp[uid];
     const hrs=e.min/60,loaded=hrs*(data.loaded[uid]||0),wage=hrs*(data.wage[uid]||0);
     grand+=loaded;
-    const jsHrs=e.jobSiteMin/60,drHrs=e.driveMin/60,shHrs=e.shopMin/60;
+    const jsHrs=e.jobSiteMin/60,drHrs=e.driveMin/60,shHrs=e.shopMin/60,offHrs=e.offMin/60,plHrs=e.placeMin/60;
     // Use actual days worked (days with any entry), not the full range length,
     // otherwise absent days inflate "unaccounted" for part-week workers.
     const workedDays=Math.max(1,Object.keys(e.dayMins).length);
     const unaccH=Math.max(0,(bizDayMins*workedDays-e.min)/60);
-    const hasBreakdown=e.driveMin>0||e.shopMin>0;
+    const hasBreakdown=e.driveMin>0||e.shopMin>0||e.offMin>0||e.placeMin>0;
     const otTag=e.otDays>0?'<span style="color:var(--c-amber);font-weight:700;margin-left:6px">'+svgIcon('⚠',{size:12})+' OT '+e.otDays+'d</span>':'';
     const rlTag=(e.revenue>0&&loaded>0)?'<span style="color:var(--green);font-weight:700;margin-left:6px">'+fmt(e.revenue)+' rev</span>':'';
     const jobLines=Object.keys(e.jobs).sort((a,b)=>e.jobs[b]-e.jobs[a]).map(bid=>{
@@ -2799,6 +2924,8 @@ async function _crewCostRender(range){
         '<span>'+svgIcon('🏗',{size:11})+' On-site '+jsHrs.toFixed(1)+'h</span>'+
         (drHrs>0.1?'<span>'+svgIcon('🚗',{size:11})+' Drive '+drHrs.toFixed(1)+'h</span>':'')+
         (shHrs>0.1?'<span>'+svgIcon('🏠',{size:11})+' Shop '+shHrs.toFixed(1)+'h</span>':'')+
+        (plHrs>0.1?'<span>'+svgIcon('📦',{size:11})+' Supply/other '+plHrs.toFixed(1)+'h</span>':'')+
+        (offHrs>0.1?'<span style="color:var(--text4)">Off-job '+offHrs.toFixed(1)+'h (unpaid)</span>':'')+
         (unaccH>0.5?'<span style="color:var(--text4)">~ '+unaccH.toFixed(1)+'h unaccounted</span>':'')+
       '</div>':'';
     return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">'+
@@ -2950,7 +3077,7 @@ function renderJobSummary(){
   const rows=wonBids.map(b=>{
     const rev=getClientIncome(b.client_id).reduce((s,i)=>s+i.amount,0);
     const exp=expenses.filter(e=>e.job_id===b.id).reduce((s,e)=>s+e.amount,0);
-    const miles=mileage.filter(m=>m.client_id===b.client_id).reduce((s,m)=>s+(m.miles||0),0);
+    const miles=mileage.filter(m=>m.client_id===b.client_id).reduce((s,m)=>s+(m.miles||0),0); // miles-not-deduction: distance driven to this job, shown as "3.4mi", never multiplied by a rate
     const net=rev-exp;
     grandRev+=rev;grandExp+=exp;
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'+
@@ -3122,7 +3249,10 @@ function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor,sumFn,fmtFn
   sumFn=sumFn||(r=>r.amount||0);fmtFn=fmtFn||fmt;opts=opts||{};
   const byDay={};
   rows.forEach(r=>{const d=(r.date||'').slice(0,10)||'unknown';(byDay[d]||(byDay[d]=[])).push(r);});
-  const days=Object.keys(byDay).sort((a,b)=>b.localeCompare(a));
+  // Every existing caller (Income/Expenses/Time log/Client timeline) reads
+  // newest-first, unchanged. opts.asc:true is additive, Time at Places is
+  // the only caller that wants oldest-to-newest.
+  const days=Object.keys(byDay).sort((a,b)=>opts.asc?a.localeCompare(b):b.localeCompare(a));
   return days.map(day=>{
     const dr=byDay[day];
     const dayTotal=dr.reduce((s,r)=>s+sumFn(r),0);
@@ -3282,7 +3412,18 @@ function renderExpenses(){
         :'<button onclick="viewReceipt('+r.id+')" style="background:#fff8e1;border:1px solid #f59e0b;color:#b45309;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">'+svgIcon('💾',{size:11})+' View</button>')
       :'<button onclick="addReceiptToExpense('+r.id+')" style="background:rgba(162,45,45,.08);border:1px solid #A32D2D;color:#A32D2D;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">+ Add</button>';
     return '<tr data-lp-id="'+r.id+'" data-lp-type="expense" data-lp-label="'+escHtml((r.vendor||'expense')+' · '+fmt(r.amount||0))+'">'+
-      '<td class="bold" data-label="Vendor">'+(r.vendor||'-')+(r.job_name?'<div style="font-size:9px;color:var(--text3)">'+r.job_name+'</div>':'')+'</td>'+
+      '<td class="bold" data-label="Vendor">'+(r.vendor||'-')+(r.job_name?'<div style="font-size:9px;color:var(--text3)">'+r.job_name+'</div>':'')+
+        // Where it was logged. Tapping opens the pin, which is also the fastest
+        // way to eyeball whether a stamp landed somewhere sensible. Hidden when
+        // the fix was too loose to mean anything (>150m is wifi-triangulation
+        // territory and would put the pin on the wrong side of a retail park).
+        // nowrap + a short label: on the stacked mobile card the vendor name
+        // already wraps, and a two-word link beside it wrapped again and crowded
+        // the name (§15.1). One line, its own row under the vendor.
+        (r.lat!=null&&r.lon!=null&&(r.geoAcc==null||r.geoAcc<=150)
+          ?'<div style="font-size:9px;margin-top:3px;white-space:nowrap"><a href="https://www.google.com/maps?q='+r.lat+','+r.lon+'" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none">'+svgIcon('📍',{size:9})+' Map</a></div>'
+          :'')+
+      '</td>'+
       '<td class="red" data-label="Amount">('+fmtD(r.amount||0)+')'+(r.meals_50?'<div style="font-size:9px;color:var(--amber)">50% deduct</div>':'')+'</td>'+
       '<td class="mute" data-label="Date">'+(r.date||'')+'</td>'+
       '<td class="mute" style="font-size:10px" data-label="Category">'+(info?info.icon+' '+info.label:r.catLabel||r.cat||'-')+'</td>'+

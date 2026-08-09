@@ -41,18 +41,32 @@ test.describe('estimate permission-request (UI-driven, two-sided)', () => {
       act: async (p) => {
         await p.evaluate(async () => {
           const uid = _supaUser.id;
-          await _supa.from('team_members').upsert({
+          // CAPTURE THE ERROR. This upsert targets onConflict
+          // (contractor_user_id,email); without a unique index behind that pair
+          // Postgres aborts the whole statement with 42P10 and PostgREST
+          // silently writes nothing, so the read-back below sees no row and the
+          // finding reads "row absent" while saying nothing about why. That is
+          // precisely the failure 20260709_team_members_conflict_uniq exists to
+          // prevent, and a red that cannot name its own cause is a red everyone
+          // learns to skip past.
+          const { error } = await _supa.from('team_members').upsert({
             contractor_user_id: uid, employee_user_id: uid, email: _supaUser.email,
             name: 'E2E Self Tech', role: 'tech', active: true, permissions: { collect: true, estimate: false },
           }, { onConflict: 'contractor_user_id,email' });
+          window.__seedErr = error ? ((error.code || '?') + ': ' + (error.message || String(error))) : null;
         });
         return 1;
       },
       rule: async (p) => {
         const r = await p.evaluate(async () => {
           const uid = _supaUser.id;
-          const { data } = await _supa.from('team_members').select('permissions').eq('contractor_user_id', uid).eq('employee_user_id', uid).maybeSingle();
-          return { has: !!data, est: !!(data && data.permissions && data.permissions.estimate) };
+          // maybeSingle() ERRORS when more than one row matches, which is its own
+          // distinct cause (a duplicate self-link) and used to look identical to
+          // "no row at all". Surfaced separately below.
+          const { data, error } = await _supa.from('team_members').select('permissions').eq('contractor_user_id', uid).eq('employee_user_id', uid).maybeSingle();
+          return { has: !!data, est: !!(data && data.permissions && data.permissions.estimate),
+                   readErr: error ? ((error.code || '?') + ': ' + (error.message || String(error))) : null,
+                   seedErr: window.__seedErr || null };
         });
         return { ok: r.has && !r.est, got: JSON.stringify(r) };
       },

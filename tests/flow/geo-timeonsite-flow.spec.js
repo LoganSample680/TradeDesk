@@ -54,6 +54,9 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
 
     // Helper to install ONE coord-bearing job for today + always-on hours, isolated
     // so _geoMyJobs() returns exactly our job (real jobs lack session coords/are far).
+    // hoursOk is retained as a parameter only so existing call sites read the
+    // same; the time lock it used to drive is gone (owner call), so it no longer
+    // has any effect. See step 2.
     const setup = async (jobId, hoursOk) => {
       return await page.evaluate(({ jobId, SITE, hoursOk }) => {
         window.__origJobs = jobs.slice();
@@ -68,15 +71,10 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
         // Reset the geo state machine.
         _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null; _geoDriveStartedAt = null; _geoLastPingTs = 0;
         S.officeLat = null; S.officeLon = null;
-        if (hoursOk) { S.trackStart = '00:00'; S.trackEnd = '23:59'; }
-        else {
-          // A 1-hour window 6h from now (clamped to avoid a midnight wrap), excludes now.
-          const d = new Date(); const n = d.getHours() * 60 + d.getMinutes();
-          let s = (n + 360) % 1440, e = s + 60; if (e >= 1440) { s = 60; e = 120; }
-          const f = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
-          S.trackStart = f(s); S.trackEnd = f(e);
-        }
-        return _geoBusinessHoursNow();
+        // The 07:00-18:00 window and _geoBusinessHoursNow were REMOVED (owner
+        // call): they silently dropped a Saturday call-out, a 7pm supply run and
+        // a 5:30am start. Nothing here gates on a clock any more.
+        return true;
       }, { jobId, SITE, hoursOk });
     };
     const restore = async () => { await page.evaluate(() => { if (window.__origJobs) { jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); } }); };
@@ -85,7 +83,7 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
     await step(page, {
       label: 'arrive at site, dwell ~12 min, depart → time-on-site logged', page: 'geo', role: 'contractor',
       suspect: 'geo-track.js _geoOnPing → _geoCloseEntry (job_time_entries insert, source geofence)',
-      ruleText: 'a real arrive→dwell→depart must write ONE geofence time entry with minutes>=2 (or skip if geo tables absent)',
+      ruleText: 'a real arrive→dwell→depart must write ONE geofence time entry with minutes>=2',
       expected: 'job_time_entries row source=geofence minutes>=2',
       act: async (p) => {
         const ok = await setup(jobOn, true);
@@ -99,7 +97,7 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
           curJob: (typeof _geoCurrentJob !== 'undefined') ? _geoCurrentJob : 'undef',
           arrived: (typeof _geoArrivedAt !== 'undefined') ? !!_geoArrivedAt : 'undef',
           myJobIds: (typeof _geoMyJobs === 'function') ? (_geoMyJobs() || []).map(j => j.id) : 'no-fn',
-          hoursNow: (typeof _geoBusinessHoursNow === 'function') ? _geoBusinessHoursNow() : 'no-fn',
+          gateRemoved: typeof _geoBusinessHoursNow === 'undefined',
         }));
         // Simulate a 12-minute dwell by back-dating the arrival the handler stored.
         await p.evaluate(() => { _geoArrivedAt = new Date(Date.now() - 12 * 60000).toISOString(); });
@@ -110,34 +108,42 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
       },
       rule: async (p) => {
         const r = await geoEntries(p, jobOn);
-        if (r.absent) return { ok: true, got: 'SKIP: job_time_entries not provisioned in this env (pending geo migration)' };
+        if (r.absent) return { ok: false, got: 'MISSING: job_time_entries errored on a schema lookup, but it ships in a migration (20260617/20260619), so an absent table is a real failure, not an environment gap' };
         const gf = (r.rows || []).find(x => x.source === 'geofence');
         return { ok: !!gf && gf.minutes >= 2, got: gf ? `minutes=${gf.minutes} source=${gf.source}` : `no geofence row, DIAG after arrive: ${JSON.stringify(p.__geoDiag)}` };
       },
     });
 
-    // ── 2. OUT-OF-HOURS ping is ignored (privacy gate). ──
+    // ── 2. A ping at ANY hour logs. The time lock was removed. ──
+    // This step used to assert the opposite: that an out-of-hours ping logged
+    // nothing. That gate was deleted (owner call) because it silently dropped
+    // exactly the miles contractors care about, a Saturday emergency call, a 7pm
+    // supply run, a 5:30am start. Inverted rather than deleted so the removal
+    // itself can never regress.
     await step(page, {
-      label: 'a ping outside business hours logs nothing', page: 'geo', role: 'contractor',
-      suspect: 'geo-track.js _geoOnPing business-hours guard (_geoBusinessHoursNow)',
-      ruleText: 'a ping when the current time is outside S.trackStart–trackEnd must not arrive or log anything',
-      expected: '_geoCurrentJob stays null, no time entry for this job',
+      label: 'a ping outside old business hours still logs', page: 'geo', role: 'contractor',
+      suspect: 'geo-track.js _geoOnPing (the business-hours guard was removed)',
+      ruleText: 'tracking must never be gated on a wall clock: an evening or weekend trip is still deductible work',
+      expected: 'arrival registers and a geofence entry is written regardless of the hour',
       act: async (p) => {
-        const inHours = await setup(jobHrs, false);
-        // setup returns _geoBusinessHoursNow(); for this phase it MUST be false.
-        p.__gate = inHours;
-        await ping(p, SITE.lat, SITE.lon);                       // inside fence but off-hours
-        await p.waitForTimeout(800);
+        await setup(jobHrs, false);
+        // Pin the clock-independent claim: the predicate is gone entirely.
+        p.__gateGone = await p.evaluate(() => typeof _geoBusinessHoursNow === 'undefined');
+        await ping(p, SITE.lat, SITE.lon);                       // arrive
+        await p.waitForTimeout(600);
         p.__cur = await p.evaluate(() => (typeof _geoCurrentJob !== 'undefined' ? _geoCurrentJob : 'undef'));
+        await p.evaluate(() => { _geoArrivedAt = new Date(Date.now() - 11 * 60000).toISOString(); });
+        await ping(p, FAR.lat, FAR.lon);                         // depart
+        await p.waitForTimeout(1500);
         await restore();
-        return 1;
+        return 2;
       },
       rule: async (p) => {
-        if (p.__gate !== false) return { ok: true, got: 'SKIP: could not build an out-of-hours window (rare clock alignment)' };
+        if (p.__gateGone !== true) return { ok: false, got: '_geoBusinessHoursNow still exists, the time lock is back' };
         const r = await geoEntries(p, jobHrs);
-        if (r.absent) return { ok: true, got: 'SKIP: geo tables absent' };
-        const none = (r.rows || []).length === 0;
-        return { ok: p.__cur == null && none, got: `currentJob=${p.__cur} rows=${(r.rows || []).length}` };
+        if (r.absent) return { ok: false, got: 'MISSING: job_time_entries errored on a schema lookup, but it ships in a migration (20260617/20260619), so an absent table is a real failure, not an environment gap' };
+        const gf = (r.rows || []).find(x => x.source === 'geofence');
+        return { ok: p.__cur != null || !!gf, got: `currentJob=${p.__cur} rows=${(r.rows || []).length}` };
       },
     });
 
@@ -157,7 +163,7 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
       },
       rule: async (p) => {
         const r = await geoEntries(p, jobPass);
-        if (r.absent) return { ok: true, got: 'SKIP: geo tables absent' };
+        if (r.absent) return { ok: false, got: 'MISSING: job_time_entries errored on a schema lookup, but it ships in a migration (20260617/20260619), so an absent table is a real failure, not an environment gap' };
         return { ok: (r.rows || []).length === 0, got: `rows=${(r.rows || []).length} (expected 0)` };
       },
     });

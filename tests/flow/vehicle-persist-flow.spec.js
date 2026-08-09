@@ -114,6 +114,9 @@ test.describe('Fleet persistence: a vehicle + its odometer survive a real re-sig
         await p.evaluate(() => openAddVehicleModal());
         await p.waitForSelector('#fv-name', { state: 'visible', timeout: 8000 });
         n += await type(p, '#fv-name', vehName);
+        // Plate required once the fleet holds more than one (fleet.js
+        // saveFleetVehicle). The dev account always does.
+        n += await type(p, '#fv-plate', `KS-P-${String(runId).slice(-4)}`);
         await p.evaluate(() => saveFleetVehicle());
         // Settle the compliance modal here rather than letting it surface
         // mid-step later. It may legitimately never open (a prior run on this

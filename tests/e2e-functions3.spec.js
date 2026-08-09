@@ -5457,6 +5457,192 @@ test.describe('Proposals photo, hub, contract, and form functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // Owner report 2026-08-07: inside the Capacitor shell, this weather-only
+  // auto-ask (js/cloud.js boot sequence) fired its own in-app "Allow
+  // location access?" modal BEFORE the tracking-consent flow's real,
+  // Always-capable OS prompt (geo-track.js startGeoTracking). iOS resolves
+  // location authorization on the FIRST ask and never re-offers a richer
+  // dialog later, so this modal-then-plain-getCurrentPosition permanently
+  // capped the app at When-In-Use and the owner never got Always. Fixed by
+  // gating the auto-ask off entirely inside the shell (geoIfGranted, silent
+  // by design, still lets weather piggyback once ANY permission already
+  // exists, with zero extra prompt).
+  test('inside the native shell, geoIfGranted never auto-prompts, and silently populates once already granted', async () => {
+    const result = await page.evaluate(() => new Promise(resolve => {
+      const realCap = window.Capacitor, realGet = navigator.geolocation.getCurrentPosition;
+      const calls = [];
+      navigator.geolocation.getCurrentPosition = (success) => { calls.push(1); if (success) success({ coords: { latitude: 39.05, longitude: -95.6 } }); };
+      window.Capacitor = { isNativePlatform: () => true };
+      const savedLat = S.weatherLat, savedLon = S.weatherLon, savedGranted = S.locationGranted;
+      try {
+        // Not yet granted: silent no-op, no OS call, no in-app modal.
+        S.locationGranted = false;
+        geoIfGranted(() => {});
+        const noPromptCalls = calls.length;
+        const modalShown = !!document.getElementById('loc-allow-btn');
+        // Already granted: silently piggybacks to populate weather.
+        S.locationGranted = true;
+        geoIfGranted(pos => {
+          S.weatherLat = pos.coords.latitude; S.weatherLon = pos.coords.longitude;
+          resolve({ noPromptCalls, modalShown, grantedCalls: calls.length, weatherLat: S.weatherLat });
+        });
+        setTimeout(() => resolve({ noPromptCalls, modalShown, grantedCalls: calls.length, weatherLat: S.weatherLat }), 400);
+      } finally {
+        window.Capacitor = realCap; navigator.geolocation.getCurrentPosition = realGet;
+        S.weatherLat = savedLat; S.weatherLon = savedLon; S.locationGranted = savedGranted;
+      }
+    }));
+    expect(result.noPromptCalls, 'not-yet-granted must never touch the OS geolocation API').toBe(0);
+    expect(result.modalShown, 'no in-app "Allow location access?" modal auto-fires in the shell').toBe(false);
+    expect(result.grantedCalls, 'already-granted DOES silently populate (weather still works)').toBeGreaterThanOrEqual(1);
+    expect(result.weatherLat).toBe(39.05);
+  });
+
+  // Owner report (2026-08-08): tapping Mileage on the dashboard painted the
+  // Books SUMMARY tab first, then hard-cut to Mileage 150ms later. Fixed by
+  // setting trackerTab BEFORE goPg so the page enters once, already on the
+  // right tab. This asserts the end state synchronously, with zero settle
+  // time, which the old two-step could never pass.
+  test('goToTrackerTab paints the target tab in one pass, never the previous tab first', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof goToTrackerTab !== 'function') return { skip: true };
+      trackerTab = 'summary';
+      goToTrackerTab('mileage');
+      return {
+        pgActive: document.getElementById('pg-tracker')?.classList.contains('active'),
+        mileageShown: document.getElementById('tr-mileage')?.style.display,
+        summaryHidden: document.getElementById('tr-summary')?.style.display,
+        tabState: trackerTab,
+      };
+    });
+    if (r.skip) return;
+    expect(r.pgActive).toBe(true);
+    expect(r.mileageShown).toBe('block');
+    expect(r.summaryHidden).toBe('none');
+    expect(r.tabState).toBe('mileage');
+  });
+
+  // §8: a Books tab switch is a reveal, never a hard cut. The shown panel
+  // restarts the shared td-pg-enter animation on every real switch.
+  test('setTrTab fades the revealed panel in, and only on a real switch', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof setTrTab !== 'function') return { skip: true };
+      goPg('pg-tracker');
+      setTrTab('summary', document.getElementById('tr-t-summary'));
+      setTrTab('income', document.getElementById('tr-t-income'));
+      const switched = document.getElementById('tr-income')?.style.animation || '';
+      return { switched };
+    });
+    if (r.skip) return;
+    expect(r.switched).toContain('td-pg-enter');
+  });
+
+  // Owner report (2026-08-08): the audit report (and every other popup
+  // document, 23 call sites) showed "Allow pop-ups" inside the shell,
+  // because WKWebView has no popup windows: window.open returns null. The
+  // shell shim turns window.open into an in-app viewer; these drive it the
+  // way the audit-report code does.
+  test('shell popup shim: document.write popups render in an in-app viewer, same-origin URLs load in it', async () => {
+    const r = await page.evaluate(() => {
+      const realCap = window.Capacitor, realOpen = window.open;
+      try {
+        window.Capacitor = { isNativePlatform: () => true };
+        const installed = _tdInstallShellWindowOpen();
+        // The audit-report pattern: blank open + document.write + print.
+        const w = window.open('', '_blank');
+        const gotWindow = !!w;
+        w.document.open(); w.document.write('<html><body><h1>AUDIT-TEST-BODY</h1></body></html>'); w.document.close();
+        const frameText = w._frame.contentDocument.body.textContent;
+        const overlayInDom = document.body.contains(w._overlay);
+        w.close();
+        const overlayGone = !document.body.contains(w._overlay);
+        // Same-origin URL: loads inside the viewer, never navigates the app.
+        const w2 = window.open('/sign.html?x=1');
+        const iframeSrc = w2._frame.src;
+        w2.close();
+        return { installed, gotWindow, frameText, overlayInDom, overlayGone, iframeSrc, appStillHere: !!document.getElementById('pg-dash') };
+      } finally { window.Capacitor = realCap; window.open = realOpen; }
+    });
+    expect(r.installed).toBe(true);
+    expect(r.gotWindow, 'callers never see null, the "Allow pop-ups" branch is dead in the shell').toBe(true);
+    expect(r.frameText).toBe('AUDIT-TEST-BODY');
+    expect(r.overlayInDom).toBe(true);
+    expect(r.overlayGone).toBe(true);
+    expect(r.iframeSrc).toContain('/sign.html');
+    expect(r.appStillHere).toBe(true);
+  });
+
+  test('shell popup shim never installs in a plain browser', async () => {
+    const r = await page.evaluate(() => {
+      const realCap = window.Capacitor, realOpen = window.open;
+      try {
+        window.Capacitor = undefined;
+        const installed = _tdInstallShellWindowOpen();
+        return { installed, untouched: window.open === realOpen };
+      } finally { window.Capacitor = realCap; window.open = realOpen; }
+    });
+    expect(r.installed).toBe(false);
+    expect(r.untouched).toBe(true);
+  });
+
+  // Owner report (2026-08-07): "Continue with Apple" in the shell bounced to
+  // Safari and stranded the sign-in on the website. In the shell it now uses
+  // Apple's native sheet and hands the identity token straight to Supabase.
+  test('shell Apple sign-in: native sheet feeds signInWithIdToken, hashed nonce to Apple, raw to Supabase', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const realIdToken = _supa.auth.signInWithIdToken, realOAuth = _supa.auth.signInWithOAuth;
+      try {
+        let authorizeArgs = null, idTokenArgs = null, oauthCalled = false;
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: (name) => name === 'SignInWithApple' ? {
+            authorize: (o) => { authorizeArgs = o; return Promise.resolve({ response: { identityToken: 'jwt-test-token' } }); },
+          } : null,
+        };
+        _supa.auth.signInWithIdToken = (o) => { idTokenArgs = o; return Promise.resolve({ error: null }); };
+        _supa.auth.signInWithOAuth = () => { oauthCalled = true; return Promise.resolve({ error: null }); };
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 150));
+        // The nonce contract: Apple received the SHA-256 of the raw nonce
+        // Supabase received. Recompute to prove the pair is linked.
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(idTokenArgs.nonce));
+        const rehashed = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        return {
+          clientId: authorizeArgs && authorizeArgs.clientId,
+          provider: idTokenArgs && idTokenArgs.provider,
+          token: idTokenArgs && idTokenArgs.token,
+          nonceLinked: rehashed === (authorizeArgs && authorizeArgs.nonce),
+          oauthCalled,
+        };
+      } finally {
+        window.Capacitor = realCap;
+        _supa.auth.signInWithIdToken = realIdToken;
+        _supa.auth.signInWithOAuth = realOAuth;
+      }
+    });
+    expect(r.clientId).toBe('app.tradedesk.beta');
+    expect(r.provider).toBe('apple');
+    expect(r.token).toBe('jwt-test-token');
+    expect(r.nonceLinked, 'Apple got sha256(raw), Supabase got raw').toBe(true);
+    expect(r.oauthCalled, 'the browser redirect flow must never fire in the shell').toBe(false);
+  });
+
+  test('browser Apple sign-in is untouched: still the OAuth redirect flow', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor, realOAuth = _supa.auth.signInWithOAuth;
+      try {
+        let oauthArgs = null;
+        window.Capacitor = undefined;
+        _supa.auth.signInWithOAuth = (o) => { oauthArgs = o; return Promise.resolve({ error: null }); };
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 50));
+        return { provider: oauthArgs && oauthArgs.provider };
+      } finally { window.Capacitor = realCap; _supa.auth.signInWithOAuth = realOAuth; localStorage.removeItem('_oauthPending'); }
+    });
+    expect(r.provider).toBe('apple');
+  });
+
   test('renderCalGrid: calls without throwing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof renderCalGrid !== 'function') return { skip: true };

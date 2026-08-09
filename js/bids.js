@@ -1316,6 +1316,9 @@ function logPayment(){
   }
   const storedAmount=isRefund?-a:a;
   payments.push({id:_newId(),bid_id:activePayBidId,client_id:bid.client_id,client_name:bid.client_name,date:pdate,loggedAt:new Date().toISOString(),type:type,amount:storedAmount,method:pmethod,ref:pref});
+  // Where it was collected: an on-site tap and an office cheque are different
+  // facts, and only the phone knows which this was.
+  if(typeof _stampGeo==='function')_stampGeo(payments[payments.length-1]);
   const _savedBidId=activePayBidId;
   saveAll();emitEvent('payment_received',bid.client_id,{bid_id:activePayBidId,amount:storedAmount});
   // Payments repeat, so they are not deduped. balance_settled fires once, when
@@ -1350,7 +1353,7 @@ function logPayment(){
 
   const tIn=income.reduce((s,r)=>s+(r.amount||0),0)+a;
   const tEx=expenses.reduce((s,r)=>s+(r.amount||0),0);
-  const tMi=mileage.reduce((s,r)=>s+(r.miles||0),0);
+  const tMi=deductibleTrips(mileage).reduce((s,r)=>s+(r.miles||0),0);
   const netSelf=Math.max(0,tIn-tEx-(tMi*IRS()));
   const seBase=netSelf*.9235,seTax=seBase*.153,seDed=seTax/2;
   const status=v('tx-status')||S.txStatus||'single';

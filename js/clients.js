@@ -53,7 +53,7 @@ function _cdActionSheet(title,rows){
 function _cdMoreMenu(){
   const c=getClientById(currentClientId);if(!c)return;
   const rows=[];
-  rows.push({icon:'📅',label:'Schedule proposal',act:'schedForClient()'});
+  rows.push({icon:'📅',label:'Schedule estimate',act:'schedForClient()'});
   rows.push({icon:'🔧',label:'Diagnostic / trip charge',act:'openDiagnosticCharge('+c.id+')'});
   if(!(typeof gps!=='undefined'&&gps.active))rows.push({icon:'🚗',label:'Drive there',act:'startDriveToClient()'});
   rows.push({icon:'🔗',label:'Client hub',act:'showHubMenu('+c.id+')'});
@@ -1602,14 +1602,14 @@ const CD_AUDIT_LABELS={hub_opened:'Client opened hub',proposal_opened:'Client op
 // back to rendering the raw character, which would look broken.
 const CD_TL_ICON={lead:'👤',bid:'📋',sent:'📤',audit:'👁',signed:'✍',expense:'🧾',
   won:'🤝',declined:'❌',lost:'❌',coll:'🔔',complete:'🏁',payment:'💵',
-  estimate:'📅',job:'🔨',mile:'🚗'};
+  estimate:'📅',job:'🔨',mile:'🚗',onsite:'📍',offsite:'📍'};
 // The job lifecycle, in the order it actually happens. Used only to place events
 // that carry a date but no clock time, so they land beside the stage they belong
 // to rather than defaulting to midday. Drives and expenses sit mid-job because
 // that is when they occur.
 const CD_TL_STAGE={lead:10,estimate:20,bid:30,sent:40,hub:50,opened:60,audit:70,
-  signed:80,won:85,payment:90,mile:95,expense:96,job:100,complete:110,coll:120,
-  declined:130,lost:130,_default:75};
+  signed:80,won:85,payment:90,mile:95,expense:96,job:100,onsite:101,offsite:102,
+  complete:110,coll:120,declined:130,lost:130,_default:75};
 function _cdEventIcon(e){
   // A refund is money going the other way, so it must not wear the payment icon.
   if(e.type==='payment'&&e.color==='lost')return '💸';
@@ -1754,6 +1754,20 @@ function renderCDTimeline(){
     } else {
       events.push({date:j.start||'',ts:_cdEventTs(j.start,{time:j.time,id:j.id,logged:j.loggedAt}),type:'job',label:'Job scheduled, '+j.days+' day'+(j.days>1?'s':''),meta:fmt(j.value||0)+_cdLoggedNote(j.start,j.loggedAt,j.id),color:'active'});
     }
+    // Verified on-site presence: geofence arrival/departure, so "did we actually
+    // show up, and when did we leave" has a real timestamp instead of a guess.
+    // Manual clock-ins count too; only the placeless supply-house rows (job_id
+    // null, filtered out before this dict was even built) are excluded.
+    const _tEntries=(typeof _jobTimeEntriesByJob!=='undefined'&&_jobTimeEntriesByJob)?_jobTimeEntriesByJob[String(j.id)]:null;
+    if(_tEntries)_tEntries.forEach(t=>{
+      if(!t.arrivedAt)return;
+      // Named when the account has a crew (multiple phones can hit the same
+      // job's fence independently); a solo owner-only account has no name to
+      // resolve, so the generic label is exactly right there.
+      const who=t.employeeName?escHtml(t.employeeName)+' ':'';
+      events.push({date:String(t.arrivedAt).slice(0,10),ts:t.arrivedAt,type:'onsite',label:who+'Arrived on site',meta:t.source==='manual'?'Clocked in':'GPS geofence',color:'mile'});
+      if(t.departedAt)events.push({date:String(t.departedAt).slice(0,10),ts:t.departedAt,type:'offsite',label:who+'Left job site',meta:(t.minutes&&typeof _dispatchDur==='function'?_dispatchDur(t.minutes)+' on site':'')+(t.source==='manual'?' · clocked out':' · GPS geofence'),color:'mile'});
+    });
   });
   cmiles.forEach(m=>events.push({date:m.date||'',ts:_cdEventTs(m.date,{iso:m.ts,id:m.id,logged:m.loggedAt}),type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`+_cdLoggedNote(m.date,m.loggedAt,m.id),color:'mile'}));
   // Expenses logged against this client belong in the trail too: they're part of
@@ -1979,7 +1993,7 @@ function renderCDMileage(){
     );
   const el=document.getElementById('cd-mile-list');
   if(!cmiles.length){el.innerHTML='<div class="empty">No trips yet.<br>Tap "Drive to this job" above to start tracking.</div>';return;}
-  el.innerHTML=[...cmiles].sort((a,b)=>b.date.localeCompare(a.date)).map(m=>`<div class="mile-row" data-lp-id="${m.id}" data-lp-type="mileage" data-lp-label="${escHtml((m.from||'Start')+' → '+(m.to||'Destination')+' · '+(m.miles||0).toFixed(1)+' mi')}"><div class="mile-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/></svg></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">${escHtml(m.from||'Start')} → ${escHtml(m.to||'Destination')}</div><div style="font-size:11px;color:var(--text3)">${m.date} · <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${(MILE_PURPOSE_COLORS[m.purpose||'Other']||MILE_PURPOSE_COLORS['Other']).dot};margin-right:2px;vertical-align:middle"></span><select onchange="editMilePurpose(${m.id},this.value)" onclick="event.stopPropagation()" style="font-size:11px;border:none;background:transparent;color:${(MILE_PURPOSE_COLORS[m.purpose||'Other']||MILE_PURPOSE_COLORS['Other']).text};font-weight:700;cursor:pointer;font-family:inherit;padding:1px 2px;border-radius:3px">${MILE_PURPOSES.map(p=>`<option value="${p}"${(m.purpose||'Other')===p?' selected':''}>${p}</option>`).join('')}</select>${m.gps?' · <span class="bdg bdg-gps">GPS</span>':''}</div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:700">${(m.miles||0).toFixed(1)} mi</div><div style="font-size:10px;color:var(--green-mid)">${fmt((m.miles||0)*IRS())}</div></div></div>`).join('');
+  el.innerHTML=[...cmiles].sort((a,b)=>b.date.localeCompare(a.date)).map(m=>`<div class="mile-row" data-lp-id="${m.id}" data-lp-type="mileage" data-lp-label="${escHtml((m.from||'Start')+' → '+(m.to||'Destination')+' · '+(m.miles||0).toFixed(1)+' mi')}"><div class="mile-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/></svg></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">${escHtml(m.from||'Start')} → ${escHtml(m.to||'Destination')}</div><div style="font-size:11px;color:var(--text3)">${m.date} · <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${(MILE_PURPOSE_COLORS[m.purpose||'Other']||MILE_PURPOSE_COLORS['Other']).dot};margin-right:2px;vertical-align:middle"></span><select onchange="editMilePurpose(${m.id},this.value)" onclick="event.stopPropagation()" style="font-size:11px;border:none;background:transparent;color:${(MILE_PURPOSE_COLORS[m.purpose||'Other']||MILE_PURPOSE_COLORS['Other']).text};font-weight:700;cursor:pointer;font-family:inherit;padding:1px 2px;border-radius:3px">${MILE_PURPOSES.map(p=>`<option value="${p}"${(m.purpose||'Other')===p?' selected':''}>${p}</option>`).join('')}</select>${m.gps?' · <span class="bdg bdg-gps">GPS</span>':''}</div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:700">${(m.miles||0).toFixed(1)} mi</div><div style="font-size:10px;color:var(--green-mid)">${fmt((m.miles||0)*IRS(m.date))}</div></div></div>`).join('');
 }
 function renderCDBids(){
   const cbids=getClientBids(currentClientId);

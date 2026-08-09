@@ -79,7 +79,7 @@ test.describe('geo-fence edge cases (UI-driven via the real ping handler)', () =
       },
       rule: async (p) => {
         const r = await rows(p, 'shop_time_entries');
-        if (r.absent) return { ok: true, got: 'SKIP: shop_time_entries not provisioned' };
+        if (r.absent) return { ok: false, got: 'MISSING: shop_time_entries errored on a schema lookup, but it ships in a migration (20260617/20260619), so an absent table is a real failure, not an environment gap' };
         const recent = (r.rows || []).filter(x => x.minutes >= 2);
         return { ok: recent.length >= 1, got: `shopRows>=2min=${recent.length}` };
       },
@@ -105,7 +105,7 @@ test.describe('geo-fence edge cases (UI-driven via the real ping handler)', () =
       },
       rule: async (p) => {
         const r = await rows(p, 'job_time_entries', 'job_id', jobB);
-        if (r.absent) return { ok: true, got: 'SKIP: job_time_entries not provisioned' };
+        if (r.absent) return { ok: false, got: 'MISSING: job_time_entries errored on a schema lookup, but it ships in a migration (20260617/20260619), so an absent table is a real failure, not an environment gap' };
         const drive = (r.rows || []).find(x => String(x.source || '').startsWith('drive') && x.minutes >= 2);
         return { ok: !!drive, got: drive ? `source=${drive.source} minutes=${drive.minutes}` : `no drive leg (rows=${JSON.stringify(r.rows)})` };
       },

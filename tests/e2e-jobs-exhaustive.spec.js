@@ -1046,6 +1046,119 @@ test.describe('jobs.js: exhaustive coverage', () => {
     });
   });
 
+  // ── _locPromptClockIn / _locPromptJobs (the location prompt on the dashboard,
+  // js/dashboard.js) ──────────────────────────────────────────────────────────
+  test.describe('_locPromptClockIn / _locPromptJobs', () => {
+    test('clocks in with no scope tag, not the task-scope sheet, once on a job it is just job time', async () => {
+      const r = await page.evaluate(() => {
+        const origTimer = _activeTimer, origJobs = jobs.slice();
+        jobs.length = 0;
+        jobs.push({ id: 998001, name: 'Shop Test Job', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
+        if (_activeTimer) clockOut(false, true);
+        try {
+          _locPromptClockIn(998001);
+          return {
+            jobId: _activeTimer && _activeTimer.jobId,
+            scopeId: _activeTimer && _activeTimer.scopeId,
+            scopeLabel: _activeTimer && _activeTimer.scopeLabel,
+            sheetOpen: !!document.getElementById('_cks-ov'),
+          };
+        } finally {
+          if (_activeTimer) clockOut(false, true);
+          _activeTimer = origTimer; jobs.length = 0; origJobs.forEach(j => jobs.push(j));
+        }
+      });
+      expect(r.jobId).toBe(998001);
+      // No scope tag: owner directive 2026-08-01, once shop time is on a job it
+      // IS job time, no special "shop labor" category.
+      expect(r.scopeId).toBe(null);
+      expect(r.scopeLabel).toBe(null);
+      expect(r.sheetOpen).toBe(false);
+    });
+
+    test('a closed job silently does not clock in (same guard clockIn already has)', async () => {
+      const r = await page.evaluate(() => {
+        const origTimer = _activeTimer, origJobs = jobs.slice();
+        jobs.length = 0;
+        jobs.push({ id: 998002, name: 'Done Shop Job', client_id: null, eventType: 'job', status: 'done', completion_date: todayKey(), start: todayKey(), days: 1 });
+        if (_activeTimer) clockOut(false, true);
+        try {
+          _locPromptClockIn(998002);
+          return { started: !!(_activeTimer && _activeTimer.jobId === 998002) };
+        } finally {
+          if (_activeTimer) clockOut(false, true);
+          _activeTimer = origTimer; jobs.length = 0; origJobs.forEach(j => jobs.push(j));
+        }
+      });
+      expect(r.started).toBe(false);
+    });
+
+    test('null jobId does not throw', async () => {
+      const r = await page.evaluate(() => {
+        const origTimer = _activeTimer;
+        try { _locPromptClockIn(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { _activeTimer = origTimer; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    // THE REASON THIS HELPER EXISTS. _geoMyJobs (today's ACTIVE jobs) is right
+    // for fencing and wrong here: prefab and material pickup happen AHEAD of
+    // the work, so the job being built for on Monday usually starts Thursday.
+    test('includes UPCOMING jobs, not just today, which is the whole point for prefab', async () => {
+      const r = await page.evaluate(() => {
+        const origJobs = jobs.slice();
+        jobs.length = 0;
+        jobs.push({ id: 998010, name: 'Today Job', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
+        jobs.push({ id: 998011, name: 'Thursday Job', client_id: null, eventType: 'job', status: 'upcoming', start: addDays(todayKey(), 4), days: 1 });
+        jobs.push({ id: 998012, name: 'Next Month Job', client_id: null, eventType: 'job', status: 'upcoming', start: addDays(todayKey(), 45), days: 1 });
+        jobs.push({ id: 998013, name: 'Yesterday Done', client_id: null, eventType: 'job', status: 'done', completion_date: todayKey(), start: addDays(todayKey(), -1), days: 1 });
+        try {
+          const ids = _locPromptJobs().map(j => j.id);
+          return { ids, viaGeo: (typeof _geoMyJobs === 'function' ? _geoMyJobs() : []).map(j => j.id) };
+        } finally { jobs.length = 0; origJobs.forEach(j => jobs.push(j)); }
+      });
+      // Today AND the upcoming one, soonest first.
+      expect(r.ids).toEqual([998010, 998011]);
+      // Beyond the horizon is excluded, and a completed job never appears.
+      expect(r.ids).not.toContain(998012);
+      expect(r.ids).not.toContain(998013);
+      // The contrast that motivated the helper: the fencing list would have
+      // shown only today's, hiding the job most likely being prefabbed for.
+      expect(r.viaGeo).toEqual([998010]);
+    });
+
+    test('a multi-day job mid-span still appears', async () => {
+      const r = await page.evaluate(() => {
+        const origJobs = jobs.slice();
+        jobs.length = 0;
+        jobs.push({ id: 998014, name: 'Mid Span', client_id: null, eventType: 'job', status: 'upcoming', start: addDays(todayKey(), -2), days: 5 });
+        try { return _locPromptJobs().map(j => j.id); }
+        finally { jobs.length = 0; origJobs.forEach(j => jobs.push(j)); }
+      });
+      expect(r).toEqual([998014]);
+    });
+
+    test('_fmtJobStartHint labels today, tomorrow, this week, and further out', async () => {
+      const r = await page.evaluate(() => ({
+        today: _fmtJobStartHint({ start: todayKey(), days: 1, status: 'upcoming' }),
+        tomorrow: _fmtJobStartHint({ start: addDays(todayKey(), 1), days: 1, status: 'upcoming' }),
+        thisWeek: _fmtJobStartHint({ start: addDays(todayKey(), 3), days: 1, status: 'upcoming' }),
+        farOut: _fmtJobStartHint({ start: addDays(todayKey(), 14), days: 1, status: 'upcoming' }),
+        missing: _fmtJobStartHint({}),
+      }));
+      expect(r.today).toBe('Today');
+      expect(r.tomorrow).toBe('Tomorrow');
+      // A weekday inside a week, a date past it. Both non-empty and distinct
+      // from each other, so a three-week list is never ambiguous.
+      expect(r.thisWeek).toBeTruthy();
+      expect(r.farOut).toBeTruthy();
+      expect(r.thisWeek).not.toBe(r.farOut);
+      expect(r.missing).toBe('');
+    });
+  });
+
   // ═══════════════════════════════════════════════════════════════════════════
   // _clockAddTask
   // ═══════════════════════════════════════════════════════════════════════════

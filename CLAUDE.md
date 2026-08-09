@@ -271,6 +271,27 @@ All development work goes on branch: `claude/review-app-ux-flow-mRafw`
 
 Never commit or push to any other branch without explicit user permission.
 
+### 3.1 The `uat` Branch: Stable UAT Environment (owner-established 2026-08-07)
+
+`uat` is a permanent environment-pointer branch, NOT a review branch. Its only
+job is giving Cloudflare Pages a stable alias that never changes with dev
+branch names: `https://uat.tradedesk-cyp.pages.dev`. The TestFlight beta shell
+points at this URL, so it must stay alive and stably named forever.
+
+- **Rolling to UAT** (only when the owner asks): fast-forward `uat` to the dev
+  branch tip, add one empty deploy commit WITHOUT `[CF-Pages-Skip]` so
+  Cloudflare builds, push. `git checkout -B uat <dev-branch> && git commit
+  --allow-empty -m "UAT deploy" && git push -u origin uat --force-with-lease`.
+- **Never open a PR from `uat`**, and never develop on it. All work stays on
+  the dev branch; `uat` only ever receives what the dev branch already has.
+- Production is untouched by any of this: `main` still only moves via approved
+  PR merge (§14.1.1), and the UAT roll is a separate, explicit owner ask.
+- One shared Supabase serves dev/UAT/production (owner decision 2026-08-07):
+  data written from any environment is live for all of them instantly; only
+  CODE is gated by the merge to `main`. Therefore migrations must stay
+  additive (never rename/drop what production code still reads), and new code
+  must never rewrite existing records into shapes production can't read.
+
 ---
 
 ## 4. Branch Protection (One-Time Setup by Repo Owner)
@@ -394,6 +415,51 @@ Before removing any UI that wrote to storage (`S.*`, localStorage, Supabase):
    the old UI present.
 3. Call out in the PR description which data stores are affected and confirm no
    records are dropped.
+
+---
+
+### 7.3 Reuse the Existing Pattern, Never Hand-Roll a Parallel One
+
+**Before building any new UI surface, sync store, or piece of logic, find the
+closest thing already built and match it exactly, don't invent a new one that
+happens to do something similar.**
+
+This app already has proven, load-bearing conventions for the recurring
+problems: `.zmodal-overlay`/`.zmodal` for a centered prompt, `_TD_TABLES`
+(js/cloud.js) for anything that has to persist and sync like every other
+account record, the setup-checklist chooser pattern for "pick one of two
+paths, then go straight to the right form." A new feature almost never needs
+a new pattern, it needs the existing one pointed at new data.
+
+**Concrete incident this rule exists to prevent (2026-08-06):** a "what do
+you want to schedule" chooser was built as a hand-rolled bottom sheet
+(`position:fixed;align-items:flex-end`) instead of the app's actual centered-
+modal convention (`.zmodal-overlay`, `align-items:center`, the same pair
+`openPlaceModal` uses). It shipped, the owner asked for it centered, the
+first fix only centered the TEXT inside the hand-rolled box, because the box
+itself was never touched, so it still read as pinned to the bottom. The real
+fix was to delete the hand-rolled shell and rebuild on `.zmodal-overlay`. Two
+review passes to arrive at what copying the existing pattern would have given
+for free on the first try.
+
+**Before writing new modal/prompt/persistence code, answer:**
+
+1. What existing surface does the SAME job (a prompt, a fork-in-two-paths
+   chooser, a synced data store, a form)? Name it.
+2. Does this new thing genuinely differ from it, or is it the same shape with
+   different content? If the same shape, use the existing pattern's actual
+   markup/classes/table registration, don't approximate it by hand from
+   memory of what it roughly looks like.
+3. If it does genuinely differ, say why in a comment, so the NEXT change
+   knows the divergence was deliberate and not a shortcut.
+
+This applies as much to data persistence as to UI: a new record type that
+needs to survive sign-out/sign-in and sync across devices belongs in
+`_TD_TABLES` (js/cloud.js) exactly like `td_bids`, `td_vehicles`, and
+`td_places` already do, one array entry (`{t, get, set, tx}`), not a
+one-off save path that happens to work today and quietly misses the sweep,
+the cache-restore blocks, or the account-switch reset that the shared array
+gets for free.
 
 ---
 

@@ -1,5 +1,9 @@
 let _renderDashRunning=false;
 Object.defineProperty(window,'_renderDashRunning',{get:()=>_renderDashRunning,set:v=>{_renderDashRunning=v;},configurable:true});
+// Pending #dash-nearby fade-out timer (slide/fade instead of an abrupt
+// display:none, CLAUDE.md §8), cleared if the card reappears mid-fade.
+let _nearbyHideTimer=null;
+Object.defineProperty(window,'_nearbyHideTimer',{get:()=>_nearbyHideTimer,set:v=>{_nearbyHideTimer=v;},configurable:true});
 
 function _trendHtml(curr,prev,reverseColor){
   if(!prev||prev===0)return '';
@@ -15,10 +19,18 @@ function _trendHtml(curr,prev,reverseColor){
 }
 
 function _mmtNewLeads(){
+  const tk=todayKey();
   return clients.filter(c=>{
     if(getClientStage(c.id).stage!=='new')return false;
     if(bids.some(b=>b.client_id===c.id))return false;
-    if(jobs.some(j=>j.client_id===c.id&&j.eventType==='estimate'))return false;
+    // Only an estimate visit that HASN'T happened yet is its own next step (go
+    // to the visit); this must match getClientStage's own definition of
+    // 'upcoming' (not canceled, start today or later). A visit whose date has
+    // passed with still no bid written is done, and the proposal is now the
+    // real next step, so the lead belongs back in this list, not gone for
+    // good (owner report 2026-08-06: leaving the visit made "build a bid"
+    // vanish from Make Money Today permanently, even though none was built).
+    if(jobs.some(j=>j.client_id===c.id&&j.eventType==='estimate'&&j.status!=='canceled'&&j.start>=tk))return false;
     return true;
   });
 }
@@ -102,6 +114,9 @@ function _renderDashSetupTodo(){
   const _signedIn=typeof _supaUser!=='undefined'&&!!_supaUser;
   const _settingsReady=typeof _authSettingsLoaded!=='undefined'&&_authSettingsLoaded;
   if(_signedIn&&!_settingsReady){el.style.display='none';return;}
+  // Kick the async permission read once per paint. It re-renders only when the
+  // state actually CHANGES, so this can never loop.
+  _geoRefreshPermCache();
   // The full setup checklist (owner 2026-07-14, research-backed). Every task shows
   // from day one and drops off the moment it's done (or the contractor skips an
   // optional one); the whole card collapses once nothing's left. Copy is money/
@@ -132,9 +147,19 @@ function _renderDashSetupTodo(){
   // this account, or null before that, which cloud.js's post-load hook treats as
   // "go check" rather than a flash of "not done" on every single boot.
   const hasQrSource=typeof _qrHasSourceCached==='function'&&_qrHasSourceCached()===true;
+  // Places: done once the account has any location that took a real decision, a
+  // home office, a supply house (receipt-born counts, that IS setting one up), or
+  // anything added by hand. The shop auto-migrated from the business address does
+  // NOT count: it arrived free, and the item exists to get the contractor to mark
+  // the places only they know (where their day starts, where they buy), which is
+  // what makes the automatic drive log right from day one. Skippable: a shop-based
+  // solo op with no supply stops genuinely has nothing to add.
+  const hasPlaces=typeof places!=='undefined'&&(places||[]).some(p=>p&&(p.kind==='home_office'||p.kind==='supply'||p.confirmedBy==='manual'));
   const ALL=[
     {id:'vehicle',done:hasVehicle,icon:'🚗',title:'Add your vehicles',
       sub:'Mileage writes itself off at tax time, and it turns on the Drive button.',cta:'Add vehicle'},
+    {id:'places',done:hasPlaces,icon:'🏡',title:'Mark your home office & supply stops',
+      sub:'Drives log themselves once TradeDesk knows your places. A qualifying home office makes the first drive of the day deductible.',cta:'Add places'},
     {id:'getpaid',done:stripeOk,icon:'💳',title:'Turn on card payments',
       sub:'Get paid the day you finish the job, not weeks later. Cash & check still work without it.',cta:'Connect'},
     {id:'logo',done:hasLogo,icon:'🖼',title:'Add your logo',
@@ -148,6 +173,20 @@ function _renderDashSetupTodo(){
     // shrugged off like the optional ones above.
     {id:'qrcode',done:hasQrSource,icon:'▦',title:'Create your first QR code',
       sub:'Put it on a sign or truck, every scan becomes a tracked lead.',cta:'Create',noSkip:true},
+    // Location: noSkip because drive mileage and job hours are the whole
+    // time-tracking product and neither works without it. Two states that are NOT
+    // "done": 'prompt' (never asked, tapping opens the OS dialog) and 'denied'
+    // (iOS will not re-prompt from JS, so the CTA has to route to Settings
+    // instead, or this becomes a task nobody can ever complete and the card never
+    // clears). 'unsupported' counts as done: Safari often can't report the state
+    // at all, and nagging someone whose location already works is worse than
+    // missing the nudge.
+    {id:'location',done:_geoPermDone(),icon:'📍',
+      title:_geoPermState()==='denied'?'Turn location back on':'Turn on location',
+      sub:_geoPermState()==='denied'
+        ?'Location is off, so drive mileage and job hours have stopped logging. Takes two taps in your phone settings.'
+        :'Your drive miles and hours on each job log themselves, no timesheets, no odometer photos. Work hours only.',
+      cta:_geoPermState()==='denied'?'Fix it':'Turn on',noSkip:true},
   ];
   const remaining=ALL.filter(t=>!t.done&&!skipped.includes(t.id));
   // Endowed progress: credit the 3 things signup genuinely finished (account, trade,
@@ -202,8 +241,55 @@ function _renderDashSetupTodo(){
 }
 // Setup-to-do actions. Kept out of inline onclick so the quoting stays sane and
 // the nav targets are guarded (a missing settings detail can never throw).
+// Permission state for the checklist. Read synchronously from a cache that
+// _geoRefreshPermCache() keeps warm, because the checklist renders on every
+// dashboard paint and navigator.permissions.query is async: awaiting it here
+// would reintroduce exactly the show-then-hide flash the Stripe cache above
+// exists to prevent.
+let _geoPermCache=null;
+function _geoPermState(){return _geoPermCache||'prompt';}
+function _geoPermDone(){const s=_geoPermState();return s==='granted'||s==='unsupported';}
+function _geoRefreshPermCache(){
+  if(typeof _geoReadPermission!=='function')return;
+  try{
+    _geoReadPermission().then(st=>{
+      if(st===_geoPermCache)return;
+      _geoPermCache=st;
+      if(typeof _geoReportPermission==='function')_geoReportPermission(st);
+      _renderDashSetupTodo();
+    }).catch(()=>{});
+  }catch(_e){}
+}
 function _setupTodoGo(id){
+  if(id==='location'){
+    // Denied: the OS will not re-prompt from script, so a button that "asks
+    // again" would do nothing at all. Show the platform walkthrough instead.
+    if(_geoPermState()==='denied'){
+      if(typeof zAlert==='function')zAlert(
+        'Your phone is blocking location for TradeDesk, so we can\'t turn it back on from in here.\n\n'+
+        'iPhone: Settings → TradeDesk → Location → While Using the App\n'+
+        'Android: Settings → Apps → TradeDesk → Permissions → Location → Allow only while using\n\n'+
+        'Come back here after and this will clear itself.',
+        {title:'Turn location back on'});
+      return;
+    }
+    // Owners record the per-device preference; crew get the notice sheet, which
+    // records a real acknowledgment. Either way the OS prompt fires inside this tap.
+    if(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _geoNoticeSheet==='function'){_geoNoticeSheet();return;}
+    if(typeof _geoSetConsent==='function'){_geoSetConsent(true);return;}
+    return;
+  }
   if(id==='vehicle'){if(typeof openAddVehicleModal==='function')openAddVehicleModal();return;}
+  if(id==='places'){
+    // Land on Books → Places with the Add modal already open (address
+    // search ready), the list and any repeat-stop suggestions sit behind it.
+    if(typeof goPg==='function')goPg('pg-tracker');
+    setTimeout(()=>{
+      if(typeof setTrTab==='function')setTrTab('places');
+      if(typeof openPlaceModal==='function')openPlaceModal();
+    },160);
+    return;
+  }
   if(id==='getpaid'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('integrations');},160);return;}
   if(id==='logo'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('biz');},160);return;}
   if(id==='team'){_setupTeamChooser();return;}
@@ -263,18 +349,22 @@ function renderDash(){
   const _paymentsSum=payments.filter(p=>p.date&&_dashInRange(p.date)&&p.amount!==0).reduce((s,p)=>s+p.amount,0);
   const tInc=_incomeSum+_paymentsSum;
   const tExp=expenses.filter(e=>e.date&&_dashInRange(e.date)).reduce((s,e)=>s+e.amount,0);
-  const tMi=mileage.filter(m=>m.date&&_dashInRange(m.date)).reduce((s,m)=>s+(m.miles||0),0);
+  // Deductible only. tMi feeds mileDed, net, and the tax estimate below, so a
+  // crew member's own-car miles landing here would show the owner a profit lower
+  // than the truth twice over: once as a deduction that isn't theirs, and again
+  // because the money is still owed to the driver.
+  const tMi=deductibleTrips(mileage).filter(m=>m.date&&_dashInRange(m.date)).reduce((s,m)=>s+(m.miles||0),0);
   // Prior-year totals for trend arrows (year mode only)
   const prevYrStr=String(yr-1);
   const _pInc=income.filter(r=>r.date&&r.date.startsWith(prevYrStr)).reduce((s,r)=>s+r.amount,0);
   const _pPay=payments.filter(p=>p.date&&p.date.startsWith(prevYrStr)&&p.amount!==0).reduce((s,p)=>s+p.amount,0);
   const prevInc=_pInc+_pPay;
   const prevExp=expenses.filter(e=>e.date&&e.date.startsWith(prevYrStr)).reduce((s,e)=>s+e.amount,0);
-  const prevMi=mileage.filter(m=>m.date&&m.date.startsWith(prevYrStr)).reduce((s,m)=>s+(m.miles||0),0);
+  const prevMi=deductibleTrips(mileage).filter(m=>m.date&&m.date.startsWith(prevYrStr)).reduce((s,m)=>s+(m.miles||0),0);
   const showTrends=dashPeriod==='year';
-  const net=tInc-tExp-(tMi*IRS());
+  const net=tInc-tExp-(tMi*IRS(yr));
 
-  const mileDed=Math.round(tMi*IRS());
+  const mileDed=Math.round(tMi*IRS(yr));
   const netBeforeTax=Math.max(0,tInc-tExp-mileDed);
   const ytdTaxEst=estimateTax(netBeforeTax);
   const ytdTrueProfit=Math.round(tInc-tExp-ytdTaxEst);
@@ -384,7 +474,7 @@ function renderDash(){
       '</div>';
   } else if(kpiEl){
     const pBids=bids.filter(b=>b.status==='Pending');
-    const prevTax=showTrends?estimateTax(Math.max(0,prevInc-prevExp-Math.round(prevMi*IRS()))):0;
+    const prevTax=showTrends?estimateTax(Math.max(0,prevInc-prevExp-Math.round(prevMi*IRS(yr-1)))):0;
     const prevProfit=showTrends?Math.round(prevInc-prevExp-prevTax):0;
     kpiEl.innerHTML='<div class="mets" id="dash-mets-inner">'+
       '<div class="met" data-kpi="revenue" style="cursor:pointer" onclick="goToTrackerTab(\'income\')">'+
@@ -428,7 +518,7 @@ function renderDash(){
       const _yrs=String(_cy-_yi);
       const _yi2=income.filter(r=>r.date&&r.date.startsWith(_yrs)).reduce((s,r)=>s+r.amount,0);
       const _ye=expenses.filter(e=>e.date&&e.date.startsWith(_yrs)).reduce((s,e)=>s+e.amount,0);
-      const _ym=mileage.filter(m=>m.date&&m.date.startsWith(_yrs)).reduce((s,m)=>s+(m.miles||0),0);
+      const _ym=deductibleTrips(mileage).filter(m=>m.date&&m.date.startsWith(_yrs)).reduce((s,m)=>s+(m.miles||0),0);
       if(_yi2-_ye-(_ym*_getIrsRateForYear(_yrs))<0)_lossYears++;
     }
     if(_lossYears>=3){
@@ -490,22 +580,57 @@ function renderDash(){
     // The on-site card spans the WHOLE moment (owner: persist card + time-on-site):
     //   pre-clock-in  → geofence prompt with Clock in
     //   on the clock  → live "on site" timer + Arrived stamp + Clock out
-    // Shows whenever there's a nearby job OR an active clock; hidden otherwise.
+    //   somewhere known → "working on a job?" prompt, titled by WHERE the fence
+    //                    machine says they are (owner 2026-08-01: "can we say At
+    //                    the Shop, At the Job, At the Supply House based on the
+    //                    geo tags"). Prefab at the yard and material pickup at a
+    //                    supplier are both real job labor with nowhere to attach
+    //                    to; researched, no competitor geofence-prompts anywhere
+    //                    but a job site, so this is TradeDesk's own gap to close.
+    // Shows whenever there's a nearby job, an active clock, or a known-location
+    // dwell; hidden otherwise.
     const _onClock=(typeof _activeTimer!=='undefined'&&_activeTimer&&_activeTimer.startTime)?_activeTimer:null;
-    if(_onClock||_nearbyJob){
+    // WHERE we are, straight off the fence machine rather than re-derived: the
+    // shop and every saved place already have their own tracked arrival, so the
+    // title is whatever the tracker itself resolved. 2-minute floor matches the
+    // dwell threshold those closers use, a drive-through for a part must not
+    // trigger a prompt.
+    let _locPrompt=null;
+    if(typeof _geoWasInShop!=='undefined'&&_geoWasInShop&&typeof _geoShopArrivedAt!=='undefined'&&_geoShopArrivedAt){
+      _locPrompt={key:'shop:'+_geoShopArrivedAt,at:_geoShopArrivedAt,title:'At the shop'};
+    }else if(typeof _geoCurrentPlace!=='undefined'&&_geoCurrentPlace&&typeof _geoPlaceArrivedAt!=='undefined'&&_geoPlaceArrivedAt){
+      // Name it, don't label it: "At Ferguson Supply" beats "At the supply
+      // house" when the contractor saved that name themselves, and a saved
+      // place can just as easily be a dump, a rental yard or a home office.
+      const _pl=(typeof getPlaces==='function')?getPlaces().find(p=>String(p.id)===String(_geoCurrentPlace)):null;
+      _locPrompt={key:'place:'+_geoCurrentPlace+':'+_geoPlaceArrivedAt,at:_geoPlaceArrivedAt,
+                  title:'At '+((_pl&&_pl.name)||'a saved place')};
+    }
+    if(_locPrompt&&(Date.now()-Date.parse(_locPrompt.at))<120000)_locPrompt=null;
+    const _locPromptList=(_locPrompt&&typeof _locPromptJobs==='function')?_locPromptJobs().slice(0,5):[];
+    const _showLocPrompt=!_onClock&&!_nearbyJob&&_locPromptList.length>0;
+    // ON THE ROAD: the automatic system's first piece of live feedback (owner
+    // ask 2026-08-07). Reads the fence machine's own drive state, never
+    // re-derived: an open drive leg with recent driving speed.
+    const _driving=!_onClock&&(typeof _geoDriving==='function')&&_geoDriving();
+    if(_onClock||_driving||_nearbyJob||_showLocPrompt){
       if(!document.getElementById('_td-nearby-anim-style')){
         const _s=document.createElement('style');_s.id='_td-nearby-anim-style';
         // A radar-ping (concentric rings expanding from the pin) + a live status dot
         // read as "on site, right now", the GPS moment made visible.
         _s.textContent='@keyframes tdNearbyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}'+
+          '@keyframes tdNearbyOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(6px)}}'+
           '@keyframes tdNearbyDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}'+
-          '@keyframes tdGeoPing{0%{transform:scale(.45);opacity:.85}80%{opacity:0}100%{transform:scale(1.18);opacity:0}}';
+          '@keyframes tdGeoPing{0%{transform:scale(.45);opacity:.85}80%{opacity:0}100%{transform:scale(1.18);opacity:0}}'+
+          '@keyframes tdDriveMove{0%{transform:translateX(-3px)}50%{transform:translateX(3px)}100%{transform:translateX(-3px)}}';
         document.head.appendChild(_s);
       }
       const _svgPin=(c,sz)=>'<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+'" fill="none" stroke="'+c+'" stroke-width="2"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
       const _fmtClk=(t)=>{try{return new Date(t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
       const _fmtDur=(ms)=>{const s=Math.max(0,Math.floor((Date.now()-ms)/1000));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return (h?h+'h ':'')+m+'m';};
       const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
+      if(_nearbyHideTimer){clearTimeout(_nearbyHideTimer);_nearbyHideTimer=null;} // a re-appearance mid-fade-out must not get hidden out from under it
+      _nearbyEl.style.animation='';
       _nearbyEl.style.display='block';
       const _cardShell=(inner)=>'<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(22,163,74,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(22,163,74,.16),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f6fbf7 100%);box-shadow:0 10px 30px -12px rgba(14,107,57,.35),0 2px 8px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+inner+'</div>';
       const _cardHead=(name,addr,extra)=>'<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
@@ -535,6 +660,65 @@ function renderDash(){
         ocBtns.push('<button onclick="clockOut();setTimeout(function(){renderDash&&renderDash();},140)" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Clock out</button>');
         if(_cid)ocBtns.push('<button onclick="_nearbyStartWork('+_cid+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button>');
         _nearbyEl.innerHTML=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+_ocNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+ocBtns.join('')+'</div>');
+      } else if(_driving){
+        // DRIVING: the blue sibling of the green ON SITE card, same shell
+        // conventions (badge, title, stat tiles), recolored because "in
+        // motion" and "arrived" must never read as the same state. Numbers
+        // tick in place per ping (geo-track.js updates #dash-drive-mi/-mph/
+        // -min directly), a full re-render per fix would be wasted work.
+        const _org=(typeof _geoLegOrigin!=='undefined'&&_geoLegOrigin&&_geoLegOrigin.name)?_geoLegOrigin.name:'';
+        const _dMi=(typeof _geoDriveMiles!=='undefined')?_geoDriveMiles:0;
+        const _dMph=(typeof _geoDriveMph!=='undefined')?Math.round(_geoDriveMph):0;
+        const _dMin=(typeof _geoDriveStartedAt!=='undefined'&&_geoDriveStartedAt)?Math.max(0,Math.round((Date.now()-Date.parse(_geoDriveStartedAt))/60000)):0;
+        const _svgCar=(c,sz)=>'<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+'" fill="none" stroke="'+c+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 01-2-2v-1.5a2 2 0 01.4-1.2l1.7-2.3A3 3 0 017.5 9h9a3 3 0 012.4 1.2l1.7 2.3a2 2 0 01.4 1.2V15a2 2 0 01-2 2M5 17a2 2 0 002 2h0a2 2 0 002-2M17 17a2 2 0 002 2h0a2 2 0 002-2M8 13h8"/></svg>';
+        const _dStat=(id,val,label)=>'<div style="flex:1;background:rgba(255,255,255,.6);border:1px solid rgba(29,78,216,.14);border-radius:12px;padding:9px 10px">'+
+          '<div id="'+id+'" style="font-size:16px;font-weight:800;color:#1B1612;font-variant-numeric:tabular-nums">'+val+'</div>'+
+          '<div style="font-size:9.5px;color:#1D4ED8;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-top:1px">'+label+'</div></div>';
+        _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(29,78,216,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(29,78,216,.14),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f5f8ff 100%);box-shadow:0 10px 30px -12px rgba(29,78,216,.30),0 2px 8px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+
+          '<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
+            '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
+              '<span style="position:relative;z-index:2;width:40px;height:40px;border-radius:50%;background:linear-gradient(160deg,#3B82F6,#1D4ED8);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(29,78,216,.5)"><span style="display:inline-flex;animation:tdDriveMove 1.1s ease-in-out infinite">'+_svgCar('#fff',20)+'</span></span>'+
+            '</div>'+
+            '<div style="flex:1;min-width:0">'+
+              '<span style="display:inline-flex;align-items:center;gap:6px;background:#1D4ED8;color:#fff;font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:4px 9px;border-radius:20px;margin-bottom:5px"><span style="width:6px;height:6px;border-radius:50%;background:#93C5FD;animation:tdNearbyDot 1.4s ease-in-out infinite"></span>DRIVING</span>'+
+              '<div style="font-size:18px;font-weight:800;letter-spacing:-.02em;line-height:1.15;color:#1B1612">On the road</div>'+
+              '<div style="font-size:13px;color:#1D4ED8;font-weight:600;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(_org?'From '+escHtml(_org)+' · ':'')+'<span id="dash-drive-min">'+_dMin+' min</span></div>'+
+            '</div>'+
+          '</div>'+
+          '<div style="display:flex;gap:8px;padding:0 16px 16px">'+
+            _dStat('dash-drive-mi',_dMi.toFixed(1)+' mi','This trip')+
+            _dStat('dash-drive-mph',_dMph+' mph','Speed')+
+          '</div>'+
+        '</div>';
+      } else if(_showLocPrompt){
+        // Somewhere known, no job open: prefab at the yard and material pickup
+        // at a supplier are both real job labor with nowhere to attach today.
+        // One tap clocks in via the SAME manual system job-site clock-ins
+        // already use (js/jobs.js clockIn), untagged: once it's on a job it's
+        // job time, no new table, no new report, no special "shop labor"
+        // category.
+        //
+        // No dismiss (owner 2026-08-01: "don't think we need the not now").
+        // Ignoring the card already costs nothing, and clocking in replaces it
+        // with the on-the-clock view, so a dismiss control was a third state
+        // nobody needed and one more thing to mis-tap.
+        const jobRows=_locPromptList.map(j=>{
+          const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+          const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
+          const sub=[c&&c.name&&c.name!==j.name?c.name:'',_fmtJobStartHint(j)].filter(Boolean).join(' · ');
+          return '<button onclick="_locPromptClockIn('+j.id+')" style="display:flex;align-items:center;gap:11px;width:100%;padding:11px 14px;border:none;background:none;border-bottom:1px solid var(--border);text-align:left;font-family:inherit;cursor:pointer">'+
+            // A play glyph in a green chip, the same shape and colour the job-site
+            // card's primary Clock in button uses, so a row reads as a BUTTON.
+            // A bare list with a dot looked like a read-only list (self-review of
+            // the first screenshot), which is fatal for a one-tap feature.
+            '<span style="width:30px;height:30px;border-radius:50%;background:linear-gradient(160deg,#22c55e,#12894a);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 3px 8px -3px rgba(14,107,57,.6)"><svg viewBox="0 0 24 24" width="12" height="12" fill="#fff"><path d="M7 5v14l11-7z"/></svg></span>'+
+            '<span style="min-width:0;flex:1"><span style="display:block;font-size:13.5px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(j.name||(c&&c.name)||'Job')+'</span>'+
+            (sub?'<span style="display:block;font-size:11.5px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(sub)+'</span>':'')+'</span>'+
+          '</button>';
+        }).join('');
+        const _extra='<div style="font-size:12px;color:var(--text3);margin-top:3px">Working on a job? Tap to clock in.</div>';
+        _nearbyEl.innerHTML=_cardShell(_cardHead(_locPrompt.title,'',_extra)+
+          '<div style="max-height:250px;overflow-y:auto">'+jobRows+'</div>');
       } else {
         // PRE-CLOCK-IN geofence prompt. Clock in (primary) + Estimate + conditional Collect.
         const nb=_nearbyJob;
@@ -551,7 +735,17 @@ function renderDash(){
         const _extra=hasBalance?'<div style="font-size:12px;color:#B45309;font-weight:700;margin-top:3px">'+fmt(nb.balance)+' owed</div>':'';
         _nearbyEl.innerHTML=_cardShell(_cardHead(nb.clientName,nb.addr,_extra)+_nbNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+nbBtns.join('')+'</div>');
       }
-    }else{_nearbyEl.style.display='none';}
+    }else if(_nearbyEl.style.display!=='none'&&_nearbyEl.innerHTML.trim()){
+      // Slide/fade out instead of an abrupt display:none (CLAUDE.md §8): the
+      // card keeps its content and animates itself away, hard-hidden only
+      // once that's actually finished. Mirrors the .22s entrance (tdNearbyIn).
+      _nearbyEl.style.animation='tdNearbyOut .18s ease both';
+      _nearbyHideTimer=setTimeout(()=>{
+        _nearbyHideTimer=null;
+        _nearbyEl.style.display='none';
+        _nearbyEl.style.animation='';
+      },180);
+    }
   }
   // Update new nav badges
   const _owing=bids.filter(b=>b.status==='Closed Won'&&!b.clientCancelled&&getBidBalance(b)>0.01);
