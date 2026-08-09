@@ -433,6 +433,22 @@ function _geoLocOfJob(j){
           jobId:j.id,clientId:j.client_id||null,addr:j.addr||(cl&&cl.addr)||''};
 }
 
+// ── Fresh-fix subscription ───────────────────────────────────────────────────
+// A one-shot listener for "a real position just came in". Deliberately NOT
+// navigator.geolocation: inside the shell that is shimmed to serve a cached fix
+// for up to two minutes, which is correct for weather and wrong for anything
+// asking where somebody is this second.
+let _geoFixSubs=[];
+function _geoOnFreshFix(fn){
+  if(typeof fn!=='function')return ()=>{};
+  _geoFixSubs.push(fn);
+  return ()=>{_geoFixSubs=_geoFixSubs.filter(f=>f!==fn);};
+}
+function _geoEmitFix(fix){
+  if(!_geoFixSubs.length)return;
+  _geoFixSubs.slice().forEach(fn=>{try{fn(fix);}catch(_e){}});
+}
+
 // ── Position handler: breadcrumb + geofence state machine ──────────────────────
 async function _geoOnPing(pos){
   // RE-ENTRANCY GUARD: this handler awaits network geocodes, and watchPosition can
@@ -452,6 +468,12 @@ async function _geoOnPing(pos){
   // handler clocks off nowMs, so the whole fence machine honors it.
   const nowMs=(pos&&pos.__tdTs)||Date.now();
   if(nowMs-_geoLastPingTs>60000){_geoLastPingTs=nowMs;_geoWritePing(here,acc);}
+  // Every fix, from every source (web watcher, native watcher, TdGeo burst,
+  // replayed buffer), funnels through here, so this is the one honest place to
+  // tell anybody waiting on a FRESH position that one just arrived. Push to
+  // locate (js/crew-locate.js) is the caller: it cannot use the shimmed
+  // getCurrentPosition, which answers from a two-minute cache on purpose.
+  _geoEmitFix({lat:here.lat,lng:here.lng,acc:Math.round(acc||0),ts:nowMs});
   // ── Live drive banner: rolling miles + speed ──────────────────────────────
   // Runs BEFORE the fence machine so the fix that closes the leg still counts
   // its last stretch of road. Straight-line ping to ping: display only, the
@@ -1705,6 +1727,11 @@ function _geoExitParkMode(){
   try{if(Td&&typeof Td.stopAll==='function')Td.stopAll();}catch(_e){}
   startGeoTracking();
 }
+// crew-locate.js loads after this file, so the journal is read through a guard
+// rather than called directly.
+function _geoLocateHistory(){
+  try{return (typeof _crewLocateHistory==='function')?(_crewLocateHistory()||[]):[];}catch(_e){return [];}
+}
 // On-device diagnostics: state + the park journal, in a standard zmodal.
 // Reachable from Settings (the button unhides only inside the shell).
 function _geoDiagPanel(){
@@ -1728,6 +1755,17 @@ function _geoDiagPanel(){
     '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:12px 0 4px">Recent events</div>'+
     '<div style="max-height:32vh;overflow-y:auto;font-size:11px;font-family:ui-monospace,monospace;line-height:1.6">'+
       (_geoParkLog.length?_geoParkLog.slice().reverse().map(r=>'<div>'+escHtml(r.t)+' '+escHtml(r.ev)+(r.x?' · '+escHtml(r.x):'')+'</div>').join(''):'<div style="color:var(--text3)">Nothing yet.</div>')+
+    '</div>'+
+    // Who asked this phone where it was. Push to locate is on-demand by design,
+    // so the record of every ask is the thing that keeps it from being covert.
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:12px 0 4px">Location checks</div>'+
+    '<div style="max-height:20vh;overflow-y:auto;font-size:11px;line-height:1.6">'+
+      (_geoLocateHistory().length
+        ?_geoLocateHistory().slice().reverse().map(r=>{
+            let when='';try{when=new Date(r.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});}catch(_e){when=String(r.at||'');}
+            return '<div>'+escHtml(when)+' · '+escHtml(r.by||'A manager')+' · '+escHtml(r.answered?'shared':'not shared ('+(r.reason||'')+')')+'</div>';
+          }).join('')
+        :'<div style="color:var(--text3)">Nobody has checked your location.</div>')+
     '</div>'+
     '<button class="btn btn-p" style="width:100%;margin-top:14px;padding:12px" onclick="document.getElementById(\'_geo-diag-ov\').remove()">Close</button>';
   ov.appendChild(m);document.body.appendChild(ov);
@@ -1942,6 +1980,11 @@ function _geoTrackInit(){
   // owner ran dispatch route optimization, so shop-time logging silently never
   // fired until then, kick the one-time geocode here so it always works.
   if(!(S.officeLat&&S.officeLon)&&typeof _geoOfficeCoords==='function')_geoOfficeCoords();
+  // Join the account's locate channel. Deliberately BEFORE the consent
+  // branches below: a phone that has not consented still answers "sharing is
+  // off" rather than going silent, because silence would otherwise be read as
+  // an asleep phone and the manager would keep asking.
+  if(typeof _crewLocateInit==='function'){try{_crewLocateInit();}catch(_e){}}
   if(_isEmployee){
     if(!_employeeRecord)return;
     // Tracking being a condition of the job is the OWNER's call and stays that
