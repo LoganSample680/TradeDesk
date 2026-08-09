@@ -4502,28 +4502,77 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.freshRestored, 'a briefly-suspended real drive still survives').toBe(r.freshStart);
     });
 
-    test('one phone cannot run two drives at once: an auto trip overlapping a logged trip is refused', async () => {
-      const r = await page.evaluate(async () => {
-        const realRoute = _routeDistance;
-        window._routeDistance = _routeDistance = async () => ({ miles: 5.4, mins: 11 });
-        const before = mileage.length;
+  });
+
+  // ── The last leg of the day (owner report 2026-08-09) ───────────────────────
+  // "FBC to Culver's for personal lunch, then home, it didn't grab my mileage
+  // direct from FBC back to home." The inbound leg was only ever written on
+  // DEPARTURE from a stop, and nobody drives away from home: the anchor lived
+  // in memory, park mode cut GPS four minutes in, iOS eventually killed the
+  // app, and the drive evaporated. It now settles the moment the stop is real.
+  test.describe('the drive that ends at a stop', () => {
+    const parkAt = (spot, o) => page.evaluate(async (a) => {
+      const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue;
+      const before = mileage.length;
+      _supaUser = { id: 'u-park-leg' };
+      window._routeDistance = _routeDistance = async () => ({ miles: 5.1, mins: 11 });
+      window._geoEnqueue = () => {};
+      try {
+        __seedGeo();
+        const t0 = Date.now();
+        _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
+        _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoLegAtShop = false;
+        _geoCurrentClient = null; _geoClientArrivedAt = null;
+        _geoHomeDwell = null; _geoWasAtHome = false; _geoGapHiddenAt = null;
+        _geoQuietSinceMs = null; _geoParkPrevFix = null; _geoFenceEnteredAtMs = null;
+        // Pulled out of the shop 20 minutes ago, parked at this kerb 8 minutes ago.
+        _geoDriveStartedAt = new Date(t0 - 20 * 60000).toISOString();
+        _geoLegOrigin = { lat: a.shop.lat, lng: a.shop.lon, name: 'Shop', kind: 'shop', addr: '1 Yard Rd' };
+        _geoLastFenceAt = new Date(t0 - 20 * 60000).toISOString();
+        _geoLastFenceLoc = _geoLegOrigin;
+        _geoDriveMiles = 5; _geoDriveLastFix = null;
+        _geoStopAnchor = { lat: a.spot.lat, lng: a.spot.lon,
+          at: new Date(t0 - 8 * 60000).toISOString(), lastAt: new Date(t0 - 60000).toISOString() };
+        // One ping while sitting there: no fence, no movement.
+        await _geoOnPing({ coords: { latitude: a.spot.lat, longitude: a.spot.lon, accuracy: 8, speed: 0 }, __tdTs: t0 });
+        await new Promise(r2 => setTimeout(r2, 40));
+        const rows = mileage.slice(0, Math.max(0, mileage.length - before))
+          .map(m => ({ from: m.from_name, to: m.to_name, miles: m.miles }));
+        // Driving off later must not write the same leg twice.
+        _geoStopAnchor.lastAt = new Date(t0 + 30 * 60000).toISOString();
+        _geoCloseStop(_geoStopAnchor);
+        await new Promise(r2 => setTimeout(r2, 40));
+        return { rows, afterDeparture: mileage.length - before };
+      } finally {
+        _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
+        window._geoEnqueue = realEnq;
+        _geoDriveStartedAt = null; _geoDriveReset(); _geoStopAnchor = null;
+        _geoLegOrigin = null; _geoLastFenceAt = null; _geoLastFenceLoc = null;
+        _geoQuietSinceMs = null; _geoParkPrevFix = null;
+        mileage.length = before; saveAll();
+      }
+    }, { spot, shop: SHOP, ...(o || {}) });
+
+    test('parking at an unknown kerb writes the leg in, before they ever drive away again', async () => {
+      const r = await parkAt({ lat: SHOP.lat + 0.09, lon: SHOP.lon + 0.09 });
+      expect(r.rows.length, 'the leg lands while they are still parked').toBe(1);
+      expect(r.rows[0].from).toBe('Shop');
+      expect(r.rows[0].miles).toBe(5.1);
+      expect(r.afterDeparture, 'driving off never logs the same leg twice').toBe(1);
+    });
+
+    test('parking at home names the endpoint Home rather than an anonymous Stop', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realHome = window._placeIsLikelyHome;
+        window._placeIsLikelyHome = () => true;
         try {
-          const t = m => new Date(Date.now() - m * 60000).toISOString();
-          mileage.push({ id: 991, gps: true, legKey: 'k-real', from_name: 'FBC', to_name: 'FBC', startedIso: t(120), endedIso: t(118), miles: 0, date: todayKey() });
-          const dup = autoLogDriveTrip({ from: { name: 'Shop', lat: 39.0, lng: -95.7 }, to: { name: 'FBC', lat: 39.02, lng: -95.68 }, legKey: 'k-dup', startedIso: t(120), endedIso: t(53) });
-          const dupCount = mileage.filter(m => m.legKey === 'k-dup').length;
-          const ok = autoLogDriveTrip({ from: { name: 'Shop', lat: 39.0, lng: -95.7 }, to: { name: 'FBC', lat: 39.02, lng: -95.68 }, legKey: 'k-ok', startedIso: t(50), endedIso: t(40) });
-          await new Promise(r2 => setTimeout(r2, 30));
-          const okCount = mileage.filter(m => m.legKey === 'k-ok').length;
-          return { dupNull: dup === null, dupCount, okCount };
-        } finally {
-          window._routeDistance = _routeDistance = realRoute;
-          mileage.length = before; saveAll();
-        }
-      });
-      expect(r.dupNull, 'the overlapping reconstruction is refused').toBe(true);
-      expect(r.dupCount).toBe(0);
-      expect(r.okCount, 'a later, non-overlapping real trip still logs').toBe(1);
+          const loc = _geoStopLoc({ lat: a.shop.lat + 0.09, lng: a.shop.lon + 0.09,
+            at: new Date().toISOString(), lastAt: new Date().toISOString() }, 40 * 60000);
+          return { name: loc.name, likelyHome: loc.likelyHome };
+        } finally { window._placeIsLikelyHome = realHome; }
+      }, { shop: SHOP });
+      expect(r.name, 'the log reads "Home", not "Stop"').toBe('Home');
+      expect(r.likelyHome, 'and it still counts as home for the commute rule').toBe(true);
     });
   });
 

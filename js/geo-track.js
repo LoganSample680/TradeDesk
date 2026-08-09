@@ -737,6 +737,14 @@ async function _geoOnPing(pos){
     if(_mps!=null&&_mps>=_GEO_DRIVEBY_SPEED_MPS)_geoQuietSinceMs=null;
     else if(_geoQuietSinceMs==null)_geoQuietSinceMs=nowMs;
     _geoParkPrevFix={lat:here.lat,lng:here.lng,atMs:nowMs,acc:acc};
+    // Five minutes at the same kerb IS this app's definition of a stop, so the
+    // leg that got them here is written the moment it qualifies rather than
+    // whenever they happen to drive off again (owner report 2026-08-09: the
+    // drive home never logged, because nobody drives away from home).
+    if(!cur&&_geoStopAnchor&&_geoDriveStartedAt&&
+       (nowMs-(Date.parse(_geoStopAnchor.at)||nowMs))>=_GEO_STOP_MS){
+      _geoSettleStopLeg(_geoStopAnchor,nowIso);
+    }
     let _parkSpot=null,_parkDwellStart=null;
     if(cur&&!_geoDriveStartedAt){
       if(!_geoFenceEnteredAtMs)_geoFenceEnteredAtMs=nowMs;
@@ -959,11 +967,69 @@ function _geoCloseClientEntry(clientId,arrivedAt,departedIso){
 // A stop is only real once they LEAVE it, which is also the first moment it can
 // be bounded at both ends. Both edges use a VERIFIED ping rather than now: the
 // same rule the hidden-gap close follows, never claim time nobody observed.
+// The stop's own location descriptor. A stop has no geocode, so it is its own
+// endpoint. `likelyHome` rides along because a leg that STARTS at home is a
+// commute, and a commute is not a deductible mile however plainly the GPS saw
+// it. A likely-home stop is NAMED (owner report 2026-08-09: "drove FBC to
+// home and it didn't log"): "Home" is a real endpoint on the log, and naming
+// it also keeps _geoCollapseDetours from folding the end of the day away as
+// if it were a passed-through errand.
+function _geoStopLoc(a,ms){
+  const atHome=(typeof _placeIsLikelyHome==='function')&&_placeIsLikelyHome({lat:a.lat,lng:a.lng},ms);
+  return {lat:a.lat,lng:a.lng,kind:'stop',likelyHome:atHome,
+          name:atHome?(S.homeOffice?'Home Office':'Home'):'Stop'};
+}
+// SETTLE THE LEG WHEN THEY PARK, NOT WHEN THEY LEAVE (owner report
+// 2026-08-09: FBC -> lunch -> home logged nothing).
+//
+// The inbound leg used to be written by _geoCloseStop, which only runs on
+// DEPARTURE from the stop. Park at home for the night and the leg you just
+// drove has nowhere to be written: the anchor lives in memory only, the shell
+// kills GPS four minutes into the park, and iOS eventually kills the app, so
+// the last drive of the day evaporated. Worse, that is exactly the leg a
+// contractor looks for the moment they walk in the door.
+//
+// Once a stop is real (the app's own five-minute definition, or the moment
+// park mode is about to cut GPS) the leg into it is written immediately and
+// the leg is split at the kerb. Idempotent via a.legClosed, so the later
+// departure never double-logs. A stop that turns out to be a passed-through
+// errand is still folded by _geoCollapseDetours on the next fence arrival,
+// which removes this row and rewrites the direct one, unchanged.
+function _geoSettleStopLeg(a,nowIso){
+  if(!a||a.legClosed||!_geoDriveStartedAt)return false;
+  // Fold any earlier personal stop FIRST, so the row written here runs from
+  // the last real endpoint (the CPA rule: a lunch stop in the middle makes
+  // one trip with a detour, not two trips).
+  _geoCollapseDetours();
+  const ms=Math.max(0,Date.parse(a.lastAt||nowIso)-Date.parse(a.at));
+  const stopLoc=_geoStopLoc(a,ms);
+  stopLoc.prevOrigin=_geoLegOrigin||null;
+  _geoDriveEntry(null,_geoDriveStartedAt,null,a.at,false,stopLoc);
+  a.legClosed=true;
+  _geoDriveStartedAt=a.lastAt||nowIso;   // the leg out starts when they pull away
+  _geoDriveReset();
+  _geoLegOrigin=stopLoc;
+  return true;
+}
 function _geoCloseStop(a){
   if(!a||!a.at||!a.lastAt)return;
   const ms=Date.parse(a.lastAt)-Date.parse(a.at);
   if(!(ms>=_GEO_STOP_MS))return;          // a light, not a stop
   const mins=Math.max(0,Math.round(ms/60000));
+  // Already settled when they parked: the leg and the split are done, only
+  // the departure time needs refining to the last fix seen at the kerb.
+  if(a.legClosed){
+    _geoDriveStartedAt=a.lastAt;
+    _geoDriveReset();
+    if(typeof recordUnknownStop==='function')recordUnknownStop({lat:a.lat,lng:a.lng},ms);
+    if(!_supaUser)return;
+    _geoEnqueue('job_time_entries',{
+      contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+      job_id:null,arrived_at:a.at,departed_at:a.lastAt,minutes:mins,
+      dest_place:null,source:'stop'
+    });
+    return;
+  }
   // Split the leg at the kerb. Without this the parked minutes ride out on the
   // drive entry, which is the entire defect. Either way the next leg begins the
   // moment they pulled out.
@@ -974,16 +1040,9 @@ function _geoCloseStop(a){
   // the time this ran on arriving at the yard, _geoWasInShop was already true,
   // so the leg out of lunch never restarted and the trip home logged nothing.
   // A stop has no geocode, so it is its own endpoint: the inbound leg ends at
-  // the kerb they parked at, and the outbound leg starts from the same spot.
-  // `likelyHome` rides along because a leg that STARTS at home is a commute,
-  // and a commute is not a deductible mile however plainly the GPS saw it.
-  const atHome=(typeof _placeIsLikelyHome==='function')&&_placeIsLikelyHome({lat:a.lat,lng:a.lng},ms);
-  const stopLoc={lat:a.lat,lng:a.lng,kind:'stop',likelyHome:atHome,
-                 // A declared home office is a named business location on the
-                 // log, not an anonymous "Stop". The row has to read
-                 // "Home Office -> Ace Supply" or it is not a mileage record
-                 // anyone could defend a year later.
-                 name:(atHome&&S.homeOffice)?'Home Office':'Stop'};
+  // the kerb they parked at, and the outbound leg starts from the same spot
+  // (_geoStopLoc above owns that descriptor and the home naming).
+  const stopLoc=_geoStopLoc(a,ms);
   // Where the leg INTO this stop began, carried on the stop itself. If the stop
   // turns out to be personal, that is the point the next leg has to be measured
   // from: a lunch break in the middle of a supply-house-to-job-site run does not
@@ -1582,6 +1641,11 @@ function _geoEnterParkMode(spot){
   if(_geoNativeWatcherId==null&&!_geoNativeStarting){_geoParkNote('park-skip','no watcher');return;}
   const _at=spot||_geoLastFenceLoc;
   if(!_at){_geoParkNote('park-skip','no park spot');return;}
+  // LAST CHANCE BEFORE THE GPS GOES DARK. Parking cuts the fix stream, and
+  // iOS may kill the app long before they drive off, so any leg still open
+  // into this stop is settled here or it is lost (owner report 2026-08-09:
+  // the drive home never logged).
+  if(_geoStopAnchor&&_geoDriveStartedAt)_geoSettleStopLeg(_geoStopAnchor,new Date().toISOString());
   // The region is the fence plus slack: region monitoring is coarser than GPS
   // (cell/wifi assisted), and an exit that fires a little late is fine, the
   // re-armed watcher's first fix re-runs the fence machine with real truth.
