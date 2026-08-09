@@ -4359,6 +4359,49 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.timer, 'no countdown survives a driving ping').toBe(false);
     });
 
+    // Owner report (2026-08-09): arrow still on 18 minutes into park mode.
+    // The journal showed FOUR watcher-on ids and one removal: every WebView
+    // reload (version watchdog) wiped JS memory but the native watcher kept
+    // running in the plugin, so park/stop only ever killed the newest one.
+    // Ids are now persisted, and every start sweeps the orphans first.
+    test('a reload-orphaned native watcher is swept on the next start, and stop forgets its id', async () => {
+      const r = await page.evaluate(async () => {
+        const realCap = window.Capacitor;
+        const removed = [];
+        try {
+          localStorage.setItem('td_geo_watcher_ids', JSON.stringify(['stale-1', 'stale-2']));
+          _geoWatchId = null; _geoNativeWatcherId = null; _geoNativeStarting = false;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = true;
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (n) => n === 'BackgroundGeolocation' ? {
+              addWatcher: (o, cb) => Promise.resolve('w-new'),
+              removeWatcher: (o) => { removed.push(o.id); return Promise.resolve(); },
+            } : n === 'TdGeo' ? { addListener: () => {}, stopAll: () => Promise.resolve(), drainBuffer: () => Promise.resolve({ fixes: [] }) } : null,
+          };
+          startGeoTracking();
+          await new Promise(r2 => setTimeout(r2, 30));
+          const sweptBoth = removed.includes('stale-1') && removed.includes('stale-2');
+          const storeAfterStart = JSON.parse(localStorage.getItem('td_geo_watcher_ids') || '[]');
+          const liveId = _geoNativeWatcherId;
+          stopGeoTracking();
+          await new Promise(r2 => setTimeout(r2, 10));
+          const storeAfterStop = JSON.parse(localStorage.getItem('td_geo_watcher_ids') || '[]');
+          return { sweptBoth, storeAfterStart, liveId, removedLive: removed.includes('w-new'), storeAfterStop };
+        } finally {
+          window.Capacitor = realCap;
+          localStorage.removeItem('td_geo_watcher_ids');
+          _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+        }
+      });
+      expect(r.sweptBoth, 'both orphans from prior reloads are killed natively').toBe(true);
+      expect(r.storeAfterStart, 'only the live watcher stays persisted').toEqual(['w-new']);
+      expect(r.liveId).toBe('w-new');
+      expect(r.removedLive, 'stop removes the live watcher too').toBe(true);
+      expect(r.storeAfterStop, 'nothing persisted once tracking stops').toEqual([]);
+    });
+
     test('in a plain browser park mode does not exist', async () => {
       const r = await page.evaluate(() => {
         const realCap = window.Capacitor;

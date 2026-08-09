@@ -44,6 +44,33 @@ test.describe('Dashboard filter and pipeline functions', () => {
     expect(r.realAfter, 'real KPI tiles back once the load resolved').toBeGreaterThanOrEqual(6);
   });
 
+  // Owner report (2026-08-09, second sighting): skeletons shimmering forever
+  // in the shell with nothing arriving. A stalled cloud load left
+  // _dashAwaitingCloud set with no path back. The watchdog caps the promise:
+  // past the deadline the tiles drop to local data and any late load repaints.
+  test('the skeleton watchdog drops a stalled cloud load to real tiles', async () => {
+    const r = await page.evaluate(async () => {
+      const realMax = _dashSkelMaxMs;
+      try {
+        _dashSkelMaxMs = 60;
+        _dashAwaitingCloud = true;
+        _dashArmSkelWatchdog();
+        renderDash();
+        const skelBefore = document.querySelectorAll('#dash-kpi .met-skel-bar').length;
+        await new Promise(r2 => setTimeout(r2, 200));
+        const flagAfter = _dashAwaitingCloud;
+        renderDash();
+        const skelAfter = document.querySelectorAll('#dash-kpi .met-skel-bar').length;
+        const realAfter = document.querySelectorAll('#dash-mets-inner .met').length;
+        return { skelBefore, flagAfter, skelAfter, realAfter };
+      } finally { _dashSkelMaxMs = realMax; _dashAwaitingCloud = false; clearTimeout(_dashSkelTimer); renderDash(); }
+    });
+    expect(r.skelBefore, 'skeletons up while waiting').toBe(6);
+    expect(r.flagAfter, 'the watchdog clears the stalled flag').toBe(false);
+    expect(r.skelAfter, 'no endless shimmer').toBe(0);
+    expect(r.realAfter).toBeGreaterThanOrEqual(6);
+  });
+
   // Owner mandate (2026-08-09): shimmer skeletons are THE loading treatment.
   // The calendar was the worst offender: renderCalGrid awaited the weather
   // fetch before painting anything, and pg-cal's 5s page fade existed only to

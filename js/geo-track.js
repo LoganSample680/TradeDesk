@@ -1474,11 +1474,14 @@ function _geoInstallGeoShim(){
         if(_geoNativeWatcherId==null&&!_geoNativeStarting){
           const BG=_geoNativePlugin();
           if(BG&&typeof BG.addWatcher==='function'){
+            // Persisted like the main watcher: a reload mid-one-shot would
+            // otherwise orphan it natively (same leak as the big one).
             let oneId=null,done=false;
+            const oneDrop=()=>{if(oneId){try{BG.removeWatcher({id:oneId});}catch(_e){}_geoForgetWatcher(oneId);oneId=null;}};
             Promise.resolve(BG.addWatcher({requestPermissions:false,stale:true},(loc)=>{
               if(loc&&!done){done=true;_geoShimDeliver(_geoShimPos(loc));}
-              if(oneId){try{BG.removeWatcher({id:oneId});}catch(_e){}oneId=null;}
-            })).then(id=>{oneId=id;if(done&&oneId){try{BG.removeWatcher({id:oneId});}catch(_e){}oneId=null;}},()=>{});
+              oneDrop();
+            })).then(id=>{oneId=id;_geoRememberWatcher(id);if(done)oneDrop();},()=>{});
           }
         }
       }catch(_e){if(typeof err==='function')err({code:2,message:String(_e&&_e.message||_e)});}
@@ -1575,6 +1578,7 @@ function _geoEnterParkMode(spot){
       if(_geoNativeWatcherId!=null){
         const BG=_geoNativePlugin();
         try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id:_geoNativeWatcherId});}catch(_e){}
+        _geoForgetWatcher(_geoNativeWatcherId);
         _geoNativeWatcherId=null;
       }
     },(err)=>{
@@ -1664,6 +1668,37 @@ function _geoTdInit(){
     }
   }catch(_e){}
 }
+// ── Stale native watcher bookkeeping ─────────────────────────────────────────
+// THE LEAK (owner report 2026-08-09, arrow on 18 minutes into park mode): a
+// WebView reload (version watchdog, crash) wipes JS memory, but watchers live
+// NATIVELY in the plugin and keep GPS running. Every reload added a fresh
+// watcher, park/stop only ever removed the newest one, and the orphans from
+// earlier reloads pinned the location arrow forever. The owner's own journal
+// proved it: four watcher-on ids, one removal. Every id is therefore
+// persisted the moment it exists, and every start first kills any persisted
+// id that is not the current one.
+function _geoRememberWatcher(id){
+  if(id==null)return;
+  try{
+    const ids=JSON.parse(localStorage.getItem('td_geo_watcher_ids')||'[]')||[];
+    if(!ids.includes(id)){ids.push(id);localStorage.setItem('td_geo_watcher_ids',JSON.stringify(ids));}
+  }catch(_e){}
+}
+function _geoForgetWatcher(id){
+  if(id==null)return;
+  try{
+    const ids=(JSON.parse(localStorage.getItem('td_geo_watcher_ids')||'[]')||[]).filter(x=>x!==id);
+    localStorage.setItem('td_geo_watcher_ids',JSON.stringify(ids));
+  }catch(_e){}
+}
+function _geoStaleWatcherSweep(BG){
+  let ids=[];
+  try{ids=JSON.parse(localStorage.getItem('td_geo_watcher_ids')||'[]')||[];}catch(_e){}
+  const stale=ids.filter(id=>id!==_geoNativeWatcherId);
+  stale.forEach(id=>{try{BG.removeWatcher({id});}catch(_e){}});
+  try{localStorage.setItem('td_geo_watcher_ids',JSON.stringify(_geoNativeWatcherId!=null?[_geoNativeWatcherId]:[]));}catch(_e){}
+  if(stale.length)_geoParkNote('stale-sweep',stale.length+' orphaned');
+}
 // ── Start / stop ───────────────────────────────────────────────────────────────
 function startGeoTracking(){
   if(_geoWatchId!=null||_geoNativeWatcherId!=null||_geoNativeStarting)return;
@@ -1672,6 +1707,7 @@ function startGeoTracking(){
     // Native shell: the background watcher also fires in the foreground, so it
     // fully replaces the web watcher rather than doubling it up.
     _geoTdInit();   // bind the park-mode event stream + replay anything buffered
+    _geoStaleWatcherSweep(BG);   // kill watchers orphaned by a prior reload
     _geoNativeStarting=true;
     try{
       Promise.resolve(BG.addWatcher({
@@ -1702,6 +1738,7 @@ function startGeoTracking(){
         }});
       })).then(id=>{
         _geoNativeStarting=false;_geoNativeWatcherId=id||null;
+        _geoRememberWatcher(_geoNativeWatcherId);
         _geoParkNote('watcher-on',String(id||''));
         // The watcher running IS the shell's 'granted' state: refresh the
         // dashboard's permission cache so "Turn on location" clears itself.
@@ -1728,6 +1765,7 @@ function stopGeoTracking(){
   if(_geoNativeWatcherId!=null){
     const BG=_geoNativePlugin();
     try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id:_geoNativeWatcherId});}catch(_e){}
+    _geoForgetWatcher(_geoNativeWatcherId);
     _geoNativeWatcherId=null;
   }
   _geoNativeStarting=false;
