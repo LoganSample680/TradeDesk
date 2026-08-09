@@ -641,6 +641,31 @@ test.describe('TdScan web half', () => {
     expect(r.jumped, 'a plan tap from surface view returns to the room card').toBe(true);
   });
 
+  test('the interactive 3D viewer opens, renders or degrades gracefully, and closes clean', async () => {
+    const r = await page.evaluate(async (raw) => {
+      const before = scans.length;
+      try {
+        const r1 = _scanParseRoom(raw, 'Kitchen'); r1.story = 1;
+        const r2 = _scanParseRoom(raw, 'Bedroom'); r2.story = 2;
+        const sc = saveScan({ id: 'sc-orbit', clientId: null, name: 'Orbit', createdAt: new Date().toISOString(), rooms: [r1, r2], photos: [], price: null, purchasedAt: null });
+        await _scan3dOpen(sc.id);
+        const ov = document.getElementById('_scan-3d-ov');
+        const opened = !!ov;
+        // Headless runners may lack WebGL: a canvas OR the honest fallback
+        // message both count as a working surface. A blank mount does not.
+        const canvas = !!ov?.querySelector('canvas');
+        const fallback = /WebGL/.test(ov?.textContent || '');
+        _scan3dClose();
+        const closed = !document.getElementById('_scan-3d-ov');
+        return { opened, canvas, fallback, closed, stateCleared: _s3d === null };
+      } finally { scans.length = before; saveAll(); _scan3dClose(); }
+    }, fabricatedRoom());
+    expect(r.opened).toBe(true);
+    expect(r.canvas || r.fallback, 'a real render or an honest fallback, never a blank screen').toBe(true);
+    expect(r.closed, 'close tears the overlay down').toBe(true);
+    expect(r.stateCleared).toBe(true);
+  });
+
   test('the estimate-type chooser leads with Scan Estimate', async () => {
     const r = await page.evaluate(() => {
       try {

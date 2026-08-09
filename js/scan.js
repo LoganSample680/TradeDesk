@@ -585,8 +585,9 @@ function openScanViewer(id){
   const tabs=[['plan','Plan'],['3d','3D'],['paint','Paint'],['electrical','Electrical'],['hvac','HVAC']];
   let body='';
   if(lens==='3d'){
-    body='<div style="font-size:12px;color:var(--text2);line-height:1.5">The dollhouse view, drawn straight from the measured walls'+(stories.length>1?', floors stacked with air between them':'')+'. Cutaway walls so you can see into every room.</div>'+
-      (sc.usdz&&_scanPlugin()?'<button class="btn btn-p" style="width:100%;margin-top:10px;padding:12px;font-weight:700" onclick="_scanViewUsdz(\''+sc.id+'\')">Open full 3D · walk it in AR</button>':'');
+    body='<div style="font-size:12px;color:var(--text2);line-height:1.5">The dollhouse, drawn straight from the measured walls'+(stories.length>1?', floors stacked with air between them':'')+'.</div>'+
+      '<button class="btn btn-p" style="width:100%;margin-top:10px;padding:12px;font-weight:800" onclick="_scan3dOpen(\''+sc.id+'\')">Orbit it in 3D →</button>'+
+      (sc.usdz&&_scanPlugin()?'<button class="btn" style="width:100%;margin-top:8px;padding:12px;font-weight:700" onclick="_scanViewUsdz(\''+sc.id+'\')">Walk it in AR</button>':'');
   }
   if(lens==='paint'){
     const sub=!!sc._paintSubtract;
