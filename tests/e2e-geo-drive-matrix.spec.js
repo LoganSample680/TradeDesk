@@ -384,6 +384,15 @@ test.describe('Drive matrix: every origin to every destination', () => {
                     start: todayKey(), days: 1, lat: C.JOB.lat, lon: C.JOB.lon });
         _geoJobCoords = {};
         S.officeLat = C.SHOP.lat; S.officeLon = C.SHOP.lon;
+        // Same self-heal the pair tests carry (see the places-fixture note in
+        // beforeAll): the sync fabric can replace `places` mid-file on WebKit
+        // timing, and without the supply fixture the 250-270 visit degrades to
+        // an anonymous stop, moving one minute from the visit to the leg
+        // (drive 93, place 0: the exact 2026-08-09 shard-3 failure).
+        if (typeof places !== 'undefined' && !places.some(p => p && p.name === 'All-day Supply')) {
+          savePlace({ id: 'allday-supply', name: 'All-day Supply', kind: 'supply',
+                      lat: C.SUPPLY.lat, lon: C.SUPPLY.lon, confirmedBy: 'manual' });
+        }
         _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
         _geoShopArrivedAt = null; _geoDriveStartedAt = null; _geoCurrentPlace = null;
         _geoPlaceArrivedAt = null; _geoStopAnchor = null; _geoLastFenceAt = null; _geoLegAtShop = false;
