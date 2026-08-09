@@ -469,7 +469,7 @@ function _showEstimateStylePicker(c,overrideAddr){
     </button>`;
   };
   ov.innerHTML=
-    '<div style="max-width:760px;margin:0 auto;padding:24px 20px 40px">'+
+    '<div style="max-width:760px;margin:0 auto;padding:calc(24px + env(safe-area-inset-top,0px)) 20px calc(40px + env(safe-area-inset-bottom,0px))">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'+
         '<div>'+
           '<div class="tbar-eyebrow">Pick proposal type</div>'+

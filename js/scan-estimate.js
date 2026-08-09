@@ -148,7 +148,7 @@ function _seRender(){
   }).join('');
   const total=_seTotal();
   ov.innerHTML=
-    '<div style="max-width:760px;margin:0 auto;padding:20px 16px 120px">'+
+    '<div style="max-width:760px;margin:0 auto;padding:calc(20px + env(safe-area-inset-top,0px)) 16px 120px">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
         '<div><div class="tbar-eyebrow">Scan estimate · '+escHtml(scan.name||'')+'</div>'+
         '<div class="tbar-title">'+escHtml((c&&c.name)||'Client')+'</div></div>'+
