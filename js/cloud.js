@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.09.26.1';
+const APP_VERSION='08.09.26.2';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1226,6 +1226,7 @@ const _TD_TABLES=[
   {t:'td_maintenance', get:()=>maintenance, set:v=>{maintenance.length=0;v.forEach(r=>maintenance.push(r));}, tx:null},
   {t:'td_vehicles',    get:()=>vehicles,    set:v=>{vehicles.length=0;v.forEach(r=>vehicles.push(r));},     tx:null},
   {t:'td_places',      get:()=>places,      set:v=>{places.length=0;v.forEach(r=>places.push(r));},         tx:null},
+  {t:'td_scans',       get:()=>scans,       set:v=>{scans.length=0;v.forEach(r=>scans.push(r));},           tx:null},
   {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
     tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
 ];
@@ -1794,6 +1795,7 @@ async function supaInit(){
           if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
+          if(_cd.scans?.length)scans=_cd.scans;
           if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
           if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
           if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (no-session boot)');applySettings();_refillSettingsFormUnlessEditing();}
@@ -1846,6 +1848,7 @@ async function supaInit(){
           // Wipe the outgoing account's in-memory records so they can't be merged/pushed up.
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           vehicles=[]; // fleet is a synced array (td_vehicles) now, not a settings key
+          scans=[];    // same rule: td_scans is account data, never carried across
           places=[];   // same for geocoded locations (td_places)
           // Crew caches are keyed by EMAIL, so without this the next account's
           // roster renders the previous account's location status against any
@@ -2021,6 +2024,7 @@ async function supaInit(){
         if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
+          if(_cd.scans?.length)scans=_cd.scans;
           if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (offline boot, session present)');applySettings();_refillSettingsFormUnlessEditing();}
@@ -4772,6 +4776,7 @@ function _enterOfflineMode(){
       if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
+          if(_cd.scans?.length)scans=_cd.scans;
           if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
       if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
       if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cache restore)');applySettings();_refillSettingsFormUnlessEditing();}
@@ -5104,6 +5109,7 @@ function _wipeLocalAccountData(){
   // outgoing account's trucks stay in memory and render under the next login,
   // which is the exact cross-account bleed the S.vehicles reset below guarded.
   vehicles=[];
+  scans=[];
   places=[];
   _teamGeo={};_teamGeoLoaded=false;_teamComp={};_teamCompLoaded=false;
   // Inbound-lead review queue is account-scoped in-memory state that lived OUTSIDE
@@ -5598,7 +5604,7 @@ function _writeLocalCache(){
   try{
     const _snap={_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,payments,income,
       expenses:expenses.map(({receipt_img,...r})=>r),
-      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,vehicles,places,checksState,
+      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,vehicles,places,scans,checksState,
       settings:S,cached_at:new Date().toISOString()};
     localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));
     // Delta sidecar: the server-updated_at cursor + known-cloud hashes, owner-scoped.
@@ -7246,6 +7252,7 @@ async function supaLoadFromCloud({silent=false}={}){
         if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
+          if(_cd.scans?.length)scans=_cd.scans;
           if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cloud load FAILED, fallback)');applySettings();_refillSettingsFormUnlessEditing();}

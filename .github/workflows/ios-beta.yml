@@ -54,6 +54,9 @@ jobs:
             /usr/libexec/PlistBuddy -c "Set :NSLocationWhenInUseUsageDescription 'TradeDesk logs your work drives and time on site for your business records.'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :NSLocationAlwaysAndWhenInUseUsageDescription string 'Choose Always so drives and job-site time keep logging while your phone is in your pocket. Tracking follows your business-hours and consent settings.'" "$PLIST" || \
             /usr/libexec/PlistBuddy -c "Set :NSLocationAlwaysAndWhenInUseUsageDescription 'Choose Always so drives and job-site time keep logging while your phone is in your pocket. Tracking follows your business-hours and consent settings.'" "$PLIST"
+          # TdScan (RoomPlan): ARKit uses the camera; missing this string crashes on scan start.
+          /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'TradeDesk uses the camera and LiDAR to scan rooms into floor plans for your estimates.'" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSCameraUsageDescription 'TradeDesk uses the camera and LiDAR to scan rooms into floor plans for your estimates.'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$PLIST" || true
           # Standard HTTPS only: answers TestFlight's export-compliance question

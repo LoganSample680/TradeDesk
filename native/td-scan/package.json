@@ -1,0 +1,13 @@
+{
+  "name": "td-scan",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TradeDesk room scanner. Thin RoomPlan wrapper: a native modal hosts Apple's RoomCaptureView with a minimal overlay (photo shutter, room label chip, done/finish). Everything it captures, per-room parametric geometry, photo files with camera poses, room labels, compass heading, returns to JS as JSON; every calculation, drawing, and business rule lives in the web app (CLAUDE.md 3.2).",
+  "main": "index.js",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "files": ["index.js", "ios/", "TdScan.podspec"]
+}

@@ -8,7 +8,8 @@
     "@capacitor/ios": "^7.0.0",
     "@capacitor-community/background-geolocation": "latest",
     "@capacitor-community/apple-sign-in": "latest",
-    "td-geo": "file:./td-geo"
+    "td-geo": "file:./td-geo",
+    "td-scan": "file:./td-scan"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.0.0"

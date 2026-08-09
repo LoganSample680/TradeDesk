@@ -1,6 +1,6 @@
 // ── Submit guard, prevents double-tap on any button ─────────────────────
 let _submitting=false,_allowPhoneDupe=false;
-let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],maintenance=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[],agreements=[],vehicles=[],places=[];
+let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],maintenance=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[],agreements=[],vehicles=[],places=[],scans=[];
 // Expose all data arrays and employee record on window so Playwright E2E tests can read/write them.
 // All are module-scoped `let` variables (not on window by default in non-module scripts).
 Object.defineProperty(window,'bids',{get:()=>bids,set:v=>{bids=v;},configurable:true});
@@ -293,6 +293,7 @@ function saveAll(){if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){s
   localStorage.setItem('zp3_agreements',JSON.stringify(agreements));
   localStorage.setItem('zp3_maint',JSON.stringify(maintenance));
   localStorage.setItem('zp3_vehicles',JSON.stringify(vehicles));
+  localStorage.setItem('zp3_scans',JSON.stringify(scans));
   localStorage.setItem('zp3_places',JSON.stringify(places));
   // Offline-pending: write synchronously so a force-quit can never outrun a timer.
   // Use the shared owner-stamped blob so this account's data can never be merged
@@ -328,6 +329,8 @@ function loadAll(){
     vehicles=lp('zp3_vehicles',[]);
     places=lp('zp3_places',[]);
     places.forEach((pl,i)=>{if(!pl.id)pl.id=_newId()+i;}); // td_places is keyed by id
+    scans=lp('zp3_scans',[]);
+    scans.forEach((sc,i)=>{if(!sc.id)sc.id=_newId()+i;}); // td_scans is keyed by id
 
     // Same contract as maintenance above: td_vehicles is keyed by id, so any
     // record that predates the table (or arrived from the legacy S.vehicles

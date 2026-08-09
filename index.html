@@ -1643,6 +1643,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="card" id="cd-opp-card" style="display:none"><div id="cd-opportunities"></div></div>
     <div class="card" id="cd-client-mets"></div>
     <div id="cd-notes-mount" style="margin-bottom:14px"></div>
+    <div id="cd-scans-mount" style="margin-bottom:14px"></div>
     <div id="cd-timeline-mount" style="margin-bottom:14px"></div>
     <div id="cd-risk-mount" style="margin-bottom:14px"></div>
   </div>
@@ -3036,10 +3037,14 @@ body.dark .cal-cell.other{background:var(--cream)}
               <input type="checkbox" id="set-accept-check" style="width:18px;height:18px;margin-top:1px;accent-color:var(--blue);flex-shrink:0">
               <div><div style="font-size:13px;font-weight:700">Accept check</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Client can choose to pay by check.</div></div>
             </label>
-            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none;padding:12px 0">
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none;padding:12px 0;border-bottom:1px solid var(--border)">
               <input type="checkbox" id="set-allow-pay-later" style="width:18px;height:18px;margin-top:1px;accent-color:var(--blue);flex-shrink:0">
               <div><div style="font-size:13px;font-weight:700">Allow pay later</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Client signs now, no money due at signing, settles up any way before the job's done.</div></div>
             </label>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0">
+              <div><div style="font-size:13px;font-weight:700">Floor plan price</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Default when selling a scanned floor plan standalone. Adjustable per scan.</div></div>
+              <div style="display:flex;align-items:center;gap:4px;flex-shrink:0"><span style="font-size:13px;color:var(--text2)">$</span><input type="number" id="set-scan-price" min="0" step="1" style="width:72px;padding:9px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit"></div>
+            </div>
           </div>
         </div>
         <button class="btn btn-p" onclick="saveSettings()" style="width:100%;margin-top:8px;padding:13px">Save</button>
@@ -3687,6 +3692,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/mileage.js"></script>
 <script src="js/geo-track.js"></script>
 <script src="js/places.js"></script>
+<script src="js/scan.js"></script>
 <script src="js/legal.js"></script>
 <script src="js/proposals.js"></script>
 <script src="js/sales-tax.js"></script>

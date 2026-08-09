@@ -17,3 +17,4 @@ _shot_*.png
 # ignore above predates it and silently dropped it from the first workflow PR.
 !native/package.json
 !native/td-geo/package.json
+!native/td-scan/package.json

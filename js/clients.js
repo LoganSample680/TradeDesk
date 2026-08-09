@@ -1458,6 +1458,7 @@ function renderClientDetail(){
   renderCDTimeline();
   renderClientNotes();
   renderCDRisk();
+  if(typeof _renderCDScans==='function')_renderCDScans();
   renderCDEstimatesUpcoming();
   renderCDOpportunities();
   renderCDAddresses();

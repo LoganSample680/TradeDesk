@@ -1,0 +1,465 @@
+// ── TradeDesk Scanner: scan-to-estimate ──────────────────────────────────────
+// The web half of TdScan (native/td-scan). The native plugin returns raw
+// RoomPlan geometry (walls/doors/windows as JSON, photo files with camera
+// poses, room labels, compass heading); EVERYTHING else lives here: parsing,
+// the 2D floor plan, wall/floor footage, the trade lenses (paint takeoff, NEC
+// outlet layout, HVAC sizing inputs), the estimate handoff, and the sellable
+// floor-plan product (priced, hub-gated behind signing + paying in full).
+//
+// Design notes (research 2026-08-09): no contractor CRM has built-in interior
+// LiDAR scanning; painters need WALL footage (every generalist tool leads with
+// floor area); electricians bid by device count; NEC numbers below are the
+// verified 210.52 rules with a "verify with your local AHJ" disclaimer because
+// states adopt different editions. RoomPlan units are METERS, y-up; the 2D
+// plan is the x/z plane.
+
+const _SCAN_M2FT=3.280839895;
+const _SCAN_LABELS=['Room','Kitchen','Living room','Dining room','Bedroom','Bathroom','Office','Hallway','Garage','Basement','Laundry','Foyer','Closet'];
+
+// ── Parsing: CapturedRoom JSON → compact room geometry ───────────────────────
+// simd types encode differently across OS versions (flat [16] or nested [4][4]
+// for a matrix, [3] or {x,y,z} for a vector), so every read is defensive.
+function _scanVec(v){
+  if(!v)return null;
+  if(Array.isArray(v))return {x:+v[0]||0,y:+v[1]||0,z:+v[2]||0};
+  if(typeof v==='object')return {x:+v.x||0,y:+v.y||0,z:+v.z||0};
+  return null;
+}
+function _scanMat(m){
+  // Returns {col0:{x,y,z}, col3:{x,y,z}} (direction + translation), from a
+  // flat 16-array (column-major) or nested [[..4],[..4],[..4],[..4]].
+  if(!m)return null;
+  let f=null;
+  if(Array.isArray(m)&&m.length===16)f=m.map(Number);
+  else if(Array.isArray(m)&&m.length===4&&Array.isArray(m[0])){f=[];m.forEach(c=>c.forEach(x=>f.push(+x)));}
+  else if(m.columns){f=[];[0,1,2,3].forEach(i=>{const c=_scanVec(m.columns[i]);f.push(c.x,c.y,c.z,0);});}
+  if(!f||f.length<16)return null;
+  return {col0:{x:f[0],y:f[1],z:f[2]},col3:{x:f[12],y:f[13],z:f[14]}};
+}
+function _scanDims(d){
+  const v=_scanVec(d);return v?{w:Math.abs(v.x),h:Math.abs(v.y)}:{w:0,h:0};
+}
+// One wall surface → {ax,az,bx,bz,len,h,id} plus openings resolved onto it.
+function _scanParseRoom(rawJson,label){
+  let cr=null;
+  try{cr=typeof rawJson==='string'?JSON.parse(rawJson):rawJson;}catch(_e){return null;}
+  if(!cr)return null;
+  const walls=[],doors=[],windows=[];
+  const wallById={};
+  (cr.walls||[]).forEach(w=>{
+    const m=_scanMat(w.transform),d=_scanDims(w.dimensions);
+    if(!m||!d.w)return;
+    const hx=m.col0.x*d.w/2,hz=m.col0.z*d.w/2;
+    const wall={id:w.identifier||('w'+walls.length),
+      ax:m.col3.x-hx,az:m.col3.z-hz,bx:m.col3.x+hx,bz:m.col3.z+hz,
+      len:d.w,h:d.h||2.44,doors:[],windows:[]};
+    walls.push(wall);wallById[wall.id]=wall;
+  });
+  const placeOpening=(o,list,isDoor)=>{
+    const m=_scanMat(o.transform),d=_scanDims(o.dimensions);
+    if(!m||!d.w)return;
+    const rec={w:d.w,h:d.h||2,area:d.w*(d.h||2)};
+    // Offset along the parent wall from its A endpoint, so the electrical
+    // engine knows where wall space breaks.
+    const host=o.parentIdentifier&&wallById[o.parentIdentifier];
+    if(host){
+      const dx=m.col3.x-host.ax,dz=m.col3.z-host.az;
+      const wx=host.bx-host.ax,wz=host.bz-host.az;
+      const t=(dx*wx+dz*wz)/(wx*wx+wz*wz||1);
+      rec.off=Math.max(0,Math.min(1,t))*host.len;
+      (isDoor?host.doors:host.windows).push(rec);
+    }
+    list.push(rec);
+  };
+  (cr.doors||[]).forEach(o=>placeOpening(o,doors,true));
+  (cr.openings||[]).forEach(o=>placeOpening(o,doors,true)); // an archway breaks wall space like a door
+  (cr.windows||[]).forEach(o=>placeOpening(o,windows,false));
+  // Floor polygon: floors[0].polygonCorners (iOS 17) or the wall endpoints hull.
+  let poly=null;
+  const fl=(cr.floors||[])[0];
+  if(fl&&Array.isArray(fl.polygonCorners)&&fl.polygonCorners.length>=3){
+    const fm=_scanMat(fl.transform);
+    poly=fl.polygonCorners.map(p=>{const v=_scanVec(p);return [v.x+(fm?fm.col3.x:0),v.z+(fm?fm.col3.z:0)];});
+  }
+  if(!poly){
+    poly=[];walls.forEach(w=>{poly.push([w.ax,w.az]);poly.push([w.bx,w.bz]);});
+    poly=_scanHull(poly);
+  }
+  const floorM2=Math.abs(_scanShoelace(poly));
+  const wallM2=walls.reduce((t,w)=>t+w.len*w.h,0);
+  const openM2=doors.reduce((t,o)=>t+o.area,0)+windows.reduce((t,o)=>t+o.area,0);
+  const perimM=walls.reduce((t,w)=>t+w.len,0);
+  const hM=walls.length?Math.max(...walls.map(w=>w.h)):2.44;
+  return {label:label||'Room',walls,poly,floorM2,wallM2,openM2,perimM,hM,
+          doorN:doors.length,winN:windows.length,winM2:windows.reduce((t,o)=>t+o.area,0)};
+}
+function _scanShoelace(poly){
+  let a=0;for(let i=0;i<poly.length;i++){const[x1,z1]=poly[i],[x2,z2]=poly[(i+1)%poly.length];a+=x1*z2-x2*z1;}
+  return a/2;
+}
+function _scanHull(pts){
+  // Monotone chain; enough to bound wall endpoints into a floor outline when
+  // polygonCorners is absent (iOS 16 rooms).
+  if(pts.length<3)return pts;
+  const p=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+  const cross=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+  const lo=[];for(const q of p){while(lo.length>=2&&cross(lo[lo.length-2],lo[lo.length-1],q)<=0)lo.pop();lo.push(q);}
+  const hi=[];for(let i=p.length-1;i>=0;i--){const q=p[i];while(hi.length>=2&&cross(hi[hi.length-2],hi[hi.length-1],q)<=0)hi.pop();hi.push(q);}
+  lo.pop();hi.pop();return lo.concat(hi);
+}
+const _scanFt=m=>m*_SCAN_M2FT;
+const _scanSqFt=m2=>m2*_SCAN_M2FT*_SCAN_M2FT;
+function _scanFtIn(m){
+  const ft=_scanFt(m);const f=Math.floor(ft);const i=Math.round((ft-f)*12);
+  return i===12?(f+1)+"'0\"":f+"'"+i+'"';
+}
+
+// ── Store ────────────────────────────────────────────────────────────────────
+// td_scans rides the sync fabric like every other account record (§7.3): one
+// _TD_TABLES entry in cloud.js, saveAll persists, sweep/cache/reset for free.
+function getScans(){return (typeof scans!=='undefined'&&scans)||[];}
+function saveScan(sc){
+  if(!sc)return null;
+  if(!sc.id)sc.id=(typeof _newId==='function'?_newId():String(Date.now()));
+  const i=getScans().findIndex(x=>String(x.id)===String(sc.id));
+  if(i>-1)scans[i]=sc;else scans.push(sc);
+  if(typeof saveAll==='function')saveAll();
+  return sc;
+}
+function deleteScan(id){
+  const i=getScans().findIndex(x=>String(x.id)===String(id));
+  if(i>-1){scans.splice(i,1);if(typeof saveAll==='function')saveAll();}
+}
+// The hub deliverable is unlocked by (a) the standalone floor-plan purchase, or
+// (b) the booked job's bill hitting zero balance, signed AND 100% paid, not
+// the deposit (owner call 2026-08-09). `purchasedAt` records path (a); path
+// (b) derives live from the bid model, where signing and payments actually
+// live: a linked bid if the scan has one, else any of the client's signed
+// Closed Won bids with real money on it and nothing left owed.
+function scanUnlocked(sc){
+  if(!sc)return false;
+  if(sc.purchasedAt)return true;
+  if(typeof bids==='undefined'||typeof getBidBalance!=='function')return false;
+  try{
+    const paidInFull=b=>b&&b.signedAt&&(b.amount||0)>0&&getBidBalance(b)<=0;
+    if(sc.bidId){
+      const b=bids.find(x=>String(x.id)===String(sc.bidId));
+      return paidInFull(b);
+    }
+    if(sc.clientId){
+      return bids.some(b=>String(b.client_id)===String(sc.clientId)&&b.status==='Closed Won'&&paidInFull(b));
+    }
+  }catch(_e){}
+  return false;
+}
+
+// ── Trade lenses ─────────────────────────────────────────────────────────────
+// The scan opens in the lens matching the business trade (owner directive
+// 2026-08-09); every other lens stays one toggle away.
+function _scanDefaultLens(){
+  const t=String((typeof S!=='undefined'&&(S.trade||S.industry))||'').toLowerCase();
+  if(/paint/.test(t))return 'paint';
+  if(/electric/.test(t))return 'electrical';
+  if(/hvac|heat|cool|air/.test(t))return 'hvac';
+  return 'plan';
+}
+// Paint numbers per room. subtractOpenings is a real choice: plenty of
+// painters deliberately DON'T subtract because cutting in costs more than the
+// skipped area saves (PaintTalk consensus).
+function _scanPaintNumbers(room,subtractOpenings){
+  const wall=room.wallM2-(subtractOpenings?room.openM2:0);
+  return {
+    wallSqFt:Math.round(_scanSqFt(Math.max(0,wall))),
+    ceilSqFt:Math.round(_scanSqFt(room.floorM2)),
+    floorSqFt:Math.round(_scanSqFt(room.floorM2)),
+    wallFt:Math.round(_scanFt(room.perimM)),
+    ceilHt:_scanFtIn(room.hM),
+    doors:room.doorN,windows:room.winN
+  };
+}
+// ── Electrical lens: NEC 210.52 receptacle layout ────────────────────────────
+// Verified rules (research 2026-08-09, NEC 2023): no point along a wall's
+// floor line more than 6 ft from a receptacle (max 12 ft between), wall
+// spaces 2 ft or wider count, doorways break wall space. Corner wrap is NOT
+// merged here, each wall is planned on its own, which can only ever place an
+// EXTRA outlet near a corner, never miss one: conservative by construction.
+// Kitchens add the counter rule (24 in / max 48 in apart) as a note, counters
+// aren't in the scan geometry.
+const _SCAN_NEC={maxGapFt:12,fromBreakFt:6,minWallFt:2,
+  outletsInTypical:12,switchInTypical:48,switchInMaxCode:79,
+  gfciRooms:['kitchen','bathroom','garage','laundry','basement','outdoor']};
+function _scanOutletPlan(room){
+  const out=[];
+  room.walls.forEach(w=>{
+    // Split the wall into wall spaces at door edges.
+    const breaks=[[0,w.len]];
+    (w.doors||[]).slice().sort((a,b)=>(a.off||0)-(b.off||0)).forEach(d=>{
+      const seg=breaks.pop();
+      const dA=Math.max(seg[0],(d.off||0)-d.w/2),dB=Math.min(seg[1],(d.off||0)+d.w/2);
+      if(dA>seg[0])breaks.push([seg[0],dA]);
+      if(dB<seg[1])breaks.push([dB,seg[1]]);
+      else if(dA<=seg[0])breaks.push(seg); // door outside segment, keep as-is
+    });
+    breaks.forEach(([a,b])=>{
+      const lenFt=_scanFt(b-a);
+      if(lenFt<_SCAN_NEC.minWallFt)return;           // under 2 ft, no requirement
+      // First within 6 ft of each break, then every 12 ft: N = ceil(len/12),
+      // spread evenly so no point sits more than 6 ft out.
+      const n=Math.max(1,Math.ceil(lenFt/_SCAN_NEC.maxGapFt));
+      for(let i=0;i<n;i++){
+        const t=(a+(b-a)*((i+0.5)/n));
+        const ux=(w.bx-w.ax)/w.len,uz=(w.bz-w.az)/w.len;
+        out.push({x:w.ax+ux*t,z:w.az+uz*t,wallId:w.id});
+      }
+    });
+  });
+  return out;
+}
+function _scanElectricalNumbers(room){
+  const outlets=_scanOutletPlan(room);
+  const label=String(room.label||'').toLowerCase();
+  return {
+    outlets:outlets.length,
+    marks:outlets,
+    switches:1+(room.doorN>1?room.doorN-1:0),   // one per entry as the working default
+    gfci:_SCAN_NEC.gfciRooms.some(r=>label.includes(r)),
+    kitchenCounterNote:/kitchen/.test(label)
+  };
+}
+// ── HVAC lens: sizing inputs + infiltration from ACH50 ───────────────────────
+// The scan supplies the geometry half of a Manual J (volumes, wall/window
+// areas); infiltration uses the blower door number directly (MJ8 prefers a
+// measured ACH50 over its tight/average/loose defaults). Sensible
+// 1.1×CFM×ΔT, latent 0.68×CFM×Δgrains. This is a SIZING ESTIMATE, not a
+// permit document: permit-grade Manual J reports typically require
+// ACCA-approved software, and the UI says so.
+const _SCAN_ACH50_PRESETS={leaky:10,average:7,tight:3,'code-2021':3};
+function _scanHvacNumbers(room,opts){
+  const o=opts||{};
+  const ach50=+o.ach50||_SCAN_ACH50_PRESETS[o.preset||'average']||7;
+  const nFactor=+o.nFactor||18;                 // LBL ballpark, single-story sheltered
+  const dT=+o.deltaT||45;                        // winter design ΔT default
+  const dGr=+o.deltaGrains||30;
+  const volFt3=_scanSqFt(room.floorM2)*_scanFt(room.hM);
+  const achNat=ach50/nFactor;
+  const cfm=achNat*volFt3/60;
+  return {
+    volFt3:Math.round(volFt3),
+    winSqFt:Math.round(_scanSqFt(room.winM2)),
+    achNat:Math.round(achNat*100)/100,
+    infiltSensBtuh:Math.round(1.1*cfm*dT),
+    infiltLatBtuh:Math.round(0.68*cfm*dGr)
+  };
+}
+
+// ── Floor plan SVG ───────────────────────────────────────────────────────────
+function _scanPlanSvg(sc,opts){
+  const o=opts||{};
+  const lens=o.lens||'plan';
+  const rooms=(sc.rooms||[]);
+  if(!rooms.length)return '<svg viewBox="0 0 100 40"><text x="50" y="22" text-anchor="middle" font-size="8" fill="var(--text3)">No rooms captured</text></svg>';
+  // Bounds across all rooms.
+  let minX=1e9,minZ=1e9,maxX=-1e9,maxZ=-1e9;
+  rooms.forEach(r=>(r.poly||[]).forEach(([x,z])=>{minX=Math.min(minX,x);minZ=Math.min(minZ,z);maxX=Math.max(maxX,x);maxZ=Math.max(maxZ,z);}));
+  if(minX>maxX)return '<svg viewBox="0 0 100 40"></svg>';
+  const pad=0.6,W=maxX-minX+pad*2,H=maxZ-minZ+pad*2;
+  const px=x=>((x-minX+pad)/W*100).toFixed(2);
+  const pz=z=>((z-minZ+pad)/H*100*(H/W)).toFixed(2);
+  const vh=(100*(H/W)).toFixed(2);
+  let s='<svg viewBox="0 0 100 '+vh+'" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg">';
+  rooms.forEach((r,ri)=>{
+    const pts=(r.poly||[]).map(([x,z])=>px(x)+','+pz(z)).join(' ');
+    s+='<polygon points="'+pts+'" fill="var(--bg2)" stroke="var(--text2)" stroke-width="0.6" stroke-linejoin="round"/>';
+    // Wall dimension labels on the two longest walls, clutter kills small plans.
+    (r.walls||[]).slice().sort((a,b)=>b.len-a.len).slice(0,2).forEach(w=>{
+      s+='<text x="'+px((w.ax+w.bx)/2)+'" y="'+pz((w.az+w.bz)/2)+'" font-size="2.6" fill="var(--text3)" text-anchor="middle">'+_scanFtIn(w.len)+'</text>';
+    });
+    // Room label + area.
+    const cx=(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
+    const cz=(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
+    s+='<text x="'+px(cx)+'" y="'+(+pz(cz)-1.6)+'" font-size="3.2" font-weight="700" fill="var(--text)" text-anchor="middle">'+escHtml(r.label||'Room')+'</text>';
+    s+='<text x="'+px(cx)+'" y="'+(+pz(cz)+2.2)+'" font-size="2.8" fill="var(--text2)" text-anchor="middle">'+Math.round(_scanSqFt(r.floorM2))+' sq ft</text>';
+    if(lens==='electrical'){
+      _scanOutletPlan(r).forEach(m=>{
+        s+='<circle cx="'+px(m.x)+'" cy="'+pz(m.z)+'" r="1.1" fill="#D97706" stroke="#fff" stroke-width="0.3"/>';
+      });
+    }
+  });
+  s+='</svg>';
+  return s;
+}
+
+// ── Capture flow ─────────────────────────────────────────────────────────────
+function _scanPlugin(){
+  try{
+    const cap=window.Capacitor;
+    if(!cap||typeof cap.isNativePlatform!=='function'||!cap.isNativePlatform())return null;
+    if(typeof cap.registerPlugin==='function')return cap.registerPlugin('TdScan');
+    return (cap.Plugins&&cap.Plugins.TdScan)||null;
+  }catch(_e){return null;}
+}
+async function scanIsSupported(){
+  const P=_scanPlugin();
+  if(!P||typeof P.isSupported!=='function')return false;
+  try{const r=await P.isSupported();return !!(r&&r.supported);}catch(_e){return false;}
+}
+async function startRoomScan(ctx){
+  const P=_scanPlugin();
+  if(!P){if(typeof showToast==='function')showToast('Scanning needs the TradeDesk iPhone app','📐');return null;}
+  let res=null;
+  try{res=await P.startScan({labels:_SCAN_LABELS});}catch(_e){return null;}
+  if(!res||!Array.isArray(res.rooms)||!res.rooms.length){
+    if(typeof showToast==='function')showToast('Scan cancelled','📐');
+    return null;
+  }
+  const rooms=[];
+  res.rooms.forEach((raw,i)=>{
+    const r=_scanParseRoom(raw,(res.labels||[])[i]);
+    if(r)rooms.push(r);
+  });
+  if(!rooms.length){if(typeof showToast==='function')showToast('Could not read the scan geometry','📐');return null;}
+  const sc=saveScan({
+    id:(typeof _newId==='function'?_newId():String(Date.now())),
+    clientId:(ctx&&ctx.clientId)||null,jobId:(ctx&&ctx.jobId)||null,
+    name:'Scan '+new Date().toLocaleDateString(),
+    createdAt:new Date().toISOString(),
+    headingDeg:(typeof res.headingDeg==='number'?res.headingDeg:null),
+    rooms,
+    // Photos stay device-local paths in v1 (the client deliverable excludes
+    // them by design); cam pose rides along for the pinned walkthrough.
+    photos:(res.photos||[]).map(p=>({path:p.path,cam:p.cam,room:p.room})),
+    price:(typeof S!=='undefined'&&S.scanDefaultPrice)||null,
+    purchasedAt:null
+  });
+  if(typeof showToast==='function')showToast('Floor plan saved: '+rooms.length+' room'+(rooms.length>1?'s':''),'📐');
+  return sc;
+}
+
+// ── Viewer ───────────────────────────────────────────────────────────────────
+let _scanViewLens=null;
+function openScanViewer(id){
+  const sc=getScans().find(x=>String(x.id)===String(id));
+  if(!sc)return;
+  _scanViewLens=_scanViewLens||_scanDefaultLens();
+  const lens=_scanViewLens;
+  document.getElementById('_scan-view-ov')?.remove();
+  const totalSqFt=Math.round(_scanSqFt((sc.rooms||[]).reduce((t,r)=>t+r.floorM2,0)));
+  const tabs=[['plan','Plan'],['paint','Paint'],['electrical','Electrical'],['hvac','HVAC']];
+  let body='';
+  if(lens==='paint'){
+    const sub=!!sc._paintSubtract;
+    body='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
+      '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Paint takeoff</div>'+
+      '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:5px"><input type="checkbox" '+(sub?'checked':'')+' onchange="_scanToggleSubtract(\''+sc.id+'\',this.checked)"> subtract openings</label></div>'+
+      (sc.rooms||[]).map(r=>{const n=_scanPaintNumbers(r,sub);
+        return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)">'+
+          '<span style="font-weight:700">'+escHtml(r.label)+'</span>'+
+          '<span style="color:var(--text2)">'+n.wallSqFt+' wall · '+n.ceilSqFt+' ceil sq ft · '+n.ceilHt+'</span></div>';}).join('')+
+      '<button class="btn btn-p" style="width:100%;margin-top:12px;padding:12px" onclick="_scanToEstimate(\''+sc.id+'\')">Send rooms to estimate</button>';
+  }else if(lens==='electrical'){
+    body='<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Receptacle layout · NEC 210.52</div>'+
+      (sc.rooms||[]).map(r=>{const n=_scanElectricalNumbers(r);
+        return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)">'+
+          '<span style="font-weight:700">'+escHtml(r.label)+(n.gfci?' <span style="color:#D97706;font-weight:800">GFCI</span>':'')+'</span>'+
+          '<span style="color:var(--text2)">'+n.outlets+' outlets · '+n.switches+' switch'+(n.switches>1?'es':'')+(n.kitchenCounterNote?' · counter rule applies':'')+'</span></div>';}).join('')+
+      '<div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.5">Markers: no point over 6 ft from a receptacle (12 ft max apart), walls 2 ft+ count, doorways break the run. Heights: outlets 12" AFF typical, switches 48" typical (code max 6\'7"). Kitchen counters: 24" rule, planned separately. <strong>Estimate only, verify edition and amendments with your local AHJ.</strong></div>';
+  }else if(lens==='hvac'){
+    body='<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Load calc inputs</div>'+
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px">ACH50 <input id="_scan-ach" type="number" step="0.1" value="'+(sc._ach50||7)+'" style="width:64px;padding:6px;border:1px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--text)" onchange="_scanSetAch(\''+sc.id+'\',this.value)"> <span style="color:var(--text3)">from a blower door test; presets: leaky 10 · average 7 · tight 3</span></div>'+
+      (sc.rooms||[]).map(r=>{const n=_scanHvacNumbers(r,{ach50:sc._ach50});
+        return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)">'+
+          '<span style="font-weight:700">'+escHtml(r.label)+'</span>'+
+          '<span style="color:var(--text2)">'+n.volFt3+' ft³ · '+n.winSqFt+' sq ft glass · infil '+n.infiltSensBtuh+' BTU/h</span></div>';}).join('')+
+      '<div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.5">Sizing estimate from scanned geometry + measured infiltration. <strong>Not for permit submission</strong>, permit-grade Manual J reports typically require ACCA-approved software. A blower door number beats any preset, and new-construction code already requires one (3 to 5 ACH50 by climate zone).</div>';
+  }else{
+    body='<div style="font-size:12px;color:var(--text2)">'+(sc.rooms||[]).length+' rooms · '+totalSqFt+' sq ft total'+((sc.photos||[]).length?' · '+(sc.photos||[]).length+' photos':'')+'</div>'+
+      '<div style="display:flex;gap:8px;margin-top:12px">'+
+        '<button class="btn btn-p" style="flex:1;padding:12px" onclick="_scanSellSheet(\''+sc.id+'\')">'+(sc.purchasedAt?'Plan purchased ✓':'Sell floor plan')+'</button>'+
+        '<button class="btn" style="padding:12px" onclick="deleteScan(\''+sc.id+'\');document.getElementById(\'_scan-view-ov\').remove();typeof _renderCDScans===\'function\'&&_renderCDScans()">Delete</button>'+
+      '</div>';
+  }
+  const ov=document.createElement('div');ov.id='_scan-view-ov';ov.className='zmodal-overlay';
+  const m=document.createElement('div');m.className='zmodal';m.style.maxWidth='560px';
+  m.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'+
+      '<div style="font-size:16px;font-weight:800">'+escHtml(sc.name||'Floor plan')+'</div>'+
+      '<button onclick="document.getElementById(\'_scan-view-ov\').remove()" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--text3)">✕</button></div>'+
+    '<div style="display:flex;gap:6px;margin-bottom:10px">'+
+      tabs.map(([k,t])=>'<button onclick="_scanSetLens(\''+sc.id+'\',\''+k+'\')" class="btn btn-sm" style="flex:1;padding:8px;font-size:12px;'+(lens===k?'background:var(--blue);color:#fff;border-color:var(--blue)':'')+'">'+t+'</button>').join('')+
+    '</div>'+
+    '<div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px;background:var(--bg2)">'+_scanPlanSvg(sc,{lens})+'</div>'+
+    body;
+  ov.appendChild(m);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function _scanSetLens(id,lens){_scanViewLens=lens;openScanViewer(id);}
+function _scanToggleSubtract(id,on){
+  const sc=getScans().find(x=>String(x.id)===String(id));
+  if(sc){sc._paintSubtract=!!on;saveScan(sc);openScanViewer(id);}
+}
+function _scanSetAch(id,v){
+  const sc=getScans().find(x=>String(x.id)===String(id));
+  if(sc){sc._ach50=Math.max(0.5,+v||7);saveScan(sc);openScanViewer(id);}
+}
+// Paint estimate handoff: rooms land in the paint flow as name + wall sq ft.
+function _scanToEstimate(id){
+  const sc=getScans().find(x=>String(x.id)===String(id));
+  if(!sc)return;
+  const sub=!!sc._paintSubtract;
+  window._scanEstimateSeed={
+    scanId:sc.id,clientId:sc.clientId,
+    rooms:(sc.rooms||[]).map(r=>{const n=_scanPaintNumbers(r,sub);
+      return {name:r.label,wallSqFt:n.wallSqFt,ceilSqFt:n.ceilSqFt,ceilHt:n.ceilHt,doors:n.doors,windows:n.windows};})
+  };
+  document.getElementById('_scan-view-ov')?.remove();
+  if(typeof showToast==='function')showToast('Rooms ready, open a paint estimate to use them','📐');
+  if(typeof goPg==='function')goPg('pg-est');
+}
+// The sale: default price from Settings, per-scan override (owner call).
+function _scanSellSheet(id){
+  const sc=getScans().find(x=>String(x.id)===String(id));
+  if(!sc)return;
+  const cur=sc.price!=null?sc.price:((typeof S!=='undefined'&&S.scanDefaultPrice)||99);
+  const v=prompt('Floor plan price for this client ($):',String(cur));
+  if(v==null)return;
+  sc.price=Math.max(0,Math.round(+v||0));
+  saveScan(sc);
+  if(typeof showToast==='function')showToast('Priced at $'+sc.price+'. It shows locked in their hub until signed and paid.','📐');
+  openScanViewer(id);
+}
+
+// ── Client detail section ────────────────────────────────────────────────────
+function _renderCDScans(){
+  const el=document.getElementById('cd-scans-mount');
+  if(!el)return;
+  const cid=(typeof currentClientId!=='undefined')?currentClientId:null;
+  if(cid==null){el.innerHTML='';return;}
+  const list=getScans().filter(s=>String(s.clientId)===String(cid));
+  const shell=!!_scanPlugin();
+  el.innerHTML='<div class="card" style="padding:14px 16px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:'+(list.length?'8px':'0')+'">'+
+      '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Floor plans</div>'+
+      (shell
+        ?'<button class="btn btn-sm btn-p" style="padding:7px 12px;font-size:12px" onclick="_scanStartForClient()">'+ (typeof svgIcon==='function'?svgIcon('📐',{size:13}):'')+' Scan rooms</button>'
+        :'<span style="font-size:10px;color:var(--text3)">Scan with the iPhone app (Pro/LiDAR)</span>')+
+    '</div>'+
+    list.map(s=>{
+      const sqft=Math.round(_scanSqFt((s.rooms||[]).reduce((t,r)=>t+r.floorM2,0)));
+      const unlocked=scanUnlocked(s);
+      return '<div onclick="openScanViewer(\''+s.id+'\')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--border);cursor:pointer">'+
+        '<div><div style="font-size:13px;font-weight:700">'+escHtml(s.name||'Floor plan')+'</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+(s.rooms||[]).length+' rooms · '+sqft+' sq ft'+(s.price!=null?' · $'+s.price:'')+'</div></div>'+
+        '<span class="bdg '+(unlocked?'bdg-active':'bdg-upcoming')+'">'+(unlocked?'Unlocked':'Locked')+'</span></div>';
+    }).join('')+
+  '</div>';
+}
+async function _scanStartForClient(){
+  const cid=(typeof currentClientId!=='undefined')?currentClientId:null;
+  const supported=await scanIsSupported();
+  if(!supported){
+    if(typeof showToast==='function')showToast('Scanning needs an iPhone Pro (LiDAR) on iOS 17+','📐');
+    return;
+  }
+  const sc=await startRoomScan({clientId:cid});
+  if(sc){_renderCDScans();openScanViewer(sc.id);}
+}
