@@ -706,25 +706,48 @@ async function _geoOnPing(pos){
   if(cur){_geoLastFenceAt=nowIso;_geoLastFenceLoc=curLoc;}
   // ── TdGeo duty cycle ──────────────────────────────────────────────────────
   // Two parked shapes, both head toward GPS-off (no-op outside the shell):
-  // settled inside a FENCE and not driving, or settled at an anonymous STOP
-  // outside every fence (lunch, a supply run, a lead's driveway, the case
-  // the owner actually hit with the arrow still on after 4 minutes). The
-  // countdown timer alone is NOT trusted: WKWebView suspends JS timers with
-  // the screen locked, so any ping that shows the dwell has ALREADY passed
+  // settled inside a FENCE and not driving, or below driving speed outside
+  // every fence: an anonymous stop, or ON FOOT. Judged on speed rather than
+  // displacement, because a walker resets the stop anchor forever and GPS
+  // never shut off (owner report 2026-08-09: "I walk everywhere with my
+  // phone"). The countdown timer alone is NOT trusted: WKWebView suspends JS
+  // timers with the screen locked, so any ping whose dwell has ALREADY passed
   // the threshold parks right now; the timer covers the screen-on case.
-  // Driving (or anything else) kills the countdown and the dwell clock.
+  // Driving kills the countdown and both dwell clocks.
   {
+    // Quiet clock upkeep: device-reported speed when present, distance over
+    // time between two decent fixes when not. Only driving speed clears it.
+    // Bad-accuracy fixes can't clear it either: an indoor phone bouncing
+    // hundreds of meters between cell fixes is exactly the case that must
+    // still park. Failing toward GPS-off is safe, a wrong park self-heals
+    // within a couple hundred meters of real driving via the exit region.
+    let _mps=(typeof pos.coords.speed==='number'&&pos.coords.speed>=0)?pos.coords.speed:null;
+    if(_mps==null&&_geoParkPrevFix&&acc<=_GEO_GAP_EXIT_MAX_ACC_M&&_geoParkPrevFix.acc<=_GEO_GAP_EXIT_MAX_ACC_M){
+      const _dtS=(nowMs-_geoParkPrevFix.atMs)/1000;
+      if(_dtS>=5)_mps=(_geoDistFt(here,_geoParkPrevFix)*0.3048)/_dtS;
+    }
+    if(_mps!=null&&_mps>=_GEO_DRIVEBY_SPEED_MPS)_geoQuietSinceMs=null;
+    else if(_geoQuietSinceMs==null)_geoQuietSinceMs=nowMs;
+    _geoParkPrevFix={lat:here.lat,lng:here.lng,atMs:nowMs,acc:acc};
     let _parkSpot=null,_parkDwellStart=null;
     if(cur&&!_geoDriveStartedAt){
       if(!_geoFenceEnteredAtMs)_geoFenceEnteredAtMs=nowMs;
       _parkSpot=_geoLastFenceLoc;_parkDwellStart=_geoFenceEnteredAtMs;
-    }else if(!cur&&_geoStopAnchor){
-      // The stop anchor's own birth time is the dwell clock: it resets itself
-      // whenever they move beyond the stop radius, so no separate bookkeeping.
+    }else if(!cur&&_geoQuietSinceMs!=null){
+      // Dwell = the EARLIER of "position settled here" (the stop anchor's
+      // birth) and "dropped below driving speed" (the quiet clock). A
+      // stationary truck parks on the anchor exactly as before; a walker,
+      // whose anchor keeps re-birthing, parks on the quiet clock.
       _geoFenceEnteredAtMs=null;
-      _parkSpot={lat:_geoStopAnchor.lat,lng:_geoStopAnchor.lng,name:'stop'};
-      _parkDwellStart=Date.parse(_geoStopAnchor.at)||null;
+      _parkSpot=_geoStopAnchor?{lat:_geoStopAnchor.lat,lng:_geoStopAnchor.lng,name:'stop'}
+                              :{lat:here.lat,lng:here.lng,name:'stop'};
+      const _aAt=_geoStopAnchor?(Date.parse(_geoStopAnchor.at)||Infinity):Infinity;
+      const _qAt=_geoQuietSinceMs!=null?_geoQuietSinceMs:Infinity;
+      _parkDwellStart=isFinite(Math.min(_aAt,_qAt))?Math.min(_aAt,_qAt):null;
     }else{
+      // Driving (quiet clock cleared), or inside a fence with a drive still
+      // open. Either way nothing is parked, so nothing may count down: the
+      // old code left the timer armed across a whole screen-on drive.
       _geoFenceEnteredAtMs=null;
     }
     if(_parkSpot&&_parkDwellStart){
@@ -1484,6 +1507,15 @@ let _geoParkTimer=null;         // countdown from fence entry to GPS-off
 let _geoParkModeOn=false;       // TdGeo regions armed, continuous watcher removed
 let _geoFenceEnteredAtMs=null;  // when the CURRENT fence was entered (dwell clock)
 const _GEO_PARK_AFTER_MS=4*60*1000;  // parked this long inside a fence => GPS off
+// "Parked" means NOT DRIVING, not "not moving". A phone in the pocket of
+// somebody WALKING drifts past _GEO_STOP_FT every minute or two, so the stop
+// anchor re-births forever and its dwell never reached four minutes: GPS ran
+// all day on foot (owner report 2026-08-09: "I walk everywhere with my
+// phone"). This clock marks when driving-speed evidence was last seen;
+// walking pace and jitter hold it, and four quiet minutes park the GPS
+// wherever they happen to be standing.
+let _geoQuietSinceMs=null;   // ms when "below driving speed" began, null while driving
+let _geoParkPrevFix=null;    // {lat,lng,atMs,acc} prior fix, derives speed when the device reports none
 // Owner-readable diagnostics (owner report 2026-08-09: "30 minutes and still
 // got that blue arrow", with zero visibility into why). Every park-mode
 // transition and failure is journaled here, persisted, and readable on-device
@@ -1529,7 +1561,12 @@ function _geoEnterParkMode(spot){
   // The region is the fence plus slack: region monitoring is coarser than GPS
   // (cell/wifi assisted), and an exit that fires a little late is fine, the
   // re-armed watcher's first fix re-runs the fence machine with real truth.
-  const radiusM=_geoFenceFt()*0.3048+60;
+  // An anonymous stop/foot park gets a wider region (250m floor): somebody
+  // parked on foot keeps strolling, and a lap around the yard or the block
+  // must not ping-pong the GPS awake every couple of minutes.
+  const radiusM=_at.name==='stop'
+    ?Math.max(_geoFenceFt()*0.3048+60,250)
+    :_geoFenceFt()*0.3048+60;
   _geoParkNote('park-try',_at.name||'stop');
   Promise.resolve(Td.startParked({regions:[{id:'fence',lat:_at.lat,lng:_at.lng,radius:radiusM}]}))
     .then((r)=>{
@@ -1551,6 +1588,10 @@ function _geoExitParkMode(){
   _geoClearParkTimer();
   if(!_geoParkModeOn)return;
   _geoParkModeOn=false;
+  // Fresh observation window on wake: if this exit was a real drive the next
+  // fixes clear the quiet clock; if it was a walk out of the region, GPS gets
+  // four minutes to confirm and then parks again at the new spot.
+  _geoQuietSinceMs=Date.now();_geoParkPrevFix=null;
   _geoParkNote('park-exit');
   const Td=_geoTdPlugin();
   try{if(Td&&typeof Td.stopAll==='function')Td.stopAll();}catch(_e){}
@@ -1567,6 +1608,7 @@ function _geoDiagPanel(){
     ['Park mode',_geoParkModeOn?'ON (GPS off)':'off'],
     ['Park countdown',_geoParkTimer?'running':'idle'],
     ['In fence',_geoLastFenceLoc?((_geoLastFenceLoc.name||_geoLastFenceLoc.kind||'yes')+(dwellMin!=null?' · '+dwellMin+' min':'')):'no'],
+    ['Below drive speed',_geoQuietSinceMs?Math.round((Date.now()-_geoQuietSinceMs)/60000)+' min':'no (moving)'],
     ['Consent',localStorage.getItem('geo_owner_consent')||'unset'],
     ['OS denied',localStorage.getItem('td_geo_os_denied')==='1'?'yes':'no'],
   ];
@@ -1681,6 +1723,7 @@ function stopGeoTracking(){
   _geoClearParkTimer();
   _geoParkModeOn=false;
   _geoFenceEnteredAtMs=null;
+  _geoQuietSinceMs=null;_geoParkPrevFix=null;
   {const Td=_geoTdPlugin();try{if(Td&&typeof Td.stopAll==='function')Td.stopAll();}catch(_e){}}
   if(_geoNativeWatcherId!=null){
     const BG=_geoNativePlugin();

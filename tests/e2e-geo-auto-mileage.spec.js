@@ -4237,6 +4237,128 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.removedId).toBe('w-1');
     });
 
+    // Owner report (2026-08-09, third sighting): "I walk everywhere with my
+    // phone, that would still pick up me drifting." True: walking drifts past
+    // _GEO_STOP_FT every minute or two, the stop anchor re-birthed forever,
+    // and its dwell never reached the park threshold. Parking now keys off a
+    // QUIET clock (time since the last driving-speed evidence), which walking
+    // pace holds, so four minutes on foot parks the GPS mid-stroll.
+    test('four minutes of walking-pace drift outside every fence parks GPS', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realCap = window.Capacitor, realUser = _supaUser;
+        const parked = [], removed = [];
+        _supaUser = { id: 'u-walk' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null;
+          _geoDriveStartedAt = new Date(Date.now() - 25 * 60000).toISOString();  // out on the road
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+          _geoLegAtShop = false; _geoLastFenceAt = new Date(Date.now() - 25 * 60000).toISOString();
+          _geoLastFenceLoc = null; _geoLegOrigin = null;
+          _geoHomeDwell = null; _geoWasAtHome = false;
+          _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoWatchId = null; _geoNativeWatcherId = 'w-1'; _geoNativeStarting = false;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = true;
+          _geoFenceEnteredAtMs = null; _geoStopAnchor = null;
+          _geoQuietSinceMs = null; _geoParkPrevFix = null;
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (n) => n === 'BackgroundGeolocation' ? {
+              removeWatcher: (o) => { removed.push(o); return Promise.resolve(); },
+            } : n === 'TdGeo' ? {
+              startParked: (o) => { parked.push(o); return Promise.resolve({ armed: 1 }); },
+              stopAll: () => Promise.resolve(),
+            } : null,
+          };
+          // A lap around the yard: nine fixes 30s apart circling ROAD at
+          // ~220ft radius, each step ~170ft (about 3.5 mph on foot). The
+          // anchor breaks and re-births mid-lap, exactly the owner's case.
+          const t0 = Date.now() - 260000;
+          for (let i = 0; i < 9; i++) {
+            const ang = (i / 8) * 2 * Math.PI;
+            await _geoOnPing({
+              coords: { latitude: a.road.lat + 0.0006 * Math.cos(ang),
+                        longitude: a.road.lon + 0.0006 * Math.sin(ang),
+                        accuracy: 10, speed: 1.4 },
+              __tdTs: t0 + i * 30000,
+            });
+          }
+          await new Promise(r2 => setTimeout(r2, 10));
+          return {
+            parkedCalls: parked.length,
+            region: parked[0] && parked[0].regions && parked[0].regions[0],
+            parkOn: _geoParkModeOn, removedId: removed[0] && removed[0].id,
+          };
+        } finally {
+          window.Capacitor = realCap; _supaUser = realUser;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+          _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
+          _geoDriveStartedAt = null; _geoDriveReset(); _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoFenceEnteredAtMs = null;
+          _geoQuietSinceMs = null; _geoParkPrevFix = null; _geoLegOrigin = null;
+        }
+      }, { road: ROAD });
+      expect(r.parkedCalls, 'walking never blocks the park').toBe(1);
+      expect(r.region && r.region.lat, 'parked where they are strolling').toBeCloseTo(ROAD.lat, 2);
+      expect(r.region.radius, 'a foot park gets the wider region so a stroll stays inside it').toBeGreaterThanOrEqual(250);
+      expect(r.parkOn).toBe(true);
+      expect(r.removedId).toBe('w-1');
+    });
+
+    test('driving speed holds the park off and kills the countdown', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realCap = window.Capacitor, realUser = _supaUser;
+        const parked = [];
+        _supaUser = { id: 'u-drivehold' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null;
+          _geoDriveStartedAt = new Date(Date.now() - 25 * 60000).toISOString();
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+          _geoLegAtShop = false; _geoLastFenceAt = new Date(Date.now() - 25 * 60000).toISOString();
+          _geoLastFenceLoc = null; _geoLegOrigin = null;
+          _geoHomeDwell = null; _geoWasAtHome = false;
+          _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoWatchId = null; _geoNativeWatcherId = 'w-1'; _geoNativeStarting = false;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = true;
+          _geoFenceEnteredAtMs = null; _geoStopAnchor = null;
+          _geoQuietSinceMs = null; _geoParkPrevFix = null;
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (n) => n === 'TdGeo' ? {
+              startParked: (o) => { parked.push(o); return Promise.resolve({ armed: 1 }); },
+              stopAll: () => Promise.resolve(),
+            } : { removeWatcher: () => Promise.resolve() },
+          };
+          // Ten fixes 30s apart at 15 m/s heading north, a five-minute drive.
+          // The old code armed the countdown on the first outside ping and let
+          // it run through the whole screen-on drive.
+          const t0 = Date.now() - 290000;
+          for (let i = 0; i < 10; i++) {
+            await _geoOnPing({
+              coords: { latitude: a.road.lat + 0.004 * i, longitude: a.road.lon,
+                        accuracy: 10, speed: 15 },
+              __tdTs: t0 + i * 30000,
+            });
+          }
+          await new Promise(r2 => setTimeout(r2, 10));
+          return { parkedCalls: parked.length, parkOn: _geoParkModeOn, timer: _geoParkTimer != null };
+        } finally {
+          window.Capacitor = realCap; _supaUser = realUser;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+          _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
+          _geoDriveStartedAt = null; _geoDriveReset(); _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoFenceEnteredAtMs = null;
+          _geoQuietSinceMs = null; _geoParkPrevFix = null; _geoLegOrigin = null;
+        }
+      }, { road: ROAD });
+      expect(r.parkedCalls, 'GPS never parks at driving speed').toBe(0);
+      expect(r.parkOn).toBe(false);
+      expect(r.timer, 'no countdown survives a driving ping').toBe(false);
+    });
+
     test('in a plain browser park mode does not exist', async () => {
       const r = await page.evaluate(() => {
         const realCap = window.Capacitor;
