@@ -422,8 +422,11 @@ function _scanToEstimate(id){
       return {name:r.label,wallSqFt:n.wallSqFt,ceilSqFt:n.ceilSqFt,ceilHt:n.ceilHt,doors:n.doors,windows:n.windows};})
   };
   document.getElementById('_scan-view-ov')?.remove();
-  if(typeof showToast==='function')showToast('Rooms ready, open a paint estimate to use them','📐');
-  if(typeof goPg==='function')goPg('pg-est');
+  // The seed is consumed by openGenericEstimate for this client (one row per
+  // room, wall footage as the quantity), so the path is: land on the client,
+  // tap New estimate, rooms are already lined.
+  if(sc.clientId!=null&&typeof openClient==='function'){openClient(sc.clientId);}
+  if(typeof showToast==='function')showToast('Rooms measured. Start an estimate for this client and they load in automatically.','📐');
 }
 // Standalone sale completion: collect the money through the normal payment
 // flow (cash/check/card), then mark it here; purchasedAt is what unlocks the

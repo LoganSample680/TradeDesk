@@ -242,6 +242,42 @@ test.describe('TdScan web half', () => {
     expect(r.openRooms).toBe(1);
   });
 
+  test('scanned rooms auto-line the next estimate for that client, and only that client', async () => {
+    const r = await page.evaluate((raw) => {
+      const savedClients = clients.slice();
+      try {
+        clients.length = 0;
+        clients.push({ id: 701, name: 'Seed Client' }, { id: 702, name: 'Other Client' });
+        const room = _scanParseRoom(raw, 'Kitchen');
+        const n = _scanPaintNumbers(room, false);
+        window._scanEstimateSeed = { scanId: 'sx', clientId: 701,
+          rooms: [{ name: 'Kitchen', wallSqFt: n.wallSqFt, ceilSqFt: n.ceilSqFt, ceilHt: n.ceilHt, doors: 1, windows: 1 }] };
+        // Wrong client first: the seed must survive untouched.
+        openGenericEstimate(clients[1]);
+        const wrongLines = _geiLines.length;
+        const seedSurvived = !!window._scanEstimateSeed;
+        // Right client: consumed into lines.
+        openGenericEstimate(clients[0]);
+        const line = _geiLines[0];
+        const consumed = !window._scanEstimateSeed;
+        return { wrongLines, seedSurvived, lines: _geiLines.length, consumed,
+                 desc: line && line.desc, qty: line && line.qty, unit: line && line.unit };
+      } finally {
+        clients.length = 0; savedClients.forEach(c => clients.push(c));
+        window._scanEstimateSeed = null; _geiLines = [];
+        goPg('pg-dash');
+      }
+    }, fabricatedRoom());
+    expect(r.wrongLines, 'another client never inherits scanned rooms').toBe(0);
+    expect(r.seedSurvived).toBe(true);
+    expect(r.lines).toBe(1);
+    expect(r.consumed, 'the seed is consumed exactly once').toBe(true);
+    expect(r.desc).toContain('Kitchen');
+    expect(r.desc).toContain('352 wall sq ft');
+    expect(r.qty).toBe(352);
+    expect(r.unit).toBe('sq ft');
+  });
+
   test('no console errors across the scan suite', async () => { await assertNoErrors(page); });
 });
 
