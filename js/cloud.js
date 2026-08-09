@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.09.26.31';
+const APP_VERSION='08.09.26.32';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2469,14 +2469,14 @@ function renderDispatch(){
   el.innerHTML=
     '<div class="tbar"><div class="tbar-title">'+svgIcon('📋')+' Dispatch Board</div>'+
       '<div style="display:flex;gap:6px">'+
-        (S.teamTracking?'<button onclick="_renderCrewMap()" style="font-size:12px;padding:6px 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">'+svgIcon('📍')+' Crew map</button>':'')+
         '<button onclick="goPg(\'pg-jobs\')" style="font-size:12px;padding:6px 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">← Jobs</button>'+
       '</div>'+
     '</div>'+
-    '<div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 10px">'+tab('crew','By crew')+tab('timeline','Timeline')+'</div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 10px">'+tab('crew','By crew')+tab('timeline','Timeline')+tab('map','Map')+'</div>'+
     '<div id="_dispatch-body" style="padding:0 12px 12px">'+
-      _dispatchVehicleGapHtml()+
-      (_dispatchView==='timeline'?_dispatchTimelineHtml(emps,todayJobs):
+      (_dispatchView==='map'?'':_dispatchVehicleGapHtml())+
+      (_dispatchView==='map'?'':
+      _dispatchView==='timeline'?_dispatchTimelineHtml(emps,todayJobs):
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Unassigned</div>'+
       '<div id="dispatch-unassigned" style="margin-bottom:20px">'+unassignedHtml+'</div>'+
       (emps.length
@@ -2487,7 +2487,14 @@ function renderDispatch(){
   _initDispatchDrag();
 }
 let _dispatchView='crew';
-function setDispatchView(v){_dispatchView=(v==='timeline'?'timeline':'crew');renderDispatch();}
+function setDispatchView(v){
+  _dispatchView=(v==='timeline'||v==='map')?v:'crew';
+  renderDispatch();
+  // The map paints into the same body the other two views use, after the board
+  // has rebuilt it. It supersedes the old Crew map modal outright: same crew,
+  // same Locate button, plus today's jobs and estimates on real tiles.
+  if(_dispatchView==='map'&&typeof openDayMap==='function')openDayMap();
+}
 
 // ── The day, by the clock ───────────────────────────────────────────────────
 // One strip per crew member across the working day, built from the times the
@@ -2892,86 +2899,6 @@ function _crewMemberName(uid){
   const emp=(S.employees||[]).find(e=>String(e.employee_user_id||'')===String(uid));
   return (emp&&emp.name)||'';
 }
-// ── Crew live map (manager view of last-known location per employee) ──────────
-async function _renderCrewMap(){
-  document.getElementById('_crew-map-ov')?.remove();
-  const ov=document.createElement('div');ov.id='_crew-map-ov';ov.className='zmodal-overlay';
-  const box=document.createElement('div');box.className='zmodal';
-  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('📍')+' Crew locations</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Last-known position today. Tap Locate to ask a phone where it is right now.</div>'+
-    '<div id="_crew-map-body" style="font-size:13px;color:var(--text3)">'+_tdSkelRows(3,12)+'</div>'+
-    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:10px">Close</button>';
-  ov.appendChild(box);document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  if(!supaEnabled()||!_supaUser){const b=document.getElementById('_crew-map-body');if(b)b.textContent='Sign in to see crew locations.';return;}
-  const cid=_contractorUserId||_supaUser.id;
-  const since=new Date(Date.now()-12*3600000).toISOString();
-  let rows=[];
-  try{
-    const{data}=await _supa.from('location_pings').select('employee_user_id,lat,lon,ts')
-      .eq('contractor_user_id',cid).gte('ts',since).order('ts',{ascending:false});
-    rows=data||[];
-  }catch(_e){}
-  const latest={};
-  rows.forEach(r=>{if(!latest[r.employee_user_id])latest[r.employee_user_id]=r;});
-  // The roster, not just whoever happened to ping. The crew member a manager
-  // most wants to find is precisely the one with no recent position, so listing
-  // only pingers hid the useful case. Everyone linked to the account gets a
-  // row, with or without a last-known spot, and every row can be asked.
-  const keys=Array.from(new Set(
-    (S.employees||[]).map(e=>String(e.employee_user_id||'')).filter(Boolean)
-      .concat(Object.keys(latest))));
-  const b=document.getElementById('_crew-map-body');if(!b)return;
-  if(!keys.length){b.innerHTML='<div style="padding:8px 0">No crew on the account yet. Add a team member and they\'ll show up here once they accept location sharing.</div>';return;}
-  b.innerHTML=keys.map(uid=>{
-    const r=latest[uid];
-    const nm=escHtml(_crewMemberName(uid)||'Crew member');
-    const where=r
-      ?'<a href="https://www.google.com/maps?q='+r.lat+','+r.lon+'" target="_blank" style="font-size:11px;font-weight:700;background:var(--blue-lt);color:var(--blue);border:1px solid var(--blue);border-radius:var(--r);padding:6px 10px;text-decoration:none">'+svgIcon('🗺')+' Map</a>'
-      :'';
-    return '<div id="_crew-row-'+escHtml(uid)+'" style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
-      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
-        '<div style="min-width:0"><div style="font-size:13px;font-weight:700">'+nm+'</div>'+
-        '<div class="_crew-when" style="font-size:11px;color:var(--text3)">'+svgIcon('📍')+' '+(r?_timeAgo(r.ts):'No position yet today')+'</div></div>'+
-        '<div class="_crew-acts" style="display:flex;gap:6px;flex-shrink:0">'+
-          '<button class="_crew-locate" onclick="_crewLocateTap(\''+escHtml(uid)+'\')" style="font-size:11px;font-weight:700;background:var(--bg);color:var(--text);border:1px solid var(--border2);border-radius:var(--r);padding:6px 10px;cursor:pointer;font-family:inherit">'+svgIcon('📡')+' Locate</button>'+
-          where+
-        '</div>'+
-      '</div></div>';
-  }).join('');
-}
-
-// ── Push to locate, the manager's tap ────────────────────────────────────────
-// Asks one phone where it is right now (js/crew-locate.js). Everything about
-// this UI is about being honest with the manager: a fresh fix replaces the row's
-// position outright, and anything else says WHY in plain English instead of
-// leaving them staring at a stale timestamp wondering whether it means
-// anything. A timeout in particular is stated as "asleep or out of signal",
-// never as a location.
-async function _crewLocateTap(uid){
-  const row=document.getElementById('_crew-row-'+uid);
-  const btn=row&&row.querySelector('._crew-locate');
-  const when=row&&row.querySelector('._crew-when');
-  if(btn){btn.disabled=true;btn.textContent='Asking…';btn.style.opacity='.6';}
-  if(when)when.textContent='Waking their phone…';
-  let res={ok:false,reason:'offline'};
-  try{ res=await crewLocateRequest(uid); }catch(_e){}
-  if(btn){btn.disabled=false;btn.innerHTML=svgIcon('📡')+' Locate';btn.style.opacity='';}
-  if(!when)return;
-  if(res&&res.ok){
-    when.innerHTML=svgIcon('📍')+' Just now · ±'+Math.round(res.acc||0)+' m';
-    when.style.color='var(--green)';
-    const box=row.querySelector('._crew-acts');
-    const url='https://www.google.com/maps?q='+res.lat+','+res.lng;
-    let a=box&&box.querySelector('a');
-    if(a)a.href=url;
-    else if(box)box.insertAdjacentHTML('beforeend','<a href="'+url+'" target="_blank" style="font-size:11px;font-weight:700;background:var(--blue-lt);color:var(--blue);border:1px solid var(--blue);border-radius:var(--r);padding:6px 10px;text-decoration:none">'+svgIcon('🗺')+' Map</a>');
-  }else{
-    when.textContent=(typeof _crewLocateReasonText==='function')?_crewLocateReasonText(res&&res.reason):'No answer.';
-    when.style.color='var(--text3)';
-  }
-}
-
 // ── Vehicle-start-of-shift picker ────────────────────────────────────────────
 // Crew have always been asked this. Owners now are too when they run more than
 // one truck (owner call 2026-08-01: "for multiple vehicles I kind of like a

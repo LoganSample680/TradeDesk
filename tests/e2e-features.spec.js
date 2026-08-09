@@ -3690,17 +3690,25 @@ test.describe('Crew tracking + payroll + dispatch routing + job profit', () => {
     expect(r.started).toBe(false);
   });
 
-  test('dispatch routing + crew map + job profit entry points exist', async () => {
+  test('dispatch routing + day map + job profit entry points exist', async () => {
     const r = await page.evaluate(() => ({
       optimize: typeof _dispatchOptimizeRoute === 'function',
       office: typeof _geoOfficeCoords === 'function',
-      crewMap: typeof _renderCrewMap === 'function',
+      dayMap: typeof openDayMap === 'function',
       jobProfit: typeof _openJobProfit === 'function',
+      // The Crew map modal was replaced by the Dispatch Map tab, which shows
+      // the same crew plus today's work on real tiles. Two entry points to the
+      // same answer is the duplication CLAUDE.md 15.1 bans, so the old one is
+      // gone rather than left beside the new one.
+      oldCrewMapGone: typeof window._renderCrewMap === 'undefined',
+      oldTapGone: typeof window._crewLocateTap === 'undefined',
     }));
     expect(r.optimize).toBe(true);
     expect(r.office).toBe(true);
-    expect(r.crewMap).toBe(true);
+    expect(r.dayMap).toBe(true);
     expect(r.jobProfit).toBe(true);
+    expect(r.oldCrewMapGone).toBe(true);
+    expect(r.oldTapGone).toBe(true);
   });
 
   test('Settings crew tracking: no toggle, no fence input, and no hours inputs', async () => {

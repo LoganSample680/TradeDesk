@@ -493,7 +493,7 @@ test.describe('Places, drive attribution and the map', () => {
       const body = document.getElementById('tr-map-body').innerHTML;
       delete window.mapkit;
       try { _mapkitReady = false; } catch (e) {}
-      _geoMapDestroy();
+      tdMapDestroy(_geoMapSt);
       jobs.length = 0;
       return { hasCanvas: /tr-map-canvas/.test(body), n: built.annotations.length, shown: built.shown, colors: built.colors.sort() };
     });
