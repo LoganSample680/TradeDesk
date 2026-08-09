@@ -39,7 +39,17 @@ let _driveActive = null;           // {jobId,label,destLat,destLng,startedAt,arr
 let _driveSpokenStep = -1;         // last step index announced
 let _driveSpokenNear = -1;         // last step announced at close range
 let _driveOffCount = 0;
+// One-shot listener guard. Bound once per app launch, which is right on a
+// device where Capacitor hands back the same plugin proxy every time.
+//
+// Exposed on window through an accessor because `let` at the top level of a
+// classic script is script-scoped, NOT a window property, so a plain
+// `window._driveBound = false` would silently create a second, unrelated
+// variable and change nothing. Same reason and same shape as _nearbyHideTimer
+// in js/dashboard.js. Tests install a fresh stub plugin per case and need the
+// listener rebound against it, which is what a real launch does anyway.
 let _driveBound = false;
+Object.defineProperty(window,'_driveBound',{get:()=>_driveBound,set:v=>{_driveBound=v;},configurable:true});
 
 function _drivePlugin(){
   try{
@@ -129,8 +139,13 @@ async function driveTextEta(jobId){
     }
   }catch(_e){}
   const msg='Hi '+first+', '+biz+' is on the way'+when+'.';
-  window.location.href='sms:'+phone+'&body='+encodeURIComponent(msg);
+  _driveNavigate('sms:'+phone+'&body='+encodeURIComponent(msg));
 }
+// Navigation isolated so tests can stub it without triggering a real sms:
+// intent, the same seam _subInviteNavigate uses (js/cloud.js). window.location
+// is [Unforgeable] in the HTML spec, so a test cannot redefine it; a plain
+// function it can replace is the only version of this that is testable.
+function _driveNavigate(href){ window.location.href=href; }
 
 function _driveHere(){
   return new Promise(res=>{

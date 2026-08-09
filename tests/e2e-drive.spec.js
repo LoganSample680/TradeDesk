@@ -30,6 +30,11 @@ test.describe('drive', () => {
     let listener = null;
     window.__nav = calls;
     window.__fire = (ev) => { if (listener) listener(ev); };
+    // _driveBound is a one-shot guard: the app binds the native listener once
+    // per launch, which is right on a device and wrong here, because every test
+    // installs its own stub plugin. Without this reset only the FIRST test ever
+    // gets a listener and every later __fire lands on nothing.
+    window._driveBound = false;
     window.Capacitor = {
       isNativePlatform: () => true,
       registerPlugin: (n) => n === 'TdNav' ? {
@@ -217,12 +222,16 @@ test.describe('drive', () => {
     await seedJob();
     const r = await withNav(async () => {
       const before = window.__nav.speak.length;
+      let navigated = null;
+      const realNav = window._driveNavigate;
+      window._driveNavigate = (h) => { navigated = h; };
       await startDrive('7001');
       for (const m of [3000, 1000, 300, 120]) {
         window.__fire({ type: 'progress', stepIndex: 0, stepMeters: m, stepText: 'Continue',
                         offRouteMeters: 5, toDestinationMeters: m, etaSeconds: 120 });
       }
-      return { navigated: window.__tdNavHref || null, before };
+      window._driveNavigate = realNav;
+      return { navigated, before };
     });
     expect(r.navigated, 'a drive never opens Messages by itself').toBe(null);
   });
@@ -230,14 +239,12 @@ test.describe('drive', () => {
   test('Text ETA opens Messages with the client and a real message', async () => {
     await seedJob();
     const href = await page.evaluate(async () => {
+      // window.location is [Unforgeable], so the app routes this through
+      // _driveNavigate for exactly this reason (same seam as _subInviteNavigate).
       let got = null;
-      const d = Object.getOwnPropertyDescriptor(window, 'location');
-      // Intercept the sms: navigation rather than performing it.
-      const fake = { set href(v) { got = v; }, get href() { return ''; } };
-      Object.defineProperty(window, 'location', { value: fake, configurable: true });
-      try { await driveTextEta('7001'); } finally {
-        if (d) Object.defineProperty(window, 'location', d);
-      }
+      const real = window._driveNavigate;
+      window._driveNavigate = (h) => { got = h; };
+      try { await driveTextEta('7001'); } finally { window._driveNavigate = real; }
       return got;
     });
     expect(href).toMatch(/^sms:8155551234/);
@@ -256,9 +263,9 @@ test.describe('drive', () => {
     });
     const href = await page.evaluate(async () => {
       let got = null;
-      const d = Object.getOwnPropertyDescriptor(window, 'location');
-      Object.defineProperty(window, 'location', { value: { set href(v) { got = v; }, get href() { return ''; } }, configurable: true });
-      try { await driveTextEta('7003'); } finally { if (d) Object.defineProperty(window, 'location', d); }
+      const real = window._driveNavigate;
+      window._driveNavigate = (h) => { got = h; };
+      try { await driveTextEta('7003'); } finally { window._driveNavigate = real; }
       return got;
     });
     expect(href).toBe(null);
