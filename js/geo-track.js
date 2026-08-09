@@ -263,6 +263,15 @@ function _geoPersistOpen(hiddenAt){
       localStorage.setItem(_GEO_OPEN_KEY,JSON.stringify({
         job:_geoCurrentJob,arrivedAt:_geoArrivedAt,wasInShop:_geoWasInShop,
         shopArrivedAt:_geoShopArrivedAt,driveStartedAt:_geoDriveStartedAt,
+        // WHERE THE DRIVE STARTED, not just that one is open (owner report
+        // 2026-08-09: "FBC to home didn't log", with every endpoint saved).
+        // These were memory-only, so an app kill left a restored drive with
+        // no origin, and _geoAutoMileage bails silently without one: the
+        // arrival wrote drive TIME and no mileage row at all. Park mode makes
+        // that the common case rather than the rare one, because it is
+        // designed to let iOS kill the app while parked.
+        legOrigin:_geoLegOrigin,lastFenceLoc:_geoLastFenceLoc,lastFenceAt:_geoLastFenceAt,
+        stopAnchor:_geoStopAnchor,
         hiddenAt:hiddenAt||new Date().toISOString(),uid:(_supaUser&&_supaUser.id)||null,day:todayKey()
       }));
     }else localStorage.removeItem(_GEO_OPEN_KEY);
@@ -283,15 +292,20 @@ function _geoRestoreOpen(){
     if(_geoCurrentJob||_geoArrivedAt)return; // live state wins, never clobber a running session
     _geoCurrentJob=s.job;_geoArrivedAt=s.arrivedAt;
     _geoWasInShop=!!s.wasInShop;_geoShopArrivedAt=s.shopArrivedAt;
-    // A restored open DRIVE gets a freshness cap (owner report 2026-08-09: a
-    // junk 2-minute fence-bounce leg was open when the phone locked, iOS
-    // killed the app while parked, and the next launch an hour later
-    // resurrected 'driving since 10:49' and billed a whole fictional trip
-    // across the dead time). A drive suspended for a few minutes mid-journey
-    // is real and survives; one that has been 'open' longer than 30 minutes
-    // of app-death is a story, and the fence machine's own gap inference
-    // handles any real miles with the stale rules it already has.
-    _geoDriveStartedAt=((Date.parse(s.hiddenAt||0)||0)>=Date.now()-30*60000)?s.driveStartedAt:null;
+    // The drive comes back WITH its origin, which is what makes it billable.
+    // (A freshness cap lived here for one commit and was wrong: a 45-minute
+    // lunch is a normal parked gap, and dropping the drive threw the leg home
+    // away, the very bug being fixed. The junk-leg resurrection it aimed at
+    // is handled properly by the fence-bounce guard in _geoDriveEntry, which
+    // now works across a restart precisely BECAUSE the origin survives: a
+    // bounce restores with origin == destination and is refused.)
+    _geoDriveStartedAt=s.driveStartedAt;
+    if(!_geoLegOrigin&&s.legOrigin)_geoLegOrigin=s.legOrigin;
+    if(!_geoLastFenceLoc&&s.lastFenceLoc)_geoLastFenceLoc=s.lastFenceLoc;
+    if(!_geoLastFenceAt&&s.lastFenceAt)_geoLastFenceAt=s.lastFenceAt;
+    // The stop they were parked at comes back too, so its own time entry and
+    // the detour fold still happen when they finally pull away.
+    if(!_geoStopAnchor&&s.stopAnchor)_geoStopAnchor=s.stopAnchor;
     // Job and place come back through their own vars; only the shop leg flag
     // needs seeding, or a session restored at the yard loses its next leg.
     _geoLegAtShop=!!s.wasInShop&&!s.job;
@@ -1646,6 +1660,10 @@ function _geoEnterParkMode(spot){
   // into this stop is settled here or it is lost (owner report 2026-08-09:
   // the drive home never logged).
   if(_geoStopAnchor&&_geoDriveStartedAt)_geoSettleStopLeg(_geoStopAnchor,new Date().toISOString());
+  // Parking is the moment we know the app may not be alive for the next fix,
+  // so the open leg and its ORIGIN go to disk here rather than relying on a
+  // screen-lock event that may already have passed.
+  _geoPersistOpen();
   // The region is the fence plus slack: region monitoring is coarser than GPS
   // (cell/wifi assisted), and an exit that fires a little late is fine, the
   // re-armed watcher's first fix re-runs the fence machine with real truth.

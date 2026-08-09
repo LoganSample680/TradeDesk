@@ -4472,34 +4472,100 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.driveEntries, 'no drive time entry for a fence bounce').toBe(0);
     });
 
-    test('a drive left open across a long app-death is not resurrected; a short suspension survives', async () => {
-      const r = await page.evaluate(() => {
-        const realUser = _supaUser;
-        _supaUser = { id: 'u-resur' };
+    // Owner correction (2026-08-09): every endpoint IS saved (house as a
+    // place, FBC as an estimate, work as a job), so FBC -> home should have
+    // routed. The real hole: the open-state blob carried "a drive is open"
+    // but not WHERE IT STARTED. _geoLegOrigin was memory-only, so an app kill
+    // (which park mode deliberately invites) left the restored drive with no
+    // origin, and _geoAutoMileage bails without one: drive TIME logged, and
+    // no mileage row at all. The origin now rides to disk with the drive.
+    test('a drive restored after an app kill still knows where it started, and logs its miles', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue;
+        const before = mileage.length;
+        _supaUser = { id: 'u-origin' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 7.7, mins: 14 });
+        window._geoEnqueue = () => {};
         try {
-          // Killed for 40 minutes with a junk leg open: the story dies.
+          __seedGeo();
+          const t0 = Date.now();
+          // Parked at a lunch stop with the leg out of the client still open,
+          // then the screen locks and iOS kills the app.
           _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
-          _geoDriveStartedAt = new Date(Date.now() - 67 * 60000).toISOString();
-          _geoPersistOpen(new Date(Date.now() - 40 * 60000).toISOString());
-          _geoDriveStartedAt = null; _geoGapHiddenAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoLegAtShop = false;
+          _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoDriveStartedAt = new Date(t0 - 50 * 60000).toISOString();
+          _geoLegOrigin = { lat: a.job.lat, lng: a.job.lon, name: 'Miller Residence', kind: 'job', addr: '9 Job St' };
+          _geoLastFenceLoc = _geoLegOrigin;
+          _geoLastFenceAt = new Date(t0 - 50 * 60000).toISOString();
+          _geoPersistOpen(new Date(t0 - 45 * 60000).toISOString());
+          // ── app dies here ──
+          _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null;
+          _geoLastFenceAt = null; _geoGapHiddenAt = null; _geoStopAnchor = null;
+          _geoQuietSinceMs = null; _geoParkPrevFix = null; _geoFenceEnteredAtMs = null;
           _geoRestoreOpen();
-          const staleRestored = _geoDriveStartedAt;
-          _geoClearOpen();
-          // Suspended 10 minutes mid-journey: the real drive survives.
-          const freshStart = new Date(Date.now() - 15 * 60000).toISOString();
-          _geoDriveStartedAt = freshStart;
-          _geoPersistOpen(new Date(Date.now() - 10 * 60000).toISOString());
-          _geoDriveStartedAt = null; _geoGapHiddenAt = null;
-          _geoRestoreOpen();
-          const freshRestored = _geoDriveStartedAt;
-          _geoClearOpen();
-          return { staleRestored, freshRestored, freshStart };
+          const restoredOrigin = _geoLegOrigin && _geoLegOrigin.name;
+          const restoredDrive = !!_geoDriveStartedAt;
+          // Relaunch lands them arriving at the saved shop: the leg must log.
+          _geoDriveMiles = 6;
+          await _geoOnPing({ coords: { latitude: a.shop.lat, longitude: a.shop.lon, accuracy: 8, speed: 0 }, __tdTs: t0 });
+          await new Promise(r2 => setTimeout(r2, 60));
+          const rows = mileage.slice(0, Math.max(0, mileage.length - before))
+            .map(m => ({ from: m.from_name, to: m.to_name, miles: m.miles }));
+          return { restoredOrigin, restoredDrive, rows };
         } finally {
-          _supaUser = realUser; _geoDriveStartedAt = null; _geoGapHiddenAt = null; _geoClearOpen();
+          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
+          window._geoEnqueue = realEnq;
+          _geoDriveStartedAt = null; _geoDriveReset(); _geoLegOrigin = null;
+          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoGapHiddenAt = null;
+          _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+          _geoClearOpen(); mileage.length = before; saveAll();
         }
-      });
-      expect(r.staleRestored, 'an hour-dead "open drive" is a story, not a restore').toBe(null);
-      expect(r.freshRestored, 'a briefly-suspended real drive still survives').toBe(r.freshStart);
+      }, { job: JOB, shop: SHOP });
+      expect(r.restoredDrive, 'the open drive comes back').toBe(true);
+      expect(r.restoredOrigin, 'and so does where it started').toBe('Miller Residence');
+      expect(r.rows.length, 'so the leg logs its miles instead of vanishing').toBe(1);
+      expect(r.rows[0].from).toBe('Miller Residence');
+      expect(r.rows[0].miles).toBe(7.7);
+    });
+
+    test('a bounce restored after a kill is still refused, because the origin came back with it', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue;
+        const before = mileage.length;
+        _supaUser = { id: 'u-bounce-kill' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 4.2, mins: 9 });
+        window._geoEnqueue = () => {};
+        try {
+          __seedGeo();
+          const t0 = Date.now();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoLegAtShop = false;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoStopAnchor = null;
+          // A jitter bounce off the SHOP fence left a drive open, then the kill.
+          _geoDriveStartedAt = new Date(t0 - 67 * 60000).toISOString();
+          _geoLegOrigin = { lat: a.shop.lat, lng: a.shop.lon, name: 'Shop', kind: 'shop' };
+          _geoLastFenceLoc = _geoLegOrigin;
+          _geoLastFenceAt = new Date(t0 - 67 * 60000).toISOString();
+          _geoPersistOpen(new Date(t0 - 65 * 60000).toISOString());
+          _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null;
+          _geoLastFenceAt = null; _geoGapHiddenAt = null;
+          _geoQuietSinceMs = null; _geoParkPrevFix = null; _geoFenceEnteredAtMs = null;
+          _geoRestoreOpen();
+          _geoDriveMiles = 0;                     // nothing actually moved
+          await _geoOnPing({ coords: { latitude: a.shop.lat, longitude: a.shop.lon, accuracy: 8, speed: 0 }, __tdTs: t0 });
+          await new Promise(r2 => setTimeout(r2, 60));
+          return { newRows: mileage.length - before };
+        } finally {
+          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
+          window._geoEnqueue = realEnq;
+          _geoDriveStartedAt = null; _geoDriveReset(); _geoLegOrigin = null;
+          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoGapHiddenAt = null;
+          _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+          _geoClearOpen(); mileage.length = before; saveAll();
+        }
+      }, { shop: SHOP });
+      expect(r.newRows, 'the phantom stays dead: same spot, no miles moved').toBe(0);
     });
 
   });
