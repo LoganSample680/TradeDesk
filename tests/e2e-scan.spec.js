@@ -641,6 +641,48 @@ test.describe('TdScan web half', () => {
     expect(r.jumped, 'a plan tap from surface view returns to the room card').toBe(true);
   });
 
+  // Conduit's close-rate move (research 2026-08-09): the client proposal
+  // shows THEIR house, color-keyed to the money. Quoted rooms tint + get a
+  // legend chip with the room total; rooms not in the quote stay white.
+  test('the proposal plan is color-keyed to the quoted rooms with a room-total legend', async () => {
+    const r = await page.evaluate(async (raw) => {
+      const savedScans = scans.slice(), savedClients = clients.slice(), savedBids = bids.slice(), savedRates = S.scanRates;
+      try {
+        S.scanRates = { wall: 2, ceiling: 0, trimLf: 0, door: 0, window: 0 };
+        clients.push({ id: 77501, name: 'Legend Client' });
+        const k = _scanParseRoom(raw, 'Kitchen');
+        const b = _scanParseRoom(raw, 'Bedroom');
+        b.poly = b.poly.map(([x, z]) => [x + 3.8, z]);
+        b.walls = b.walls.map(w => ({ ...w, ax: w.ax + 3.8, bx: w.bx + 3.8 }));
+        scans.push({ id: 'sc-legend', clientId: 77501, name: 'Legend scan', createdAt: new Date().toISOString(), rooms: [k, b], photos: [] });
+        openScanEstimate(clients.find(c => c.id === 77501));
+        _seToggleRoom(1);           // Bedroom OFF: must stay untinted
+        _seCreateProposal();
+        await new Promise(r2 => setTimeout(r2, 80));
+        await sendGenericProposal(true);
+        await new Promise(r2 => setTimeout(r2, 250));
+        const html = document.body.innerHTML;
+        return {
+          hasPlan: /Measured floor plan/.test(html),
+          kitchenTinted: /fill="#DCE8F5"/.test(html),
+          legendKitchen: /Kitchen · \$704/.test(html),
+          bedroomNotInLegend: !/Bedroom · \$/.test(html),
+        };
+      } finally {
+        document.querySelectorAll('.zmodal-overlay,#_se-ov').forEach(el => el.remove());
+        document.querySelectorAll('[id*=proposal-preview]').forEach(el => el.remove());
+        scans.length = 0; savedScans.forEach(x => scans.push(x));
+        bids.length = 0; savedBids.forEach(x => bids.push(x));
+        clients.length = 0; savedClients.forEach(x => clients.push(x));
+        S.scanRates = savedRates; _seState = null; saveAll();
+      }
+    }, fabricatedRoom());
+    expect(r.hasPlan, 'the proposal embeds the measured plan').toBe(true);
+    expect(r.kitchenTinted, 'the quoted room is tinted').toBe(true);
+    expect(r.legendKitchen, 'the legend prices the quoted room').toBe(true);
+    expect(r.bedroomNotInLegend, 'an unquoted room stays out of the legend').toBe(true);
+  });
+
   test('the interactive 3D viewer opens, renders or degrades gracefully, and closes clean', async () => {
     const r = await page.evaluate(async (raw) => {
       const before = scans.length;

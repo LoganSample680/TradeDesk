@@ -291,9 +291,12 @@ function _scanPlanSvg(sc,opts){
   const ink='var(--text,#1a1a18)',bg='var(--bg,#fff)';
   let s='<svg viewBox="0 0 100 '+vh+'" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg">';
   // 1. Room fills first (tappable when the caller wires roomClick).
+  // roomFills tints rooms by ORIGINAL index (the proposal color-keys the
+  // rooms that carry quote lines); untinted rooms stay paper-white.
   rooms.forEach((r,ri)=>{
     const pts=(r.poly||[]).map(([x,z])=>px(x)+','+pz(z)).join(' ');
-    s+='<polygon points="'+pts+'" fill="'+bg+'" stroke="none"'+
+    const fill=(o.roomFills&&o.roomFills[gidx[ri]])||bg;
+    s+='<polygon points="'+pts+'" fill="'+fill+'" stroke="none"'+
        (o.roomClick?' onclick="'+o.roomClick+'('+gidx[ri]+')" style="cursor:pointer"':'')+'/>';
   });
   // 2. Walls as solid poché segments; square caps close the corners.

@@ -3322,7 +3322,26 @@ async function sendGenericProposal(previewOnly){
   const _scanPlanSection=(_geiScanId&&typeof getScans==='function')?(()=>{
     const _sc=getScans().find(x=>String(x.id)===String(_geiScanId));
     if(!_sc)return '';
-    return '<div style="padding:16px 18px;border-bottom:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:8px">Measured floor plan · LiDAR scan</div>'+_scanPlanSvg(_sc,{lens:'plan'})+'</div>';
+    // Color-keyed to the quote (Conduit's close-rate move, research
+    // 2026-08-09: showing the customer their own house sells the job): every
+    // room that carries quote lines gets a tint + a legend chip with its
+    // room total; rooms not in this quote stay paper-white. Lines are keyed
+    // by the 'Room · surface' desc prefix the scan builder writes.
+    const _pal=['#DCE8F5','#E7F0DC','#F5E9D4','#EFE0EF','#E0EFEA','#F2E3DD'];
+    const _fills={},_legend=[];
+    (_sc.rooms||[]).forEach((r,gi)=>{
+      const rl=_geiLines.filter(l=>((l.desc||'').indexOf((r.label||'')+' · ')===0));
+      if(!rl.length||!r.label)return;
+      const col=_pal[_legend.length%_pal.length];
+      _fills[gi]=col;
+      _legend.push('<span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#4a5568;font-weight:700"><span style="width:10px;height:10px;border-radius:3px;background:'+col+';border:1px solid #cbd5e0"></span>'+escHtml(r.label)+' · $'+Math.round(rl.reduce((t,l)=>t+(+l.total||0),0)).toLocaleString('en-US')+'</span>');
+    });
+    const _sts=(typeof _scanStories==='function')?_scanStories(_sc):[1];
+    const _plans=_sts.map(st=>
+      (_sts.length>1?'<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin:6px 0 4px">Floor '+st+'</div>':'')+
+      _scanPlanSvg(_sc,{lens:'plan',story:(_sts.length>1?st:null),roomFills:_fills})).join('');
+    return '<div style="padding:16px 18px;border-bottom:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:8px">Measured floor plan · LiDAR scan</div>'+_plans+
+      (_legend.length?'<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px">'+_legend.join('')+'</div>':'')+'</div>';
   })():'';
   const _lineItemsSection=_geiIsFreeForm
     ?`<table style="width:100%;border-collapse:collapse"><tfoot>${_totalFooterRows}</tfoot></table>`
