@@ -55,7 +55,12 @@ function openScanEstimate(c){
   _seState={c,scan,rooms:(scan.rooms||[]).map(r=>({
     on:true,
     surf:{wall:true,ceiling:false,trim:false,door:false,window:false},
-    mults:{highCeil:r.hM>=_SCANEST_HIGH_CEIL_M,prep:false,color:false}
+    mults:{highCeil:r.hM>=_SCANEST_HIGH_CEIL_M,prep:false,color:false},
+    // Per-surface manual overrides. The measured number is never lost: an
+    // override prices the line, the scan value stays restorable one tap away
+    // (the trust rule from research 2026-08-09: auto numbers you can't
+    // inspect, correct, and undo are the top rage point on competitor apps).
+    qtyOv:{}
   }))};
   _seRender();
 }
@@ -75,6 +80,11 @@ const _SE_SURFS=[
   {k:'door',label:'Doors',unit:'ea',rateKey:'door'},
   {k:'window',label:'Windows',unit:'ea',rateKey:'window'},
 ];
+// Effective quantity: the contractor's override when set, the measured value
+// otherwise. The measured value is the permanent source of truth.
+function _seQtyEff(r,st,k){
+  return (st&&st.qtyOv&&st.qtyOv[k]!=null)?st.qtyOv[k]:_seQty(r,k);
+}
 function _seIsElec(){return _scanDefaultLens()==='electrical';}
 function _seMultPct(st){return _SCANEST_MULTS.reduce((t,m)=>t+(st.mults[m.k]?m.pct:0),0);}
 // One room's priced lines (painter surfaces or electrician devices).
@@ -93,9 +103,13 @@ function _seRoomLines(r,st){
     const rates=_scanRates();
     _SE_SURFS.forEach(s=>{
       if(!st.surf[s.k])return;
-      const qty=_seQty(r,s.k);
+      const meas=_seQty(r,s.k);
+      const qty=_seQtyEff(r,st,s.k);
       if(!qty)return;
-      out.push({k:s.k,desc:r.label+' · '+s.label.toLowerCase()+' ('+qty+' '+s.unit+')',qty,unit:s.unit,rate:bake(+rates[s.rateKey]||0),notes:'Measured by LiDAR scan'+multNote});
+      // Provenance travels onto the proposal line: adjusted numbers say so
+      // and name the measured value, untouched ones stay scan-vouched.
+      const prov=(qty!==meas)?('Adjusted from measured '+meas+' '+s.unit):'Measured by LiDAR scan';
+      out.push({k:s.k,desc:r.label+' · '+s.label.toLowerCase()+' ('+qty+' '+s.unit+')',qty,unit:s.unit,rate:bake(+rates[s.rateKey]||0),notes:prov+multNote});
     });
   }
   return out.map(l=>({...l,total:Math.round(l.qty*l.rate*100)/100,_byoSection:'Interior'}));
@@ -129,8 +143,18 @@ function _seRender(){
     const lines=st.on?_seRoomLines(r,st):[];
     const roomTotal=lines.reduce((t,l)=>t+l.total,0);
     const surfChips=elec?'':_SE_SURFS.map(s=>{
-      const qty=_seQty(r,s.k);
-      return '<button onclick="_seToggleSurf('+i+',\''+s.k+'\')" class="btn btn-sm" style="padding:6px 10px;font-size:11px;'+(st.surf[s.k]?'background:var(--blue);color:#fff;border-color:var(--blue)':'')+'">'+s.label+(qty?' · '+qty:'')+'</button>';
+      const meas=_seQty(r,s.k);
+      const ov=st.qtyOv&&st.qtyOv[s.k]!=null;
+      const qty=ov?st.qtyOv[s.k]:meas;
+      const on=st.surf[s.k];
+      // Overridden chips go amber with a star: adjusted numbers must LOOK
+      // adjusted, never pass as measured. The pencil opens the adjuster.
+      return '<span style="display:inline-flex;gap:2px">'+
+        '<button onclick="_seToggleSurf('+i+',\''+s.k+'\')" class="btn btn-sm" style="padding:6px 10px;font-size:11px;'+
+          (on?(ov?'background:#D97706;color:#fff;border-color:#D97706':'background:var(--blue);color:#fff;border-color:var(--blue)'):'')+'">'+
+          s.label+(qty?' · '+qty+(ov?'*':''):'')+'</button>'+
+        ((on&&meas)?'<button onclick="_seEditQty('+i+',\''+s.k+'\')" title="Adjust the measured number" class="btn btn-sm" style="padding:6px 8px;font-size:11px">✎</button>':'')+
+      '</span>';
     }).join('');
     const multChips=_SCANEST_MULTS.map(m=>
       '<button onclick="_seToggleMult('+i+',\''+m.k+'\')" class="btn btn-sm" style="padding:5px 9px;font-size:10px;'+(st.mults[m.k]?'background:#D97706;color:#fff;border-color:#D97706':'')+'">'+m.label+' +'+m.pct+'%'+(m.auto&&r.hM>=_SCANEST_HIGH_CEIL_M?' (measured)':'')+'</button>').join('');
@@ -223,6 +247,47 @@ function _seJumpRoom(i){
 }
 function _seToggleRoom(i){_seState.rooms[i].on=!_seState.rooms[i].on;_seRender();}
 function _seToggleSurf(i,k){_seState.rooms[i].surf[k]=!_seState.rooms[i].surf[k];_seRender();}
+// Tap-to-adjust with the measured value always restorable: the scan number is
+// shown, never destroyed, and setting the input back to it clears the
+// override entirely so the line reads scan-vouched again.
+function _seEditQty(i,k){
+  if(!_seState)return;
+  const r=_seState.scan.rooms[i],st=_seState.rooms[i];
+  const s=_SE_SURFS.find(x=>x.k===k);
+  if(!r||!st||!s)return;
+  const meas=_seQty(r,k);
+  const cur=_seQtyEff(r,st,k);
+  document.getElementById('_se-qty-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_se-qty-ov';ov.className='zmodal-overlay';ov.style.zIndex='9200';
+  const m=document.createElement('div');m.className='zmodal';
+  m.innerHTML=
+    '<div class="zmodal-title">'+escHtml(r.label)+' · '+s.label.toLowerCase()+'</div>'+
+    '<div style="font-size:12px;color:var(--text2);margin-bottom:10px">Measured by scan: <strong>'+meas+' '+s.unit+'</strong>. Your number prices the line; the measured one stays a tap away.</div>'+
+    '<input id="_se-qty-inp" type="number" min="0" step="1" value="'+cur+'" style="width:100%;box-sizing:border-box;padding:12px;font-size:16px;border:1px solid var(--border2);border-radius:10px;background:var(--bg2);color:var(--text);font-family:inherit;margin-bottom:12px">'+
+    '<div style="display:flex;gap:8px">'+
+      ((st.qtyOv&&st.qtyOv[k]!=null)?'<button class="btn" style="padding:11px 14px" onclick="_seRestoreQty('+i+',\''+k+'\')">Restore '+meas+'</button>':'')+
+      '<button class="btn btn-p" style="flex:1;padding:11px" onclick="_seSaveQty('+i+',\''+k+'\')">Save</button>'+
+    '</div>';
+  ov.appendChild(m);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  setTimeout(()=>{const inp=document.getElementById('_se-qty-inp');if(inp){inp.focus();inp.select();}},80);
+}
+function _seSaveQty(i,k){
+  if(!_seState)return;
+  const inp=document.getElementById('_se-qty-inp');
+  const val=Math.max(0,Math.round(+((inp&&inp.value)||0)));
+  const meas=_seQty(_seState.scan.rooms[i],k);
+  if(val===meas)delete _seState.rooms[i].qtyOv[k];   // back to measured = no override
+  else _seState.rooms[i].qtyOv[k]=val;
+  document.getElementById('_se-qty-ov')?.remove();
+  _seRender();
+}
+function _seRestoreQty(i,k){
+  if(!_seState)return;
+  delete _seState.rooms[i].qtyOv[k];
+  document.getElementById('_se-qty-ov')?.remove();
+  _seRender();
+}
 function _seToggleMult(i,k){_seState.rooms[i].mults[k]=!_seState.rooms[i].mults[k];_seRender();}
 function _seCreateProposal(){
   if(!_seState)return;

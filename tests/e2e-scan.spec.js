@@ -641,6 +641,54 @@ test.describe('TdScan web half', () => {
     expect(r.jumped, 'a plan tap from surface view returns to the room card').toBe(true);
   });
 
+  // The trust rule (research 2026-08-09): auto-generated numbers the
+  // contractor can't inspect, correct, and undo are the top rage point on
+  // competitor apps. Every measured quantity adjusts in one tap, adjusted
+  // numbers LOOK adjusted, and the scan value restores in one more tap.
+  test('a measured number adjusts in one tap, wears its provenance, and restores to the scan value', async () => {
+    const r = await page.evaluate(async (raw) => {
+      const savedScans = scans.slice(), savedClients = clients.slice(), savedRates = S.scanRates;
+      try {
+        S.scanRates = { wall: 2, ceiling: 0, trimLf: 0, door: 0, window: 0 };
+        clients.push({ id: 77601, name: 'Adjust Client' });
+        scans.push({ id: 'sc-adjust', clientId: 77601, name: 'Adjust scan', createdAt: new Date().toISOString(), rooms: [_scanParseRoom(raw, 'Kitchen')], photos: [] });
+        openScanEstimate(clients.find(c => c.id === 77601));
+        const measuredTotal = _seTotal();                       // 352 x $2
+        _seEditQty(0, 'wall');
+        const modal = document.getElementById('_se-qty-ov')?.textContent || '';
+        const showsMeasured = /Measured by scan: 352 sq ft/.test(modal);
+        document.getElementById('_se-qty-inp').value = '400';
+        _seSaveQty(0, 'wall');
+        const adjustedTotal = _seTotal();                       // 400 x $2
+        const line = _seRoomLines(_seState.scan.rooms[0], _seState.rooms[0])[0];
+        const provenance = line.notes;
+        const chipHtml = document.getElementById('se-room-0')?.innerHTML || '';
+        const chipAdjusted = /Walls · 400\*/.test(chipHtml) && /#D97706/.test(chipHtml);
+        _seEditQty(0, 'wall');
+        const hasRestore = /Restore 352/.test(document.getElementById('_se-qty-ov')?.textContent || '');
+        _seRestoreQty(0, 'wall');
+        const restoredTotal = _seTotal();
+        const restoredNotes = _seRoomLines(_seState.scan.rooms[0], _seState.rooms[0])[0].notes;
+        document.getElementById('_se-ov')?.remove(); _seState = null;
+        return { measuredTotal, showsMeasured, adjustedTotal, provenance, chipAdjusted, hasRestore, restoredTotal, restoredNotes };
+      } finally {
+        scans.length = 0; savedScans.forEach(x => scans.push(x));
+        clients.length = 0; savedClients.forEach(x => clients.push(x));
+        S.scanRates = savedRates; saveAll();
+        document.getElementById('_se-qty-ov')?.remove();
+        document.getElementById('_se-ov')?.remove(); _seState = null;
+      }
+    }, fabricatedRoom());
+    expect(r.measuredTotal).toBe(704);
+    expect(r.showsMeasured, 'the adjuster names the measured value').toBe(true);
+    expect(r.adjustedTotal, '400 sq ft at $2 reprices live').toBe(800);
+    expect(r.provenance).toContain('Adjusted from measured 352 sq ft');
+    expect(r.chipAdjusted, 'an adjusted chip goes amber with a star, never passes as measured').toBe(true);
+    expect(r.hasRestore).toBe(true);
+    expect(r.restoredTotal, 'one tap back to the scan').toBe(704);
+    expect(r.restoredNotes).toContain('Measured by LiDAR scan');
+  });
+
   // Conduit's close-rate move (research 2026-08-09): the client proposal
   // shows THEIR house, color-keyed to the money. Quoted rooms tint + get a
   // legend chip with the room total; rooms not in the quote stay white.

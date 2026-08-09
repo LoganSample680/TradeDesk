@@ -762,6 +762,28 @@ wizard, which is our edge.
 - Files: `js/settings.js` (`_ob`, `renderObStep`, `obStep*`, `obSubmit`), `index.html`
   (dashboard setup-checklist card), new live flow test `tests/flow/onboarding-signup-flow.spec.js`.
 
+### 9.10 Dual-Hat Accounts: Crew by Day, Owner on the Side (owner back-burnered 2026-08-09)
+
+**One login, two hats: a person who is crew on an employer's account AND owner of
+their own side business.** Today they need two emails and a sign-out/sign-in; the
+design is an in-app account switcher on one login. Owner call: park it until the
+scanned estimate is solid.
+
+- **Switcher**: profile menu flips between "Crew · {employer}" and "My business,"
+  riding the existing account-switch reset machinery (arrays, caches, offline queues).
+- **Hard wall**: employer never sees the side business; crew permissions gate the
+  other direction. RLS already scopes per account, the switcher only picks context.
+- **Tracking follows the hat**: crew mode logs drives/site time to the employer
+  exactly as now; own-business mode logs to their own mileage/jobs and the employer
+  sees nothing. Keeps payroll data clean and each business's IRS log separate.
+- **Separate wallets**: own Stripe, invoices, taxes, subscription per business.
+- **Growth loop**: "start your own business" one tap from the crew view, every
+  moonlighting apprentice is a future subscriber; no competitor supports dual roles.
+- **Blast radius (§10)**: cloud.js load/reset paths, geo attribution, offline
+  queues, memberships lookup (team_members by user across accounts). Careful
+  refactor, architect with owner (§16) in slices: (1) switcher + data wall,
+  (2) tracking-follows-the-hat, (3) sign-up growth loop.
+
 ---
 
 ## 10. Patch-Chain Prohibition: No House-of-Cards Fixing
