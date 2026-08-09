@@ -16,3 +16,4 @@ _shot_*.png
 # native/ is a real npm package the iOS build needs; the blanket package.json
 # ignore above predates it and silently dropped it from the first workflow PR.
 !native/package.json
+!native/td-geo/package.json

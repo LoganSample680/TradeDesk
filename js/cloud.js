@@ -536,9 +536,16 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.08.26.6';
+const APP_VERSION='08.08.26.8';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
+// True only for the window between an in-tab sign-in landing on the dashboard
+// and the cloud load resolving (either way). renderDash shows skeleton KPI
+// tiles instead of $0 placeholders while it is set, owner report 2026-08-09:
+// "when I sign in sync fires but I see nothing but zeros for a second or two."
+// Deliberately NOT inferred from bare !_supaCloudLoaded: an environment where
+// no load is coming (mocked tests, brand-new account) must render real tiles.
+let _dashAwaitingCloud=false;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
 // flips true only when the td-sync channel confirms SUBSCRIBED (delivery is live).
 // Anything that depends on actually RECEIVING peer changes should gate on this, not
@@ -1873,6 +1880,9 @@ async function supaInit(){
         // only reachable from Settings, so every account switch on the same device
         // landed the incoming account back on Settings until the load finally finished
         // and the goPg('pg-dash') calls below caught up.
+        // The dash is about to render with empty arrays: skeleton tiles, not $0s,
+        // until the cloud load below resolves (see _dashAwaitingCloud).
+        _dashAwaitingCloud=true;
         goPg('pg-dash');
         const hasAccount=await loadAccountData();
         if(hasAccount){
@@ -1933,6 +1943,7 @@ async function supaInit(){
           // SIGNED_IN branch is reached by same-device account switches, which must land
           // on the dashboard, not onboarding.
           _authSettingsLoaded=true;
+          _dashAwaitingCloud=false; // nothing to load, a new account's zeros are the truth
           _removeBootOverlay();
           renderDash();
           supaSetStatus('cloud');
@@ -5071,7 +5082,7 @@ function _teardownRealtimeChannels(){
 function _wipeLocalAccountData(){
   clearTimeout(_syncTimer);_syncTimer=null; // prevent a live timer from flushing emptied arrays
   _teardownRealtimeChannels(); // CRITICAL: close A's live channels so they can't re-deliver A's rows into B
-  _supaCloudLoaded=false;_realtimeSubscribed=false;_loadInProgress=false;clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;clearTimeout(_reconcileTimer);_reconcileTimer=null;clearTimeout(_writeCacheTimer);_writeCacheTimer=null;
+  _supaCloudLoaded=false;_realtimeSubscribed=false;_loadInProgress=false;_dashAwaitingCloud=false;clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;clearTimeout(_reconcileTimer);_reconcileTimer=null;clearTimeout(_writeCacheTimer);_writeCacheTimer=null;
   // Reset the "settings are authoritative" gate too. It guards the dashboard setup
   // checklist (dashboard.js): if it survives a sign-out, the next sign-in renders the
   // checklist for one frame against the OLD/empty state before the new load corrects
@@ -7256,9 +7267,11 @@ async function supaLoadFromCloud({silent=false}={}){
         _showOfflineBanner();supaSetStatus('error');return;
       }catch(_ce){console.warn('Cache load failed:',_ce);}
     }
+    _dashAwaitingCloud=false; // nothing more is coming, zeros are now the truth
     _removeBootOverlay();renderDash();supaSetStatus('error');
   }finally{
     _loadInProgress=false;
+    _dashAwaitingCloud=false; // load settled either way, whatever we have is what shows
     // A version/SW-update reload arrived mid-load and was deferred (see
     // _autoSaveAndReload). The load has now settled, so it's safe to reload into
     // the new code without stranding the app. setTimeout lets this finally unwind

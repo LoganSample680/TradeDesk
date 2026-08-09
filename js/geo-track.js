@@ -425,8 +425,10 @@ async function _geoOnPing(pos){
   // First fix of the day anchors the commute guard: wherever the working day
   // started is where this person left FROM, and that leg is not deductible.
   if(typeof noteDayStart==='function')noteDayStart(here);
-  // Throttled breadcrumb (~60s)
-  const nowMs=Date.now();
+  // Throttled breadcrumb (~60s). A replayed TdGeo buffer event carries the
+  // moment it actually happened (__tdTs); everything downstream in this
+  // handler clocks off nowMs, so the whole fence machine honors it.
+  const nowMs=(pos&&pos.__tdTs)||Date.now();
   if(nowMs-_geoLastPingTs>60000){_geoLastPingTs=nowMs;_geoWritePing(here,acc);}
   // ── Live drive banner: rolling miles + speed ──────────────────────────────
   // Runs BEFORE the fence machine so the fix that closes the leg still counts
@@ -531,7 +533,10 @@ async function _geoOnPing(pos){
     else{
       // A hidden gap since arrival: close at the last VERIFIED moment rather
       // than claiming shop time nobody observed.
-      if(_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt,_geoGapHiddenAt||undefined);
+      // nowIsoEarly rather than nothing: live they are the same moment, and a
+      // replayed TdGeo buffer fix closes the dwell at the moment the departure
+      // actually happened rather than at the replay moment.
+      if(_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt,_geoGapHiddenAt||nowIsoEarly);
       _geoShopArrivedAt=null;
     }
     _geoWasInShop=inShop;
@@ -609,8 +614,8 @@ async function _geoOnPing(pos){
       // behavior). The 'geofence-gap' source tag still marks the row as
       // gap-resolved rather than continuously observed.
       if(prev.k==='job'&&_geoArrivedAt)await _geoCloseEntry(_geoCurrentJob,nowIso,!!_geoGapHiddenAt);
-      else if(prev.k==='place'&&_geoPlaceArrivedAt)_geoClosePlaceEntry(_geoCurrentPlace,_geoPlaceArrivedAt);
-      else if(prev.k==='client'&&_geoClientArrivedAt)_geoCloseClientEntry(_geoCurrentClient,_geoClientArrivedAt);
+      else if(prev.k==='place'&&_geoPlaceArrivedAt)_geoClosePlaceEntry(_geoCurrentPlace,_geoPlaceArrivedAt,nowIso);
+      else if(prev.k==='client'&&_geoClientArrivedAt)_geoCloseClientEntry(_geoCurrentClient,_geoClientArrivedAt,nowIso);
       // prev.k==='shop' needs nothing here: the independent shop block above
       // owns that dwell, and only closes it when they actually leave the yard.
     }else if(_geoStopAnchor){
@@ -649,8 +654,11 @@ async function _geoOnPing(pos){
     if(cur){
       _geoCollapseDetours();   // unreceipted anonymous stops between here and the last real endpoint are detours
       if(legStart){
-        if(cur.k==='job')_geoDriveEntry(cur.id,legStart,null,null,legGap,curLoc,legStale);
-        else _geoDriveEntry(null,legStart,cur.name,null,legGap,curLoc,legStale);
+        // nowIso, not null: live it IS now, and a replayed TdGeo buffer fix
+        // carries the moment the arrival actually happened, so the leg's
+        // duration stays honest instead of stretching to the replay moment.
+        if(cur.k==='job')_geoDriveEntry(cur.id,legStart,null,nowIso,legGap,curLoc,legStale);
+        else _geoDriveEntry(null,legStart,cur.name,nowIso,legGap,curLoc,legStale);
       }
       _geoDriveStartedAt=null;
       _geoDriveReset();
@@ -693,6 +701,11 @@ async function _geoOnPing(pos){
   // The last fix that still put them inside something. This is the only
   // departure evidence a single-ping transition ever has.
   if(cur){_geoLastFenceAt=nowIso;_geoLastFenceLoc=curLoc;}
+  // ── TdGeo duty cycle ──────────────────────────────────────────────────────
+  // Settled inside a fence and not driving: start the countdown to GPS-off
+  // (no-op outside the shell). Anywhere else, the countdown dies.
+  if(cur&&!_geoDriveStartedAt&&typeof _geoArmParkTimer==='function')_geoArmParkTimer();
+  else if(typeof _geoClearParkTimer==='function')_geoClearParkTimer();
   // Whatever branch ran, THIS completed ping resolved any hidden gap, a stale
   // marker must never truncate a later, fully-visible close.
   _geoGapHiddenAt=null;
@@ -812,9 +825,9 @@ function _geoBindInteract(){
 function _geoIsPlaceSource(s){return String(s||'')==='place';}
 // Time at a known place, closed on departure. Bounded by a real fence at both
 // ends, so unlike an off-job stop this is verified work time.
-function _geoClosePlaceEntry(placeId,arrivedAt){
+function _geoClosePlaceEntry(placeId,arrivedAt,departedIso){
   if(!arrivedAt)return;
-  const departed=new Date().toISOString();
+  const departed=departedIso||new Date().toISOString();
   // Same rule as the shop: a saved place marked home_office bills active app
   // time only, every other kind bills the dwell.
   const mins=_geoHomeDwell
@@ -871,9 +884,9 @@ function _geoClientAt(here){
 // The visit itself, closed on departure: same shape as a place visit (the
 // client's name is the destination), so it lands in the day's story and the
 // Time at Places report without a new table or source.
-function _geoCloseClientEntry(clientId,arrivedAt){
+function _geoCloseClientEntry(clientId,arrivedAt,departedIso){
   if(!arrivedAt)return;
-  const departed=new Date().toISOString();
+  const departed=departedIso||new Date().toISOString();
   const mins=Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrivedAt))/60000));
   if(mins<2)return;               // a pass-through, not a visit
   if(!_supaUser)return;
@@ -1267,6 +1280,15 @@ async function _geoReadPermission(){
     if(_cap&&typeof _cap.isNativePlatform==='function'&&_cap.isNativePlatform()){
       if(_geoNativeWatcherId!=null)return 'granted';
       if(localStorage.getItem('geo_owner_consent')==='declined')return 'denied';
+      // The plugin's watcher reported an OS-level permission failure and no
+      // success since: the phone's Settings are the only fix, say so.
+      if(localStorage.getItem('td_geo_os_denied')==='1')return 'denied';
+      // Consent given on this device and no denial on record: granted. This
+      // is what makes the checklist SURVIVE sign-out/sign-in (owner report
+      // 2026-08-08: "onboarding didn't persist my location"): the watcher
+      // takes seconds to spin up after sign-in, and gating 'granted' on it
+      // alone re-flashed the item on every boot.
+      if(localStorage.getItem('geo_owner_consent')==='1')return 'granted';
       return 'prompt';
     }
   }catch(_e){}
@@ -1351,17 +1373,6 @@ function _geoNativePlugin(){
     return (cap.Plugins&&cap.Plugins.BackgroundGeolocation)||null;
   }catch(_e){return null;}
 }
-// TEMPORARY diagnostic (owner report 2026-08-07: still seeing the plain
-// website location prompt in the shell, no shop geofence). There's no Mac
-// to attach a debugger to the device, so this surfaces the actual runtime
-// state as an on-screen toast instead of a console log nobody can read.
-// Remove once the native watcher is confirmed working from a real device.
-function _geoNativeDiag(msg){
-  try{
-    if(!(window.Capacitor&&typeof window.Capacitor.isNativePlatform==='function'&&window.Capacitor.isNativePlatform()))return;
-    if(typeof showToast==='function')showToast('[geo diag] '+msg,'🛠',9000);
-  }catch(_e){}
-}
 // ── Native geolocation shim: the plugin is the ONLY GPS source in the shell ──
 // Any web-API call (navigator.geolocation.*) inside WKWebView pops Apple's
 // per-WEBSITE prompt ("uat...pages.dev would like to use your location") even
@@ -1431,16 +1442,113 @@ function _geoInstallGeoShim(){
     return true;
   }catch(_e){return false;}
 }
+// ── TdGeo park mode: GPS off while parked, geofence hardware watches ──────────
+// The continuous background watcher above is what pins the blue arrow in the
+// Dynamic Island and drains the battery all evening at the home office (owner
+// report 2026-08-08). Parked inside a fence for a few minutes, the native TdGeo
+// plugin (native/td-geo) takes over: full GPS goes OFF, and iOS's near-free
+// region monitoring + significant-location-change hardware watches for
+// departure. Crossing the fence re-arms the full watcher, and every native
+// event that fired while the WebView was asleep or dead is buffered to disk
+// and replayed into the fence machine (with its ORIGINAL timestamp) on the
+// next boot, so a drive that started with the app killed still logs.
+let _geoParkTimer=null;    // countdown from fence entry to GPS-off
+let _geoParkModeOn=false;  // TdGeo regions armed, continuous watcher removed
+const _GEO_PARK_AFTER_MS=4*60*1000;  // parked this long inside a fence => GPS off
+function _geoTdPlugin(){
+  try{
+    const cap=window.Capacitor;
+    if(!cap||typeof cap.isNativePlatform!=='function'||!cap.isNativePlatform())return null;
+    if(typeof cap.registerPlugin==='function')return cap.registerPlugin('TdGeo');
+    return (cap.Plugins&&cap.Plugins.TdGeo)||null;
+  }catch(_e){return null;}
+}
+function _geoArmParkTimer(){
+  if(_geoParkTimer||_geoParkModeOn)return;
+  if(!_geoTdPlugin())return;             // browser/PWA: park mode does not exist
+  _geoParkTimer=setTimeout(_geoEnterParkMode,_GEO_PARK_AFTER_MS);
+}
+function _geoClearParkTimer(){
+  if(_geoParkTimer){clearTimeout(_geoParkTimer);_geoParkTimer=null;}
+}
+function _geoEnterParkMode(){
+  _geoClearParkTimer();
+  if(_geoParkModeOn)return;
+  const Td=_geoTdPlugin();
+  if(!Td||typeof Td.startParked!=='function')return;
+  // Only duty-cycle a watcher that is actually running, and only when we know
+  // which fence we are parked in.
+  if(_geoNativeWatcherId==null&&!_geoNativeStarting)return;
+  if(!_geoLastFenceLoc)return;
+  // The region is the fence plus slack: region monitoring is coarser than GPS
+  // (cell/wifi assisted), and an exit that fires a little late is fine, the
+  // re-armed watcher's first fix re-runs the fence machine with real truth.
+  const radiusM=_geoFenceFt()*0.3048+60;
+  Promise.resolve(Td.startParked({regions:[{id:'fence',lat:_geoLastFenceLoc.lat,lng:_geoLastFenceLoc.lng,radius:radiusM}]}))
+    .then(()=>{
+      _geoParkModeOn=true;
+      if(_geoNativeWatcherId!=null){
+        const BG=_geoNativePlugin();
+        try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id:_geoNativeWatcherId});}catch(_e){}
+        _geoNativeWatcherId=null;
+      }
+    },()=>{});
+}
+function _geoExitParkMode(){
+  _geoClearParkTimer();
+  if(!_geoParkModeOn)return;
+  _geoParkModeOn=false;
+  const Td=_geoTdPlugin();
+  try{if(Td&&typeof Td.stopAll==='function')Td.stopAll();}catch(_e){}
+  startGeoTracking();
+}
+// A native event, live (listener) or replayed (drainBuffer). Replayed events
+// carry __tdTs so the fence machine clocks them at the moment they actually
+// happened, not at boot: without that, a buffered overnight drive collapses to
+// zero minutes and drops under the 2-minute floor.
+async function _geoTdEvent(ev,replay){
+  if(!ev||typeof ev!=='object')return;
+  const hasFix=typeof ev.lat==='number'&&typeof ev.lng==='number';
+  if(!replay&&_geoParkModeOn){
+    const out=ev.type==='regionExit'||
+      (hasFix&&_geoLastFenceLoc&&_geoDistFt({lat:ev.lat,lng:ev.lng},_geoLastFenceLoc)>_geoFenceFt());
+    if(out)_geoExitParkMode();
+  }
+  if(!hasFix)return;
+  return _geoOnPing({
+    coords:{latitude:ev.lat,longitude:ev.lng,accuracy:ev.acc||0,
+            speed:(typeof ev.speed==='number'&&ev.speed>=0)?ev.speed:null},
+    __tdTs:(replay&&typeof ev.ts==='number')?ev.ts:undefined
+  });
+}
+function _geoTdInit(){
+  if(window._geoTdBound)return;
+  const Td=_geoTdPlugin();
+  if(!Td)return;
+  window._geoTdBound=true;
+  try{
+    if(typeof Td.addListener==='function')Td.addListener('geoEvent',(ev)=>{_geoTdEvent(ev);});
+  }catch(_e){}
+  // Anything that fired while the WebView was asleep or the app was dead
+  // (region monitoring relaunches a killed app) replays oldest-first, awaited
+  // one at a time so the fence machine sees them in order.
+  try{
+    if(typeof Td.drainBuffer==='function'){
+      Promise.resolve(Td.drainBuffer()).then(r=>{
+        const fixes=((r&&r.fixes)||[]).slice().sort((a,b)=>(a.ts||0)-(b.ts||0));
+        (async()=>{for(const f of fixes){try{await _geoTdEvent(f,true);}catch(_e){}}})();
+      },()=>{});
+    }
+  }catch(_e){}
+}
 // ── Start / stop ───────────────────────────────────────────────────────────────
 function startGeoTracking(){
   if(_geoWatchId!=null||_geoNativeWatcherId!=null||_geoNativeStarting)return;
-  const _cap=window.Capacitor;
-  _geoNativeDiag('Capacitor='+(typeof _cap)+' native='+(_cap&&typeof _cap.isNativePlatform==='function'?_cap.isNativePlatform():'n/a')+' registerPlugin='+(_cap?typeof _cap.registerPlugin:'n/a')+' Plugins.BG='+(_cap&&_cap.Plugins?typeof _cap.Plugins.BackgroundGeolocation:'n/a'));
   const BG=_geoNativePlugin();
-  _geoNativeDiag('BG='+(BG?'found':'NULL')+' addWatcher='+(BG?typeof BG.addWatcher:'n/a'));
   if(BG&&typeof BG.addWatcher==='function'){
     // Native shell: the background watcher also fires in the foreground, so it
     // fully replaces the web watcher rather than doubling it up.
+    _geoTdInit();   // bind the park-mode event stream + replay anything buffered
     _geoNativeStarting=true;
     try{
       Promise.resolve(BG.addWatcher({
@@ -1448,8 +1556,16 @@ function startGeoTracking(){
         backgroundTitle:'TradeDesk tracking is on',
         requestPermissions:true,stale:false,distanceFilter:25
       },(loc,err)=>{
-        if(err){_geoNativeDiag('watcher callback ERROR: '+(err.message||JSON.stringify(err)));return;}
+        if(err){
+          // A permission-shaped error is the one denial signal the shell ever
+          // gets (the WebView permission API is meaningless here). Recorded so
+          // _geoReadPermission can honestly say 'denied' and the checklist
+          // routes to the phone-Settings walkthrough.
+          try{if(/permission|denied|authoriz/i.test(String(err.message||err.code||'')))localStorage.setItem('td_geo_os_denied','1');}catch(_e){}
+          return;
+        }
         if(!loc)return;
+        try{localStorage.removeItem('td_geo_os_denied');}catch(_e){}
         // Every plugin fix also feeds the geolocation shim, so weather, the
         // nearby-job card, and trip addresses ride the same stream without
         // ever touching the web API (and its per-website prompt).
@@ -1463,22 +1579,26 @@ function startGeoTracking(){
         }});
       })).then(id=>{
         _geoNativeStarting=false;_geoNativeWatcherId=id||null;
-        _geoNativeDiag('addWatcher RESOLVED, id='+id);
         // The watcher running IS the shell's 'granted' state: refresh the
         // dashboard's permission cache so "Turn on location" clears itself.
         try{if(typeof _geoRefreshPermCache==='function')_geoRefreshPermCache();}catch(_e){}
       },
-               (e)=>{_geoNativeStarting=false;_geoNativeDiag('addWatcher REJECTED: '+(e&&(e.message||JSON.stringify(e))));});
+               ()=>{_geoNativeStarting=false;});
       return;
-    }catch(_e){_geoNativeStarting=false;_geoNativeDiag('addWatcher THREW: '+(_e&&_e.message));}
+    }catch(_e){_geoNativeStarting=false;}
   }
-  _geoNativeDiag('FALLING BACK to plain web watchPosition (no background)');
   if(!navigator.geolocation)return;
   try{
     _geoWatchId=navigator.geolocation.watchPosition(_geoOnPing,()=>{},{enableHighAccuracy:true,maximumAge:30000,timeout:20000});
   }catch(_e){}
 }
 function stopGeoTracking(){
+  // Park mode dies with tracking: regions persist in CoreLocation across app
+  // kills, so sign-out must disarm them or the NEXT account's session could be
+  // woken by the previous account's fence.
+  _geoClearParkTimer();
+  _geoParkModeOn=false;
+  {const Td=_geoTdPlugin();try{if(Td&&typeof Td.stopAll==='function')Td.stopAll();}catch(_e){}}
   if(_geoNativeWatcherId!=null){
     const BG=_geoNativePlugin();
     try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id:_geoNativeWatcherId});}catch(_e){}

@@ -2,6 +2,9 @@
 # checked in: the workflow runs `npx cap add ios` fresh each build, so the repo
 # never drifts from what Capacitor generates.
 node_modules/
-ios/
+# Anchored: ONLY the generated project at native/ios. An unanchored ios/ also
+# swallowed native/td-geo/ios/, which is real checked-in plugin source, and
+# silently dropped the Swift file from the first TdGeo commit.
+/ios/
 build/
 package-lock.json

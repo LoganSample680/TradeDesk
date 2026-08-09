@@ -16,6 +16,34 @@ test.describe('Dashboard filter and pipeline functions', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
+  // Owner report (2026-08-09): "when I sign in sync fires but I see nothing
+  // but zeros for a second or two." While _dashAwaitingCloud is set (the
+  // in-tab sign-in window before the cloud load resolves) the KPI area shows
+  // skeleton tiles, never $0 placeholders; resolution swaps in real tiles.
+  // The flag defaults to false, so a mocked environment with no load coming
+  // (this very harness) must render real tiles, never an endless shimmer.
+  test('sign-in skeleton KPIs: shimmer while the cloud load is pending, real tiles otherwise', async () => {
+    const r = await page.evaluate(() => {
+      try {
+        const defaulted = _dashAwaitingCloud;
+        _dashAwaitingCloud = true;
+        renderDash();
+        const skelWhileWaiting = document.querySelectorAll('#dash-kpi .met-skel-bar').length;
+        const realWhileWaiting = document.querySelectorAll('#dash-mets-inner .met').length;
+        _dashAwaitingCloud = false;
+        renderDash();
+        const skelAfter = document.querySelectorAll('#dash-kpi .met-skel-bar').length;
+        const realAfter = document.querySelectorAll('#dash-mets-inner .met').length;
+        return { defaulted, skelWhileWaiting, realWhileWaiting, skelAfter, realAfter };
+      } finally { _dashAwaitingCloud = false; renderDash(); }
+    });
+    expect(r.defaulted, 'no load pending in this harness, the flag must default off').toBe(false);
+    expect(r.skelWhileWaiting, 'six skeleton tiles while the load is pending').toBe(6);
+    expect(r.realWhileWaiting, 'no $0 tiles while the load is pending').toBe(0);
+    expect(r.skelAfter, 'skeletons gone once the load resolved').toBe(0);
+    expect(r.realAfter, 'real KPI tiles back once the load resolved').toBeGreaterThanOrEqual(6);
+  });
+
   test('setDashFeedFilter: changes feed filter without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof setDashFeedFilter !== 'function') return { skip: true };

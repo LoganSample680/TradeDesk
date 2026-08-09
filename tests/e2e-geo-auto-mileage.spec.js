@@ -3804,25 +3804,41 @@ test.describe('Automatic mileage from drive legs', () => {
       const r = await page.evaluate(async () => {
         const realCap = window.Capacitor;
         const savedConsent = localStorage.getItem('geo_owner_consent');
+        const savedDenied = localStorage.getItem('td_geo_os_denied');
         try {
           window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => null };
+          localStorage.removeItem('td_geo_os_denied');
           _geoNativeWatcherId = 'w-live';
           const running = await _geoReadPermission();
           _geoNativeWatcherId = null;
           localStorage.setItem('geo_owner_consent', 'declined');
           const declined = await _geoReadPermission();
+          // Owner report (2026-08-09): sign back in and "Turn on location" was
+          // back, because the watcher takes seconds to start and the checklist
+          // read before it did. Consent granted on this device IS granted,
+          // durable across sign-out/sign-in, watcher running or not.
+          localStorage.setItem('geo_owner_consent', '1');
+          const consented = await _geoReadPermission();
+          // ...unless the OS itself said no: that marker outranks consent.
+          localStorage.setItem('td_geo_os_denied', '1');
+          const osDenied = await _geoReadPermission();
+          localStorage.removeItem('td_geo_os_denied');
           localStorage.removeItem('geo_owner_consent');
           const fresh = await _geoReadPermission();
-          return { running, declined, fresh };
+          return { running, declined, consented, osDenied, fresh };
         } finally {
           window.Capacitor = realCap;
           _geoNativeWatcherId = null;
           if (savedConsent === null) localStorage.removeItem('geo_owner_consent');
           else localStorage.setItem('geo_owner_consent', savedConsent);
+          if (savedDenied === null) localStorage.removeItem('td_geo_os_denied');
+          else localStorage.setItem('td_geo_os_denied', savedDenied);
         }
       });
       expect(r.running, 'a delivering watcher IS granted, the checklist item clears').toBe('granted');
       expect(r.declined).toBe('denied');
+      expect(r.consented, 'consent on this device survives sign-out/sign-in as granted').toBe('granted');
+      expect(r.osDenied, 'an OS-level denial outranks stored consent').toBe('denied');
       expect(r.fresh).toBe('prompt');
     });
 
@@ -3859,6 +3875,222 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.webWatchCalls).toBe(1);
       expect(r.watchId).toBe(1234);
       expect(r.nativeId).toBe(null);
+    });
+
+    // ── TdGeo park mode ─────────────────────────────────────────────────────
+    // Owner report (2026-08-08): the blue arrow lives in the Dynamic Island the
+    // whole time the truck is parked in a fence, because the continuous
+    // background watcher never lets go of GPS. Parked a few minutes, the native
+    // TdGeo plugin takes over: full GPS OFF, iOS's near-free geofence hardware
+    // watches for departure, and crossing the fence re-arms the full watcher.
+    // Events that fire while the WebView is asleep buffer to disk and replay
+    // with their ORIGINAL timestamps, so a drive the app slept through still
+    // logs to the minute.
+    test('parked inside a fence: TdGeo regions arm and the continuous GPS watcher is removed', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realCap = window.Capacitor, realUser = _supaUser;
+        const parked = [], removed = [];
+        _supaUser = { id: 'u-park' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false;
+          _geoHomeDwell = null; _geoWasAtHome = false;
+          _geoLastFenceLoc = null; _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoWatchId = null; _geoNativeWatcherId = null; _geoNativeStarting = false;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (name) => name === 'BackgroundGeolocation' ? {
+              addWatcher: (opts, cb) => { window.__parkCb = cb; return Promise.resolve('w-1'); },
+              removeWatcher: (o) => { removed.push(o); return Promise.resolve(); },
+            } : name === 'TdGeo' ? {
+              addListener: () => {},
+              drainBuffer: () => Promise.resolve({ fixes: [] }),
+              startParked: (o) => { parked.push(o); return Promise.resolve({ armed: (o.regions || []).length }); },
+              stopAll: () => Promise.resolve(),
+            } : null,
+          };
+          startGeoTracking();
+          await new Promise(r2 => setTimeout(r2, 10));
+          // Arriving at the shop starts the countdown to GPS-off...
+          await window.__parkCb({ latitude: a.shop.lat, longitude: a.shop.lon, accuracy: 8, speed: 0 });
+          const timerArmed = _geoParkTimer != null;
+          // ...which we fire directly rather than waiting four minutes.
+          _geoEnterParkMode();
+          await new Promise(r2 => setTimeout(r2, 10));
+          return {
+            timerArmed,
+            parkedCalls: parked.length,
+            region: parked[0] && parked[0].regions && parked[0].regions[0],
+            expectRadius: _geoFenceFt() * 0.3048 + 60,
+            removedId: removed[0] && removed[0].id,
+            watcherCleared: _geoNativeWatcherId,
+            parkOn: _geoParkModeOn,
+          };
+        } finally {
+          window.Capacitor = realCap; _supaUser = realUser;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+          _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
+          _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoStopAnchor = null;
+          delete window.__parkCb;
+        }
+      }, { shop: SHOP });
+      expect(r.timerArmed, 'settling inside a fence arms the park countdown').toBe(true);
+      expect(r.parkedCalls).toBe(1);
+      expect(r.region && r.region.id).toBe('fence');
+      expect(r.region.lat).toBeCloseTo(SHOP.lat, 4);
+      expect(r.region.lng).toBeCloseTo(SHOP.lon, 4);
+      expect(r.region.radius, 'the region is the fence plus coarse-hardware slack').toBeCloseTo(r.expectRadius, 2);
+      expect(r.removedId, 'the continuous GPS watcher is removed, the blue arrow goes away').toBe('w-1');
+      expect(r.watcherCleared).toBe(null);
+      expect(r.parkOn).toBe(true);
+    });
+
+    test('crossing the fence re-arms the full watcher and the departing fix opens the drive', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realCap = window.Capacitor, realUser = _supaUser;
+        const added = []; let stopped = 0;
+        _supaUser = { id: 'u-exit' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = true;
+          _geoShopArrivedAt = new Date(Date.now() - 30 * 60000).toISOString();
+          _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLegAtShop = true;
+          _geoHomeDwell = null; _geoWasAtHome = false;
+          _geoLastFenceAt = new Date(Date.now() - 60000).toISOString();
+          _geoLastFenceLoc = { lat: a.shop.lat, lng: a.shop.lon, name: 'Shop', kind: 'shop' };
+          _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoWatchId = null; _geoNativeWatcherId = null; _geoNativeStarting = false;
+          _geoClearParkTimer();
+          _geoParkModeOn = true;             // parked at the shop, GPS off
+          window._geoTdBound = true;         // listener already bound, skip re-init
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (name) => name === 'BackgroundGeolocation' ? {
+              addWatcher: (opts, cb) => { added.push(opts); return Promise.resolve('w-2'); },
+              removeWatcher: () => Promise.resolve(),
+            } : name === 'TdGeo' ? {
+              stopAll: () => { stopped++; return Promise.resolve(); },
+            } : null,
+          };
+          // The geofence hardware fires: they left the shop.
+          await _geoTdEvent({ type: 'regionExit', lat: a.road.lat, lng: a.road.lon, acc: 20, speed: 12, ts: Date.now() });
+          await new Promise(r2 => setTimeout(r2, 10));
+          return {
+            stopped,
+            reArmed: added.length,
+            background: !!(added[0] && added[0].backgroundMessage),
+            parkOn: _geoParkModeOn,
+            watcherId: _geoNativeWatcherId,
+            driveOpen: _geoDriveStartedAt != null,
+          };
+        } finally {
+          window.Capacitor = realCap; _supaUser = realUser;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+          _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
+          _geoDriveStartedAt = null; _geoDriveReset();
+          _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoStopAnchor = null;
+        }
+      }, { shop: SHOP, road: ROAD });
+      expect(r.stopped, 'TdGeo regions disarm on exit').toBe(1);
+      expect(r.reArmed, 'the full background watcher comes back').toBe(1);
+      expect(r.background).toBe(true);
+      expect(r.parkOn).toBe(false);
+      expect(r.watcherId).toBe('w-2');
+      expect(r.driveOpen, 'the departing fix itself opens the drive leg').toBe(true);
+    });
+
+    test('the disk buffer replays with original timestamps: a drive the app slept through still logs', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realCap = window.Capacitor, realUser = _supaUser, realRoute = _routeDistance;
+        const realEnq = window._geoEnqueue;
+        const entries = [];
+        _supaUser = { id: 'u-replay' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 12.34, mins: 21 });
+        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+        const before = mileage.length;
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false;
+          _geoHomeDwell = null; _geoWasAtHome = false;
+          _geoLastFenceLoc = null; _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoWatchId = null; _geoNativeWatcherId = null; _geoNativeStarting = false;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+          try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
+          const now = Date.now();
+          // The app was dead for the whole drive: the buffer holds a fix at the
+          // shop 30 minutes ago and the arrival at the job 2 minutes ago.
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (name) => name === 'TdGeo' ? {
+              addListener: () => {},
+              startParked: () => Promise.resolve({ armed: 0 }),
+              stopAll: () => Promise.resolve(),
+              drainBuffer: () => Promise.resolve({ fixes: [
+                { type: 'fix', lat: a.job.lat, lng: a.job.lon, acc: 8, speed: 0, ts: now - 2 * 60000 },
+                { type: 'fix', lat: a.shop.lat, lng: a.shop.lon, acc: 8, speed: 0, ts: now - 30 * 60000 },
+              ] }),
+            } : null,
+          };
+          _geoTdInit();
+          await new Promise(r2 => setTimeout(r2, 60));
+          const rows = mileage.slice(0, Math.max(0, mileage.length - before)).map(m => ({ from: m.from_name, to: m.to_name, miles: m.miles }));
+          const drive = entries.find(e => e.tbl === 'job_time_entries' && /^drive/.test(e.row.source));
+          return { rows, driveMins: drive && drive.row.minutes, arrivedAt: drive && drive.row.departed_at, expectArrive: new Date(now - 2 * 60000).toISOString() };
+        } finally {
+          window.Capacitor = realCap; _supaUser = realUser;
+          window._routeDistance = _routeDistance = realRoute;
+          window._geoEnqueue = realEnq;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+          _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoDriveReset();
+          _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoStopAnchor = null; _geoLegOrigin = null;
+        }
+      }, { shop: SHOP, job: JOB });
+      // Without honest timestamps both fixes collapse to the replay moment, the
+      // leg reads zero minutes, and the 2-minute floor silently drops the trip.
+      expect(r.rows.length, 'the slept-through drive logs its measured trip').toBe(1);
+      expect(r.rows[0].from).toBe('Shop');
+      expect(r.rows[0].to).toBe('Miller Residence');
+      expect(r.rows[0].miles).toBe(12.3);
+      expect(r.driveMins, 'the leg is clocked shop-fix to job-fix, 28 minutes').toBe(28);
+      expect(r.arrivedAt, 'arrival is stamped when it happened, not when it replayed').toBe(r.expectArrive);
+    });
+
+    test('in a plain browser park mode does not exist', async () => {
+      const r = await page.evaluate(() => {
+        const realCap = window.Capacitor;
+        try {
+          window.Capacitor = undefined;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+          _geoArmParkTimer();
+          const timerAfterArm = _geoParkTimer;
+          _geoEnterParkMode();     // must be a silent no-op, never a throw
+          _geoTdInit();
+          return { plugin: _geoTdPlugin(), timerAfterArm, parkOn: _geoParkModeOn, bound: window._geoTdBound };
+        } finally {
+          window.Capacitor = realCap;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+        }
+      });
+      expect(r.plugin).toBe(null);
+      expect(r.timerAfterArm, 'no shell, no countdown').toBe(null);
+      expect(r.parkOn).toBe(false);
+      expect(r.bound, 'the event stream never binds outside the shell').toBe(undefined);
     });
   });
 

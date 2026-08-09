@@ -472,6 +472,20 @@ function renderDash(){
         (vehLabel?'<div id="_emp-vehicle-display" style="font-size:12px;color:var(--text2);margin-bottom:10px">'+svgIcon('🚗',{size:13})+' Driving: '+escHtml(vehLabel)+'</div>':'<div id="_emp-vehicle-display" style="font-size:12px;color:var(--text2);margin-bottom:10px"></div>')+
         (myDayJobs.length?jobCards:'<div style="font-size:13px;color:var(--text3);padding:12px 0;line-height:1.5">No jobs assigned for today. Check back after your contractor updates the schedule.</div>')+
       '</div>';
+  } else if(kpiEl&&typeof _dashAwaitingCloud!=='undefined'&&_dashAwaitingCloud&&typeof _supaCloudLoaded!=='undefined'&&!_supaCloudLoaded){
+    // First seconds after sign-in: the arrays are empty until the cloud load
+    // lands, so real tiles would flash $0 everywhere (owner report
+    // 2026-08-08: "nothing but zeros for a second or two"). Skeletons
+    // instead; supaLoadFromCloud's own final renderDash swaps in real values
+    // once _supaCloudLoaded is set, and the .met entrance fade covers the
+    // swap (§8.4). Gated on _dashAwaitingCloud (set only by the in-tab
+    // sign-in path, cleared when the load resolves either way) rather than
+    // on bare !_supaCloudLoaded, so an environment where no load is coming
+    // (mocked tests, a brand-new account) renders real tiles, never an
+    // endless shimmer.
+    kpiEl.innerHTML='<div class="mets">'+
+      Array.from({length:6}).map(()=>'<div class="met"><div class="met-skel-lbl"></div><div class="met-skel-bar"></div></div>').join('')+
+    '</div>';
   } else if(kpiEl){
     const pBids=bids.filter(b=>b.status==='Pending');
     const prevTax=showTrends?estimateTax(Math.max(0,prevInc-prevExp-Math.round(prevMi*IRS(yr-1)))):0;

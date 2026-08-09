@@ -1,0 +1,13 @@
+{
+  "name": "td-geo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TradeDesk battery-aware geofence engine. Parked inside a fence, GPS goes fully OFF and the phone's near-free geofence hardware (region monitoring + significant-location-change) watches for departure; full GPS runs only while actually moving. Every native event is buffered to disk, so fixes that arrive while the WebView is asleep replay into the fence machine on the next boot.",
+  "main": "index.js",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "files": ["index.js", "ios/", "TdGeo.podspec"]
+}
