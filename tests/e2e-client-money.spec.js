@@ -2259,11 +2259,14 @@ test.describe('Job completion, price change signature gate', () => {
   test('openFinalInvoice: no pending change orders: generates straight through, opens the pay panel', async () => {
     const BID_ID = 920009, JOB_ID = 930009;
     await seedJob(BID_ID, JOB_ID, 1000);
-    await page.evaluate(([bId]) => {
+    const r = await page.evaluate(([bId]) => {
+      // Seed AND act in ONE synchronous evaluate, the same fix the pending-CO
+      // test above already carries: splitting them lets the debounced
+      // cloud-merge reassign the live `bids` array between the mutation and
+      // the call (webkit fixture-seeding flake), dropping completion_date so
+      // the invoice path never reaches the pay panel.
       const b = bids.find(x => x.id === bId);
       b.completion_date = '2026-06-01';
-    }, [BID_ID]);
-    const r = await page.evaluate(([bId]) => {
       const orig = window.open;
       let openCalled = false;
       window.open = () => { openCalled = true; return { document: { write: () => {}, close: () => {} } }; };
