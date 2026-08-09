@@ -206,5 +206,78 @@ test.describe('TdScan web half', () => {
     expect(r.started).toBe(null);
   });
 
+  test('hub snapshot gate: a locked scan ships NO geometry, an unlocked one ships the plan', async () => {
+    const r = await page.evaluate((raw) => {
+      const savedBids = bids.slice(), savedClients = clients.slice();
+      try {
+        clients.length = 0; clients.push({ id: 601, name: 'Hub Client', clientToken: 'tok601' });
+        bids.length = 0;
+        saveScan({ id: 'scan-hub-1', clientId: 601, rooms: [_scanParseRoom(raw, 'Kitchen')], name: 'Main floor', price: 99, purchasedAt: null });
+        const lockedSnap = _buildClientHubSnapshot(601);
+        const locked = (lockedSnap.scans || [])[0];
+        const sc = getScans().find(s => s.id === 'scan-hub-1');
+        sc.purchasedAt = '2026-08-09'; saveScan(sc);
+        const openSnap = _buildClientHubSnapshot(601);
+        const open = (openSnap.scans || [])[0];
+        deleteScan('scan-hub-1');
+        return {
+          lockedHasSvg: 'svg' in (locked || {}), lockedHasRooms: 'rooms' in (locked || {}),
+          lockedUnlocked: locked && locked.unlocked, lockedTeaserSqFt: locked && locked.totalSqFt,
+          lockedPrice: locked && locked.price,
+          openHasSvg: !!(open && open.svg && /<polygon/.test(open.svg)),
+          openSqFt: open && open.totalSqFt, openRooms: open && open.rooms && open.rooms.length,
+        };
+      } finally {
+        bids.length = 0; savedBids.forEach(b => bids.push(b));
+        clients.length = 0; savedClients.forEach(c => clients.push(c));
+      }
+    }, fabricatedRoom());
+    expect(r.lockedHasSvg, 'locked scans must never ship the drawing').toBe(false);
+    expect(r.lockedHasRooms, 'locked scans must never ship room detail').toBe(false);
+    expect(r.lockedUnlocked).toBe(false);
+    expect(r.lockedTeaserSqFt % 50, 'teaser square footage is rounded, not exact').toBe(0);
+    expect(r.lockedPrice).toBe(99);
+    expect(r.openHasSvg, 'a purchased scan ships the real plan').toBe(true);
+    expect(r.openSqFt).toBe(120);
+    expect(r.openRooms).toBe(1);
+  });
+
   test('no console errors across the scan suite', async () => { await assertNoErrors(page); });
+});
+
+test.describe('client hub: floor plan cards', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/client.html', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(600);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('locked card: decoy blur, lock, price, and zero real geometry; unlocked card: the plan and room rows', async () => {
+    const r = await page.evaluate(() => {
+      const locked = _hubScanCards([{ id: 's1', name: 'Main floor', roomCount: 3, totalSqFt: 450, price: 99, unlocked: false }]);
+      const open = _hubScanCards([{ id: 's2', name: 'Main floor', roomCount: 1, totalSqFt: 120, unlocked: true,
+        svg: '<svg viewBox="0 0 100 50"><polygon points="1,1 99,1 99,49 1,49"/></svg>',
+        rooms: [{ label: 'Kitchen', sqFt: 120, ceilHt: "8'0\"" }] }]);
+      return {
+        lockedHasLock: /Unlock your floor plan/.test(locked),
+        lockedHasPrice: /\$99/.test(locked),
+        lockedBlurred: /blur\(/.test(locked),
+        lockedNoPolygonData: !/points="1,1 99,1/.test(locked),
+        openHasSvg: /<polygon points="1,1 99,1/.test(open),
+        openHasRoom: /Kitchen/.test(open) && /120 sq ft/.test(open),
+        openNoLock: !/Unlock your floor plan/.test(open),
+      };
+    });
+    expect(r.lockedHasLock).toBe(true);
+    expect(r.lockedHasPrice).toBe(true);
+    expect(r.lockedBlurred).toBe(true);
+    expect(r.lockedNoPolygonData, 'the locked card contains only the decoy, never real data').toBe(true);
+    expect(r.openHasSvg).toBe(true);
+    expect(r.openHasRoom).toBe(true);
+    expect(r.openNoLock).toBe(true);
+  });
 });

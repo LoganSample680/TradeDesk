@@ -190,6 +190,25 @@ function _buildClientHubSnapshot(clientId){
     return {id:j.id,bid_id:j.bid_id||null,name:j.name||'Job',start:j.start||'',days:j.days||0,status:j.status||'scheduled',completion_date:j.completion_date||'',photos:jPhotos};
   });
   const snapshotPayments=cpayments.map(p=>({date:p.date||'',type:p.type||'',amount:p.amount||0,bid_id:p.bid_id||null,ref:p.ref||'',method:p.method||''}));
+  // Floor plans (TdScan). THE GATE LIVES HERE, server-side of the client:
+  // a locked scan ships ONLY teaser facts (name, room count, rounded sq ft,
+  // price), never geometry or the SVG, so no amount of view-source or
+  // screenshot beats it. Unlocked (bought standalone, or the bid signed and
+  // paid IN FULL) ships the pre-rendered plan SVG and per-room numbers.
+  const snapshotScans=(typeof getScans==='function'?getScans():[])
+    .filter(s=>String(s.clientId)===String(clientId))
+    .map(s=>{
+      const unlocked=(typeof scanUnlocked==='function')&&scanUnlocked(s);
+      const totalSqFt=Math.round(_scanSqFt((s.rooms||[]).reduce((t,r)=>t+r.floorM2,0)));
+      const base={id:s.id,name:s.name||'Floor plan',roomCount:(s.rooms||[]).length,
+                  totalSqFt:unlocked?totalSqFt:Math.round(totalSqFt/50)*50,
+                  price:s.price!=null?s.price:null,unlocked:!!unlocked};
+      if(unlocked){
+        base.svg=_scanPlanSvg(s,{lens:'plan'});
+        base.rooms=(s.rooms||[]).map(r=>({label:r.label,sqFt:Math.round(_scanSqFt(r.floorM2)),ceilHt:_scanFtIn(r.hM)}));
+      }
+      return base;
+    });
   const jobPhotos=clientPhotos.map(p=>({url:p.url,thumbUrl:p.thumbUrl||'',type:p.type,caption:p.caption||'',job_name:p.job_name||'',job_id:p.job_id||null,uploadedAt:p.uploadedAt||''}));
   // Extract optional chaining BEFORE the return object, Safari crashes on ?. inside { }
   const _snapUserId=_effectiveUid()||'';
@@ -202,6 +221,7 @@ function _buildClientHubSnapshot(clientId){
   const _snapCancelStatute=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].statute:'16 CFR Part 429';
   return {
     clientId,clientName:c.name,clientEmail:c.email||'',clientPhone:c.phone||'',clientAddr:c.addr||'',
+    scans:snapshotScans,
     contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
     brandColor:adaBrand(S.brandColor)||'',
     // logoUrl when the CURRENT logo is confirmed uploaded (hash match); base64

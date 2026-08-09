@@ -124,11 +124,18 @@ function saveScan(sc){
   const i=getScans().findIndex(x=>String(x.id)===String(sc.id));
   if(i>-1)scans[i]=sc;else scans.push(sc);
   if(typeof saveAll==='function')saveAll();
+  // The hub snapshot carries this client's scans (locked or unlocked), so any
+  // scan change refreshes it; the content hash inside upload dedupes no-ops.
+  if(sc.clientId&&typeof _uploadClientHub==='function'){try{_uploadClientHub(sc.clientId).catch(()=>{});}catch(_e){}}
   return sc;
 }
 function deleteScan(id){
   const i=getScans().findIndex(x=>String(x.id)===String(id));
-  if(i>-1){scans.splice(i,1);if(typeof saveAll==='function')saveAll();}
+  if(i>-1){
+    const cid=scans[i].clientId;
+    scans.splice(i,1);if(typeof saveAll==='function')saveAll();
+    if(cid&&typeof _uploadClientHub==='function'){try{_uploadClientHub(cid).catch(()=>{});}catch(_e){}}
+  }
 }
 // The hub deliverable is unlocked by (a) the standalone floor-plan purchase, or
 // (b) the booked job's bill hitting zero balance, signed AND 100% paid, not
@@ -257,7 +264,7 @@ function _scanPlanSvg(sc,opts){
   const o=opts||{};
   const lens=o.lens||'plan';
   const rooms=(sc.rooms||[]);
-  if(!rooms.length)return '<svg viewBox="0 0 100 40"><text x="50" y="22" text-anchor="middle" font-size="8" fill="var(--text3)">No rooms captured</text></svg>';
+  if(!rooms.length)return '<svg viewBox="0 0 100 40"><text x="50" y="22" text-anchor="middle" font-size="8" fill="var(--text3,#6a6963)">No rooms captured</text></svg>';
   // Bounds across all rooms.
   let minX=1e9,minZ=1e9,maxX=-1e9,maxZ=-1e9;
   rooms.forEach(r=>(r.poly||[]).forEach(([x,z])=>{minX=Math.min(minX,x);minZ=Math.min(minZ,z);maxX=Math.max(maxX,x);maxZ=Math.max(maxZ,z);}));
@@ -269,16 +276,16 @@ function _scanPlanSvg(sc,opts){
   let s='<svg viewBox="0 0 100 '+vh+'" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg">';
   rooms.forEach((r,ri)=>{
     const pts=(r.poly||[]).map(([x,z])=>px(x)+','+pz(z)).join(' ');
-    s+='<polygon points="'+pts+'" fill="var(--bg2)" stroke="var(--text2)" stroke-width="0.6" stroke-linejoin="round"/>';
+    s+='<polygon points="'+pts+'" fill="var(--bg2,#f4f4f0)" stroke="var(--text2,#5f5e5a)" stroke-width="0.6" stroke-linejoin="round"/>';
     // Wall dimension labels on the two longest walls, clutter kills small plans.
     (r.walls||[]).slice().sort((a,b)=>b.len-a.len).slice(0,2).forEach(w=>{
-      s+='<text x="'+px((w.ax+w.bx)/2)+'" y="'+pz((w.az+w.bz)/2)+'" font-size="2.6" fill="var(--text3)" text-anchor="middle">'+_scanFtIn(w.len)+'</text>';
+      s+='<text x="'+px((w.ax+w.bx)/2)+'" y="'+pz((w.az+w.bz)/2)+'" font-size="2.6" fill="var(--text3,#6a6963)" text-anchor="middle">'+_scanFtIn(w.len)+'</text>';
     });
     // Room label + area.
     const cx=(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
     const cz=(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
-    s+='<text x="'+px(cx)+'" y="'+(+pz(cz)-1.6)+'" font-size="3.2" font-weight="700" fill="var(--text)" text-anchor="middle">'+escHtml(r.label||'Room')+'</text>';
-    s+='<text x="'+px(cx)+'" y="'+(+pz(cz)+2.2)+'" font-size="2.8" fill="var(--text2)" text-anchor="middle">'+Math.round(_scanSqFt(r.floorM2))+' sq ft</text>';
+    s+='<text x="'+px(cx)+'" y="'+(+pz(cz)-1.6)+'" font-size="3.2" font-weight="700" fill="var(--text,#1a1a18)" text-anchor="middle">'+escHtml(r.label||'Room')+'</text>';
+    s+='<text x="'+px(cx)+'" y="'+(+pz(cz)+2.2)+'" font-size="2.8" fill="var(--text2,#5f5e5a)" text-anchor="middle">'+Math.round(_scanSqFt(r.floorM2))+' sq ft</text>';
     if(lens==='electrical'){
       _scanOutletPlan(r).forEach(m=>{
         s+='<circle cx="'+px(m.x)+'" cy="'+pz(m.z)+'" r="1.1" fill="#D97706" stroke="#fff" stroke-width="0.3"/>';
@@ -372,9 +379,12 @@ function openScanViewer(id){
           '<span style="color:var(--text2)">'+n.volFt3+' ft³ · '+n.winSqFt+' sq ft glass · infil '+n.infiltSensBtuh+' BTU/h</span></div>';}).join('')+
       '<div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.5">Sizing estimate from scanned geometry + measured infiltration. <strong>Not for permit submission</strong>, permit-grade Manual J reports typically require ACCA-approved software. A blower door number beats any preset, and new-construction code already requires one (3 to 5 ACH50 by climate zone).</div>';
   }else{
+    const unlocked=scanUnlocked(sc);
     body='<div style="font-size:12px;color:var(--text2)">'+(sc.rooms||[]).length+' rooms · '+totalSqFt+' sq ft total'+((sc.photos||[]).length?' · '+(sc.photos||[]).length+' photos':'')+'</div>'+
+      '<div style="font-size:11px;color:var(--text3);margin-top:6px">Hub status: '+(unlocked?'unlocked, client sees the full plan':'locked, client sees a blurred teaser'+(sc.price!=null?' at $'+sc.price:''))+'</div>'+
       '<div style="display:flex;gap:8px;margin-top:12px">'+
         '<button class="btn btn-p" style="flex:1;padding:12px" onclick="_scanSellSheet(\''+sc.id+'\')">'+(sc.purchasedAt?'Plan purchased ✓':'Sell floor plan')+'</button>'+
+        (sc.price!=null&&!sc.purchasedAt?'<button class="btn" style="padding:12px" onclick="_scanMarkPurchased(\''+sc.id+'\')">Mark paid</button>':'')+
         '<button class="btn" style="padding:12px" onclick="deleteScan(\''+sc.id+'\');document.getElementById(\'_scan-view-ov\').remove();typeof _renderCDScans===\'function\'&&_renderCDScans()">Delete</button>'+
       '</div>';
   }
@@ -414,6 +424,18 @@ function _scanToEstimate(id){
   document.getElementById('_scan-view-ov')?.remove();
   if(typeof showToast==='function')showToast('Rooms ready, open a paint estimate to use them','📐');
   if(typeof goPg==='function')goPg('pg-est');
+}
+// Standalone sale completion: collect the money through the normal payment
+// flow (cash/check/card), then mark it here; purchasedAt is what unlocks the
+// hub copy. In-hub Stripe checkout is the follow-up, this keeps the loop
+// closed today with zero new payment plumbing.
+function _scanMarkPurchased(id){
+  const sc=getScans().find(x=>String(x.id)===String(id));
+  if(!sc)return;
+  sc.purchasedAt=new Date().toISOString();
+  saveScan(sc);
+  if(typeof showToast==='function')showToast('Floor plan unlocked in their hub','📐');
+  openScanViewer(id);
 }
 // The sale: default price from Settings, per-scan override (owner call).
 function _scanSellSheet(id){
