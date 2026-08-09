@@ -285,13 +285,69 @@ function _rcptLiveCapable(){
     return !!(navigator.mediaDevices&&typeof navigator.mediaDevices.getUserMedia==='function');
   }catch(_e){return false;}
 }
+// ── VisionKit: the real document scanner ─────────────────────────────────────
+// Apple's own (native/td-doc), the same one Notes and Files use. It beats the
+// canvas pipeline below on every axis that matters on a job site: better edge
+// detection, auto-capture on a steady frame, glare and low-light handling,
+// corner adjustment and retake built in. It only exists in the app, so the
+// canvas scanner stays as the browser's.
+function _rcptNativePlugin(){
+  try{
+    const cap=window.Capacitor;
+    if(!cap||typeof cap.isNativePlatform!=='function'||!cap.isNativePlatform())return null;
+    if(typeof cap.registerPlugin==='function')return cap.registerPlugin('TdDoc');
+    return (cap.Plugins&&cap.Plugins.TdDoc)||null;
+  }catch(_e){return null;}
+}
+let _rcptNativeOk=null;   // true | false | null (not asked yet)
+async function _rcptNativeCapable(){
+  const P=_rcptNativePlugin();
+  if(!P||typeof P.isAvailable!=='function'){_rcptNativeOk=false;return false;}
+  if(_rcptNativeOk!==null)return _rcptNativeOk;
+  try{const r=await P.isAvailable();_rcptNativeOk=!!(r&&r.available);}catch(_e){_rcptNativeOk=false;}
+  return _rcptNativeOk;
+}
+// Pages come back as file paths; the callback contract everywhere else is a
+// Blob, so they are read back through the same file bridge the LiDAR scanner's
+// photos use. Only the first page is delivered, which is exactly today's
+// one-photo-per-attach behaviour: multi-page capture is available from the
+// plugin and can be surfaced later without touching any of these call sites.
+async function _rcptNativeScan(callback){
+  const P=_rcptNativePlugin();
+  try{
+    const r=await P.scanDocument();
+    const pages=(r&&r.pages)||[];
+    if(!pages.length)return;                      // cancelled: leave everything alone
+    const cap=window.Capacitor;
+    const src=(cap&&typeof cap.convertFileSrc==='function')?cap.convertFileSrc(pages[0]):pages[0];
+    const blob=await (await fetch(src)).blob();
+    callback(blob);
+  }catch(_e){
+    // Anything unexpected falls through to the canvas scanner rather than
+    // dead-ending the expense the user was in the middle of.
+    if(_rcptLiveCapable())_openLiveScanner(callback);
+  }
+}
 function _showReceiptScanner(fileOrNull,callback){
   if(fileOrNull){_loadAndBuildScanUI(fileOrNull,callback);return;}
+  // Apple's scanner first inside the app.
+  if(_rcptNativePlugin()){
+    _rcptNativeCapable().then(ok=>{
+      if(ok){_rcptNativeScan(callback);return;}
+      if(_rcptLiveCapable()){_openLiveScanner(callback);return;}
+      _rcptPickFile(callback);
+    });
+    return;
+  }
   // Live viewfinder: auto edge detection, hold-steady coaching, tap to shoot,
   // then perspective-corrected and contrast-stretched on the way out.
   // _openLiveScanner falls back to this same file path by itself if the
   // camera is refused at runtime, so there is no dead end.
   if(_rcptLiveCapable()){_openLiveScanner(callback);return;}
+  _rcptPickFile(callback);
+}
+// The OS camera plus the manual corner editor: the floor every platform gets.
+function _rcptPickFile(callback){
   const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.capture='environment';inp.style.display='none';
   inp.onchange=()=>{const f=inp.files[0];inp.remove();if(f)_loadAndBuildScanUI(f,callback);};
   document.body.appendChild(inp);inp.click();

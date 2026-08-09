@@ -46,7 +46,7 @@ test.describe('receipt scanner', () => {
     expect(r.picked, 'the OS camera path still works everywhere').toBe(1);
   });
 
-  test('inside the shell the live viewfinder is what opens', async () => {
+  test('inside the shell the live viewfinder is available as the fallback', async () => {
     const r = await page.evaluate(() => {
       const realCap = window.Capacitor;
       window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
@@ -54,6 +54,89 @@ test.describe('receipt scanner', () => {
       finally { window.Capacitor = realCap; }
     });
     expect(r.capable).toBe(true);
+  });
+
+  // Apple's VisionKit scanner (native/td-doc) is the one the app should use:
+  // better edge detection, auto-capture, glare handling, retake. The canvas
+  // pipeline is demoted to the browser's fallback.
+  test('in the app, Apple\'s document scanner is preferred over the canvas one', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const realFetch = window.fetch;
+      let scanCalls = 0;
+      window.Capacitor = {
+        isNativePlatform: () => true,
+        convertFileSrc: (p) => 'file://' + p,
+        registerPlugin: (n) => n === 'TdDoc' ? {
+          isAvailable: () => Promise.resolve({ available: true }),
+          scanDocument: () => { scanCalls++; return Promise.resolve({ pages: ['/docs/p0.jpg', '/docs/p1.jpg'], cancelled: false }); },
+        } : null,
+      };
+      window.fetch = () => Promise.resolve({ blob: () => Promise.resolve(new Blob(['x'], { type: 'image/jpeg' })) });
+      try {
+        window._rcptNativeOk = null;
+        let got = null;
+        _showReceiptScanner(null, (b) => { got = b; });
+        await new Promise(r2 => setTimeout(r2, 120));
+        return { scanCalls, gotBlob: !!got && got.type === 'image/jpeg',
+                 canvasOpened: !!document.getElementById('live-scan-ui') };
+      } finally {
+        window.Capacitor = realCap; window.fetch = realFetch;
+        document.getElementById('live-scan-ui')?.remove();
+      }
+    });
+    expect(r.scanCalls, 'VisionKit is what runs').toBe(1);
+    expect(r.gotBlob, 'the page comes back as an image the expense can attach').toBe(true);
+    expect(r.canvasOpened, 'the canvas scanner never opens when Apple\'s is there').toBe(false);
+  });
+
+  test('cancelling Apple\'s scanner attaches nothing at all', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      window.Capacitor = {
+        isNativePlatform: () => true,
+        convertFileSrc: (p) => p,
+        registerPlugin: (n) => n === 'TdDoc' ? {
+          isAvailable: () => Promise.resolve({ available: true }),
+          scanDocument: () => Promise.resolve({ pages: [], cancelled: true }),
+        } : null,
+      };
+      try {
+        window._rcptNativeOk = null;
+        let calls = 0;
+        _showReceiptScanner(null, () => { calls++; });
+        await new Promise(r2 => setTimeout(r2, 120));
+        return { calls };
+      } finally { window.Capacitor = realCap; }
+    });
+    expect(r.calls, 'a cancel leaves the expense untouched').toBe(0);
+  });
+
+  test('an older phone without VisionKit still gets the canvas scanner', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const realGUM = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+      window.Capacitor = {
+        isNativePlatform: () => true,
+        registerPlugin: (n) => n === 'TdDoc' ? {
+          isAvailable: () => Promise.resolve({ available: false }),
+          scanDocument: () => Promise.reject(new Error('unsupported')),
+        } : null,
+      };
+      if (navigator.mediaDevices) navigator.mediaDevices.getUserMedia = () => new Promise(() => {});
+      try {
+        window._rcptNativeOk = null;
+        _showReceiptScanner(null, () => {});
+        await new Promise(r2 => setTimeout(r2, 150));
+        const opened = !!document.getElementById('live-scan-ui');
+        document.getElementById('live-scan-ui')?.remove();
+        return { opened };
+      } finally {
+        window.Capacitor = realCap;
+        if (navigator.mediaDevices && realGUM) navigator.mediaDevices.getUserMedia = realGUM;
+      }
+    });
+    expect(r.opened, 'no dead end on a phone VisionKit will not run on').toBe(true);
   });
 
   // THE BUG THIS FILE EXISTS FOR. In CSS calc(), + and - must have whitespace

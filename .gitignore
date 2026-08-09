@@ -18,3 +18,4 @@ _shot_*.png
 !native/package.json
 !native/td-geo/package.json
 !native/td-scan/package.json
+!native/td-doc/package.json
