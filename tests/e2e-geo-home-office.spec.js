@@ -108,12 +108,18 @@ test.describe('Home office: presence is not work', () => {
                                   .reduce((n, r) => n + (r.minutes || 0), 0);
 
   test.describe('the shop is the house', () => {
-    test.beforeAll(async () => {
+    // beforeEACH, not beforeAll: the sync fabric can replace the `places`
+    // array mid-file (the documented WebKit places-wipe flake, see the note in
+    // e2e-geo-drive-matrix). Losing the Home Office fixture silently turns
+    // this describe's activeMs billing into wall-clock billing, and
+    // "fourteen hours asleep" bills 840 (the exact 2026-08-09 shard-3
+    // failure). Re-seeding per test makes the fixture unstealable.
+    test.beforeEach(async () => {
       await page.evaluate((d) => {
         S.officeLat = d.HOME.lat; S.officeLon = d.HOME.lon;
         S.teamTracking = true;
         if (typeof places !== 'undefined') places.length = 0;
-        savePlace({ name: 'Home Office', kind: 'home_office', lat: d.HOME.lat, lon: d.HOME.lon, confirmedBy: 'manual' });
+        savePlace({ id: 'homeoffice-fixture', name: 'Home Office', kind: 'home_office', lat: d.HOME.lat, lon: d.HOME.lon, confirmedBy: 'manual' });
       }, { HOME });
     });
 
