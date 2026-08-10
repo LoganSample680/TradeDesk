@@ -477,15 +477,25 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
                 }
             }
             // Photo mesh: weld the LiDAR anchors, bake real color from the
-            // keyframes, write a binary PLY the web viewer streams back out.
+            // keyframes, write a vertex-color PLY (fallback tier) AND the
+            // textured mesh (photoreal tier): every triangle UV-mapped into
+            // the keyframe photo that saw it best, keyframe JPEGs kept as the
+            // textures.
             var meshPath: String? = nil
+            var texPath: String? = nil
+            var keepTex: Set<String> = []
             if !meshAnchors.isEmpty && !self.keyframes.isEmpty && !self.rooms.isEmpty {
                 let kfs = self.keyframes
-                meshPath = await Task.detached(priority: .userInitiated) {
+                let baked = await Task.detached(priority: .userInitiated) {
                     TdMeshBaker.bake(anchors: meshAnchors, keyframes: kfs)
                 }.value
+                meshPath = baked.ply
+                texPath = baked.tdm
+                keepTex = baked.usedImages
             }
-            for k in self.keyframes { try? FileManager.default.removeItem(atPath: k.path) }
+            for k in self.keyframes where !keepTex.contains(k.path) {
+                try? FileManager.default.removeItem(atPath: k.path)
+            }
             await MainActor.run {
                 hud.removeFromSuperview()
                 var result: [String: Any] = [
@@ -497,6 +507,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
                 ]
                 if let p = usdzPath { result["usdz"] = p }
                 if let p = meshPath { result["meshPly"] = p }
+                if let p = texPath { result["meshTex"] = p }
                 self.dismiss(animated: true) { self.onDone?(result) }
             }
         }
@@ -520,7 +531,10 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
 #if canImport(RoomPlan)
 @available(iOS 17.0, *)
 enum TdMeshBaker {
-    static func bake(anchors: [ARMeshAnchor], keyframes: [TdKeyframe]) -> String? {
+    // Returns the vertex-color PLY, the textured TDM, and which keyframe
+    // JPEGs the TDM references (those must NOT be deleted, they ARE the
+    // textures).
+    static func bake(anchors: [ARMeshAnchor], keyframes: [TdKeyframe]) -> (ply: String?, tdm: String?, usedImages: Set<String>) {
         // 1. Weld anchors into world-space arrays.
         var pos: [simd_float3] = [], nor: [simd_float3] = [], tris: [Int32] = []
         for a in anchors {
@@ -549,7 +563,7 @@ enum TdMeshBaker {
                 tris.append(base + idx)
             }
         }
-        guard !pos.isEmpty, !tris.isEmpty else { return nil }
+        guard !pos.isEmpty, !tris.isEmpty else { return (nil, nil, []) }
         // 2. Grid-merge duplicated border vertices; coarser grid on huge scans
         // keeps the PLY streamable over the plugin bridge.
         let grid: Float = pos.count > 800_000 ? 0.04 : 0.025
@@ -634,9 +648,91 @@ enum TdMeshBaker {
             f += 3
         }
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let url = dir.appendingPathComponent("td_mesh_\(Int(Date().timeIntervalSince1970 * 1000)).ply")
-        do { try out.write(to: url) } catch { return nil }
-        return url.path
+        let stamp = Int(Date().timeIntervalSince1970 * 1000)
+        let url = dir.appendingPathComponent("td_mesh_\(stamp).ply")
+        var plyPath: String? = url.path
+        do { try out.write(to: url) } catch { plyPath = nil }
+
+        // 5. The photoreal tier: assign each face to the keyframe that saw it
+        // best and UV-map its corners into that photo. No atlas repacking:
+        // the keyframe JPEGs themselves are the textures, one draw group per
+        // frame. Chart seams are visible up close; sharpness everywhere else
+        // is the photo's own.
+        let nFaces = mTris.count / 3
+        var faceKf = [Int](repeating: -1, count: nFaces)
+        var faceUv = [Float](repeating: 0, count: nFaces * 6)
+        let imgW = Float(960), imgH = Float(720)   // saved keyframe size (4:3 sensor)
+        for f in 0..<nFaces {
+            let ia = Int(mTris[f*3]), ib = Int(mTris[f*3+1]), ic = Int(mTris[f*3+2])
+            let a = mPos[ia], b = mPos[ib], c = mPos[ic]
+            let centroid = (a + b + c) / 3
+            let fn = simd_normalize(simd_cross(b - a, c - a))
+            var bestScore: Float = 0
+            for (ki, kf) in keyframes.enumerated() {
+                let toCam = kf.camPos - centroid
+                let dist2 = simd_length_squared(toCam)
+                if dist2 < 0.04 || dist2 > 36 { continue }
+                let facing = abs(simd_dot(fn, simd_normalize(toCam)))
+                if facing < 0.2 { continue }
+                let score = facing / dist2
+                if score <= bestScore { continue }
+                var uvs = [Float](repeating: 0, count: 6)
+                var ok = true
+                for (vi, p) in [a, b, c].enumerated() {
+                    let c4 = kf.inv * simd_float4(p, 1)
+                    let zc = -c4.z
+                    if zc < 0.05 { ok = false; break }
+                    let u = kf.cx + kf.fx * c4.x / zc
+                    let v = kf.cy - kf.fy * c4.y / zc
+                    if u < 0 || v < 0 || u >= imgW || v >= imgH { ok = false; break }
+                    uvs[vi*2] = u / imgW
+                    uvs[vi*2+1] = 1 - v / imgH     // three.js flipY=true: v=1 is the image top
+                }
+                if !ok { continue }
+                bestScore = score
+                faceKf[f] = ki
+                for i in 0..<6 { faceUv[f*6+i] = uvs[i] }
+            }
+        }
+        // Order faces by keyframe so each texture is one contiguous group.
+        var byKf: [Int: [Int]] = [:]
+        for f in 0..<nFaces { byKf[faceKf[f], default: []].append(f) }
+        var soup = Data(); soup.reserveCapacity(nFaces * 60)
+        var groups: [[String: Any]] = []
+        var cursor = 0
+        var used: Set<String> = []
+        let kfKeys = byKf.keys.sorted()
+        for ki in kfKeys {
+            let faces = byKf[ki]!
+            let img = ki >= 0 ? keyframes[ki].path : ""
+            if ki >= 0 { used.insert(img) }
+            groups.append(["img": img, "start": cursor, "count": faces.count * 3])
+            cursor += faces.count * 3
+            for f in faces {
+                for corner in 0..<3 {
+                    var p = mPos[Int(mTris[f*3+corner])]
+                    withUnsafeBytes(of: &p.x) { soup.append(contentsOf: $0) }
+                    withUnsafeBytes(of: &p.y) { soup.append(contentsOf: $0) }
+                    withUnsafeBytes(of: &p.z) { soup.append(contentsOf: $0) }
+                    var u = ki >= 0 ? faceUv[f*6+corner*2] : 0
+                    var v = ki >= 0 ? faceUv[f*6+corner*2+1] : 0
+                    withUnsafeBytes(of: &u) { soup.append(contentsOf: $0) }
+                    withUnsafeBytes(of: &v) { soup.append(contentsOf: $0) }
+                }
+            }
+        }
+        var tdmPath: String? = nil
+        if let head = try? JSONSerialization.data(withJSONObject: [
+            "v": 1, "corners": nFaces * 3, "stride": 20, "groups": groups
+        ]) {
+            var tdm = Data()
+            tdm.append(head)
+            tdm.append(0x0A)          // newline ends the JSON header
+            tdm.append(soup)
+            let turl = dir.appendingPathComponent("td_mesh_\(stamp).tdm")
+            do { try tdm.write(to: turl); tdmPath = turl.path } catch { used = [] }
+        } else { used = [] }
+        return (plyPath, tdmPath, used)
     }
 }
 #endif

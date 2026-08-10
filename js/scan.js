@@ -882,9 +882,11 @@ async function startRoomScan(ctx){
     // USDZ is device-local too: the 3D/AR file Quick Look opens on this phone.
     photos:(res.photos||[]).map(p=>({path:p.path,cam:p.cam,room:p.room})),
     usdz:(typeof res.usdz==='string'&&res.usdz)||null,
-    // The photo mesh (color-baked PLY) is device-local like the USDZ: the
-    // orbit viewer streams it back out through the plugin's readFile.
+    // The photo mesh is device-local like the USDZ: the orbit viewer streams
+    // it back out through the plugin's readFile. meshTex is the photoreal
+    // textured tier; meshPly the vertex-color fallback.
     meshPly:(typeof res.meshPly==='string'&&res.meshPly)||null,
+    meshTex:(typeof res.meshTex==='string'&&res.meshTex)||null,
     price:(typeof S!=='undefined'&&S.scanDefaultPrice)||null,
     purchasedAt:null
   });

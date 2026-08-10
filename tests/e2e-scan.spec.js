@@ -1233,25 +1233,92 @@ test.describe('TdScan web half', () => {
   // Owner (2026-08-10): "show the client a scan, have them pick their color
   // and show what it would look like on the wall."
   test.describe('paint mode: the client picks a color on their own walls', () => {
-    test('what the client picked saves onto the scan record', async () => {
+    test('what the client picked saves onto the scan record, name and all', async () => {
       const r = await page.evaluate(() => {
         const before = scans.length;
         try {
           const sc = { id: 'sc-paint', name: 'Paint', rooms: [], photos: [] };
-          _scan3dSetPaint(sc, _scan3dPaintKey(0, 'w-n'), '#9CAF88');
+          _scan3dSetPaint(sc, _scan3dPaintKey(0, 'w-n'), '#D1CBC1', 'Agreeable Gray SW 7029');
           const stored = sc.wallPaint['0:w-n'];
+          const named = sc.wallPaintNames['0:w-n'];
           const persisted = scans.some(s => s.id === 'sc-paint');
           _scan3dSetPaint(sc, '0:w-n', null);
-          return { stored, persisted, cleared: !('0:w-n' in sc.wallPaint),
-                   swatches: _S3D_PAINT.length,
-                   noTrademarks: _S3D_PAINT.every(([n]) => !/sherwin|moore|behr|valspar/i.test(n)) };
+          return { stored, named, persisted,
+                   cleared: !('0:w-n' in sc.wallPaint) && !('0:w-n' in sc.wallPaintNames),
+                   swatches: _S3D_PAINT.length };
         } finally { scans.length = before; saveAll(); }
       });
-      expect(r.stored).toBe('#9CAF88');
+      expect(r.stored).toBe('#D1CBC1');
+      expect(r.named, 'the NAME is what goes on the estimate and the paint order').toBe('Agreeable Gray SW 7029');
       expect(r.persisted, 'the pick rides td_scans, it is on file at estimate time').toBe(true);
-      expect(r.cleared, 'reset erases, not paints white').toBe(true);
+      expect(r.cleared, 'reset erases the color and its name together').toBe(true);
       expect(r.swatches).toBe(12);
-      expect(r.noTrademarks, 'no paint-brand trademarks in the product').toBe(true);
+    });
+
+    // Owner (2026-08-10): "for painters we need to load in sherwin Williams
+    // colors." The deck follows the active trade like the scan lenses do.
+    test('painters get the Sherwin-Williams deck, other trades the generic one', async () => {
+      const r = await page.evaluate(() => {
+        const real = typeof _activeTrade !== 'undefined' ? _activeTrade : null;
+        try {
+          setActiveTrade('painting');
+          const sw = _scan3dPalette();
+          setActiveTrade('hvac');
+          const gen = _scan3dPalette();
+          return {
+            swBrand: sw.brand, swCount: sw.colors.length,
+            allCoded: sw.colors.every(c => /^SW \d{4}$/.test(c[1])),
+            hasStaples: ['Agreeable Gray', 'Alabaster', 'Naval', 'Sea Salt']
+              .every(n => sw.colors.some(c => c[0] === n)),
+            genBrand: gen.brand, genCount: gen.colors.length,
+          };
+        } finally { setActiveTrade(real); }
+      });
+      expect(r.swBrand).toBe('Sherwin-Williams');
+      expect(r.swCount, 'a real deck, not a token dozen').toBeGreaterThanOrEqual(40);
+      expect(r.allCoded, 'every SW color carries its number, that is the language').toBe(true);
+      expect(r.hasStaples, 'the staples every painter quotes are in the deck').toBe(true);
+      expect(r.genBrand).toBe(null);
+      expect(r.genCount).toBe(12);
+    });
+
+    test('the textured mesh round-trips and paints without touching the photo elsewhere', async () => {
+      const r = await page.evaluate(() => {
+        // Two triangles: one flat against a wall, one out in the room.
+        const head = JSON.stringify({ v: 1, corners: 6, stride: 20,
+          groups: [{ img: '/tmp/kf1.jpg', start: 0, count: 6 }] });
+        const hb = new TextEncoder().encode(head + '\n');
+        const buf = new ArrayBuffer(hb.length + 6 * 20);
+        new Uint8Array(buf).set(hb);
+        const dv = new DataView(buf, hb.length);
+        const corners = [
+          [0.5, 1.0, 0.05, 0.1, 0.9], [1.5, 1.0, 0.05, 0.5, 0.9], [1.0, 2.0, 0.05, 0.3, 0.1],
+          [0.5, 1.0, 2.0, 0.1, 0.9], [1.5, 1.0, 2.0, 0.5, 0.9], [1.0, 2.0, 2.0, 0.3, 0.1]];
+        corners.forEach((c, i) => {
+          dv.setFloat32(i * 20, c[0], true); dv.setFloat32(i * 20 + 4, c[1], true);
+          dv.setFloat32(i * 20 + 8, c[2], true); dv.setFloat32(i * 20 + 12, c[3], true);
+          dv.setFloat32(i * 20 + 16, c[4], true);
+        });
+        const soup = _scan3dParseTdm(buf);
+        const rooms = [{ walls: [{ id: 'w1', ax: 0, az: 0, bx: 3, bz: 0, len: 3, h: 2.4, ey: 1.2 }] }];
+        const tint = _scan3dMeshTintTex(soup, rooms, { '0:w1': '#33465E' });
+        const bare = _scan3dMeshTintTex(soup, rooms, {});
+        return {
+          corners: soup && soup.corners, groupImg: soup && soup.groups[0].img,
+          uvKept: soup && Math.abs(soup.uv[1] - 0.9) < 1e-6,
+          wallTinted: tint[2] > tint[0],                        // navy leans blue
+          roomLeftAlone: tint[9] === 1 && tint[10] === 1 && tint[11] === 1,
+          bareAllWhite: Array.from(bare).every(v => v === 1),
+          junkNull: _scan3dParseTdm(new TextEncoder().encode('not json\n').buffer) === null,
+        };
+      });
+      expect(r.corners).toBe(6);
+      expect(r.groupImg).toBe('/tmp/kf1.jpg');
+      expect(r.uvKept).toBe(true);
+      expect(r.wallTinted, 'the wall corner takes the paint').toBe(true);
+      expect(r.roomLeftAlone, 'multiply-white leaves the photo untouched off the wall').toBe(true);
+      expect(r.bareAllWhite).toBe(true);
+      expect(r.junkNull).toBe(true);
     });
 
     test('the PLY the phone bakes parses back byte for byte', async () => {
@@ -1320,7 +1387,9 @@ test.describe('TdScan web half', () => {
             paintPill: !!document.getElementById('_s3d-paint-btn'),
             hiddenUntilOpened: strip && strip.style.display === 'none',
             swatchButtons: strip ? strip.querySelectorAll('[data-hex]').length : 0,
+            deckSize: _scan3dPalette().colors.length,
             customWell: !!(strip && strip.querySelector('input[type=color]')),
+            fanDeckLine: /confirm/i.test(document.getElementById('_s3d-paint-deck')?.textContent || ''),
             // No mesh on this scan and no plugin on web: no dead Photo pill.
             meshPill: !!document.getElementById('_s3d-mesh-btn'),
           };
@@ -1330,8 +1399,9 @@ test.describe('TdScan web half', () => {
       }, fabricatedRoom());
       expect(r.paintPill).toBe(true);
       expect(r.hiddenUntilOpened, 'the strip waits behind the pill').toBe(true);
-      expect(r.swatchButtons).toBe(12);
-      expect(r.customWell, 'any color, not just our twelve').toBe(true);
+      expect(r.swatchButtons, 'the strip shows the whole active deck').toBe(r.deckSize);
+      expect(r.customWell, 'any color, not just the deck').toBe(true);
+      expect(r.fanDeckLine, 'the screen-preview honesty line is on the glass').toBe(true);
       expect(r.meshPill).toBe(false);
     });
   });
