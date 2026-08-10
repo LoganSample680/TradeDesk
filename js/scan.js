@@ -102,7 +102,7 @@ function _scanParseRoom(rawJson,label){
     const ux=m.col0.x,uz=m.col0.z;
     const ln=Math.hypot(ux,uz)||1;
     objects.push({cat:_scanObjCat(o.category),
-      cx:m.col3.x,cz:m.col3.z,w:d.w,d:d.d||d.w,
+      cx:m.col3.x,cz:m.col3.z,w:d.w,d:d.d||d.w,h:d.h||0,
       ux:ux/ln,uz:uz/ln});
   });
   // Floor polygon: floors[0].polygonCorners (iOS 17) or the wall endpoints hull.

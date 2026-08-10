@@ -923,6 +923,7 @@ test.describe('TdScan web half', () => {
           cats: (room.objects || []).map(o => o.cat).join(),
           bedDeg: bed && Math.round(Math.atan2(bed.uz, bed.ux) * 180 / Math.PI),
           bedDepth: bed && +bed.d.toFixed(2),
+          bedH: bed && +bed.h.toFixed(2),
           unit: bed && +Math.hypot(bed.ux, bed.uz).toFixed(3),
           noObjects: (_scanParseRoom(JSON.stringify({ walls: [], objects: null }), 'X') || {}).objects,
         };
@@ -930,6 +931,7 @@ test.describe('TdScan web half', () => {
       expect(r.cats).toBe('sofa,bed,toilet,stove');
       expect(r.bedDeg, 'a bed at 30 degrees stays at 30 degrees').toBe(30);
       expect(r.bedDepth, 'depth comes off the transform, it is not guessed').toBe(2);
+      expect(r.bedH, 'the measured height rides along for the 3D model').toBe(0.8);
       expect(r.unit, 'the axis is normalized so the symbol never stretches').toBe(1);
       expect(r.noObjects, 'a scan with no objects still parses').toEqual([]);
     });
@@ -1155,6 +1157,77 @@ test.describe('TdScan web half', () => {
     expect(r.canvas || r.fallback, 'a real render or an honest fallback, never a blank screen').toBe(true);
     expect(r.closed, 'close tears the overlay down').toBe(true);
     expect(r.stateCleared).toBe(true);
+  });
+
+  // Owner (2026-08-10): "3d needs its shine." The shine is the furniture: the
+  // parts library is pure data so these run without a GL context.
+  test.describe('3D furniture: real parts, measured heights, a layer pill', () => {
+    test('each category builds an assembly, inside its own footprint', async () => {
+      const r = await page.evaluate(() => {
+        const inside = (parts, w, d) => parts.every(p => {
+          const hx = p.shape === 'cyl' ? p.r : p.w / 2, hz = p.shape === 'cyl' ? p.r : p.d / 2;
+          return Math.abs(p.x) + hx <= w / 2 + 0.02 && Math.abs(p.z) + hz <= d / 2 + 0.02 && p.y - p.h / 2 >= -0.01;
+        });
+        const bed = _scan3dFurnSpec('bed', 1.5, 2.0, 0.6);
+        const stove = _scan3dFurnSpec('stove', 0.76, 0.65, 0.9);
+        const toilet = _scan3dFurnSpec('toilet', 0.5, 0.75, 0);
+        const table = _scan3dFurnSpec('table', 1.2, 0.7, 0.74);
+        const mystery = _scan3dFurnSpec('hoverboard-dock', 1, 0.5, 0);
+        return {
+          bedParts: bed.length, bedInside: inside(bed, 1.5, 2.0),
+          burners: stove.filter(p => p.shape === 'cyl').length,
+          bowl: toilet.some(p => p.shape === 'cyl'),
+          legs: table.filter(p => p.h > 0.5).length,
+          mysteryBox: mystery.length === 1 && mystery[0].shape === 'box',
+          mysteryH: mystery[0].y * 2,
+        };
+      });
+      expect(r.bedParts, 'a bed is frame + mattress + pillow, not one slab').toBeGreaterThanOrEqual(3);
+      expect(r.bedInside, 'no part sticks out of the measured footprint').toBe(true);
+      expect(r.burners, 'a stove shows its burners from above').toBe(4);
+      expect(r.bowl, 'a toilet has a round bowl').toBe(true);
+      expect(r.legs, 'a table stands on four legs').toBe(4);
+      expect(r.mysteryBox, 'an unknown category degrades to its box').toBe(true);
+      expect(r.mysteryH, 'and takes the generic fallback height').toBeCloseTo(0.75, 5);
+    });
+
+    test('the height the scan measured wins over the category default', async () => {
+      const r = await page.evaluate(() => {
+        const top = parts => Math.max(...parts.map(p => p.y + p.h / 2));
+        return {
+          measured: top(_scan3dFurnSpec('storage', 1, 0.5, 2.3)),
+          fallback: top(_scan3dFurnSpec('storage', 1, 0.5, 0)),
+          junk: top(_scan3dFurnSpec('storage', 1, 0.5, 0.02)),
+        };
+      });
+      expect(r.measured, 'a 2.3 m wardrobe models at 2.3 m').toBeCloseTo(2.3, 5);
+      expect(r.fallback).toBeCloseTo(1.1, 5);
+      expect(r.junk, 'a degenerate 2 cm box falls back instead of modeling a coaster').toBeCloseTo(1.1, 5);
+    });
+
+    test('the viewer offers the Furniture pill only when there is furniture', async () => {
+      const r = await page.evaluate(async (raw) => {
+        const before = scans.length;
+        try {
+          const furnished = _scanParseRoom(raw, 'Kitchen');
+          furnished.objects = [{ cat: 'sofa', cx: 0, cz: 0, w: 2, d: 0.9, h: 0.8, ux: 1, uz: 0 }];
+          const bare = _scanParseRoom(raw, 'Hall');
+          const sc1 = saveScan({ id: 'sc-furn', clientId: null, name: 'Furnished', createdAt: new Date().toISOString(), rooms: [furnished], photos: [], price: null, purchasedAt: null });
+          await _scan3dOpen(sc1.id);
+          const withPill = !!document.getElementById('_s3d-furn-btn');
+          const toggleSafe = (() => { try { _scan3dToggleFurn(); return true; } catch (e) { return false; } })();
+          _scan3dClose();
+          const sc2 = saveScan({ id: 'sc-bare', clientId: null, name: 'Bare', createdAt: new Date().toISOString(), rooms: [bare], photos: [], price: null, purchasedAt: null });
+          await _scan3dOpen(sc2.id);
+          const withoutPill = !!document.getElementById('_s3d-furn-btn');
+          _scan3dClose();
+          return { withPill, toggleSafe, withoutPill };
+        } finally { scans.length = before; saveAll(); _scan3dClose(); }
+      }, fabricatedRoom());
+      expect(r.withPill, 'furniture in the scan, pill on the glass').toBe(true);
+      expect(r.toggleSafe, 'toggling with no GL context must not throw').toBe(true);
+      expect(r.withoutPill, 'no furniture, no dead pill').toBe(false);
+    });
   });
 
   // Scanning is hardware (owner 2026-08-09): a phone with no LiDAR can never do

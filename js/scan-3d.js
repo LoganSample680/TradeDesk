@@ -11,7 +11,104 @@
 // (build #12) is the AR tier. Controls are hand-rolled (~40 lines) instead of
 // OrbitControls because the examples module hard-imports the bare 'three'
 // specifier, which a static no-bundler app cannot resolve.
-let _s3d=null;   // {renderer,scene,camera,raf,ov} while the viewer is open
+let _s3d=null;   // {renderer,scene,camera,raf,ov,furn} while the viewer is open
+
+// ── Furniture parts library ──────────────────────────────────────────────────
+// Owner (2026-08-10): the 3D needs its shine, and next to Polycam the missing
+// shine was the furniture. RoomPlan boxes every piece it classifies; the plan
+// draws them as 2D symbols (js/scan.js), and this is the 3D half: each
+// category becomes a small assembly of boxes and cylinders, in the piece's own
+// frame (x along width, z along depth, y up from the floor, meters).
+//
+// Pure data, no three.js: the offline suite proves the shapes without a GL
+// context, and _scan3dOpen just turns parts into meshes.
+const _S3D_COLS={wood:0xC9AE84,beige:0xD5C39D,cushion:0xEFE8D8,appl:0x9C96B8,
+                 plumb:0xEDF0F2,basin:0xAFB9C2,dark:0x4A4F58,tan:0xC4A876};
+function _scan3dFurnSpec(cat,w,d,h){
+  const C=_S3D_COLS;
+  // Typical heights when the scan's own box came back degenerate.
+  const FALL={bed:.6,sofa:.78,chair:.85,table:.74,refrigerator:1.75,stove:.9,
+    oven:.9,dishwasher:.85,washerDryer:1.0,sink:.86,toilet:.76,bathtub:.56,
+    television:.9,storage:1.1,fireplace:1.0,stairs:2.2};
+  const H=(h&&h>0.15)?h:(FALL[cat]||0.75);
+  const box=(x,y,z,bw,bh,bd,col)=>({shape:'box',x,y,z,w:bw,h:bh,d:bd,col});
+  const cyl=(x,y,z,r,ch,col)=>({shape:'cyl',x,y,z,r,h:ch,col});
+  const hw=w/2,hd=d/2;
+  switch(cat){
+    case 'bed':{
+      const fh=H*.45,mh=H*.4;
+      return [box(0,fh/2,0,w,fh,d,C.wood),
+              box(0,fh+mh/2,0,w*.94,mh,d*.96,C.cushion),
+              box(0,fh+mh+.06,-hd+d*.15,w*.62,.11,d*.2,0xF7F4EC)];
+    }
+    case 'sofa':{
+      const bh=H*.55;
+      return [box(0,bh/2,0,w,bh,d,C.beige),
+              box(0,H/2,-hd+d*.12,w,H,d*.24,C.beige),
+              box(-hw+w*.07,H*.38,0,w*.14,H*.76,d,C.beige),
+              box(hw-w*.07,H*.38,0,w*.14,H*.76,d,C.beige),
+              box(0,bh+.05,d*.06,w*.66,.12,d*.5,C.cushion)];
+    }
+    case 'chair':{
+      const sh=H*.52;
+      return [box(0,sh/2,0,w,sh,d,C.beige),
+              box(0,(sh+H)/2,-hd+d*.1,w,H-sh,d*.2,C.beige)];
+    }
+    case 'table':{
+      const ix=Math.min(.07,hw*.35),iz=Math.min(.07,hd*.35);
+      const legs=[[-hw+ix,-hd+iz],[hw-ix,-hd+iz],[-hw+ix,hd-iz],[hw-ix,hd-iz]]
+        .map(([x,z])=>box(x,(H-.05)/2,z,.06,H-.05,.06,C.wood));
+      return [box(0,H-.025,0,w,.05,d,C.wood)].concat(legs);
+    }
+    case 'stove':{
+      const r=Math.min(w,d)*.16;
+      const burners=[[-1,-1],[1,-1],[-1,1],[1,1]]
+        .map(([a,b])=>cyl(a*w*.22,H+.015,b*d*.2,r,.03,C.dark));
+      return [box(0,H/2,0,w,H,d,C.appl)].concat(burners);
+    }
+    case 'oven':
+      return [box(0,H/2,0,w,H,d,C.appl),
+              box(0,H*.45,hd-.01,w*.8,H*.5,.04,C.dark)];
+    case 'washerDryer':
+      return [box(0,H/2,0,w,H,d,C.appl),
+              box(0,H-.05,-hd+d*.1,w*.9,.07,d*.16,C.dark)];
+    case 'refrigerator':case 'dishwasher':
+      return [box(0,H/2,0,w,H,d,C.appl)];
+    case 'sink':
+      return [box(0,H/2,0,w,H,d,C.plumb),
+              box(0,H-.01,0,w*.66,.06,d*.6,C.basin)];
+    case 'toilet':
+      return [box(0,H*.7,-hd+d*.16,w*.9,H*.55,d*.3,C.plumb),
+              cyl(0,H*.26,d*.12,Math.min(w,d)*.34,H*.5,C.plumb)];
+    case 'bathtub':
+      return [box(0,H/2,0,w,H,d,C.plumb),
+              box(0,H-.03,0,w*.84,.06,d*.72,0xF8FAFB)];
+    case 'television':
+      return [box(0,H*.55,0,w,H*.8,Math.min(d,.09),C.dark),
+              box(0,H*.075,0,w*.3,H*.15,Math.min(d,.2),C.dark)];
+    case 'fireplace':
+      return [box(0,H/2,0,w,H,d,0xBDB4A8),
+              box(0,H*.32,hd-.01,w*.6,H*.5,.04,C.dark)];
+    case 'stairs':{
+      const n=Math.max(3,Math.round(d/.28)),rise=H/n,run=d/n;
+      const steps=[];
+      for(let i=0;i<n;i++)steps.push(box(0,rise*(i+.5),-hd+run*(i+.5),w,rise,run,C.wood));
+      return steps;
+    }
+    case 'storage':
+      return [box(0,H/2,0,w,H,d,C.tan)];
+    default:
+      return [box(0,H/2,0,w,H,d,C.beige)];
+  }
+}
+// The Furniture layer pill, Polycam-style: the model stays, the furniture
+// group blinks off, so a contractor can read bare walls under a staged house.
+function _scan3dToggleFurn(){
+  if(!_s3d||!_s3d.furn)return;
+  _s3d.furn.visible=!_s3d.furn.visible;
+  const b=document.getElementById('_s3d-furn-btn');
+  if(b)b.style.opacity=_s3d.furn.visible?'1':'0.45';
+}
 
 function _scan3dClose(){
   if(!_s3d)return;
@@ -35,7 +132,10 @@ async function _scan3dOpen(id){
     '<div id="_s3d-mount" style="flex:1"></div>'+
     '<div style="position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);display:flex;flex-direction:column;align-items:center;gap:10px;z-index:2;pointer-events:none">'+
       '<div style="color:rgba(255,255,255,.55);font-size:11px;font-weight:600">Drag to orbit · pinch or scroll to zoom</div>'+
-      (sc.usdz&&typeof _scanPlugin==='function'&&_scanPlugin()?'<button onclick="_scanViewUsdz(\''+sc.id+'\')" style="pointer-events:auto;border:none;background:rgba(255,255,255,.92);color:#181714;font-size:13px;font-weight:800;padding:10px 18px;border-radius:20px;cursor:pointer;font-family:inherit">Walk it in AR</button>':'')+
+      '<div style="display:flex;gap:8px">'+
+        ((sc.rooms||[]).some(r=>(r.objects||[]).length)?'<button id="_s3d-furn-btn" onclick="_scan3dToggleFurn()" style="pointer-events:auto;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;font-size:13px;font-weight:800;padding:10px 18px;border-radius:20px;cursor:pointer;font-family:inherit">Furniture</button>':'')+
+        (sc.usdz&&typeof _scanPlugin==='function'&&_scanPlugin()?'<button onclick="_scanViewUsdz(\''+sc.id+'\')" style="pointer-events:auto;border:none;background:rgba(255,255,255,.92);color:#181714;font-size:13px;font-weight:800;padding:10px 18px;border-radius:20px;cursor:pointer;font-family:inherit">Walk it in AR</button>':'')+
+      '</div>'+
     '</div>';
   document.body.appendChild(ov);
   _s3d={ov};
@@ -72,7 +172,10 @@ async function _scan3dOpen(id){
       const shp=new T.Shape();
       r.poly.forEach(([x,z],i)=>{i?shp.lineTo(x,z):shp.moveTo(x,z);});
       const g=new T.ExtrudeGeometry(shp,{depth:0.09,bevelEnabled:false});
-      const m=new T.Mesh(g,new T.MeshStandardMaterial({color:floorCols[ri%floorCols.length],roughness:0.95}));
+      // Slabs tint by what the room IS (the same palette as the 2D sheet), so
+      // the two views read as one document. Index palette is the fallback.
+      const tint=(typeof _scanRoomTint==='function')?parseInt(_scanRoomTint(r.label).slice(1),16):floorCols[ri%floorCols.length];
+      const m=new T.Mesh(g,new T.MeshStandardMaterial({color:tint,roughness:0.95}));
       // Shape extrudes along +z of its local space; rotate flat, slab tops at y0.
       m.rotation.x=Math.PI/2;
       m.position.y=y0;
@@ -115,6 +218,33 @@ async function _scan3dOpen(id){
       model.add(el);
     });
   });
+  // Furniture: every piece the scan classified, at its measured footprint,
+  // height, and the angle it really sits at. One group so the layer pill can
+  // blink it off. Added before the bounds so the camera frames a staged house.
+  const furn=new T.Group();
+  (sc.rooms||[]).forEach(r=>{
+    const y0=lvlY(r.story);
+    (r.objects||[]).forEach(ob=>{
+      if(!ob||!(ob.w>0))return;
+      const g=new T.Group();
+      _scan3dFurnSpec(ob.cat,ob.w,ob.d||ob.w,ob.h||0).forEach(p=>{
+        const geo=p.shape==='cyl'
+          ?new T.CylinderGeometry(Math.max(.02,p.r),Math.max(.02,p.r),Math.max(.02,p.h),20)
+          :new T.BoxGeometry(Math.max(.02,p.w),Math.max(.02,p.h),Math.max(.02,p.d));
+        const mesh=new T.Mesh(geo,new T.MeshStandardMaterial({color:p.col,roughness:.85,metalness:0}));
+        mesh.position.set(p.x,p.y,p.z);
+        mesh.castShadow=true;mesh.receiveShadow=true;
+        g.add(mesh);
+      });
+      // Same yaw convention as the walls: rotation.y maps local +x onto the
+      // piece's world width axis (ux,uz).
+      g.rotation.y=Math.atan2(-(ob.uz||0),typeof ob.ux==='number'?ob.ux:1);
+      g.position.set(ob.cx,y0,ob.cz);
+      furn.add(g);
+    });
+  });
+  model.add(furn);
+  _s3d.furn=furn;
   // Center the model on origin so the orbit pivots through the house.
   const bb=new T.Box3().setFromObject(model);
   const c=bb.getCenter(new T.Vector3()),size=bb.getSize(new T.Vector3());
@@ -137,7 +267,9 @@ async function _scan3dOpen(id){
   // ── Camera + hand-rolled orbit ─────────────────────────────────────────────
   const cam=new T.PerspectiveCamera(46,1,0.1,300);
   const R0=Math.max(size.x,size.y,size.z)*1.55+2;
-  const orbit={theta:Math.PI/4,phi:1.05,r:R0,cy:size.y/2};
+  // Opens high, looking DOWN into the dollhouse (Polycam's opening framing):
+  // from a low angle the walls hide everything the furniture pass just added.
+  const orbit={theta:Math.PI/4,phi:0.62,r:R0,cy:size.y/2};
   const place=()=>{
     cam.position.set(Math.sin(orbit.theta)*Math.sin(orbit.phi)*orbit.r,
                      Math.cos(orbit.phi)*orbit.r+orbit.cy,
