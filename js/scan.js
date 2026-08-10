@@ -71,6 +71,12 @@ function _scanParseRoom(rawJson,label){
       len:d.w,h:d.h||2.44,ey:m.col3.y||0,doors:[],windows:[]};
     walls.push(wall);wallById[wall.id]=wall;
   });
+  // Squaring pass (owner 2026-08-10: "we can be off by 8 inches in some
+  // cases"): LiDAR tracking drifts a degree or two over a floor, and a 2
+  // degree skew on a 20 ft run reads as inches of error in the dimension
+  // chains. Snap BEFORE openings are placed so their offsets ride the squared
+  // geometry.
+  _scanSquareWalls(walls);
   const placeOpening=(o,list,isDoor,kind)=>{
     const m=_scanMat(o.transform),d=_scanDims(o.dimensions);
     if(!m||!d.w)return;
@@ -126,6 +132,27 @@ function _scanParseRoom(rawJson,label){
   const hM=walls.length?Math.max(...walls.map(w=>w.h)):2.44;
   return {label:label||'Room',walls,poly,objects,floorM2,wallM2,openM2,perimM,hM,
           doorN:doors.length,winN:windows.length,winM2:windows.reduce((t,o)=>t+o.area,0)};
+}
+// Manhattan squaring: find the room's dominant grid direction (length-weighted
+// mean of wall angles folded modulo 90 degrees, the fold-by-4 trick) and
+// rotate every wall within 6 degrees of a grid axis onto it, about its own
+// center, length untouched. Real angled walls (bays, 45s) deviate far more
+// than drift ever does and are left alone.
+function _scanSquareWalls(walls){
+  if(!Array.isArray(walls)||walls.length<2)return;
+  let sx=0,sy=0;
+  walls.forEach(w=>{const a=Math.atan2(w.bz-w.az,w.bx-w.ax);sx+=Math.cos(a*4)*w.len;sy+=Math.sin(a*4)*w.len;});
+  if(!sx&&!sy)return;
+  const theta=Math.atan2(sy,sx)/4;
+  const SNAP=6*Math.PI/180,Q=Math.PI/2;
+  walls.forEach(w=>{
+    const a=Math.atan2(w.bz-w.az,w.bx-w.ax);
+    let d=a-theta;d-=Math.round(d/Q)*Q;
+    if(Math.abs(d)>SNAP)return;
+    const sa=a-d,cx=(w.ax+w.bx)/2,cz=(w.az+w.bz)/2,h=w.len/2;
+    w.ax=cx-Math.cos(sa)*h;w.az=cz-Math.sin(sa)*h;
+    w.bx=cx+Math.cos(sa)*h;w.bz=cz+Math.sin(sa)*h;
+  });
 }
 function _scanShoelace(poly){
   let a=0;for(let i=0;i<poly.length;i++){const[x1,z1]=poly[i],[x2,z2]=poly[(i+1)%poly.length];a+=x1*z2-x2*z1;}
@@ -946,6 +973,29 @@ function _scanMergeResult(sc,res){
   if(!sc.meshTex&&typeof res.meshTex==='string')sc.meshTex=res.meshTex;
   return saveScan(sc);
 }
+// Interrupted-scan recovery (owner 2026-08-10: phone auto-locked mid-scan and
+// the whole floor was lost). Native keeps a draft after every finished room;
+// this asks whether to pick it up. Same centered .zmodal pattern as the
+// preflight sheet (§7.3). Resolves true (resume), false (start fresh), or
+// null (backed out, do not scan).
+function _scanDraftPrompt(d){
+  return new Promise(res=>{
+    document.getElementById('_scan-draft-ov')?.remove();
+    const ov=document.createElement('div');ov.id='_scan-draft-ov';ov.className='zmodal-overlay';
+    const m=document.createElement('div');m.className='zmodal';
+    const n=d.count|0;
+    const names=(Array.isArray(d.labels)?d.labels:[]).slice(0,4).map(x=>escHtml(String(x))).join(', ');
+    m.innerHTML=
+      '<div class="zmodal-title">Finish your last scan?</div>'+
+      '<div style="font-size:13px;color:var(--text2);margin:6px 0 2px">A scan got cut off with '+n+' finished room'+(n===1?'':'s')+' saved'+(names?(': '+names):'')+'. Pick it up and keep walking, or start fresh.</div>'+
+      '<button id="_scan-draft-go" class="btn btn-p" style="width:100%;margin-top:12px;padding:13px;font-weight:800">Pick up where I left off</button>'+
+      '<button id="_scan-draft-no" class="btn" style="width:100%;margin-top:8px;padding:12px">Start fresh</button>';
+    ov.appendChild(m);document.body.appendChild(ov);
+    document.getElementById('_scan-draft-go').onclick=()=>{ov.remove();res(true);};
+    document.getElementById('_scan-draft-no').onclick=()=>{ov.remove();res(false);};
+    ov.addEventListener('click',e=>{if(e.target===ov){ov.remove();res(null);}});
+  });
+}
 async function startRoomScan(ctx){
   const P=_scanPlugin();
   if(!P){if(typeof showToast==='function')showToast('Scanning needs the TradeDesk iPhone app','📐');return null;}
@@ -953,6 +1003,18 @@ async function startRoomScan(ctx){
   const resume=(ctx&&ctx.resumeScan)||null;
   const opts={labels:_SCAN_LABELS};
   if(resume&&resume.worldMap)opts.worldMap=resume.worldMap;
+  // A grow-a-scan resume already targets a specific scan; the interruption
+  // draft only applies to FRESH captures.
+  if(!resume&&typeof P.pendingDraft==='function'){
+    let draft=null;
+    try{draft=await P.pendingDraft();}catch(_e){}
+    if(draft&&draft.exists){
+      const pick=await _scanDraftPrompt(draft);
+      if(pick===null)return null;
+      if(pick===true)opts.resumeDraft=true;
+      else{try{P.discardDraft&&P.discardDraft();}catch(_e){}}
+    }
+  }
   let res=null;
   try{res=await P.startScan(opts);}catch(_e){return null;}
   if(!res||!Array.isArray(res.rooms)||!res.rooms.length){

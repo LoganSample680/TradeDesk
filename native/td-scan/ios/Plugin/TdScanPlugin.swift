@@ -34,7 +34,9 @@ public class TdScanPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isSupported", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startScan", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "viewUsdz", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "readFile", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "readFile", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pendingDraft", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "discardDraft", returnType: CAPPluginReturnPromise)
     ]
     private var usdzPreview: TdUsdzPreview?
 
@@ -86,6 +88,26 @@ public class TdScanPlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve(["supported": false])
     }
 
+    // An interrupted scan (lock, crash, kill) leaves a draft on disk. JS asks
+    // here on scan start and offers "resume or start fresh"; the decision and
+    // its UI are entirely JS (CLAUDE.md 3.2), this only reports and deletes.
+    @objc func pendingDraft(_ call: CAPPluginCall) {
+        #if canImport(RoomPlan)
+        if #available(iOS 17.0, *), let d = TdScanDraft.load() {
+            call.resolve(["exists": true, "count": d.rooms.count, "labels": d.labels, "ts": d.ts])
+            return
+        }
+        #endif
+        call.resolve(["exists": false])
+    }
+
+    @objc func discardDraft(_ call: CAPPluginCall) {
+        #if canImport(RoomPlan)
+        if #available(iOS 17.0, *) { TdScanDraft.remove() }
+        #endif
+        call.resolve()
+    }
+
     @objc func startScan(_ call: CAPPluginCall) {
         #if canImport(RoomPlan)
         if #available(iOS 17.0, *) {
@@ -102,6 +124,7 @@ public class TdScanPlugin: CAPPlugin, CAPBridgedPlugin {
                 // new rooms in the SAME coordinate space once the phone
                 // relocalizes, so the plans line up instead of stacking.
                 vc.resumeWorldMapPath = call.getString("worldMap")
+                vc.resumeDraft = call.getBool("resumeDraft") ?? false
                 vc.modalPresentationStyle = .fullScreen
                 vc.onDone = { [weak self] result in
                     if let r = result { call.resolve(r) }
@@ -140,16 +163,66 @@ struct TdKeyframe {
     let camFwd: simd_float3
 }
 
+// ── Interruption draft store ─────────────────────────────────────────────────
+// Rewritten after every finished room; deleted only on a completed deliver or
+// an explicit cancel. Whatever kills the scan (auto-lock, crash, iOS reclaim),
+// at most the room currently being walked is lost, never the whole floor.
+@available(iOS 17.0, *)
+struct TdScanDraft: Codable {
+    var rooms: [String]
+    var labels: [String]
+    var stories: [Int]
+    var story: Int
+    var worldMap: String?
+    var ts: Double
+
+    static func jsonUrl() -> URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("td_scan_draft.json")
+    }
+    static func mapUrl() -> URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("td_scan_draft.armap")
+    }
+    static func save(rooms: [String], labels: [String], stories: [Int], story: Int) {
+        let mapPath = FileManager.default.fileExists(atPath: mapUrl().path) ? mapUrl().path : nil
+        let d = TdScanDraft(rooms: rooms, labels: labels, stories: stories, story: story,
+                            worldMap: mapPath, ts: Date().timeIntervalSince1970)
+        if let data = try? JSONEncoder().encode(d) { try? data.write(to: jsonUrl()) }
+    }
+    static func load() -> TdScanDraft? {
+        guard let data = try? Data(contentsOf: jsonUrl()),
+              let d = try? JSONDecoder().decode(TdScanDraft.self, from: data),
+              !d.rooms.isEmpty else { return nil }
+        var out = d
+        if out.worldMap == nil, FileManager.default.fileExists(atPath: mapUrl().path) {
+            out.worldMap = mapUrl().path
+        }
+        return out
+    }
+    static func remove() {
+        try? FileManager.default.removeItem(at: jsonUrl())
+        try? FileManager.default.removeItem(at: mapUrl())
+    }
+}
+
 @available(iOS 17.0, *)
 class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     var labels: [String] = ["Room"]
     var onDone: (([String: Any]?) -> Void)?
     var resumeWorldMapPath: String?
+    var resumeDraft = false
 
     private var arSession = ARSession()
     private var captureView: RoomCaptureView!
     private let builder = RoomBuilder(options: [.beautifyObjects])
-    private var rooms: [CapturedRoom] = []
+    // CONTINUOUS FLOOR FLOW (owner 2026-08-10): "Next room" reserves a slot
+    // and scanning continues INSTANTLY; RoomBuilder fills the slot in the
+    // background while the user is already walking the next room. Slots keep
+    // labels/stories aligned however long a build takes; nil slots (a build
+    // that failed, a Next tapped without walking) drop out at deliver.
+    private var rooms: [CapturedRoom?] = []
+    private var pendingSlots: [Int] = []
     private var roomLabels: [String] = []
     private var roomStories: [Int] = []
     private var photos: [[String: Any]] = []
@@ -188,9 +261,28 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
+        // A scan is hands-busy and eyes-up: the phone must NEVER auto-lock in
+        // the middle of one. (Owner 2026-08-10: set the phone down mid-scan,
+        // it locked, the whole capture was lost.) Restored in viewDidDisappear.
+        UIApplication.shared.isIdleTimerDisabled = true
         // One compass read anchors the plan to north; JS rotates the drawing.
         locMgr.delegate = nil
         if CLLocationManager.headingAvailable() { locMgr.startUpdatingHeading() }
+        // Resuming an interrupted scan (draft on disk): preload its finished
+        // rooms + labels so nothing already walked is lost, and relocalize
+        // into its world map below so new rooms land in the same space.
+        if resumeDraft, let d = TdScanDraft.load() {
+            let dec = JSONDecoder()
+            for (i, rj) in d.rooms.enumerated() {
+                if let data = rj.data(using: .utf8), let r = try? dec.decode(CapturedRoom.self, from: data) {
+                    rooms.append(r)
+                    roomLabels.append(i < d.labels.count ? d.labels[i] : "Room")
+                    roomStories.append(i < d.stories.count ? d.stories[i] : 1)
+                }
+            }
+            currentStory = d.story
+            if resumeWorldMapPath == nil { resumeWorldMapPath = d.worldMap }
+        }
         // Resuming an earlier scan: preload its ARWorldMap so the session
         // relocalizes into the SAME coordinate space and the new rooms land
         // beside the old ones instead of on top of them. Verify on device
@@ -246,20 +338,25 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     }
 
     private func buildOverlay() {
-        roomLabels = []
+        // NOTE: roomLabels is NOT reset here, a draft resume preloads it in
+        // viewDidLoad and wiping it would orphan the recovered rooms' names.
         styled(chip, labels.first ?? "Room", bg: UIColor(white: 0, alpha: 0.55))
-        styled(floorBtn, "Floor 1", bg: UIColor(white: 0, alpha: 0.55))
+        styled(floorBtn, "Floor \(currentStory)", bg: UIColor(white: 0, alpha: 0.55))
         styled(cancelBtn, "Cancel", bg: UIColor(white: 0, alpha: 0.55))
         styled(redoBtn, "Redo room", bg: UIColor(white: 0, alpha: 0.55))
         redoBtn.titleLabel?.font = .systemFont(ofSize: 13, weight: .bold)
-        styled(doneRoomBtn, "Done room", bg: UIColor(red: 0.09, green: 0.37, blue: 0.65, alpha: 1))
+        // ONE tap per doorway (owner 2026-08-10: scan a whole floor without a
+        // done-and-wait per room): Next room banks the segment, scanning never
+        // stops, the name sheet opens as you walk into the next room.
+        styled(doneRoomBtn, "Next room", bg: UIColor(red: 0.09, green: 0.37, blue: 0.65, alpha: 1))
         styled(finishBtn, "Finish", bg: UIColor(red: 0.13, green: 0.55, blue: 0.28, alpha: 1))
         styled(shutterBtn, "📷", bg: UIColor(white: 0, alpha: 0.55))
         shutterBtn.titleLabel?.font = .systemFont(ofSize: 24)
 
-        hint.text = resumeWorldMapPath != nil
-            ? "Stand where you already scanned so the phone finds its place, then walk the new room."
-            : "Walk the room edges. Tap the label to type this room's name. Tap Floor when you head upstairs."
+        let resuming = resumeWorldMapPath != nil || !rooms.isEmpty
+        hint.text = resuming
+            ? "Picking up your earlier scan (\(rooms.count) room\(rooms.count == 1 ? "" : "s") kept). Stand where you already scanned, then keep walking."
+            : "Walk slow, hug the walls. Tap Next room at each doorway, Finish when the floor is done."
         hint.textColor = .white
         hint.font = .systemFont(ofSize: 12, weight: .medium)
         hint.textAlignment = .center
@@ -374,9 +471,25 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         UIView.animate(withDuration: 0.25, animations: { flash.alpha = 0 }, completion: { _ in flash.removeFromSuperview() })
     }
 
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    // "Next room": ONE tap at the doorway. The finished segment gets a slot
+    // (built in the background), scanning restarts instantly, and the naming
+    // sheet for the NEW room opens right away, walk while you type.
     @objc private func doneRoomTapped() {
         finishing = false
+        let name = chip.title(for: .normal) ?? "Room"
+        pendingSlots.append(rooms.count)
+        rooms.append(nil)
+        roomLabels.append(name.isEmpty ? "Room" : name)
+        roomStories.append(currentStory)
+        chip.setTitle(labels.first ?? "Room", for: .normal)
         captureView.captureSession.stop(pauseARSession: false)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        cycleLabel()
     }
 
     // Botched the room (walked it wrong, kid ran through, wrong room): throw
@@ -392,6 +505,11 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
 
     @objc private func finishTapped() {
         finishing = true
+        let name = chip.title(for: .normal) ?? "Room"
+        pendingSlots.append(rooms.count)
+        rooms.append(nil)
+        roomLabels.append(name.isEmpty ? "Room" : name)
+        roomStories.append(currentStory)
         captureView.captureSession.stop(pauseARSession: false)
     }
 
@@ -399,6 +517,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         kfTimer?.invalidate(); kfTimer = nil
         captureView.captureSession.stop()
         for k in keyframes { try? FileManager.default.removeItem(atPath: k.path) }
+        TdScanDraft.remove() // explicit cancel throws the draft away too
         dismiss(animated: true) { [weak self] in self?.onDone?(nil) }
     }
 
@@ -484,38 +603,71 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         let wasFinishing = finishing
         let wasDiscarding = discarding
         discarding = false
+        // Redo reserved no slot: restart the same room, name kept, done.
+        if wasDiscarding {
+            DispatchQueue.main.async { self.startRoom() }
+            return
+        }
+        // The label/story were captured into a slot at tap time (the chip is
+        // the source of truth). Restart the capture IMMEDIATELY, the builder
+        // fills the slot in the background while the next room is walked.
+        let slot = pendingSlots.isEmpty ? nil : pendingSlots.removeFirst()
+        if !wasFinishing {
+            DispatchQueue.main.async { self.startRoom() }
+        }
         Task { [weak self] in
             guard let self = self else { return }
-            if wasDiscarding {
-                // Redo: nothing appended, same room again, name kept.
-                await MainActor.run { self.startRoom() }
-                return
+            if let slot = slot, error == nil, let room = try? await self.builder.capturedRoom(from: data) {
+                self.rooms[slot] = room
+                // Interruption insurance: every finished room lands in the
+                // draft on disk, a lock/crash/kill mid-scan loses at most the
+                // room currently being walked, never the whole floor.
+                self.saveDraft()
             }
-            if error == nil, let room = try? await self.builder.capturedRoom(from: data) {
-                self.rooms.append(room)
-                // The CHIP is the source of truth, not an index into the list.
-                // Since the chip can now hold a typed name, reading
-                // labels[labelIndex] would have silently thrown that name away
-                // and filed the room under whatever the list happened to hold.
-                let typed = await MainActor.run { self.chip.title(for: .normal) ?? "" }
-                self.roomLabels.append(typed.isEmpty ? "Room" : typed)
-                self.roomStories.append(self.currentStory)
+            if wasFinishing, self.pendingSlots.isEmpty {
+                await MainActor.run { self.deliver() }
             }
-            await MainActor.run {
-                if wasFinishing || self.rooms.isEmpty {
-                    self.deliver()
-                } else {
-                    // Next room rides the same ARSession, so its geometry lands
-                    // in the same world space and the plans line up.
-                    self.chip.setTitle(self.labels.first ?? "Room", for: .normal)
-                    self.startRoom()
-                }
-            }
+        }
+    }
+
+    // ── Interruption draft ───────────────────────────────────────────────────
+    private func saveDraft() {
+        let enc = JSONEncoder()
+        var roomJson: [String] = []
+        for r in rooms.compactMap({ $0 }) {
+            if let d = try? enc.encode(r), let s = String(data: d, encoding: .utf8) { roomJson.append(s) }
+        }
+        // Labels/stories filtered to FILLED slots so indices stay aligned.
+        var lbl: [String] = [], sto: [Int] = []
+        for (i, r) in rooms.enumerated() where r != nil {
+            lbl.append(i < roomLabels.count ? roomLabels[i] : "Room")
+            sto.append(i < roomStories.count ? roomStories[i] : 1)
+        }
+        TdScanDraft.save(rooms: roomJson, labels: lbl, stories: sto, story: currentStory)
+        // A world map alongside lets the resume relocalize into the same
+        // space. Async and replace-in-place; a failure just means the resumed
+        // scan starts its own coordinate space (rooms still preloaded).
+        arSession.getCurrentWorldMap { map, _ in
+            guard let map = map,
+                  let data = try? NSKeyedArchiver.archivedData(withRootObject: map, requiringSecureCoding: true) else { return }
+            try? data.write(to: TdScanDraft.mapUrl())
         }
     }
 
     private func deliver() {
         kfTimer?.invalidate(); kfTimer = nil
+        // Compact the slots: a nil (failed build, Next tapped without walking)
+        // drops out together with its label and story, indices stay aligned.
+        var built: [CapturedRoom] = [], lbl: [String] = [], sto: [Int] = []
+        for (i, r) in rooms.enumerated() {
+            guard let r = r else { continue }
+            built.append(r)
+            lbl.append(i < roomLabels.count ? roomLabels[i] : "Room")
+            sto.append(i < roomStories.count ? roomStories[i] : 1)
+        }
+        let rooms = built
+        roomLabels = lbl
+        roomStories = sto
         let enc = JSONEncoder()
         var roomJson: [String] = []
         for r in rooms {
@@ -543,14 +695,14 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
             // them into one model; a failed export just omits the file, the
             // 2D product never depends on it.
             var usdzPath: String? = nil
-            if !self.rooms.isEmpty {
+            if !rooms.isEmpty {
                 let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                 let url = dir.appendingPathComponent("td_scan_\(Int(Date().timeIntervalSince1970 * 1000)).usdz")
-                if let structure = try? await StructureBuilder(options: [.beautifyObjects]).capturedStructure(from: self.rooms) {
+                if let structure = try? await StructureBuilder(options: [.beautifyObjects]).capturedStructure(from: rooms) {
                     do { try structure.export(to: url, exportOptions: .parametric); usdzPath = url.path } catch {}
                 }
-                if usdzPath == nil, self.rooms.count == 1 {
-                    do { try self.rooms[0].export(to: url, exportOptions: .parametric); usdzPath = url.path } catch {}
+                if usdzPath == nil, rooms.count == 1 {
+                    do { try rooms[0].export(to: url, exportOptions: .parametric); usdzPath = url.path } catch {}
                 }
             }
             // Photo mesh: weld the LiDAR anchors, bake real color from the
@@ -560,7 +712,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
             // textures.
             var meshPath: String? = nil
             var texPath: String? = nil
-            if !meshAnchors.isEmpty && !self.keyframes.isEmpty && !self.rooms.isEmpty {
+            if !meshAnchors.isEmpty && !self.keyframes.isEmpty && !rooms.isEmpty {
                 let kfs = self.keyframes
                 let baked = await Task.detached(priority: .userInitiated) {
                     TdMeshBaker.bake(anchors: meshAnchors, keyframes: kfs)
@@ -605,6 +757,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
                 if let p = texPath { result["meshTex"] = p }
                 if let p = worldMapPath { result["worldMap"] = p }
                 if !walk.isEmpty { result["walk"] = walk }
+                TdScanDraft.remove() // scan finished whole: the interruption draft is obsolete
                 self.dismiss(animated: true) { self.onDone?(result) }
             }
         }

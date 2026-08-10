@@ -249,6 +249,126 @@ test.describe('TdScan web half', () => {
     expect(r.stories).toEqual([1, 2]);
   });
 
+  // Squaring pass (owner 2026-08-10: "off by 8 inches in some cases"). LiDAR
+  // drift skews one wall a degree or two off the others; the parse snaps any
+  // wall within 6 degrees of the room's dominant grid onto it, so dimension
+  // chains stop accumulating skew error. Genuinely angled walls stay.
+  test('squaring: a drift-skewed wall snaps onto the room grid, lengths untouched', async () => {
+    const r = await page.evaluate(() => {
+      const L = 3.6576, W = 3.048, H = 2.4384;
+      const rad = 2 * Math.PI / 180; // 2 degree tracking drift on one wall
+      const wall = (id, dir, cx, cz, len) => ({
+        identifier: id, category: { wall: {} }, dimensions: [len, H, 0],
+        transform: [dir[0], 0, dir[1], 0, 0, 1, 0, 0, -dir[1], 0, dir[0], 0, cx, H / 2, cz, 1],
+      });
+      const raw = JSON.stringify({
+        identifier: 'room-sq', story: 0, version: 2,
+        walls: [
+          wall('w-n', [1, 0], 0, -W / 2, L),
+          wall('w-s', [Math.cos(rad), Math.sin(rad)], 0, W / 2, L), // drifted
+          wall('w-e', [0, 1], L / 2, 0, W),
+          wall('w-w', [0, 1], -L / 2, 0, W),
+        ],
+        doors: [], windows: [], openings: [], objects: [], floors: [],
+      });
+      const room = _scanParseRoom(raw, 'Sq');
+      const Q = Math.PI / 2;
+      const fold = (a) => a - Math.round(a / Q) * Q;
+      const folds = room.walls.map(w => fold(Math.atan2(w.bz - w.az, w.bx - w.ax)));
+      const spread = Math.max(...folds) - Math.min(...folds);
+      const lenOk = room.walls.every(w => Math.abs(Math.hypot(w.bx - w.ax, w.bz - w.az) - w.len) < 1e-9);
+      return { spread, lenOk };
+    });
+    expect(r.spread, 'all four walls share one grid after the snap').toBeLessThan(0.001);
+    expect(r.lenOk, 'snap rotates about the center, never changes a length').toBe(true);
+  });
+
+  test('squaring: a real 45 degree bay wall is left alone', async () => {
+    const r = await page.evaluate(() => {
+      const H = 2.4384, a45 = Math.PI / 4;
+      const wall = (id, dir, cx, cz, len) => ({
+        identifier: id, category: { wall: {} }, dimensions: [len, H, 0],
+        transform: [dir[0], 0, dir[1], 0, 0, 1, 0, 0, -dir[1], 0, dir[0], 0, cx, H / 2, cz, 1],
+      });
+      const raw = JSON.stringify({
+        identifier: 'room-bay', story: 0, version: 2,
+        walls: [
+          wall('w-n', [1, 0], 0, -1.5, 3.6),
+          wall('w-s', [1, 0], 0, 1.5, 3.6),
+          wall('w-e', [0, 1], 1.8, 0, 3.0),
+          wall('w-bay', [Math.cos(a45), Math.sin(a45)], -1.8, 0, 1.2), // deliberate 45
+        ],
+        doors: [], windows: [], openings: [], objects: [], floors: [],
+      });
+      const room = _scanParseRoom(raw, 'Bay');
+      const bay = room.walls.find(w => w.id === 'w-bay');
+      const ang = Math.atan2(bay.bz - bay.az, bay.bx - bay.ax);
+      return { deg: ang * 180 / Math.PI };
+    });
+    expect(Math.abs(r.deg - 45), 'the bay keeps its real angle').toBeLessThan(0.5);
+  });
+
+  // Interruption draft (owner 2026-08-10: phone auto-locked mid-scan, data
+  // lost): native keeps a draft after every finished room; a fresh capture
+  // offers resume / start fresh / back out, and each choice drives the plugin
+  // correctly.
+  test('interrupted-scan draft: resume passes resumeDraft, fresh discards, backing out never scans', async () => {
+    const r = await page.evaluate(async (raw) => {
+      const realCap = window.Capacitor;
+      const before = scans.length;
+      const calls = { starts: [], discards: 0 };
+      try {
+        localStorage.setItem('td_scan_preflight', '1');
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: (n) => n === 'TdScan' ? {
+            pendingDraft: () => Promise.resolve({ exists: true, count: 2, labels: ['Kitchen', 'Bath'], ts: 1 }),
+            discardDraft: () => { calls.discards++; return Promise.resolve(); },
+            startScan: (o) => { calls.starts.push(o); return Promise.resolve({ rooms: [raw], labels: ['Kitchen'], stories: [1], photos: [], headingDeg: -1 }); },
+          } : null,
+        };
+        // 1) Resume: the prompt shows the saved rooms and passes resumeDraft.
+        const p1 = startRoomScan({ clientId: 42 });
+        await new Promise(res => setTimeout(res, 30));
+        const promptShown = !!document.getElementById('_scan-draft-ov');
+        const promptNames = (document.querySelector('#_scan-draft-ov .zmodal')?.textContent || '').includes('Kitchen');
+        document.getElementById('_scan-draft-go')?.click();
+        const sc1 = await p1;
+        // 2) Start fresh: the draft is discarded, no resumeDraft sent.
+        const p2 = startRoomScan({ clientId: 42 });
+        await new Promise(res => setTimeout(res, 30));
+        document.getElementById('_scan-draft-no')?.click();
+        const sc2 = await p2;
+        // 3) Back out: tapping the scrim starts nothing.
+        const p3 = startRoomScan({ clientId: 42 });
+        await new Promise(res => setTimeout(res, 30));
+        const ov = document.getElementById('_scan-draft-ov');
+        ov?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        const sc3 = await p3;
+        scans.length = before; saveAll();
+        return {
+          promptShown, promptNames,
+          resumed: !!sc1, resumeFlag: calls.starts[0] && calls.starts[0].resumeDraft === true,
+          fresh: !!sc2, freshFlag: !!(calls.starts[1] && calls.starts[1].resumeDraft),
+          discards: calls.discards,
+          backedOut: sc3 === null, startCount: calls.starts.length,
+        };
+      } finally {
+        window.Capacitor = realCap;
+        document.getElementById('_scan-draft-ov')?.remove();
+      }
+    }, fabricatedRoom());
+    expect(r.promptShown, 'the draft prompt appears before any capture').toBe(true);
+    expect(r.promptNames, 'it names the rooms already saved').toBe(true);
+    expect(r.resumed).toBe(true);
+    expect(r.resumeFlag, 'resume rides resumeDraft:true into the plugin').toBe(true);
+    expect(r.fresh).toBe(true);
+    expect(r.freshFlag, 'start fresh never sends resumeDraft').toBe(false);
+    expect(r.discards, 'start fresh throws the draft away exactly once').toBe(1);
+    expect(r.backedOut, 'scrim tap backs out without scanning').toBe(true);
+    expect(r.startCount, 'only the two confirmed choices reached the plugin').toBe(2);
+  });
+
   test('the pre-flight checklist gates the first capture only, and cancelling it never starts the scan', async () => {
     const r = await page.evaluate(async (raw) => {
       const realCap = window.Capacitor;
