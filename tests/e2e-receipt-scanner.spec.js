@@ -249,13 +249,17 @@ test.describe('receipt scanner', () => {
         await _rcptNativeScan(async b => { all.push(b.size); }, true);
         const first = [];
         await _rcptNativeScan(async b => { first.push(b.size); }, false);
-        // Read failure: no plugin reader, and a fetch that throws outright.
-        window.Capacitor = { isNativePlatform: () => true, registerPlugin: (n) => {
-          if (n === 'TdDoc') return { isAvailable: async () => ({ available: true }),
-            scanDocument: async () => ({ pages: ['capacitor://localhost/x.jpg'], cancelled: false }) };
-          if (n === 'TdScan') return {};
-          return {};
-        } };
+        // Read failure: no plugin reader, and a convertFileSrc that throws,
+        // so no network request happens (WebKit logs unsupported-scheme
+        // fetches as console errors, which is noise, not the app failing).
+        window.Capacitor = { isNativePlatform: () => true,
+          convertFileSrc: () => { throw new Error('no bridge'); },
+          registerPlugin: (n) => {
+            if (n === 'TdDoc') return { isAvailable: async () => ({ available: true }),
+              scanDocument: async () => ({ pages: ['/walk/px.jpg'], cancelled: false }) };
+            if (n === 'TdScan') return {};
+            return {};
+          } };
         const none = [];
         await _rcptNativeScan(async b => { none.push(1); }, true);
         return {
