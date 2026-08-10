@@ -677,6 +677,15 @@ function _scanPlanSvg(sc,opts){
          '<text x="'+cx+'" y="'+(cz+1.1)+'" font-size="2.6" fill="#fff" text-anchor="middle">'+(i+1)+'</text></g>';
     });
   }
+  // Walkthrough dots: every auto-kept frame, small and unnumbered so the
+  // shutter photos stay the loud pins. Tap one, stand there again.
+  if(o.walk&&o.scanId){
+    o.walk.forEach((k,i)=>{
+      const cam=k&&k.cam;
+      if(!cam||cam.length<16)return;
+      s+='<circle cx="'+px(cam[12])+'" cy="'+pz(cam[14])+'" r="1.1" fill="#8A9BB0" stroke="#fff" stroke-width="0.3" onclick="_scanOpenWalk(\''+o.scanId+'\','+i+')" style="cursor:pointer"/>';
+    });
+  }
   s+='</svg>';
   return s;
 }
@@ -760,6 +769,66 @@ function _scanOpenPhoto(id,idx){
       '<button onclick="_scanOpenPhoto(\''+id+'\','+(i-1)+')" style="border:none;background:rgba(255,255,255,.16);color:#fff;font-size:20px;width:44px;height:44px;border-radius:22px;cursor:pointer">‹</button>'+
       '<div style="color:#fff;font-size:13px;font-weight:700">'+(i+1)+' of '+n+'</div>'+
       '<button onclick="_scanOpenPhoto(\''+id+'\','+(i+1)+')" style="border:none;background:rgba(255,255,255,.16);color:#fff;font-size:20px;width:44px;height:44px;border-radius:22px;cursor:pointer">›</button>'+
+    '</div>'+
+    '<button onclick="document.getElementById(\'_scan-photo-ov\').remove()" style="position:absolute;top:max(16px,env(safe-area-inset-top));right:16px;border:none;background:rgba(255,255,255,.16);color:#fff;font-size:18px;width:40px;height:40px;border-radius:20px;cursor:pointer">✕</button>';
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  document.body.appendChild(ov);
+}
+
+// ── Walk back through it ─────────────────────────────────────────────────────
+// The question this answers: "show me the actual photo of THIS spot." Every
+// walkthrough frame carries its camera pose (camera → world, column-major) and
+// intrinsics, so for any world-space point we can rank which frame saw it
+// best: in front of the lens, inside the picture with margin, facing it
+// squarely, not too far. Returns {i,u,v} (frame index + pixel hit) or null.
+function _scanBestFrame(sc,p){
+  const walk=(sc&&sc.walk)||[];
+  let best=null,bestScore=0;
+  walk.forEach((k,i)=>{
+    const m=k.cam;if(!m||m.length<16||!k.w||!k.h)return;
+    // Rigid inverse: R^T and -R^T t, from the column-major camera pose.
+    const dx=p.x-m[12],dy=p.y-m[13],dz=p.z-m[14];
+    const cxp=m[0]*dx+m[1]*dy+m[2]*dz;      // camera-space x
+    const cyp=m[4]*dx+m[5]*dy+m[6]*dz;      // camera-space y
+    const czp=m[8]*dx+m[9]*dy+m[10]*dz;     // camera-space z (-forward)
+    const zc=-czp;
+    if(zc<0.25)return;                       // behind or on the lens
+    const u=k.cx+k.fx*cxp/zc,v=k.cy-k.fy*cyp/zc;
+    const mg=0.06;                           // keep the detail off the frame edge
+    if(u<k.w*mg||v<k.h*mg||u>k.w*(1-mg)||v>k.h*(1-mg))return;
+    const dist=Math.hypot(dx,dy,dz);
+    if(dist>8)return;
+    const facing=zc/(dist||1);               // 1 = dead ahead of the lens
+    const score=facing/Math.max(0.35,dist);  // squarely seen beats barely seen
+    if(score>bestScore){bestScore=score;best={i,u,v};}
+  });
+  return best;
+}
+// The re-walk viewer: the same overlay pattern as the shutter photos, over the
+// walkthrough frames in capture order (prev/next IS re-walking the house),
+// with an optional crosshair pinned on the detail that was tapped.
+function _scanOpenWalk(id,idx,mark){
+  const sc=getScans().find(x=>String(x.id)===String(id));
+  const walk=(sc&&sc.walk)||[];
+  if(!walk.length)return;
+  const n=walk.length;
+  const i=((idx%n)+n)%n;
+  document.getElementById('_scan-photo-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_scan-photo-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px';
+  const k=walk[i];
+  const markHtml=(mark&&k.w&&k.h)
+    ?'<div style="position:absolute;left:'+(mark.u/k.w*100).toFixed(2)+'%;top:'+(mark.v/k.h*100).toFixed(2)+'%;width:34px;height:34px;margin:-17px 0 0 -17px;border:3px solid #FFD60A;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,.55)"></div>'
+    :'';
+  ov.innerHTML=
+    '<div style="position:relative;max-width:94vw;max-height:74vh">'+
+      '<img src="'+_scanPhotoSrc(k).replace(/"/g,'&quot;')+'" style="max-width:94vw;max-height:74vh;border-radius:10px;object-fit:contain;display:block" alt="Walkthrough photo '+(i+1)+'">'+
+      markHtml+
+    '</div>'+
+    '<div style="display:flex;align-items:center;gap:18px">'+
+      '<button onclick="_scanOpenWalk(\''+id+'\','+(i-1)+')" style="border:none;background:rgba(255,255,255,.16);color:#fff;font-size:20px;width:44px;height:44px;border-radius:22px;cursor:pointer">‹</button>'+
+      '<div style="color:#fff;font-size:13px;font-weight:700">'+(i+1)+' of '+n+' · the walk, in order</div>'+
+      '<button onclick="_scanOpenWalk(\''+id+'\','+(i+1)+')" style="border:none;background:rgba(255,255,255,.16);color:#fff;font-size:20px;width:44px;height:44px;border-radius:22px;cursor:pointer">›</button>'+
     '</div>'+
     '<button onclick="document.getElementById(\'_scan-photo-ov\').remove()" style="position:absolute;top:max(16px,env(safe-area-inset-top));right:16px;border:none;background:rgba(255,255,255,.16);color:#fff;font-size:18px;width:40px;height:40px;border-radius:20px;cursor:pointer">✕</button>';
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -881,6 +950,11 @@ async function startRoomScan(ctx){
     // them by design); cam pose rides along for the pinned walkthrough. The
     // USDZ is device-local too: the 3D/AR file Quick Look opens on this phone.
     photos:(res.photos||[]).map(p=>({path:p.path,cam:p.cam,room:p.room})),
+    // The walkthrough record (owner 2026-08-10): every half-meter of the walk
+    // kept as a full-res photo with its pose + intrinsics, so months later a
+    // detail question ("what was behind that panel?") is answered by the
+    // actual photo of that spot, from the plan or a tap on the 3D model.
+    walk:(res.walk||[]).map(k=>({path:k.path,cam:k.cam,fx:k.fx,fy:k.fy,cx:k.cx,cy:k.cy,w:k.w,h:k.h})),
     usdz:(typeof res.usdz==='string'&&res.usdz)||null,
     // The photo mesh is device-local like the USDZ: the orbit viewer streams
     // it back out through the plugin's readFile. meshTex is the photoreal
@@ -999,6 +1073,10 @@ function openScanViewer(id){
       // It is the primary action here now; selling the plan is the side hustle
       // and reads like one.
       '<button class="btn btn-p" style="width:100%;margin-top:12px;padding:14px;font-size:15px;font-weight:800" onclick="_scanToEstimate(\''+sc.id+'\')">Build the estimate from these rooms →</button>'+
+      // Re-walk the house: the auto-kept walkthrough frames, in capture
+      // order. This is the record you come back to when a detail question
+      // lands months later. Device-local, so only offered where the files are.
+      ((sc.walk||[]).length&&_scanPlugin()?'<button class="btn" style="width:100%;margin-top:8px;padding:12px;font-weight:700" onclick="_scanOpenWalk(\''+sc.id+'\',0)">Re-walk the photos · '+sc.walk.length+' frames</button>':'')+
       '<div style="display:flex;gap:8px;margin-top:8px">'+
         '<button class="btn" style="flex:1;padding:12px" onclick="_scanSellSheet(\''+sc.id+'\')">'+(sc.purchasedAt?'Plan purchased ✓':'Sell floor plan')+'</button>'+
         (sc.price!=null&&!sc.purchasedAt?'<button class="btn" style="padding:12px" onclick="_scanMarkPurchased(\''+sc.id+'\')">Mark paid</button>':'')+
@@ -1028,7 +1106,10 @@ function openScanViewer(id){
           photos:(lens==='plan'?(sc.photos||[]).filter(p=>{
             if(stories.length<2)return true;
             const r=(sc.rooms||[])[p.room];return r&&Math.max(1,+r.story||1)===story;
-          }):null)}))+
+          }):null),
+          // Walk dots only where the files are (device-local), and only on
+          // the plan lens where the pins already live.
+          walk:(lens==='plan'&&_scanPlugin()?sc.walk:null)}))+
     '</div>'+
     body;
   ov.appendChild(m);document.body.appendChild(ov);

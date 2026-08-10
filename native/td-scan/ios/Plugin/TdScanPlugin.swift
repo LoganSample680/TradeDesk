@@ -129,7 +129,9 @@ class TdUsdzPreview: NSObject, QLPreviewControllerDataSource {
 struct TdKeyframe {
     let path: String
     let inv: simd_float4x4    // world → camera
+    let cam: [Double]         // camera → world, column-major, for JS
     let fx: Float, fy: Float, cx: Float, cy: Float
+    let w: Float, h: Float    // saved pixel size, projection normalizes by it
     let camPos: simd_float3
     let camFwd: simd_float3
 }
@@ -153,18 +155,19 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     private let locMgr = CLLocationManager()
     private let tickGen = UIImpactFeedbackGenerator(style: .light)
 
-    // ── Photo-mesh capture (owner ask 2026-08-10) ────────────────────────────
-    // The mesh costs the user NOTHING: RoomPlan's own ARSession is already
-    // building ARMeshAnchors from the LiDAR, and a half-second timer quietly
-    // snaps small keyframes (sensor-space JPEG + pose + intrinsics) while they
-    // walk the room they were walking anyway. The only added time is a few
-    // seconds of color bake after Finish. Capability only: JS decides how the
-    // mesh is shown, painted, and sold.
+    // ── Walkthrough photo capture (owner 2026-08-10) ─────────────────────────
+    // NOT bake fuel: these frames are the JOB RECORD. "We need photos so we
+    // can walk back through it later if we have details that we need to see
+    // from actual photos." So they save at FULL sensor resolution, they are
+    // never deleted, and every one carries its pose + intrinsics so JS can
+    // answer "show me the real photo of THIS spot" from the plan or the 3D
+    // model. The mesh bake and its textures ride the same files for free.
+    // Costs the walk nothing: a half-second timer keeps a frame only when the
+    // camera genuinely moved. Capability only: JS owns the walkthrough UX.
     private var keyframes: [TdKeyframe] = []
     private var kfTimer: Timer?
     private var lastKfPose: simd_float4x4?
-    private let kfMax = 60
-    private let kfWidth: CGFloat = 960
+    private let kfMax = 80
 
     private let chip = UIButton(type: .system)
     private let floorBtn = UIButton(type: .system)
@@ -357,10 +360,10 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         dismiss(animated: true) { [weak self] in self?.onDone?(nil) }
     }
 
-    // One keyframe when the camera has genuinely moved: >0.4 m of travel or
-    // >25 degrees of turn since the last kept frame. Saved sensor-oriented
-    // (landscape) with intrinsics scaled to the saved size, because the bake
-    // projects into exactly what was written, no orientation math later.
+    // One frame when the camera has genuinely moved: >0.35 m of travel or
+    // >20 degrees of turn since the last kept frame. Saved sensor-oriented
+    // (landscape) at FULL resolution, details have to survive being zoomed
+    // into months later, with intrinsics for exactly what was written.
     private func maybeKeyframe() {
         guard keyframes.count < kfMax, let frame = arSession.currentFrame,
               case .normal = frame.camera.trackingState else { return }
@@ -370,28 +373,29 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         if let last = lastKfPose {
             let lp = simd_float3(last.columns.3.x, last.columns.3.y, last.columns.3.z)
             let lf = -simd_float3(last.columns.2.x, last.columns.2.y, last.columns.2.z)
-            if simd_distance(pos, lp) < 0.4 && simd_dot(fwd, lf) > 0.906 { return }
+            if simd_distance(pos, lp) < 0.35 && simd_dot(fwd, lf) > 0.94 { return }
         }
         lastKfPose = t
         let K = frame.camera.intrinsics
         let img = CIImage(cvPixelBuffer: frame.capturedImage)
-        let s = kfWidth / img.extent.width
+        let pw = Float(img.extent.width), ph = Float(img.extent.height)
+        var cam: [Double] = []
+        for c in 0..<4 { for r in 0..<4 { cam.append(Double(t[c][r])) } }
         let idx = keyframes.count
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
-            let small = img.transformed(by: CGAffineTransform(scaleX: s, y: s))
             let ctx = CIContext()
-            guard let cg = ctx.createCGImage(small, from: small.extent),
-                  let jpg = UIImage(cgImage: cg).jpegData(compressionQuality: 0.6) else { return }
+            guard let cg = ctx.createCGImage(img, from: img.extent),
+                  let jpg = UIImage(cgImage: cg).jpegData(compressionQuality: 0.62) else { return }
             let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let url = dir.appendingPathComponent("td_kf_\(Int(Date().timeIntervalSince1970 * 1000))_\(idx).jpg")
+            let url = dir.appendingPathComponent("td_walk_\(Int(Date().timeIntervalSince1970 * 1000))_\(idx).jpg")
             do { try jpg.write(to: url) } catch { return }
-            let sf = Float(s)
             DispatchQueue.main.async {
                 guard self.keyframes.count < self.kfMax else { try? FileManager.default.removeItem(at: url); return }
                 self.keyframes.append(TdKeyframe(
-                    path: url.path, inv: simd_inverse(t),
-                    fx: K[0][0] * sf, fy: K[1][1] * sf, cx: K[2][0] * sf, cy: K[2][1] * sf,
+                    path: url.path, inv: simd_inverse(t), cam: cam,
+                    fx: K[0][0], fy: K[1][1], cx: K[2][0], cy: K[2][1],
+                    w: pw, h: ph,
                     camPos: pos, camFwd: fwd))
             }
         }
@@ -483,7 +487,6 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
             // textures.
             var meshPath: String? = nil
             var texPath: String? = nil
-            var keepTex: Set<String> = []
             if !meshAnchors.isEmpty && !self.keyframes.isEmpty && !self.rooms.isEmpty {
                 let kfs = self.keyframes
                 let baked = await Task.detached(priority: .userInitiated) {
@@ -491,10 +494,13 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
                 }.value
                 meshPath = baked.ply
                 texPath = baked.tdm
-                keepTex = baked.usedImages
             }
-            for k in self.keyframes where !keepTex.contains(k.path) {
-                try? FileManager.default.removeItem(atPath: k.path)
+            // Every walkthrough frame is KEPT and returned: they are the job
+            // record, not disposable bake input.
+            let walk: [[String: Any]] = self.keyframes.map { k in
+                ["path": k.path, "cam": k.cam,
+                 "fx": Double(k.fx), "fy": Double(k.fy), "cx": Double(k.cx), "cy": Double(k.cy),
+                 "w": Double(k.w), "h": Double(k.h)]
             }
             await MainActor.run {
                 hud.removeFromSuperview()
@@ -508,6 +514,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
                 if let p = usdzPath { result["usdz"] = p }
                 if let p = meshPath { result["meshPly"] = p }
                 if let p = texPath { result["meshTex"] = p }
+                if !walk.isEmpty { result["walk"] = walk }
                 self.dismiss(animated: true) { self.onDone?(result) }
             }
         }
@@ -661,7 +668,6 @@ enum TdMeshBaker {
         let nFaces = mTris.count / 3
         var faceKf = [Int](repeating: -1, count: nFaces)
         var faceUv = [Float](repeating: 0, count: nFaces * 6)
-        let imgW = Float(960), imgH = Float(720)   // saved keyframe size (4:3 sensor)
         for f in 0..<nFaces {
             let ia = Int(mTris[f*3]), ib = Int(mTris[f*3+1]), ic = Int(mTris[f*3+2])
             let a = mPos[ia], b = mPos[ib], c = mPos[ic]
@@ -684,9 +690,9 @@ enum TdMeshBaker {
                     if zc < 0.05 { ok = false; break }
                     let u = kf.cx + kf.fx * c4.x / zc
                     let v = kf.cy - kf.fy * c4.y / zc
-                    if u < 0 || v < 0 || u >= imgW || v >= imgH { ok = false; break }
-                    uvs[vi*2] = u / imgW
-                    uvs[vi*2+1] = 1 - v / imgH     // three.js flipY=true: v=1 is the image top
+                    if u < 0 || v < 0 || u >= kf.w || v >= kf.h { ok = false; break }
+                    uvs[vi*2] = u / kf.w
+                    uvs[vi*2+1] = 1 - v / kf.h     // three.js flipY=true: v=1 is the image top
                 }
                 if !ok { continue }
                 bestScore = score

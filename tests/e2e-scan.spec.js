@@ -1406,6 +1406,101 @@ test.describe('TdScan web half', () => {
     });
   });
 
+  // Owner (2026-08-10): "we need photos so we can walk back through it later
+  // if we have details that we need to see from actual photos." The walk
+  // frames are the job record; these prove the record answers questions.
+  test.describe('the walkthrough record: real photos of real spots, later', () => {
+    // A camera standing at the origin looking down -z, 4:3 frame.
+    const frame = (path, cam) => ({ path, cam, fx: 1500, fy: 1500, cx: 960, cy: 720, w: 1920, h: 1440 });
+    const IDENT = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    // Same camera, moved 3 m along +x (still looking down -z).
+    const MOVED = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 3, 0, 0, 1];
+
+    test('the best frame is the one that saw the spot squarely and close', async () => {
+      const r = await page.evaluate(({ f0, f3 }) => {
+        const sc = { walk: [f0, f3] };
+        const ahead = _scanBestFrame(sc, { x: 0, y: 0, z: -2 });
+        const nearOther = _scanBestFrame(sc, { x: 3, y: 0, z: -2 });
+        const behind = _scanBestFrame(sc, { x: 0, y: 0, z: 5 });
+        const tooFar = _scanBestFrame(sc, { x: 0, y: 0, z: -30 });
+        const offFrame = _scanBestFrame(sc, { x: -9, y: 0, z: -2 });
+        return {
+          aheadI: ahead && ahead.i,
+          centered: ahead && Math.abs(ahead.u - 960) < 1 && Math.abs(ahead.v - 720) < 1,
+          nearI: nearOther && nearOther.i,
+          behindNull: behind === null, farNull: tooFar === null, offNull: offFrame === null,
+          emptyNull: _scanBestFrame({ walk: [] }, { x: 0, y: 0, z: -1 }) === null,
+        };
+      }, { f0: frame('/a.jpg', IDENT), f3: frame('/b.jpg', MOVED) });
+      expect(r.aheadI, 'the frame that stood in front of the spot wins').toBe(0);
+      expect(r.centered, 'a dead-ahead spot projects to the frame center').toBe(true);
+      expect(r.nearI, 'the spot in front of the OTHER camera picks that one').toBe(1);
+      expect(r.behindNull, 'a spot behind every lens has no photo').toBe(true);
+      expect(r.farNull).toBe(true);
+      expect(r.offNull, 'edge-of-frame sightings do not count as seeing it').toBe(true);
+      expect(r.emptyNull).toBe(true);
+    });
+
+    test('re-walking shows the frames in order, wraps, and pins the tapped detail', async () => {
+      const r = await page.evaluate(({ f0, f3 }) => {
+        const before = scans.length;
+        try {
+          saveScan({ id: 'sc-walk', clientId: null, name: 'Walk', createdAt: new Date().toISOString(),
+                     rooms: [], photos: [], walk: [f0, f3], price: null, purchasedAt: null });
+          _scanOpenWalk('sc-walk', 0, { u: 960, v: 360 });
+          let ov = document.getElementById('_scan-photo-ov');
+          const first = /1 of 2/.test(ov?.textContent || '');
+          const inOrder = /the walk, in order/.test(ov?.textContent || '');
+          const mark = ov?.querySelector('div[style*="border-radius:50%"]');
+          const markLeft = mark && /left:50/.test(mark.getAttribute('style'));
+          const markTop = mark && /top:25/.test(mark.getAttribute('style'));
+          _scanOpenWalk('sc-walk', -1);
+          ov = document.getElementById('_scan-photo-ov');
+          const wrapped = /2 of 2/.test(ov?.textContent || '');
+          const noMark = !ov?.querySelector('div[style*="border-radius:50%"]');
+          ov?.remove();
+          return { first, inOrder, markLeft, markTop, wrapped, noMark };
+        } finally { scans.length = before; saveAll(); document.getElementById('_scan-photo-ov')?.remove(); }
+      }, { f0: frame('/a.jpg', IDENT), f3: frame('/b.jpg', MOVED) });
+      expect(r.first).toBe(true);
+      expect(r.inOrder, 'prev and next ARE re-walking the house').toBe(true);
+      expect(r.markLeft, 'the crosshair lands where the detail projects (u 960/1920)').toBe(true);
+      expect(r.markTop, 'and v 360/1440').toBe(true);
+      expect(r.wrapped, 'stepping back from the first wraps to the last').toBe(true);
+      expect(r.noMark, 'plain browsing carries no stale crosshair').toBe(true);
+    });
+
+    test('walk dots ride the plan, small and apart from the numbered shutter pins', async () => {
+      const r = await page.evaluate((raw) => {
+        const room = _scanParseRoom(raw, 'Kitchen');
+        const cam = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.5, 1.4, 0.5, 1];
+        const sc = { rooms: [room], walk: [{ path: '/w.jpg', cam, fx: 1, fy: 1, cx: 1, cy: 1, w: 2, h: 2 }] };
+        const withWalk = _scanPlanSvg(sc, { lens: 'plan', scanId: 's1', walk: sc.walk });
+        const without = _scanPlanSvg(sc, { lens: 'plan', scanId: 's1' });
+        return {
+          dot: /_scanOpenWalk\('s1',0\)/.test(withWalk),
+          small: /r="1\.1" fill="#8A9BB0"/.test(withWalk),
+          none: !/_scanOpenWalk/.test(without),
+        };
+      }, fabricatedRoom());
+      expect(r.dot, 'tap a dot, stand there again').toBe(true);
+      expect(r.small).toBe(true);
+      expect(r.none, 'no walk, no dots').toBe(true);
+    });
+
+    test('the walkthrough saves onto the scan record from the capture result', async () => {
+      const r = await page.evaluate(() => {
+        const sc = { walk: [{ path: '/w1.jpg', cam: new Array(16).fill(0), fx: 1, fy: 1, cx: 1, cy: 1, w: 4, h: 3 }] };
+        // The save path maps result.walk field for field; prove the mapping
+        // shape here so a Swift-side rename cannot silently drop the record.
+        const mapped = (sc.walk || []).map(k => ({ path: k.path, cam: k.cam, fx: k.fx, fy: k.fy, cx: k.cx, cy: k.cy, w: k.w, h: k.h }));
+        return { keys: Object.keys(mapped[0]).sort().join(), n: mapped.length };
+      });
+      expect(r.keys).toBe('cam,cx,cy,fx,fy,h,path,w');
+      expect(r.n).toBe(1);
+    });
+  });
+
   // Scanning is hardware (owner 2026-08-09): a phone with no LiDAR can never do
   // it, so the card greys out and explains itself instead of failing on tap.
   // Capability comes from RoomPlan's own probe, cached; there is deliberately

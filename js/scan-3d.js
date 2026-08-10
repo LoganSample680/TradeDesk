@@ -495,7 +495,7 @@ async function _scan3dOpen(id){
     '</div>'+
     '<div id="_s3d-mount" style="flex:1"></div>'+
     '<div style="position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);display:flex;flex-direction:column;align-items:center;gap:10px;z-index:2;pointer-events:none">'+
-      '<div style="color:rgba(255,255,255,.55);font-size:11px;font-weight:600">Drag to orbit · pinch or scroll to zoom</div>'+
+      '<div style="color:rgba(255,255,255,.55);font-size:11px;font-weight:600">Drag to orbit · pinch or scroll to zoom'+((sc.walk||[]).length?' · tap a spot for its photo':'')+'</div>'+
       _scan3dPaintStripHtml()+
       '<div style="display:flex;gap:8px">'+
         '<button id="_s3d-paint-btn" onclick="_scan3dTogglePaint()" style="pointer-events:auto;opacity:0.7;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;font-size:13px;font-weight:800;padding:10px 18px;border-radius:20px;cursor:pointer;font-family:inherit">🎨 Paint</button>'+
@@ -689,24 +689,40 @@ async function _scan3dOpen(id){
     place();
   });
   const lift=e=>{delete ptrs[e.pointerId];pinchD=null;};
-  // A TAP (not a drag) with a swatch chosen paints the wall under the finger:
-  // the accent-wall move in the client conversation.
+  // A TAP (not a drag) does one of two jobs. With a swatch chosen it paints
+  // the wall under the finger (the accent-wall move). Otherwise it answers
+  // the detail question: raycast the spot, find the walkthrough frame that
+  // saw it best, and open the ACTUAL PHOTO with a crosshair on the spot.
   el.addEventListener('pointerup',e=>{
     const wasTap=downAt&&Math.hypot(e.clientX-downAt.x,e.clientY-downAt.y)<8;
     lift(e);
-    if(!wasTap||!_s3d||!_s3d.paintHex||Object.keys(ptrs).length)return;
-    const strip=document.getElementById('_s3d-paint-strip');
-    if(!strip||strip.style.display==='none')return;
+    if(!wasTap||!_s3d||Object.keys(ptrs).length)return;
     const rct=el.getBoundingClientRect();
     const nx=((e.clientX-rct.left)/rct.width)*2-1;
     const ny=-(((e.clientY-rct.top)/rct.height)*2-1);
     const rc=new T.Raycaster();
     rc.setFromCamera(new T.Vector2(nx,ny),cam);
-    const hit=rc.intersectObjects((_s3d.walls||[]).map(w=>w.mesh),false)[0];
+    const strip=document.getElementById('_s3d-paint-strip');
+    const painting=_s3d.paintHex&&strip&&strip.style.display!=='none';
+    if(painting){
+      const hit=rc.intersectObjects((_s3d.walls||[]).map(w=>w.mesh),false)[0];
+      if(!hit)return;
+      hit.object.material.color.set(_s3d.paintHex);
+      _scan3dSetPaint(_s3d.sc,hit.object.userData.wallKey,_s3d.paintHex,_s3d.paintLabel||'');
+      _scan3dMeshRepaint();
+      return;
+    }
+    if(!(_s3d.sc&&(_s3d.sc.walk||[]).length)||typeof _scanBestFrame!=='function')return;
+    const targets=[];
+    if(_s3d.meshG&&_s3d.meshG.visible)targets.push(_s3d.meshG);
+    else if(_s3d.model)targets.push(_s3d.model);
+    const hit=rc.intersectObjects(targets,true).find(h=>h.object.isMesh);
     if(!hit)return;
-    hit.object.material.color.set(_s3d.paintHex);
-    _scan3dSetPaint(_s3d.sc,hit.object.userData.wallKey,_s3d.paintHex,_s3d.paintLabel||'');
-    _scan3dMeshRepaint();
+    // Back into scan space: the groups are recentered by modelOffset.
+    const off=_s3d.modelOffset||{x:0,y:0,z:0};
+    const bf=_scanBestFrame(_s3d.sc,{x:hit.point.x-off.x,y:hit.point.y-off.y,z:hit.point.z-off.z});
+    if(bf&&typeof _scanOpenWalk==='function')_scanOpenWalk(_s3d.sc.id,bf.i,{u:bf.u,v:bf.v});
+    else if(typeof showToast==='function')showToast('No photo caught that spot','📷');
   });
   el.addEventListener('pointercancel',lift);
   el.addEventListener('wheel',e=>{e.preventDefault();orbit.r=Math.max(3,Math.min(R0*2.5,orbit.r*(1+e.deltaY*0.0012)));place();},{passive:false});
