@@ -304,72 +304,88 @@ test.describe('drive', () => {
     expect(r.quickAction).toMatch(/Log miles/);
   });
 
-  // The Log a trip sheet is where a lot of drives actually start: the
-  // contractor is recording the trip anyway, and the next thing they do is
-  // drive it. Its "open in maps" chooser used to only offer a handoff.
-  const openTripSheet = async (native) => page.evaluate((isNative) => {
+  // ── The Log a trip sheet ───────────────────────────────────────────────────
+  // Owner call (2026-08-09): no branded fourth option. "It should be smart
+  // enough to see the phone, then based on iPhone it preselects Apple Maps,
+  // then you click save trip to start, none is nice in case you need to
+  // manually add."
+  //
+  // So the sheet keeps its three familiar choices and answers the question
+  // itself from the device. What "Apple Maps" MEANS is the only thing that
+  // varies: in the app it is our own full-screen Apple Maps drive, in a browser
+  // it opens the Maps app. Same promise, best available version of it.
+  const openTripSheet = async (native) => page.evaluate(async (isNative) => {
     document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
-    const realCap = window.Capacitor;
-    window.__realCap = realCap;
-    window.Capacitor = isNative ? {
-      isNativePlatform: () => true,
-      registerPlugin: (n) => n === 'TdNav' ? {
-        addListener() {}, speak: () => Promise.resolve({}), stop: () => Promise.resolve({}),
-        recalculate: () => Promise.resolve({}),
-        isAvailable: () => Promise.resolve({ available: true }),
-        start: (o) => { (window.__started = window.__started || []).push(o); return Promise.resolve({}); },
-      } : null,
-    } : undefined;
+    window.__realCap = window.Capacitor;
     window.__started = [];
-    return _driveCapRefresh().then(() => { openDriveModal({}); });
+    window.__handoff = [];
+    window.openTripInMaps = (app, from, to) => { window.__handoff.push(app); };
+    if (isNative) {
+      window.Capacitor = {
+        isNativePlatform: () => true,
+        registerPlugin: (n) => n === 'TdNav' ? {
+          addListener() {}, speak: () => Promise.resolve({}), stop: () => Promise.resolve({}),
+          recalculate: () => Promise.resolve({}),
+          isAvailable: () => Promise.resolve({ available: true }),
+          start: (o) => { window.__started.push(o); return Promise.resolve({}); },
+        } : null,
+      };
+      await _driveCapRefresh();
+    } else {
+      window.Capacitor = undefined;
+      try { localStorage.removeItem('td_nav_capable'); } catch (e) {}
+    }
+    openDriveModal({});
   }, native);
 
-  test('in the app the trip sheet offers our own drive, and defaults to it', async () => {
+  const closeTripSheet = () => page.evaluate(() => {
+    document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+    window.Capacitor = window.__realCap;
+  });
+
+  test('the trip sheet offers three familiar choices, not a branded fourth', async () => {
     await openTripSheet(true);
     await page.waitForTimeout(200);
     const r = await page.evaluate(() => ({
-      row: (document.getElementById('lm-map-td') || {}).textContent || '',
-      selected: (document.getElementById('lm-map-app') || {}).value,
-      label: [...document.querySelectorAll('label')].map(l => l.textContent).find(t => /after saving/i.test(t)) || '',
-      apple: !!document.getElementById('lm-map-apple'),
-      google: !!document.getElementById('lm-map-google'),
+      branded: !!document.getElementById('lm-map-td'),
+      chips: ['apple', 'google', 'none'].filter(k => !!document.getElementById('lm-map-' + k)),
+      none: (document.getElementById('lm-map-none') || {}).textContent || '',
     }));
-    expect(r.row).toMatch(/Drive it in TradeDesk/);
-    expect(r.selected, 'ours is the default in the app').toBe('td');
-    expect(r.label, 'the section is no longer only about other apps').toMatch(/Navigate after saving/i);
-    expect(r.apple && r.google, 'anyone who prefers Apple or Google keeps them').toBe(true);
+    await closeTripSheet();
+    expect(r.branded, 'nothing here asks a contractor to learn a new word').toBe(false);
+    expect(r.chips).toEqual(['apple', 'google', 'none']);
+    expect(r.none, 'None stays, for a trip somebody is only recording').toMatch(/None/);
   });
 
-  test('the four choices are exclusive', async () => {
-    await openTripSheet(true);
-    await page.waitForTimeout(150);
+  test('the sheet reads the phone and preselects for it', async () => {
+    // The preselect is by user agent, so drive it the same way the app does.
+    const pick = (ua) => page.evaluate((agent) => {
+      const _ua = agent;
+      return /iPhone|iPad|iPod/i.test(_ua) ? 'apple' : /Android/i.test(_ua) ? 'google' : '';
+    }, ua);
+    expect(await pick('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)')).toBe('apple');
+    expect(await pick('Mozilla/5.0 (Linux; Android 14; Pixel 8)')).toBe('google');
+    expect(await pick('Mozilla/5.0 (X11; Linux x86_64)'), 'a desktop has no map app to hand off to').toBe('');
+    // And the real sheet honours whatever that resolves to on this runner.
+    await openTripSheet(false);
+    await page.waitForTimeout(200);
     const r = await page.evaluate(() => {
-      _selectTripMapApp('apple');
-      const a = { td: document.getElementById('lm-map-td').style.background,
-                  apple: document.getElementById('lm-map-apple').style.background };
-      _selectTripMapApp('td');
-      const b = { td: document.getElementById('lm-map-td').style.background,
-                  apple: document.getElementById('lm-map-apple').style.background };
-      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
-      window.Capacitor = window.__realCap;
-      return { a, b };
+      const want = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'apple'
+                 : /Android/i.test(navigator.userAgent) ? 'google' : '';
+      return { want, got: (document.getElementById('lm-map-app') || {}).value };
     });
-    expect(r.a.td, 'picking Apple clears ours').toBe('');
-    expect(r.a.apple).not.toBe('');
-    expect(r.b.apple, 'picking ours clears Apple').toBe('');
-    expect(r.b.td).not.toBe('');
+    await closeTripSheet();
+    expect(r.got, 'the sheet answers its own question from the device').toBe(r.want);
   });
 
-  test('saving the trip starts the drive in-app, with no handoff', async () => {
+  test('in the app, Save trip drives on Apple Maps without leaving', async () => {
     await openTripSheet(true);
     await page.waitForTimeout(200);
     const r = await page.evaluate(async () => {
-      const opened = [];
-      const realOpen = window.open;
       const realResolve = window._resolveCoords;
-      window.open = (u) => { opened.push(u); return null; };
       window._resolveCoords = async () => ({ lat: 41.532, lng: -88.095 });
       try {
+        _selectTripMapApp('apple');
         document.getElementById('lm-to').value = '12 Oak St, Joliet IL';
         const sel = document.getElementById('lm-trip-type-sel');
         const first = [...sel.querySelectorAll('option')].map(o => o.value).filter(Boolean)[0];
@@ -377,31 +393,54 @@ test.describe('drive', () => {
         document.getElementById('lm-purpose').value = first;
         saveLoggedTrip();
         await new Promise(res => setTimeout(res, 400));
-        return { started: window.__started, opened };
-      } finally {
-        window.open = realOpen; window._resolveCoords = realResolve;
-        window.Capacitor = window.__realCap;
-        document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
-      }
+        return { started: window.__started, handoff: window.__handoff };
+      } finally { window._resolveCoords = realResolve; }
     });
-    expect(r.started.length, 'the drive begins where the trip was logged').toBe(1);
+    await closeTripSheet();
+    expect(r.started.length, 'Save trip IS the start button').toBe(1);
     expect(r.started[0].lat).toBeCloseTo(41.532, 3);
-    expect(r.opened, 'nothing leaves the app').toEqual([]);
+    expect(r.handoff, 'and it never leaves the app to do it').toEqual([]);
   });
 
-  test('a browser sees the trip sheet exactly as it was', async () => {
+  test('in a browser the same choice opens the Maps app, as it always did', async () => {
     await openTripSheet(false);
     await page.waitForTimeout(200);
-    const r = await page.evaluate(() => {
-      const out = { td: !!document.getElementById('lm-map-td'),
-                    apple: !!document.getElementById('lm-map-apple'),
-                    none: !!document.getElementById('lm-map-none') };
-      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
-      window.Capacitor = window.__realCap;
-      return out;
+    const r = await page.evaluate(async () => {
+      _selectTripMapApp('apple');
+      document.getElementById('lm-to').value = '12 Oak St, Joliet IL';
+      const sel = document.getElementById('lm-trip-type-sel');
+      const first = [...sel.querySelectorAll('option')].map(o => o.value).filter(Boolean)[0];
+      sel.value = first;
+      document.getElementById('lm-purpose').value = first;
+      saveLoggedTrip();
+      await new Promise(res => setTimeout(res, 300));
+      return { started: window.__started.length, handoff: window.__handoff };
     });
-    expect(r.td, 'no option that cannot work here').toBe(false);
-    expect(r.apple && r.none, 'and the old chooser is untouched').toBe(true);
+    await closeTripSheet();
+    expect(r.started, 'no plugin here, so nothing pretends to navigate').toBe(0);
+    expect(r.handoff, 'Apple Maps still means Apple Maps').toEqual(['apple']);
+  });
+
+  test('None saves the trip and navigates nothing', async () => {
+    await openTripSheet(true);
+    await page.waitForTimeout(200);
+    const r = await page.evaluate(async () => {
+      _selectTripMapApp('');
+      document.getElementById('lm-to').value = '99 Elm St';
+      const sel = document.getElementById('lm-trip-type-sel');
+      const first = [...sel.querySelectorAll('option')].map(o => o.value).filter(Boolean)[0];
+      sel.value = first;
+      document.getElementById('lm-purpose').value = first;
+      const before = mileage.length;
+      saveLoggedTrip();
+      await new Promise(res => setTimeout(res, 300));
+      return { started: window.__started.length, handoff: window.__handoff.length,
+               logged: mileage.length > before };
+    });
+    await closeTripSheet();
+    expect(r.logged, 'the trip is still recorded, which is the whole point').toBe(true);
+    expect(r.started, 'a trip added after the fact must not start a drive').toBe(0);
+    expect(r.handoff).toBe(0);
   });
 
   // Capacitor.registerPlugin returns a proxy whether or not the native half is
