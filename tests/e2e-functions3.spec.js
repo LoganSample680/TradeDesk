@@ -1223,6 +1223,40 @@ test.describe('Cloud Supabase and account functions', () => {
     await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 6000 });
   });
 
+  // The geo ON SITE card lands seconds after the boot waterfall and sits at
+  // the top of the dashboard. It must slide its space open (max-height
+  // transition, §8.4) instead of shoving every card below it down in one
+  // frame, which read as the whole dashboard dropping again (owner
+  // 2026-08-10). Same on hide: the space collapses, no jump-up.
+  test('geo ON SITE card slides open and collapses closed, never yanks layout', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = (typeof _activeTimer !== 'undefined') ? _activeTimer : null;
+      const el = document.getElementById('dash-nearby');
+      el.style.display = 'none'; el.innerHTML = '';
+      try {
+        _activeTimer = { startTime: Date.now() - 60000, clientName: 'Geo Test', jobId: null };
+        renderDash();
+        const during = { maxH: el.style.maxHeight, trans: el.style.transition, disp: el.style.display };
+        await new Promise(res => setTimeout(res, 500));
+        const settled = { maxH: el.style.maxHeight, overflow: el.style.overflow, visible: el.style.display === 'block' };
+        _activeTimer = null;
+        renderDash();          // state gone: card animates away and collapses
+        const hiding = { trans: el.style.transition, anim: el.style.animation };
+        await new Promise(res => setTimeout(res, 400));
+        const hidden = { disp: el.style.display, maxH: el.style.maxHeight };
+        return { during, settled, hiding, hidden };
+      } finally { _activeTimer = saved; renderDash(); }
+    });
+    expect(r.during.disp).toBe('block');
+    expect(r.during.maxH).toBe('0px');               // enters collapsed
+    expect(r.during.trans).toContain('max-height');  // and transitions open
+    expect(r.settled.maxH).toBe('');                 // cleanup: no residual cap
+    expect(r.settled.visible).toBe(true);
+    expect(r.hiding.trans).toContain('max-height');  // exit collapses the space
+    expect(r.hidden.disp).toBe('none');              // fully hidden after
+    expect(r.hidden.maxH).toBe('');                  // and cleaned up
+  });
+
   // Same-page goPg must not strip and re-add .active: that restarts the
   // td-pg-enter animation, and boot/sign-in flows call goPg('pg-dash')
   // several times, so each restart replayed the whole page pour (owner

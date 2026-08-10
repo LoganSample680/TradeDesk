@@ -638,6 +638,20 @@ function renderDash(){
       if(_nearbyHideTimer){clearTimeout(_nearbyHideTimer);_nearbyHideTimer=null;} // a re-appearance mid-fade-out must not get hidden out from under it
       _nearbyEl.style.animation='';
       _nearbyEl.style.display='block';
+      if(_wasHidden){
+        // The geo fix usually lands seconds AFTER the boot waterfall, and this
+        // card sits at the top of the dashboard: popping in at full height
+        // shoved every card below it down in one frame, which read as the
+        // whole dashboard dropping again (owner 2026-08-10). Slide the space
+        // open instead (§8.4: max-height with a known cap, never height:auto).
+        _nearbyEl.style.overflow='hidden';
+        _nearbyEl.style.maxHeight='0px';
+        _nearbyEl.style.transition='max-height .3s cubic-bezier(.22,1,.36,1)';
+        requestAnimationFrame(()=>{
+          _nearbyEl.style.maxHeight='560px';
+          setTimeout(()=>{_nearbyEl.style.maxHeight='';_nearbyEl.style.transition='';_nearbyEl.style.overflow='';},380);
+        });
+      }
       const _cardShell=(inner)=>'<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(22,163,74,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(22,163,74,.16),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f6fbf7 100%);box-shadow:0 10px 30px -12px rgba(14,107,57,.35),0 2px 8px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+inner+'</div>';
       const _cardHead=(name,addr,extra)=>'<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
           '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
@@ -746,11 +760,18 @@ function renderDash(){
       // card keeps its content and animates itself away, hard-hidden only
       // once that's actually finished. Mirrors the .22s entrance (tdNearbyIn).
       _nearbyEl.style.animation='tdNearbyOut .18s ease both';
+      // Collapse the space too: without this the fade ends and everything
+      // below jumps UP one frame, the mirror of the entrance yank.
+      _nearbyEl.style.overflow='hidden';
+      _nearbyEl.style.maxHeight=_nearbyEl.offsetHeight+'px';
+      _nearbyEl.style.transition='max-height .24s ease';
+      requestAnimationFrame(()=>{_nearbyEl.style.maxHeight='0px';});
       _nearbyHideTimer=setTimeout(()=>{
         _nearbyHideTimer=null;
         _nearbyEl.style.display='none';
         _nearbyEl.style.animation='';
-      },180);
+        _nearbyEl.style.maxHeight='';_nearbyEl.style.transition='';_nearbyEl.style.overflow='';
+      },250);
     }
   }
   // Update new nav badges
