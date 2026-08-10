@@ -21,18 +21,25 @@ function openExpenseFlow(){
         '<div style="font-size:18px;font-weight:800">Log expense</div>'+
         '<button onclick="closeExpenseFlow()" style="border:none;background:none;font-size:24px;cursor:pointer;color:var(--text3)">×</button>'+
       '</div>'+
+      // Left: the two capture buttons stacked. Right: the captured pages in
+      // their own box (owner 2026-08-10: the post-scan layout read as
+      // clutter; pages belong beside Scan, prompts get the full row below).
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">'+
-        '<button id="exp-scan-area" style="border:1.5px solid var(--blue);border-radius:12px;padding:12px 8px;cursor:pointer;background:rgba(45,93,168,.06);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px" onclick="expTriggerScan()">'+
-          '<span style="font-size:22px">'+svgIcon('📷',{size:22})+'</span>'+
-          '<div style="text-align:left"><div style="font-size:13px;font-weight:700;color:var(--blue)">Scan receipt</div></div>'+
-        '</button>'+
-        '<button id="exp-attach-area" style="border:1.5px solid var(--border2);border-radius:12px;padding:12px 8px;cursor:pointer;background:var(--bg2);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px" onclick="expTriggerAttach()">'+
-          '<span style="font-size:22px">'+svgIcon('📎',{size:22})+'</span>'+
-          '<div style="text-align:left"><div style="font-size:13px;font-weight:700">Attach photo</div></div>'+
-        '</button>'+
+        '<div style="display:flex;flex-direction:column;gap:8px">'+
+          '<button id="exp-scan-area" style="flex:1;border:1.5px solid var(--blue);border-radius:12px;padding:12px 8px;cursor:pointer;background:rgba(45,93,168,.06);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px" onclick="expTriggerScan()">'+
+            '<span style="font-size:22px">'+svgIcon('📷',{size:22})+'</span>'+
+            '<div style="text-align:left"><div style="font-size:13px;font-weight:700;color:var(--blue)">Scan receipt</div></div>'+
+          '</button>'+
+          '<button id="exp-attach-area" style="flex:1;border:1.5px solid var(--border2);border-radius:12px;padding:12px 8px;cursor:pointer;background:var(--bg2);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px" onclick="expTriggerAttach()">'+
+            '<span style="font-size:22px">'+svgIcon('📎',{size:22})+'</span>'+
+            '<div style="text-align:left"><div style="font-size:13px;font-weight:700">Attach photo</div></div>'+
+          '</button>'+
+        '</div>'+
+        '<div id="exp-pages-box" style="border:1.5px dashed var(--border2);border-radius:12px;min-height:104px;padding:8px;display:flex;align-items:center;justify-content:center">'+
+          '<div style="font-size:11px;color:var(--text3);text-align:center">Receipt pages land here</div>'+
+        '</div>'+
       '</div>'+
       '<div id="exp-scan-status" style="display:none;margin-bottom:10px"></div>'+
-      '<div id="exp-preview-img" style="display:none;margin-bottom:12px;text-align:center"></div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
         '<div class="f"><label>Vendor / Store *</label><input id="em-vendor" placeholder="Home Depot..." style="font-size:14px"></div>'+
         '<div class="f"><label>Amount * ($)</label><input id="em-amount" type="number" step="0.01" placeholder="0.00" style="font-size:14px"></div>'+
@@ -79,24 +86,27 @@ function openExpenseFlow(){
 function closeExpenseFlow(){document.getElementById('expense-modal')?.remove();_expState={imageData:null,imageKey:null,hasReceipt:false,editId:null,imagePages:[]};}
 
 function _renderExpPages(){
-  const preview=document.getElementById('exp-preview-img');if(!preview)return;
+  const box=document.getElementById('exp-pages-box');if(!box)return;
   const pages=_expState.imagePages;
-  if(!pages.length){preview.style.display='none';return;}
-  preview.style.display='block';
-  preview.innerHTML=
-    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">'+
+  if(!pages.length){
+    box.style.borderStyle='dashed';
+    box.innerHTML='<div style="font-size:11px;color:var(--text3);text-align:center">Receipt pages land here</div>';
+    return;
+  }
+  box.style.borderStyle='solid';
+  box.innerHTML=
+    '<div style="width:100%">'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">'+
     pages.map((p,i)=>
       '<div style="position:relative;text-align:center">'+
-        '<img src="data:image/jpeg;base64,'+p.b64+'" style="width:68px;height:68px;object-fit:cover;border-radius:8px;border:2px solid var(--green);display:block">'+
+        '<img src="data:image/jpeg;base64,'+p.b64+'" style="width:58px;height:58px;object-fit:cover;border-radius:8px;border:2px solid var(--green);display:block">'+
         '<button type="button" onclick="_removeExpPage('+i+')" style="position:absolute;top:-7px;right:-7px;width:20px;height:20px;border-radius:50%;border:none;background:#A32D2D;color:#fff;font-size:12px;cursor:pointer;line-height:1;padding:0;font-family:inherit">×</button>'+
-        '<div style="font-size:9px;color:var(--text3);margin-top:3px;font-weight:700">Page '+(i+1)+'</div>'+
       '</div>'
     ).join('')+
-    '<div style="display:flex;align-items:center">'+
-      '<button type="button" onclick="expTriggerAttach(true)" style="width:68px;height:68px;border-radius:8px;border:2px dashed var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:22px;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center">+</button>'+
+    '<button type="button" onclick="expTriggerAttach(true)" style="width:58px;height:58px;border-radius:8px;border:2px dashed var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:20px;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;flex:0 0 auto">+</button>'+
     '</div>'+
-    '</div>'+
-    '<div style="font-size:11px;color:var(--green-mid);font-weight:700">'+pages.length+' page'+(pages.length>1?'s':'')+' captured</div>';
+    '<div style="font-size:10px;color:var(--green-mid);font-weight:700;text-align:center;margin-top:6px">'+pages.length+' page'+(pages.length>1?'s':'')+' captured</div>'+
+    '</div>';
 }
 function _removeExpPage(idx){
   _expState.imagePages.splice(idx,1);
@@ -813,8 +823,10 @@ function _confirmReceiptDate(aiDate,statusEl){
       '<button id="rcpt-yes-btn" style="padding:8px;border-radius:var(--r);border:none;background:#D97706;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✓',{size:12})+' Yes</button>'+
       '<button id="rcpt-no-btn" style="padding:8px;border-radius:var(--r);border:1px solid #D97706;background:#fff;color:#92400E;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✗',{size:12})+' Let me fix it</button>'+
     '</div>';
+  // Full row under the capture grid, never crammed into a grid cell.
+  const _stat=document.getElementById('exp-scan-status');
   const scanArea=document.getElementById('exp-scan-area');
-  if(scanArea)scanArea.after(div);
+  if(_stat)_stat.after(div);else if(scanArea)scanArea.after(div);
   div.querySelector('#rcpt-yes-btn').onclick=()=>{
     const el=document.getElementById('em-date');
     if(el&&aiDate){const m=aiDate.match(/(\d{4})-(\d{2})-(\d{2})/);el.value=m?m[2]+'/'+m[3]+'/'+m[1]:aiDate;}
@@ -3641,11 +3653,11 @@ function editExpense(id){
     if(saveBtn)saveBtn.textContent='Save changes';
     if(exp.receipt_keys?.length||exp.receipt_key||exp.receipt_img){
       const pc=exp.receipt_keys?.length||(exp.receipt_key?1:0);
-      const preview=document.getElementById('exp-preview-img');
-      if(preview){
-        preview.style.display='block';
-        preview.innerHTML='<div style="font-size:11px;color:var(--green-mid);font-weight:700;margin-bottom:6px">'+svgIcon('☁',{size:12})+' '+pc+' receipt page'+(pc>1?'s':'')+' on file</div>'+
-          '<button type="button" onclick="expTriggerAttach(true)" style="font-size:11px;padding:5px 10px;border-radius:var(--r);border:1.5px dashed var(--blue);background:var(--blue-lt);color:var(--blue-dk);cursor:pointer;font-family:inherit;font-weight:700">+ Add another page</button>';
+      const box=document.getElementById('exp-pages-box');
+      if(box){
+        box.style.borderStyle='solid';
+        box.innerHTML='<div style="text-align:center"><div style="font-size:11px;color:var(--green-mid);font-weight:700;margin-bottom:6px">'+svgIcon('☁',{size:12})+' '+pc+' receipt page'+(pc>1?'s':'')+' on file</div>'+
+          '<button type="button" onclick="expTriggerAttach(true)" style="font-size:11px;padding:5px 10px;border-radius:var(--r);border:1.5px dashed var(--blue);background:var(--blue-lt);color:var(--blue-dk);cursor:pointer;font-family:inherit;font-weight:700">+ Add another page</button></div>';
       }
     }
     const saveErr=document.getElementById('exp-save-err');

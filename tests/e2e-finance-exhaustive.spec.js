@@ -193,26 +193,28 @@ test.describe('finance.js: exhaustive coverage', () => {
     test('empty imagePages, hides preview element', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [];
-        try { _renderExpPages(); return { ok: true, display: document.getElementById('exp-preview-img')?.style.display }; }
+        // Pages moved into #exp-pages-box (owner 2026-08-10 layout swap):
+        // empty state shows the dashed placeholder, never hides.
+        try { _renderExpPages(); return { ok: true, empty: /Receipt pages land here/.test(document.getElementById('exp-pages-box')?.innerHTML || '') }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.display).toBe('none');
+      expect(r.empty).toBe(true);
     });
 
     test('one page, shows preview with page thumbnail', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aGVsbG8=', key: null }];
-        try { _renderExpPages(); return { ok: true, display: document.getElementById('exp-preview-img')?.style.display }; }
+        try { _renderExpPages(); return { ok: true, thumbs: (document.getElementById('exp-pages-box')?.querySelectorAll('img') || []).length }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.display).toBe('block');
+      expect(r.thumbs).toBe(1);
     });
 
     test('missing preview element, does not throw', async () => {
       const r = await page.evaluate(() => {
-        document.getElementById('exp-preview-img')?.remove();
+        document.getElementById('exp-pages-box')?.remove();
         try { _renderExpPages(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
@@ -224,7 +226,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         _expState.imagePages = [{ b64: 'aGVsbG8=', key: null }];
         try {
           _renderExpPages(); _renderExpPages(); _renderExpPages();
-          const imgs = document.getElementById('exp-preview-img')?.querySelectorAll('img') || [];
+          const imgs = document.getElementById('exp-pages-box')?.querySelectorAll('img') || [];
           return { ok: true, imgCount: imgs.length };
         } catch (e) { return { ok: false, err: e.message }; }
       });

@@ -268,12 +268,20 @@ async function startDriveTo(dest){
   }
   const label=dest.label||'Your stop';
   const Nav=_drivePlugin();
-  // driveCapable(), not just "is there a plugin object": an app build without
-  // the native half still hands back a proxy, and this is the difference
-  // between handing off cleanly and failing on the first tap.
-  if(!Nav||!driveCapable()){
-    // Browser, PWA, or a build that predates TdNav: hand off rather than fake it.
-    window.open('https://maps.apple.com/?daddr='+dest.lat+','+dest.lng,'_blank');
+  // Owner 2026-08-10, after driving the embedded MapKit screen: "I need it to
+  // be Apple's navigation only." Apple does not license its turn-by-turn UI
+  // to ANY app (lane guidance, the guidance camera, the banners are private
+  // to the Maps app), so an embedded screen can only ever be a lookalike.
+  // Drive therefore hands off to the REAL Apple Maps by default; mileage
+  // auto-logging keeps running in the background either way. The embedded
+  // TdNav screen stays behind S.navEmbedded for the day a fleet wants
+  // in-app guidance despite the tradeoff, deliberate divergence, not dead
+  // code (CLAUDE.md 7.3).
+  if(!Nav||!driveCapable()||!(typeof S!=='undefined'&&S.navEmbedded)){
+    // maps:// reliably jumps a WKWebView into the Maps app; the https form is
+    // the everywhere-else fallback (desktop, Android hands to the browser).
+    const apple=(typeof tdAppleHardware==='function')&&tdAppleHardware();
+    _driveNavigate((apple?'maps://?daddr=':'https://maps.apple.com/?daddr=')+dest.lat+','+dest.lng+'&dirflg=d');
     return false;
   }
   _driveBindEvents();

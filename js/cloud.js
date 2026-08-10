@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.10.26.8';
+const APP_VERSION='08.10.26.9';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1493,6 +1493,13 @@ function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _armBootCascade(){
   const d=document.getElementById('pg-dash');
   if(!d||!d.classList.contains('active'))return;
+  // ONE pour per page load (owner 2026-08-10: "the tiles at the top are
+  // waterfalling 3 times"). Boot re-renders (local paint, cloud load,
+  // settings apply) each re-armed the ripple, so the cards visibly restarted
+  // their entrance mid-flight. The first arm wins; later renders just update
+  // content in place.
+  if(window._bootCascadeRan)return;
+  window._bootCascadeRan=true;
   // Cascade plays RIGHT AWAY as the boot overlay lifts, including BEHIND a boot
   // popup (owner: blank white behind a popup looks odd; the dashboard should be
   // filling in under the popup's scrim). Delays are assigned over VISIBLE cards

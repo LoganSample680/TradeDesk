@@ -62,22 +62,45 @@ test.describe('drive', () => {
                 allowWeekend: true, days: 1, status: 'active', lat: 41.532, lon: -88.095 });
   });
 
-  test('in the app, Drive opens turn-by-turn rather than leaving for Maps', async () => {
+  // Owner 2026-08-10: "I need it to be Apple's navigation only." Apple never
+  // licenses its turn-by-turn UI to apps, so the embedded screen can only be
+  // a lookalike: the DEFAULT is now the real Apple Maps handoff, and the
+  // embedded engine survives behind S.navEmbedded for fleets that want
+  // in-app guidance despite that.
+  test('in the app, Drive hands off to the real Apple Maps by default', async () => {
     await seedJob();
     const r = await withNav(async () => {
-      const opened = [];
-      const realOpen = window.open;
-      window.open = (u) => { opened.push(u); return null; };
+      const nav = [];
+      const realNavigate = window._driveNavigate;
+      window._driveNavigate = (u) => { nav.push(u); };
       try {
+        S.navEmbedded = false;
         await startDrive('7001');
-        return { started: window.__nav.start, opened, capable: driveCapable() };
-      } finally { window.open = realOpen; }
+        return { started: window.__nav.start, nav, capable: driveCapable() };
+      } finally { window._driveNavigate = realNavigate; }
     });
     expect(r.capable).toBe(true);
-    expect(r.started.length, 'navigation starts natively').toBe(1);
+    expect(r.started.length, 'the lookalike does not launch uninvited').toBe(0);
+    expect(r.nav.length).toBe(1);
+    expect(r.nav[0], 'the real Maps app takes the drive').toMatch(/daddr=41.532/);
+  });
+
+  test('S.navEmbedded opts a fleet back into the in-app turn-by-turn', async () => {
+    await seedJob();
+    const r = await withNav(async () => {
+      const nav = [];
+      const realNavigate = window._driveNavigate;
+      window._driveNavigate = (u) => { nav.push(u); };
+      try {
+        S.navEmbedded = true;
+        await startDrive('7001');
+        return { started: window.__nav.start, nav };
+      } finally { window._driveNavigate = realNavigate; S.navEmbedded = false; }
+    });
+    expect(r.started.length, 'navigation starts natively when opted in').toBe(1);
     expect(r.started[0].lat).toBeCloseTo(41.532, 3);
     expect(r.started[0].label, 'the destination is named for the driver').toBe('Dana Ramirez');
-    expect(r.opened, 'nothing bounces the crew out to Maps').toEqual([]);
+    expect(r.nav, 'no double handoff on top of the embedded screen').toEqual([]);
   });
 
   test('in a browser it is honest: the Apple Maps handoff, labelled Directions', async () => {
@@ -86,13 +109,13 @@ test.describe('drive', () => {
       const realCap = window.Capacitor;
       window.Capacitor = undefined;
       const opened = [];
-      const realOpen = window.open;
-      window.open = (u) => { opened.push(u); return null; };
+      const realNavigate = window._driveNavigate;
+      window._driveNavigate = (u) => { opened.push(u); };
       try {
         const label = driveButtonHtml('7001');
         await startDrive('7001');
         return { opened, capable: driveCapable(), label };
-      } finally { window.open = realOpen; window.Capacitor = realCap; }
+      } finally { window._driveNavigate = realNavigate; window.Capacitor = realCap; }
     });
     expect(r.capable).toBe(false);
     expect(r.opened.length).toBe(1);
