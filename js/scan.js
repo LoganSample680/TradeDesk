@@ -161,14 +161,40 @@ function scanUnlocked(sc){
 }
 
 // ── Trade lenses ─────────────────────────────────────────────────────────────
-// The scan opens in the lens matching the business trade (owner directive
-// 2026-08-09); every other lens stays one toggle away.
-function _scanDefaultLens(){
-  const t=String((typeof S!=='undefined'&&(S.trade||S.industry))||'').toLowerCase();
+// ONE lens per trade, and you only see YOUR trade's (owner 2026-08-10: "other
+// trades shouldn't be visible unless I'm writing things under that trade, hvac
+// shouldn't show for painters and neither should electrical and vice versa").
+//
+// The gate is the ACTIVE trade, not the list of trades the business works,
+// because the active trade is literally what they are writing under: a
+// multi-trade shop flips it in the nav switcher and the lens follows. Plan and
+// 3D are the geometry and belong to everybody.
+//
+// A trade with no lens of its own (general, plumbing, roofing, landscaping)
+// gets Plan and 3D. Showing it three takeoffs it did not ask for is the exact
+// thing this rule exists to stop, and the measurements still reach the estimate.
+//
+// READS getActiveTrade(), not S.trade. S.trade is never assigned anywhere in
+// the app: the trade lives on _config.business_type. So this function has been
+// returning 'plan' for every contractor since it was written, and no painter
+// has ever had the scan open on the paint takeoff.
+function _scanTradeLens(){
+  const t=String((typeof getActiveTrade==='function'&&getActiveTrade())||
+                 (typeof _config!=='undefined'&&_config&&_config.business_type)||'').toLowerCase();
   if(/paint/.test(t))return 'paint';
   if(/electric/.test(t))return 'electrical';
   if(/hvac|heat|cool|air/.test(t))return 'hvac';
-  return 'plan';
+  return null;
+}
+function _scanDefaultLens(){ return _scanTradeLens()||'plan'; }
+// The tabs this contractor gets: the geometry, plus their own trade's takeoff.
+function _scanTabs(){
+  const mine=_scanTradeLens();
+  const tabs=[['plan','Plan'],['3d','3D']];
+  if(mine==='paint')tabs.push(['paint','Paint']);
+  if(mine==='electrical')tabs.push(['electrical','Electrical']);
+  if(mine==='hvac')tabs.push(['hvac','HVAC']);
+  return tabs;
 }
 // Paint numbers per room. subtractOpenings is a real choice: plenty of
 // painters deliberately DON'T subtract because cutting in costs more than the
@@ -635,6 +661,11 @@ function openScanViewer(id){
   const sc=getScans().find(x=>String(x.id)===String(id));
   if(!sc)return;
   _scanViewLens=_scanViewLens||_scanDefaultLens();
+  // A lens this contractor is no longer shown (they switched active trade, or
+  // the viewer remembered one from before the gate existed) must not strand
+  // them on a tab with no button to leave it.
+  const _allowed=_scanTabs().map(t=>t[0]);
+  if(!_allowed.includes(_scanViewLens))_scanViewLens=_scanDefaultLens();
   const lens=_scanViewLens;
   const stories=_scanStories(sc);
   if(!stories.includes(_scanViewStory))_scanViewStory=stories[0];
@@ -642,7 +673,7 @@ function openScanViewer(id){
   document.getElementById('_scan-view-ov')?.remove();
   const totalSqFt=Math.round(_scanSqFt((sc.rooms||[]).reduce((t,r)=>t+r.floorM2,0)));
   const totalWallSqFt=Math.round(_scanSqFt((sc.rooms||[]).reduce((t,r)=>t+r.wallM2,0)));
-  const tabs=[['plan','Plan'],['3d','3D'],['paint','Paint'],['electrical','Electrical'],['hvac','HVAC']];
+  const tabs=_scanTabs();
   let body='';
   if(lens==='3d'){
     body='<div style="font-size:12px;color:var(--text2);line-height:1.5">The dollhouse, drawn straight from the measured walls'+(stories.length>1?', floors stacked with air between them':'')+'.</div>'+
@@ -654,14 +685,14 @@ function openScanViewer(id){
     body='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
       '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Paint takeoff</div>'+
       '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:5px"><input type="checkbox" '+(sub?'checked':'')+' onchange="_scanToggleSubtract(\''+sc.id+'\',this.checked)"> subtract openings</label></div>'+
-      (sc.rooms||[]).map((r,ri)=>{const n=_scanPaintNumbers(r,sub);
+      _scanRoomsOnFloor(sc,stories,story).map(({r,ri})=>{const n=_scanPaintNumbers(r,sub);
         return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)">'+
           _scanRoomNameHtml(sc.id,ri,r.label)+
           '<span style="color:var(--text2)">'+n.wallSqFt+' wall · '+n.ceilSqFt+' ceil sq ft · '+n.ceilHt+'</span></div>';}).join('')+
       '<button class="btn btn-p" style="width:100%;margin-top:12px;padding:12px" onclick="_scanToEstimate(\''+sc.id+'\')">Send rooms to estimate</button>';
   }else if(lens==='electrical'){
     body='<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Receptacle layout · NEC 210.52</div>'+
-      (sc.rooms||[]).map((r,ri)=>{const n=_scanElectricalNumbers(r);
+      _scanRoomsOnFloor(sc,stories,story).map(({r,ri})=>{const n=_scanElectricalNumbers(r);
         return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)">'+
           '<span>'+_scanRoomNameHtml(sc.id,ri,r.label)+(n.gfci?' <span style="color:#D97706;font-weight:800">GFCI</span>':'')+'</span>'+
           '<span style="color:var(--text2)">'+n.outlets+' outlets · '+n.switches+' switch'+(n.switches>1?'es':'')+(n.kitchenCounterNote?' · counter rule applies':'')+'</span></div>';}).join('')+
@@ -669,7 +700,7 @@ function openScanViewer(id){
   }else if(lens==='hvac'){
     body='<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Load calc inputs</div>'+
       '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px">ACH50 <input id="_scan-ach" type="number" step="0.1" value="'+(sc._ach50||7)+'" style="width:64px;padding:6px;border:1px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--text)" onchange="_scanSetAch(\''+sc.id+'\',this.value)"> <span style="color:var(--text3)">from a blower door test; presets: leaky 10 · average 7 · tight 3</span></div>'+
-      (sc.rooms||[]).map((r,ri)=>{const n=_scanHvacNumbers(r,{ach50:sc._ach50});
+      _scanRoomsOnFloor(sc,stories,story).map(({r,ri})=>{const n=_scanHvacNumbers(r,{ach50:sc._ach50});
         return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)">'+
           _scanRoomNameHtml(sc.id,ri,r.label)+
           '<span style="color:var(--text2)">'+n.volFt3+' ft³ · '+n.winSqFt+' sq ft glass · infil '+n.infiltSensBtuh+' BTU/h</span></div>';}).join('')+
@@ -680,11 +711,18 @@ function openScanViewer(id){
       // The rooms, by name, right here. This tab is where you land after a scan
       // and it had no room list at all, so the only way to correct a name the
       // capture chip guessed was to go hunting on the Paint tab.
-      ((sc.rooms||[]).length?'<div style="margin-top:10px">'+
-        (sc.rooms||[]).map((r,ri)=>'<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)">'+
-          _scanRoomNameHtml(sc.id,ri,r.label)+
-          '<span style="color:var(--text3);font-size:11px">tap to rename</span></div>').join('')+
-        '</div>':'')+
+      // THIS FLOOR's rooms, not every room in the building. The Floor tabs sit
+      // directly above this list and the plan below it draws one floor at a
+      // time; a list that ignored the selection contradicted both. The index
+      // passed to the rename is the room's real index in sc.rooms, never the
+      // filtered position, or renaming a room on floor 2 would rename whichever
+      // room happened to sit at that slot on floor 1.
+      (()=>{const rows=_scanRoomsOnFloor(sc,stories,story);
+        return rows.length?'<div style="margin-top:10px">'+
+          rows.map(x=>'<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)">'+
+            _scanRoomNameHtml(sc.id,x.ri,x.r.label)+
+            '<span style="color:var(--text3);font-size:11px">tap to rename</span></div>').join('')+
+          '</div>':'';})()+
       '<div style="font-size:11px;color:var(--text3);margin-top:6px">Hub status: '+(unlocked?'unlocked, client sees the full plan':'locked, client sees a blurred teaser'+(sc.price!=null?' at $'+sc.price:''))+'</div>'+
       (sc.usdz&&_scanPlugin()?'<button class="btn" style="width:100%;margin-top:10px;padding:12px;font-weight:700" onclick="_scanViewUsdz(\''+sc.id+'\')">View in 3D · walk it in AR</button>':'')+
       // THE WAY OUT (owner 2026-08-10: "it looks like the scanner goes to
@@ -759,6 +797,15 @@ function _scanRoomNameHtml(id,idx,label){
   return '<button onclick="_scanRenameRoom(\''+id+'\','+idx+')" title="Tap to rename" '+
     'style="border:none;background:none;padding:0;font:inherit;font-weight:700;color:var(--text);cursor:pointer;text-align:left;'+
     'border-bottom:1px dashed var(--border2)">'+escHtml(label||'Room')+'</button>';
+}
+// The rooms on the floor currently selected, carrying each room's REAL index in
+// sc.rooms so a rename on floor 2 cannot hit whatever sits at that slot on
+// floor 1. One helper for every lens: the Plan list had the floor filter and
+// the Paint, Electrical and HVAC takeoffs did not, so a two-storey scan showed
+// Floor 1 selected above a takeoff listing the whole building.
+function _scanRoomsOnFloor(sc,stories,story){
+  return (sc.rooms||[]).map((r,ri)=>({r,ri}))
+    .filter(x=>!stories||stories.length<2||(+x.r.story||1)===story);
 }
 function _scanSetLens(id,lens){_scanViewLens=lens;openScanViewer(id);}
 function _scanSetStory(id,st){_scanViewStory=Math.max(1,+st||1);openScanViewer(id);}

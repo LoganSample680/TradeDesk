@@ -318,6 +318,190 @@ test.describe('TdScan web half', () => {
     expect(r.noTabs, 'a flat scan shows no floor tabs').toBe(true);
   });
 
+  // ── Naming a room, and getting out of the viewer ──────────────────────────
+  // Owner (2026-08-10): "it looks like the scanner goes to nowhere, and the
+  // ability to name a room is a click through rather than a custom name, I want
+  // a custom name."
+  test.describe('room names and the way into an estimate', () => {
+    const seed = () => page.evaluate(() => {
+      if (typeof scans === 'undefined') window.scans = [];
+      scans.length = 0;
+      const room = (label) => ({ label, story: 1,
+        walls: [{ w: 12, h: 8 }, { w: 10, h: 8 }, { w: 12, h: 8 }, { w: 10, h: 8 }],
+        doors: [{ w: 3, h: 6.7 }], windows: [{ w: 4, h: 3 }], dims: { x: 12, y: 8, z: 10 } });
+      scans.push({ id: 's-name', name: 'Scan', clientId: 55, date: '2026-08-09',
+                   rooms: [room('Living room'), room('Room')], photos: [] });
+      openScanViewer('s-name');
+      // A painter now LANDS on their own takeoff, so tests about the Plan tab
+      // have to ask for it. That is the _scanDefaultLens fix landing: it used
+      // to read S.trade, which nothing in the app ever sets, so every
+      // contractor got a bare plan.
+      _scanSetLens('s-name', 'plan');
+    });
+
+    // Owner (2026-08-10): "other trades shouldn't be visible unless I'm writing
+    // things under that trade, hvac shouldn't show for painters and neither
+    // should electrical and vice versa."
+    test('you see the geometry and your own trade, never somebody else\'s', async () => {
+      const r = await page.evaluate(() => {
+        const real = typeof _activeTrade !== 'undefined' ? _activeTrade : null;
+        const read = () => _scanTabs().map(t => t[1]).join();
+        try {
+          setActiveTrade('painting');   const painter = read();
+          setActiveTrade('electrical'); const sparky = read();
+          setActiveTrade('hvac');       const hvac = read();
+          setActiveTrade('general');    const gc = read();
+          return { painter, sparky, hvac, gc };
+        } finally { if (real !== null) setActiveTrade(real); }
+      });
+      expect(r.painter, 'a painter is not shown load calcs').toBe('Plan,3D,Paint');
+      expect(r.sparky, 'a sparky is not shown paint takeoff').toBe('Plan,3D,Electrical');
+      expect(r.hvac).toBe('Plan,3D,HVAC');
+      // A trade with no takeoff of its own gets the geometry, not all three.
+      expect(r.gc, 'showing a GC three takeoffs is the thing this stops').toBe('Plan,3D');
+    });
+
+    test('a lens from another trade cannot strand you on a hidden tab', async () => {
+      const r = await page.evaluate(() => {
+        const real = typeof _activeTrade !== 'undefined' ? _activeTrade : null;
+        try {
+          setActiveTrade('painting');
+          _scanViewLens = 'hvac';       // left over from another trade
+          openScanViewer('s-name');
+          const lens = _scanViewLens;
+          document.getElementById('_scan-view-ov')?.remove();
+          return { lens };
+        } finally { if (real !== null) setActiveTrade(real); }
+      });
+      expect(r.lens, 'falls back to this trade instead of a tab with no button')
+        .toBe('paint');
+    });
+
+    test('the Plan tab leads into an estimate, above selling the plan', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        const h = document.getElementById('_scan-view-ov').innerHTML;
+        return { cta: /Build the estimate from these rooms/.test(h),
+                 order: h.indexOf('Build the estimate') < h.indexOf('Sell floor plan') };
+      });
+      // The scan exists to price work. The only path to that used to live on the
+      // Paint tab, which is why this read as a dead end.
+      expect(r.cta, 'the tab you land on must lead somewhere').toBe(true);
+      expect(r.order, 'selling the plan is the side hustle, not the point').toBe(true);
+    });
+
+    test('a room takes a name the contractor types, not one off a list', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        const real = window.prompt;
+        window.prompt = () => "Zach's office";
+        try { _scanRenameRoom('s-name', 1); } finally { window.prompt = real; }
+        _scanToEstimate('s-name');
+        return { label: scans[0].rooms[1].label,
+                 seed: (window._scanEstimateSeed?.rooms || []).map(x => x.name) };
+      });
+      expect(r.label).toBe("Zach's office");
+      // The label feeds the plan drawing, the takeoff and the line items, so a
+      // rename has to survive all the way into the estimate.
+      expect(r.seed, 'the name the contractor chose is the one on the estimate')
+        .toContain("Zach's office");
+    });
+
+    test('cancelling or clearing the prompt never wipes a name', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        const real = window.prompt;
+        window.prompt = () => 'Kitchen';
+        try { _scanRenameRoom('s-name', 0); } finally { window.prompt = real; }
+        const named = scans[0].rooms[0].label;
+        window.prompt = () => null;
+        try { _scanRenameRoom('s-name', 0); } finally { window.prompt = real; }
+        const afterCancel = scans[0].rooms[0].label;
+        window.prompt = () => '   ';
+        try { _scanRenameRoom('s-name', 0); } finally { window.prompt = real; }
+        return { named, afterCancel, afterBlank: scans[0].rooms[0].label };
+      });
+      expect(r.named).toBe('Kitchen');
+      expect(r.afterCancel, 'a cancel is not an edit').toBe('Kitchen');
+      expect(r.afterBlank, 'blank is not a name').toBe('Kitchen');
+    });
+
+    // The Floor tabs sit directly above this list and the plan below draws one
+    // floor at a time. A list ignoring the selection contradicted both, and the
+    // multi-floor test caught it.
+    test('the Plan room list follows the floor tabs', async () => {
+      const r = await page.evaluate(() => {
+        const room = (label, story) => ({ label, story,
+          walls: [{ w: 12, h: 8 }], doors: [], windows: [], dims: { x: 12, y: 8, z: 10 } });
+        scans.length = 0;
+        scans.push({ id: 's-two', name: 'Two story', clientId: null, date: '2026-08-09',
+                     rooms: [room('Zebraroom', 1), room('Yakroom', 2)], photos: [] });
+        _scanViewStory = null; _scanViewLens = 'plan';
+        openScanViewer('s-two');
+        const one = document.getElementById('_scan-view-ov').innerHTML;
+        _scanSetStory('s-two', 2);
+        const two = document.getElementById('_scan-view-ov').innerHTML;
+        document.getElementById('_scan-view-ov')?.remove();
+        _scanViewStory = null;
+        // Deliberately odd room names: the electrical lens's own disclaimer
+        // contains the words "Kitchen counters", so a room called Kitchen makes
+        // this pass or fail on static copy rather than on the filter.
+        return { f1: /Zebraroom/.test(one) && !/Yakroom/.test(one),
+                 f2: /Yakroom/.test(two) && !/Zebraroom/.test(two) };
+      });
+      expect(r.f1, 'floor 1 lists only floor 1').toBe(true);
+      expect(r.f2, 'floor 2 lists only floor 2').toBe(true);
+    });
+
+    // The Plan list had the floor filter and the three takeoffs did not, so a
+    // two-storey scan showed Floor 1 selected above a takeoff for the whole
+    // building. One helper now, so they cannot drift apart again.
+    test('every takeoff follows the floor tabs, not just the plan', async () => {
+      const r = await page.evaluate(() => {
+        const real = typeof _activeTrade !== 'undefined' ? _activeTrade : null;
+        const room = (label, story) => ({ label, story,
+          walls: [{ w: 12, h: 8 }], doors: [], windows: [], dims: { x: 12, y: 8, z: 10 } });
+        try {
+          scans.length = 0;
+          scans.push({ id: 's-lens', name: 'Two story', clientId: null, date: '2026-08-09',
+                       rooms: [room('Zebraroom', 1), room('Yakroom', 2)], photos: [] });
+          const out = {};
+          [['paint', 'painting'], ['electrical', 'electrical'], ['hvac', 'hvac']].forEach(([lens, trade]) => {
+            setActiveTrade(trade);
+            _scanViewStory = 1; _scanViewLens = lens;
+            openScanViewer('s-lens');
+            const a = document.getElementById('_scan-view-ov').innerHTML;
+            _scanSetStory('s-lens', 2);
+            const b = document.getElementById('_scan-view-ov').innerHTML;
+            document.getElementById('_scan-view-ov')?.remove();
+            out[lens] = /Zebraroom/.test(a) && !/Yakroom/.test(a) &&
+                        /Yakroom/.test(b) && !/Zebraroom/.test(b);
+          });
+          _scanViewStory = null;
+          return out;
+        } finally { if (real !== null) setActiveTrade(real); }
+      });
+      expect(r.paint).toBe(true);
+      expect(r.electrical).toBe(true);
+      expect(r.hvac).toBe(true);
+    });
+
+    test('every lens offers the rename, so none of them drift apart', async () => {
+      await seed();
+      const counts = await page.evaluate(() => {
+        const n = () => document.querySelectorAll('[onclick^="_scanRenameRoom"]').length;
+        const out = { plan: n() };
+        ['paint', 'electrical', 'hvac'].forEach(l => { _scanSetLens('s-name', l); out[l] = n(); });
+        _scanSetLens('s-name', 'plan');
+        document.getElementById('_scan-view-ov')?.remove();
+        return out;
+      });
+      expect(counts.plan).toBe(2);
+      expect(counts.paint).toBe(2);
+      expect(counts.electrical).toBe(2);
+      expect(counts.hvac).toBe(2);
+    });
+
   test('the 3D viewer hands the USDZ to the plugin in the shell and stays inert in a browser', async () => {
     const r = await page.evaluate((raw) => {
       const realCap = window.Capacitor;
@@ -862,85 +1046,5 @@ test.describe('client hub: floor plan cards', () => {
     expect(r.openNoLock).toBe(true);
   });
 
-  // ── Naming a room, and getting out of the viewer ──────────────────────────
-  // Owner (2026-08-10): "it looks like the scanner goes to nowhere, and the
-  // ability to name a room is a click through rather than a custom name, I want
-  // a custom name."
-  test.describe('room names and the way into an estimate', () => {
-    const seed = () => page.evaluate(() => {
-      if (typeof scans === 'undefined') window.scans = [];
-      scans.length = 0;
-      const room = (label) => ({ label, story: 1,
-        walls: [{ w: 12, h: 8 }, { w: 10, h: 8 }, { w: 12, h: 8 }, { w: 10, h: 8 }],
-        doors: [{ w: 3, h: 6.7 }], windows: [{ w: 4, h: 3 }], dims: { x: 12, y: 8, z: 10 } });
-      scans.push({ id: 's-name', name: 'Scan', clientId: 55, date: '2026-08-09',
-                   rooms: [room('Living room'), room('Room')], photos: [] });
-      openScanViewer('s-name');
-    });
-
-    test('the Plan tab leads into an estimate, above selling the plan', async () => {
-      await seed();
-      const r = await page.evaluate(() => {
-        const h = document.getElementById('_scan-view-ov').innerHTML;
-        return { cta: /Build the estimate from these rooms/.test(h),
-                 order: h.indexOf('Build the estimate') < h.indexOf('Sell floor plan') };
-      });
-      // The scan exists to price work. The only path to that used to live on the
-      // Paint tab, which is why this read as a dead end.
-      expect(r.cta, 'the tab you land on must lead somewhere').toBe(true);
-      expect(r.order, 'selling the plan is the side hustle, not the point').toBe(true);
-    });
-
-    test('a room takes a name the contractor types, not one off a list', async () => {
-      await seed();
-      const r = await page.evaluate(() => {
-        const real = window.prompt;
-        window.prompt = () => "Zach's office";
-        try { _scanRenameRoom('s-name', 1); } finally { window.prompt = real; }
-        _scanToEstimate('s-name');
-        return { label: scans[0].rooms[1].label,
-                 seed: (window._scanEstimateSeed?.rooms || []).map(x => x.name) };
-      });
-      expect(r.label).toBe("Zach's office");
-      // The label feeds the plan drawing, the takeoff and the line items, so a
-      // rename has to survive all the way into the estimate.
-      expect(r.seed, 'the name the contractor chose is the one on the estimate')
-        .toContain("Zach's office");
-    });
-
-    test('cancelling or clearing the prompt never wipes a name', async () => {
-      await seed();
-      const r = await page.evaluate(() => {
-        const real = window.prompt;
-        window.prompt = () => 'Kitchen';
-        try { _scanRenameRoom('s-name', 0); } finally { window.prompt = real; }
-        const named = scans[0].rooms[0].label;
-        window.prompt = () => null;
-        try { _scanRenameRoom('s-name', 0); } finally { window.prompt = real; }
-        const afterCancel = scans[0].rooms[0].label;
-        window.prompt = () => '   ';
-        try { _scanRenameRoom('s-name', 0); } finally { window.prompt = real; }
-        return { named, afterCancel, afterBlank: scans[0].rooms[0].label };
-      });
-      expect(r.named).toBe('Kitchen');
-      expect(r.afterCancel, 'a cancel is not an edit').toBe('Kitchen');
-      expect(r.afterBlank, 'blank is not a name').toBe('Kitchen');
-    });
-
-    test('every lens offers the rename, so none of them drift apart', async () => {
-      await seed();
-      const counts = await page.evaluate(() => {
-        const n = () => document.querySelectorAll('[onclick^="_scanRenameRoom"]').length;
-        const out = { plan: n() };
-        ['paint', 'electrical', 'hvac'].forEach(l => { _scanSetLens('s-name', l); out[l] = n(); });
-        _scanSetLens('s-name', 'plan');
-        document.getElementById('_scan-view-ov')?.remove();
-        return out;
-      });
-      expect(counts.plan).toBe(2);
-      expect(counts.paint).toBe(2);
-      expect(counts.electrical).toBe(2);
-      expect(counts.hvac).toBe(2);
-    });
   });
 });

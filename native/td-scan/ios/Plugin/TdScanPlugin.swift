@@ -115,7 +115,6 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     private var roomLabels: [String] = []
     private var roomStories: [Int] = []
     private var photos: [[String: Any]] = []
-    private var labelIndex = 0
     private var currentStory = 1
     private var finishing = false
     private var headingDeg: Double = -1
@@ -171,7 +170,6 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
 
     private func buildOverlay() {
         roomLabels = []
-        labelIndex = 0
         styled(chip, labels.first ?? "Room", bg: UIColor(white: 0, alpha: 0.55))
         styled(floorBtn, "Floor 1", bg: UIColor(white: 0, alpha: 0.55))
         styled(cancelBtn, "Cancel", bg: UIColor(white: 0, alpha: 0.55))
@@ -180,7 +178,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         styled(shutterBtn, "📷", bg: UIColor(white: 0, alpha: 0.55))
         shutterBtn.titleLabel?.font = .systemFont(ofSize: 24)
 
-        hint.text = "Walk the room edges. Tap the label to pick a name, hold it to type your own. Tap Floor when you head upstairs."
+        hint.text = "Walk the room edges. Tap the label to type this room's name. Tap Floor when you head upstairs."
         hint.textColor = .white
         hint.font = .systemFont(ofSize: 12, weight: .medium)
         hint.textAlignment = .center
@@ -189,7 +187,6 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         view.addSubview(hint)
 
         chip.addTarget(self, action: #selector(cycleLabel), for: .touchUpInside)
-        chip.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(chipHeld(_:))))
         floorBtn.addTarget(self, action: #selector(floorTapped), for: .touchUpInside)
         floorBtn.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(floorHeld(_:))))
         cancelBtn.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
@@ -217,42 +214,39 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         ])
     }
 
-    // TAP cycles the list JS passed in; HOLD types a real name.
+    // TAP THE CHIP AND TYPE (owner 2026-08-10: "I want to type to name").
     //
-    // Cycling is right while scanning: you are holding the phone up walking the
-    // walls and a keyboard there is miserable. But half of every real house is
-    // "Master bath" or "Zach's office", and a fixed list can never hold those
-    // (owner 2026-08-10: "I want a custom name"). So the quick path stays a tap
-    // and the custom path is a long press, the same tap/hold pairing the Floor
-    // button already uses.
+    // It used to cycle a fixed list, and that WAS the naming mechanism, so a
+    // room could only ever be called one of the words we shipped. Half of every
+    // real house is "Master bath" or "Zach's office". The tap now opens a text
+    // field with the current name in it, so typing over it is the fast path.
     //
-    // Still dumb (CLAUDE.md 3.2): the LIST comes from JS, this only captures
-    // whatever they type. Renaming after the fact lives entirely in JS
-    // (_scanRenameRoom), so no build is needed to change how naming works.
+    // The list survives as QUICK PICKS in the same sheet, because "Kitchen"
+    // should stay one tap. It is still JS's list (CLAUDE.md 3.2): this only
+    // captures what comes back, and renaming after the scan is entirely JS
+    // (_scanRenameRoom), so how naming works can change without a build.
     @objc private func cycleLabel() {
-        labelIndex = (labelIndex + 1) % max(labels.count, 1)
-        chip.setTitle(labels[labelIndex], for: .normal)
-    }
-
-    @objc private func chipHeld(_ g: UILongPressGestureRecognizer) {
-        guard g.state == .began else { return }
-        customLabel()
-    }
-
-    @objc private func customLabel() {
         let a = UIAlertController(title: "Name this room", message: nil, preferredStyle: .alert)
         a.addTextField { tf in
             tf.text = self.chip.title(for: .normal)
+            tf.placeholder = "Master bath, back bedroom..."
             tf.autocapitalizationType = .words
             tf.clearButtonMode = .whileEditing
+            tf.returnKeyType = .done
         }
-        a.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         a.addAction(UIAlertAction(title: "Use it", style: .default) { [weak self] _ in
             guard let self = self else { return }
             let t = (a.textFields?.first?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !t.isEmpty else { return }
+            guard !t.isEmpty else { return }          // blank is not a name
             self.chip.setTitle(t, for: .normal)
         })
+        // Quick picks, capped so the sheet stays readable on a small phone.
+        for l in labels.prefix(6) where l != chip.title(for: .normal) {
+            a.addAction(UIAlertAction(title: l, style: .default) { [weak self] _ in
+                self?.chip.setTitle(l, for: .normal)
+            })
+        }
+        a.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         present(a, animated: true)
     }
 
@@ -330,7 +324,12 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
             guard let self = self else { return }
             if error == nil, let room = try? await self.builder.capturedRoom(from: data) {
                 self.rooms.append(room)
-                self.roomLabels.append(self.labels[self.labelIndex])
+                // The CHIP is the source of truth, not an index into the list.
+                // Since the chip can now hold a typed name, reading
+                // labels[labelIndex] would have silently thrown that name away
+                // and filed the room under whatever the list happened to hold.
+                let typed = await MainActor.run { self.chip.title(for: .normal) ?? "" }
+                self.roomLabels.append(typed.isEmpty ? "Room" : typed)
                 self.roomStories.append(self.currentStory)
             }
             await MainActor.run {
@@ -339,7 +338,6 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
                 } else {
                     // Next room rides the same ARSession, so its geometry lands
                     // in the same world space and the plans line up.
-                    self.labelIndex = 0
                     self.chip.setTitle(self.labels.first ?? "Room", for: .normal)
                     self.startRoom()
                 }
