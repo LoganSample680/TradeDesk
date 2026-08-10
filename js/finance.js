@@ -474,6 +474,17 @@ async function _openLiveScanner(callback){
   }
 
   function applyResult(raw){
+    // Owner review 2026-08-10 vs the Apple scanner: pointed at a sink, this
+    // drew a huge skewed quad across the screen and still said "receipt
+    // detected." Two guards Apple has that this lacked: the quad must LOOK
+    // like a document, and steadiness means the CORNERS held still, not that
+    // anything at all was detected 8 frames running.
+    if(raw&&!_rcptQuadSane(raw,video.videoWidth,video.videoHeight))raw=null;
+    if(raw&&detectedCorners){
+      const diag=Math.hypot(video.videoWidth,video.videoHeight)||1;
+      const move=Math.max(...raw.map((c,i)=>Math.hypot(c.x-detectedCorners[i].x,c.y-detectedCorners[i].y)));
+      if(move>diag*0.05)stableFrames=0;   // it jumped: not the same document
+    }
     if(raw){detectedCorners=raw;stableFrames=Math.min(stableFrames+1,STABLE_NEEDED+4);}
     else{detectedCorners=null;stableFrames=Math.max(stableFrames-3,0);}
     const ready=stableFrames>=STABLE_NEEDED;
@@ -674,6 +685,33 @@ function _detectDocCorners(data,tw,th,outW,outH){
     const sx=outW/tw,sy=outH/th;
     return[{x:tl.x*sx,y:tl.y*sy},{x:tr.x*sx,y:tr.y*sy},{x:br.x*sx,y:br.y*sy},{x:bl.x*sx,y:bl.y*sy}];
   }catch(e){return null;}
+}
+
+// A detected quad must plausibly BE a document before the UI treats it as
+// one: convex, corners somewhere near square (50 to 130 degrees), covering a
+// real fraction of the frame but not effectively all of it. Everything the
+// bounding-box walk produces from counter clutter fails at least one of
+// these, which is what keeps the overlay quiet until a receipt is actually
+// in view.
+function _rcptQuadSane(q,w,h){
+  if(!q||q.length!==4||!w||!h)return false;
+  let area=0,sign=0;
+  for(let i=0;i<4;i++){
+    const a=q[i],b=q[(i+1)%4],c=q[(i+2)%4];
+    if(!a||!b||!c)return false;
+    const abx=b.x-a.x,aby=b.y-a.y,bcx=c.x-b.x,bcy=c.y-b.y;
+    const cr=abx*bcy-aby*bcx;
+    const s=Math.sign(cr)||1;
+    if(i===0)sign=s;
+    else if(s!==sign)return false;                 // not convex
+    const dot=(-abx)*bcx+(-aby)*bcy;
+    const m=(Math.hypot(abx,aby)*Math.hypot(bcx,bcy))||1;
+    const ang=Math.acos(Math.max(-1,Math.min(1,dot/m)))*180/Math.PI;
+    if(ang<50||ang>130)return false;               // nowhere near square
+    area+=a.x*b.y-b.x*a.y;
+  }
+  const fr=Math.abs(area)/2/(w*h);
+  return fr>0.10&&fr<0.95;
 }
 
 // keep old name for any callers

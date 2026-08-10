@@ -195,5 +195,40 @@ test.describe('receipt scanner', () => {
     expect(r.scrollW, 'nothing bleeds sideways').toBeLessThanOrEqual(r.vw + 1);
   });
 
+  // Owner review (2026-08-10) vs the Apple scanner: pointed at a sink, the
+  // live overlay drew a giant skewed quad and claimed a receipt. The sanity
+  // gate is what keeps the overlay quiet until a document is really there.
+  test('a detected quad must look like a document before the UI believes it', async () => {
+    const r = await page.evaluate(() => {
+      const W = 1920, H = 1080;
+      const rect = [{ x: 500, y: 200 }, { x: 1400, y: 210 }, { x: 1390, y: 900 }, { x: 510, y: 890 }];
+      const tilted = rect.map(({ x, y }) => {
+        const cx = 960, cy = 540, a = 0.3;
+        return { x: cx + (x - cx) * Math.cos(a) - (y - cy) * Math.sin(a),
+                 y: cy + (x - cx) * Math.sin(a) + (y - cy) * Math.cos(a) };
+      });
+      const sliver = [{ x: 0, y: 0 }, { x: 1900, y: 40 }, { x: 1910, y: 90 }, { x: 20, y: 60 }];
+      const bowtie = [{ x: 500, y: 200 }, { x: 1400, y: 900 }, { x: 1390, y: 210 }, { x: 510, y: 890 }];
+      const tiny = [{ x: 900, y: 500 }, { x: 1000, y: 500 }, { x: 1000, y: 580 }, { x: 900, y: 580 }];
+      const whole = [{ x: 2, y: 2 }, { x: 1918, y: 2 }, { x: 1918, y: 1078 }, { x: 2, y: 1078 }];
+      return {
+        rect: _rcptQuadSane(rect, W, H),
+        tilted: _rcptQuadSane(tilted, W, H),
+        sliver: _rcptQuadSane(sliver, W, H),
+        bowtie: _rcptQuadSane(bowtie, W, H),
+        tiny: _rcptQuadSane(tiny, W, H),
+        whole: _rcptQuadSane(whole, W, H),
+        junk: _rcptQuadSane(null, W, H) || _rcptQuadSane([{ x: 1, y: 1 }], W, H),
+      };
+    });
+    expect(r.rect, 'a receipt-shaped quad passes').toBe(true);
+    expect(r.tilted, 'tilted is fine, receipts sit crooked on seats').toBe(true);
+    expect(r.sliver, 'a counter-edge sliver is not a document').toBe(false);
+    expect(r.bowtie, 'self-crossing garbage is not a document').toBe(false);
+    expect(r.tiny, 'a speck is not a document').toBe(false);
+    expect(r.whole, 'the entire frame is clutter, not a document').toBe(false);
+    expect(r.junk).toBe(false);
+  });
+
   test('no console errors across the receipt scanner suite', async () => { await assertNoErrors(page); });
 });
