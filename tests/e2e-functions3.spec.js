@@ -994,6 +994,7 @@ test.describe('Cloud Supabase and account functions', () => {
   test('boot waterfall, arms synchronously, staggers visible cards, self-removes', async () => {
     const r = await page.evaluate(() => {
       window._sboT0 = 0; // neutralize min-stage-time (tested separately)
+      window._bootCascadeRan = false;   // simulate a FRESH boot: one pour per page load
       document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
       document.getElementById('supa-boot-overlay')?.remove();
       const o = document.createElement('div');
@@ -1031,6 +1032,7 @@ test.describe('Cloud Supabase and account functions', () => {
   test('boot waterfall, plays behind an open boot popup (no blank backdrop)', async () => {
     const r = await page.evaluate(() => {
       window._sboT0 = 0;
+      window._bootCascadeRan = false;   // fresh boot: one pour per page load
       document.getElementById('supa-boot-overlay')?.remove();
       const o = document.createElement('div');
       o.id = 'supa-boot-overlay';
@@ -1053,6 +1055,7 @@ test.describe('Cloud Supabase and account functions', () => {
   // until it has been on screen ~2.8s, then lifts.
   test('boot overlay min stage time, fast loads hold before the lift-away', async () => {
     const r0 = await page.evaluate(() => {
+      window._bootCascadeRan = false;   // fresh boot: one pour per page load
       document.getElementById('supa-boot-overlay')?.remove();
       const o = document.createElement('div');
       o.id = 'supa-boot-overlay';

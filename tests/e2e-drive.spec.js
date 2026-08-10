@@ -124,7 +124,9 @@ test.describe('drive', () => {
     });
     expect(r.capable).toBe(false);
     expect(r.opened.length).toBe(1);
-    expect(r.opened[0]).toMatch(/maps\.apple\.com/);
+    // Chromium's UA gets the https form; WebKit reports itself as a Mac and
+    // Macs get Apple always (owner 2026-08-09), which is the maps:// scheme.
+    expect(r.opened[0]).toMatch(/maps:\/\/|maps\.apple\.com/);
     expect(r.label, 'the button never promises navigation it cannot do').toMatch(/Directions/);
     expect(r.label).not.toMatch(/>\s*Drive/);
   });
