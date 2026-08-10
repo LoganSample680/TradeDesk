@@ -164,6 +164,29 @@ test.describe('shadow tracking engine', () => {
     expect(r.hasWakes).toBe(true);
   });
 
+  // Owner (2026-08-10): "engine comparison is forcing UTC, I want device
+  // local central time." Stored ISO stays UTC; the glass shows local.
+  test('panel timestamps read in device-local time, never sliced UTC', async () => {
+    const r = await withShell(async () => {
+      _shadowClear();
+      const iso = '2026-01-15T23:45:00.000Z';
+      _shadowLog.push({ k: 'arrive', name: 'TZ probe', t: iso });
+      await _shadowPanel();
+      const txt = document.getElementById('_geo-shadow-ov')?.textContent || '';
+      document.getElementById('_geo-shadow-ov')?.remove();
+      const d = new Date(iso);
+      const localHm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      return {
+        showsLocal: txt.includes(localHm + '  arrive · TZ probe'),
+        // Only meaningful when the runner's zone differs from UTC, but
+        // harmless when it does not (both strings are then the same).
+        utcLeak: localHm !== '23:45' && txt.includes('23:45  arrive'),
+      };
+    });
+    expect(r.showsLocal, 'the row carries the device-local clock').toBe(true);
+    expect(r.utcLeak, 'the raw UTC slice never reaches the glass').toBe(false);
+  });
+
   test('in a plain browser the shadow engine is completely inert', async () => {
     const r = await page.evaluate(async () => {
       const realCap = window.Capacitor;

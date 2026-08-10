@@ -213,10 +213,13 @@ async function _shadowPanel(){
   const wakes=st.wakes||{};
   const wakeStr=Object.keys(wakes).length?Object.keys(wakes).map(k=>k+' '+wakes[k]).join(' · '):'none yet';
   const batt=(+st.batteryLevel>=0)?Math.round(st.batteryLevel*100)+'%'+(st.charging?' (charging)':''):'unknown';
-  // Only the shadow's OWN conclusions, newest first.
+  // Only the shadow's OWN conclusions, newest first. Timestamps STORE as ISO
+  // (UTC, sortable) but DISPLAY in the device's local time (owner 2026-08-10:
+  // "engine comparison is forcing UTC, I want device local central time").
+  const hm=iso=>{const d=new Date(iso);return isNaN(d)?'':String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
   const rows=_shadowLog.slice().reverse().slice(0,40).map(e=>{
-    const time=String(e.t||'').slice(11,16);
-    if(e.k==='visit')return time+'  visit · '+(e.name||'')+(e.mins!=null?(' · '+e.mins+' min'):'')+(e.arrived?(' · in '+String(e.arrived).slice(11,16)):'')+(e.departed?(' out '+String(e.departed).slice(11,16)):'');
+    const time=hm(e.t);
+    if(e.k==='visit')return time+'  visit · '+(e.name||'')+(e.mins!=null?(' · '+e.mins+' min'):'')+(e.arrived?(' · in '+hm(e.arrived)):'')+(e.departed?(' out '+hm(e.departed)):'');
     if(e.k==='leg')return time+'  leg · '+e.from+' → '+e.to+' · '+e.mins+' min';
     if(e.k==='arrive')return time+'  arrive · '+e.name;
     if(e.k==='depart')return time+'  depart · '+e.name+' ('+(e.src||'')+')';
