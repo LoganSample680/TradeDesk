@@ -545,7 +545,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.10.26.13';
+const APP_VERSION='08.10.26.14';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1547,6 +1547,7 @@ function _bootSyncSettled(){
   if(window._bootSkelDone)return;
   window._bootSkelDone=true;
   try{clearTimeout(window._bootSkelTimer);}catch(_e){}
+  window._bootSkelTimer=null; // next sign-in this session must arm a fresh failsafe
   try{if(typeof _dashClearSkeletons==='function')_dashClearSkeletons();}catch(_e){}
   try{if(typeof renderDash==='function')renderDash();}catch(_e){}
   // Pour only if the boot overlay already lifted. A fast sync that settles
@@ -1816,6 +1817,12 @@ async function supaInit(){
         // success (inside supaLoadFromCloud) OR failure (the finally), so an
         // offline boot never sits shimmering waiting on the 15 s failsafe.
         window._bootSyncPending=true;
+        // Reveal the dashboard as full shimmer RIGHT AWAY (the overlay's min
+        // stage time still applies), instead of holding the spinner for the
+        // whole sync: the load continues behind the skeletons and
+        // _bootSyncSettled swaps + pours the moment it fully finishes.
+        try{goPg('pg-dash');}catch(_e){}
+        _removeBootOverlay();
         try{await supaLoadFromCloud();}finally{_bootSyncSettled();}
         _supaCloudLoaded=true;
       } else {
@@ -1959,7 +1966,13 @@ async function supaInit(){
         // watchdog caps how long that promise can hold if the load stalls.
         _dashAwaitingCloud=true;
         _dashArmSkelWatchdog();
+        // One clean load, sign-in edition (owner 2026-08-10): the sign-in
+        // dashboard render holds the FULL shimmer (every widget + greeting),
+        // one swap + one waterfall when the load below fully settles, exactly
+        // like a fresh boot. _bootCascadeRan resets so this load gets its pour.
+        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;
         goPg('pg-dash');
+        try{
         const hasAccount=await loadAccountData();
         if(hasAccount){
           // Trigger merge path if _mergeOnSignIn is set OR if zp3_offline_pending exists.
@@ -2025,6 +2038,7 @@ async function supaInit(){
           supaSetStatus('cloud');
           goPg('pg-dash');
         }
+        }finally{_bootSyncSettled();}
         // Existing-account sub-invite: a contractor who already runs TradeDesk
         // arrived via a referral link and SIGNED IN (not onboarded, new
         // accounts are suppressed by the _obInProgress return at the top, and

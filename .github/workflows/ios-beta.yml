@@ -113,12 +113,18 @@ jobs:
           mkdir -p ~/private_keys
           printf '%s' "$APPSTORE_API_KEY" > ~/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
 
-      - name: Archive (unsigned; signing happens at export)
+      - name: Archive (ad-hoc signed; real signing happens at export)
         # Automatic signing at ARCHIVE time demands a DEVELOPMENT profile,
         # which requires a registered device on the team, and this account
         # has none (build #2: "Your team has no devices"). App Store
-        # DISTRIBUTION profiles need no devices, so the archive builds
-        # unsigned and the export step does the cloud-managed signing.
+        # DISTRIBUTION profiles need no devices, so the archive signs AD HOC
+        # (identity "-", no profile needed) and the export step swaps in the
+        # real cloud-managed signature. Ad hoc, NOT unsigned: an unsigned
+        # archive (CODE_SIGNING_ALLOWED=NO, builds 1-14) embeds ZERO
+        # entitlements, so the export re-sign had nothing to preserve and
+        # build 14 shipped without com.apple.developer.applesignin, Apple
+        # sign-in then died at runtime with ASAuthorizationError 1000. Ad-hoc
+        # signing bakes the entitlements into the binary; export keeps them.
         run: |
           xcodebuild -workspace ios/App/App.xcworkspace \
             -scheme App \
@@ -128,8 +134,9 @@ jobs:
             archive \
             DEVELOPMENT_TEAM=${{ secrets.APPLE_TEAM_ID }} \
             IPHONEOS_DEPLOYMENT_TARGET=15.0 \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_REQUIRED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
 
       - name: Export the signed IPA
         run: |
@@ -154,6 +161,17 @@ jobs:
             -authenticationKeyID ${{ secrets.APPSTORE_KEY_ID }} \
             -authenticationKeyIssuerID ${{ secrets.APPSTORE_ISSUER_ID }}
           ls -la build/ipa
+
+      - name: Verify the applesignin entitlement survived signing
+        # Build 14's only symptom was a runtime error 1000 on the phone. Fail
+        # the build RIGHT HERE if the exported app lost the entitlement, so a
+        # signing regression can never ride to TestFlight silently again.
+        run: |
+          IPA=$(ls build/ipa/*.ipa | head -1)
+          unzip -q "$IPA" -d build/ipa/unpacked
+          APP=$(ls -d build/ipa/unpacked/Payload/*.app | head -1)
+          codesign -d --entitlements :- "$APP" | tee /tmp/ents.plist
+          grep -q 'com.apple.developer.applesignin' /tmp/ents.plist
 
       - name: Upload to TestFlight
         env:

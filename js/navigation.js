@@ -17,11 +17,18 @@ function goPg(id){
   // Preserve currentClientId across navigation, only clear on explicit new client selection
   if(id==='pg-dash')window._fromDash=false;
   try{if(window._obs)window._obs.track('page',id);}catch(_e){} // live page-view telemetry (inert on localhost)
-  document.querySelectorAll('.pg').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
   const _pgEl=document.getElementById(id);
   if(!_pgEl){console.error('[goPg] element not found:',id);if(id!=='pg-dash')goPg('pg-dash');return;}
-  _pgEl.classList.add('active');
+  // Re-navigating to the page already on screen must NOT strip and re-add
+  // .active: that restarts the td-pg-enter animation, and boot/sign-in flows
+  // that call goPg('pg-dash') more than once made the whole page visibly
+  // re-pour each time (owner 2026-08-10: "weird waterfalls"). Same-page calls
+  // still re-render and scroll to top below, they just skip the entrance.
+  if(!_pgEl.classList.contains('active')){
+    document.querySelectorAll('.pg').forEach(p=>p.classList.remove('active'));
+    _pgEl.classList.add('active');
+  }
+  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
   const nb=document.getElementById({
     'pg-leads':'nb-leads','pg-jobs':'nb-jobs','pg-money':'nb-money',
     'pg-schedule':'nb-jobs',

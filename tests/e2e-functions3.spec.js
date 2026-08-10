@@ -1223,6 +1223,32 @@ test.describe('Cloud Supabase and account functions', () => {
     await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 6000 });
   });
 
+  // Same-page goPg must not strip and re-add .active: that restarts the
+  // td-pg-enter animation, and boot/sign-in flows call goPg('pg-dash')
+  // several times, so each restart replayed the whole page pour (owner
+  // 2026-08-10: "weird waterfalls"). Real navigation still swaps pages.
+  test('goPg to the already-active page keeps .active untouched (no entrance replay)', async () => {
+    const r = await page.evaluate(async () => {
+      goPg('pg-dash');
+      await new Promise(res => setTimeout(res, 30));
+      const el = document.getElementById('pg-dash');
+      let mutations = 0;
+      const mo = new MutationObserver(muts => { mutations += muts.length; });
+      mo.observe(el, { attributes: true, attributeFilter: ['class'] });
+      goPg('pg-dash');            // same page: zero class churn
+      await new Promise(res => setTimeout(res, 30));
+      const same = mutations;
+      mo.disconnect();
+      goPg('pg-cal');             // real navigation still swaps
+      const moved = document.querySelector('.pg.active')?.id;
+      goPg('pg-dash');
+      return { same, moved, back: document.querySelector('.pg.active')?.id };
+    });
+    expect(r.same).toBe(0);          // no strip/re-add, no animation restart
+    expect(r.moved).toBe('pg-cal');  // navigation away unaffected
+    expect(r.back).toBe('pg-dash');  // and back
+  });
+
   // The blue "Syncing..." pill retired (owner 2026-08-10): the skeleton shimmer
   // IS the syncing signal now. Only the amber offline state still banners.
   test('offline banner: syncing state shows nothing, offline state still banners amber', async () => {
