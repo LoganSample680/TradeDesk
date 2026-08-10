@@ -166,8 +166,9 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     // camera genuinely moved. Capability only: JS owns the walkthrough UX.
     private var keyframes: [TdKeyframe] = []
     private var kfTimer: Timer?
+    private var kfBusy = false
     private var lastKfPose: simd_float4x4?
-    private let kfMax = 80
+    private let kfMax = 60
 
     private let chip = UIButton(type: .system)
     private let floorBtn = UIButton(type: .system)
@@ -361,11 +362,15 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     }
 
     // One frame when the camera has genuinely moved: >0.35 m of travel or
-    // >20 degrees of turn since the last kept frame. Saved sensor-oriented
-    // (landscape) at FULL resolution, details have to survive being zoomed
-    // into months later, with intrinsics for exactly what was written.
+    // >20 degrees of turn since the last kept frame. The frame is a
+    // PHOTO-QUALITY still where the hardware gives one (12 MP via
+    // captureHighResolutionFrame, iOS 16+), because the record has to survive
+    // being zoomed into months later and the AR video feed does not. Falls
+    // back to the video frame if the still fails. One request in flight at a
+    // time; each frame saves with the pose + intrinsics of the frame that was
+    // actually written.
     private func maybeKeyframe() {
-        guard keyframes.count < kfMax, let frame = arSession.currentFrame,
+        guard keyframes.count < kfMax, !kfBusy, let frame = arSession.currentFrame,
               case .normal = frame.camera.trackingState else { return }
         let t = frame.camera.transform
         let pos = simd_float3(t.columns.3.x, t.columns.3.y, t.columns.3.z)
@@ -376,17 +381,37 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
             if simd_distance(pos, lp) < 0.35 && simd_dot(fwd, lf) > 0.94 { return }
         }
         lastKfPose = t
+        kfBusy = true
+        if #available(iOS 16.0, *) {
+            arSession.captureHighResolutionFrame { [weak self] hi, _ in
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    if let hi = hi { self.saveKeyframe(hi) }
+                    else if let cur = self.arSession.currentFrame { self.saveKeyframe(cur) }
+                    else { self.kfBusy = false }
+                }
+            }
+        } else {
+            saveKeyframe(frame)
+        }
+    }
+
+    private func saveKeyframe(_ frame: ARFrame) {
+        let t = frame.camera.transform
         let K = frame.camera.intrinsics
         let img = CIImage(cvPixelBuffer: frame.capturedImage)
         let pw = Float(img.extent.width), ph = Float(img.extent.height)
+        let pos = simd_float3(t.columns.3.x, t.columns.3.y, t.columns.3.z)
+        let fwd = -simd_float3(t.columns.2.x, t.columns.2.y, t.columns.2.z)
         var cam: [Double] = []
         for c in 0..<4 { for r in 0..<4 { cam.append(Double(t[c][r])) } }
         let idx = keyframes.count
         DispatchQueue.global(qos: .utility).async { [weak self] in
+            defer { DispatchQueue.main.async { self?.kfBusy = false } }
             guard let self = self else { return }
             let ctx = CIContext()
             guard let cg = ctx.createCGImage(img, from: img.extent),
-                  let jpg = UIImage(cgImage: cg).jpegData(compressionQuality: 0.62) else { return }
+                  let jpg = UIImage(cgImage: cg).jpegData(compressionQuality: 0.6) else { return }
             let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let url = dir.appendingPathComponent("td_walk_\(Int(Date().timeIntervalSince1970 * 1000))_\(idx).jpg")
             do { try jpg.write(to: url) } catch { return }
@@ -571,9 +596,9 @@ enum TdMeshBaker {
             }
         }
         guard !pos.isEmpty, !tris.isEmpty else { return (nil, nil, []) }
-        // 2. Grid-merge duplicated border vertices; coarser grid on huge scans
-        // keeps the PLY streamable over the plugin bridge.
-        let grid: Float = pos.count > 800_000 ? 0.04 : 0.025
+        // 2. Grid-merge duplicated border vertices; the grid follows scan
+        // size, small scans keep the finest geometry the LiDAR produced.
+        let grid: Float = pos.count > 800_000 ? 0.035 : (pos.count > 400_000 ? 0.025 : 0.02)
         var map: [Int64: Int32] = [:]; map.reserveCapacity(pos.count)
         var remap = [Int32](repeating: 0, count: pos.count)
         var mPos: [simd_float3] = [], mNor: [simd_float3] = []
@@ -595,10 +620,14 @@ enum TdMeshBaker {
             if a != b && b != c && a != c { mTris.append(a); mTris.append(b); mTris.append(c) }
             t += 3
         }
-        // 3. Bake: one keyframe at a time, best score wins per vertex.
+        // 3. Bake: one keyframe at a time, best score wins per vertex. The
+        // winning frame per vertex is remembered so exposure can be leveled
+        // afterwards: auto-exposure drifts as the camera swings past windows,
+        // and without leveling the textured mesh reads as patchwork.
         var best = [Float](repeating: 0, count: mPos.count)
+        var bestKf = [Int32](repeating: -1, count: mPos.count)
         var col = [UInt8](repeating: 168, count: mPos.count * 3)   // unseen = flat gray
-        for kf in keyframes {
+        for (kfIdx, kf) in keyframes.enumerated() {
             autoreleasepool {
                 guard let ui = UIImage(contentsOfFile: kf.path), let cg = ui.cgImage else { return }
                 let w = cg.width, h = cg.height
@@ -625,9 +654,26 @@ enum TdMeshBaker {
                     if u < 0 || v < 0 || u >= w || v >= h { continue }
                     let o = (v * w + u) * 4
                     best[i] = score
+                    bestKf[i] = Int32(kfIdx)
                     col[i*3] = bytes[o]; col[i*3+1] = bytes[o+1]; col[i*3+2] = bytes[o+2]
                 }
             }
+        }
+        // Exposure leveling: mean luminance of each frame's winning samples
+        // vs the global mean; the ratio becomes a per-chart gain the viewer
+        // multiplies in. Clamped so a frame of mostly-window never nukes a
+        // chart to black or white.
+        var lumSum = [Double](repeating: 0, count: keyframes.count)
+        var lumN = [Double](repeating: 0, count: keyframes.count)
+        for i in 0..<mPos.count where bestKf[i] >= 0 {
+            let l = 0.299 * Double(col[i*3]) + 0.587 * Double(col[i*3+1]) + 0.114 * Double(col[i*3+2])
+            lumSum[Int(bestKf[i])] += l; lumN[Int(bestKf[i])] += 1
+        }
+        let gTot = lumSum.reduce(0, +), gN = lumN.reduce(0, +)
+        let gMean = gN > 0 ? gTot / gN : 128
+        var gains = [Double](repeating: 1, count: keyframes.count)
+        for i in 0..<keyframes.count where lumN[i] > 40 {
+            gains[i] = min(1.3, max(0.75, gMean / max(1, lumSum[i] / lumN[i])))
         }
         // 4. Binary little-endian PLY with vertex colors.
         var out = Data()
@@ -668,13 +714,29 @@ enum TdMeshBaker {
         let nFaces = mTris.count / 3
         var faceKf = [Int](repeating: -1, count: nFaces)
         var faceUv = [Float](repeating: 0, count: nFaces * 6)
+        // The GPU budget: 12 MP stills make glorious textures and terrible
+        // texture COUNTS, so charts draw from a spaced subset of frames
+        // (>=0.6 m or >=30 degrees apart, capped at 32). The viewer also
+        // downsizes each chart on load; the full files stay for the record.
+        var texSet: [Int] = []
+        var lastP: simd_float3? = nil, lastF: simd_float3? = nil
+        for (i, kf) in keyframes.enumerated() {
+            if let lp = lastP, let lf = lastF,
+               simd_distance(kf.camPos, lp) < 0.6 && simd_dot(kf.camFwd, lf) > 0.866 { continue }
+            texSet.append(i); lastP = kf.camPos; lastF = kf.camFwd
+        }
+        if texSet.count > 32 {
+            let step = Double(texSet.count) / 32
+            texSet = (0..<32).map { texSet[Int(Double($0) * step)] }
+        }
         for f in 0..<nFaces {
             let ia = Int(mTris[f*3]), ib = Int(mTris[f*3+1]), ic = Int(mTris[f*3+2])
             let a = mPos[ia], b = mPos[ib], c = mPos[ic]
             let centroid = (a + b + c) / 3
             let fn = simd_normalize(simd_cross(b - a, c - a))
             var bestScore: Float = 0
-            for (ki, kf) in keyframes.enumerated() {
+            for ki in texSet {
+                let kf = keyframes[ki]
                 let toCam = kf.camPos - centroid
                 let dist2 = simd_length_squared(toCam)
                 if dist2 < 0.04 || dist2 > 36 { continue }
@@ -712,7 +774,8 @@ enum TdMeshBaker {
             let faces = byKf[ki]!
             let img = ki >= 0 ? keyframes[ki].path : ""
             if ki >= 0 { used.insert(img) }
-            groups.append(["img": img, "start": cursor, "count": faces.count * 3])
+            groups.append(["img": img, "start": cursor, "count": faces.count * 3,
+                           "gain": ki >= 0 ? gains[ki] : 1.0])
             cursor += faces.count * 3
             for f in faces {
                 for corner in 0..<3 {

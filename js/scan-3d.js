@@ -390,11 +390,22 @@ async function _scan3dReadMesh(path){
   let o=0;parts.forEach(p=>{all.set(p,o);o+=p.length;});
   return all.buffer;
 }
-// One keyframe texture, streamed through the bridge and decoded.
+// One keyframe texture, streamed through the bridge and decoded. The files
+// are 12 MP stills (the record); the GPU gets a bounded copy, because thirty
+// charts of full-res RGBA would evict the WebView. UVs are normalized, so the
+// resize is free.
 async function _scan3dLoadTexture(T,path){
   const buf=await _scan3dReadMesh(path);
   if(!buf)return null;
-  const url=URL.createObjectURL(new Blob([buf],{type:'image/jpeg'}));
+  const blob=new Blob([buf],{type:'image/jpeg'});
+  try{
+    if(typeof createImageBitmap==='function'){
+      const bm=await createImageBitmap(blob,{resizeWidth:1280,resizeQuality:'high'});
+      const t=new T.Texture(bm);t.needsUpdate=true;t.colorSpace=T.SRGBColorSpace||'';
+      return t;
+    }
+  }catch(_e){}
+  const url=URL.createObjectURL(blob);
   return new Promise(res=>{
     const img=new Image();
     img.onload=()=>{const t=new T.Texture(img);t.needsUpdate=true;t.colorSpace=T.SRGBColorSpace||'';res(t);};
@@ -440,8 +451,11 @@ async function _scan3dToggleMesh(){
         geo.addGroup(grp.start,grp.count,gi);
         const tex=grp.img?await _scan3dLoadTexture(T,grp.img):null;
         if(!_s3d)return;
+        // The baked exposure gain levels this chart against its neighbors,
+        // so a frame metered on a window does not leave a dark patch.
+        const g=typeof grp.gain==='number'?Math.max(0.5,Math.min(1.6,grp.gain)):1;
         mats.push(tex
-          ?new T.MeshBasicMaterial({map:tex,vertexColors:true,side:T.DoubleSide})
+          ?new T.MeshBasicMaterial({map:tex,vertexColors:true,side:T.DoubleSide,color:new T.Color(g,g,g)})
           :new T.MeshBasicMaterial({color:0x9AA0A6,vertexColors:true,side:T.DoubleSide}));
       }
       _s3d.meshSoup=soup;_s3d.meshGeo=geo;

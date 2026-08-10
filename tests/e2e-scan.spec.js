@@ -1286,7 +1286,7 @@ test.describe('TdScan web half', () => {
       const r = await page.evaluate(() => {
         // Two triangles: one flat against a wall, one out in the room.
         const head = JSON.stringify({ v: 1, corners: 6, stride: 20,
-          groups: [{ img: '/tmp/kf1.jpg', start: 0, count: 6 }] });
+          groups: [{ img: '/tmp/kf1.jpg', start: 0, count: 6, gain: 1.12 }] });
         const hb = new TextEncoder().encode(head + '\n');
         const buf = new ArrayBuffer(hb.length + 6 * 20);
         new Uint8Array(buf).set(hb);
@@ -1305,6 +1305,7 @@ test.describe('TdScan web half', () => {
         const bare = _scan3dMeshTintTex(soup, rooms, {});
         return {
           corners: soup && soup.corners, groupImg: soup && soup.groups[0].img,
+          gainKept: soup && soup.groups[0].gain === 1.12,
           uvKept: soup && Math.abs(soup.uv[1] - 0.9) < 1e-6,
           wallTinted: tint[2] > tint[0],                        // navy leans blue
           roomLeftAlone: tint[9] === 1 && tint[10] === 1 && tint[11] === 1,
@@ -1314,6 +1315,7 @@ test.describe('TdScan web half', () => {
       });
       expect(r.corners).toBe(6);
       expect(r.groupImg).toBe('/tmp/kf1.jpg');
+      expect(r.gainKept, 'the exposure gain rides the group to the material').toBe(true);
       expect(r.uvKept).toBe(true);
       expect(r.wallTinted, 'the wall corner takes the paint').toBe(true);
       expect(r.roomLeftAlone, 'multiply-white leaves the photo untouched off the wall').toBe(true);
