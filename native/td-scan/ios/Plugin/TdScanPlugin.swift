@@ -98,6 +98,10 @@ public class TdScanPlugin: CAPPlugin, CAPBridgedPlugin {
             DispatchQueue.main.async {
                 let vc = TdScanViewController()
                 vc.labels = labels
+                // Adding to an existing scan: the saved ARWorldMap puts the
+                // new rooms in the SAME coordinate space once the phone
+                // relocalizes, so the plans line up instead of stacking.
+                vc.resumeWorldMapPath = call.getString("worldMap")
                 vc.modalPresentationStyle = .fullScreen
                 vc.onDone = { [weak self] result in
                     if let r = result { call.resolve(r) }
@@ -140,6 +144,7 @@ struct TdKeyframe {
 class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     var labels: [String] = ["Room"]
     var onDone: (([String: Any]?) -> Void)?
+    var resumeWorldMapPath: String?
 
     private var arSession = ARSession()
     private var captureView: RoomCaptureView!
@@ -150,6 +155,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     private var photos: [[String: Any]] = []
     private var currentStory = 1
     private var finishing = false
+    private var discarding = false
     private var headingDeg: Double = -1
     private var lastGeomCount = 0
     private let locMgr = CLLocationManager()
@@ -172,6 +178,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
 
     private let chip = UIButton(type: .system)
     private let floorBtn = UIButton(type: .system)
+    private let redoBtn = UIButton(type: .system)
     private let doneRoomBtn = UIButton(type: .system)
     private let finishBtn = UIButton(type: .system)
     private let cancelBtn = UIButton(type: .system)
@@ -184,6 +191,22 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         // One compass read anchors the plan to north; JS rotates the drawing.
         locMgr.delegate = nil
         if CLLocationManager.headingAvailable() { locMgr.startUpdatingHeading() }
+        // Resuming an earlier scan: preload its ARWorldMap so the session
+        // relocalizes into the SAME coordinate space and the new rooms land
+        // beside the old ones instead of on top of them. Verify on device
+        // (build 14): RoomPlan on a custom, already-running ARSession keeps
+        // tracking (the multi-room pattern rides the same behavior).
+        if let p = resumeWorldMapPath,
+           let data = try? Data(contentsOf: URL(fileURLWithPath: p)),
+           let map = try? NSKeyedUnarchiver.unarchivedObject(ofClass: ARWorldMap.self, from: data) {
+            let cfg = ARWorldTrackingConfiguration()
+            cfg.initialWorldMap = map
+            cfg.planeDetection = [.horizontal, .vertical]
+            if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
+                cfg.sceneReconstruction = .mesh
+            }
+            arSession.run(cfg, options: [.resetTracking, .removeExistingAnchors])
+        }
         startRoom()
         buildOverlay()
         // Keyframes ride the walk on a slow tick; the pose gate keeps only
@@ -227,12 +250,16 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         styled(chip, labels.first ?? "Room", bg: UIColor(white: 0, alpha: 0.55))
         styled(floorBtn, "Floor 1", bg: UIColor(white: 0, alpha: 0.55))
         styled(cancelBtn, "Cancel", bg: UIColor(white: 0, alpha: 0.55))
+        styled(redoBtn, "Redo room", bg: UIColor(white: 0, alpha: 0.55))
+        redoBtn.titleLabel?.font = .systemFont(ofSize: 13, weight: .bold)
         styled(doneRoomBtn, "Done room", bg: UIColor(red: 0.09, green: 0.37, blue: 0.65, alpha: 1))
         styled(finishBtn, "Finish", bg: UIColor(red: 0.13, green: 0.55, blue: 0.28, alpha: 1))
         styled(shutterBtn, "📷", bg: UIColor(white: 0, alpha: 0.55))
         shutterBtn.titleLabel?.font = .systemFont(ofSize: 24)
 
-        hint.text = "Walk the room edges. Tap the label to type this room's name. Tap Floor when you head upstairs."
+        hint.text = resumeWorldMapPath != nil
+            ? "Stand where you already scanned so the phone finds its place, then walk the new room."
+            : "Walk the room edges. Tap the label to type this room's name. Tap Floor when you head upstairs."
         hint.textColor = .white
         hint.font = .systemFont(ofSize: 12, weight: .medium)
         hint.textAlignment = .center
@@ -241,6 +268,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         view.addSubview(hint)
 
         chip.addTarget(self, action: #selector(cycleLabel), for: .touchUpInside)
+        redoBtn.addTarget(self, action: #selector(redoRoomTapped), for: .touchUpInside)
         floorBtn.addTarget(self, action: #selector(floorTapped), for: .touchUpInside)
         floorBtn.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(floorHeld(_:))))
         cancelBtn.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
@@ -263,6 +291,8 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
             shutterBtn.centerXAnchor.constraint(equalTo: g.centerXAnchor),
             doneRoomBtn.bottomAnchor.constraint(equalTo: g.bottomAnchor, constant: -18),
             doneRoomBtn.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: 14),
+            redoBtn.bottomAnchor.constraint(equalTo: doneRoomBtn.topAnchor, constant: -10),
+            redoBtn.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: 14),
             finishBtn.bottomAnchor.constraint(equalTo: g.bottomAnchor, constant: -18),
             finishBtn.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -14),
         ])
@@ -347,6 +377,17 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     @objc private func doneRoomTapped() {
         finishing = false
         captureView.captureSession.stop(pauseARSession: false)
+    }
+
+    // Botched the room (walked it wrong, kid ran through, wrong room): throw
+    // THIS room's geometry away and walk it again. The session stays alive so
+    // already-finished rooms are untouched, and the typed name is kept: they
+    // are redoing the room, not renaming it.
+    @objc private func redoRoomTapped() {
+        discarding = true
+        finishing = false
+        captureView.captureSession.stop(pauseARSession: false)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
     @objc private func finishTapped() {
@@ -441,8 +482,15 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     // RoomBuilder turns it into the parametric CapturedRoom.
     public func captureSession(_ session: RoomCaptureSession, didEndWith data: CapturedRoomData, error: Error?) {
         let wasFinishing = finishing
+        let wasDiscarding = discarding
+        discarding = false
         Task { [weak self] in
             guard let self = self else { return }
+            if wasDiscarding {
+                // Redo: nothing appended, same room again, name kept.
+                await MainActor.run { self.startRoom() }
+                return
+            }
             if error == nil, let room = try? await self.builder.capturedRoom(from: data) {
                 self.rooms.append(room)
                 // The CHIP is the source of truth, not an index into the list.
@@ -527,6 +575,22 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
                  "fx": Double(k.fx), "fy": Double(k.fy), "cx": Double(k.cx), "cy": Double(k.cy),
                  "w": Double(k.w), "h": Double(k.h)]
             }
+            // The ARWorldMap is what makes "add rooms later" possible: a
+            // future session relocalizes into this map and its rooms land in
+            // the same coordinate space. Saved on EVERY scan so any of them
+            // can be extended.
+            let worldMapPath: String? = await withCheckedContinuation { cont in
+                self.arSession.getCurrentWorldMap { map, _ in
+                    guard let map = map,
+                          let data = try? NSKeyedArchiver.archivedData(withRootObject: map, requiringSecureCoding: true) else {
+                        cont.resume(returning: nil); return
+                    }
+                    let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                    let url = dir.appendingPathComponent("td_map_\(Int(Date().timeIntervalSince1970 * 1000)).armap")
+                    do { try data.write(to: url); cont.resume(returning: url.path) }
+                    catch { cont.resume(returning: nil) }
+                }
+            }
             await MainActor.run {
                 hud.removeFromSuperview()
                 var result: [String: Any] = [
@@ -539,6 +603,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
                 if let p = usdzPath { result["usdz"] = p }
                 if let p = meshPath { result["meshPly"] = p }
                 if let p = texPath { result["meshTex"] = p }
+                if let p = worldMapPath { result["worldMap"] = p }
                 if !walk.isEmpty { result["walk"] = walk }
                 self.dismiss(animated: true) { self.onDone?(result) }
             }

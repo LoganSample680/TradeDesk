@@ -921,15 +921,49 @@ function _scanPreflight(){
     ov.addEventListener('click',e=>{if(e.target===ov){ov.remove();res(false);}});
   });
 }
+// Fold a resumed capture into an existing scan. The resumed session shares
+// the original's coordinate space (ARWorldMap relocalization), so rooms just
+// append; photo room indexes shift by the rooms that already existed. Session
+// artifacts (USDZ, photo mesh) only cover what one session walked, so a slot
+// already filled is KEPT (it covers more) and only empty slots take the new
+// files. Wall paint keys are roomIdx:wallId and indexes never move, so every
+// saved color survives. Returns the saved scan, or null on empty geometry.
+function _scanMergeResult(sc,res){
+  if(!sc||!res)return null;
+  const base=(sc.rooms||[]).length;
+  const rooms=[];
+  (res.rooms||[]).forEach((raw,i)=>{
+    const r=_scanParseRoom(raw,(res.labels||[])[i]);
+    if(r){r.story=Math.max(1,parseInt((res.stories||[])[i],10)||1);rooms.push(r);}
+  });
+  if(!rooms.length)return null;
+  sc.rooms=(sc.rooms||[]).concat(rooms);
+  sc.photos=(sc.photos||[]).concat((res.photos||[]).map(p=>({path:p.path,cam:p.cam,room:(p.room|0)+base})));
+  sc.walk=(sc.walk||[]).concat((res.walk||[]).map(k=>({path:k.path,cam:k.cam,fx:k.fx,fy:k.fy,cx:k.cx,cy:k.cy,w:k.w,h:k.h})));
+  if(typeof res.worldMap==='string'&&res.worldMap)sc.worldMap=res.worldMap;   // newest map resumes best
+  if(!sc.usdz&&typeof res.usdz==='string')sc.usdz=res.usdz;
+  if(!sc.meshPly&&typeof res.meshPly==='string')sc.meshPly=res.meshPly;
+  if(!sc.meshTex&&typeof res.meshTex==='string')sc.meshTex=res.meshTex;
+  return saveScan(sc);
+}
 async function startRoomScan(ctx){
   const P=_scanPlugin();
   if(!P){if(typeof showToast==='function')showToast('Scanning needs the TradeDesk iPhone app','📐');return null;}
   if(!(await _scanPreflight()))return null;
+  const resume=(ctx&&ctx.resumeScan)||null;
+  const opts={labels:_SCAN_LABELS};
+  if(resume&&resume.worldMap)opts.worldMap=resume.worldMap;
   let res=null;
-  try{res=await P.startScan({labels:_SCAN_LABELS});}catch(_e){return null;}
+  try{res=await P.startScan(opts);}catch(_e){return null;}
   if(!res||!Array.isArray(res.rooms)||!res.rooms.length){
     if(typeof showToast==='function')showToast('Scan cancelled','📐');
     return null;
+  }
+  if(resume){
+    const merged=_scanMergeResult(resume,res);
+    if(merged&&typeof showToast==='function')showToast('Added '+res.rooms.length+' room'+(res.rooms.length>1?'s':'')+' to '+(merged.name||'the scan'),'📐');
+    else if(!merged&&typeof showToast==='function')showToast('Could not read the scan geometry','📐');
+    return merged;
   }
   const rooms=[];
   res.rooms.forEach((raw,i)=>{
@@ -961,6 +995,9 @@ async function startRoomScan(ctx){
     // textured tier; meshPly the vertex-color fallback.
     meshPly:(typeof res.meshPly==='string'&&res.meshPly)||null,
     meshTex:(typeof res.meshTex==='string'&&res.meshTex)||null,
+    // The ARWorldMap: the key that lets a later session add rooms to THIS
+    // scan in the same coordinate space. Device-local like the mesh.
+    worldMap:(typeof res.worldMap==='string'&&res.worldMap)||null,
     price:(typeof S!=='undefined'&&S.scanDefaultPrice)||null,
     purchasedAt:null
   });
@@ -1077,6 +1114,13 @@ function openScanViewer(id){
       // order. This is the record you come back to when a detail question
       // lands months later. Device-local, so only offered where the files are.
       ((sc.walk||[]).length&&_scanPlugin()?'<button class="btn" style="width:100%;margin-top:8px;padding:12px;font-weight:700" onclick="_scanOpenWalk(\''+sc.id+'\',0)">Re-walk the photos · '+sc.walk.length+' frames</button>':'')+
+      // Growing and redoing (owner 2026-08-10: "no way to cancel a previous
+      // scan and start over or add to it"). Add rooms needs this phone to
+      // hold the scan's ARWorldMap; Start over just needs a scanner.
+      (_scanPlugin()?'<div style="display:flex;gap:8px;margin-top:8px">'+
+        (sc.worldMap?'<button class="btn" style="flex:1;padding:12px;font-weight:700" onclick="_scanAddRooms(\''+sc.id+'\')">Add rooms</button>':'')+
+        '<button class="btn" style="flex:1;padding:12px;font-weight:700" onclick="_scanStartOver(\''+sc.id+'\')">Start over</button>'+
+      '</div>':'')+
       '<div style="display:flex;gap:8px;margin-top:8px">'+
         '<button class="btn" style="flex:1;padding:12px" onclick="_scanSellSheet(\''+sc.id+'\')">'+(sc.purchasedAt?'Plan purchased ✓':'Sell floor plan')+'</button>'+
         (sc.price!=null&&!sc.purchasedAt?'<button class="btn" style="padding:12px" onclick="_scanMarkPurchased(\''+sc.id+'\')">Mark paid</button>':'')+
@@ -1240,6 +1284,35 @@ async function _scanStartForClient(){
   if(!supported){_scanWhyNoLidar();return;}
   const sc=await startRoomScan({clientId:cid});
   if(sc){_renderCDScans();openScanViewer(sc.id);}
+}
+// Add rooms to a scan that already exists ("there is no way to add to it,
+// why": owner 2026-08-10). Needs the scan's saved ARWorldMap on this phone,
+// so the button only shows where it can work.
+async function _scanAddRooms(id){
+  const sc=getScans().find(x=>String(x.id)===String(id));
+  if(!sc||!sc.worldMap)return;
+  document.getElementById('_scan-view-ov')?.remove();
+  const merged=await startRoomScan({resumeScan:sc});
+  if(typeof _renderCDScans==='function')_renderCDScans();
+  openScanViewer(id);
+  return merged;
+}
+// Start the scan over: capture the replacement FIRST, and only when it saves
+// does the old scan (and its plan, photos, paint picks) get deleted. Backing
+// out of the capture costs nothing.
+async function _scanStartOver(id){
+  const sc=getScans().find(x=>String(x.id)===String(id));
+  if(!sc)return;
+  document.getElementById('_scan-view-ov')?.remove();
+  const fresh=await startRoomScan({clientId:sc.clientId,jobId:sc.jobId});
+  if(fresh){
+    deleteScan(sc.id);
+    if(typeof _renderCDScans==='function')_renderCDScans();
+    openScanViewer(fresh.id);
+    if(typeof showToast==='function')showToast('Fresh scan saved, the old one is gone','📐');
+  }else{
+    openScanViewer(id);
+  }
 }
 // Ask the device once, at load, so every surface that gates on LiDAR can paint
 // synchronously from here on. Silent no-op outside the shell.

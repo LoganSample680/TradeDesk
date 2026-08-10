@@ -1503,6 +1503,86 @@ test.describe('TdScan web half', () => {
     });
   });
 
+  // Owner (2026-08-10): "there is no way to cancel a previous scan and start
+  // over or add to it, why." Adding rides the saved ARWorldMap; these prove
+  // the merge math and the gating.
+  test.describe('growing a scan: add rooms later, or start it over', () => {
+    test('a resumed capture folds into the scan without disturbing what was there', async () => {
+      const r = await page.evaluate((raw) => {
+        const before = scans.length;
+        try {
+          const sc = saveScan({ id: 'sc-grow', clientId: 5, name: 'Grow', createdAt: new Date().toISOString(),
+            rooms: [_scanParseRoom(raw, 'Kitchen')],
+            photos: [{ path: '/p0.jpg', cam: [], room: 0 }],
+            walk: [{ path: '/w0.jpg', cam: [], fx: 1, fy: 1, cx: 1, cy: 1, w: 4, h: 3 }],
+            usdz: '/old.usdz', meshTex: '/old.tdm', meshPly: null, worldMap: '/old.armap',
+            wallPaint: { '0:w-n': '#9CAF88' }, price: null, purchasedAt: null });
+          const res = { rooms: [raw], labels: ['Addition'], stories: [2],
+            photos: [{ path: '/p1.jpg', cam: [], room: 0 }],
+            walk: [{ path: '/w1.jpg', cam: [], fx: 1, fy: 1, cx: 1, cy: 1, w: 4, h: 3 }],
+            usdz: '/new.usdz', meshTex: '/new.tdm', meshPly: '/new.ply', worldMap: '/new.armap' };
+          const merged = _scanMergeResult(sc, res);
+          const empty = _scanMergeResult(sc, { rooms: [] });
+          return {
+            rooms: merged.rooms.length,
+            newLabel: merged.rooms[1].label, newStory: merged.rooms[1].story,
+            photoShift: merged.photos[1].room,
+            walkGrew: merged.walk.length,
+            oldUsdzKept: merged.usdz, oldTexKept: merged.meshTex,
+            plyFilled: merged.meshPly,
+            mapUpdated: merged.worldMap,
+            paintSurvives: merged.wallPaint['0:w-n'],
+            emptyNull: empty === null, emptyNoMutate: sc.rooms.length === 2,
+          };
+        } finally { scans.length = before; saveAll(); }
+      }, fabricatedRoom());
+      expect(r.rooms).toBe(2);
+      expect(r.newLabel).toBe('Addition');
+      expect(r.newStory).toBe(2);
+      expect(r.photoShift, 'new photos index against the grown room list').toBe(1);
+      expect(r.walkGrew).toBe(2);
+      expect(r.oldUsdzKept, 'a filled artifact slot is kept, it covers more rooms').toBe('/old.usdz');
+      expect(r.oldTexKept).toBe('/old.tdm');
+      expect(r.plyFilled, 'an empty slot takes the new file').toBe('/new.ply');
+      expect(r.mapUpdated, 'the newest map is the one that relocalizes best').toBe('/new.armap');
+      expect(r.paintSurvives, 'room indexes never move, so the client\'s colors hold').toBe('#9CAF88');
+      expect(r.emptyNull, 'a cancelled or empty capture merges nothing').toBe(true);
+      expect(r.emptyNoMutate).toBe(true);
+    });
+
+    test('Add rooms needs the world map on this phone; Start over just needs a scanner', async () => {
+      const r = await page.evaluate((raw) => {
+        const before = scans.length, realCap = window.Capacitor;
+        try {
+          const mk = (id, map) => saveScan({ id, clientId: null, name: id, createdAt: new Date().toISOString(),
+            rooms: [_scanParseRoom(raw, 'Kitchen')], photos: [], worldMap: map, price: null, purchasedAt: null });
+          mk('sc-map', '/m.armap'); mk('sc-nomap', null);
+          const open = (id) => {
+            _scanViewLens = 'plan'; openScanViewer(id);
+            const h = document.getElementById('_scan-view-ov')?.innerHTML || '';
+            document.getElementById('_scan-view-ov')?.remove();
+            return h;
+          };
+          const webH = open('sc-map');
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          const shellMap = open('sc-map');
+          const shellNoMap = open('sc-nomap');
+          return {
+            webHasNeither: !/Add rooms|Start over/.test(webH),
+            shellBoth: /Add rooms/.test(shellMap) && /Start over/.test(shellMap),
+            shellNoMapOnlyOver: !/Add rooms/.test(shellNoMap) && /Start over/.test(shellNoMap),
+          };
+        } finally {
+          window.Capacitor = realCap; scans.length = before; saveAll();
+          document.getElementById('_scan-view-ov')?.remove();
+        }
+      }, fabricatedRoom());
+      expect(r.webHasNeither, 'web cannot scan, so it offers neither').toBe(true);
+      expect(r.shellBoth).toBe(true);
+      expect(r.shellNoMapOnlyOver, 'no saved map, no Add rooms, never a dead button').toBe(true);
+    });
+  });
+
   // Scanning is hardware (owner 2026-08-09): a phone with no LiDAR can never do
   // it, so the card greys out and explains itself instead of failing on tap.
   // Capability comes from RoomPlan's own probe, cached; there is deliberately
