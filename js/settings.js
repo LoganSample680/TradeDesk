@@ -1686,7 +1686,13 @@ function _obShowTos(e){if(e)e.preventDefault();if(typeof zAlert==='function')zAl
 // Nonce dance per Apple's spec: Apple gets the SHA-256, Supabase gets the raw.
 async function _obNativeApple(){
   const cap=window.Capacitor;
-  const AppleP=(typeof cap.registerPlugin==='function')?cap.registerPlugin('SignInWithApple'):(cap.Plugins&&cap.Plugins.SignInWithApple);
+  // registerPlugin throws on a SECOND call for the same name in Capacitor 7,
+  // which turned every tap after the first into a dead click. Register once.
+  if(!window._applePluginCache){
+    try{window._applePluginCache=(typeof cap.registerPlugin==='function')?cap.registerPlugin('SignInWithApple'):(cap.Plugins&&cap.Plugins.SignInWithApple);}
+    catch(_e){window._applePluginCache=(cap.Plugins&&cap.Plugins.SignInWithApple)||null;}
+  }
+  const AppleP=window._applePluginCache;
   if(!AppleP||typeof AppleP.authorize!=='function')return false;   // plugin absent: this shell build predates it
   const raw=(crypto.randomUUID()+crypto.randomUUID()).replace(/-/g,'');
   const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw));
@@ -1711,9 +1717,14 @@ function _obOAuth(provider){
       _obNativeApple().then(handled=>{
         if(handled===false){if(typeof showToast==='function')showToast('Update TradeDesk Beta in TestFlight for Apple sign-in, or use email','⚠️',5000);}
       }).catch(e=>{
-        // User-cancelled sheets land here too; stay quiet for those.
-        const msg=String(e&&(e.message||e.errorMessage)||'');
-        if(!/cancel|1001/i.test(msg)&&typeof showToast==='function')showToast('Apple sign-in didn\'t go through, use email for now','⚠️',5000);
+        // User-cancelled sheets stay quiet. EVERYTHING else says exactly what
+        // broke (owner 2026-08-10: a swallowed error read as a dead click and
+        // left nothing to diagnose from), and console.error feeds the live
+        // error log so the failure is on record even if the toast is missed.
+        const msg=String(e&&(e.message||e.errorMessage)||e||'');
+        if(/cancel|1001/i.test(msg))return;
+        try{console.error('apple-signin: '+msg);}catch(_e2){}
+        if(typeof showToast==='function')showToast('Apple sign-in error: '+(msg||'unknown').slice(0,120),'⚠️',7000);
       });
       return;
     }

@@ -230,5 +230,71 @@ test.describe('receipt scanner', () => {
     expect(r.junk).toBe(false);
   });
 
+  // Owner (2026-08-10): Apple's scanner ran, then the OLD canvas UI came up.
+  // The page files were read through convertFileSrc, which cannot resolve
+  // when the shell serves the remote UAT site; the read failed and the catch
+  // resurrected the old scanner over a capture that already happened.
+  test('native pages read through the plugin bridge, and a read failure never resurrects the old UI', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor, realOk = _rcptNativeOk;
+      try {
+        const jpeg = btoa('JPEGDATA');
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: (n) => {
+          if (n === 'TdDoc') return { isAvailable: async () => ({ available: true }),
+            scanDocument: async () => ({ pages: ['/walk/p1.jpg', '/walk/p2.jpg'], cancelled: false }) };
+          if (n === 'TdScan') return { readFile: async ({ offset }) => offset ? { b64: '', size: 8 } : { b64: jpeg, size: 8 } };
+          return {};
+        } };
+        const all = [];
+        await _rcptNativeScan(async b => { all.push(b.size); }, true);
+        const first = [];
+        await _rcptNativeScan(async b => { first.push(b.size); }, false);
+        // Read failure: no plugin reader, and a fetch that throws outright.
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: (n) => {
+          if (n === 'TdDoc') return { isAvailable: async () => ({ available: true }),
+            scanDocument: async () => ({ pages: ['capacitor://localhost/x.jpg'], cancelled: false }) };
+          if (n === 'TdScan') return {};
+          return {};
+        } };
+        const none = [];
+        await _rcptNativeScan(async b => { none.push(1); }, true);
+        return {
+          allPages: all.length, allBytes: all[0],
+          firstOnly: first.length,
+          noneDelivered: none.length,
+          oldUiNotResurrected: !document.getElementById('live-scan-ui'),
+        };
+      } finally {
+        window.Capacitor = realCap; _rcptNativeOk = realOk;
+        document.getElementById('live-scan-ui')?.remove();
+      }
+    });
+    expect(r.allPages, 'every page the user kept becomes an expense page').toBe(2);
+    expect(r.allBytes, 'bytes arrive through the plugin reader, not convertFileSrc').toBe(8);
+    expect(r.firstOnly, 'the AI path still reads one receipt').toBe(1);
+    expect(r.noneDelivered).toBe(0);
+    expect(r.oldUiNotResurrected, 'a read hiccup after a real capture never reopens the canvas scanner').toBe(true);
+  });
+
+  test('the expense chooser buttons carry no stale sublabels', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof showExpenseModal === 'function') showExpenseModal();
+      const ov = document.getElementById('expense-modal');
+      const html = ov ? ov.innerHTML : '';
+      ov?.remove();
+      return {
+        opened: !!html,
+        scan: /Scan receipt/.test(html), attach: /Attach photo/.test(html),
+        aiGone: !/AI fills fields/.test(html),
+        signInGone: !/No sign-in needed/.test(html),
+      };
+    });
+    expect(r.opened).toBe(true);
+    expect(r.scan).toBe(true);
+    expect(r.attach).toBe(true);
+    expect(r.aiGone, 'owner 2026-08-10: that sublabel goes away').toBe(true);
+    expect(r.signInGone).toBe(true);
+  });
+
   test('no console errors across the receipt scanner suite', async () => { await assertNoErrors(page); });
 });

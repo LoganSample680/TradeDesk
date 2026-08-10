@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.10.26.5';
+const APP_VERSION='08.10.26.6';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1796,7 +1796,16 @@ async function supaInit(){
       // (iOS reports onLine:true even on airplane mode, so the flag is not reliable).
       // onAuthStateChange + _startOfflineWatcher must always be reached below, so no early return.
       let _cacheLoaded=false;
-      const _cc=localStorage.getItem('zp3_cloud_cache');
+      // The cache is for OFFLINE BLIPS, where the stored auth token still
+      // exists but could not refresh. A deliberate sign-out removes the token
+      // first and wipes the footprint after; force-closing between those two
+      // steps used to leave a half-wiped cache that booted as a dashboard of
+      // zeros with no way to sign in (owner 2026-08-10). No stored token
+      // means signed out on purpose: login screen, always.
+      let _hasStoredToken=false;
+      try{for(let _i=0;_i<localStorage.length;_i++){const _k=localStorage.key(_i);if(_k&&_k.indexOf('sb-')===0&&_k.indexOf('auth-token')>-1){_hasStoredToken=true;break;}}}catch(_e){}
+      if(!_hasStoredToken){try{localStorage.removeItem('zp3_cloud_cache');}catch(_e){}}
+      const _cc=_hasStoredToken?localStorage.getItem('zp3_cloud_cache'):null;
       if(_cc){
         try{
           const _cd=JSON.parse(_cc);

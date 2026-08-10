@@ -379,35 +379,11 @@ function renderDash(){
   const wonBidAmts=bids.filter(b=>b.status==='Closed Won').map(b=>b.amount||0);
   const avgJobVal=wonBidAmts.length?Math.round(wonBidAmts.reduce((s,a)=>s+a,0)/wonBidAmts.length):null;
 
-  // Attention sub-text for tbar
+  // The greeting stands alone (owner 2026-08-10: the "N things need your
+  // attention today" line under it goes away altogether). Make Money Today
+  // below already IS the attention list; the sentence was a duplicate.
   const _subEl=document.getElementById('dash-sub');
-  if(_subEl&&!_isEmployee){
-    const _collectItems=bids.filter(b=>b.status==='Closed Won'&&!b.clientCancelled&&getBidBalance(b)>0.01&&b.completion_date);
-    const _collectOwed=_collectItems.reduce((s,b)=>s+getBidBalance(b),0);
-    const _urgFu=bids.filter(b=>b.status==='Pending'&&!b.signingToken&&b.followup&&b.followup<=tk).length;
-    const _pendingBids=bids.filter(b=>b.status==='Pending').length;
-    const _licAlerts=getLicenseAlerts().filter(l=>_licStatus(l)==='expired').length;
-    // Closed Won bids that still need a job scheduled and/or deposit collected
-    const _wonNeedAction=bids.filter(b=>{
-      if(b.status!=='Closed Won'||b.completion_date||b.clientCancelled)return false;
-      const depositPaid=getBidPaid(b.id)>0;
-      const hasJob=jobs.some(j=>(j.bid_id===b.id||(j.client_id===b.client_id&&!j.bid_id))&&j.eventType!=='estimate');
-      return!(hasJob&&depositPaid);
-    }).length;
-    // In-progress drafts (Draft/Pending-unsent bids)
-    const _draftCount=bids.filter(b=>!b.signingToken&&(b.status==='Draft'||(b.status==='Pending'&&!b.bid_date))).length;
-    const _attnItems=_collectItems.length+_urgFu+_pendingBids+_licAlerts+_wonNeedAction+_draftCount;
-    if(_attnItems>0){
-      let _biggestNote='';
-      if(_collectOwed>0)_biggestNote='The biggest one is '+fmt(_collectOwed)+' in outstanding balances.';
-      else if(_wonNeedAction>0)_biggestNote=_wonNeedAction+' signed job'+(+_wonNeedAction>1?'s':'')+' need scheduling or a deposit.';
-      else if(_urgFu>0)_biggestNote=_urgFu+' follow-up'+(+_urgFu>1?'s':'')+' are overdue.';
-      else if(_pendingBids>0)_biggestNote=_pendingBids+' pending proposal'+(+_pendingBids>1?'s':'')+' need attention.';
-      _subEl.textContent=_attnItems+' thing'+(_attnItems>1?'s':'')+' need'+(_attnItems===1?'s':'')+' your attention today. '+_biggestNote;
-    }else{
-      _subEl.textContent='You\'re all caught up, nothing urgent.';
-    }
-  }else if(_subEl){_subEl.textContent='';}
+  if(_subEl)_subEl.textContent='';
 
   const kpiEl=document.getElementById('dash-kpi');
   if(kpiEl&&_isEmployee){

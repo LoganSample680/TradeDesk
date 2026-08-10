@@ -24,11 +24,11 @@ function openExpenseFlow(){
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">'+
         '<button id="exp-scan-area" style="border:1.5px solid var(--blue);border-radius:12px;padding:12px 8px;cursor:pointer;background:rgba(45,93,168,.06);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px" onclick="expTriggerScan()">'+
           '<span style="font-size:22px">'+svgIcon('📷',{size:22})+'</span>'+
-          '<div style="text-align:left"><div style="font-size:13px;font-weight:700;color:var(--blue)">Scan receipt</div><div style="font-size:10px;color:var(--text3)">AI fills fields</div></div>'+
+          '<div style="text-align:left"><div style="font-size:13px;font-weight:700;color:var(--blue)">Scan receipt</div></div>'+
         '</button>'+
         '<button id="exp-attach-area" style="border:1.5px solid var(--border2);border-radius:12px;padding:12px 8px;cursor:pointer;background:var(--bg2);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px" onclick="expTriggerAttach()">'+
           '<span style="font-size:22px">'+svgIcon('📎',{size:22})+'</span>'+
-          '<div style="text-align:left"><div style="font-size:13px;font-weight:700">Attach photo</div><div style="font-size:10px;color:var(--text3)">No sign-in needed</div></div>'+
+          '<div style="text-align:left"><div style="font-size:13px;font-weight:700">Attach photo</div></div>'+
         '</button>'+
       '</div>'+
       '<div id="exp-scan-status" style="display:none;margin-bottom:10px"></div>'+
@@ -105,6 +105,8 @@ function _removeExpPage(idx){
 }
 
 function expTriggerAttach(addPage){
+  // allPages: Apple's scanner captures multi-page in one session ("Ready for
+  // next scan"); every page the user kept becomes an expense page.
   _showReceiptScanner(null,async blob=>{
     const attachArea=document.getElementById('exp-attach-area');
     if(attachArea)attachArea.style.opacity='.5';
@@ -117,7 +119,7 @@ function expTriggerAttach(addPage){
       _renderExpPages();
       if(attachArea){attachArea.style.opacity='1';attachArea.style.borderColor='var(--green-mid)';}
     }catch(e){if(attachArea)attachArea.style.opacity='1';}
-  });
+  },{allPages:true});
 }
 function expAttachPhotoOnly(input){expTriggerAttach();}  // legacy: redirect to live scanner
 
@@ -312,28 +314,50 @@ async function _rcptNativeCapable(){
 // photos use. Only the first page is delivered, which is exactly today's
 // one-photo-per-attach behaviour: multi-page capture is available from the
 // plugin and can be surfaced later without touching any of these call sites.
-async function _rcptNativeScan(callback){
-  const P=_rcptNativePlugin();
+// Read a file the native scanner wrote. convertFileSrc only resolves when the
+// WebView is served from the capacitor origin; this shell loads the REMOTE
+// UAT site, so fetch(convertFileSrc(...)) went to Cloudflare, 404ed, and the
+// old catch dumped the user into the canvas scanner right after Apple's
+// scanner had worked (owner 2026-08-10). The LiDAR plugin ships a chunked
+// file reader in the same build; receipts ride it, with convertFileSrc kept
+// for older shells that predate it.
+async function _rcptReadNativeFile(path){
   try{
-    const r=await P.scanDocument();
-    const pages=(r&&r.pages)||[];
-    if(!pages.length)return;                      // cancelled: leave everything alone
+    if(typeof _scan3dReadMesh==='function'){
+      const buf=await _scan3dReadMesh(path);
+      if(buf)return new Blob([buf],{type:'image/jpeg'});
+    }
+  }catch(_e){}
+  try{
     const cap=window.Capacitor;
-    const src=(cap&&typeof cap.convertFileSrc==='function')?cap.convertFileSrc(pages[0]):pages[0];
-    const blob=await (await fetch(src)).blob();
-    callback(blob);
-  }catch(_e){
-    // Anything unexpected falls through to the canvas scanner rather than
-    // dead-ending the expense the user was in the middle of.
-    if(_rcptLiveCapable())_openLiveScanner(callback);
-  }
+    const src=(cap&&typeof cap.convertFileSrc==='function')?cap.convertFileSrc(path):path;
+    return await (await fetch(src)).blob();
+  }catch(_e){return null;}
 }
-function _showReceiptScanner(fileOrNull,callback){
+async function _rcptNativeScan(callback,allPages){
+  const P=_rcptNativePlugin();
+  let r=null;
+  // Only a FAILED LAUNCH falls back to the canvas scanner. Once Apple's
+  // scanner has run, its result is the result: a read hiccup afterwards must
+  // never resurrect the old UI on top of a capture that already happened.
+  try{r=await P.scanDocument();}
+  catch(_e){if(_rcptLiveCapable())_openLiveScanner(callback);else _rcptPickFile(callback);return;}
+  const pages=(r&&r.pages)||[];
+  if(!pages.length)return;                        // cancelled: leave everything alone
+  const take=allPages?pages:pages.slice(0,1);
+  let delivered=0;
+  for(const p of take){
+    const blob=await _rcptReadNativeFile(p);
+    if(blob){try{await callback(blob);delivered++;}catch(_e){}}
+  }
+  if(!delivered&&typeof showToast==='function')showToast('Could not read the scanned pages','📷');
+}
+function _showReceiptScanner(fileOrNull,callback,opts){
   if(fileOrNull){_loadAndBuildScanUI(fileOrNull,callback);return;}
   // Apple's scanner first inside the app.
   if(_rcptNativePlugin()){
     _rcptNativeCapable().then(ok=>{
-      if(ok){_rcptNativeScan(callback);return;}
+      if(ok){_rcptNativeScan(callback,!!(opts&&opts.allPages));return;}
       if(_rcptLiveCapable()){_openLiveScanner(callback);return;}
       _rcptPickFile(callback);
     });
