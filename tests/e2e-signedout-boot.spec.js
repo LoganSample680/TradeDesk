@@ -23,6 +23,9 @@ test.describe('signed-out boot always lands on the sign-in screen', () => {
     // Seed the half-wiped state BEFORE the app boots: a cache with data but
     // no sb- auth token anywhere, exactly what an interrupted sign-out leaves.
     await page.addInitScript(() => {
+      // The default shim fakes a signed-in session; this spec needs the clean
+      // signed-out shape the real client returns after sign-out.
+      window.__noSession = true;
       if (!localStorage.getItem('__seeded')) {
         localStorage.setItem('__seeded', '1');
         localStorage.setItem('zp3_cloud_cache', JSON.stringify({

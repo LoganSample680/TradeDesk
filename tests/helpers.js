@@ -322,8 +322,11 @@ function _supabaseShim() {
     createClient: function(url, key) {
       return {
         auth: {
-          getUser:    () => { if(global.__authFail401) return authErrorResult(); const uid = (typeof window!=='undefined'&&window.__overrideSessionUserId)||'e2e-user'; return noopResult({ user: { id: uid, email: 'test@test.com' } }); },
-          getSession: () => { if(global.__authFail401) return authErrorResult(); const uid = (typeof window!=='undefined'&&window.__overrideSessionUserId)||'e2e-user'; return noopResult({ session: { access_token: 'fake-jwt', user: { id: uid, email: 'test@test.com' } } }); },
+          // __noSession → a clean signed-out state ({session:null}, no error),
+          // the shape the real client returns after sign-out. Distinct from
+          // __authFail401, which simulates a 401 ERROR.
+          getUser:    () => { if(global.__authFail401) return authErrorResult(); if(global.__noSession) return noopResult({ user: null }); const uid = (typeof window!=='undefined'&&window.__overrideSessionUserId)||'e2e-user'; return noopResult({ user: { id: uid, email: 'test@test.com' } }); },
+          getSession: () => { if(global.__authFail401) return authErrorResult(); if(global.__noSession) return noopResult({ session: null }); const uid = (typeof window!=='undefined'&&window.__overrideSessionUserId)||'e2e-user'; return noopResult({ session: { access_token: 'fake-jwt', user: { id: uid, email: 'test@test.com' } } }); },
           signInWithPassword: () => noopResult({ user: { id: 'e2e-user' }, session: { access_token: 'fake-jwt' } }),
           signOut:    () => noopResult(null),
           // Stash the registered callback so tests can fire a synthetic SIGNED_IN/

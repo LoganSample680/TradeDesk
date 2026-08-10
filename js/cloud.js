@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.10.26.6';
+const APP_VERSION='08.10.26.7';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2037,7 +2037,12 @@ async function supaInit(){
   }catch(e){
     console.warn('Supabase init failed:',e);
     // Even if Supabase itself won't init (e.g. no network), try serving from cache
-    const _cc=localStorage.getItem('zp3_cloud_cache');
+    // Same signed-out gate as the no-session branch: an interrupted deliberate
+    // sign-out (token already gone, wipe unfinished) must never boot its
+    // half-wiped cache as a dashboard here either.
+    let _hasTok=false;
+    try{for(let _i=0;_i<localStorage.length;_i++){const _k=localStorage.key(_i);if(_k&&_k.indexOf('sb-')===0&&_k.indexOf('auth-token')>-1){_hasTok=true;break;}}}catch(_e2){}
+    const _cc=_hasTok?localStorage.getItem('zp3_cloud_cache'):null;
     if(_cc){
       try{
         const _cd=JSON.parse(_cc);

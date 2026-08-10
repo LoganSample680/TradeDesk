@@ -278,10 +278,10 @@ test.describe('receipt scanner', () => {
 
   test('the expense chooser buttons carry no stale sublabels', async () => {
     const r = await page.evaluate(() => {
-      if (typeof showExpenseModal === 'function') showExpenseModal();
+      openExpenseFlow();
       const ov = document.getElementById('expense-modal');
       const html = ov ? ov.innerHTML : '';
-      ov?.remove();
+      if (typeof closeExpenseFlow === 'function') closeExpenseFlow(); else ov?.remove();
       return {
         opened: !!html,
         scan: /Scan receipt/.test(html), attach: /Attach photo/.test(html),
