@@ -33,9 +33,29 @@ public class TdScanPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "isSupported", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startScan", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "viewUsdz", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "viewUsdz", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "readFile", returnType: CAPPluginReturnPromise)
     ]
     private var usdzPreview: TdUsdzPreview?
+
+    // Chunked file reader: the photo mesh (PLY) is megabytes, and the bridge
+    // moves strings, so JS pulls it in 1 MB base64 slices. Dumb by design:
+    // bytes in a range, nothing else.
+    @objc func readFile(_ call: CAPPluginCall) {
+        guard let path = call.getString("path") else { call.reject("no path"); return }
+        let offset = call.getInt("offset") ?? 0
+        let length = call.getInt("length") ?? 1_048_576
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let fh = FileHandle(forReadingAtPath: path) else {
+                call.reject("no such file"); return
+            }
+            let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int) ?? 0
+            fh.seek(toFileOffset: UInt64(max(0, offset)))
+            let data = fh.readData(ofLength: length)
+            fh.closeFile()
+            call.resolve(["b64": data.base64EncodedString(), "size": size ?? 0])
+        }
+    }
 
     // Quick Look on a USDZ gives the free native 3D orbit + AR placement.
     // Dumb by design: present a file, nothing else. The Safari rel="ar"
@@ -103,6 +123,17 @@ class TdUsdzPreview: NSObject, QLPreviewControllerDataSource {
 }
 
 #if canImport(RoomPlan)
+// One keyframe of the walk: where the camera stood, how it projected, and the
+// small sensor-space JPEG it wrote. Shared by the capture VC and the baker.
+@available(iOS 17.0, *)
+struct TdKeyframe {
+    let path: String
+    let inv: simd_float4x4    // world → camera
+    let fx: Float, fy: Float, cx: Float, cy: Float
+    let camPos: simd_float3
+    let camFwd: simd_float3
+}
+
 @available(iOS 17.0, *)
 class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     var labels: [String] = ["Room"]
@@ -122,6 +153,19 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     private let locMgr = CLLocationManager()
     private let tickGen = UIImpactFeedbackGenerator(style: .light)
 
+    // ── Photo-mesh capture (owner ask 2026-08-10) ────────────────────────────
+    // The mesh costs the user NOTHING: RoomPlan's own ARSession is already
+    // building ARMeshAnchors from the LiDAR, and a half-second timer quietly
+    // snaps small keyframes (sensor-space JPEG + pose + intrinsics) while they
+    // walk the room they were walking anyway. The only added time is a few
+    // seconds of color bake after Finish. Capability only: JS decides how the
+    // mesh is shown, painted, and sold.
+    private var keyframes: [TdKeyframe] = []
+    private var kfTimer: Timer?
+    private var lastKfPose: simd_float4x4?
+    private let kfMax = 60
+    private let kfWidth: CGFloat = 960
+
     private let chip = UIButton(type: .system)
     private let floorBtn = UIButton(type: .system)
     private let doneRoomBtn = UIButton(type: .system)
@@ -138,6 +182,12 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         if CLLocationManager.headingAvailable() { locMgr.startUpdatingHeading() }
         startRoom()
         buildOverlay()
+        // Keyframes ride the walk on a slow tick; the pose gate keeps only
+        // frames that actually add coverage, so a slow scanner is not a
+        // thousand-JPEG scanner.
+        kfTimer = Timer.scheduledTimer(withTimeInterval: 0.55, repeats: true) { [weak self] _ in
+            self?.maybeKeyframe()
+        }
         // Grab the heading shortly after start; one sample is plenty.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             guard let self = self else { return }
@@ -301,8 +351,50 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     }
 
     @objc private func cancelTapped() {
+        kfTimer?.invalidate(); kfTimer = nil
         captureView.captureSession.stop()
+        for k in keyframes { try? FileManager.default.removeItem(atPath: k.path) }
         dismiss(animated: true) { [weak self] in self?.onDone?(nil) }
+    }
+
+    // One keyframe when the camera has genuinely moved: >0.4 m of travel or
+    // >25 degrees of turn since the last kept frame. Saved sensor-oriented
+    // (landscape) with intrinsics scaled to the saved size, because the bake
+    // projects into exactly what was written, no orientation math later.
+    private func maybeKeyframe() {
+        guard keyframes.count < kfMax, let frame = arSession.currentFrame,
+              case .normal = frame.camera.trackingState else { return }
+        let t = frame.camera.transform
+        let pos = simd_float3(t.columns.3.x, t.columns.3.y, t.columns.3.z)
+        let fwd = -simd_float3(t.columns.2.x, t.columns.2.y, t.columns.2.z)
+        if let last = lastKfPose {
+            let lp = simd_float3(last.columns.3.x, last.columns.3.y, last.columns.3.z)
+            let lf = -simd_float3(last.columns.2.x, last.columns.2.y, last.columns.2.z)
+            if simd_distance(pos, lp) < 0.4 && simd_dot(fwd, lf) > 0.906 { return }
+        }
+        lastKfPose = t
+        let K = frame.camera.intrinsics
+        let img = CIImage(cvPixelBuffer: frame.capturedImage)
+        let s = kfWidth / img.extent.width
+        let idx = keyframes.count
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { return }
+            let small = img.transformed(by: CGAffineTransform(scaleX: s, y: s))
+            let ctx = CIContext()
+            guard let cg = ctx.createCGImage(small, from: small.extent),
+                  let jpg = UIImage(cgImage: cg).jpegData(compressionQuality: 0.6) else { return }
+            let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let url = dir.appendingPathComponent("td_kf_\(Int(Date().timeIntervalSince1970 * 1000))_\(idx).jpg")
+            do { try jpg.write(to: url) } catch { return }
+            let sf = Float(s)
+            DispatchQueue.main.async {
+                guard self.keyframes.count < self.kfMax else { try? FileManager.default.removeItem(at: url); return }
+                self.keyframes.append(TdKeyframe(
+                    path: url.path, inv: simd_inverse(t),
+                    fx: K[0][0] * sf, fy: K[1][1] * sf, cx: K[2][0] * sf, cy: K[2][1] * sf,
+                    camPos: pos, camFwd: fwd))
+            }
+        }
     }
 
     // A light haptic tick each time a wall/door/window/opening locks in:
@@ -346,10 +438,26 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     }
 
     private func deliver() {
+        kfTimer?.invalidate(); kfTimer = nil
         let enc = JSONEncoder()
         var roomJson: [String] = []
         for r in rooms {
             if let d = try? enc.encode(r), let s = String(data: d, encoding: .utf8) { roomJson.append(s) }
+        }
+        // Snapshot the raw LiDAR mesh BEFORE anything stops the session.
+        let meshAnchors = (arSession.currentFrame?.anchors.compactMap { $0 as? ARMeshAnchor }) ?? []
+        // The bake takes a few seconds on a big house; say so on the glass
+        // instead of freezing silently.
+        let hud = UILabel()
+        if !meshAnchors.isEmpty && !keyframes.isEmpty {
+            hud.text = "Building the photo mesh…"
+            hud.textColor = .white
+            hud.font = .systemFont(ofSize: 14, weight: .bold)
+            hud.textAlignment = .center
+            hud.backgroundColor = UIColor(white: 0, alpha: 0.72)
+            hud.layer.cornerRadius = 12; hud.clipsToBounds = true
+            hud.frame = CGRect(x: 40, y: view.bounds.midY - 24, width: view.bounds.width - 80, height: 48)
+            view.addSubview(hud)
         }
         Task { [weak self] in
             guard let self = self else { return }
@@ -368,7 +476,18 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
                     do { try self.rooms[0].export(to: url, exportOptions: .parametric); usdzPath = url.path } catch {}
                 }
             }
+            // Photo mesh: weld the LiDAR anchors, bake real color from the
+            // keyframes, write a binary PLY the web viewer streams back out.
+            var meshPath: String? = nil
+            if !meshAnchors.isEmpty && !self.keyframes.isEmpty && !self.rooms.isEmpty {
+                let kfs = self.keyframes
+                meshPath = await Task.detached(priority: .userInitiated) {
+                    TdMeshBaker.bake(anchors: meshAnchors, keyframes: kfs)
+                }.value
+            }
+            for k in self.keyframes { try? FileManager.default.removeItem(atPath: k.path) }
             await MainActor.run {
+                hud.removeFromSuperview()
                 var result: [String: Any] = [
                     "rooms": roomJson,
                     "labels": self.roomLabels,
@@ -377,9 +496,147 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
                     "headingDeg": self.headingDeg
                 ]
                 if let p = usdzPath { result["usdz"] = p }
+                if let p = meshPath { result["meshPly"] = p }
                 self.dismiss(animated: true) { self.onDone?(result) }
             }
         }
+    }
+}
+#endif
+
+// ── The mesh baker ───────────────────────────────────────────────────────────
+// Welds every ARMeshAnchor into one world-space mesh, merges vertices on a
+// small grid (the anchors overlap at their borders), bakes a color per vertex
+// by projecting into the best-facing keyframe, and writes a binary PLY.
+//
+// One keyframe image lives in memory at a time: for each frame we project ALL
+// vertices and keep the best-scored sample per vertex (score = how squarely
+// the camera saw the point / distance squared), so the phone never holds
+// sixty frames of pixels at once.
+//
+// Sign convention note (verify on device, build 14): ARKit camera space is
+// -z forward, +y up; capturedImage pixels are landscape, origin top-left,
+// +y down. Projection below maps world -> camera -> pixel accordingly.
+#if canImport(RoomPlan)
+@available(iOS 17.0, *)
+enum TdMeshBaker {
+    static func bake(anchors: [ARMeshAnchor], keyframes: [TdKeyframe]) -> String? {
+        // 1. Weld anchors into world-space arrays.
+        var pos: [simd_float3] = [], nor: [simd_float3] = [], tris: [Int32] = []
+        for a in anchors {
+            let g = a.geometry
+            let base = Int32(pos.count)
+            let vtx = g.vertices, nrm = g.normals
+            let vp = vtx.buffer.contents().advanced(by: vtx.offset)
+            let np = nrm.buffer.contents().advanced(by: nrm.offset)
+            let rot = simd_float3x3(columns: (
+                simd_float3(a.transform.columns.0.x, a.transform.columns.0.y, a.transform.columns.0.z),
+                simd_float3(a.transform.columns.1.x, a.transform.columns.1.y, a.transform.columns.1.z),
+                simd_float3(a.transform.columns.2.x, a.transform.columns.2.y, a.transform.columns.2.z)))
+            for i in 0..<vtx.count {
+                let v = vp.advanced(by: i * vtx.stride).assumingMemoryBound(to: simd_float3.self).pointee
+                let w = a.transform * simd_float4(v, 1)
+                pos.append(simd_float3(w.x, w.y, w.z))
+                let n = np.advanced(by: i * nrm.stride).assumingMemoryBound(to: simd_float3.self).pointee
+                nor.append(simd_normalize(rot * n))
+            }
+            let f = g.faces
+            let fp = f.buffer.contents()
+            for i in 0..<(f.count * 3) {
+                let idx: Int32 = f.bytesPerIndex == 2
+                    ? Int32(fp.advanced(by: i * 2).assumingMemoryBound(to: UInt16.self).pointee)
+                    : fp.advanced(by: i * 4).assumingMemoryBound(to: Int32.self).pointee
+                tris.append(base + idx)
+            }
+        }
+        guard !pos.isEmpty, !tris.isEmpty else { return nil }
+        // 2. Grid-merge duplicated border vertices; coarser grid on huge scans
+        // keeps the PLY streamable over the plugin bridge.
+        let grid: Float = pos.count > 800_000 ? 0.04 : 0.025
+        var map: [Int64: Int32] = [:]; map.reserveCapacity(pos.count)
+        var remap = [Int32](repeating: 0, count: pos.count)
+        var mPos: [simd_float3] = [], mNor: [simd_float3] = []
+        for i in 0..<pos.count {
+            let p = pos[i]
+            let kx = Int64((p.x / grid).rounded()), ky = Int64((p.y / grid).rounded()), kz = Int64((p.z / grid).rounded())
+            let key = (kx &* 73_856_093) ^ (ky &* 19_349_663) ^ (kz &* 83_492_791)
+            if let j = map[key] { remap[i] = j }
+            else {
+                let j = Int32(mPos.count)
+                map[key] = j; remap[i] = j
+                mPos.append(p); mNor.append(nor[i])
+            }
+        }
+        var mTris: [Int32] = []; mTris.reserveCapacity(tris.count)
+        var t = 0
+        while t < tris.count {
+            let a = remap[Int(tris[t])], b = remap[Int(tris[t+1])], c = remap[Int(tris[t+2])]
+            if a != b && b != c && a != c { mTris.append(a); mTris.append(b); mTris.append(c) }
+            t += 3
+        }
+        // 3. Bake: one keyframe at a time, best score wins per vertex.
+        var best = [Float](repeating: 0, count: mPos.count)
+        var col = [UInt8](repeating: 168, count: mPos.count * 3)   // unseen = flat gray
+        for kf in keyframes {
+            autoreleasepool {
+                guard let ui = UIImage(contentsOfFile: kf.path), let cg = ui.cgImage else { return }
+                let w = cg.width, h = cg.height
+                guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
+                                          bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+                ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+                guard let px = ctx.data else { return }
+                let bytes = px.assumingMemoryBound(to: UInt8.self)
+                for i in 0..<mPos.count {
+                    let p = mPos[i]
+                    let toCam = kf.camPos - p
+                    let dist2 = simd_length_squared(toCam)
+                    if dist2 < 0.04 || dist2 > 36 { continue }
+                    let facing = simd_dot(mNor[i], simd_normalize(toCam))
+                    if facing < 0.15 { continue }
+                    let score = facing / dist2
+                    if score <= best[i] { continue }
+                    let c4 = kf.inv * simd_float4(p, 1)
+                    let zc = -c4.z
+                    if zc < 0.05 { continue }
+                    let u = Int(kf.cx + kf.fx * c4.x / zc)
+                    let v = Int(kf.cy - kf.fy * c4.y / zc)
+                    if u < 0 || v < 0 || u >= w || v >= h { continue }
+                    let o = (v * w + u) * 4
+                    best[i] = score
+                    col[i*3] = bytes[o]; col[i*3+1] = bytes[o+1]; col[i*3+2] = bytes[o+2]
+                }
+            }
+        }
+        // 4. Binary little-endian PLY with vertex colors.
+        var out = Data()
+        out.append(("ply\nformat binary_little_endian 1.0\n" +
+                    "element vertex \(mPos.count)\n" +
+                    "property float x\nproperty float y\nproperty float z\n" +
+                    "property uchar red\nproperty uchar green\nproperty uchar blue\n" +
+                    "element face \(mTris.count / 3)\n" +
+                    "property list uchar int vertex_indices\nend_header\n").data(using: .ascii)!)
+        out.reserveCapacity(out.count + mPos.count * 15 + (mTris.count / 3) * 13)
+        for i in 0..<mPos.count {
+            var x = mPos[i].x, y = mPos[i].y, z = mPos[i].z
+            withUnsafeBytes(of: &x) { out.append(contentsOf: $0) }
+            withUnsafeBytes(of: &y) { out.append(contentsOf: $0) }
+            withUnsafeBytes(of: &z) { out.append(contentsOf: $0) }
+            out.append(col[i*3]); out.append(col[i*3+1]); out.append(col[i*3+2])
+        }
+        var f = 0
+        while f < mTris.count {
+            out.append(3)
+            var a = mTris[f], b = mTris[f+1], c = mTris[f+2]
+            withUnsafeBytes(of: &a) { out.append(contentsOf: $0) }
+            withUnsafeBytes(of: &b) { out.append(contentsOf: $0) }
+            withUnsafeBytes(of: &c) { out.append(contentsOf: $0) }
+            f += 3
+        }
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let url = dir.appendingPathComponent("td_mesh_\(Int(Date().timeIntervalSince1970 * 1000)).ply")
+        do { try out.write(to: url) } catch { return nil }
+        return url.path
     }
 }
 #endif

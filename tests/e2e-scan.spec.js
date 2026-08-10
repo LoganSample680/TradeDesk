@@ -1230,6 +1230,112 @@ test.describe('TdScan web half', () => {
     });
   });
 
+  // Owner (2026-08-10): "show the client a scan, have them pick their color
+  // and show what it would look like on the wall."
+  test.describe('paint mode: the client picks a color on their own walls', () => {
+    test('what the client picked saves onto the scan record', async () => {
+      const r = await page.evaluate(() => {
+        const before = scans.length;
+        try {
+          const sc = { id: 'sc-paint', name: 'Paint', rooms: [], photos: [] };
+          _scan3dSetPaint(sc, _scan3dPaintKey(0, 'w-n'), '#9CAF88');
+          const stored = sc.wallPaint['0:w-n'];
+          const persisted = scans.some(s => s.id === 'sc-paint');
+          _scan3dSetPaint(sc, '0:w-n', null);
+          return { stored, persisted, cleared: !('0:w-n' in sc.wallPaint),
+                   swatches: _S3D_PAINT.length,
+                   noTrademarks: _S3D_PAINT.every(([n]) => !/sherwin|moore|behr|valspar/i.test(n)) };
+        } finally { scans.length = before; saveAll(); }
+      });
+      expect(r.stored).toBe('#9CAF88');
+      expect(r.persisted, 'the pick rides td_scans, it is on file at estimate time').toBe(true);
+      expect(r.cleared, 'reset erases, not paints white').toBe(true);
+      expect(r.swatches).toBe(12);
+      expect(r.noTrademarks, 'no paint-brand trademarks in the product').toBe(true);
+    });
+
+    test('the PLY the phone bakes parses back byte for byte', async () => {
+      const r = await page.evaluate(() => {
+        const head = 'ply\nformat binary_little_endian 1.0\nelement vertex 3\n' +
+          'property float x\nproperty float y\nproperty float z\n' +
+          'property uchar red\nproperty uchar green\nproperty uchar blue\n' +
+          'element face 1\nproperty list uchar int vertex_indices\nend_header\n';
+        const hb = new TextEncoder().encode(head);
+        const buf = new ArrayBuffer(hb.length + 3 * 15 + 13);
+        new Uint8Array(buf).set(hb);
+        const dv = new DataView(buf);
+        let o = hb.length;
+        [[0, 0, 0, 255, 0, 0], [1, 0, 0, 0, 255, 0], [0, 1, 0, 0, 0, 255]].forEach(v => {
+          dv.setFloat32(o, v[0], true); dv.setFloat32(o + 4, v[1], true); dv.setFloat32(o + 8, v[2], true);
+          new Uint8Array(buf).set([v[3], v[4], v[5]], o + 12); o += 15;
+        });
+        new Uint8Array(buf)[o] = 3;
+        dv.setUint32(o + 1, 0, true); dv.setUint32(o + 5, 1, true); dv.setUint32(o + 9, 2, true);
+        const m = _scan3dParsePly(buf);
+        const bad = _scan3dParsePly(new TextEncoder().encode('ply\nformat ascii 1.0\nend_header\n').buffer);
+        return { nV: m && m.nV, nF: m && m.nF, x1: m && m.pos[3], red: m && m.col[0],
+                 idx: m && Array.from(m.idx).join(), badIsNull: bad === null };
+      });
+      expect(r.nV).toBe(3);
+      expect(r.nF).toBe(1);
+      expect(r.x1).toBe(1);
+      expect(r.red).toBe(255);
+      expect(r.idx).toBe('0,1,2');
+      expect(r.badIsNull, 'an ascii or foreign PLY refuses instead of garbling').toBe(true);
+    });
+
+    test('painting a wall on the photo mesh tints only that wall and keeps their light', async () => {
+      const r = await page.evaluate(() => {
+        // Four vertices: dark on-wall, bright on-wall, off-wall, above the band.
+        const mesh = { nV: 4,
+          pos: new Float32Array([1, 1.2, 0.05, 2, 1.2, 0.05, 1, 1.2, 2.5, 1, 4.0, 0.05]),
+          col: new Uint8Array([50, 50, 50, 220, 220, 220, 120, 120, 120, 120, 120, 120]) };
+        const rooms = [{ walls: [{ id: 'w1', ax: 0, az: 0, bx: 3, bz: 0, len: 3, h: 2.4, ey: 1.2 }] }];
+        const navy = _scan3dMeshTint(mesh, rooms, { '0:w1': '#33465E' });
+        const untouched = _scan3dMeshTint(mesh, rooms, {});
+        return {
+          darkBlue: navy[2] > navy[0], brightBlue: navy[5] > navy[3],
+          brighterKept: navy[5] > navy[2],
+          offWall: navy[6] === 120 && navy[7] === 120 && navy[8] === 120,
+          aboveBand: navy[9] === 120,
+          noPaintNoChange: Array.from(untouched).join() === Array.from(mesh.col).join(),
+        };
+      });
+      expect(r.darkBlue, 'a painted vertex leans blue').toBe(true);
+      expect(r.brightBlue).toBe(true);
+      expect(r.brighterKept, 'the baked lighting survives the recolor').toBe(true);
+      expect(r.offWall, 'the sofa two meters away is not painted').toBe(true);
+      expect(r.aboveBand, 'the floor above does not catch this floor\'s paint').toBe(true);
+      expect(r.noPaintNoChange).toBe(true);
+    });
+
+    test('the viewer offers Paint always, Photo only when this phone holds a mesh', async () => {
+      const r = await page.evaluate(async (raw) => {
+        const before = scans.length;
+        try {
+          const sc = saveScan({ id: 'sc-pmode', clientId: null, name: 'P', createdAt: new Date().toISOString(), rooms: [_scanParseRoom(raw, 'Kitchen')], photos: [], price: null, purchasedAt: null });
+          await _scan3dOpen(sc.id);
+          const strip = document.getElementById('_s3d-paint-strip');
+          const out = {
+            paintPill: !!document.getElementById('_s3d-paint-btn'),
+            hiddenUntilOpened: strip && strip.style.display === 'none',
+            swatchButtons: strip ? strip.querySelectorAll('[data-hex]').length : 0,
+            customWell: !!(strip && strip.querySelector('input[type=color]')),
+            // No mesh on this scan and no plugin on web: no dead Photo pill.
+            meshPill: !!document.getElementById('_s3d-mesh-btn'),
+          };
+          _scan3dClose();
+          return out;
+        } finally { scans.length = before; saveAll(); _scan3dClose(); }
+      }, fabricatedRoom());
+      expect(r.paintPill).toBe(true);
+      expect(r.hiddenUntilOpened, 'the strip waits behind the pill').toBe(true);
+      expect(r.swatchButtons).toBe(12);
+      expect(r.customWell, 'any color, not just our twelve').toBe(true);
+      expect(r.meshPill).toBe(false);
+    });
+  });
+
   // Scanning is hardware (owner 2026-08-09): a phone with no LiDAR can never do
   // it, so the card greys out and explains itself instead of failing on tap.
   // Capability comes from RoomPlan's own probe, cached; there is deliberately

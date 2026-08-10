@@ -110,6 +110,215 @@ function _scan3dToggleFurn(){
   if(b)b.style.opacity=_s3d.furn.visible?'1':'0.45';
 }
 
+// ── Paint mode (owner ask 2026-08-10) ────────────────────────────────────────
+// "Show the client a scan, have them pick their color and show what it would
+// look like on the wall." The sales moment: the contractor hands the phone
+// over in the client's own living room. Pick a swatch, the whole room repaints
+// live under the scene lighting; tap a single wall for an accent wall. The
+// choice SAVES onto the scan record (td_scans syncs), so what the client
+// picked is on file when the estimate is written.
+//
+// Swatch names are generic on purpose: no Sherwin-Williams or Benjamin Moore
+// trademarks in the product. A contractor translates "Sage" to their brand's
+// fan deck themselves.
+const _S3D_PAINT=[
+  ['Warm white','#F3EFE4'],['Soft cream','#F1E7CF'],['Greige','#D8D0C2'],
+  ['Clay','#C9A98F'],['Terracotta','#C4744E'],['Blush','#E3C2B7'],
+  ['Sage','#9CAF88'],['Olive','#7E8464'],['Dusty blue','#8FA7B8'],
+  ['Navy','#33465E'],['Slate','#6B7280'],['Charcoal','#3E4145'],
+];
+function _scan3dPaintKey(ri,wallId){return ri+':'+wallId;}
+// Persistence: {wallKey:'#hex'} on the scan record. hex=null erases.
+function _scan3dSetPaint(sc,key,hex){
+  if(!sc)return;
+  sc.wallPaint=sc.wallPaint||{};
+  if(hex)sc.wallPaint[key]=hex;else delete sc.wallPaint[key];
+  if(typeof saveScan==='function')saveScan(sc);
+}
+function _scan3dPaintAll(hex){
+  if(!_s3d||!_s3d.sc)return;
+  (_s3d.walls||[]).forEach(w=>{
+    _s3d.sc.wallPaint=_s3d.sc.wallPaint||{};
+    if(hex)_s3d.sc.wallPaint[w.key]=hex;else delete _s3d.sc.wallPaint[w.key];
+    if(w.mesh&&w.mesh.material)w.mesh.material.color.set(hex||_s3d.wallBase);
+  });
+  if(typeof saveScan==='function')saveScan(_s3d.sc);
+  _scan3dMeshRepaint();
+}
+function _scan3dPickSwatch(hex){
+  if(!_s3d)return;
+  _s3d.paintHex=hex;
+  document.querySelectorAll('#_s3d-paint-strip [data-hex]').forEach(el=>{
+    el.style.outline=el.getAttribute('data-hex')===hex?'2px solid #fff':'none';
+  });
+  // Picking a swatch paints the whole scan immediately (the demo moment);
+  // tapping a wall afterwards makes that one an accent in the same color
+  // conversation.
+  _scan3dPaintAll(hex);
+}
+function _scan3dPaintReset(){
+  if(!_s3d)return;
+  _s3d.paintHex=null;
+  document.querySelectorAll('#_s3d-paint-strip [data-hex]').forEach(el=>{el.style.outline='none';});
+  _scan3dPaintAll(null);
+}
+function _scan3dTogglePaint(){
+  const strip=document.getElementById('_s3d-paint-strip');
+  const b=document.getElementById('_s3d-paint-btn');
+  if(!strip)return;
+  const open=strip.style.display==='none';
+  strip.style.display=open?'flex':'none';
+  if(b)b.style.opacity=open?'1':'0.7';
+}
+// The swatch strip HTML: preset chips + a native color well + Reset.
+function _scan3dPaintStripHtml(){
+  return '<div id="_s3d-paint-strip" style="display:none;gap:8px;align-items:center;overflow-x:auto;max-width:92vw;padding:6px 10px;background:rgba(0,0,0,.5);border-radius:16px;pointer-events:auto">'+
+    _S3D_PAINT.map(([name,hex])=>'<button data-hex="'+hex+'" onclick="_scan3dPickSwatch(\''+hex+'\')" title="'+name+'" style="width:34px;height:34px;border-radius:17px;border:2px solid rgba(255,255,255,.5);background:'+hex+';flex:0 0 auto;cursor:pointer"></button>').join('')+
+    '<input type="color" value="#9CAF88" onchange="_scan3dPickSwatch(this.value)" style="width:34px;height:34px;border-radius:17px;border:2px solid rgba(255,255,255,.5);padding:0;background:none;flex:0 0 auto;cursor:pointer" title="Custom color">'+
+    '<button onclick="_scan3dPaintReset()" style="border:none;background:rgba(255,255,255,.16);color:#fff;font-size:12px;font-weight:700;padding:9px 12px;border-radius:14px;flex:0 0 auto;cursor:pointer;font-family:inherit">Reset</button>'+
+  '</div>';
+}
+
+// ── Photo mesh (binary PLY from the native bake) ─────────────────────────────
+// Parses the exact file TdMeshBaker writes: binary little-endian, xyz float32
+// + rgb uint8 per vertex, uchar-count int32 triangles. ~60 lines instead of
+// three.js's examples loader, which cannot load in a no-bundler app.
+function _scan3dParsePly(buf){
+  const bytes=new Uint8Array(buf);
+  const headEnd=(()=>{
+    const probe=new TextDecoder().decode(bytes.subarray(0,Math.min(2048,bytes.length)));
+    const i=probe.indexOf('end_header\n');
+    return i<0?-1:i+11;
+  })();
+  if(headEnd<0)return null;
+  const head=new TextDecoder().decode(bytes.subarray(0,headEnd));
+  if(!/format binary_little_endian/.test(head))return null;
+  const nV=+(head.match(/element vertex (\d+)/)||[])[1]||0;
+  const nF=+(head.match(/element face (\d+)/)||[])[1]||0;
+  if(!nV||!nF)return null;
+  const dv=new DataView(buf);
+  const pos=new Float32Array(nV*3),col=new Uint8Array(nV*3);
+  let o=headEnd;
+  for(let i=0;i<nV;i++){
+    pos[i*3]=dv.getFloat32(o,true);pos[i*3+1]=dv.getFloat32(o+4,true);pos[i*3+2]=dv.getFloat32(o+8,true);
+    col[i*3]=bytes[o+12];col[i*3+1]=bytes[o+13];col[i*3+2]=bytes[o+14];
+    o+=15;
+  }
+  const idx=new Uint32Array(nF*3);
+  for(let f=0;f<nF;f++){
+    if(bytes[o]!==3)return null;      // the baker only writes triangles
+    idx[f*3]=dv.getUint32(o+1,true);idx[f*3+1]=dv.getUint32(o+5,true);idx[f*3+2]=dv.getUint32(o+9,true);
+    o+=13;
+  }
+  return {pos,col,idx,nV,nF};
+}
+// Tint the mesh vertices that belong to painted walls. The mesh and the
+// parametric walls share the scan's world space, so membership is geometry:
+// within 15 cm of the wall segment in plan, within the wall's height band.
+// The tint keeps the baked luminance, which is what makes it read as paint on
+// THEIR wall with THEIR light, not a flood fill.
+function _scan3dMeshTint(mesh,rooms,paints){
+  const out=new Uint8Array(mesh.col);   // start from the baked colors
+  if(!paints||!Object.keys(paints).length)return out;
+  const painted=[];
+  (rooms||[]).forEach((r,ri)=>(r.walls||[]).forEach(w=>{
+    const hex=paints[_scan3dPaintKey(ri,w.id)];
+    if(!hex||!w.len)return;
+    painted.push({w,rgb:[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)]});
+  }));
+  if(!painted.length)return out;
+  const pos=mesh.pos;
+  for(let i=0;i<mesh.nV;i++){
+    const x=pos[i*3],y=pos[i*3+1],z=pos[i*3+2];
+    for(const{w,rgb} of painted){
+      // Height band first, it is the cheapest reject.
+      if(typeof w.ey==='number'&&Math.abs(y-w.ey)>w.h/2+0.25)continue;
+      const wx=w.bx-w.ax,wz=w.bz-w.az;
+      let t=((x-w.ax)*wx+(z-w.az)*wz)/(w.len*w.len);
+      if(t<-0.02||t>1.02)continue;
+      t=Math.max(0,Math.min(1,t));
+      const dx=x-(w.ax+wx*t),dz=z-(w.az+wz*t);
+      if(dx*dx+dz*dz>0.0225)continue;   // 15 cm off the wall plane
+      const l=(0.299*out[i*3]+0.587*out[i*3+1]+0.114*out[i*3+2])/255;
+      const k=0.35+0.85*l;              // keep their lighting in the color
+      out[i*3]=Math.min(255,rgb[0]*k);out[i*3+1]=Math.min(255,rgb[1]*k);out[i*3+2]=Math.min(255,rgb[2]*k);
+      break;
+    }
+  }
+  return out;
+}
+// Re-tint the loaded mesh (if any) from the scan's saved wall colors.
+function _scan3dMeshRepaint(){
+  if(!_s3d||!_s3d.meshData||!_s3d.meshGeo)return;
+  const tinted=_scan3dMeshTint(_s3d.meshData,(_s3d.sc&&_s3d.sc.rooms)||[],(_s3d.sc&&_s3d.sc.wallPaint)||{});
+  const attr=_s3d.meshGeo.getAttribute('color');
+  for(let i=0;i<tinted.length;i++)attr.array[i]=tinted[i]/255;
+  attr.needsUpdate=true;
+}
+// Pull the PLY through the plugin bridge in 1 MB slices.
+async function _scan3dReadMesh(path){
+  const P=typeof _scanPlugin==='function'?_scanPlugin():null;
+  if(!P||typeof P.readFile!=='function')return null;
+  const CH=1048576;
+  let first=null;
+  try{first=await P.readFile({path,offset:0,length:CH});}catch(_e){return null;}
+  if(!first||!first.b64)return null;
+  const size=+first.size||0;
+  const parts=[Uint8Array.from(atob(first.b64),c=>c.charCodeAt(0))];
+  let got=parts[0].length;
+  while(got<size){
+    let r=null;
+    try{r=await P.readFile({path,offset:got,length:CH});}catch(_e){return null;}
+    if(!r||!r.b64)break;
+    const u=Uint8Array.from(atob(r.b64),c=>c.charCodeAt(0));
+    if(!u.length)break;
+    parts.push(u);got+=u.length;
+  }
+  const all=new Uint8Array(got);
+  let o=0;parts.forEach(p=>{all.set(p,o);o+=p.length;});
+  return all.buffer;
+}
+// The Photo pill: swap the parametric dollhouse for the color-baked LiDAR
+// mesh, and back. Loads once, then it is an instant toggle.
+async function _scan3dToggleMesh(){
+  if(!_s3d||!_s3d.T)return;
+  const T=_s3d.T,btn=document.getElementById('_s3d-mesh-btn');
+  if(_s3d.meshG){
+    const showMesh=!_s3d.meshG.visible;
+    _s3d.meshG.visible=showMesh;
+    if(_s3d.model)_s3d.model.visible=!showMesh;
+    if(btn)btn.style.opacity=showMesh?'1':'0.7';
+    return;
+  }
+  if(_s3d.meshLoading)return;
+  _s3d.meshLoading=true;
+  if(btn)btn.textContent='Loading…';
+  const buf=await _scan3dReadMesh(_s3d.sc&&_s3d.sc.meshPly);
+  if(!_s3d){return;}
+  const data=buf&&_scan3dParsePly(buf);
+  _s3d.meshLoading=false;
+  if(!data){
+    if(btn){btn.textContent='Photo';btn.style.opacity='0.4';btn.disabled=true;}
+    if(typeof showToast==='function')showToast('Photo mesh lives on the phone that scanned it','📐');
+    return;
+  }
+  const geo=new T.BufferGeometry();
+  geo.setAttribute('position',new T.BufferAttribute(data.pos,3));
+  const colf=new Float32Array(data.nV*3);
+  geo.setAttribute('color',new T.BufferAttribute(colf,3));
+  geo.setIndex(new T.BufferAttribute(data.idx,1));
+  _s3d.meshData=data;_s3d.meshGeo=geo;
+  _scan3dMeshRepaint();                 // fills the color attribute, painted or not
+  const mesh=new T.Mesh(geo,new T.MeshBasicMaterial({vertexColors:true,side:T.DoubleSide}));
+  const g=new T.Group();g.add(mesh);
+  // Same recenter as the parametric model so the orbit target matches.
+  if(_s3d.modelOffset)g.position.copy(_s3d.modelOffset);
+  _s3d.scene.add(g);
+  _s3d.meshG=g;
+  if(_s3d.model)_s3d.model.visible=false;
+  if(btn){btn.textContent='Photo';btn.style.opacity='1';}
+}
+
 function _scan3dClose(){
   if(!_s3d)return;
   try{cancelAnimationFrame(_s3d.raf);}catch(_e){}
@@ -132,8 +341,11 @@ async function _scan3dOpen(id){
     '<div id="_s3d-mount" style="flex:1"></div>'+
     '<div style="position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);display:flex;flex-direction:column;align-items:center;gap:10px;z-index:2;pointer-events:none">'+
       '<div style="color:rgba(255,255,255,.55);font-size:11px;font-weight:600">Drag to orbit · pinch or scroll to zoom</div>'+
+      _scan3dPaintStripHtml()+
       '<div style="display:flex;gap:8px">'+
+        '<button id="_s3d-paint-btn" onclick="_scan3dTogglePaint()" style="pointer-events:auto;opacity:0.7;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;font-size:13px;font-weight:800;padding:10px 18px;border-radius:20px;cursor:pointer;font-family:inherit">🎨 Paint</button>'+
         ((sc.rooms||[]).some(r=>(r.objects||[]).length)?'<button id="_s3d-furn-btn" onclick="_scan3dToggleFurn()" style="pointer-events:auto;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;font-size:13px;font-weight:800;padding:10px 18px;border-radius:20px;cursor:pointer;font-family:inherit">Furniture</button>':'')+
+        (sc.meshPly&&typeof _scanPlugin==='function'&&_scanPlugin()?'<button id="_s3d-mesh-btn" onclick="_scan3dToggleMesh()" style="pointer-events:auto;opacity:0.7;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;font-size:13px;font-weight:800;padding:10px 18px;border-radius:20px;cursor:pointer;font-family:inherit">Photo</button>':'')+
         (sc.usdz&&typeof _scanPlugin==='function'&&_scanPlugin()?'<button onclick="_scanViewUsdz(\''+sc.id+'\')" style="pointer-events:auto;border:none;background:rgba(255,255,255,.92);color:#181714;font-size:13px;font-weight:800;padding:10px 18px;border-radius:20px;cursor:pointer;font-family:inherit">Walk it in AR</button>':'')+
       '</div>'+
     '</div>';
@@ -161,7 +373,12 @@ async function _scan3dOpen(id){
   const scene=new T.Scene();
   scene.background=new T.Color(0x181714);
   const model=new T.Group();
-  const wallMat=new T.MeshStandardMaterial({color:0xEDEAE3,roughness:0.9,metalness:0});
+  // Every wall gets its OWN material so paint mode can color one at a time;
+  // wallBase is what Reset restores.
+  const WALL_BASE=0xEDEAE3;
+  _s3d.wallBase='#EDEAE3';
+  _s3d.walls=[];
+  _s3d.sc=sc;_s3d.T=T;
   const edgeMat=new T.LineBasicMaterial({color:0x55524a});
   const floorCols=[0xB9CFE8,0xC9DDB4,0xE8D5AC,0xD8C2D8,0xBFDCD2,0xE3C8BC];
   const TH=0.11;
@@ -203,7 +420,13 @@ async function _scan3dOpen(id){
         shp.holes.push(hole);
       });
       const g=new T.ExtrudeGeometry(shp,{depth:TH,bevelEnabled:false});
-      const m=new T.Mesh(g,wallMat);
+      // Own material per wall: paint mode colors one wall without repainting
+      // the house. Saved client picks (sc.wallPaint) restore on open.
+      const key=_scan3dPaintKey(ri,w.id);
+      const saved=sc.wallPaint&&sc.wallPaint[key];
+      const m=new T.Mesh(g,new T.MeshStandardMaterial({color:saved?new T.Color(saved):WALL_BASE,roughness:0.9,metalness:0}));
+      m.userData.wallKey=key;
+      _s3d.walls.push({key,mesh:m});
       m.castShadow=true;m.receiveShadow=true;
       // Local x runs A→B along the wall; the extrusion depth becomes the
       // thickness, pushed back half a wall so it centers on the scanned
@@ -250,6 +473,8 @@ async function _scan3dOpen(id){
   const c=bb.getCenter(new T.Vector3()),size=bb.getSize(new T.Vector3());
   model.position.set(-c.x,-bb.min.y,-c.z);
   scene.add(model);
+  _s3d.model=model;
+  _s3d.modelOffset=model.position.clone();   // the photo mesh recenters identically
   // Ground shadow catcher.
   const ground=new T.Mesh(new T.CircleGeometry(Math.max(size.x,size.z)*1.4,48),
     new T.ShadowMaterial({opacity:0.28}));
@@ -289,9 +514,9 @@ async function _scan3dOpen(id){
   renderer.domElement.style.touchAction='none';
   fit();place();
   // Pointer orbit + two-finger pinch + wheel zoom.
-  const ptrs={};let pinchD=null;
+  const ptrs={};let pinchD=null;let downAt=null;
   const el=renderer.domElement;
-  el.addEventListener('pointerdown',e=>{ptrs[e.pointerId]={x:e.clientX,y:e.clientY};el.setPointerCapture(e.pointerId);});
+  el.addEventListener('pointerdown',e=>{ptrs[e.pointerId]={x:e.clientX,y:e.clientY};downAt={x:e.clientX,y:e.clientY};el.setPointerCapture(e.pointerId);});
   el.addEventListener('pointermove',e=>{
     const p=ptrs[e.pointerId];if(!p)return;
     const ids=Object.keys(ptrs);
@@ -309,7 +534,26 @@ async function _scan3dOpen(id){
     place();
   });
   const lift=e=>{delete ptrs[e.pointerId];pinchD=null;};
-  el.addEventListener('pointerup',lift);el.addEventListener('pointercancel',lift);
+  // A TAP (not a drag) with a swatch chosen paints the wall under the finger:
+  // the accent-wall move in the client conversation.
+  el.addEventListener('pointerup',e=>{
+    const wasTap=downAt&&Math.hypot(e.clientX-downAt.x,e.clientY-downAt.y)<8;
+    lift(e);
+    if(!wasTap||!_s3d||!_s3d.paintHex||Object.keys(ptrs).length)return;
+    const strip=document.getElementById('_s3d-paint-strip');
+    if(!strip||strip.style.display==='none')return;
+    const rct=el.getBoundingClientRect();
+    const nx=((e.clientX-rct.left)/rct.width)*2-1;
+    const ny=-(((e.clientY-rct.top)/rct.height)*2-1);
+    const rc=new T.Raycaster();
+    rc.setFromCamera(new T.Vector2(nx,ny),cam);
+    const hit=rc.intersectObjects((_s3d.walls||[]).map(w=>w.mesh),false)[0];
+    if(!hit)return;
+    hit.object.material.color.set(_s3d.paintHex);
+    _scan3dSetPaint(_s3d.sc,hit.object.userData.wallKey,_s3d.paintHex);
+    _scan3dMeshRepaint();
+  });
+  el.addEventListener('pointercancel',lift);
   el.addEventListener('wheel',e=>{e.preventDefault();orbit.r=Math.max(3,Math.min(R0*2.5,orbit.r*(1+e.deltaY*0.0012)));place();},{passive:false});
   window.addEventListener('resize',fit);
   _s3d.renderer=renderer;_s3d.scene=scene;_s3d.camera=cam;

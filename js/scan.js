@@ -65,7 +65,10 @@ function _scanParseRoom(rawJson,label){
     const hx=m.col0.x*d.w/2,hz=m.col0.z*d.w/2;
     const wall={id:w.identifier||('w'+walls.length),
       ax:m.col3.x-hx,az:m.col3.z-hz,bx:m.col3.x+hx,bz:m.col3.z+hz,
-      len:d.w,h:d.h||2.44,doors:[],windows:[]};
+      // ey = the wall's center elevation in scan world space. The photo mesh
+      // lives in that same space, so painting a wall on the mesh can mask by
+      // height and a floor-2 wall never tints the floor-1 wall below it.
+      len:d.w,h:d.h||2.44,ey:m.col3.y||0,doors:[],windows:[]};
     walls.push(wall);wallById[wall.id]=wall;
   });
   const placeOpening=(o,list,isDoor,kind)=>{
@@ -879,6 +882,9 @@ async function startRoomScan(ctx){
     // USDZ is device-local too: the 3D/AR file Quick Look opens on this phone.
     photos:(res.photos||[]).map(p=>({path:p.path,cam:p.cam,room:p.room})),
     usdz:(typeof res.usdz==='string'&&res.usdz)||null,
+    // The photo mesh (color-baked PLY) is device-local like the USDZ: the
+    // orbit viewer streams it back out through the plugin's readFile.
+    meshPly:(typeof res.meshPly==='string'&&res.meshPly)||null,
     price:(typeof S!=='undefined'&&S.scanDefaultPrice)||null,
     purchasedAt:null
   });
