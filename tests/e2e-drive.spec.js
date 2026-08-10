@@ -423,7 +423,7 @@ test.describe('drive', () => {
 
   // One definition of which map a device has, shared by the chooser and the
   // preselect, so the button on screen and the link behind it can never
-  // disagree. Phone gets Apple, desk gets Google: a rule that fits in a head.
+  // disagree. Apple device, Apple Maps: no phone-versus-desk exception.
   test('the device rule is one function, and it is the obvious one', async () => {
     const pick = (ua) => page.evaluate((agent) => {
       const real = navigator.userAgent;
@@ -435,8 +435,24 @@ test.describe('drive', () => {
     expect(await pick('Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)')).toBe('apple');
     expect(await pick('Mozilla/5.0 (Linux; Android 14; Pixel 8)')).toBe('google');
     expect(await pick('Mozilla/5.0 (Windows NT 10.0; Win64; x64)')).toBe('google');
+    // Owner 2026-08-10: "Mac's get Apple always". maps:// opens the real Maps
+    // app on a desktop Mac exactly as it does on a phone, so there was never a
+    // reason to send it to Google.
     expect(await pick('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'),
-      'a Mac is a desk, and desks get Google').toBe('google');
+      'a Mac is Apple hardware').toBe('apple');
+  });
+
+  test('the sheet says Navigate after saving, with no optional tag', async () => {
+    const label = await page.evaluate(() => {
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      openDriveModal({});
+      const l = [...document.querySelectorAll('label')]
+        .map(x => x.textContent).find(t => /Navigate after saving/i.test(t)) || '';
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      return l;
+    });
+    expect(label).toMatch(/Navigate after saving/);
+    expect(label, 'None is right there saying it is optional').not.toMatch(/optional/i);
   });
 
   test('the Google handoff is a real web link that opens anywhere', async () => {

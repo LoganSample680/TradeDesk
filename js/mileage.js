@@ -1612,7 +1612,8 @@ function openLogTripModal(opts){
     // app. Same promise, best available version of it.
     (!opts.editId?
       '<div class="f" style="margin-bottom:14px">'+
-        '<label style="margin-bottom:6px;display:block">Navigate after saving <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
+        // No "(optional)" tag: None is right there saying so (owner 2026-08-10).
+        '<label style="margin-bottom:6px;display:block">Navigate after saving</label>'+
         '<div style="display:flex;gap:8px">'+
           (_tripMapForDevice()==='apple'
             ?'<button type="button" id="lm-map-apple" onclick="_selectTripMapApp(\'apple\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:42px"> Apple Maps</button>'
@@ -1745,21 +1746,23 @@ async function calculateAndShowRoute(){
 // and the preselect, so the button on screen and the link behind it can never
 // disagree.
 //
-// iPhone and iPad get Apple Maps: maps:// is an Apple URL scheme and opens the
-// real app there. Everything else, Android, Windows, Linux, and a Mac at the
-// desk, gets Google, whose handoff is a plain google.com/maps web link that
-// opens in a tab anywhere. A Mac could technically take the scheme too; it is
-// grouped with the desktops on purpose (owner 2026-08-10), because "phone gets
-// Apple, desk gets Google" is a rule a contractor can hold in their head.
+// Apple hardware gets Apple Maps, and that includes a Mac (owner 2026-08-10:
+// "Mac's get Apple always"): maps:// is an Apple URL scheme and opens the real
+// Maps app on an iPhone, an iPad and a desktop Mac alike. Everything else,
+// Android, Windows and Linux, gets Google, whose handoff is a plain
+// google.com/maps web link that opens in a tab anywhere.
+//
+// The rule is now simply "Apple device, Apple Maps", with no phone-versus-desk
+// exception to remember.
 function _tripMapForDevice(){
-  return /iPhone|iPad|iPod/i.test(navigator.userAgent||'')?'apple':'google';
+  return /iPhone|iPad|iPod|Macintosh|Mac OS X/i.test(navigator.userAgent||'')?'apple':'google';
 }
 function openTripInMaps(which,from,to){
   if(!to||!which)return;
   const enc=s=>encodeURIComponent(s);
   if(which==='apple'){
-    // Only ever reached on an iPhone or iPad, because that is the only place
-    // the Apple button is rendered, so the scheme is always the right call.
+    // Only ever reached on Apple hardware, because that is the only place the
+    // Apple button is rendered, so the scheme is always the right call.
     window.location.href='maps://?daddr='+enc(to)+'&dirflg=d';
   } else if(which==='google'){
     window.open('https://www.google.com/maps/dir/?api=1'+(from?'&origin='+enc(from):'')+'&destination='+enc(to)+'&travelmode=driving','_blank');
