@@ -680,9 +680,33 @@ async function _autoNameStopTrip(rec,to){
     // date and would have healed it on the next load; this makes the first
     // answer right instead of the second.
     const legDay=(rec&&rec.date)||todayKey();
-    const personal=!!(poi.name&&_poiIsPersonal(poi.category,poi.name)&&
-                      !(typeof expenseForStop==='function'&&
-                        expenseForStop({lat:to.lat,lng:to.lng,name:poi.name,day:legDay})));
+    // ── WHAT MAKES AN UNSCHEDULED STOP BUSINESS ──────────────────────────────
+    // Exactly two things, and neither of them is a guess about what the shop
+    // sells (owner 2026-08-10: "the only places that could return as a business
+    // expense is if that place is explicitly listed under their places as a
+    // supply house"):
+    //
+    //   1. It is one of THEIR OWN saved places, with a kind that is business
+    //      (shop, supply house, home office, business meeting). placeAt matches
+    //      on the pin, inside that place's own fence.
+    //   2. There is a receipt at that pin on the leg's day. The contractor
+    //      spending money there IS the claim, and it is evidence they already
+    //      have to keep.
+    //
+    // Everything else comes off the log. This replaced a name-matching guess at
+    // which shops are supply houses, which was mine and was wrong: whether a
+    // Target run is a supply run is the contractor's call, not a regex's. An
+    // unsaved stop is offered as a place to save (js/places.js repeat-stop
+    // suggestions), and saving it as a supply house makes every future stop
+    // there count.
+    //
+    // Still only NAMED stops: an unnamed one is the geofence layer's business
+    // (_geoCollapseDetours), and this must not judge it twice.
+    const savedPlace=(typeof placeAt==='function')?placeAt({lat:to.lat,lon:to.lng}):null;
+    const savedIsBusiness=!!(savedPlace&&_PLACE_KIND_TO_PURPOSE[savedPlace.kind]);
+    const hasReceipt=!!(typeof expenseForStop==='function'&&
+                        expenseForStop({lat:to.lat,lng:to.lng,name:poi.name,day:legDay}));
+    const personal=!!poi.name&&!savedIsBusiness&&!hasReceipt;
     // And patch a leg out of here that was ALREADY written. Which of the two
     // landed first depends on how long Apple took against how long they were
     // parked, and a record must not depend on that race.
@@ -736,7 +760,9 @@ async function _autoNameStopTrip(rec,to){
       // address column the manual log already uses for the same thing.
       saved.to_name=poi.name;
       saved.to=poi.addr||poi.name;
-      saved.purpose=_autoTripPurpose({kind:_poiPlaceKind(poi.category,poi.name)});
+      // The saved place's own kind is the truth; the category guess is only the
+      // fallback for the receipt-without-a-saved-place case.
+      saved.purpose=_autoTripPurpose({kind:(savedPlace&&savedPlace.kind)||_poiPlaceKind(poi.category)});
     }
     saveAll();
     if(document.getElementById('mil-table'))renderAllMileage();
@@ -1056,56 +1082,20 @@ async function _poiAt(coord){
   }catch(_e){}
   return null;
 }
-// ── Trade supply houses, by NAME ─────────────────────────────────────────────
-// Apple hands back the SAME 'Store' category for Home Depot and for Target, so
-// the category alone cannot tell a supply run from an errand. The name can.
-// This list is what keeps the everyday supply stop auto-claimed once bare
-// 'Store' stops being treated as proof of work (owner report 2026-08-10: a shop
-// to Target and back "counted when it shouldn't have").
+// Apple's POI categories mapped onto the kinds a contractor cares about.
 //
-// Deliberately generous: a false positive here just preserves today's
-// behaviour for that stop, while a false negative only defers the trip until a
-// receipt appears (reviewDetourReceipts puts it straight back). Add to it
-// freely.
-const _POI_SUPPLY_NAME=/home\s*depot|lowe'?s|menards|ace hardware|true value|do it best|hardware|sherwin|benjamin moore|behr|ppg|paint|ferguson|grainger|fastenal|hd supply|white cap|northern tool|harbor freight|tractor supply|lumber|building|supply|wholesale|electric(al)? supply|plumbing|rental|equipment|contractor/i;
-function _poiIsSupplyHouse(name){
-  return _POI_SUPPLY_NAME.test(String(name||''));
-}
-// Apple's POI categories mapped onto the four kinds a contractor cares about.
-// Anything unrecognised stays 'supply', which is the existing default and the
-// overwhelmingly common case for a place they keep stopping at.
-function _poiPlaceKind(category,name){
+// A SUGGESTION ONLY. This prefills the kind dropdown when they save a new place
+// (js/places.js) and names the purpose on a receipt-backed stop that has no
+// saved place yet. It decides no money on its own: what makes a stop
+// deductible is the place THEY saved, or a receipt (see _autoNameStopTrip).
+// A previous version of this file guessed supply houses from their names; that
+// guess is deleted, because whether a shop is a supply house is the
+// contractor's call.
+function _poiPlaceKind(category){
   const c=String(category||'');
-  if(_poiIsPersonal(c,name))return 'other';
-  if(/Store|Hardware|Home|Building|Supply|Warehouse|Wholesale/i.test(c))return 'supply';
+  if(/Hardware|Building|Lumber|Wholesale|Warehouse|Supply/i.test(c))return 'supply';
+  if(/Restaurant|Cafe|Food|Bakery|Brewery|Bar/i.test(c))return 'other';
   return 'supply';
-}
-// What makes a stop PERSONAL rather than a work errand, and so what keeps a leg
-// off the mileage log entirely. It only ever SUBTRACTS a trip, so it stays
-// narrow and evidence-based: everything it drops is recoverable the moment a
-// receipt for that stop appears (reviewDetourReceipts), which is the safety net
-// that lets it exist at all.
-//
-// Two rules, and the second one is new:
-//   1. Food. Lunch is not a work errand.
-//   2. GENERAL RETAIL whose name is not a trade supply house. Apple returns the
-//      one 'Store' category for Home Depot and Target alike, so "it is a shop"
-//      was being read as "it is a work stop", and a run to Target and back from
-//      the shop was landing on the deductible log as a supply run. A claimed
-//      personal trip is the dangerous error on a mileage log, so retail is no
-//      longer claimed on the category alone. The specific trade categories
-//      (HardwareStore, Building, Supply, Wholesale, Warehouse) still are.
-//
-// Kept as its own predicate rather than read off _poiPlaceKind's 'other',
-// because that function's catch-all is 'supply' and a future category landing
-// in 'other' must not start deleting trips.
-function _poiIsPersonal(category,name){
-  const c=String(category||'');
-  // Trade categories are a work stop outright, whatever the shop is called.
-  if(/Hardware|Building|Lumber|Wholesale|Warehouse|Supply/i.test(c))return false;
-  if(/Restaurant|Cafe|Food|Bakery|Brewery|Bar/i.test(c))return true;
-  if(/Store|Market/i.test(c)&&!_poiIsSupplyHouse(name))return true;
-  return false;
 }
 async function _routeDistance(fromCoords,toCoords){
   // MapKit Directions, primary

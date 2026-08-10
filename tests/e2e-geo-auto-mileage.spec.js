@@ -1213,37 +1213,6 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out).toBeNull();
     });
 
-    // CHANGED 2026-08-10. This used to assert that a bare 'Store' category IS a
-    // supply house. That was correct when written, on the belief that a shop a
-    // contractor keeps stopping at is a supply house. It is not correct: Apple
-    // returns the SAME 'Store' for Home Depot and for Target, so the assertion
-    // was really asserting "all retail is work", and the owner's shop to Target
-    // and back landed on the deductible log because of it. The name is what
-    // settles it now, and the specific trade categories still stand alone.
-    test('a store is a supply house only if its name says so; food never is', async () => {
-      const out = await page.evaluate(() => ({
-        store: _poiPlaceKind('MKPOICategoryStore', 'Target'),
-        storeSupply: _poiPlaceKind('MKPOICategoryStore', 'Home Depot'),
-        hardware: _poiPlaceKind('MKPOICategoryHardwareStore'),
-        food: _poiPlaceKind('MKPOICategoryRestaurant'),
-        cafe: _poiPlaceKind('MKPOICategoryCafe'),
-        unknown: _poiPlaceKind('MKPOICategoryZoo'),
-        blank: _poiPlaceKind(''),
-        nul: _poiPlaceKind(null),
-      }));
-      expect(out.store, 'general retail is not evidence of a work stop').toBe('other');
-      expect(out.storeSupply, 'the everyday supply run is untouched').toBe('supply');
-      expect(out.hardware, 'a trade category stands on its own').toBe('supply');
-      // Lunch is not a supply run, and mislabelling it would put a burrito in
-      // the materials column.
-      expect(out.food).toBe('other');
-      expect(out.cafe).toBe('other');
-      // Anything unrecognised keeps the existing default rather than inventing
-      // a behaviour for a category nobody anticipated.
-      expect(out.unknown).toBe('supply');
-      expect(out.blank).toBe('supply');
-      expect(out.nul).toBe('supply');
-    });
 
     test('the name lands in the modal, and never over one already typed', async () => {
       // The answer is a suggestion. What their supplier is called is theirs.
@@ -1462,46 +1431,62 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out).toEqual(['Ace Supply']);
     });
 
-    // CHANGED 2026-08-10, and this is the assertion the owner's bug lived in.
-    // It used to say a 'Store' can never take a trip off the log, which meant
-    // Target, Walmart and Costco were all claimed as supply runs. Everything
-    // this predicate drops is restored the moment a receipt for that stop
-    // appears (reviewDetourReceipts), which is what makes erring toward "do not
-    // claim it" the safe direction on a document the IRS may read.
-    test('food and unproven retail come off the log; trade stops never do', async () => {
-      const out = await page.evaluate(() => ({
-        restaurant: _poiIsPersonal('MKPOICategoryRestaurant'),
-        cafe: _poiIsPersonal('MKPOICategoryCafe'),
-        bakery: _poiIsPersonal('MKPOICategoryBakery'),
-        target: _poiIsPersonal('MKPOICategoryStore', 'Target'),
-        walmart: _poiIsPersonal('MKPOICategoryStore', 'Walmart Supercenter'),
-        grocery: _poiIsPersonal('MKPOICategoryFoodMarket', 'Hy-Vee'),
-        homeDepot: _poiIsPersonal('MKPOICategoryStore', 'The Home Depot'),
-        lowes: _poiIsPersonal('MKPOICategoryStore', "Lowe's Home Improvement"),
-        sherwin: _poiIsPersonal('MKPOICategoryStore', 'Sherwin-Williams Paint Store'),
-        localSupply: _poiIsPersonal('MKPOICategoryStore', 'Capital Electric Supply'),
-        hardware: _poiIsPersonal('MKPOICategoryHardwareStore'),
-        gas: _poiIsPersonal('MKPOICategoryGasStation'),
-        blank: _poiIsPersonal(''),
-        nul: _poiIsPersonal(null),
+    // REWRITTEN 2026-08-10. This block used to test a predicate that decided,
+    // from Apple's POI category and then from the shop's NAME, whether a stop
+    // was a work errand. Both were guesses, and the second one was mine. The
+    // rule is now the contractor's own (owner: "the only places that could
+    // return as a business expense is if that place is explicitly listed under
+    // their places as a supply house"), so the predicate is deleted and what is
+    // tested is the decision itself.
+    test('the guessing predicates are gone, not merely unused', async () => {
+      const gone = await page.evaluate(() => ({
+        personal: typeof window._poiIsPersonal,
+        supplyName: typeof window._poiIsSupplyHouse,
       }));
-      expect(out.restaurant).toBe(true);
-      expect(out.cafe).toBe(true);
-      expect(out.bakery).toBe(true);
-      // THE BUG: a run to Target and back from the shop was a claimed supply run.
-      expect(out.target, 'general retail is not claimed on the category alone').toBe(true);
-      expect(out.walmart).toBe(true);
-      expect(out.grocery).toBe(true);
-      // And the everyday supply run must be exactly as it was.
-      expect(out.homeDepot, 'the common case must not gain friction').toBe(false);
-      expect(out.lowes).toBe(false);
-      expect(out.sherwin).toBe(false);
-      expect(out.localSupply, 'a local supply house, recognised by name').toBe(false);
-      expect(out.hardware, 'a trade category needs no name at all').toBe(false);
-      // Fuel is a work cost, not lunch.
-      expect(out.gas).toBe(false);
-      expect(out.blank).toBe(false);
-      expect(out.nul).toBe(false);
+      expect(gone.personal, 'no category guess decides a deduction').toBe('undefined');
+      expect(gone.supplyName, 'and no name guess either').toBe('undefined');
+    });
+
+    // The rule itself, on the real data shape: a stop is business ONLY if the
+    // pin matches one of THEIR saved places with a business kind, or a receipt
+    // proves it. Nothing about the shop's name or Apple's category enters here.
+    test('only a saved business place, or a receipt, makes a stop count', async () => {
+      const out = await page.evaluate(() => {
+        const TARGET = { lat: 39.03, lng: -95.77 };
+        const keep = places.slice();
+        try {
+          places.length = 0;
+          const unsaved = !placeAt({ lat: TARGET.lat, lon: TARGET.lng });
+          // Saved as a supply house: counts.
+          places.push({ id: 'p1', name: 'Target', kind: 'supply', lat: TARGET.lat, lon: TARGET.lng });
+          const asSupply = !!_PLACE_KIND_TO_PURPOSE[placeAt({ lat: TARGET.lat, lon: TARGET.lng }).kind];
+          // Saved as Other, somewhere they track but do not deduct: does not.
+          places.length = 0;
+          places.push({ id: 'p2', name: 'Target', kind: 'other', lat: TARGET.lat, lon: TARGET.lng });
+          const asOther = !!_PLACE_KIND_TO_PURPOSE[placeAt({ lat: TARGET.lat, lon: TARGET.lng }).kind];
+          const businessKinds = Object.keys(PLACE_KINDS)
+            .filter(k => !!_PLACE_KIND_TO_PURPOSE[k]).sort().join(',');
+          return { unsaved, asSupply, asOther, businessKinds };
+        } finally { places.length = 0; keep.forEach(p => places.push(p)); }
+      });
+      expect(out.unsaved, 'an unsaved pin is nobody\'s supply house').toBe(true);
+      expect(out.asSupply, 'the contractor saying it is a supply house is what counts').toBe(true);
+      expect(out.asOther, 'a place they track but do not deduct stays out').toBe(false);
+      expect(out.businessKinds).toBe('business_meeting,home_office,shop,supply');
+    });
+
+    test('the category map survives only as a prefill hint', async () => {
+      const out = await page.evaluate(() => ({
+        hardware: _poiPlaceKind('MKPOICategoryHardwareStore'),
+        food: _poiPlaceKind('MKPOICategoryRestaurant'),
+        store: _poiPlaceKind('MKPOICategoryStore'),
+        blank: _poiPlaceKind(''),
+      }));
+      // It fills in the kind dropdown when they save a place. It claims nothing.
+      expect(out.hardware).toBe('supply');
+      expect(out.food).toBe('other');
+      expect(out.store).toBe('supply');
+      expect(out.blank).toBe('supply');
     });
 
     test('the nearest tenant wins, not whichever Apple lists first', async () => {
