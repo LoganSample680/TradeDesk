@@ -654,33 +654,48 @@ function openScanViewer(id){
     body='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
       '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Paint takeoff</div>'+
       '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:5px"><input type="checkbox" '+(sub?'checked':'')+' onchange="_scanToggleSubtract(\''+sc.id+'\',this.checked)"> subtract openings</label></div>'+
-      (sc.rooms||[]).map(r=>{const n=_scanPaintNumbers(r,sub);
+      (sc.rooms||[]).map((r,ri)=>{const n=_scanPaintNumbers(r,sub);
         return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)">'+
-          '<span style="font-weight:700">'+escHtml(r.label)+'</span>'+
+          _scanRoomNameHtml(sc.id,ri,r.label)+
           '<span style="color:var(--text2)">'+n.wallSqFt+' wall · '+n.ceilSqFt+' ceil sq ft · '+n.ceilHt+'</span></div>';}).join('')+
       '<button class="btn btn-p" style="width:100%;margin-top:12px;padding:12px" onclick="_scanToEstimate(\''+sc.id+'\')">Send rooms to estimate</button>';
   }else if(lens==='electrical'){
     body='<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Receptacle layout · NEC 210.52</div>'+
-      (sc.rooms||[]).map(r=>{const n=_scanElectricalNumbers(r);
+      (sc.rooms||[]).map((r,ri)=>{const n=_scanElectricalNumbers(r);
         return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)">'+
-          '<span style="font-weight:700">'+escHtml(r.label)+(n.gfci?' <span style="color:#D97706;font-weight:800">GFCI</span>':'')+'</span>'+
+          '<span>'+_scanRoomNameHtml(sc.id,ri,r.label)+(n.gfci?' <span style="color:#D97706;font-weight:800">GFCI</span>':'')+'</span>'+
           '<span style="color:var(--text2)">'+n.outlets+' outlets · '+n.switches+' switch'+(n.switches>1?'es':'')+(n.kitchenCounterNote?' · counter rule applies':'')+'</span></div>';}).join('')+
       '<div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.5">Markers: no point over 6 ft from a receptacle (12 ft max apart), walls 2 ft+ count, doorways break the run. Heights: outlets 12" AFF typical, switches 48" typical (code max 6\'7"). Kitchen counters: 24" rule, planned separately. <strong>Estimate only, verify edition and amendments with your local AHJ.</strong></div>';
   }else if(lens==='hvac'){
     body='<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Load calc inputs</div>'+
       '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px">ACH50 <input id="_scan-ach" type="number" step="0.1" value="'+(sc._ach50||7)+'" style="width:64px;padding:6px;border:1px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--text)" onchange="_scanSetAch(\''+sc.id+'\',this.value)"> <span style="color:var(--text3)">from a blower door test; presets: leaky 10 · average 7 · tight 3</span></div>'+
-      (sc.rooms||[]).map(r=>{const n=_scanHvacNumbers(r,{ach50:sc._ach50});
+      (sc.rooms||[]).map((r,ri)=>{const n=_scanHvacNumbers(r,{ach50:sc._ach50});
         return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)">'+
-          '<span style="font-weight:700">'+escHtml(r.label)+'</span>'+
+          _scanRoomNameHtml(sc.id,ri,r.label)+
           '<span style="color:var(--text2)">'+n.volFt3+' ft³ · '+n.winSqFt+' sq ft glass · infil '+n.infiltSensBtuh+' BTU/h</span></div>';}).join('')+
       '<div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.5">Sizing estimate from scanned geometry + measured infiltration. <strong>Not for permit submission</strong>, permit-grade Manual J reports typically require ACCA-approved software. A blower door number beats any preset, and new-construction code already requires one (3 to 5 ACH50 by climate zone).</div>';
   }else if(lens!=='3d'){
     const unlocked=scanUnlocked(sc);
     body='<div style="font-size:12px;color:var(--text2)">'+(sc.rooms||[]).length+' rooms · '+totalWallSqFt+' wall sq ft · '+totalSqFt+' sq ft floor'+((sc.photos||[]).length?' · '+(sc.photos||[]).length+' photos':'')+'</div>'+
+      // The rooms, by name, right here. This tab is where you land after a scan
+      // and it had no room list at all, so the only way to correct a name the
+      // capture chip guessed was to go hunting on the Paint tab.
+      ((sc.rooms||[]).length?'<div style="margin-top:10px">'+
+        (sc.rooms||[]).map((r,ri)=>'<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)">'+
+          _scanRoomNameHtml(sc.id,ri,r.label)+
+          '<span style="color:var(--text3);font-size:11px">tap to rename</span></div>').join('')+
+        '</div>':'')+
       '<div style="font-size:11px;color:var(--text3);margin-top:6px">Hub status: '+(unlocked?'unlocked, client sees the full plan':'locked, client sees a blurred teaser'+(sc.price!=null?' at $'+sc.price:''))+'</div>'+
       (sc.usdz&&_scanPlugin()?'<button class="btn" style="width:100%;margin-top:10px;padding:12px;font-weight:700" onclick="_scanViewUsdz(\''+sc.id+'\')">View in 3D · walk it in AR</button>':'')+
-      '<div style="display:flex;gap:8px;margin-top:12px">'+
-        '<button class="btn btn-p" style="flex:1;padding:12px" onclick="_scanSellSheet(\''+sc.id+'\')">'+(sc.purchasedAt?'Plan purchased ✓':'Sell floor plan')+'</button>'+
+      // THE WAY OUT (owner 2026-08-10: "it looks like the scanner goes to
+      // nowhere"). This tab is the one you land on, and every button on it was
+      // about selling or deleting the plan. The scan exists to price work, and
+      // the only path to that lived on the Paint tab where nobody would look.
+      // It is the primary action here now; selling the plan is the side hustle
+      // and reads like one.
+      '<button class="btn btn-p" style="width:100%;margin-top:12px;padding:14px;font-size:15px;font-weight:800" onclick="_scanToEstimate(\''+sc.id+'\')">Build the estimate from these rooms →</button>'+
+      '<div style="display:flex;gap:8px;margin-top:8px">'+
+        '<button class="btn" style="flex:1;padding:12px" onclick="_scanSellSheet(\''+sc.id+'\')">'+(sc.purchasedAt?'Plan purchased ✓':'Sell floor plan')+'</button>'+
         (sc.price!=null&&!sc.purchasedAt?'<button class="btn" style="padding:12px" onclick="_scanMarkPurchased(\''+sc.id+'\')">Mark paid</button>':'')+
         '<button class="btn" style="padding:12px" onclick="deleteScan(\''+sc.id+'\');document.getElementById(\'_scan-view-ov\').remove();typeof _renderCDScans===\'function\'&&_renderCDScans()">Delete</button>'+
       '</div>';
@@ -711,6 +726,39 @@ function openScanViewer(id){
     body;
   ov.appendChild(m);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+// ── Name a room whatever it actually is ──────────────────────────────────────
+// Owner call (2026-08-10): "the ability to name a room is a click through
+// rather than a custom name, I want a custom name."
+//
+// The capture chip cycles a fixed list, which is right WHILE scanning (you are
+// holding the phone up walking the walls, and typing there is miserable), and
+// wrong afterwards, because half of every real house is "Master bath", "Zach's
+// office", "Back bedroom, the one with the bay window". So every room name in
+// the viewer is tappable and takes free text.
+//
+// The label is what feeds the plan drawing, the takeoff rows, and the estimate
+// line items, so renaming here renames it everywhere downstream, which is why
+// it lives on the scan record rather than on the estimate.
+function _scanRenameRoom(id,idx){
+  const sc=getScans().find(x=>String(x.id)===String(id));
+  if(!sc||!sc.rooms||!sc.rooms[idx])return;
+  const cur=sc.rooms[idx].label||'';
+  const next=prompt('Name this room',cur);
+  if(next===null)return;                    // cancelled: leave it alone
+  const name=String(next).trim();
+  if(!name||name===cur)return;              // blank is not a name
+  sc.rooms[idx].label=name;
+  saveScan(sc);
+  openScanViewer(id);
+  if(typeof showToast==='function')showToast('Renamed to '+name,'✏️');
+}
+// A room name, rendered as the button it now is. One helper so the plan, paint,
+// electrical and HVAC lists cannot drift apart on how a rename is offered.
+function _scanRoomNameHtml(id,idx,label){
+  return '<button onclick="_scanRenameRoom(\''+id+'\','+idx+')" title="Tap to rename" '+
+    'style="border:none;background:none;padding:0;font:inherit;font-weight:700;color:var(--text);cursor:pointer;text-align:left;'+
+    'border-bottom:1px dashed var(--border2)">'+escHtml(label||'Room')+'</button>';
 }
 function _scanSetLens(id,lens){_scanViewLens=lens;openScanViewer(id);}
 function _scanSetStory(id,st){_scanViewStory=Math.max(1,+st||1);openScanViewer(id);}

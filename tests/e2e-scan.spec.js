@@ -861,4 +861,86 @@ test.describe('client hub: floor plan cards', () => {
     expect(r.openHasRoom).toBe(true);
     expect(r.openNoLock).toBe(true);
   });
+
+  // ── Naming a room, and getting out of the viewer ──────────────────────────
+  // Owner (2026-08-10): "it looks like the scanner goes to nowhere, and the
+  // ability to name a room is a click through rather than a custom name, I want
+  // a custom name."
+  test.describe('room names and the way into an estimate', () => {
+    const seed = () => page.evaluate(() => {
+      if (typeof scans === 'undefined') window.scans = [];
+      scans.length = 0;
+      const room = (label) => ({ label, story: 1,
+        walls: [{ w: 12, h: 8 }, { w: 10, h: 8 }, { w: 12, h: 8 }, { w: 10, h: 8 }],
+        doors: [{ w: 3, h: 6.7 }], windows: [{ w: 4, h: 3 }], dims: { x: 12, y: 8, z: 10 } });
+      scans.push({ id: 's-name', name: 'Scan', clientId: 55, date: '2026-08-09',
+                   rooms: [room('Living room'), room('Room')], photos: [] });
+      openScanViewer('s-name');
+    });
+
+    test('the Plan tab leads into an estimate, above selling the plan', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        const h = document.getElementById('_scan-view-ov').innerHTML;
+        return { cta: /Build the estimate from these rooms/.test(h),
+                 order: h.indexOf('Build the estimate') < h.indexOf('Sell floor plan') };
+      });
+      // The scan exists to price work. The only path to that used to live on the
+      // Paint tab, which is why this read as a dead end.
+      expect(r.cta, 'the tab you land on must lead somewhere').toBe(true);
+      expect(r.order, 'selling the plan is the side hustle, not the point').toBe(true);
+    });
+
+    test('a room takes a name the contractor types, not one off a list', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        const real = window.prompt;
+        window.prompt = () => "Zach's office";
+        try { _scanRenameRoom('s-name', 1); } finally { window.prompt = real; }
+        _scanToEstimate('s-name');
+        return { label: scans[0].rooms[1].label,
+                 seed: (window._scanEstimateSeed?.rooms || []).map(x => x.name) };
+      });
+      expect(r.label).toBe("Zach's office");
+      // The label feeds the plan drawing, the takeoff and the line items, so a
+      // rename has to survive all the way into the estimate.
+      expect(r.seed, 'the name the contractor chose is the one on the estimate')
+        .toContain("Zach's office");
+    });
+
+    test('cancelling or clearing the prompt never wipes a name', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        const real = window.prompt;
+        window.prompt = () => 'Kitchen';
+        try { _scanRenameRoom('s-name', 0); } finally { window.prompt = real; }
+        const named = scans[0].rooms[0].label;
+        window.prompt = () => null;
+        try { _scanRenameRoom('s-name', 0); } finally { window.prompt = real; }
+        const afterCancel = scans[0].rooms[0].label;
+        window.prompt = () => '   ';
+        try { _scanRenameRoom('s-name', 0); } finally { window.prompt = real; }
+        return { named, afterCancel, afterBlank: scans[0].rooms[0].label };
+      });
+      expect(r.named).toBe('Kitchen');
+      expect(r.afterCancel, 'a cancel is not an edit').toBe('Kitchen');
+      expect(r.afterBlank, 'blank is not a name').toBe('Kitchen');
+    });
+
+    test('every lens offers the rename, so none of them drift apart', async () => {
+      await seed();
+      const counts = await page.evaluate(() => {
+        const n = () => document.querySelectorAll('[onclick^="_scanRenameRoom"]').length;
+        const out = { plan: n() };
+        ['paint', 'electrical', 'hvac'].forEach(l => { _scanSetLens('s-name', l); out[l] = n(); });
+        _scanSetLens('s-name', 'plan');
+        document.getElementById('_scan-view-ov')?.remove();
+        return out;
+      });
+      expect(counts.plan).toBe(2);
+      expect(counts.paint).toBe(2);
+      expect(counts.electrical).toBe(2);
+      expect(counts.hvac).toBe(2);
+    });
+  });
 });

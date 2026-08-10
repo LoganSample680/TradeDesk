@@ -180,7 +180,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         styled(shutterBtn, "📷", bg: UIColor(white: 0, alpha: 0.55))
         shutterBtn.titleLabel?.font = .systemFont(ofSize: 24)
 
-        hint.text = "Walk the room edges. Tap the label to name this room. Tap Floor when you head upstairs."
+        hint.text = "Walk the room edges. Tap the label to pick a name, hold it to type your own. Tap Floor when you head upstairs."
         hint.textColor = .white
         hint.font = .systemFont(ofSize: 12, weight: .medium)
         hint.textAlignment = .center
@@ -189,6 +189,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         view.addSubview(hint)
 
         chip.addTarget(self, action: #selector(cycleLabel), for: .touchUpInside)
+        chip.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(chipHeld(_:))))
         floorBtn.addTarget(self, action: #selector(floorTapped), for: .touchUpInside)
         floorBtn.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(floorHeld(_:))))
         cancelBtn.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
@@ -216,9 +217,43 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         ])
     }
 
+    // TAP cycles the list JS passed in; HOLD types a real name.
+    //
+    // Cycling is right while scanning: you are holding the phone up walking the
+    // walls and a keyboard there is miserable. But half of every real house is
+    // "Master bath" or "Zach's office", and a fixed list can never hold those
+    // (owner 2026-08-10: "I want a custom name"). So the quick path stays a tap
+    // and the custom path is a long press, the same tap/hold pairing the Floor
+    // button already uses.
+    //
+    // Still dumb (CLAUDE.md 3.2): the LIST comes from JS, this only captures
+    // whatever they type. Renaming after the fact lives entirely in JS
+    // (_scanRenameRoom), so no build is needed to change how naming works.
     @objc private func cycleLabel() {
         labelIndex = (labelIndex + 1) % max(labels.count, 1)
         chip.setTitle(labels[labelIndex], for: .normal)
+    }
+
+    @objc private func chipHeld(_ g: UILongPressGestureRecognizer) {
+        guard g.state == .began else { return }
+        customLabel()
+    }
+
+    @objc private func customLabel() {
+        let a = UIAlertController(title: "Name this room", message: nil, preferredStyle: .alert)
+        a.addTextField { tf in
+            tf.text = self.chip.title(for: .normal)
+            tf.autocapitalizationType = .words
+            tf.clearButtonMode = .whileEditing
+        }
+        a.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        a.addAction(UIAlertAction(title: "Use it", style: .default) { [weak self] _ in
+            guard let self = self else { return }
+            let t = (a.textFields?.first?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !t.isEmpty else { return }
+            self.chip.setTitle(t, for: .normal)
+        })
+        present(a, animated: true)
     }
 
     // Tap = up a floor, long-press = back down. Deterministic on purpose:
