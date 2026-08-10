@@ -740,14 +740,18 @@ enum TdMeshBaker {
         for i in 0..<keyframes.count where lumN[i] > 40 {
             gains[i] = min(1.3, max(0.75, gMean / max(1, lumSum[i] / lumN[i])))
         }
-        // 4. Binary little-endian PLY with vertex colors.
+        // 4. Binary little-endian PLY with vertex colors. The header is built
+        // with += because a single long + chain of interpolated literals is
+        // exactly what Swift's type checker times out on (build 14, first
+        // attempt, exit 65 on this expression).
         var out = Data()
-        out.append(("ply\nformat binary_little_endian 1.0\n" +
-                    "element vertex \(mPos.count)\n" +
-                    "property float x\nproperty float y\nproperty float z\n" +
-                    "property uchar red\nproperty uchar green\nproperty uchar blue\n" +
-                    "element face \(mTris.count / 3)\n" +
-                    "property list uchar int vertex_indices\nend_header\n").data(using: .ascii)!)
+        var head = "ply\nformat binary_little_endian 1.0\n"
+        head += "element vertex \(mPos.count)\n"
+        head += "property float x\nproperty float y\nproperty float z\n"
+        head += "property uchar red\nproperty uchar green\nproperty uchar blue\n"
+        head += "element face \(mTris.count / 3)\n"
+        head += "property list uchar int vertex_indices\nend_header\n"
+        out.append(head.data(using: .ascii) ?? Data())
         out.reserveCapacity(out.count + mPos.count * 15 + (mTris.count / 3) * 13)
         for i in 0..<mPos.count {
             var x = mPos[i].x, y = mPos[i].y, z = mPos[i].z
