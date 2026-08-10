@@ -680,7 +680,7 @@ async function _autoNameStopTrip(rec,to){
     // date and would have healed it on the next load; this makes the first
     // answer right instead of the second.
     const legDay=(rec&&rec.date)||todayKey();
-    const personal=!!(poi.name&&_poiIsPersonal(poi.category)&&
+    const personal=!!(poi.name&&_poiIsPersonal(poi.category,poi.name)&&
                       !(typeof expenseForStop==='function'&&
                         expenseForStop({lat:to.lat,lng:to.lng,name:poi.name,day:legDay})));
     // And patch a leg out of here that was ALREADY written. Which of the two
@@ -736,7 +736,7 @@ async function _autoNameStopTrip(rec,to){
       // address column the manual log already uses for the same thing.
       saved.to_name=poi.name;
       saved.to=poi.addr||poi.name;
-      saved.purpose=_autoTripPurpose({kind:_poiPlaceKind(poi.category)});
+      saved.purpose=_autoTripPurpose({kind:_poiPlaceKind(poi.category,poi.name)});
     }
     saveAll();
     if(document.getElementById('mil-table'))renderAllMileage();
@@ -1056,23 +1056,56 @@ async function _poiAt(coord){
   }catch(_e){}
   return null;
 }
+// ── Trade supply houses, by NAME ─────────────────────────────────────────────
+// Apple hands back the SAME 'Store' category for Home Depot and for Target, so
+// the category alone cannot tell a supply run from an errand. The name can.
+// This list is what keeps the everyday supply stop auto-claimed once bare
+// 'Store' stops being treated as proof of work (owner report 2026-08-10: a shop
+// to Target and back "counted when it shouldn't have").
+//
+// Deliberately generous: a false positive here just preserves today's
+// behaviour for that stop, while a false negative only defers the trip until a
+// receipt appears (reviewDetourReceipts puts it straight back). Add to it
+// freely.
+const _POI_SUPPLY_NAME=/home\s*depot|lowe'?s|menards|ace hardware|true value|do it best|hardware|sherwin|benjamin moore|behr|ppg|paint|ferguson|grainger|fastenal|hd supply|white cap|northern tool|harbor freight|tractor supply|lumber|building|supply|wholesale|electric(al)? supply|plumbing|rental|equipment|contractor/i;
+function _poiIsSupplyHouse(name){
+  return _POI_SUPPLY_NAME.test(String(name||''));
+}
 // Apple's POI categories mapped onto the four kinds a contractor cares about.
 // Anything unrecognised stays 'supply', which is the existing default and the
 // overwhelmingly common case for a place they keep stopping at.
-function _poiPlaceKind(category){
+function _poiPlaceKind(category,name){
   const c=String(category||'');
+  if(_poiIsPersonal(c,name))return 'other';
   if(/Store|Hardware|Home|Building|Supply|Warehouse|Wholesale/i.test(c))return 'supply';
-  if(_poiIsPersonal(c))return 'other';
   return 'supply';
 }
-// The one category that makes a stop PERSONAL rather than a work errand, and so
-// the one that keeps a leg off the mileage log entirely. Deliberately narrow: it
-// only ever subtracts a trip, so a loose pattern here silently costs the
-// contractor deductions they earned. Kept as its own predicate rather than read
-// off _poiPlaceKind's 'other', because that function's catch-all is 'supply' and
-// a future category landing in 'other' must not start deleting trips.
-function _poiIsPersonal(category){
-  return /Restaurant|Cafe|Food|Bakery|Brewery|Bar/i.test(String(category||''));
+// What makes a stop PERSONAL rather than a work errand, and so what keeps a leg
+// off the mileage log entirely. It only ever SUBTRACTS a trip, so it stays
+// narrow and evidence-based: everything it drops is recoverable the moment a
+// receipt for that stop appears (reviewDetourReceipts), which is the safety net
+// that lets it exist at all.
+//
+// Two rules, and the second one is new:
+//   1. Food. Lunch is not a work errand.
+//   2. GENERAL RETAIL whose name is not a trade supply house. Apple returns the
+//      one 'Store' category for Home Depot and Target alike, so "it is a shop"
+//      was being read as "it is a work stop", and a run to Target and back from
+//      the shop was landing on the deductible log as a supply run. A claimed
+//      personal trip is the dangerous error on a mileage log, so retail is no
+//      longer claimed on the category alone. The specific trade categories
+//      (HardwareStore, Building, Supply, Wholesale, Warehouse) still are.
+//
+// Kept as its own predicate rather than read off _poiPlaceKind's 'other',
+// because that function's catch-all is 'supply' and a future category landing
+// in 'other' must not start deleting trips.
+function _poiIsPersonal(category,name){
+  const c=String(category||'');
+  // Trade categories are a work stop outright, whatever the shop is called.
+  if(/Hardware|Building|Lumber|Wholesale|Warehouse|Supply/i.test(c))return false;
+  if(/Restaurant|Cafe|Food|Bakery|Brewery|Bar/i.test(c))return true;
+  if(/Store|Market/i.test(c)&&!_poiIsSupplyHouse(name))return true;
+  return false;
 }
 async function _routeDistance(fromCoords,toCoords){
   // MapKit Directions, primary

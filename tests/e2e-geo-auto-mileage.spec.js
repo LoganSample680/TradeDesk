@@ -1213,9 +1213,17 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out).toBeNull();
     });
 
-    test('a store category becomes a supply house, food does not', async () => {
+    // CHANGED 2026-08-10. This used to assert that a bare 'Store' category IS a
+    // supply house. That was correct when written, on the belief that a shop a
+    // contractor keeps stopping at is a supply house. It is not correct: Apple
+    // returns the SAME 'Store' for Home Depot and for Target, so the assertion
+    // was really asserting "all retail is work", and the owner's shop to Target
+    // and back landed on the deductible log because of it. The name is what
+    // settles it now, and the specific trade categories still stand alone.
+    test('a store is a supply house only if its name says so; food never is', async () => {
       const out = await page.evaluate(() => ({
-        store: _poiPlaceKind('MKPOICategoryStore'),
+        store: _poiPlaceKind('MKPOICategoryStore', 'Target'),
+        storeSupply: _poiPlaceKind('MKPOICategoryStore', 'Home Depot'),
         hardware: _poiPlaceKind('MKPOICategoryHardwareStore'),
         food: _poiPlaceKind('MKPOICategoryRestaurant'),
         cafe: _poiPlaceKind('MKPOICategoryCafe'),
@@ -1223,8 +1231,9 @@ test.describe('Automatic mileage from drive legs', () => {
         blank: _poiPlaceKind(''),
         nul: _poiPlaceKind(null),
       }));
-      expect(out.store).toBe('supply');
-      expect(out.hardware).toBe('supply');
+      expect(out.store, 'general retail is not evidence of a work stop').toBe('other');
+      expect(out.storeSupply, 'the everyday supply run is untouched').toBe('supply');
+      expect(out.hardware, 'a trade category stands on its own').toBe('supply');
       // Lunch is not a supply run, and mislabelling it would put a burrito in
       // the materials column.
       expect(out.food).toBe('other');
@@ -1453,16 +1462,24 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out).toEqual(['Ace Supply']);
     });
 
-    test('food is the only category that deletes a trip', async () => {
-      // Narrow on purpose: this predicate only ever SUBTRACTS a deduction, so a
-      // loose pattern here quietly costs the contractor money. Kept separate
-      // from _poiPlaceKind, whose catch-all is 'supply', so a category landing
-      // in 'other' later cannot start binning legs.
+    // CHANGED 2026-08-10, and this is the assertion the owner's bug lived in.
+    // It used to say a 'Store' can never take a trip off the log, which meant
+    // Target, Walmart and Costco were all claimed as supply runs. Everything
+    // this predicate drops is restored the moment a receipt for that stop
+    // appears (reviewDetourReceipts), which is what makes erring toward "do not
+    // claim it" the safe direction on a document the IRS may read.
+    test('food and unproven retail come off the log; trade stops never do', async () => {
       const out = await page.evaluate(() => ({
         restaurant: _poiIsPersonal('MKPOICategoryRestaurant'),
         cafe: _poiIsPersonal('MKPOICategoryCafe'),
         bakery: _poiIsPersonal('MKPOICategoryBakery'),
-        store: _poiIsPersonal('MKPOICategoryStore'),
+        target: _poiIsPersonal('MKPOICategoryStore', 'Target'),
+        walmart: _poiIsPersonal('MKPOICategoryStore', 'Walmart Supercenter'),
+        grocery: _poiIsPersonal('MKPOICategoryFoodMarket', 'Hy-Vee'),
+        homeDepot: _poiIsPersonal('MKPOICategoryStore', 'The Home Depot'),
+        lowes: _poiIsPersonal('MKPOICategoryStore', "Lowe's Home Improvement"),
+        sherwin: _poiIsPersonal('MKPOICategoryStore', 'Sherwin-Williams Paint Store'),
+        localSupply: _poiIsPersonal('MKPOICategoryStore', 'Capital Electric Supply'),
         hardware: _poiIsPersonal('MKPOICategoryHardwareStore'),
         gas: _poiIsPersonal('MKPOICategoryGasStation'),
         blank: _poiIsPersonal(''),
@@ -1471,8 +1488,16 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.restaurant).toBe(true);
       expect(out.cafe).toBe(true);
       expect(out.bakery).toBe(true);
-      expect(out.store).toBe(false);
-      expect(out.hardware).toBe(false);
+      // THE BUG: a run to Target and back from the shop was a claimed supply run.
+      expect(out.target, 'general retail is not claimed on the category alone').toBe(true);
+      expect(out.walmart).toBe(true);
+      expect(out.grocery).toBe(true);
+      // And the everyday supply run must be exactly as it was.
+      expect(out.homeDepot, 'the common case must not gain friction').toBe(false);
+      expect(out.lowes).toBe(false);
+      expect(out.sherwin).toBe(false);
+      expect(out.localSupply, 'a local supply house, recognised by name').toBe(false);
+      expect(out.hardware, 'a trade category needs no name at all').toBe(false);
       // Fuel is a work cost, not lunch.
       expect(out.gas).toBe(false);
       expect(out.blank).toBe(false);
