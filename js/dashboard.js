@@ -644,13 +644,14 @@ function renderDash(){
         // shoved every card below it down in one frame, which read as the
         // whole dashboard dropping again (owner 2026-08-10). Slide the space
         // open instead (§8.4: max-height with a known cap, never height:auto).
+        // Synchronous reflow between the two values, NOT requestAnimationFrame:
+        // rAF throttles on unfocused pages, leaving the card stuck at 0 height.
         _nearbyEl.style.overflow='hidden';
         _nearbyEl.style.maxHeight='0px';
         _nearbyEl.style.transition='max-height .3s cubic-bezier(.22,1,.36,1)';
-        requestAnimationFrame(()=>{
-          _nearbyEl.style.maxHeight='560px';
-          setTimeout(()=>{_nearbyEl.style.maxHeight='';_nearbyEl.style.transition='';_nearbyEl.style.overflow='';},380);
-        });
+        void _nearbyEl.offsetHeight;
+        _nearbyEl.style.maxHeight='560px';
+        setTimeout(()=>{_nearbyEl.style.maxHeight='';_nearbyEl.style.transition='';_nearbyEl.style.overflow='';},380);
       }
       const _cardShell=(inner)=>'<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(22,163,74,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(22,163,74,.16),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f6fbf7 100%);box-shadow:0 10px 30px -12px rgba(14,107,57,.35),0 2px 8px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+inner+'</div>';
       const _cardHead=(name,addr,extra)=>'<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
@@ -765,7 +766,8 @@ function renderDash(){
       _nearbyEl.style.overflow='hidden';
       _nearbyEl.style.maxHeight=_nearbyEl.offsetHeight+'px';
       _nearbyEl.style.transition='max-height .24s ease';
-      requestAnimationFrame(()=>{_nearbyEl.style.maxHeight='0px';});
+      void _nearbyEl.offsetHeight; // flush, then collapse (no rAF: throttles unfocused)
+      _nearbyEl.style.maxHeight='0px';
       _nearbyHideTimer=setTimeout(()=>{
         _nearbyHideTimer=null;
         _nearbyEl.style.display='none';

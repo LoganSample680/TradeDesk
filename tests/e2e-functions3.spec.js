@@ -1248,8 +1248,8 @@ test.describe('Cloud Supabase and account functions', () => {
       } finally { _activeTimer = saved; renderDash(); }
     });
     expect(r.during.disp).toBe('block');
-    expect(r.during.maxH).toBe('0px');               // enters collapsed
-    expect(r.during.trans).toContain('max-height');  // and transitions open
+    expect(r.during.maxH).toBe('560px');             // expand target set synchronously (no rAF)
+    expect(r.during.trans).toContain('max-height');  // transitioning open from the flushed 0
     expect(r.settled.maxH).toBe('');                 // cleanup: no residual cap
     expect(r.settled.visible).toBe(true);
     expect(r.hiding.trans).toContain('max-height');  // exit collapses the space
