@@ -1173,11 +1173,12 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // across the fence line, not a drive: no time entry, no mileage row. A
   // real out-and-back loop from the same door survives on the moved-miles
   // test; the rolling straight-line accumulator is reset per leg.
+  let sameSpot=false;
   if(destLoc&&_geoLegOrigin&&!stale){
     const sameId=(destLoc.placeId&&destLoc.placeId===_geoLegOrigin.placeId)||
                  (destLoc.clientId&&destLoc.clientId===_geoLegOrigin.clientId)||
                  (destLoc.jobId&&destLoc.jobId===_geoLegOrigin.jobId);
-    const sameSpot=sameId||(_geoLegOrigin.lat!=null&&_geoDistFt(destLoc,{lat:_geoLegOrigin.lat,lng:_geoLegOrigin.lng})<400);
+    sameSpot=sameId||(_geoLegOrigin.lat!=null&&_geoDistFt(destLoc,{lat:_geoLegOrigin.lat,lng:_geoLegOrigin.lng})<400);
     if(sameSpot&&_geoDriveMiles<0.3)return;
   }
   // `stale` = the departure could not be inferred (the phone was asleep across
@@ -1225,6 +1226,29 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // sub-legs. A stale leg claims none, same rule as the time entry above.
   let driveMins=stale?0:mins;
   if(!stale&&_geoLegOrigin&&_geoLegOrigin.extraDriveMins){driveMins+=_geoLegOrigin.extraDriveMins;delete _geoLegOrigin.extraDriveMins;}
+  // ── OUT AND BACK WITH NOTHING BUSINESS IN IT ─────────────────────────────
+  // Owner rule (2026-08-10): "a drive from home office shop and back shouldn't
+  // count either unless there was a business stop that day."
+  //
+  // This is the other half of the Target run. Once the personal stop is
+  // collapsed out of the middle (_geoCollapseDetours / the personal branch in
+  // mileage.js), what is left is a leg whose ORIGIN AND DESTINATION ARE THE
+  // SAME PLACE. That shape can only ever mean a round trip with nothing
+  // business in it, because a business stop would have ENDED the leg there and
+  // started a new one: shop to supply house to shop is two legs, neither of
+  // which starts and ends in the same spot. So same place in, same place out,
+  // no miles.
+  //
+  // The DRIVE TIME still goes in, above. A crew member driving is being paid
+  // for it whatever the errand turned out to be, and stripping the hours would
+  // be a payroll bug dressed up as a mileage fix. Only the deduction goes.
+  //
+  // Distinct from the fence-bounce guard higher up, which drops the whole leg
+  // including the time, because that one never happened at all.
+  if(sameSpot){
+    _geoParkNote('roundtrip-no-miles',destLoc&&(destLoc.name||destLoc.kind)||'');
+    return;
+  }
   // The arrival stamp rides along so the row can show WHEN the trip ran, not
   // just how long: a stale leg passes nothing, its clock times are fiction.
   _geoAutoMileage(_geoLegOrigin,destLoc,legKey,stale?arrived:driveStartedAt,companyVeh,driveMins,stale?null:arrived);

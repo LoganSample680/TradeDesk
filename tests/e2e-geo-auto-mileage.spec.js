@@ -1438,6 +1438,59 @@ test.describe('Automatic mileage from drive legs', () => {
     // return as a business expense is if that place is explicitly listed under
     // their places as a supply house"), so the predicate is deleted and what is
     // tested is the decision itself.
+    // Owner rule (2026-08-10): "a drive from home office shop and back
+    // shouldn't count either unless there was a business stop that day."
+    //
+    // This is the other half of the Target run. Once the personal stop is
+    // collapsed out of the middle, what survives is a leg whose ORIGIN AND
+    // DESTINATION ARE THE SAME PLACE, and that shape can only mean a round trip
+    // with nothing business in it: a business stop would have ENDED the leg
+    // there and started a new one, so shop to supply house to shop is two legs,
+    // neither starting and ending in the same spot.
+    test('out from the shop and back logs no miles, but still pays the drive', async () => {
+      const out = await page.evaluate(() => {
+        const miles = [], times = [];
+        const realMile = window._geoAutoMileage, realEnq = window._geoEnqueue;
+        const realVeh = window._isCompanyVehicleToday, realUser = window._supaUser;
+        window._geoAutoMileage = () => { miles.push(1); };
+        window._geoEnqueue = (tbl) => { if (tbl === 'job_time_entries') times.push(1); };
+        window._isCompanyVehicleToday = () => true;
+        window._supaUser = { id: 'u1' };
+        const SHOP = { lat: 39.04, lng: -95.76, name: 'Shop', kind: 'shop', placeId: 'p-shop' };
+        const JOB = { lat: 39.07, lng: -95.72, name: 'Miller job', kind: 'job', jobId: 77 };
+        const ago = (m) => new Date(Date.now() - m * 60000).toISOString();
+        const run = (origin, dest, drivenMiles) => {
+          miles.length = 0; times.length = 0;
+          // Bare assignment: script-scoped `let`, so window.X would miss it.
+          _geoLegOrigin = Object.assign({}, origin);
+          _geoDriveMiles = drivenMiles;
+          _geoDriveEntry(dest.jobId || null, ago(25), dest.name, null, false, dest, false);
+          return { miles: miles.length, times: times.length };
+        };
+        try {
+          return {
+            roundTrip: run(SHOP, SHOP, 9),
+            toJob: run(SHOP, JOB, 9),
+            fromJob: run(JOB, SHOP, 9),
+            bounce: run(SHOP, SHOP, 0.05),
+          };
+        } finally {
+          window._geoAutoMileage = realMile; window._geoEnqueue = realEnq;
+          window._isCompanyVehicleToday = realVeh; window._supaUser = realUser;
+          _geoLegOrigin = null; _geoDriveMiles = 0;
+        }
+      });
+      expect(out.roundTrip.miles, 'a personal errand and back is not a deduction').toBe(0);
+      // Stripping the hours too would be a payroll bug dressed up as a mileage
+      // fix: a crew member driving is paid for it whatever the errand was.
+      expect(out.roundTrip.times, 'the drive time is still theirs').toBe(1);
+      expect(out.toJob.miles, 'a real leg to a job site is untouched').toBe(1);
+      expect(out.fromJob.miles, 'and the leg back from it').toBe(1);
+      // Distinct from the fence-bounce guard, which drops the whole leg
+      // including the time, because that one never happened at all.
+      expect(out.bounce.miles + out.bounce.times, 'a fence bounce is still dropped whole').toBe(0);
+    });
+
     test('the guessing predicates are gone, not merely unused', async () => {
       const gone = await page.evaluate(() => ({
         personal: typeof window._poiIsPersonal,
