@@ -50,8 +50,13 @@ test.describe('drive', () => {
     // plugin object", because Capacitor hands back a proxy even when the native
     // half is missing from the installed build. Ask it now so the stub counts.
     await _driveCapRefresh();
+    // withNav tests exercise the EMBEDDED engine, which is opt-in since the
+    // real-Apple-Maps default (owner 2026-08-10). Bodies that test the
+    // default set the flag back to false themselves.
+    const _realNavEmbedded = typeof S !== 'undefined' ? S.navEmbedded : undefined;
+    if (typeof S !== 'undefined') S.navEmbedded = true;
     try { return await (new Function('a', 'return (' + b + ')(a)'))(a); }
-    finally { window.Capacitor = realCap; }
+    finally { window.Capacitor = realCap; if (typeof S !== 'undefined') S.navEmbedded = _realNavEmbedded; }
   }, [body.toString(), arg]);
 
   const seedJob = () => page.evaluate(() => {
@@ -508,15 +513,22 @@ test.describe('drive', () => {
         const first = [...sel.querySelectorAll('option')].map(o => o.value).filter(Boolean)[0];
         sel.value = first;
         document.getElementById('lm-purpose').value = first;
-        saveLoggedTrip();
-        await new Promise(res => setTimeout(res, 400));
-        return { started: window.__started, handoff: window.__handoff };
+        const nav = [];
+        const realNavigate = window._driveNavigate;
+        window._driveNavigate = (h) => { nav.push(h); };
+        try {
+          saveLoggedTrip();
+          await new Promise(res => setTimeout(res, 400));
+        } finally { window._driveNavigate = realNavigate; }
+        return { started: window.__started, handoff: window.__handoff, nav };
       } finally { window._resolveCoords = realResolve; }
     });
     await closeTripSheet();
-    expect(r.started.length, 'Save trip IS the start button').toBe(1);
-    expect(r.started[0].lat).toBeCloseTo(41.532, 3);
-    expect(r.handoff, 'and it never leaves the app to do it').toEqual([]);
+    // Real-Apple-Maps default (owner 2026-08-10): Save trip hands the drive
+    // to the Maps app; the embedded engine only launches behind S.navEmbedded.
+    expect(r.started.length, 'the embedded screen does not launch uninvited').toBe(0);
+    expect(r.nav.length, 'Save trip still starts the drive, in real Apple Maps').toBe(1);
+    expect(r.nav[0]).toMatch(/daddr=41.532/);
   });
 
   test('in a browser the same choice hands off, as it always did', async () => {
@@ -584,8 +596,11 @@ test.describe('drive', () => {
         const probed = await _driveCapRefresh();
         const capable = driveCapable();
         const label = driveButtonHtml('7001');
-        await startDrive('7001');
-        return { probed, capable, label, opened };
+        const nav = [];
+        const realNavigate = window._driveNavigate;
+        window._driveNavigate = (h) => { nav.push(h); };
+        try { await startDrive('7001'); } finally { window._driveNavigate = realNavigate; }
+        return { probed, capable, label, nav };
       } finally {
         window.open = realOpen; window.Capacitor = realCap;
         try { localStorage.removeItem('td_nav_capable'); } catch (e) {}
@@ -594,8 +609,8 @@ test.describe('drive', () => {
     expect(r.probed, 'the probe answers honestly').toBe(false);
     expect(r.capable).toBe(false);
     expect(r.label, 'and the button promises only what that build can do').toMatch(/Directions/);
-    expect(r.opened.length, 'the tap still gets them there, via Maps').toBe(1);
-    expect(r.opened[0]).toMatch(/maps\.apple\.com/);
+    expect(r.nav.length, 'the tap still gets them there, via Maps').toBe(1);
+    expect(r.nav[0]).toMatch(/maps:\/\/|maps\.apple\.com/);
   });
 
   test('no console errors across drive', async () => { await assertNoErrors(page); });
