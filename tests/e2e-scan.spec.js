@@ -117,13 +117,19 @@ test.describe('TdScan web half', () => {
 
   test('the scan opens in the lens matching the business trade', async () => {
     const r = await page.evaluate(() => {
-      const was = S.trade;
+      // Drives setActiveTrade, the seam the app really uses. This test used to
+      // assign S.trade, which nothing outside this file has ever written: the
+      // trade lives on _config.business_type / _activeTrade (js/lifecycle.js
+      // documents the same thing), so the lens was 'plan' for every real
+      // contractor while this test read green.
+      const was = typeof _activeTrade !== 'undefined' ? _activeTrade : null;
       const out = {};
-      S.trade = 'Painting';   out.paint = _scanDefaultLens();
-      S.trade = 'Electrical'; out.elec = _scanDefaultLens();
-      S.trade = 'HVAC';       out.hvac = _scanDefaultLens();
-      S.trade = 'Plumbing';   out.plumb = _scanDefaultLens();
-      S.trade = was;
+      try {
+        setActiveTrade('painting');   out.paint = _scanDefaultLens();
+        setActiveTrade('electrical'); out.elec = _scanDefaultLens();
+        setActiveTrade('hvac');       out.hvac = _scanDefaultLens();
+        setActiveTrade('plumbing');   out.plumb = _scanDefaultLens();
+      } finally { setActiveTrade(was); }
       return out;
     });
     expect(r.paint).toBe('paint');
@@ -362,6 +368,7 @@ test.describe('TdScan web half', () => {
     });
 
     test('a lens from another trade cannot strand you on a hidden tab', async () => {
+      await seed();
       const r = await page.evaluate(() => {
         const real = typeof _activeTrade !== 'undefined' ? _activeTrade : null;
         try {
@@ -663,9 +670,10 @@ test.describe('TdScan web half', () => {
 
   test('Scan Estimate: standalone builder prices rooms from measured surfaces, bakes multipliers, stamps scanId', async () => {
     const r = await page.evaluate((raw) => {
-      const savedClients = clients.slice(), savedRates = S.scanRates, savedTrade = S.trade;
+      const savedClients = clients.slice(), savedRates = S.scanRates;
+      const savedTrade = typeof _activeTrade !== 'undefined' ? _activeTrade : null;
       try {
-        S.trade = 'Painting';
+        setActiveTrade('painting');
         clients.length = 0; clients.push({ id: 801, name: 'Builder Client' });
         const room = _scanParseRoom(raw, 'Kitchen');
         saveScan({ id: 'scan-se-1', clientId: 801, rooms: [room], name: 'SE scan' });
@@ -687,7 +695,7 @@ test.describe('TdScan web half', () => {
         return { opened, t1, t2, t3, autoHigh, seeded };
       } finally {
         clients.length = 0; savedClients.forEach(c => clients.push(c));
-        S.scanRates = savedRates; S.trade = savedTrade;
+        S.scanRates = savedRates; setActiveTrade(savedTrade);
         window._scanEstimateSeed = null; _geiLines = []; _geiScanId = null; _seState = null;
         document.getElementById('_se-ov')?.remove();
         goPg('pg-dash');
@@ -706,13 +714,14 @@ test.describe('TdScan web half', () => {
 
   test('Scan Estimate: a measured 10 ft room auto-flags high ceilings; electricians bill by device count', async () => {
     const r = await page.evaluate((raw) => {
-      const savedClients = clients.slice(), savedTrade = S.trade, savedER = S.scanElecRates;
+      const savedClients = clients.slice(), savedER = S.scanElecRates;
+      const savedTrade = typeof _activeTrade !== 'undefined' ? _activeTrade : null;
       try {
         clients.length = 0; clients.push({ id: 802, name: 'Elec Client' });
         const room = _scanParseRoom(raw, 'Kitchen');
         room.hM = 3.05;   // a measured 10 ft ceiling
         saveScan({ id: 'scan-se-2', clientId: 802, rooms: [room], name: 'Tall scan' });
-        S.trade = 'Electrical';
+        setActiveTrade('electrical');
         S.scanElecRates = { outlet: 100, sw: 80, gfci: 150 };
         openScanEstimate(clients[0]);
         const autoHigh = _seState.rooms[0].mults.highCeil;
@@ -724,7 +733,7 @@ test.describe('TdScan web half', () => {
         return { autoHigh, total, lines: _geiLines.length, kinds };
       } finally {
         clients.length = 0; savedClients.forEach(c => clients.push(c));
-        S.trade = savedTrade; S.scanElecRates = savedER;
+        setActiveTrade(savedTrade); S.scanElecRates = savedER;
         window._scanEstimateSeed = null; _geiLines = []; _geiScanId = null; _seState = null;
         document.getElementById('_se-ov')?.remove();
         goPg('pg-dash');
@@ -766,6 +775,112 @@ test.describe('TdScan web half', () => {
     expect(r.northArrow, 'a captured heading draws the north arrow').toBe(true);
     expect(r.stillHasLabel).toBe(true);
     expect(r.dims, 'wall dimensions annotate the plan').toBe(true);
+  });
+
+  // Owner review (2026-08-10): "arches are rendering as squares, I want exact
+  // furniture markings to come through in grave detail."
+  test.describe('archways are not doors, and the furniture RoomPlan sees gets drawn', () => {
+    // Same 12x10 room, plus a 5 ft archway on the west wall and four pieces of
+    // furniture, one of them sitting at 30 degrees to the walls.
+    const furnished = () => {
+      const raw = JSON.parse(fabricatedRoom());
+      const W = 3.048, L = 3.6576;
+      raw.openings = [{
+        identifier: 'op-1', parentIdentifier: 'w-w', category: { opening: {} },
+        dimensions: [1.524, 2.1336, 0],
+        transform: [0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, 0, -L / 2, 1.06, 0, 1],
+      }];
+      const obj = (cat, cx, cz, w, d, deg) => {
+        const r = deg * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+        return { identifier: cat, category: { [cat]: {} }, dimensions: [w, 0.8, d],
+                 transform: [c, 0, s, 0, 0, 1, 0, 0, -s, 0, c, 0, cx, 0.4, cz, 1] };
+      };
+      raw.objects = [obj('sofa', -0.9, -1.0, 2.0, 0.9, 0), obj('bed', 1.0, 0.6, 1.5, 2.0, 30),
+                     obj('toilet', -1.5, 1.0, 0.5, 0.75, 0), obj('stove', 1.2, -1.1, 0.76, 0.65, 0)];
+      return JSON.stringify(raw);
+    };
+
+    test('an archway punches the wall, caps its jambs, and never grows a door swing', async () => {
+      const r = await page.evaluate((raw) => {
+        const room = _scanParseRoom(raw, 'Kitchen');
+        const svg = _scanPlanSvg({ rooms: [room] }, { lens: 'plan' });
+        const westDoors = room.walls.find(w => w.doors.some(d => d.kind === 'opening'));
+        return {
+          kinds: room.walls.flatMap(w => w.doors.map(d => d.kind)).sort().join(),
+          winKind: room.walls.flatMap(w => w.windows.map(d => d.kind)).join(),
+          // ONE swing arc for the ONE real door. The archway used to draw a
+          // second leaf plus arc, which is what read as a square door.
+          swings: (svg.match(/ A [\d.]+ [\d.]+ 0 0 [01] /g) || []).length,
+          header: (svg.match(/stroke-dasharray/g) || []).length,
+          breaksWallSpace: !!westDoors,
+        };
+      }, furnished());
+      expect(r.kinds, 'an opening rides in the wall door list, tagged as itself').toBe('door,opening');
+      expect(r.winKind).toBe('window');
+      expect(r.swings, 'one swing for the one door that actually swings').toBe(1);
+      expect(r.header, 'the archway draws a dashed header instead').toBe(1);
+      expect(r.breaksWallSpace, 'the NEC engine still sees it break the wall').toBe(true);
+    });
+
+    test('furniture parses with its footprint and the angle it really sits at', async () => {
+      const r = await page.evaluate((raw) => {
+        const room = _scanParseRoom(raw, 'Kitchen');
+        const bed = (room.objects || []).find(o => o.cat === 'bed');
+        return {
+          cats: (room.objects || []).map(o => o.cat).join(),
+          bedDeg: bed && Math.round(Math.atan2(bed.uz, bed.ux) * 180 / Math.PI),
+          bedDepth: bed && +bed.d.toFixed(2),
+          unit: bed && +Math.hypot(bed.ux, bed.uz).toFixed(3),
+          noObjects: (_scanParseRoom(JSON.stringify({ walls: [], objects: null }), 'X') || {}).objects,
+        };
+      }, furnished());
+      expect(r.cats).toBe('sofa,bed,toilet,stove');
+      expect(r.bedDeg, 'a bed at 30 degrees stays at 30 degrees').toBe(30);
+      expect(r.bedDepth, 'depth comes off the transform, it is not guessed').toBe(2);
+      expect(r.unit, 'the axis is normalized so the symbol never stretches').toBe(1);
+      expect(r.noObjects, 'a scan with no objects still parses').toEqual([]);
+    });
+
+    test('each piece draws its own plan symbol, rotated, lighter than the walls', async () => {
+      const r = await page.evaluate((raw) => {
+        const svg = _scanPlanSvg({ rooms: [_scanParseRoom(raw, 'Kitchen')] }, { lens: 'plan' });
+        return {
+          groups: (svg.match(/<g transform="translate\([\d.]+,[\d.]+\) rotate\(/g) || []).length,
+          rotated: /rotate\(30\.0\)/.test(svg),
+          burners: (svg.match(/<circle[^>]*stroke-width="0\.25"/g) || []).length,
+          bowl: /<ellipse/.test(svg),
+          // Furniture must never out-weigh the poché or the plan turns to soup.
+          lighter: /stroke-width="0\.25"/.test(svg) && !/stroke-width="0\.25"[^>]*stroke-linecap="square"/.test(svg),
+          // Symbols sit UNDER the walls: the first wall line comes after the
+          // last furniture group in the string.
+          under: svg.lastIndexOf('rotate(30.0)') < svg.indexOf('stroke-linecap="square"'),
+          haloed: /paint-order="stroke"/.test(svg),
+        };
+      }, furnished());
+      expect(r.groups, 'four pieces, four placed symbols').toBe(4);
+      expect(r.rotated, 'the symbol is rotated, not squared up to the page').toBe(true);
+      expect(r.burners, 'a stove draws its burners and a toilet its bowl').toBeGreaterThanOrEqual(4);
+      expect(r.bowl).toBe(true);
+      expect(r.lighter).toBe(true);
+      expect(r.under, 'walls draw on top of furniture').toBe(true);
+      expect(r.haloed, 'room labels clear the furniture beneath them').toBe(true);
+    });
+
+    test('a tiny or malformed object degrades to its footprint instead of throwing', async () => {
+      const r = await page.evaluate(() => {
+        const room = { label: 'X', poly: [[0, 0], [3, 0], [3, 3], [0, 3]], walls: [], wallM2: 1, floorM2: 9,
+          objects: [{ cat: 'sofa', cx: 1, cz: 1, w: 0.1, d: 0.1, ux: 1, uz: 0 },
+                    { cat: 'nothing-we-know', cx: 2, cz: 2, w: 1, d: 1, ux: 1, uz: 0 },
+                    { cat: 'bed', cx: 2, cz: 1, w: 0, d: 1, ux: 1, uz: 0 },
+                    null] };
+        let threw = null;
+        let svg = '';
+        try { svg = _scanPlanSvg({ rooms: [room] }, { lens: 'plan' }); } catch (e) { threw = String(e); }
+        return { threw, groups: (svg.match(/<g transform="translate\([\d.]+,[\d.]+\) rotate\(/g) || []).length };
+      });
+      expect(r.threw).toBe(null);
+      expect(r.groups, 'a zero-width object is skipped; the other two still draw').toBe(2);
+    });
   });
 
   test('the dollhouse stacks floors with labels; a flat scan gets no floor labels; the viewer has a 3D tab', async () => {

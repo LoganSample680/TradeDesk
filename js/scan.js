@@ -37,7 +37,20 @@ function _scanMat(m){
   return {col0:{x:f[0],y:f[1],z:f[2]},col3:{x:f[12],y:f[13],z:f[14]}};
 }
 function _scanDims(d){
-  const v=_scanVec(d);return v?{w:Math.abs(v.x),h:Math.abs(v.y)}:{w:0,h:0};
+  // w = width (local x), h = height (local y), d = DEPTH (local z). Walls and
+  // openings only ever needed w and h; a furniture footprint needs the depth.
+  const v=_scanVec(d);return v?{w:Math.abs(v.x),h:Math.abs(v.y),d:Math.abs(v.z)}:{w:0,h:0,d:0};
+}
+// RoomPlan encodes an enum as {"sofa":{}} on some OS versions and the bare
+// string "sofa" on others; a couple of builds nest it under .value.
+function _scanObjCat(c){
+  if(!c)return '';
+  if(typeof c==='string')return c;
+  if(typeof c==='object'){
+    if(typeof c.value==='string')return c.value;
+    const k=Object.keys(c);if(k.length)return k[0];
+  }
+  return '';
 }
 // One wall surface → {ax,az,bx,bz,len,h,id} plus openings resolved onto it.
 function _scanParseRoom(rawJson,label){
@@ -55,10 +68,10 @@ function _scanParseRoom(rawJson,label){
       len:d.w,h:d.h||2.44,doors:[],windows:[]};
     walls.push(wall);wallById[wall.id]=wall;
   });
-  const placeOpening=(o,list,isDoor)=>{
+  const placeOpening=(o,list,isDoor,kind)=>{
     const m=_scanMat(o.transform),d=_scanDims(o.dimensions);
     if(!m||!d.w)return;
-    const rec={w:d.w,h:d.h||2,area:d.w*(d.h||2)};
+    const rec={w:d.w,h:d.h||2,area:d.w*(d.h||2),kind:kind||(isDoor?'door':'window')};
     // Offset along the parent wall from its A endpoint, so the electrical
     // engine knows where wall space breaks.
     const host=o.parentIdentifier&&wallById[o.parentIdentifier];
@@ -71,9 +84,27 @@ function _scanParseRoom(rawJson,label){
     }
     list.push(rec);
   };
-  (cr.doors||[]).forEach(o=>placeOpening(o,doors,true));
-  (cr.openings||[]).forEach(o=>placeOpening(o,doors,true)); // an archway breaks wall space like a door
-  (cr.windows||[]).forEach(o=>placeOpening(o,windows,false));
+  (cr.doors||[]).forEach(o=>placeOpening(o,doors,true,'door'));
+  // An archway breaks wall space exactly like a door, so it stays in the wall's
+  // door list for the NEC engine, but it is NOT a door and must never be drawn
+  // with a hinge leaf and a swing arc (owner 2026-08-10: "arches are rendering
+  // as squares"). kind carries the difference through to the plan.
+  (cr.openings||[]).forEach(o=>placeOpening(o,doors,true,'opening'));
+  (cr.windows||[]).forEach(o=>placeOpening(o,windows,false,'window'));
+  // Furniture and fixtures. RoomPlan detects these on every scan and we were
+  // throwing all of it away, so a scanned bathroom drew as an empty box with
+  // no toilet, tub, or vanity in it. Footprint only: center, size, and the
+  // angle it sits at, which is everything a plan symbol needs.
+  const objects=[];
+  (cr.objects||[]).forEach(o=>{
+    const m=_scanMat(o.transform),d=_scanDims(o.dimensions);
+    if(!m||!d.w)return;
+    const ux=m.col0.x,uz=m.col0.z;
+    const ln=Math.hypot(ux,uz)||1;
+    objects.push({cat:_scanObjCat(o.category),
+      cx:m.col3.x,cz:m.col3.z,w:d.w,d:d.d||d.w,
+      ux:ux/ln,uz:uz/ln});
+  });
   // Floor polygon: floors[0].polygonCorners (iOS 17) or the wall endpoints hull.
   let poly=null;
   const fl=(cr.floors||[])[0];
@@ -90,7 +121,7 @@ function _scanParseRoom(rawJson,label){
   const openM2=doors.reduce((t,o)=>t+o.area,0)+windows.reduce((t,o)=>t+o.area,0);
   const perimM=walls.reduce((t,w)=>t+w.len,0);
   const hM=walls.length?Math.max(...walls.map(w=>w.h)):2.44;
-  return {label:label||'Room',walls,poly,floorM2,wallM2,openM2,perimM,hM,
+  return {label:label||'Room',walls,poly,objects,floorM2,wallM2,openM2,perimM,hM,
           doorN:doors.length,winN:windows.length,winM2:windows.reduce((t,o)=>t+o.area,0)};
 }
 function _scanShoelace(poly){
@@ -285,6 +316,92 @@ function _scanHvacNumbers(room,opts){
   };
 }
 
+// ── Furniture and fixture plan symbols ───────────────────────────────────────
+// RoomPlan classifies what it sees (bed, sofa, toilet, stove...) and we drew
+// none of it, so a scanned bathroom came out as an empty rectangle. Every
+// symbol below is drawn to the plan convention for that piece, in the object's
+// OWN frame: the caller wraps this in a translate+rotate, so a sofa at 37
+// degrees is drawn at 37 degrees, not squared up to the page.
+//
+// Local frame: x runs along the object's width, y along its depth, the back
+// (the side that goes against a wall) at y = -hd. Everything is in svg units.
+const _SCAN_OBJ_SW='0.25';   // furniture reads LIGHTER than walls and openings
+function _scanObjSym(cat,sw,sd,ink){
+  const hw=sw/2,hd=sd/2,f=' fill="none" stroke="'+ink+'" stroke-width="'+_SCAN_OBJ_SW+'"';
+  const rect=(x,y,w,h,r)=>'<rect x="'+x.toFixed(2)+'" y="'+y.toFixed(2)+'" width="'+Math.max(0,w).toFixed(2)+'" height="'+Math.max(0,h).toFixed(2)+'"'+(r?' rx="'+r.toFixed(2)+'"':'')+f+'/>';
+  const line=(x1,y1,x2,y2)=>'<line x1="'+x1.toFixed(2)+'" y1="'+y1.toFixed(2)+'" x2="'+x2.toFixed(2)+'" y2="'+y2.toFixed(2)+'"'+f+'/>';
+  const circ=(x,y,r)=>'<circle cx="'+x.toFixed(2)+'" cy="'+y.toFixed(2)+'" r="'+Math.max(0.12,r).toFixed(2)+'"'+f+'/>';
+  const ell=(x,y,rx,ry)=>'<ellipse cx="'+x.toFixed(2)+'" cy="'+y.toFixed(2)+'" rx="'+Math.max(0.12,rx).toFixed(2)+'" ry="'+Math.max(0.12,ry).toFixed(2)+'"'+f+'/>';
+  const box=r=>rect(-hw,-hd,sw,sd,r);
+  // Below ~1.6 svg units the detail turns to mud, so tiny objects get the
+  // footprint alone. That is still more than the nothing they got before.
+  if(sw<1.6||sd<1.6)return box(0);
+  switch(cat){
+    case 'bed':
+      return box(sw*0.05)+
+        rect(-hw+sw*0.1,-hd+sd*0.05,sw*0.8,sd*0.18,sd*0.05)+   // pillow
+        line(-hw,-hd+sd*0.34,hw,-hd+sd*0.34);                   // turn-down fold
+    case 'sofa':
+      return box(sw*0.06)+
+        rect(-hw+sw*0.13,-hd+sd*0.26,sw*0.74,sd*0.6,sd*0.08)+   // seat cushions
+        line(0,-hd+sd*0.26,0,hd-sd*0.14);                       // cushion split
+    case 'chair':
+      return box(sw*0.12)+rect(-hw,-hd,sw,sd*0.2,sw*0.06);      // seat + back band
+    case 'table':
+      return box(sw*0.04)+rect(-hw+sw*0.1,-hd+sd*0.1,sw*0.8,sd*0.8,sw*0.03);
+    case 'refrigerator':
+      return box(0)+line(0,-hd,0,hd)+circ(-sw*0.06,hd-sd*0.2,sw*0.03)+circ(sw*0.06,hd-sd*0.2,sw*0.03);
+    case 'stove':
+      return box(0)+line(-hw,-hd+sd*0.22,hw,-hd+sd*0.22)+       // control strip
+        [[-1,-1],[1,-1],[-1,1],[1,1]].map(([a,b])=>circ(a*sw*0.22,sd*0.1+b*sd*0.2,Math.min(sw,sd)*0.11)).join('');
+    case 'oven':
+      return box(0)+rect(-hw+sw*0.1,-hd+sd*0.18,sw*0.8,sd*0.68,sw*0.03)+line(-hw+sw*0.2,hd-sd*0.08,hw-sw*0.2,hd-sd*0.08);
+    case 'dishwasher':
+      return box(0)+rect(-hw+sw*0.08,-hd+sd*0.08,sw*0.84,sd*0.84,sw*0.03)+line(-hw+sw*0.22,hd-sd*0.05,hw-sw*0.22,hd-sd*0.05);
+    case 'washerDryer':
+      // Side by side reads as a pair; a single deep box is one machine.
+      return box(0)+(sw>sd*1.5
+        ?circ(-sw*0.25,0,Math.min(sw*0.2,sd*0.3))+circ(sw*0.25,0,Math.min(sw*0.2,sd*0.3))
+        :circ(0,0,Math.min(sw,sd)*0.3));
+    case 'sink':
+      return box(0)+rect(-hw+sw*0.12,-hd+sd*0.22,sw*0.76,sd*0.6,sw*0.05)+circ(0,-hd+sd*0.12,Math.min(sw,sd)*0.06);
+    case 'toilet':
+      return rect(-sw*0.35,-hd,sw*0.7,sd*0.26,sw*0.04)+         // tank
+        ell(0,hd-sd*0.34,sw*0.34,sd*0.34);                       // bowl
+    case 'bathtub':
+      return box(Math.min(sw,sd)*0.12)+
+        rect(-hw+sw*0.06,-hd+sd*0.1,sw*0.88,sd*0.8,Math.min(sw,sd)*0.1)+
+        circ(-hw+sw*0.16,0,Math.min(sw,sd)*0.06);                // drain end
+    case 'television':
+      return box(0)+line(-sw*0.14,hd,sw*0.14,hd);                // stand foot
+    case 'fireplace':
+      return box(0)+rect(-hw+sw*0.16,-hd+sd*0.1,sw*0.68,sd*0.5,sw*0.03)+
+        '<path d="M '+(-sw*0.34).toFixed(2)+' '+hd.toFixed(2)+' A '+(sw*0.34).toFixed(2)+' '+(sd*0.34).toFixed(2)+' 0 0 0 '+(sw*0.34).toFixed(2)+' '+hd.toFixed(2)+'"'+f+'/>';
+    case 'stairs': {
+      let out=box(0),n=Math.max(2,Math.round(sd/Math.max(0.6,sd/8)));
+      for(let i=1;i<n;i++){const y=-hd+sd*i/n;out+=line(-hw,y,hw,y);}
+      out+=line(0,hd-sd*0.08,0,-hd+sd*0.08)+
+        '<path d="M 0 '+(-hd+sd*0.08).toFixed(2)+' l '+(sw*0.08).toFixed(2)+' '+(sd*0.1).toFixed(2)+' M 0 '+(-hd+sd*0.08).toFixed(2)+' l '+(-sw*0.08).toFixed(2)+' '+(sd*0.1).toFixed(2)+'"'+f+'/>';
+      return out;
+    }
+    case 'storage':
+      return box(0)+line(-hw,-hd,hw,hd);                         // casework diagonal
+    default:
+      return box(0);
+  }
+}
+// Every object in one room, placed and rotated on the plan.
+function _scanObjSvgFor(room,px,pz,k,ink){
+  let s='';
+  (room.objects||[]).forEach(ob=>{
+    if(!ob||!(ob.w>0))return;
+    const deg=Math.atan2(ob.uz||0,typeof ob.ux==='number'?ob.ux:1)*180/Math.PI;
+    s+='<g transform="translate('+px(ob.cx)+','+pz(ob.cz)+') rotate('+deg.toFixed(1)+')">'+
+       _scanObjSym(ob.cat,ob.w*k,(ob.d||ob.w)*k,ink)+'</g>';
+  });
+  return s;
+}
+
 // ── Floor plan SVG ───────────────────────────────────────────────────────────
 // Drawn to real drafting conventions (research 2026-08-09), because that is
 // what separates a professional plan from a toy one: walls as solid poché
@@ -315,6 +432,10 @@ function _scanPlanSvg(sc,opts){
   // so a single small room doesn't render cartoon-fat walls.
   const th=Math.max(0.9,Math.min(2.2,0.13*k));
   const ink='var(--text,#1a1a18)',bg='var(--bg,#fff)';
+  // Room names and dimensions now sit over drawn furniture, so every label
+  // carries a paper-colored halo behind the glyphs (paint-order draws the
+  // stroke first, then the fill on top of it) and stays readable.
+  const halo=' stroke="'+bg+'" stroke-width="1.1" paint-order="stroke" stroke-linejoin="round"';
   let s='<svg viewBox="0 0 100 '+vh+'" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg">';
   // 1. Room fills first (tappable when the caller wires roomClick).
   // roomFills tints rooms by ORIGINAL index (the proposal color-keys the
@@ -325,6 +446,9 @@ function _scanPlanSvg(sc,opts){
     s+='<polygon points="'+pts+'" fill="'+fill+'" stroke="none"'+
        (o.roomClick?' onclick="'+o.roomClick+'('+gidx[ri]+')" style="cursor:pointer"':'')+'/>';
   });
+  // 1b. Furniture and fixtures, UNDER the walls so the poché stays crisp where
+  // a bed or a vanity is pushed up against one.
+  rooms.forEach(r=>{s+=_scanObjSvgFor(r,px,pz,k,'var(--text2,#5f5e5a)');});
   // 2. Walls as solid poché segments; square caps close the corners.
   rooms.forEach(r=>(r.walls||[]).forEach(w=>{
     s+='<line x1="'+px(w.ax)+'" y1="'+pz(w.az)+'" x2="'+px(w.bx)+'" y2="'+pz(w.bz)+'" stroke="'+ink+'" stroke-width="'+th.toFixed(2)+'" stroke-linecap="square"/>';
@@ -347,6 +471,19 @@ function _scanPlanSvg(sc,opts){
         if(typeof d.off!=='number'||!d.w)return;
         const d0=Math.max(0,Math.min(w.len-d.w,d.off-d.w/2)),d1=d0+d.w;
         punch(d0,d1);
+        if(d.kind==='opening'){
+          // A cased opening / archway: the wall stops, the jambs cap the ends,
+          // and a DASHED line spans the gap for the header above the cut plane.
+          // No leaf, no swing arc, because there is no door to swing. Drawing
+          // one is what made every archway read as a square door.
+          const[a1,b1]=at(d0),[a2,b2]=at(d1);
+          const jx=nx*(th/k)/2,jz=nz*(th/k)/2;
+          [[a1,b1],[a2,b2]].forEach(([qx,qz])=>{
+            s+='<line x1="'+px(qx-jx)+'" y1="'+pz(qz-jz)+'" x2="'+px(qx+jx)+'" y2="'+pz(qz+jz)+'" stroke="'+ink+'" stroke-width="0.35"/>';
+          });
+          s+='<line x1="'+px(a1)+'" y1="'+pz(b1)+'" x2="'+px(a2)+'" y2="'+pz(b2)+'" stroke="'+ink+'" stroke-width="0.22" stroke-dasharray="1.2 0.9"/>';
+          return;
+        }
         // Hinge at d0: thin leaf into the room + quarter swing arc back to d1.
         // The sweep flag must put the arc's CENTER at the hinge so it bows
         // INTO the room (owner review 2026-08-09 vs reference plans: the old
@@ -388,7 +525,7 @@ function _scanPlanSvg(sc,opts){
       let nx=-uz,nz=ux;
       if(nx*(cx0-mx)+nz*(cz0-mz)>0){nx=-nx;nz=-nz;}   // away from the room
       const off=(th+2.0)/k;
-      s+='<text x="'+px(mx+nx*off)+'" y="'+(pz(mz+nz*off)+0.9)+'" font-size="2.5" fill="var(--text3,#6a6963)" text-anchor="middle">'+_scanFtIn(w.len)+'</text>';
+      s+='<text x="'+px(mx+nx*off)+'" y="'+(pz(mz+nz*off)+0.9)+'" font-size="2.5" fill="var(--text3,#6a6963)" text-anchor="middle"'+halo+'>'+_scanFtIn(w.len)+'</text>';
     });
   });
   // 5. Labels: name + the billing number (wall sq ft leads, owner 2026-08-09).
@@ -396,8 +533,8 @@ function _scanPlanSvg(sc,opts){
     const cx=(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
     const cz=(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
     const g=o.roomClick?'<g onclick="'+o.roomClick+'('+gidx[ri]+')" style="cursor:pointer">':'<g>';
-    s+=g+'<text x="'+px(cx)+'" y="'+(pz(cz)-1.6)+'" font-size="3.2" font-weight="700" fill="'+ink+'" text-anchor="middle">'+escHtml(r.label||'Room')+'</text>'+
-      '<text x="'+px(cx)+'" y="'+(pz(cz)+2.2)+'" font-size="2.8" fill="var(--text2,#5f5e5a)" text-anchor="middle">'+Math.round(_scanSqFt(r.wallM2))+' wall sq ft</text></g>';
+    s+=g+'<text x="'+px(cx)+'" y="'+(pz(cz)-1.6)+'" font-size="3.2" font-weight="700" fill="'+ink+'" text-anchor="middle"'+halo+'>'+escHtml(r.label||'Room')+'</text>'+
+      '<text x="'+px(cx)+'" y="'+(pz(cz)+2.2)+'" font-size="2.8" fill="var(--text2,#5f5e5a)" text-anchor="middle"'+halo+'>'+Math.round(_scanSqFt(r.wallM2))+' wall sq ft</text></g>';
     if(lens==='electrical'){
       _scanOutletPlan(r).forEach(m=>{
         s+='<circle cx="'+px(m.x)+'" cy="'+pz(m.z)+'" r="1.1" fill="#D97706" stroke="#fff" stroke-width="0.3"/>';
