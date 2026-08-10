@@ -319,6 +319,11 @@ test.describe('drive', () => {
     window.__realCap = window.Capacitor;
     window.__started = [];
     window.__handoff = [];
+    // Stub the handoff so a test never actually navigates the page, and SAVE
+    // the real one. Leaving the stub installed is what broke the Google-link
+    // test further down the file: it called openTripInMaps and got the stub,
+    // which never touches window.open, so the URL came back empty.
+    if (!window.__realOpenTripInMaps) window.__realOpenTripInMaps = window.openTripInMaps;
     window.openTripInMaps = (app, from, to) => { window.__handoff.push(app); };
     if (isNative) {
       window.Capacitor = {
@@ -341,69 +346,90 @@ test.describe('drive', () => {
   const closeTripSheet = () => page.evaluate(() => {
     document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
     window.Capacitor = window.__realCap;
+    // Put the real handoff back, or every later test in this file inherits the
+    // stub and silently measures nothing.
+    if (window.__realOpenTripInMaps) window.openTripInMaps = window.__realOpenTripInMaps;
   });
 
-  test('the trip sheet offers three familiar choices, not a branded fourth', async () => {
+  // Owner call (2026-08-10): "only show Apple Maps on Apple devices and give a
+  // none option for back completing mileage, then Google on android devices and
+  // desktops." Offering a map the device cannot open is a button that does
+  // nothing, and a third choice nobody on that device would pick is just
+  // something to mis-tap.
+  test('the sheet shows one map, the one this device has, plus None', async () => {
     await openTripSheet(true);
     await page.waitForTimeout(200);
     const r = await page.evaluate(() => ({
       branded: !!document.getElementById('lm-map-td'),
       chips: ['apple', 'google', 'none'].filter(k => !!document.getElementById('lm-map-' + k)),
+      expected: _tripMapForDevice(),
       none: (document.getElementById('lm-map-none') || {}).textContent || '',
+      selected: (document.getElementById('lm-map-app') || {}).value,
     }));
     await closeTripSheet();
     expect(r.branded, 'nothing here asks a contractor to learn a new word').toBe(false);
-    expect(r.chips).toEqual(['apple', 'google', 'none']);
-    expect(r.none, 'None stays, for a trip somebody is only recording').toMatch(/None/);
+    expect(r.chips, 'exactly two buttons: this device\'s map, and None')
+      .toEqual([r.expected, 'none']);
+    expect(r.none, 'None is how you back-fill a trip from last week').toMatch(/None/);
+    expect(r.selected, 'and the one map shown is already picked').toBe(r.expected);
   });
 
-  test('the sheet reads the device and preselects for it', async () => {
-    // The preselect is by user agent, so drive it the same way the app does.
-    const pick = (ua) => page.evaluate((agent) =>
-      /iPhone|iPad|iPod/i.test(agent) ? 'apple' : 'google', ua);
-    expect(await pick('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)')).toBe('apple');
-    expect(await pick('Mozilla/5.0 (Linux; Android 14; Pixel 8)')).toBe('google');
-    // Owner 2026-08-10: a desktop CAN hand off, Google Maps is a web app. A
-    // contractor pricing work at the office should not have to pick every time.
-    expect(await pick('Mozilla/5.0 (Windows NT 10.0; Win64; x64)')).toBe('google');
-    expect(await pick('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)')).toBe('google');
-    // And the real sheet honours whatever that resolves to on this runner.
+  test('the map a device cannot open is never offered', async () => {
     await openTripSheet(false);
     await page.waitForTimeout(200);
     const r = await page.evaluate(() => {
-      const want = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'apple' : 'google';
-      return { want, got: (document.getElementById('lm-map-app') || {}).value };
+      const apple = _tripMapForDevice() === 'apple';
+      return {
+        apple,
+        hasApple: !!document.getElementById('lm-map-apple'),
+        hasGoogle: !!document.getElementById('lm-map-google'),
+      };
     });
     await closeTripSheet();
-    expect(r.got, 'the sheet answers its own question from the device').toBe(r.want);
+    if (r.apple) {
+      expect(r.hasGoogle, 'an iPhone is not offered Google').toBe(false);
+      expect(r.hasApple).toBe(true);
+    } else {
+      // maps:// is an Apple URL scheme: on Android, Windows or Linux it opens
+      // nothing at all, so the button must not exist there.
+      expect(r.hasApple, 'a dead URL scheme is never rendered as a button').toBe(false);
+      expect(r.hasGoogle).toBe(true);
+    }
   });
 
-  // maps:// is an Apple URL scheme: it opens Maps on an iPhone or a Mac and
-  // does nothing whatsoever on Windows or Linux. Picking Apple there used to be
-  // a button that silently failed.
-  test('every handoff actually goes somewhere, on every platform', async () => {
+  // One definition of which map a device has, shared by the chooser and the
+  // preselect, so the button on screen and the link behind it can never
+  // disagree. Phone gets Apple, desk gets Google: a rule that fits in a head.
+  test('the device rule is one function, and it is the obvious one', async () => {
+    const pick = (ua) => page.evaluate((agent) => {
+      const real = navigator.userAgent;
+      Object.defineProperty(navigator, 'userAgent', { value: agent, configurable: true });
+      try { return _tripMapForDevice(); }
+      finally { Object.defineProperty(navigator, 'userAgent', { value: real, configurable: true }); }
+    }, ua);
+    expect(await pick('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)')).toBe('apple');
+    expect(await pick('Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)')).toBe('apple');
+    expect(await pick('Mozilla/5.0 (Linux; Android 14; Pixel 8)')).toBe('google');
+    expect(await pick('Mozilla/5.0 (Windows NT 10.0; Win64; x64)')).toBe('google');
+    expect(await pick('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'),
+      'a Mac is a desk, and desks get Google').toBe('google');
+  });
+
+  test('the Google handoff is a real web link that opens anywhere', async () => {
     const r = await page.evaluate(() => {
       const realOpen = window.open;
       const opened = [];
       window.open = (u) => { opened.push(u); return null; };
+      // Explicitly the REAL builder, never a stub another test left behind.
+      const fn = window.__realOpenTripInMaps || window.openTripInMaps;
       try {
-        openTripInMaps('google', '2015 SW Randolph Ave', '12 Oak St');
-        const google = opened[0] || '';
-        opened.length = 0;
-        // On this runner (not an Apple platform) the Apple choice must use the
-        // web app rather than the scheme.
-        const isApplePlatform = /iPhone|iPad|iPod|Macintosh|Mac OS X/i.test(navigator.userAgent);
-        openTripInMaps('apple', '', '12 Oak St');
-        return { google, isApplePlatform, appleWeb: opened[0] || '' };
+        fn('google', '2015 SW Randolph Ave', '12 Oak St');
+        return opened[0] || '';
       } finally { window.open = realOpen; }
     });
-    expect(r.google, 'Google is a plain web link, so it opens on any desktop')
+    expect(r, 'a plain web link, so a desktop can actually follow it')
       .toMatch(/^https:\/\/www\.google\.com\/maps\/dir\/\?api=1/);
-    expect(r.google, 'and it carries both ends of the trip').toMatch(/origin=.*destination=/);
-    if (!r.isApplePlatform) {
-      expect(r.appleWeb, 'Apple Maps has a web app; use it where the scheme is dead')
-        .toMatch(/^https:\/\/maps\.apple\.com\//);
-    }
+    expect(r, 'and it carries both ends of the trip').toMatch(/origin=.*destination=/);
   });
 
   test('in the app, Save trip drives on Apple Maps without leaving', async () => {
@@ -413,7 +439,7 @@ test.describe('drive', () => {
       const realResolve = window._resolveCoords;
       window._resolveCoords = async () => ({ lat: 41.532, lng: -88.095 });
       try {
-        _selectTripMapApp('apple');
+        _selectTripMapApp('apple');   // in-app drive is the Apple path
         document.getElementById('lm-to').value = '12 Oak St, Joliet IL';
         const sel = document.getElementById('lm-trip-type-sel');
         const first = [...sel.querySelectorAll('option')].map(o => o.value).filter(Boolean)[0];
@@ -430,11 +456,13 @@ test.describe('drive', () => {
     expect(r.handoff, 'and it never leaves the app to do it').toEqual([]);
   });
 
-  test('in a browser the same choice opens the Maps app, as it always did', async () => {
+  test('in a browser the same choice hands off, as it always did', async () => {
     await openTripSheet(false);
     await page.waitForTimeout(200);
     const r = await page.evaluate(async () => {
-      _selectTripMapApp('apple');
+      // Whichever map this runner is offered: the point is that a browser
+      // hands off rather than pretending to navigate.
+      _selectTripMapApp(_tripMapForDevice());
       document.getElementById('lm-to').value = '12 Oak St, Joliet IL';
       const sel = document.getElementById('lm-trip-type-sel');
       const first = [...sel.querySelectorAll('option')].map(o => o.value).filter(Boolean)[0];
@@ -446,7 +474,7 @@ test.describe('drive', () => {
     });
     await closeTripSheet();
     expect(r.started, 'no plugin here, so nothing pretends to navigate').toBe(0);
-    expect(r.handoff, 'Apple Maps still means Apple Maps').toEqual(['apple']);
+    expect(r.handoff.length, 'the map it offered is the map it opens').toBe(1);
   });
 
   test('None saves the trip and navigates nothing', async () => {

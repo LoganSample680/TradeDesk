@@ -1564,24 +1564,26 @@ function openLogTripModal(opts){
       '<button type="button" onclick="calculateAndShowRoute()" style="background:none;border:none;color:var(--blue);font-size:12px;font-weight:600;cursor:pointer;padding:0">↺ Recalculate</button>'+
     '</div>'+
     '<input type="hidden" id="lm-map-app" value="">'+
-    // THREE CHOICES, NOT FOUR (owner call 2026-08-09: "don't love drive in
-    // tradedesk, it should be smart enough to see the phone, then based on
-    // iPhone it preselects Apple Maps, then you click save trip to start, none
-    // is nice in case you need to manually add").
+    // ONE MAP AND NONE (owner call 2026-08-10: "only show Apple Maps on Apple
+    // devices and give a none option for back completing mileage, then Google
+    // on android devices and desktops").
     //
-    // A branded fourth option made the contractor learn a new word for
-    // something they already have a word for. So the sheet asks the only
-    // question that matters, which map, and answers it itself from the device.
-    // What "Apple Maps" MEANS then depends on what the phone can do: in the
-    // app it is our own full-screen Apple Maps drive (js/drive.js), in a
-    // browser it opens the Maps app. Same promise, best available version of
-    // it, and nothing new to learn either way.
+    // Offering a contractor a map their device cannot open is a button that
+    // does nothing, and a third choice nobody on that device would ever pick
+    // is just something to mis-tap. So the sheet shows the one map this device
+    // actually has, already selected, plus None for a trip somebody is
+    // back-filling a week later. Save trip is the start button.
+    //
+    // What "Apple Maps" MEANS still varies invisibly: in the app it is our own
+    // full-screen Apple Maps drive (js/drive.js), in Safari it opens the Maps
+    // app. Same promise, best available version of it.
     (!opts.editId?
       '<div class="f" style="margin-bottom:14px">'+
         '<label style="margin-bottom:6px;display:block">Navigate after saving <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
         '<div style="display:flex;gap:8px">'+
-          '<button type="button" id="lm-map-apple" onclick="_selectTripMapApp(\'apple\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:42px"> Apple Maps</button>'+
-          '<button type="button" id="lm-map-google" onclick="_selectTripMapApp(\'google\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:42px"> Google Maps</button>'+
+          (_tripMapForDevice()==='apple'
+            ?'<button type="button" id="lm-map-apple" onclick="_selectTripMapApp(\'apple\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:42px"> Apple Maps</button>'
+            :'<button type="button" id="lm-map-google" onclick="_selectTripMapApp(\'google\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:42px"> Google Maps</button>')+
           '<button type="button" id="lm-map-none" onclick="_selectTripMapApp(\'\')" class="btn" style="flex:1;font-size:13px;min-height:42px;color:var(--text3)">None</button>'+
         '</div>'+
       '</div>':'')+
@@ -1597,15 +1599,9 @@ function openLogTripModal(opts){
   document.body.appendChild(overlay);
   // Auto-select map app based on device (skip in edit mode)
   if(!opts.editId){
-    // Read the device and preselect. iPhone gets Apple Maps, and everything
-    // else gets Google, because Google's handoff is a plain web link that
-    // opens in a tab on any desktop, Windows, Mac or Linux (owner 2026-08-10:
-    // "desktop could hand off to Google right?"). A contractor pricing work at
-    // the office is a real case, and leaving it preselected on nothing made
-    // them pick every time. None is still one tap away for a trip somebody is
-    // only recording after the fact.
-    const _ua=navigator.userAgent||'';
-    const _defMap=/iPhone|iPad|iPod/i.test(_ua)?'apple':'google';
+    // The one map this device has is also the one already selected, so the
+    // common trip is Save and go.
+    const _defMap=_tripMapForDevice();
     if(_defMap)setTimeout(()=>_selectTripMapApp(_defMap),50);
     // Auto-grab GPS for starting location if not pre-filled
     if(!opts.fromAddress)setTimeout(()=>grabMyLocation(false),300);
@@ -1706,19 +1702,26 @@ async function calculateAndShowRoute(){
     zAlert(e.message+'\n\nTip: Try typing the city and state, or pick from the search suggestions.',{title:'Could not calculate route'});
   }finally{if(btn){btn.disabled=false;btn.innerHTML=svgIcon('🗺',{size:12})+' Calculate miles';}}
 }
+// WHICH MAP THIS DEVICE ACTUALLY HAS. One definition, used by both the chooser
+// and the preselect, so the button on screen and the link behind it can never
+// disagree.
+//
+// iPhone and iPad get Apple Maps: maps:// is an Apple URL scheme and opens the
+// real app there. Everything else, Android, Windows, Linux, and a Mac at the
+// desk, gets Google, whose handoff is a plain google.com/maps web link that
+// opens in a tab anywhere. A Mac could technically take the scheme too; it is
+// grouped with the desktops on purpose (owner 2026-08-10), because "phone gets
+// Apple, desk gets Google" is a rule a contractor can hold in their head.
+function _tripMapForDevice(){
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent||'')?'apple':'google';
+}
 function openTripInMaps(which,from,to){
   if(!to||!which)return;
   const enc=s=>encodeURIComponent(s);
   if(which==='apple'){
-    // maps:// is an Apple URL SCHEME: it opens Maps on an iPhone or a Mac and
-    // does nothing at all on Windows or Linux, so picking Apple there used to
-    // be a button that silently failed. Apple Maps has a real web app now, so
-    // anywhere the scheme cannot work, use it. (On iOS the https link
-    // redirects into the Maps app anyway, so this stays a one-line branch
-    // rather than a behaviour change for the phones.)
-    const applePlatform=/iPhone|iPad|iPod|Macintosh|Mac OS X/i.test(navigator.userAgent||'');
-    if(applePlatform)window.location.href='maps://?daddr='+enc(to)+'&dirflg=d';
-    else window.open('https://maps.apple.com/?daddr='+enc(to)+'&dirflg=d','_blank');
+    // Only ever reached on an iPhone or iPad, because that is the only place
+    // the Apple button is rendered, so the scheme is always the right call.
+    window.location.href='maps://?daddr='+enc(to)+'&dirflg=d';
   } else if(which==='google'){
     window.open('https://www.google.com/maps/dir/?api=1'+(from?'&origin='+enc(from):'')+'&destination='+enc(to)+'&travelmode=driving','_blank');
   }
