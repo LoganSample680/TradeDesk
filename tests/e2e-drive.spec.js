@@ -357,25 +357,53 @@ test.describe('drive', () => {
     expect(r.none, 'None stays, for a trip somebody is only recording').toMatch(/None/);
   });
 
-  test('the sheet reads the phone and preselects for it', async () => {
+  test('the sheet reads the device and preselects for it', async () => {
     // The preselect is by user agent, so drive it the same way the app does.
-    const pick = (ua) => page.evaluate((agent) => {
-      const _ua = agent;
-      return /iPhone|iPad|iPod/i.test(_ua) ? 'apple' : /Android/i.test(_ua) ? 'google' : '';
-    }, ua);
+    const pick = (ua) => page.evaluate((agent) =>
+      /iPhone|iPad|iPod/i.test(agent) ? 'apple' : 'google', ua);
     expect(await pick('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)')).toBe('apple');
     expect(await pick('Mozilla/5.0 (Linux; Android 14; Pixel 8)')).toBe('google');
-    expect(await pick('Mozilla/5.0 (X11; Linux x86_64)'), 'a desktop has no map app to hand off to').toBe('');
+    // Owner 2026-08-10: a desktop CAN hand off, Google Maps is a web app. A
+    // contractor pricing work at the office should not have to pick every time.
+    expect(await pick('Mozilla/5.0 (Windows NT 10.0; Win64; x64)')).toBe('google');
+    expect(await pick('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)')).toBe('google');
     // And the real sheet honours whatever that resolves to on this runner.
     await openTripSheet(false);
     await page.waitForTimeout(200);
     const r = await page.evaluate(() => {
-      const want = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'apple'
-                 : /Android/i.test(navigator.userAgent) ? 'google' : '';
+      const want = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'apple' : 'google';
       return { want, got: (document.getElementById('lm-map-app') || {}).value };
     });
     await closeTripSheet();
     expect(r.got, 'the sheet answers its own question from the device').toBe(r.want);
+  });
+
+  // maps:// is an Apple URL scheme: it opens Maps on an iPhone or a Mac and
+  // does nothing whatsoever on Windows or Linux. Picking Apple there used to be
+  // a button that silently failed.
+  test('every handoff actually goes somewhere, on every platform', async () => {
+    const r = await page.evaluate(() => {
+      const realOpen = window.open;
+      const opened = [];
+      window.open = (u) => { opened.push(u); return null; };
+      try {
+        openTripInMaps('google', '2015 SW Randolph Ave', '12 Oak St');
+        const google = opened[0] || '';
+        opened.length = 0;
+        // On this runner (not an Apple platform) the Apple choice must use the
+        // web app rather than the scheme.
+        const isApplePlatform = /iPhone|iPad|iPod|Macintosh|Mac OS X/i.test(navigator.userAgent);
+        openTripInMaps('apple', '', '12 Oak St');
+        return { google, isApplePlatform, appleWeb: opened[0] || '' };
+      } finally { window.open = realOpen; }
+    });
+    expect(r.google, 'Google is a plain web link, so it opens on any desktop')
+      .toMatch(/^https:\/\/www\.google\.com\/maps\/dir\/\?api=1/);
+    expect(r.google, 'and it carries both ends of the trip').toMatch(/origin=.*destination=/);
+    if (!r.isApplePlatform) {
+      expect(r.appleWeb, 'Apple Maps has a web app; use it where the scheme is dead')
+        .toMatch(/^https:\/\/maps\.apple\.com\//);
+    }
   });
 
   test('in the app, Save trip drives on Apple Maps without leaving', async () => {

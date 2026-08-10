@@ -1597,12 +1597,15 @@ function openLogTripModal(opts){
   document.body.appendChild(overlay);
   // Auto-select map app based on device (skip in edit mode)
   if(!opts.editId){
-    // Read the phone and preselect. An iPhone gets Apple Maps, an Android gets
-    // Google, and a desktop gets nothing preselected because there is no map
-    // app to hand off to. None stays one tap away for a trip somebody is just
-    // recording after the fact.
+    // Read the device and preselect. iPhone gets Apple Maps, and everything
+    // else gets Google, because Google's handoff is a plain web link that
+    // opens in a tab on any desktop, Windows, Mac or Linux (owner 2026-08-10:
+    // "desktop could hand off to Google right?"). A contractor pricing work at
+    // the office is a real case, and leaving it preselected on nothing made
+    // them pick every time. None is still one tap away for a trip somebody is
+    // only recording after the fact.
     const _ua=navigator.userAgent||'';
-    const _defMap=/iPhone|iPad|iPod/i.test(_ua)?'apple':/Android/i.test(_ua)?'google':'';
+    const _defMap=/iPhone|iPad|iPod/i.test(_ua)?'apple':'google';
     if(_defMap)setTimeout(()=>_selectTripMapApp(_defMap),50);
     // Auto-grab GPS for starting location if not pre-filled
     if(!opts.fromAddress)setTimeout(()=>grabMyLocation(false),300);
@@ -1707,7 +1710,15 @@ function openTripInMaps(which,from,to){
   if(!to||!which)return;
   const enc=s=>encodeURIComponent(s);
   if(which==='apple'){
-    window.location.href='maps://?daddr='+enc(to)+'&dirflg=d';
+    // maps:// is an Apple URL SCHEME: it opens Maps on an iPhone or a Mac and
+    // does nothing at all on Windows or Linux, so picking Apple there used to
+    // be a button that silently failed. Apple Maps has a real web app now, so
+    // anywhere the scheme cannot work, use it. (On iOS the https link
+    // redirects into the Maps app anyway, so this stays a one-line branch
+    // rather than a behaviour change for the phones.)
+    const applePlatform=/iPhone|iPad|iPod|Macintosh|Mac OS X/i.test(navigator.userAgent||'');
+    if(applePlatform)window.location.href='maps://?daddr='+enc(to)+'&dirflg=d';
+    else window.open('https://maps.apple.com/?daddr='+enc(to)+'&dirflg=d','_blank');
   } else if(which==='google'){
     window.open('https://www.google.com/maps/dir/?api=1'+(from?'&origin='+enc(from):'')+'&destination='+enc(to)+'&travelmode=driving','_blank');
   }
