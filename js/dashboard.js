@@ -778,7 +778,50 @@ function renderDash(){
   renderContractsDash&&renderContractsDash();
 
   setTimeout(()=>{_applyDashOrder(_getDashWidgetOrder());if(typeof _initDashDrag==='function')_initDashDrag();_applyKpiOrder();if(typeof _initKpiDrag==='function')_initKpiDrag();},0);
+  _dashApplySkeletons();
   }finally{_renderDashRunning=false;}
+}
+
+// ── One clean boot (owner 2026-08-10) ────────────────────────────────────────
+// "Dashboard load, shimmer skeleton always, then everything loads in nicely."
+// Until the FIRST cloud sync of this page load lands, every dashboard card
+// shows the shared shimmer instead of stale or zero numbers; when the sync
+// settles (_bootSyncSettled in cloud.js) the real content renders and the one
+// boot cascade pours over it. A 15 s failsafe ends the shimmer even if the
+// sync wedges, stale data beats an eternal skeleton.
+function _dashSkelMode(){
+  // _bootSyncPending is set ONLY where a signed-in boot awaits its first
+  // cloud load (cloud.js). Gating on it (never on _supaCloudLoaded, which
+  // legitimately stays false on accountless/offline/test boots) means those
+  // boots render normally instead of shimmering into the failsafe.
+  return !!window._bootSyncPending&&!window._bootSkelDone;
+}
+function _dashApplySkeletons(){
+  if(!_dashSkelMode())return;
+  if(!window._bootSkelTimer){
+    window._bootSkelTimer=setTimeout(()=>{if(typeof _bootSyncSettled==='function')_bootSyncSettled();},15000);
+  }
+  // NON-DESTRUCTIVE overlay: widgets carry static markup (quick-actions grid,
+  // card shells) that renderDash writes INTO but never rebuilds, so wiping
+  // innerHTML would gut the dashboard permanently. Instead each widget gets a
+  // removable .td-boot-skel card appended and a class that hides its real
+  // children (CSS rule next to .td-skel in index.html).
+  document.querySelectorAll('#dash-widget-root>.td-dw').forEach(el=>{
+    if(el.querySelector(':scope>.td-boot-skel'))return;
+    const h=el.offsetHeight;
+    if(!h)return; // empty/hidden conditional widgets stay collapsed, no phantom card
+    const sk=document.createElement('div');
+    sk.className='td-boot-skel card';
+    sk.innerHTML=(typeof _tdSkelRows==='function')?_tdSkelRows(Math.max(2,Math.min(5,Math.round(h/46)))):'';
+    el.classList.add('td-boot-skel-on');
+    el.appendChild(sk);
+  });
+}
+function _dashClearSkeletons(){
+  document.querySelectorAll('#dash-widget-root>.td-dw.td-boot-skel-on').forEach(el=>{
+    el.classList.remove('td-boot-skel-on');
+    el.querySelectorAll(':scope>.td-boot-skel').forEach(s=>s.remove());
+  });
 }
 
 // ── Employee status updates from daily view ───────────────────────────────────

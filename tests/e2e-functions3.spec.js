@@ -1136,6 +1136,149 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(r.keptOnPending).toBe(true);   // reload already executing → overlay held
   });
 
+  // ── One clean boot (owner 2026-08-10) ─────────────────────────────────────
+  // "Dashboard load, shimmer skeleton always, then everything loads in nicely."
+  // Until the FIRST cloud sync of a signed-in page load lands, every visible
+  // dashboard widget hides its real content behind an appended .td-boot-skel
+  // shimmer card; _bootSyncSettled removes them in one swap, re-renders, and
+  // pours the one boot cascade. Non-destructive: static widget markup (the
+  // quick-actions grid) must survive the swap untouched.
+  test('boot skeletons: shimmer overlays every visible widget, statics survive the swap', async () => {
+    const r = await page.evaluate(() => {
+      const savedTimer = window._bootSkelTimer;
+      try {
+        window._bootSyncPending = true; window._bootSkelDone = false; window._bootSkelTimer = null;
+        window._bootCascadeRan = false; window._sboT0 = 0;
+        document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+        document.getElementById('pg-dash').classList.add('active');
+        const before = document.querySelectorAll('#dash-quick .qa').length;
+        _dashApplySkeletons();
+        const skels = document.querySelectorAll('#dash-widget-root>.td-dw>.td-boot-skel').length;
+        const on = document.querySelectorAll('#dash-widget-root>.td-dw.td-boot-skel-on').length;
+        const quickHidden = getComputedStyle(document.getElementById('dash-quick')).display === 'none';
+        const shimmer = document.querySelectorAll('#dash-widget-root .td-boot-skel .td-skel').length;
+        const modeOn = _dashSkelMode();
+        const timerArmed = !!window._bootSkelTimer;
+        // The settle: one swap back to real content + the cascade pours.
+        _bootSyncSettled();
+        const after = {
+          skels: document.querySelectorAll('#dash-widget-root .td-boot-skel').length,
+          on: document.querySelectorAll('#dash-widget-root>.td-dw.td-boot-skel-on').length,
+          qas: document.querySelectorAll('#dash-quick .qa').length,
+          quickVisible: getComputedStyle(document.getElementById('dash-quick')).display !== 'none',
+          cascade: document.getElementById('pg-dash').classList.contains('boot-cascade'),
+          modeOff: !_dashSkelMode(),
+        };
+        _bootSyncSettled(); // idempotent: a late sync or the failsafe re-firing is a no-op
+        return { before, skels, on, quickHidden, shimmer, modeOn, timerArmed, after };
+      } finally {
+        window._bootSyncPending = false; window._bootSkelDone = true;
+        try { clearTimeout(window._bootSkelTimer); } catch (e) {}
+        window._bootSkelTimer = savedTimer;
+      }
+    });
+    expect(r.modeOn).toBe(true);                 // boot sync in flight = skel mode
+    expect(r.skels).toBeGreaterThanOrEqual(3);   // every visible widget shimmer-covered
+    expect(r.on).toBe(r.skels);                  // hide-class rides with each overlay
+    expect(r.quickHidden).toBe(true);            // real content hidden, never destroyed
+    expect(r.shimmer).toBeGreaterThanOrEqual(6); // actual .td-skel bands render
+    expect(r.timerArmed).toBe(true);             // 15s failsafe armed against a wedged sync
+    expect(r.after.skels).toBe(0);               // one swap: overlays gone
+    expect(r.after.on).toBe(0);
+    expect(r.after.qas).toBe(r.before);          // static quick actions intact after the swap
+    expect(r.after.quickVisible).toBe(true);
+    expect(r.after.cascade).toBe(true);          // the pour rides the settle
+    expect(r.after.modeOff).toBe(true);
+    await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 6000 });
+  });
+
+  // While skeletons are up the overlay lift must NOT pour the cascade over
+  // shimmer bars: the pour belongs to the sync settle, one pour, real content.
+  test('boot cascade waits for the sync settle while skeletons are up', async () => {
+    const r = await page.evaluate(() => {
+      try {
+        window._bootSyncPending = true; window._bootSkelDone = false;
+        window._bootCascadeRan = false; window._sboT0 = 0;
+        document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+        document.getElementById('supa-boot-overlay')?.remove();
+        const o = document.createElement('div');
+        o.id = 'supa-boot-overlay';
+        document.body.appendChild(o);
+        document.getElementById('pg-dash').classList.add('active');
+        _removeBootOverlay();
+        const heldForSync = !document.getElementById('pg-dash').classList.contains('boot-cascade');
+        _bootSyncSettled();
+        const poursOnSettle = document.getElementById('pg-dash').classList.contains('boot-cascade');
+        return { heldForSync, poursOnSettle };
+      } finally {
+        window._bootSyncPending = false; window._bootSkelDone = true;
+        document.getElementById('supa-boot-overlay')?.remove();
+      }
+    });
+    expect(r.heldForSync).toBe(true);   // overlay lifted onto shimmer, no premature pour
+    expect(r.poursOnSettle).toBe(true); // the settle pours over the real content
+    await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 6000 });
+  });
+
+  // The blue "Syncing..." pill retired (owner 2026-08-10): the skeleton shimmer
+  // IS the syncing signal now. Only the amber offline state still banners.
+  test('offline banner: syncing state shows nothing, offline state still banners amber', async () => {
+    const r = await page.evaluate(() => {
+      let b = document.getElementById('offline-banner');
+      const made = !b;
+      if (!b) { b = document.createElement('div'); b.id = 'offline-banner'; b.style.cssText = 'position:fixed;left:-9999px'; document.body.appendChild(b); }
+      b.textContent = ''; b.style.opacity = '0';
+      _showOfflineBanner(true);
+      const syncing = { text: b.textContent, opacity: b.style.opacity };
+      _showOfflineBanner(false);
+      const offline = { text: b.textContent, opacity: b.style.opacity };
+      _hideOfflineBanner();
+      if (made) b.remove();
+      return { syncing, offline };
+    });
+    expect(r.syncing.text).not.toContain('Syncing'); // no blue pill content
+    expect(r.syncing.opacity).toBe('0');             // and it never shows
+    expect(r.offline.text).toContain('Offline');     // amber offline state still real
+    expect(r.offline.opacity).toBe('1');
+  });
+
+  // Owner 2026-08-10: "continue with apple isn't showing any toasts." The login
+  // screen is a full-screen overlay that renders ABOVE toasts, so a failure has
+  // to land on the login screen's own #supa-login-err line to be seen at all.
+  test('Apple sign-in failure writes onto the login screen error line', async () => {
+    const r = await page.evaluate(async () => {
+      const savedCap = window.Capacitor, savedNative = window._obNativeApple, savedCE = console.error;
+      const errEl = document.createElement('div');
+      errEl.id = 'supa-login-err'; errEl.style.cssText = 'position:fixed;left:-9999px';
+      document.body.appendChild(errEl);
+      try {
+        console.error = () => {}; // the path intentionally logs; keep the shard's capture clean
+        window.Capacitor = { isNativePlatform: () => true };
+        window._obNativeApple = () => Promise.reject(new Error('AKAuthenticationError -7026'));
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 60));
+        const failText = errEl.textContent;
+        errEl.textContent = '';
+        window._obNativeApple = () => Promise.resolve(false); // plugin missing in this shell build
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 60));
+        const staleText = errEl.textContent;
+        errEl.textContent = '';
+        window._obNativeApple = () => Promise.reject(new Error('user cancelled, code 1001'));
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 60));
+        const cancelText = errEl.textContent;
+        return { failText, staleText, cancelText };
+      } finally {
+        console.error = savedCE; window.Capacitor = savedCap; window._obNativeApple = savedNative;
+        errEl.remove();
+      }
+    });
+    expect(r.failText).toContain('Apple sign-in error: AKAuthenticationError -7026');
+    expect(r.staleText).toContain('Update TradeDesk Beta in TestFlight');
+    expect(r.cancelText).toBe(''); // user-cancelled sheets stay quiet
+  });
+
   // §8.4 popup entrance: every .zmodal card must ride the td-modal-in animation
   // (fade + slide-up + settle) instead of hard-popping into the dim layer.
   test('modals enter with td-modal-in (no hard pop)', async () => {

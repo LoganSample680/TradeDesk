@@ -1715,7 +1715,11 @@ function _obOAuth(provider){
     const _cap=window.Capacitor;
     if(provider==='apple'&&_cap&&typeof _cap.isNativePlatform==='function'&&_cap.isNativePlatform()){
       _obNativeApple().then(handled=>{
-        if(handled===false){if(typeof showToast==='function')showToast('Update TradeDesk Beta in TestFlight for Apple sign-in, or use email','⚠️',5000);}
+        if(handled===false){
+          const errEl=document.getElementById('supa-login-err');
+          if(errEl)errEl.textContent='Update TradeDesk Beta in TestFlight for Apple sign-in, or use email.';
+          if(typeof showToast==='function')showToast('Update TradeDesk Beta in TestFlight for Apple sign-in, or use email','⚠️',5000);
+        }
       }).catch(e=>{
         // User-cancelled sheets stay quiet. EVERYTHING else says exactly what
         // broke (owner 2026-08-10: a swallowed error read as a dead click and
@@ -1724,6 +1728,11 @@ function _obOAuth(provider){
         const msg=String(e&&(e.message||e.errorMessage)||e||'');
         if(/cancel|1001/i.test(msg))return;
         try{console.error('apple-signin: '+msg);}catch(_e2){}
+        // The login screen is a FULL-SCREEN overlay, so toasts render under
+        // it and read as silence (owner 2026-08-10: "isn't showing any
+        // toasts"). Write the error into the login screen's own error line.
+        const errEl=document.getElementById('supa-login-err');
+        if(errEl)errEl.textContent='Apple sign-in error: '+(msg||'unknown').slice(0,140);
         if(typeof showToast==='function')showToast('Apple sign-in error: '+(msg||'unknown').slice(0,120),'⚠️',7000);
       });
       return;

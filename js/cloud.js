@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.10.26.11';
+const APP_VERSION='08.10.26.12';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1531,6 +1531,17 @@ function _armBootCascade(){
     d.querySelectorAll('.tbar,#dash-widget-root>.td-dw').forEach(el=>{el.style.animationDelay='';});
   }catch(_e){}},total);
 }
+// The moment the boot's first cloud sync lands: end the shimmer, render the
+// real content, pour the one cascade. Idempotent; the 15 s skeleton failsafe
+// and every later sync call it harmlessly.
+function _bootSyncSettled(){
+  if(window._bootSkelDone)return;
+  window._bootSkelDone=true;
+  try{clearTimeout(window._bootSkelTimer);}catch(_e){}
+  try{if(typeof _dashClearSkeletons==='function')_dashClearSkeletons();}catch(_e){}
+  try{if(typeof renderDash==='function')renderDash();}catch(_e){}
+  try{_armBootCascade();}catch(_e){}
+}
 function _removeBootOverlay(immediate){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
   // A version/SW update arrived during this boot and a reload is queued (new
@@ -1557,7 +1568,9 @@ function _removeBootOverlay(immediate){
     // Boot waterfall, popup-gated (owner rule: "waterfall builds after popups;
     // no popups → after boot load"). _armBootCascade holds the cards invisible,
     // waits out any boot popup (collect alert, verdicts), then pours them in.
-    try{_armBootCascade();}catch(_e){}
+    // A signed-in fresh boot stays in skeleton until the first sync settles;
+    // _bootSyncSettled pours the cascade then. Everything else pours now.
+    if(!(typeof _dashSkelMode==='function'&&_dashSkelMode()))try{_armBootCascade();}catch(_e){}
   }
   o.classList.add('td-fadeout');
   setTimeout(()=>{
@@ -1778,7 +1791,12 @@ async function supaInit(){
       _saveSessionBackup(session);
       const hasAccount=await loadAccountData();
       if(hasAccount){
-        await supaLoadFromCloud();
+        // One clean boot: flag the in-flight first sync so every dashboard
+        // render holds shimmer skeletons until it settles. Settle fires on
+        // success (inside supaLoadFromCloud) OR failure (the finally), so an
+        // offline boot never sits shimmering waiting on the 15 s failsafe.
+        window._bootSyncPending=true;
+        try{await supaLoadFromCloud();}finally{_bootSyncSettled();}
         _supaCloudLoaded=true;
       } else {
         // Signed in but no data at all. Route them INTO onboarding ONLY when THIS boot
@@ -5382,7 +5400,9 @@ function _flushSaveNow(){
 // ── Offline / reconnect watcher ────────────────────────────────────────────
 function _showOfflineBanner(syncing){
   const b=document.getElementById('offline-banner');if(!b)return;
-  if(syncing){b.textContent='Syncing...';b.style.background='#2563eb';b.style.color='#fff';}
+  // The blue Syncing pill retired (owner 2026-08-10): the skeleton shimmer IS
+  // the syncing signal now. Only the amber offline state still banners.
+  if(syncing){_hideOfflineBanner();return;}
   else{b.textContent='Offline: changes saved locally';b.style.background='#D97706';b.style.color='#1a1a1a';}
   b.style.opacity='1';b.style.transform='translateY(0)';b.style.pointerEvents='auto';
 }
@@ -6939,6 +6959,7 @@ async function supaLoadFromCloud({silent=false}={}){
     if(typeof _applyTabOrder==='function'&&typeof _getTabOrder==='function')_applyTabOrder(_getTabOrder());
 
     _supaCloudLoaded=true;_loadedFromCacheOnly=false;_mergeOnSignIn=false;
+    _bootSyncSettled();
     _authSettingsLoaded=true; // authoritative cloud settings are now in S, settings saves are safe
     _loadedDataOwner=(_supaUser&&_supaUser.id)||_loadedDataOwner; // remember whose data is in memory
     supaSetStatus('synced');
