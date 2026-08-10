@@ -805,20 +805,23 @@ function _dashApplySkeletons(){
   // card shells) that renderDash writes INTO but never rebuilds, so wiping
   // innerHTML would gut the dashboard permanently. Instead each widget gets a
   // removable .td-boot-skel card appended and a class that hides its real
-  // children (CSS rule next to .td-skel in index.html).
-  document.querySelectorAll('#dash-widget-root>.td-dw').forEach(el=>{
+  // children (CSS rule next to .td-skel in index.html). The greeting bar is
+  // included: EVERYTHING shimmers until the sync settles (owner 2026-08-10).
+  const targets=[...document.querySelectorAll('#pg-dash>.tbar'),...document.querySelectorAll('#dash-widget-root>.td-dw')];
+  targets.forEach(el=>{
     if(el.querySelector(':scope>.td-boot-skel'))return;
-    const h=el.offsetHeight;
+    const tbar=el.classList.contains('tbar');
+    const h=tbar?44:el.offsetHeight;
     if(!h)return; // empty/hidden conditional widgets stay collapsed, no phantom card
     const sk=document.createElement('div');
-    sk.className='td-boot-skel card';
-    sk.innerHTML=(typeof _tdSkelRows==='function')?_tdSkelRows(Math.max(2,Math.min(5,Math.round(h/46)))):'';
+    sk.className='td-boot-skel'+(tbar?'':' card');
+    sk.innerHTML=(typeof _tdSkelRows==='function')?_tdSkelRows(tbar?1:Math.max(2,Math.min(5,Math.round(h/46))),tbar?18:undefined):'';
     el.classList.add('td-boot-skel-on');
     el.appendChild(sk);
   });
 }
 function _dashClearSkeletons(){
-  document.querySelectorAll('#dash-widget-root>.td-dw.td-boot-skel-on').forEach(el=>{
+  document.querySelectorAll('#pg-dash .td-boot-skel-on').forEach(el=>{
     el.classList.remove('td-boot-skel-on');
     el.querySelectorAll(':scope>.td-boot-skel').forEach(s=>s.remove());
   });

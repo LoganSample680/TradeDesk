@@ -1150,11 +1150,13 @@ test.describe('Cloud Supabase and account functions', () => {
         window._bootSyncPending = true; window._bootSkelDone = false; window._bootSkelTimer = null;
         window._bootCascadeRan = false; window._sboT0 = 0;
         document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+        document.getElementById('supa-boot-overlay')?.remove(); // settle only pours once the overlay is gone
         document.getElementById('pg-dash').classList.add('active');
         const before = document.querySelectorAll('#dash-quick .qa').length;
         _dashApplySkeletons();
         const skels = document.querySelectorAll('#dash-widget-root>.td-dw>.td-boot-skel').length;
         const on = document.querySelectorAll('#dash-widget-root>.td-dw.td-boot-skel-on').length;
+        const tbarSkel = document.querySelectorAll('#pg-dash>.tbar>.td-boot-skel').length;
         const quickHidden = getComputedStyle(document.getElementById('dash-quick')).display === 'none';
         const shimmer = document.querySelectorAll('#dash-widget-root .td-boot-skel .td-skel').length;
         const modeOn = _dashSkelMode();
@@ -1162,15 +1164,15 @@ test.describe('Cloud Supabase and account functions', () => {
         // The settle: one swap back to real content + the cascade pours.
         _bootSyncSettled();
         const after = {
-          skels: document.querySelectorAll('#dash-widget-root .td-boot-skel').length,
-          on: document.querySelectorAll('#dash-widget-root>.td-dw.td-boot-skel-on').length,
+          skels: document.querySelectorAll('#pg-dash .td-boot-skel').length,
+          on: document.querySelectorAll('#pg-dash .td-boot-skel-on').length,
           qas: document.querySelectorAll('#dash-quick .qa').length,
           quickVisible: getComputedStyle(document.getElementById('dash-quick')).display !== 'none',
           cascade: document.getElementById('pg-dash').classList.contains('boot-cascade'),
           modeOff: !_dashSkelMode(),
         };
         _bootSyncSettled(); // idempotent: a late sync or the failsafe re-firing is a no-op
-        return { before, skels, on, quickHidden, shimmer, modeOn, timerArmed, after };
+        return { before, skels, on, tbarSkel, quickHidden, shimmer, modeOn, timerArmed, after };
       } finally {
         window._bootSyncPending = false; window._bootSkelDone = true;
         try { clearTimeout(window._bootSkelTimer); } catch (e) {}
@@ -1180,6 +1182,7 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(r.modeOn).toBe(true);                 // boot sync in flight = skel mode
     expect(r.skels).toBeGreaterThanOrEqual(3);   // every visible widget shimmer-covered
     expect(r.on).toBe(r.skels);                  // hide-class rides with each overlay
+    expect(r.tbarSkel).toBeGreaterThanOrEqual(1); // the greeting bar shimmers too
     expect(r.quickHidden).toBe(true);            // real content hidden, never destroyed
     expect(r.shimmer).toBeGreaterThanOrEqual(6); // actual .td-skel bands render
     expect(r.timerArmed).toBe(true);             // 15s failsafe armed against a wedged sync

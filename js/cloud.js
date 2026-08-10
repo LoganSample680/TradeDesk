@@ -36,6 +36,15 @@ function _parseSubInvitePayload(raw){
   if(raw||subRaw||grantTok)history.replaceState(null,'',window.location.pathname);
 })();
 
+// One clean boot, phase 0 (owner 2026-08-10: "EVERYTHING is the skeleton
+// shimmer right away before I even see it"): decide SYNCHRONOUSLY at script
+// parse, before any dashboard paint, whether this page load will sync. A
+// stored auth token means a signed-in boot with a cloud load coming, so every
+// render from the very first one holds shimmer skeletons. The flag clears on
+// the no-session / no-account / offline-catch paths, and _bootSyncSettled
+// flips _bootSkelDone when the load fully finishes.
+try{for(let _i=0;_i<localStorage.length;_i++){const _k=localStorage.key(_i);if(_k&&_k.indexOf('sb-')===0&&_k.indexOf('auth-token')>-1){window._bootSyncPending=true;break;}}}catch(_e){}
+
 async function _fetchStripeConnectStatus(){
   if(!supaEnabled()||!_supaUser)return null;
   // CREW: the status that matters is the BOSS's (payments from any link route to the
@@ -536,7 +545,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.10.26.12';
+const APP_VERSION='08.10.26.13';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1540,7 +1549,12 @@ function _bootSyncSettled(){
   try{clearTimeout(window._bootSkelTimer);}catch(_e){}
   try{if(typeof _dashClearSkeletons==='function')_dashClearSkeletons();}catch(_e){}
   try{if(typeof renderDash==='function')renderDash();}catch(_e){}
-  try{_armBootCascade();}catch(_e){}
+  // Pour only if the boot overlay already lifted. A fast sync that settles
+  // while the overlay is still up must leave the pour to _removeBootOverlay
+  // (skel mode is off now, so the lift arms it), or the once-guard would burn
+  // the cascade invisibly behind the overlay.
+  const _o=document.getElementById('supa-boot-overlay');
+  if(!_o||_o.classList.contains('td-fadeout'))try{_armBootCascade();}catch(_e){}
 }
 function _removeBootOverlay(immediate){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
@@ -1570,7 +1584,13 @@ function _removeBootOverlay(immediate){
     // waits out any boot popup (collect alert, verdicts), then pours them in.
     // A signed-in fresh boot stays in skeleton until the first sync settles;
     // _bootSyncSettled pours the cascade then. Everything else pours now.
-    if(!(typeof _dashSkelMode==='function'&&_dashSkelMode()))try{_armBootCascade();}catch(_e){}
+    // Applying the skeletons HERE guarantees the reveal is 100% shimmer even
+    // if no render has run yet this boot.
+    if(typeof _dashSkelMode==='function'&&_dashSkelMode()){
+      try{if(typeof _dashApplySkeletons==='function')_dashApplySkeletons();}catch(_e){}
+    }else{
+      try{_armBootCascade();}catch(_e){}
+    }
   }
   o.classList.add('td-fadeout');
   setTimeout(()=>{
@@ -1808,6 +1828,7 @@ async function supaInit(){
         // an overlay that would block the whole UI.
         _authSettingsLoaded=true;
         supaSetStatus('cloud');
+        window._bootSyncPending=false; // no cloud load coming: render real (empty) content, no shimmer hold
         if(_oauthRet&&!window._obInProgress&&typeof _beginOAuthOnboarding==='function'){
           _beginOAuthOnboarding();
         } else {
@@ -1820,6 +1841,7 @@ async function supaInit(){
       // No valid session, load from cache if available, regardless of navigator.onLine
       // (iOS reports onLine:true even on airplane mode, so the flag is not reliable).
       // onAuthStateChange + _startOfflineWatcher must always be reached below, so no early return.
+      window._bootSyncPending=false; // no sync coming this boot: no shimmer hold
       let _cacheLoaded=false;
       // The cache is for OFFLINE BLIPS, where the stored auth token still
       // exists but could not refresh. A deliberate sign-out removes the token
@@ -2061,6 +2083,7 @@ async function supaInit(){
     _startOfflineWatcher();
   }catch(e){
     console.warn('Supabase init failed:',e);
+    window._bootSyncPending=false; // init failed, no sync coming: cache or empty renders real, no shimmer hold
     // Even if Supabase itself won't init (e.g. no network), try serving from cache
     // Same signed-out gate as the no-session branch: an interrupted deliberate
     // sign-out (token already gone, wipe unfinished) must never boot its
@@ -6958,8 +6981,11 @@ async function supaLoadFromCloud({silent=false}={}){
     // itself inside renderDash() below.
     if(typeof _applyTabOrder==='function'&&typeof _getTabOrder==='function')_applyTabOrder(_getTabOrder());
 
+    // NOTE: the boot skeleton settle (_bootSyncSettled) deliberately does NOT
+    // fire here. This function keeps rendering after this point; the boot
+    // path's finally settles once the WHOLE load is done, so the shimmer swaps
+    // to real content exactly once (owner 2026-08-10: no mid-load stutters).
     _supaCloudLoaded=true;_loadedFromCacheOnly=false;_mergeOnSignIn=false;
-    _bootSyncSettled();
     _authSettingsLoaded=true; // authoritative cloud settings are now in S, settings saves are safe
     _loadedDataOwner=(_supaUser&&_supaUser.id)||_loadedDataOwner; // remember whose data is in memory
     supaSetStatus('synced');
