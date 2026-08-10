@@ -1602,7 +1602,13 @@ function openLogTripModal(opts){
     // The one map this device has is also the one already selected, so the
     // common trip is Save and go.
     const _defMap=_tripMapForDevice();
-    if(_defMap)setTimeout(()=>_selectTripMapApp(_defMap),50);
+    // Synchronously, NOT on a timer. The buttons are already in the DOM: they
+    // were built into the overlay's innerHTML before the appendChild above, so
+    // there is nothing to wait for. The old 50ms defer left the sheet showing
+    // no selection for its first frames, which is a real flicker on a phone
+    // and a race for anything reading the state, and it is what made this test
+    // fail on WebKit and pass on Chromium.
+    if(_defMap)_selectTripMapApp(_defMap);
     // Auto-grab GPS for starting location if not pre-filled
     if(!opts.fromAddress)setTimeout(()=>grabMyLocation(false),300);
   }

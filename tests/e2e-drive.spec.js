@@ -374,6 +374,30 @@ test.describe('drive', () => {
     expect(r.selected, 'and the one map shown is already picked').toBe(r.expected);
   });
 
+  // The preselect used to run on a 50ms timer even though the buttons were
+  // already in the DOM, so the sheet opened with nothing selected for its first
+  // frames: a flicker on a phone, and a race that failed on WebKit and passed
+  // on Chromium. It is synchronous now, so this reads the state on the very
+  // first tick with no wait at all.
+  test('the map is selected on the first frame, not after a timer', async () => {
+    const r = await page.evaluate(() => {
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      openDriveModal({});
+      const out = {
+        value: (document.getElementById('lm-map-app') || {}).value,
+        highlighted: ['apple', 'google'].some(k => {
+          const el = document.getElementById('lm-map-' + k);
+          return el && el.style.background !== '';
+        }),
+        want: _tripMapForDevice(),
+      };
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      return out;
+    });
+    expect(r.value, 'no frame where the sheet shows nothing picked').toBe(r.want);
+    expect(r.highlighted).toBe(true);
+  });
+
   test('the map a device cannot open is never offered', async () => {
     await openTripSheet(false);
     await page.waitForTimeout(200);
