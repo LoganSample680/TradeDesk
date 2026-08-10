@@ -396,10 +396,69 @@ function _scanObjSvgFor(room,px,pz,k,ink){
   (room.objects||[]).forEach(ob=>{
     if(!ob||!(ob.w>0))return;
     const deg=Math.atan2(ob.uz||0,typeof ob.ux==='number'?ob.ux:1)*180/Math.PI;
-    s+='<g transform="translate('+px(ob.cx)+','+pz(ob.cz)+') rotate('+deg.toFixed(1)+')">'+
+    s+='<g class="td-obj" transform="translate('+px(ob.cx)+','+pz(ob.cz)+') rotate('+deg.toFixed(1)+')">'+
        _scanObjSym(ob.cat,ob.w*k,(ob.d||ob.w)*k,ink)+'</g>';
   });
   return s;
+}
+
+// ── The sheet: paper, tints, dimension strings ───────────────────────────────
+// Owner review 2026-08-10 against Polycam: "it looks nothing like Polycam,
+// just a ton weaker." The geometry was already right; what was missing was
+// everything that makes a drawing read as a DOCUMENT instead of a diagram.
+// Polycam's sheet carries a title block with the address and a total, tinted
+// rooms, dimension strings with extension lines and tick marks running the
+// outside of the envelope, and a scale bar. All of it is drawable in the same
+// SVG with no dependency, so we draw all of it.
+//
+// The plan renders on WHITE PAPER in both themes, deliberately. It is a
+// deliverable: it goes in the proposal, the client hub, and the plan we sell.
+// A document does not change color because the app is in dark mode.
+const _SCAN_PAPER='#FFFFFF';
+const _SCAN_POCHE='#2F3542';      // navy-charcoal walls, not flat black
+const _SCAN_LINE='#98A0AE';       // dimension and leader lines
+const _SCAN_FURN='#8B93A1';       // furniture and fixture symbols
+const _SCAN_TXT='#2F3542';
+const _SCAN_TXT2='#6E7684';
+// Room tints by name, the way a real plan color-keys spaces. Pastel enough
+// that the poché, the furniture, and the labels all stay legible on top.
+const _SCAN_ROOM_TINTS=[
+  [/bath|powder|shower|restroom|\bwc\b/i,'#E7F0F8'],
+  [/kitchen|pantry|kitchenette/i,'#EDEDF8'],
+  [/bed|nursery|primary|master/i,'#E6ECF8'],
+  [/dining/i,'#F3E9DB'],
+  [/living|family|great room|den|lounge/i,'#FBF2E8'],
+  [/office|study|studio/i,'#E9F2EB'],
+  [/laundry|utility|mud/i,'#F1EFE6'],
+  [/garage|shop|basement|attic/i,'#EEEEEB'],
+];
+function _scanRoomTint(label){
+  const t=String(label||'');
+  for(const[re,c] of _SCAN_ROOM_TINTS)if(re.test(t))return c;
+  return '#F7F6F3';               // hall, closet, foyer, anything unnamed
+}
+// The dimension chain along one side of the envelope: every room that reaches
+// that side contributes one run, the way Polycam breaks the top edge into a
+// dimension per room instead of one number for the whole house.
+function _scanSideRuns(rooms,side,minX,minZ,maxX,maxZ){
+  const tol=0.35,runs=[];
+  rooms.forEach(r=>{
+    const xs=(r.poly||[]).map(p=>p[0]),zs=(r.poly||[]).map(p=>p[1]);
+    if(!xs.length)return;
+    const x0=Math.min(...xs),x1=Math.max(...xs),z0=Math.min(...zs),z1=Math.max(...zs);
+    if(side==='top'&&Math.abs(z0-minZ)<tol)runs.push([x0,x1]);
+    else if(side==='bottom'&&Math.abs(z1-maxZ)<tol)runs.push([x0,x1]);
+    else if(side==='left'&&Math.abs(x0-minX)<tol)runs.push([z0,z1]);
+    else if(side==='right'&&Math.abs(x1-maxX)<tol)runs.push([z0,z1]);
+  });
+  runs.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+  const out=[];
+  runs.forEach(sp=>{
+    const last=out[out.length-1];
+    if(last&&sp[0]<last[1]-0.05)last[1]=Math.max(last[1],sp[1]);
+    else out.push(sp.slice());
+  });
+  return out.filter(sp=>sp[1]-sp[0]>0.3);
 }
 
 // ── Floor plan SVG ───────────────────────────────────────────────────────────
@@ -423,32 +482,50 @@ function _scanPlanSvg(sc,opts){
   let minX=1e9,minZ=1e9,maxX=-1e9,maxZ=-1e9;
   rooms.forEach(r=>(r.poly||[]).forEach(([x,z])=>{minX=Math.min(minX,x);minZ=Math.min(minZ,z);maxX=Math.max(maxX,x);maxZ=Math.max(maxZ,z);}));
   if(minX>maxX)return '<svg viewBox="0 0 100 40"></svg>';
-  const pad=1.0,W=maxX-minX+pad*2,H=maxZ-minZ+pad*2;
-  const k=100/W;                                   // meters → viewBox units
-  const px=x=>+((x-minX+pad)*k).toFixed(2);
-  const pz=z=>+((z-minZ+pad)*k).toFixed(2);
-  const vh=(H*k).toFixed(2);
+  // Sheet layout, in viewBox units: a margin wide enough for two rows of
+  // dimension string on every side, a title block on top and a scale bar
+  // underneath when this is a full sheet.
+  const MAR=13, HEAD=o.sheet?17:2, FOOT=o.sheet?11:2;
+  const wM=maxX-minX,hM=maxZ-minZ;
+  const k=(100-MAR*2)/(wM||1);                     // meters → viewBox units
+  const px=x=>+(MAR+(x-minX)*k).toFixed(2);
+  const pz=z=>+(HEAD+MAR+(z-minZ)*k).toFixed(2);
+  const vh=+(HEAD+MAR*2+hM*k+FOOT).toFixed(2);
   // Poché thickness: reads as a real ~5in wall at whole-house scale, clamped
   // so a single small room doesn't render cartoon-fat walls.
   const th=Math.max(0.9,Math.min(2.2,0.13*k));
-  const ink='var(--text,#1a1a18)',bg='var(--bg,#fff)';
-  // Room names and dimensions now sit over drawn furniture, so every label
-  // carries a paper-colored halo behind the glyphs (paint-order draws the
-  // stroke first, then the fill on top of it) and stays readable.
-  const halo=' stroke="'+bg+'" stroke-width="1.1" paint-order="stroke" stroke-linejoin="round"';
-  let s='<svg viewBox="0 0 100 '+vh+'" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg">';
+  const ink=_SCAN_POCHE,bg=_SCAN_PAPER;
+  // Room names and dimensions sit over drawn furniture, so every label carries
+  // a paper-colored halo behind the glyphs (paint-order draws the stroke
+  // first, then the fill on top of it) and stays readable.
+  const halo=' stroke="'+bg+'" stroke-width="0.7" paint-order="stroke" stroke-linejoin="round"';
+  // An SVG with no font-family renders in the UA serif, which is why the plan
+  // read as a school worksheet next to Polycam's. The sheet sets its own.
+  let s='<svg viewBox="0 0 100 '+vh+'" style="width:100%;height:auto;display:block;border-radius:10px" '+
+    'font-family="-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif" xmlns="http://www.w3.org/2000/svg">';
+  s+='<rect x="0" y="0" width="100" height="'+vh+'" fill="'+bg+'"/>';
+  // 0. Title block: what it is, whose it is, how big it is. A plan without one
+  // reads like a screenshot; with one it reads like a document you hand over.
+  if(o.sheet){
+    const tot=Math.round(_scanSqFt(rooms.reduce((t,r)=>t+(r.floorM2||0),0)));
+    s+='<text x="50" y="7.6" font-size="4.6" font-weight="700" fill="'+_SCAN_TXT+'" text-anchor="middle">'+escHtml(o.title||'Floor plan')+'</text>';
+    if(o.subtitle)s+='<text x="50" y="12.2" font-size="2.9" fill="'+_SCAN_TXT2+'" text-anchor="middle">'+escHtml(o.subtitle)+'</text>';
+    s+='<text x="50" y="'+(o.subtitle?15.9:12.4)+'" font-size="2.6" fill="'+_SCAN_TXT2+'" text-anchor="middle">Approximately '+tot.toLocaleString()+' sq ft total</text>';
+  }
   // 1. Room fills first (tappable when the caller wires roomClick).
   // roomFills tints rooms by ORIGINAL index (the proposal color-keys the
-  // rooms that carry quote lines); untinted rooms stay paper-white.
+  // rooms that carry quote lines); with no override each room takes the tint
+  // for its type, which is what turns a wireframe into a plan you can read at
+  // a glance.
   rooms.forEach((r,ri)=>{
     const pts=(r.poly||[]).map(([x,z])=>px(x)+','+pz(z)).join(' ');
-    const fill=(o.roomFills&&o.roomFills[gidx[ri]])||bg;
+    const fill=(o.roomFills&&o.roomFills[gidx[ri]])||_scanRoomTint(r.label);
     s+='<polygon points="'+pts+'" fill="'+fill+'" stroke="none"'+
        (o.roomClick?' onclick="'+o.roomClick+'('+gidx[ri]+')" style="cursor:pointer"':'')+'/>';
   });
   // 1b. Furniture and fixtures, UNDER the walls so the poché stays crisp where
   // a bed or a vanity is pushed up against one.
-  rooms.forEach(r=>{s+=_scanObjSvgFor(r,px,pz,k,'var(--text2,#5f5e5a)');});
+  rooms.forEach(r=>{s+=_scanObjSvgFor(r,px,pz,k,_SCAN_FURN);});
   // 2. Walls as solid poché segments; square caps close the corners.
   rooms.forEach(r=>(r.walls||[]).forEach(w=>{
     s+='<line x1="'+px(w.ax)+'" y1="'+pz(w.az)+'" x2="'+px(w.bx)+'" y2="'+pz(w.bz)+'" stroke="'+ink+'" stroke-width="'+th.toFixed(2)+'" stroke-linecap="square"/>';
@@ -514,27 +591,51 @@ function _scanPlanSvg(sc,opts){
       });
     });
   });
-  // 4. Dimensions on the two longest walls per room, pushed OUTSIDE the wall.
-  rooms.forEach(r=>{
-    const cx0=(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
-    const cz0=(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
-    (r.walls||[]).slice().sort((a,b)=>b.len-a.len).slice(0,2).forEach(w=>{
-      if(!w.len)return;
-      const mx=(w.ax+w.bx)/2,mz=(w.az+w.bz)/2;
-      const ux=(w.bx-w.ax)/w.len,uz=(w.bz-w.az)/w.len;
-      let nx=-uz,nz=ux;
-      if(nx*(cx0-mx)+nz*(cz0-mz)>0){nx=-nx;nz=-nz;}   // away from the room
-      const off=(th+2.0)/k;
-      s+='<text x="'+px(mx+nx*off)+'" y="'+(pz(mz+nz*off)+0.9)+'" font-size="2.5" fill="var(--text3,#6a6963)" text-anchor="middle"'+halo+'>'+_scanFtIn(w.len)+'</text>';
-    });
+  // 4. Dimension strings around the envelope: extension lines off the wall,
+  // a dimension line with tick marks, the figure centered on it, and a second
+  // overall row outside that when a side breaks into more than one run. This
+  // is the drafting convention, and it is the single biggest thing separating
+  // our plan from a survey-grade one (owner review 2026-08-10 vs Polycam:
+  // floating numbers next to two walls per room read as annotation, not as a
+  // dimensioned drawing).
+  const dimRun=(side,a,b,row)=>{
+    const gap=4.2+row*5.2, ext=1.6;
+    const t=(row?2.35:2.6), col=_SCAN_LINE;
+    const tickAt=(x,y,dx,dy)=>'<line x1="'+(x-dx).toFixed(2)+'" y1="'+(y-dy).toFixed(2)+'" x2="'+(x+dx).toFixed(2)+'" y2="'+(y+dy).toFixed(2)+'" stroke="'+col+'" stroke-width="0.35"/>';
+    const ln=(x1,y1,x2,y2,w)=>'<line x1="'+x1.toFixed(2)+'" y1="'+y1.toFixed(2)+'" x2="'+x2.toFixed(2)+'" y2="'+y2.toFixed(2)+'" stroke="'+col+'" stroke-width="'+w+'"/>';
+    let out='';
+    if(side==='top'||side==='bottom'){
+      const edge=side==='top'?pz(minZ):pz(maxZ), dir=side==='top'?-1:1;
+      const y=edge+dir*gap, x1=px(a), x2=px(b);
+      out+=ln(x1,edge+dir*ext,x1,y+dir*1.1,0.2)+ln(x2,edge+dir*ext,x2,y+dir*1.1,0.2);
+      out+=ln(x1,y,x2,y,0.25)+tickAt(x1,y,0.9,0.9*dir)+tickAt(x2,y,0.9,0.9*dir);
+      out+='<text x="'+((x1+x2)/2).toFixed(2)+'" y="'+(y+(side==='top'?-1.4:t+0.6)).toFixed(2)+'" font-size="'+t+'" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+_scanFtIn(b-a)+'</text>';
+    }else{
+      const edge=side==='left'?px(minX):px(maxX), dir=side==='left'?-1:1;
+      const x=edge+dir*gap, y1=pz(a), y2=pz(b);
+      out+=ln(edge+dir*ext,y1,x+dir*1.1,y1,0.2)+ln(edge+dir*ext,y2,x+dir*1.1,y2,0.2);
+      out+=ln(x,y1,x,y2,0.25)+tickAt(x,y1,0.9*dir,0.9)+tickAt(x,y2,0.9*dir,0.9);
+      const my=((y1+y2)/2).toFixed(2);
+      out+='<g transform="translate('+x.toFixed(2)+','+my+') rotate(-90)"><text y="'+(side==='left'?-1.3:t+0.5).toFixed(2)+'" font-size="'+t+'" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+_scanFtIn(b-a)+'</text></g>';
+    }
+    return out;
+  };
+  ['top','bottom','left','right'].forEach(side=>{
+    const runs=_scanSideRuns(rooms,side,minX,minZ,maxX,maxZ);
+    if(!runs.length)return;
+    runs.forEach(([a,b])=>{s+=dimRun(side,a,b,0);});
+    if(runs.length>1){
+      const lo=Math.min(...runs.map(r=>r[0])),hi=Math.max(...runs.map(r=>r[1]));
+      if(hi-lo>0.3)s+=dimRun(side,lo,hi,1);
+    }
   });
   // 5. Labels: name + the billing number (wall sq ft leads, owner 2026-08-09).
   rooms.forEach((r,ri)=>{
     const cx=(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
     const cz=(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
     const g=o.roomClick?'<g onclick="'+o.roomClick+'('+gidx[ri]+')" style="cursor:pointer">':'<g>';
-    s+=g+'<text x="'+px(cx)+'" y="'+(pz(cz)-1.6)+'" font-size="3.2" font-weight="700" fill="'+ink+'" text-anchor="middle"'+halo+'>'+escHtml(r.label||'Room')+'</text>'+
-      '<text x="'+px(cx)+'" y="'+(pz(cz)+2.2)+'" font-size="2.8" fill="var(--text2,#5f5e5a)" text-anchor="middle"'+halo+'>'+Math.round(_scanSqFt(r.wallM2))+' wall sq ft</text></g>';
+    s+=g+'<text x="'+px(cx)+'" y="'+(pz(cz)-0.6)+'" font-size="2.9" font-weight="700" fill="'+_SCAN_TXT+'" text-anchor="middle"'+halo+'>'+escHtml(r.label||'Room')+'</text>'+
+      '<text x="'+px(cx)+'" y="'+(pz(cz)+2.9)+'" font-size="2.4" fill="'+_SCAN_TXT2+'" text-anchor="middle"'+halo+'>'+Math.round(_scanSqFt(r.wallM2))+' wall sq ft</text></g>';
     if(lens==='electrical'){
       _scanOutletPlan(r).forEach(m=>{
         s+='<circle cx="'+px(m.x)+'" cy="'+pz(m.z)+'" r="1.1" fill="#D97706" stroke="#fff" stroke-width="0.3"/>';
@@ -543,10 +644,22 @@ function _scanPlanSvg(sc,opts){
   });
   // 6. North arrow when the compass grabbed a heading at capture.
   if(typeof sc.headingDeg==='number'&&sc.headingDeg>=0){
-    s+='<g transform="translate(95,5) rotate('+Math.round(sc.headingDeg)+')">'+
-       '<circle r="3" fill="none" stroke="var(--text3,#6a6963)" stroke-width="0.3"/>'+
-       '<path d="M 0 -2.2 L 1 1.6 L 0 0.7 L -1 1.6 Z" fill="'+ink+'"/>'+
-       '<text y="-4" font-size="2.2" fill="var(--text3,#6a6963)" text-anchor="middle">N</text></g>';
+    s+='<g transform="translate(94.5,'+(HEAD+5).toFixed(1)+') rotate('+Math.round(sc.headingDeg)+')">'+
+       '<circle r="3" fill="none" stroke="'+_SCAN_LINE+'" stroke-width="0.3"/>'+
+       '<path d="M 0 -2.2 L 1 1.6 L 0 0.7 L -1 1.6 Z" fill="'+_SCAN_TXT+'"/>'+
+       '<text y="-4" font-size="2.2" fill="'+_SCAN_TXT2+'" text-anchor="middle">N</text></g>';
+  }
+  // 7. Scale bar: the thing that lets a client hold a ruler to the printout.
+  // The bar is a round number of feet, the largest that still fits the margin.
+  if(o.sheet){
+    const ftU=k/_SCAN_M2FT;                        // viewBox units per foot
+    const barFt=[20,10,5,3,2,1].find(f=>f*ftU<=24)||1;
+    const y=vh-FOOT+5.5,x0=MAR,x1=MAR+barFt*ftU;
+    s+='<line x1="'+x0+'" y1="'+y.toFixed(2)+'" x2="'+x1.toFixed(2)+'" y2="'+y.toFixed(2)+'" stroke="'+_SCAN_TXT+'" stroke-width="0.7"/>'+
+       '<line x1="'+x0+'" y1="'+(y-1.2).toFixed(2)+'" x2="'+x0+'" y2="'+(y+1.2).toFixed(2)+'" stroke="'+_SCAN_TXT+'" stroke-width="0.35"/>'+
+       '<line x1="'+x1.toFixed(2)+'" y1="'+(y-1.2).toFixed(2)+'" x2="'+x1.toFixed(2)+'" y2="'+(y+1.2).toFixed(2)+'" stroke="'+_SCAN_TXT+'" stroke-width="0.35"/>'+
+       '<text x="'+(x1+2).toFixed(2)+'" y="'+(y+1).toFixed(2)+'" font-size="2.5" fill="'+_SCAN_TXT2+'">'+barFt+' ft</text>'+
+       '<text x="'+(100-MAR)+'" y="'+(y+1).toFixed(2)+'" font-size="2.3" fill="'+_SCAN_LINE+'" text-anchor="end">Measured with TradeDesk</text>';
   }
   // Photo pins: each shot taken during the scan knows exactly where the
   // camera stood (the pose rides along from the plugin), so the walkthrough
@@ -785,6 +898,15 @@ function _scanViewUsdz(id){
     if(typeof showToast==='function')showToast('Could not open the 3D model','📐');
   });
 }
+// The line under the sheet title: the client's address when we know it (the
+// thing that makes the plan look like it belongs to a property), and which
+// floor this sheet draws when there is more than one.
+function _scanSheetSubtitle(sc,stories,story){
+  const c=sc&&sc.clientId!=null&&typeof getClientById==='function'?getClientById(sc.clientId):null;
+  const where=(c&&(c.address||c.name))||'';
+  const floor=(stories&&stories.length>1)?('Floor '+story):'';
+  return [where,floor].filter(Boolean).join(' · ');
+}
 // Distinct floors in a scan, ascending; single-story scans return [1].
 function _scanStories(sc){
   const s=[...new Set((sc.rooms||[]).map(r=>Math.max(1,+r.story||1)))].sort((a,b)=>a-b);
@@ -893,6 +1015,8 @@ function openScanViewer(id){
     '<div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px;background:var(--bg2)">'+
       (lens==='3d'?_scanDollhouseSvg(sc)
         :_scanPlanSvg(sc,{lens,scanId:sc.id,story:(stories.length>1?story:null),
+          sheet:true,title:sc.name||'Floor plan',
+          subtitle:_scanSheetSubtitle(sc,stories,story),
           photos:(lens==='plan'?(sc.photos||[]).filter(p=>{
             if(stories.length<2)return true;
             const r=(sc.rooms||[])[p.room];return r&&Math.max(1,+r.story||1)===story;

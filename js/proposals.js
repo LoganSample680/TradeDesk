@@ -204,7 +204,7 @@ function _buildClientHubSnapshot(clientId){
                   totalSqFt:unlocked?totalSqFt:Math.round(totalSqFt/50)*50,
                   price:s.price!=null?s.price:null,unlocked:!!unlocked};
       if(unlocked){
-        base.svg=_scanPlanSvg(s,{lens:'plan'});
+        base.svg=_scanPlanSvg(s,{lens:'plan',sheet:true,title:s.name||'Floor plan'});
         base.rooms=(s.rooms||[]).map(r=>({label:r.label,sqFt:Math.round(_scanSqFt(r.floorM2)),ceilHt:_scanFtIn(r.hM)}));
       }
       return base;

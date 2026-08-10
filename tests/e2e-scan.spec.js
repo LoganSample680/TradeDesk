@@ -777,6 +777,99 @@ test.describe('TdScan web half', () => {
     expect(r.dims, 'wall dimensions annotate the plan').toBe(true);
   });
 
+  // Owner review (2026-08-10) against Polycam: "it looks nothing like Polycam,
+  // just a ton weaker." The geometry was already right; the sheet around it
+  // was missing.
+  test.describe('the plan is a drawing sheet, not a diagram', () => {
+    // Two rooms side by side, so a side of the envelope breaks into a chain of
+    // dimensions with an overall run outside it.
+    const twoUp = () => {
+      const raw = JSON.parse(fabricatedRoom());
+      return [raw, JSON.parse(fabricatedRoom())];
+    };
+
+    test('the title block carries the name, the address, and the total', async () => {
+      const r = await page.evaluate((raw) => {
+        const room = _scanParseRoom(raw, 'Kitchen');
+        const sheet = _scanPlanSvg({ rooms: [room] },
+          { lens: 'plan', sheet: true, title: 'Patterson scan', subtitle: '12 Elm St' });
+        const bare = _scanPlanSvg({ rooms: [room] }, { lens: 'plan' });
+        return {
+          title: /Patterson scan/.test(sheet), addr: /12 Elm St/.test(sheet),
+          total: /Approximately 120 sq ft total/.test(sheet),
+          scaleBar: /\d+ ft<\/text>/.test(sheet) && /Measured with TradeDesk/.test(sheet),
+          // A plan embedded as a room picker takes none of it.
+          bareHasNoBlock: !/Approximately/.test(bare) && !/Measured with TradeDesk/.test(bare),
+          paper: /<rect x="0" y="0" width="100"[^>]*fill="#FFFFFF"/.test(sheet),
+          font: /font-family="/.test(sheet),
+        };
+      }, fabricatedRoom());
+      expect(r.title).toBe(true);
+      expect(r.addr).toBe(true);
+      expect(r.total, 'the total is the number a client looks for first').toBe(true);
+      expect(r.scaleBar, 'a scale bar is what makes a printout measurable').toBe(true);
+      expect(r.bareHasNoBlock).toBe(true);
+      expect(r.paper, 'the sheet is white paper in either theme, it is a document').toBe(true);
+      expect(r.font, 'no font-family means the UA serif, which reads as a worksheet').toBe(true);
+    });
+
+    test('rooms tint by what they are, and an explicit fill still wins', async () => {
+      const r = await page.evaluate((raw) => {
+        const mk = (n) => _scanParseRoom(raw, n);
+        const svg = _scanPlanSvg({ rooms: [mk('Kitchen'), mk('Primary bath'), mk('Bedroom')] }, { lens: 'plan' });
+        const forced = _scanPlanSvg({ rooms: [mk('Kitchen')] }, { lens: 'plan', roomFills: { 0: '#ff0000' } });
+        return {
+          kitchen: _scanRoomTint('Kitchen'), bath: _scanRoomTint('Primary bath'),
+          bed: _scanRoomTint('Bedroom'), unknown: _scanRoomTint('Zebraroom'),
+          nameless: _scanRoomTint(null),
+          distinct: new Set([_scanRoomTint('Kitchen'), _scanRoomTint('Bath'), _scanRoomTint('Bedroom'), _scanRoomTint('Dining')]).size,
+          drawn: (svg.match(/<polygon[^>]*fill="#[0-9A-F]{6}"/gi) || []).length,
+          forcedWins: /fill="#ff0000"/.test(forced),
+        };
+      }, fabricatedRoom());
+      expect(r.kitchen).not.toBe(r.bath);
+      expect(r.bed).not.toBe(r.kitchen);
+      expect(r.distinct, 'four room types, four tints').toBe(4);
+      expect(r.unknown, 'an unrecognized name still gets paper, never undefined').toBe(r.nameless);
+      expect(r.drawn, 'every room draws its tint').toBe(3);
+      expect(r.forcedWins, 'the proposal color-keys priced rooms and that must win').toBe(true);
+    });
+
+    test('dimensions are strings around the envelope, chained per room, never floating text', async () => {
+      const r = await page.evaluate((raws) => {
+        // Second room shifted 5 m east so the top edge breaks into two runs.
+        const a = _scanParseRoom(raws[0], 'Kitchen');
+        const b = _scanParseRoom(raws[1], 'Bedroom');
+        const shift = (rm, dx) => {
+          rm.poly = rm.poly.map(([x, z]) => [x + dx, z]);
+          rm.walls = rm.walls.map(w => ({ ...w, ax: w.ax + dx, bx: w.bx + dx }));
+          return rm;
+        };
+        shift(b, 5);
+        const svg = _scanPlanSvg({ rooms: [a, b] }, { lens: 'plan' });
+        const runsTop = _scanSideRuns([a, b], 'top', -1.83, -1.53, 6.83, 1.53);
+        return {
+          topRuns: runsTop.length,
+          // Two per-room runs plus the overall = 3 figures across the top.
+          figures: (svg.match(/12'0"/g) || []).length,
+          overall: svg.includes(_scanFtIn(runsTop[runsTop.length - 1][1] - runsTop[0][0])),
+          // Ticks and extension lines are what make it a dimension STRING.
+          ticks: (svg.match(/stroke="#98A0AE"/g) || []).length,
+          rotatedSide: /rotate\(-90\)/.test(svg),
+          merges: _scanSideRuns([a, a], 'top', -1.83, -1.53, 1.83, 1.53).length,
+          none: _scanSideRuns([], 'top', 0, 0, 1, 1).length,
+        };
+      }, twoUp());
+      expect(r.topRuns, 'two rooms reaching the top edge, two runs').toBe(2);
+      expect(r.figures, 'each run is dimensioned').toBeGreaterThanOrEqual(2);
+      expect(r.overall, 'and an overall run outside them').toBe(true);
+      expect(r.ticks, 'extension lines, dimension lines, and tick marks').toBeGreaterThan(10);
+      expect(r.rotatedSide, 'the left and right figures read up the page').toBe(true);
+      expect(r.merges, 'two rooms on the same span merge into one dimension').toBe(1);
+      expect(r.none, 'no rooms on a side draws no string').toBe(0);
+    });
+  });
+
   // Owner review (2026-08-10): "arches are rendering as squares, I want exact
   // furniture markings to come through in grave detail."
   test.describe('archways are not doors, and the furniture RoomPlan sees gets drawn', () => {
@@ -845,7 +938,7 @@ test.describe('TdScan web half', () => {
       const r = await page.evaluate((raw) => {
         const svg = _scanPlanSvg({ rooms: [_scanParseRoom(raw, 'Kitchen')] }, { lens: 'plan' });
         return {
-          groups: (svg.match(/<g transform="translate\([\d.]+,[\d.]+\) rotate\(/g) || []).length,
+          groups: (svg.match(/<g class="td-obj"/g) || []).length,
           rotated: /rotate\(30\.0\)/.test(svg),
           burners: (svg.match(/<circle[^>]*stroke-width="0\.25"/g) || []).length,
           bowl: /<ellipse/.test(svg),
@@ -876,7 +969,7 @@ test.describe('TdScan web half', () => {
         let threw = null;
         let svg = '';
         try { svg = _scanPlanSvg({ rooms: [room] }, { lens: 'plan' }); } catch (e) { threw = String(e); }
-        return { threw, groups: (svg.match(/<g transform="translate\([\d.]+,[\d.]+\) rotate\(/g) || []).length };
+        return { threw, groups: (svg.match(/<g class="td-obj"/g) || []).length };
       });
       expect(r.threw).toBe(null);
       expect(r.groups, 'a zero-width object is skipped; the other two still draw').toBe(2);
