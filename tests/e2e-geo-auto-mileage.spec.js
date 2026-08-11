@@ -1141,9 +1141,9 @@ test.describe('Automatic mileage from drive legs', () => {
       const fs = require('fs');
       const path = require('path');
       const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
-      const afterLoad = src.indexOf("supaSetStatus('synced');");
+      const afterLoad = src.indexOf('_loadedDataOwner=(_supaUser');   // unique to the load tail
       expect(afterLoad, 'load completion point exists').toBeGreaterThan(0);
-      expect(src.slice(afterLoad, afterLoad + 900), 'heal rides the load completion')
+      expect(src.slice(afterLoad, afterLoad + 1200), 'heal rides the load completion')
         .toContain('_mileDedupTrips(true)');
       expect(src, 'realtime mileage bursts re-collapse too').toContain('_rtMileHealTimer');
     });
