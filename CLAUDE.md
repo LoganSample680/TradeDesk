@@ -301,6 +301,13 @@ iOS builds. Firing `ios-beta.yml` costs a ~15-minute macOS run and forces the
 owner to update the app on every test device, so builds are rare and
 deliberate, never reflexive.
 
+**NEVER fire an iOS build without explicit owner approval in this session
+(owner rule 2026-08-10).** Land the native changes, say "native changed,
+build N is ready to fire," and WAIT for the owner's go-ahead. This mirrors
+the merge rule (§1.4): green code lands freely, the expensive irreversible
+step waits for a human yes. No exceptions, not even mid-debugging when the
+owner is actively testing the very feature the build carries.
+
 **An iOS build is needed ONLY when the native surface changes:**
 - New or changed Swift plugin code (`native/td-geo/`, future plugins)
 - `native/capacitor.config.json` or `native/package.json` (plugin versions)
