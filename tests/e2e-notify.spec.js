@@ -178,3 +178,125 @@ test.describe('Local notifications', () => {
     assertNoErrors(page, 'local notifications');
   });
 });
+
+// ── Handoff lock (owner 2026-08-11) ──────────────────────────────────────────
+// Scoped to the ONE genuinely exposed moment: the contractor's unlocked phone
+// in a client's hands for a signature. No launch lock (the field research says
+// per-open friction breeds shared logins), and critically it must NEVER trap a
+// contractor out of their own business.
+test.describe('Handoff lock', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('client portals never arm: no plugin, no lock', async () => {
+    const r = await page.evaluate(() => {
+      const realCap = window.Capacitor;
+      try {
+        window.Capacitor = undefined;            // sign.html / client.html
+        const armed = _handoffArm();
+        return { armed, active: _handoffActive() };
+      } finally { window.Capacitor = realCap; _handoffDisarm(); }
+    });
+    expect(r.armed, 'the client is signing on THEIR phone, nothing of ours to lock').toBe(false);
+    expect(r.active).toBe(false);
+  });
+
+  test('armed: navigation is blocked until the face checks out, then resumes', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor, startPg = document.querySelector('.pg.active')?.id;
+      let asked = 0, answer = false;
+      try {
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: () => ({ unlock: () => { asked++; return Promise.resolve({ ok: answer }); } }),
+        };
+        goPg('pg-dash');
+        _handoffArm();
+        // The client tries to wander off mid-signature: refused.
+        goPg('pg-money');
+        await new Promise(res => setTimeout(res, 30));
+        const blocked = document.querySelector('.pg.active')?.id;
+        const stillArmed = _handoffActive();
+        // The owner takes the phone back and passes Face ID: the tap resumes.
+        answer = true;
+        goPg('pg-money');
+        await new Promise(res => setTimeout(res, 40));
+        const after = document.querySelector('.pg.active')?.id;
+        return { blocked, stillArmed, after, asked, armedAfter: _handoffActive() };
+      } finally { window.Capacitor = realCap; _handoffDisarm(); if (startPg) goPg(startPg); }
+    });
+    expect(r.blocked, 'a failed unlock keeps the client on the signature screen').toBe('pg-dash');
+    expect(r.stillArmed, 'and the lock stays armed').toBe(true);
+    expect(r.after, 'a passed unlock completes the navigation that was tapped').toBe('pg-money');
+    expect(r.armedAfter, 'and stands down once through').toBe(false);
+    expect(r.asked).toBe(2);
+  });
+
+  test('capturing the signature stands the lock down with no prompt', async () => {
+    const r = await page.evaluate(() => {
+      const realCap = window.Capacitor;
+      let asked = 0;
+      try {
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: () => ({ unlock: () => { asked++; return Promise.resolve({ ok: true }); } }),
+        };
+        _handoffArm();
+        const armed = _handoffActive();
+        _handoffDisarm();                        // what esignResult does
+        return { armed, after: _handoffActive(), asked };
+      } finally { window.Capacitor = realCap; _handoffDisarm(); }
+    });
+    expect(r.armed).toBe(true);
+    expect(r.after, 'the handoff is over, no face needed').toBe(false);
+    expect(r.asked, 'finishing the signature never prompts').toBe(0);
+  });
+
+  test('never traps: a broken plugin or no biometrics still lets the owner out', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      try {
+        // Plugin throws outright
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: () => ({ unlock: () => { throw new Error('LAContext exploded'); } }),
+        };
+        _handoffArm();
+        const brokenOk = await _handoffRelease('test');
+        // Plugin present but has no unlock method at all
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+        _handoffArm();
+        const missingOk = await _handoffRelease('test');
+        return { brokenOk, missingOk, active: _handoffActive() };
+      } finally { window.Capacitor = realCap; _handoffDisarm(); }
+    });
+    expect(r.brokenOk, 'a plugin failure must never lock a contractor out').toBe(true);
+    expect(r.missingOk).toBe(true);
+    expect(r.active).toBe(false);
+  });
+
+  test('the owner can switch it off entirely', async () => {
+    const r = await page.evaluate(() => {
+      const realCap = window.Capacitor, saved = S.handoffLock;
+      try {
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({ unlock: () => Promise.resolve({ ok: true }) }) };
+        S.handoffLock = false;
+        const armed = _handoffArm();
+        return { armed, active: _handoffActive() };
+      } finally { window.Capacitor = realCap; S.handoffLock = saved; _handoffDisarm(); }
+    });
+    expect(r.armed, 'a solo operator who never hands the phone over is left alone').toBe(false);
+    expect(r.active).toBe(false);
+  });
+
+  test('no console errors during handoff lock tests', async () => {
+    assertNoErrors(page, 'handoff lock');
+  });
+});

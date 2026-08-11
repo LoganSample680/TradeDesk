@@ -2,6 +2,10 @@ function openMobileMore(){const p=document.getElementById('mtb-more-popup');if(p
 function closeMobileMore(){const p=document.getElementById('mtb-more-popup');if(p)p.style.display='none';}
 function mobileNavTo(pg){closeMobileMore();goPg(pg);}
 function goPg(id){
+  // HANDOFF LOCK (js/handoff.js): while a client is signing on this phone,
+  // leaving the signature screen takes the owner's face. Returns false and
+  // re-runs this navigation itself once unlocked.
+  if(typeof _handoffGuardNav==='function'&&!_handoffGuardNav(id))return;
   // Redirect employees away from restricted pages
   if(_isEmployee){
     const _empBlocked=['pg-taxes','pg-tracker','pg-team','pg-settings','pg-checklist',
