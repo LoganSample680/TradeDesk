@@ -519,6 +519,10 @@ async function _retryPendingTrips(){
       if(auto&&(rec.fromCoord!==fc||rec.toCoord!==tc))continue;
       if(!(miles>0))continue;   // not a measurement: leave it pending for the next sweep
       rec.miles=Math.round(miles*10)/10;rec.calc_method=auto?'auto_route':'address';
+      // Keep the resolved endpoints on a manual row: the journey dedup matches
+      // destinations by coordinate first, and a typed address otherwise only
+      // ever matches by name.
+      if(!auto){rec.fromCoord=rec.fromCoord||fc;rec.toCoord=rec.toCoord||tc;}
       filled++;
     }catch(e){}
   }
@@ -575,6 +579,12 @@ function _mileSameJourney(a,b){
     _geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=_MILE_DEDUP_DEST_FT);
   if(near(a.toCoord,b.toCoord))return true;
   if(a.client_id!=null&&b.client_id!=null&&String(a.client_id)===String(b.client_id))return true;
+  // A "Log a trip" row can carry NO client link and NO coordinates, only the
+  // destination's name (the owner's 2026-08-11 mid-drive trip did). The name
+  // plus an overlapping window for the same person is still one journey.
+  const names=m=>[m.to_name,m.client_name].map(s=>String(s||'').trim().toLowerCase()).filter(s=>s.length>2);
+  const na=names(a),nb=names(b);
+  if(na.length&&nb.length&&na.some(n=>nb.indexOf(n)>=0))return true;
   return false;
 }
 // The same LEG closed twice. A re-delivered close carries the IDENTICAL
@@ -584,7 +594,7 @@ function _mileSameJourney(a,b){
 // enough to matter starts eating a crew's genuinely repeated runs. These are
 // duplicates even before either has measured, because identical endpoints can
 // only ever measure identical.
-function _mileSameLeg(a,b){
+function _mileSameLeg(a,b,heal){
   if(!a||!b||!a.legKey||!b.legKey)return false;
   // Two crew members can leave the same shop for the same job in the same
   // minute: identical endpoints, identical clocks, two REAL drives.
@@ -592,11 +602,24 @@ function _mileSameLeg(a,b){
   // Same deterministic key = same leg, however the rows arrived (two devices
   // syncing the same drive land here).
   if(a.legKey===b.legKey)return true;
-  const sa=Date.parse(a.startedIso||''),sb=Date.parse(b.startedIso||'');
-  if(!sa||!sb||sa!==sb)return false;
   const near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&typeof _geoDistFt==='function'&&
     _geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=_MILE_DEDUP_DEST_FT);
-  return near(a.fromCoord,b.fromCoord)&&near(a.toCoord,b.toCoord);
+  if(!near(a.fromCoord,b.fromCoord)||!near(a.toCoord,b.toCoord))return false;
+  const sa=Date.parse(a.startedIso||''),sb=Date.parse(b.startedIso||'');
+  if(!sa||!sb)return false;
+  if(sa===sb)return true;
+  // HEAL (boot only): same endpoints and OVERLAPPING clocks are one drive,
+  // because nobody can start the same journey again while still finishing it.
+  // The owner's replay pair carried starts seconds apart (the two closes read
+  // the leg start from different state variables), so exact equality alone
+  // left them standing. This stays out of the live sweep because CI fixtures
+  // fabricate overlapping clocks for legs that are deliberately distinct;
+  // boot-time in a test runs before any fixture exists.
+  if(heal){
+    const wa=_mileTripWindow(a),wb=_mileTripWindow(b);
+    if(wa.end&&wb.end&&wa.end>=wb.start&&wb.end>=wa.start)return true;
+  }
+  return false;
 }
 // Which of two same-journey rows survives. Longest measured miles wins (the
 // owner's rule: the trip covering the most real driving is the record). Ties
@@ -610,14 +633,14 @@ function _mileTripWinner(a,b){
   if(!!a.legKey!==!!b.legKey)return a.legKey?a:b;
   return (Date.parse(a.loggedAt||'')||0)<=(Date.parse(b.loggedAt||'')||0)?a:b;
 }
-function _mileDedupTrips(){
+function _mileDedupTrips(heal){
   if(typeof mileage==='undefined'||!Array.isArray(mileage))return 0;
   const drop=new Set();
   for(let i=0;i<mileage.length;i++){
     const a=mileage[i];if(!a||drop.has(a))continue;
     for(let j=i+1;j<mileage.length;j++){
       const b=mileage[j];if(!b||drop.has(b))continue;
-      const twin=_mileSameLeg(a,b);
+      const twin=_mileSameLeg(a,b,heal);
       if(!twin&&!_mileSameJourney(a,b))continue;
       // A row still awaiting its measurement is only ever dropped as a twin of
       // another auto row (identical endpoints, identical eventual answer).

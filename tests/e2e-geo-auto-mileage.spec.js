@@ -1044,6 +1044,42 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.left).toEqual([2]);
     });
 
+    test("the phone's real rows: heal mode collapses what the strict sweep must not", async () => {
+      // The shapes that actually survived on the owner's phone (2026-08-11
+      // screenshot): a "Log a trip" row with no startedIso, no coords, no
+      // client link, names only; and a replay pair whose starts differ by 45
+      // seconds while both display 7:51a. Boot heal collapses all three. The
+      // live sweep leaves the offset pair alone (CI fixtures fabricate
+      // overlapping clocks for deliberately distinct legs, so the wider twin
+      // rule is boot-only).
+      const out = await page.evaluate(() => {
+        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
+        const rows = () => ([
+          { id: 1, calc_method: 'address', miles: 2.4, client_id: null, client_name: '',
+            to: '2950 SW McClure Rd', to_name: 'John Doe', loggedAt: '2026-08-11T12:55:10Z', date: '2026-08-11' },
+          { id: 2, gps: true, legKey: 'rnd-a1', calc_method: 'auto_route', miles: 3.2, client_id: 77,
+            to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
+            startedIso: '2026-08-11T12:51:02Z', endedIso: '2026-08-11T12:57:10Z', loggedAt: '2026-08-11T12:57:12Z', date: '2026-08-11' },
+          { id: 3, gps: true, legKey: 'rnd-b2', calc_method: 'auto_route', miles: 3.2, client_id: 77,
+            to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
+            startedIso: '2026-08-11T12:51:47Z', endedIso: '2026-08-11T13:01:20Z', loggedAt: '2026-08-11T13:01:22Z', date: '2026-08-11' },
+        ]);
+        const keep = mileage.splice(0);
+        try {
+          rows().forEach(m => mileage.push(m));
+          const healed = _mileDedupTrips(true);
+          const left = mileage.map(m => m.id);
+          mileage.length = 0; rows().slice(1).forEach(m => mileage.push(m));   // just the replay pair
+          const live = _mileDedupTrips();
+          return { healed, left, live, liveLeft: mileage.length };
+        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
+      });
+      expect(out.healed).toBe(2);
+      expect(out.left).toEqual([2]);
+      expect(out.live).toBe(0);          // strict mode defers the offset pair to boot
+      expect(out.liveLeft).toBe(2);
+    });
+
     test('dedup never crosses people, destinations, or distinct auto legs', async () => {
       const out = await page.evaluate(() => {
         const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };

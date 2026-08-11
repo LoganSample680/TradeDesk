@@ -545,7 +545,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.11.26.12';
+const APP_VERSION='08.11.26.13';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1566,7 +1566,9 @@ function _bootSyncSettled(){
   // Mileage rows describing one journey collapse to the longest (js/mileage.js,
   // owner rule 2026-08-11). Run after the cloud rows are in, so duplicates
   // logged before the dedup existed, or by another device, heal here too.
-  try{if(typeof _mileDedupTrips==='function')_mileDedupTrips();}catch(_e){}
+  // heal=true: boot is the one moment the wider overlapping-clocks twin rule
+  // is safe, the live sweep stays strict (see _mileSameLeg).
+  try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
 }
 function _removeBootOverlay(immediate){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
