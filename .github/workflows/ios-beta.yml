@@ -201,14 +201,30 @@ jobs:
           </plist>
           EOF
           /usr/libexec/PlistBuddy -c "Set :teamID ${{ secrets.APPLE_TEAM_ID }}" build/export.plist
-          xcodebuild -exportArchive \
-            -archivePath build/App.xcarchive \
-            -exportPath build/ipa \
-            -exportOptionsPlist build/export.plist \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.APPSTORE_KEY_ID }}.p8 \
-            -authenticationKeyID ${{ secrets.APPSTORE_KEY_ID }} \
-            -authenticationKeyIssuerID ${{ secrets.APPSTORE_ISSUER_ID }}
+          # Apple's auth endpoint throttles under repeated builds, and the
+          # export is also where -allowProvisioningUpdates registers any NEW
+          # bundle id (the share extension added one). A throttled call reports
+          # "Authentication failed" followed by "No profiles were found", which
+          # looks exactly like a permissions problem. Retry before believing it.
+          for attempt in 1 2 3; do
+            if xcodebuild -exportArchive \
+              -archivePath build/App.xcarchive \
+              -exportPath build/ipa \
+              -exportOptionsPlist build/export.plist \
+              -allowProvisioningUpdates \
+              -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.APPSTORE_KEY_ID }}.p8 \
+              -authenticationKeyID ${{ secrets.APPSTORE_KEY_ID }} \
+              -authenticationKeyIssuerID ${{ secrets.APPSTORE_ISSUER_ID }}; then
+              break
+            fi
+            if [ "$attempt" = 3 ]; then
+              echo "::error::export failed 3 times. If every attempt said 'Authentication failed' plus 'No profiles for app.tradedesk.beta.share', the App Store Connect key cannot register that new bundle id and it has to be created by hand in the developer portal."
+              exit 1
+            fi
+            echo "export attempt $attempt failed, backing off"
+            sleep $((attempt * 45))
+            rm -rf build/ipa
+          done
           ls -la build/ipa
 
       - name: Verify the applesignin entitlement survived signing
