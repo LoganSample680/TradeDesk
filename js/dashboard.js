@@ -1035,6 +1035,25 @@ function _openJobNoteEditor(jobId){
     '</div>'+
     '<button onclick="_saveJobNote('+j.id+')" class="btn btn-g" style="width:100%;height:48px;font-size:15px;font-weight:800;border-radius:var(--r);margin-top:16px">Save note</button>';
   ov.appendChild(sheet);document.body.appendChild(ov);
+  // Hold-to-talk on both note fields (js/voice.js). This is THE moment voice
+  // notes exist for: the crew is standing on site with gloves on and something
+  // to remember. Draws nothing at all on a device that cannot dictate.
+  _jnAttachMics();
+}
+// Wrap each note textarea in a row so the mic sits beside it instead of
+// stretching the field. Idempotent: re-running finds the existing row.
+function _jnAttachMics(){
+  if(typeof _voiceAttach!=='function')return;
+  ['_jn-note-ta','_jn-site-ta'].forEach(id=>{
+    const ta=document.getElementById(id);
+    if(!ta||ta.parentElement?.classList.contains('td-voice-row'))return;
+    const row=document.createElement('div');
+    row.className='td-voice-row';
+    row.style.cssText='display:flex;align-items:flex-end;gap:8px';
+    ta.parentElement.insertBefore(row,ta);
+    row.appendChild(ta);
+    _voiceAttach(id,{host:row});
+  });
 }
 
 // Pull the editor's current field values onto the job/client WITHOUT closing or

@@ -59,6 +59,12 @@ jobs:
             /usr/libexec/PlistBuddy -c "Set :NSCameraUsageDescription 'TradeDesk uses the camera and LiDAR to scan rooms into floor plans for your estimates.'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :NSMotionUsageDescription string 'TradeDesk reads the motion coprocessor to timestamp when a drive started and ended, so job time and mileage are accurate without running GPS all day.'" "$PLIST" || \
             /usr/libexec/PlistBuddy -c "Set :NSMotionUsageDescription 'TradeDesk reads the motion coprocessor to timestamp when a drive started and ended, so job time and mileage are accurate without running GPS all day.'" "$PLIST"
+          # TdVoice: on-device dictation needs BOTH the mic and the speech
+          # entitlement strings; a missing one is an instant crash on first press.
+          /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'TradeDesk turns what you say into job notes, so you can record details without stopping work.'" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription 'TradeDesk turns what you say into job notes, so you can record details without stopping work.'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSSpeechRecognitionUsageDescription string 'Your voice notes are transcribed on this iPhone. The audio never leaves your device.'" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSSpeechRecognitionUsageDescription 'Your voice notes are transcribed on this iPhone. The audio never leaves your device.'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$PLIST" || true
           # Standard HTTPS only: answers TestFlight's export-compliance question

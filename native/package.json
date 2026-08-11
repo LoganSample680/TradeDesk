@@ -14,7 +14,8 @@
     "td-lock": "file:./td-lock",
     "td-nav": "file:./td-nav",
     "td-notify": "file:./td-notify",
-    "td-scan": "file:./td-scan"
+    "td-scan": "file:./td-scan",
+    "td-voice": "file:./td-voice"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.0.0"
