@@ -545,7 +545,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.11.26.1';
+const APP_VERSION='08.11.26.2';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -608,7 +608,7 @@ let _lastKnownIds={
   td_clients:new Set(),td_bids:new Set(),td_jobs:new Set(),
   td_income:new Set(),td_expenses:new Set(),td_mileage:new Set(),
   td_payments:new Set(),td_liens:new Set(),td_time_entries:new Set(),
-  td_licenses:new Set(),td_events:new Set(),td_contracts:new Set(),td_agreements:new Set(),td_photos:new Set()
+  td_licenses:new Set(),td_events:new Set(),td_contracts:new Set(),td_agreements:new Set(),td_photos:new Set(),td_equipment:new Set()
 };
 
 // DELTA SYNC. Per-table Map(id -> content hash of the row payload the SERVER currently
@@ -1251,6 +1251,7 @@ const _TD_TABLES=[
   {t:'td_vehicles',    get:()=>vehicles,    set:v=>{vehicles.length=0;v.forEach(r=>vehicles.push(r));},     tx:null},
   {t:'td_places',      get:()=>places,      set:v=>{places.length=0;v.forEach(r=>places.push(r));},         tx:null},
   {t:'td_scans',       get:()=>scans,       set:v=>{scans.length=0;v.forEach(r=>scans.push(r));},           tx:null},
+  {t:'td_equipment',   get:()=>equipment,   set:v=>{equipment.length=0;v.forEach(r=>equipment.push(r));},   tx:null},
   {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
     tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
 ];
@@ -1927,6 +1928,7 @@ async function supaInit(){
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           vehicles=[]; // fleet is a synced array (td_vehicles) now, not a settings key
           scans=[];    // same rule: td_scans is account data, never carried across
+          equipment=[];// and the client's units belong to THAT account only
           places=[];   // same for geocoded locations (td_places)
           // Crew caches are keyed by EMAIL, so without this the next account's
           // roster renders the previous account's location status against any
@@ -5186,7 +5188,7 @@ function _wipeLocalAccountData(){
   // outgoing account's trucks stay in memory and render under the next login,
   // which is the exact cross-account bleed the S.vehicles reset below guarded.
   vehicles=[];
-  scans=[];
+  scans=[];equipment=[];
   places=[];
   _teamGeo={};_teamGeoLoaded=false;_teamComp={};_teamCompLoaded=false;
   // Inbound-lead review queue is account-scoped in-memory state that lived OUTSIDE
@@ -5654,7 +5656,7 @@ function _paintCacheForDelta(uid){
   try{
     const cc=JSON.parse(localStorage.getItem('zp3_cloud_cache')||'null');
     if(!cc||cc._owner!==uid)return false;
-    const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos,td_maintenance:cc.maintenance,td_vehicles:cc.vehicles,td_places:cc.places};
+    const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos,td_maintenance:cc.maintenance,td_vehicles:cc.vehicles,td_places:cc.places,td_equipment:cc.equipment};
     const _ptTs=Date.now();
     for(const{t,set}of _TD_TABLES){
       // A cache written by an OLDER app version has no key for a table added
