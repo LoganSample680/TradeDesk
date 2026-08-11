@@ -545,7 +545,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.10.26.22';
+const APP_VERSION='08.10.26.23';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2868,7 +2868,7 @@ function _initDispatchDrag(){
     card.style.boxShadow='0 6px 20px rgba(0,0,0,.18)';
     card.style.position='relative';
     card.style.zIndex='5';
-    navigator.vibrate&&navigator.vibrate(20);
+    _tdHaptic('thud');   // card lifted for a drag (native Taptic; navigator.vibrate was dead on iOS)
   });
 
   host.addEventListener('pointermove',e=>{

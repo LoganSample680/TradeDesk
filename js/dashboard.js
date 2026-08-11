@@ -3089,7 +3089,7 @@ function _initDashDrag() {
   function enter() {
     if (editMode) return;
     editMode = true;
-    navigator.vibrate?.(45);
+    _tdHaptic('heavy');  // long-press held: edit mode is on
     root.classList.add('td-drag-active');
     root.addEventListener('click', _swallowClick, true);
     doneBtn = document.createElement('button');
@@ -3186,7 +3186,7 @@ function _initDashDrag() {
       if (before) root.insertBefore(placeholder, before);
       else root.appendChild(placeholder);
     });
-    navigator.vibrate?.(8); // tiny tick as cards glide aside, iOS-style
+    _tdHaptic('tick'); // tiny tick as cards glide aside, iOS-style
   }
 
   function onDrop() {
@@ -3199,7 +3199,7 @@ function _initDashDrag() {
     const settled = dragEl;
     settled.classList.add('td-drop-settle');
     setTimeout(() => { try { settled.classList.remove('td-drop-settle'); } catch (_e) {} }, 320);
-    navigator.vibrate?.(12);
+    _tdHaptic('tap');    // the card settles back into the grid
     ghost?.remove(); ghost = null;
     placeholder = null; dragEl = null;
   }
@@ -3263,7 +3263,7 @@ function _initKpiDrag() {
   function enter() {
     if (editMode) return;
     editMode = true;
-    navigator.vibrate?.(45);
+    _tdHaptic('heavy');  // long-press held: edit mode is on
     cont.classList.add('td-drag-active');
     cont.addEventListener('click', _swallowClick, true);
     doneBtn = document.createElement('button');

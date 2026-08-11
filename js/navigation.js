@@ -185,7 +185,7 @@ function _initTabBarDrag() {
   function enter() {
     if (editMode) return;
     editMode = true;
-    navigator.vibrate?.(45);
+    _tdHaptic('heavy');  // long-press held: edit mode is on
     tabbar.classList.add('td-drag-active');
     inner.classList.add('td-drag-active', 'mtb-inner');
     tabbar.addEventListener('click', _swallowClick, true);

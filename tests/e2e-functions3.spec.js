@@ -8114,3 +8114,151 @@ test.describe('Dollar-field comma formatting, shared helpers + every real call s
     });
   }
 });
+
+// ── Haptics (owner 2026-08-10: "haptics everywhere needs a go") ──────────────
+// The app used to call navigator.vibrate(), which iOS has NEVER implemented
+// in Safari or WKWebView: every one of those six calls was a silent no-op on
+// iPhone. _tdHaptic routes to the native Taptic plugin in the shell and falls
+// back to vibrate elsewhere, so the feel is real on the device that matters.
+test.describe('Haptics bridge', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('native shell: every kind maps to a real Taptic call, unknown kinds still fire', async () => {
+    const r = await page.evaluate(() => {
+      const realCap = window.Capacitor, realPlugin = window._tdHapticPlugin;
+      const calls = [];
+      try {
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: (n) => n === 'TdHaptic' ? {
+            impact: (o) => { calls.push('impact:' + (o && o.style)); return Promise.resolve(); },
+            notify: (o) => { calls.push('notify:' + (o && o.type)); return Promise.resolve(); },
+            select: () => { calls.push('select'); return Promise.resolve(); },
+          } : null,
+        };
+        window._tdHapticPlugin = undefined; // force re-resolution against the stub
+        ['tick', 'tap', 'thud', 'heavy', 'win', 'warn', 'fail', 'nonsense-kind'].forEach(k => _tdHaptic(k));
+        return { calls };
+      } finally { window.Capacitor = realCap; window._tdHapticPlugin = realPlugin; }
+    });
+    expect(r.calls).toEqual([
+      'select',            // tick
+      'impact:light',      // tap
+      'impact:medium',     // thud
+      'impact:heavy',      // heavy
+      'notify:success',    // win
+      'notify:warning',    // warn
+      'notify:error',      // fail
+      'impact:light',      // unknown kind degrades to a plain tap, never throws
+    ]);
+  });
+
+  test('no native shell: falls back to navigator.vibrate, and a missing API is silent', async () => {
+    const r = await page.evaluate(() => {
+      const realCap = window.Capacitor, realPlugin = window._tdHapticPlugin, realVibe = navigator.vibrate;
+      const buzzes = [];
+      try {
+        window.Capacitor = undefined;
+        window._tdHapticPlugin = undefined;
+        Object.defineProperty(navigator, 'vibrate', { value: (v) => { buzzes.push(v); return true; }, configurable: true });
+        _tdHaptic('win');
+        _tdHaptic('tick');
+        const withApi = JSON.parse(JSON.stringify(buzzes));
+        // A browser with no Vibration API at all (desktop Safari) must be a
+        // silent no-op, never a thrown error inside a button handler.
+        Object.defineProperty(navigator, 'vibrate', { value: undefined, configurable: true });
+        let threw = false;
+        try { _tdHaptic('fail'); } catch (e) { threw = true; }
+        return { withApi, threw };
+      } finally {
+        window.Capacitor = realCap; window._tdHapticPlugin = realPlugin;
+        Object.defineProperty(navigator, 'vibrate', { value: realVibe, configurable: true });
+      }
+    });
+    expect(r.withApi.length, 'both kinds buzzed through the web fallback').toBe(2);
+    expect(Array.isArray(r.withApi[0]), 'win is a rhythm, not a single buzz').toBe(true);
+    expect(r.withApi[1], 'tick is the shortest single buzz').toBe(8);
+    expect(r.threw, 'no Vibration API is silent, never a thrown error').toBe(false);
+  });
+
+  test('S.hapticsOff silences the whole app from one switch', async () => {
+    const r = await page.evaluate(() => {
+      const realOff = S.hapticsOff, realCap = window.Capacitor, realPlugin = window._tdHapticPlugin;
+      const calls = [];
+      try {
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: () => ({ impact: () => { calls.push('i'); return Promise.resolve(); },
+                                   notify: () => { calls.push('n'); return Promise.resolve(); },
+                                   select: () => { calls.push('s'); return Promise.resolve(); } }),
+        };
+        window._tdHapticPlugin = undefined;
+        S.hapticsOff = true;
+        ['tick', 'tap', 'win', 'fail'].forEach(k => _tdHaptic(k));
+        const whileOff = calls.length;
+        S.hapticsOff = false;
+        _tdHaptic('tap');
+        return { whileOff, afterOn: calls.length };
+      } finally { S.hapticsOff = realOff; window.Capacitor = realCap; window._tdHapticPlugin = realPlugin; }
+    });
+    expect(r.whileOff, 'the switch silences every kind').toBe(0);
+    expect(r.afterOn, 'and turning it back on restores them').toBe(1);
+  });
+
+  test('showToast carries the haptic: warnings warn, wins win, notices tick', async () => {
+    const r = await page.evaluate(() => {
+      const realCap = window.Capacitor, realPlugin = window._tdHapticPlugin;
+      const calls = [];
+      try {
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: () => ({
+            impact: (o) => { calls.push('impact:' + (o && o.style)); return Promise.resolve(); },
+            notify: (o) => { calls.push('notify:' + (o && o.type)); return Promise.resolve(); },
+            select: () => { calls.push('select'); return Promise.resolve(); },
+          }),
+        };
+        window._tdHapticPlugin = undefined;
+        showToast('saved', '✓');
+        showToast('careful', '⚠️');
+        showToast('money in', '💰');
+        showToast('just so you know', '⏱');
+        document.querySelectorAll('.toast').forEach(t => t.remove());
+        return { calls };
+      } finally { window.Capacitor = realCap; window._tdHapticPlugin = realPlugin; }
+    });
+    expect(r.calls).toEqual(['notify:success', 'notify:warning', 'notify:success', 'select']);
+  });
+
+  test('dead navigator.vibrate call sites are gone from the app source', async () => {
+    // §7: the old API was silently dead on iOS. Every call site must route
+    // through _tdHaptic now, so none may call navigator.vibrate directly.
+    const fs = require('fs');
+    const path = require('path');
+    const jsDir = path.join(__dirname, '..', 'js');
+    const offenders = [];
+    for (const f of fs.readdirSync(jsDir).filter(n => n.endsWith('.js'))) {
+      const src = fs.readFileSync(path.join(jsDir, f), 'utf8');
+      src.split('\n').forEach((line, i) => {
+        if (!/navigator\.vibrate/.test(line)) return;
+        // utils.js owns the ONE fallback inside _tdHaptic; comments are fine.
+        if (f === 'utils.js') return;
+        if (/^\s*(\/\/|\*)/.test(line)) return;
+        offenders.push(`${f}:${i + 1}`);
+      });
+    }
+    expect(offenders, 'no direct navigator.vibrate outside the _tdHaptic fallback').toEqual([]);
+  });
+
+  test('no console errors during haptics tests', async () => {
+    assertNoErrors(page, 'haptics bridge');
+  });
+});
