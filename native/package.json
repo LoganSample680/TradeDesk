@@ -13,6 +13,7 @@
     "td-geo": "file:./td-geo",
     "td-haptic": "file:./td-haptic",
     "td-nav": "file:./td-nav",
+    "td-notify": "file:./td-notify",
     "td-scan": "file:./td-scan"
   },
   "devDependencies": {

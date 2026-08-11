@@ -29,6 +29,7 @@
 
 let _geoWatchId=null;
 let _geoCurrentJob=null;   // job id the employee is currently inside the fence of
+let _geoNotifiedArrivalJob=null; // last job we fired an arrival notification for (one per arrival, not per ping)
 let _geoArrivedAt=null;    // ISO arrival timestamp for the open entry
 let _geoLastPingTs=0;      // throttle for location_pings inserts
 let _geoJobCoords={};      // jobId -> {lat,lng} geocode cache (per session)
@@ -735,6 +736,22 @@ async function _geoOnPing(pos){
     _geoFenceEnteredAtMs=cur?nowMs:null;
     if(cur&&cur.k==='job'){_geoPersistOpen();_geoWakeAcquire();}
     else{_geoClearOpen();_geoWakeRelease();}
+    // ARRIVAL TAP-BACK (owner 2026-08-10: "when you arrive can it route back
+    // to tradedesk automatically?"). It cannot: no iOS API lets an app bring
+    // itself forward, from Apple Maps or anywhere else. A notification the
+    // driver taps is the sanctioned equivalent, and this is the moment we
+    // know they arrived. Only on a REAL job-fence entry, never a shop hop.
+    if(cur&&cur.k==='job'&&_geoCurrentJob!==_geoNotifiedArrivalJob){
+      _geoNotifiedArrivalJob=_geoCurrentJob;
+      try{
+        if(typeof _notifyArrival==='function'){
+          const _j=(typeof jobs!=='undefined'&&jobs.find)?jobs.find(x=>String(x.id)===String(_geoCurrentJob)):null;
+          const _c=(_j&&_j.client_id!=null&&typeof getClientById==='function')?getClientById(_j.client_id):null;
+          _notifyArrival((_c&&_c.name)||(_j&&_j.name)||'the job site',_j&&_j.name);
+        }
+      }catch(_e){}
+    }
+    if(!(cur&&cur.k==='job'))_geoNotifiedArrivalJob=null;   // re-arm for the next arrival
     // The dashboard's "ON SITE" card (renderDash, js/dashboard.js) reads
     // _geoCurrentJob/_geoCurrentPlace/_geoWasInShop straight off this module,
     // but nothing in this handler ever told it those changed. Every OTHER path
