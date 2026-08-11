@@ -113,6 +113,32 @@ test.describe('Share extension script targets the real Xcode paths', () => {
     expect(src).not.toContain('File.dirname(File.dirname(PROJECT_PATH))');
   });
 
+  test('the extension target names its product', () => {
+    // Without PRODUCT_NAME the product is literally ".appex", so the link step
+    // and the wrapper-creation step claim the same output and Xcode aborts
+    // with "Multiple commands produce". It archives fine right up until it
+    // doesn't, and only on a macOS runner.
+    expect(src).toMatch(/s\['PRODUCT_NAME'\]\s*=/);
+  });
+
+  test('the extension version is pinned to the app it ships inside', () => {
+    // A mismatch here is not a build failure, it is an App Store Connect
+    // REJECTION after the fifteen-minute archive has already been paid for.
+    const plist = fs.readFileSync(
+      path.join(ROOT, 'native/td-share/ios/Extension/Info.plist'), 'utf8');
+    expect(plist, 'short version must follow the app, not a literal')
+      .toContain('<key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>');
+    expect(src, 'MARKETING_VERSION must be copied from the App target')
+      .toContain("s['MARKETING_VERSION']");
+
+    // And the build number must be stamped on the extension at the same path
+    // the script copies its Info.plist to, from the same run number the app
+    // uses.
+    const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/ios-beta.yml'), 'utf8');
+    expect(wf).toContain('Set :CFBundleVersion ${{ github.run_number }}" ios/App/ShareExt/Info.plist');
+    expect(wf).toContain('Set :CFBundleVersion ${{ github.run_number }}" "$PLIST"');
+  });
+
   test('the App Group lands on the same entitlements file the workflow writes', () => {
     // Two files have to agree on one path or the extension and the app end up
     // in different App Groups, which reads as "sharing silently does nothing".

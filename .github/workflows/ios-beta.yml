@@ -131,6 +131,10 @@ jobs:
         run: |
           gem install xcodeproj --no-document || sudo gem install xcodeproj --no-document
           ruby ../scripts/ios-add-share-target.rb
+          # Same build number as the app, stamped from the same place. An
+          # extension whose CFBundleVersion differs from its host is rejected
+          # by App Store Connect after the whole archive has been built.
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" ios/App/ShareExt/Info.plist
           /usr/libexec/PlistBuddy -c "Print" ios/App/App/App.entitlements
 
       - name: App icon from the repo's PWA icon

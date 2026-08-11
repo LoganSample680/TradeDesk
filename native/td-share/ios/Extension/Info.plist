@@ -9,7 +9,11 @@
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
   <key>CFBundlePackageType</key><string>XPC!</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <!-- Both must equal the containing app's or App Store Connect rejects the
+       upload. MARKETING_VERSION is copied onto this target from the App target
+       by scripts/ios-add-share-target.rb; CFBundleVersion is stamped with the
+       run number by ios-beta.yml, the same place the app's is stamped. -->
+  <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>NSExtension</key>
   <dict>

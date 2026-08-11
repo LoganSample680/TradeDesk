@@ -57,8 +57,21 @@ ext_target.add_file_references([group.new_reference('ShareViewController.swift')
 group.new_reference('Info.plist')
 group.new_reference('ShareExt.entitlements')
 
+# An extension's CFBundleShortVersionString has to match the app it ships
+# inside or App Store Connect rejects the whole upload. The app's value comes
+# from MARKETING_VERSION, so read it off the App target rather than writing a
+# second copy of the number here that can drift.
+app_marketing = app_target.build_configurations
+                          .map { |c| c.build_settings['MARKETING_VERSION'] }
+                          .compact.first || '1.0'
+
 ext_target.build_configurations.each do |config|
   s = config.build_settings
+  # Without this the product is literally ".appex": the link step and the
+  # wrapper-creation step then claim the same output path and Xcode aborts the
+  # archive with "Multiple commands produce". Cost a build to learn.
+  s['PRODUCT_NAME']               = '$(TARGET_NAME)'
+  s['MARKETING_VERSION']          = app_marketing
   s['PRODUCT_BUNDLE_IDENTIFIER']  = EXT_ID
   s['INFOPLIST_FILE']             = "#{EXT_NAME}/Info.plist"
   s['CODE_SIGN_ENTITLEMENTS']     = "#{EXT_NAME}/ShareExt.entitlements"
