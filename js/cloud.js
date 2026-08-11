@@ -545,7 +545,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.11.26.17';
+const APP_VERSION='08.11.26.18';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1546,6 +1546,24 @@ function _armBootCascade(){
 // and every later sync call it harmlessly.
 function _bootSyncSettled(){
   if(window._bootSkelDone)return;
+  // Hold the shimmer a beat for the FIRST geo answer, so the ON SITE / drive
+  // card is part of the one waterfall instead of sliding in seconds behind it
+  // (owner spec 2026-08-11: one boot path, banners included, no stutters).
+  // Native shell with tracking coming up only, and never more than 1.2s past
+  // the cloud sync: GPS gets a beat, not a veto. CoreLocation hands back its
+  // last known fix almost immediately, so this usually costs ~200ms.
+  try{
+    const _geoComing=(typeof _geoTdPlugin==='function'&&_geoTdPlugin())&&
+      ((typeof _geoWatchId!=='undefined'&&_geoWatchId!=null)||
+       (typeof _geoNativeWatcherId!=='undefined'&&_geoNativeWatcherId!=null)||
+       (typeof _geoNativeStarting!=='undefined'&&_geoNativeStarting));
+    const _nb=document.getElementById('dash-nearby');
+    const _cardUp=!!(_nb&&_nb.style.display!=='none'&&_nb.innerHTML.trim());   // snapshot already painted it
+    if(_geoComing&&!window._geoFixSeen&&!window._nearbyLiveRendered&&!_cardUp){
+      if(!window._bootGeoHoldUntil)window._bootGeoHoldUntil=Date.now()+1200;
+      if(Date.now()<window._bootGeoHoldUntil){setTimeout(_bootSyncSettled,150);return;}
+    }
+  }catch(_e){}
   window._bootSkelDone=true;
   try{clearTimeout(window._bootSkelTimer);}catch(_e){}
   window._bootSkelTimer=null; // next sign-in this session must arm a fresh failsafe
@@ -1985,7 +2003,7 @@ async function supaInit(){
         // dashboard render holds the FULL shimmer (every widget + greeting),
         // one swap + one waterfall when the load below fully settles, exactly
         // like a fresh boot. _bootCascadeRan resets so this load gets its pour.
-        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;
+        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;
         goPg('pg-dash');
         try{
         const hasAccount=await loadAccountData();

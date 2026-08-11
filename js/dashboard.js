@@ -637,10 +637,24 @@ function renderDash(){
       const _fmtClk=(t)=>{try{return new Date(t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
       const _fmtDur=(ms)=>{const s=Math.max(0,Math.floor((Date.now()-ms)/1000));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return (h?h+'h ':'')+m+'m';};
       const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
+      // NEVER reveal mid-waterfall. A geo fix landing during the boot cascade
+      // used to slide this card open while the cards below were still pouring
+      // in: two animations fighting over the same layout, which is exactly the
+      // stutter the owner keeps seeing (spec 2026-08-11: one waterfall, no
+      // stutters). The content still renders (hidden); the REVEAL waits out
+      // the pour, then a fresh render slides it open once.
+      const _holdReveal=_wasHidden&&!!document.querySelector('#pg-dash.boot-cascade');
+      if(_holdReveal&&!window._nearbyPourWait){
+        window._nearbyPourWait=setInterval(()=>{
+          if(document.querySelector('#pg-dash.boot-cascade'))return;
+          clearInterval(window._nearbyPourWait);window._nearbyPourWait=null;
+          try{renderDash();}catch(_e){}
+        },140);
+      }
       if(_nearbyHideTimer){clearTimeout(_nearbyHideTimer);_nearbyHideTimer=null;} // a re-appearance mid-fade-out must not get hidden out from under it
       _nearbyEl.style.animation='';
-      _nearbyEl.style.display='block';
-      if(_wasHidden){
+      if(!_holdReveal)_nearbyEl.style.display='block';
+      if(!_holdReveal&&_wasHidden){
         // The geo fix usually lands seconds AFTER the boot waterfall, and this
         // card sits at the top of the dashboard: popping in at full height
         // shoved every card below it down in one frame, which read as the

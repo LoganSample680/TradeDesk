@@ -1257,6 +1257,72 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(r.hidden.maxH).toBe('');                  // and cleaned up
   });
 
+  // One waterfall, no stutters (owner spec 2026-08-11): a geo fix landing
+  // MID-pour must not slide the ON SITE card open while the cards below are
+  // still cascading in. The reveal waits out the pour, then slides once.
+  test('geo card never reveals mid-waterfall, slides in right after it', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = (typeof _activeTimer !== 'undefined') ? _activeTimer : null;
+      const el = document.getElementById('dash-nearby');
+      const d = document.getElementById('pg-dash');
+      el.style.display = 'none'; el.innerHTML = '';
+      try {
+        d.classList.add('boot-cascade');           // the pour is mid-flight
+        _activeTimer = { startTime: Date.now() - 60000, clientName: 'Pour Test', jobId: null };
+        renderDash();
+        const during = { disp: el.style.display, waiting: !!window._nearbyPourWait };
+        d.classList.remove('boot-cascade');        // pour finishes
+        await new Promise(res => setTimeout(res, 400));
+        const after = { disp: el.style.display, cleared: !window._nearbyPourWait };
+        return { during, after };
+      } finally {
+        _activeTimer = saved; d.classList.remove('boot-cascade');
+        if (window._nearbyPourWait) { clearInterval(window._nearbyPourWait); window._nearbyPourWait = null; }
+        renderDash();
+      }
+    });
+    expect(r.during.disp, 'held hidden while the waterfall runs').toBe('none');
+    expect(r.during.waiting, 'a reveal is queued for the end of the pour').toBe(true);
+    expect(r.after.disp, 'revealed right after the pour').toBe('block');
+    expect(r.after.cleared, 'the wait disarms itself').toBe(true);
+  });
+
+  // The settle holds the shimmer briefly for the FIRST geo answer in the
+  // native shell, so the banner joins the waterfall; a browser (no shell)
+  // settles instantly, and the hold is capped so GPS can never veto the boot.
+  test('boot settle gives the first geo fix a beat, but only in the shell', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const el = document.getElementById('dash-nearby');
+      const keep = { d: el.style.display, h: el.innerHTML };
+      try {
+        // Shell present, tracking coming up, no fix yet, no card painted.
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: (n) => n === 'TdGeo' ? { addListener: () => {} } : null };
+        window._geoTdBound = true;
+        _geoNativeStarting = true;
+        el.style.display = 'none'; el.innerHTML = '';
+        window._geoFixSeen = false; window._nearbyLiveRendered = false;
+        window._bootSyncPending = true; window._bootSkelDone = false;
+        window._bootCascadeRan = true;             // pour already spent: isolate the hold
+        window._bootGeoHoldUntil = null;
+        _bootSyncSettled();
+        const heldForGeo = !window._bootSkelDone;
+        window._geoFixSeen = true;                 // the fix lands
+        await new Promise(res => setTimeout(res, 260));
+        const settledOnFix = window._bootSkelDone;
+        return { heldForGeo, settledOnFix };
+      } finally {
+        window.Capacitor = realCap; window._geoTdBound = undefined;
+        _geoNativeStarting = false;
+        window._bootSyncPending = false; window._bootSkelDone = true;
+        window._bootGeoHoldUntil = null; window._geoFixSeen = false;
+        el.style.display = keep.d; el.innerHTML = keep.h;
+      }
+    });
+    expect(r.heldForGeo, 'shell boot waits a beat for the first fix').toBe(true);
+    expect(r.settledOnFix, 'the fix releases the settle immediately').toBe(true);
+  });
+
   // renderDash re-applied the saved widget order by re-APPENDING every card,
   // and re-inserting a DOM node restarts its CSS animation: during the pour
   // window every re-render replayed the whole waterfall (owner 2026-08-10:
