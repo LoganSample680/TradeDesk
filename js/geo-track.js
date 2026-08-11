@@ -451,6 +451,10 @@ function _geoEmitFix(fix){
 
 // ── Position handler: breadcrumb + geofence state machine ──────────────────────
 async function _geoOnPing(pos){
+  // The dashboard's optimistic geo card (renderDash, js/dashboard.js) shows
+  // the LAST session's card until real GPS truth arrives; this flag is that
+  // truth arriving, after it the live state alone decides the card.
+  window._geoFixSeen=true;
   // RE-ENTRANCY GUARD: this handler awaits network geocodes, and watchPosition can
   // fire faster than they resolve. Interleaved runs used to apply a STALE position
   // after a fresher one and flip arrive/depart backwards, overlapping pings are

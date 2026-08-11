@@ -1257,6 +1257,73 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(r.hidden.maxH).toBe('');                  // and cleaned up
   });
 
+  // renderDash re-applied the saved widget order by re-APPENDING every card,
+  // and re-inserting a DOM node restarts its CSS animation: during the pour
+  // window every re-render replayed the whole waterfall (owner 2026-08-10:
+  // the geofence card render "keeps reiterating the waterfall"). The order
+  // appliers are strict no-ops when the DOM already matches.
+  test('widget order applier never touches the DOM when already in order', async () => {
+    const r = await page.evaluate(async () => {
+      const root = document.getElementById('dash-widget-root');
+      let adds = 0;
+      const mo = new MutationObserver(muts => muts.forEach(m => { adds += m.addedNodes.length; }));
+      mo.observe(root, { childList: true });
+      _applyDashOrder(_getDashWidgetOrder());
+      await new Promise(res => setTimeout(res, 30));
+      const noop = adds;
+      const cur = [...root.querySelectorAll(':scope>.td-dw')].map(el => el.dataset.dw);
+      _applyDashOrder([...cur].reverse());
+      await new Promise(res => setTimeout(res, 30));
+      const moved = adds;
+      _applyDashOrder(cur);
+      await new Promise(res => setTimeout(res, 30));
+      mo.disconnect();
+      const back = [...root.querySelectorAll(':scope>.td-dw')].map(el => el.dataset.dw).join();
+      return { noop, moved, restored: back === cur.join() };
+    });
+    expect(r.noop, 'matching order: zero DOM churn, zero animation restarts').toBe(0);
+    expect(r.moved, 'a real reorder still moves nodes').toBeGreaterThan(0);
+    expect(r.restored).toBe(true);
+  });
+
+  // The geo card waits seconds for the first GPS fix; the dashboard now shows
+  // the LAST session's card instantly (fresh + same user only) and lets the
+  // first real fix confirm or remove it (owner 2026-08-10: "comes in 3
+  // seconds late... load all this in instantly").
+  test('geo card snapshot: shows instantly pre-fix, first no-state fix clears it, stale never shows', async () => {
+    const r = await page.evaluate(async () => {
+      const el = document.getElementById('dash-nearby');
+      const savedFix = window._geoFixSeen;
+      try {
+        window._geoFixSeen = false;
+        el.style.display = 'none'; el.innerHTML = ''; delete el.dataset.snap;
+        const uid = (typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id) || null;
+        localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div id="snap-probe">ON SITE</div>', ts: Date.now(), uid }));
+        renderDash();
+        const shown = el.style.display === 'block' && !!document.getElementById('snap-probe');
+        window._geoFixSeen = true; // GPS truth arrives and finds no live state
+        renderDash();
+        await new Promise(res => setTimeout(res, 350));
+        const hidden = el.style.display === 'none';
+        const cleared = !localStorage.getItem('zp3_nearby_snap');
+        window._geoFixSeen = false;
+        localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div id="snap-probe2">x</div>', ts: Date.now() - 700000, uid }));
+        renderDash();
+        const staleShown = !!document.getElementById('snap-probe2');
+        return { shown, hidden, cleared, staleShown };
+      } finally {
+        window._geoFixSeen = savedFix;
+        localStorage.removeItem('zp3_nearby_snap');
+        el.style.display = 'none'; el.innerHTML = ''; delete el.dataset.snap;
+        renderDash();
+      }
+    });
+    expect(r.shown, 'fresh same-user snapshot renders before any fix').toBe(true);
+    expect(r.hidden, 'the first no-state fix animates it away').toBe(true);
+    expect(r.cleared, 'and clears the stored copy').toBe(true);
+    expect(r.staleShown, 'a stale snapshot never shows').toBe(false);
+  });
+
   // Same-page goPg must not strip and re-add .active: that restarts the
   // td-pg-enter animation, and boot/sign-in flows call goPg('pg-dash')
   // several times, so each restart replayed the whole page pour (owner

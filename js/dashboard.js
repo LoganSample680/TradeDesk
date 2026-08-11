@@ -619,18 +619,20 @@ function renderDash(){
     // ask 2026-08-07). Reads the fence machine's own drive state, never
     // re-derived: an open drive leg with recent driving speed.
     const _driving=!_onClock&&(typeof _geoDriving==='function')&&_geoDriving();
+    // Styles hoisted OUT of the live branch: the optimistic snapshot card
+    // below needs the same keyframes before any live state exists.
+    if(!document.getElementById('_td-nearby-anim-style')){
+      const _s=document.createElement('style');_s.id='_td-nearby-anim-style';
+      // A radar-ping (concentric rings expanding from the pin) + a live status dot
+      // read as "on site, right now", the GPS moment made visible.
+      _s.textContent='@keyframes tdNearbyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}'+
+        '@keyframes tdNearbyOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(6px)}}'+
+        '@keyframes tdNearbyDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}'+
+        '@keyframes tdGeoPing{0%{transform:scale(.45);opacity:.85}80%{opacity:0}100%{transform:scale(1.18);opacity:0}}'+
+        '@keyframes tdDriveMove{0%{transform:translateX(-3px)}50%{transform:translateX(3px)}100%{transform:translateX(-3px)}}';
+      document.head.appendChild(_s);
+    }
     if(_onClock||_driving||_nearbyJob||_showLocPrompt){
-      if(!document.getElementById('_td-nearby-anim-style')){
-        const _s=document.createElement('style');_s.id='_td-nearby-anim-style';
-        // A radar-ping (concentric rings expanding from the pin) + a live status dot
-        // read as "on site, right now", the GPS moment made visible.
-        _s.textContent='@keyframes tdNearbyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}'+
-          '@keyframes tdNearbyOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(6px)}}'+
-          '@keyframes tdNearbyDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}'+
-          '@keyframes tdGeoPing{0%{transform:scale(.45);opacity:.85}80%{opacity:0}100%{transform:scale(1.18);opacity:0}}'+
-          '@keyframes tdDriveMove{0%{transform:translateX(-3px)}50%{transform:translateX(3px)}100%{transform:translateX(-3px)}}';
-        document.head.appendChild(_s);
-      }
       const _svgPin=(c,sz)=>'<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+'" fill="none" stroke="'+c+'" stroke-width="2"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
       const _fmtClk=(t)=>{try{return new Date(t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
       const _fmtDur=(ms)=>{const s=Math.max(0,Math.floor((Date.now()-ms)/1000));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return (h?h+'h ':'')+m+'m';};
@@ -756,7 +758,28 @@ function renderDash(){
         const _extra=hasBalance?'<div style="font-size:12px;color:#B45309;font-weight:700;margin-top:3px">'+fmt(nb.balance)+' owed</div>':'';
         _nearbyEl.innerHTML=_cardShell(_cardHead(nb.clientName,nb.addr,_extra)+_nbNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+nbBtns.join('')+'</div>');
       }
-    }else if(_nearbyEl.style.display!=='none'&&_nearbyEl.innerHTML.trim()){
+      // Snapshot the rendered card: the next page load shows it INSTANTLY at
+      // the settle pour instead of waiting seconds for the first GPS fix
+      // (owner 2026-08-10: "comes in 3 seconds late"). Live truth replaces it
+      // the moment a fix arrives (_geoFixSeen, js/geo-track.js).
+      delete _nearbyEl.dataset.snap;
+      try{localStorage.setItem('zp3_nearby_snap',JSON.stringify({html:_nearbyEl.innerHTML,ts:Date.now(),uid:(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null}));}catch(_e){}
+    }else if(!window._geoFixSeen&&(_nearbyEl.style.display==='none'||!_nearbyEl.style.display)&&!_nearbyEl.dataset.snap){
+      // No live geo state YET (no fix this session): show the last session's
+      // card optimistically if it is fresh, so the boot pour includes it.
+      // A version-watchdog reload mid-workday is seconds old, exactly the
+      // case that felt broken. Stale (>10 min) or another user's card never
+      // shows, and the first real fix either confirms or animates it away.
+      try{
+        const _sn=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
+        if(_sn&&_sn.html&&_sn.uid===((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null)&&(Date.now()-_sn.ts)<600000){
+          _nearbyEl.dataset.snap='1';
+          _nearbyEl.style.animation='';
+          _nearbyEl.innerHTML=_sn.html;
+          _nearbyEl.style.display='block';
+        }
+      }catch(_e){}
+    }else if(_nearbyEl.style.display!=='none'&&_nearbyEl.innerHTML.trim()&&(!_nearbyEl.dataset.snap||window._geoFixSeen)){
       // Slide/fade out instead of an abrupt display:none (CLAUDE.md §8): the
       // card keeps its content and animates itself away, hard-hidden only
       // once that's actually finished. Mirrors the .22s entrance (tdNearbyIn).
@@ -768,6 +791,9 @@ function renderDash(){
       _nearbyEl.style.transition='max-height .24s ease';
       void _nearbyEl.offsetHeight; // flush, then collapse (no rAF: throttles unfocused)
       _nearbyEl.style.maxHeight='0px';
+      // Real truth says no card: the stored snapshot is obsolete too.
+      delete _nearbyEl.dataset.snap;
+      try{localStorage.removeItem('zp3_nearby_snap');}catch(_e){}
       _nearbyHideTimer=setTimeout(()=>{
         _nearbyHideTimer=null;
         _nearbyEl.style.display='none';
@@ -3023,7 +3049,16 @@ function _mergeDashOrder(saved) {
 function _applyDashOrder(order) {
   const root = document.getElementById('dash-widget-root');
   if (!root) return;
-  _mergeDashOrder(order).forEach(id => {
+  const want = _mergeDashOrder(order);
+  // Re-appending a DOM node RESTARTS any CSS animation running on it, and
+  // this runs on EVERY renderDash: during the boot pour window that replayed
+  // the ENTIRE waterfall whenever anything re-rendered (owner 2026-08-10:
+  // the geofence card's late render "keeps reiterating the waterfall").
+  // Touch the DOM only when the order is actually wrong.
+  const cur = [...root.querySelectorAll(':scope>.td-dw')].map(el => el.dataset.dw);
+  const present = want.filter(id => cur.includes(id));
+  if (cur.filter(id => present.includes(id)).join() === present.join()) return;
+  want.forEach(id => {
     const el = root.querySelector(`.td-dw[data-dw="${id}"]`);
     if (el) root.appendChild(el);
   });
@@ -3184,6 +3219,12 @@ function _applyKpiOrder() {
   const cont = document.getElementById('dash-mets-inner');
   if (!cont) return;
   const order = _getKpiOrder();
+  // Same no-op guard as _applyDashOrder: re-appending restarts animations,
+  // so skip the DOM churn when the tiles are already in order.
+  const want = order.concat(_DASH_KPI_DEFAULT.filter(id => !order.includes(id)));
+  const cur = [...cont.querySelectorAll('.met[data-kpi]')].map(el => el.dataset.kpi);
+  const present = want.filter(id => cur.includes(id));
+  if (cur.filter(id => present.includes(id)).join() === present.join()) return;
   order.forEach(id => {
     const el = cont.querySelector(`.met[data-kpi="${id}"]`);
     if (el) cont.appendChild(el);
