@@ -67,13 +67,35 @@ test.describe('Native plugins reach the build', () => {
     expect(bad, 'plugins with no capacitor.ios.src: installed but never registered').toEqual([]);
   });
 
-  test('every plugin ships a podspec matching its Swift class', () => {
+  test('every plugin ships a podspec', () => {
     const bad = [];
     pluginDirs().forEach(d => {
       const files = fs.readdirSync(path.join(NATIVE, d));
       if (!files.some(f => f.endsWith('.podspec'))) bad.push(d);
     });
     expect(bad, 'plugins with no podspec: pod install will not build them').toEqual([]);
+  });
+
+  test('every podspec is named exactly what Capacitor derives from the folder', () => {
+    // CocoaPods refuses a podspec whose s.name does not match the name
+    // Capacitor computed, and it refuses it at `pod install`, meaning a
+    // fifteen-minute macOS run dies in the first minute. Capacitor's rule is
+    // dash-to-PascalCase, so td-bgup becomes TdBgup, NOT TdBgUp: the capital U
+    // is only legal if the folder itself is td-bg-up. That one letter cost a
+    // build. Check it here, where it costs nothing.
+    const expectName = d => d.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('');
+    const bad = [];
+    pluginDirs().forEach(d => {
+      const want = expectName(d);
+      const spec = fs.readdirSync(path.join(NATIVE, d)).find(f => f.endsWith('.podspec'));
+      if (!spec) return;                       // covered by the test above
+      const declared = (fs.readFileSync(path.join(NATIVE, d, spec), 'utf8')
+        .match(/s\.name\s*=\s*'([^']+)'/) || [])[1];
+      if (spec !== want + '.podspec' || declared !== want) {
+        bad.push(d + ': has ' + spec + ' (s.name=' + declared + '), Capacitor wants ' + want);
+      }
+    });
+    expect(bad, 'podspec names pod install will reject').toEqual([]);
   });
 });
 

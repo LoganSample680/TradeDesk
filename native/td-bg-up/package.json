@@ -1,5 +1,5 @@
 {
-  "name": "td-bgup",
+  "name": "td-bg-up",
   "version": "1.0.0",
   "private": true,
   "description": "TradeDesk background upload. Hands transfers to an iOS background URLSession so a batch of jobsite photos finishes with the app CLOSED and resumes across a signal drop. Results are persisted to a ledger because the app is often not running when one lands; js/bg-upload.js reconciles from it.",
