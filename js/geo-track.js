@@ -146,6 +146,8 @@ let _geoDriveSteps=0;     // how many accumulation hops built that tally: a tall
 let _geoDriveLastFix=null;// {lat,lng,atMs} last fix used for that accumulation
 let _geoDriveMph=0;       // latest speed reading, mph (device speed, else derived)
 let _geoDriveMovingAt=0;  // ms of the last ping at driving speed, banner visibility
+let _geoMphZeroRun=0;     // consecutive near-zero device speed readings
+let _geoMphHeldZero=false;// this ping's zero was held as a GPS hiccup, not motion
 let _geoDriveShown=false; // was the banner on screen after the last ping
 // Accumulation floor: below this the fix is parking-lot jitter, not travel.
 const _GEO_DRIVE_ACCUM_FT=100;
@@ -158,7 +160,7 @@ function _geoDriving(){
   const _tracking=_geoWatchId!=null||(typeof _geoNativeWatcherId!=='undefined'&&_geoNativeWatcherId!=null);
   return !!(_tracking&&_geoDriveStartedAt&&(Date.now()-_geoDriveMovingAt)<_GEO_DRIVE_SHOW_MS);
 }
-function _geoDriveReset(){_geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix=null;_geoDriveMph=0;_geoDriveMovingAt=0;}
+function _geoDriveReset(){_geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix=null;_geoDriveMph=0;_geoDriveMovingAt=0;_geoMphZeroRun=0;_geoMphHeldZero=false;}
 
 // ── Offline-durable time-entry queue ──────────────────────────────────────────
 // Every arrival→departure record is written to the DEVICE first and drained to
@@ -518,8 +520,21 @@ async function _geoOnPing(pos){
     }
   }
   // The device's own reading wins when present, it is current rather than a
-  // trailing average.
-  if(typeof pos.coords.speed==='number'&&pos.coords.speed>=0)_geoDriveMph=pos.coords.speed*2.23694;
+  // trailing average. EXCEPT a lone zero in the middle of road speed: that is
+  // a GPS hiccup, not a stop (owner: "at times the speed was wrong"), so the
+  // readout holds for one ping. A real stop light sends a STREAM of zeros and
+  // lands on the second one; the held ping also never counts as motion for
+  // the banner clock, so a fade is never postponed by a hiccup.
+  _geoMphHeldZero=false;
+  if(typeof pos.coords.speed==='number'&&pos.coords.speed>=0){
+    const _mphNow=pos.coords.speed*2.23694;
+    if(_mphNow<1&&_geoDriveMph>=8&&_geoMphZeroRun===0){
+      _geoMphZeroRun=1;_geoMphHeldZero=true;
+    }else{
+      _geoMphZeroRun=(_mphNow<1)?_geoMphZeroRun+1:0;
+      _geoDriveMph=_mphNow;
+    }
+  }
   // ── Home-office activity sampling ─────────────────────────────────────────
   // Sampled per ping rather than driven by visibilitychange, because a web app
   // stops getting pings the moment it is backgrounded, which is exactly the
@@ -848,7 +863,7 @@ async function _geoOnPing(pos){
   _geoGapHiddenAt=null;
   // Stamped AFTER the state machine, so the very ping that opens the drive
   // (already at road speed) lights the banner rather than the one after it.
-  if(_geoDriveStartedAt&&_geoDriveMph*0.44704>=_GEO_DRIVEBY_SPEED_MPS)_geoDriveMovingAt=nowMs;
+  if(_geoDriveStartedAt&&!_geoMphHeldZero&&_geoDriveMph*0.44704>=_GEO_DRIVEBY_SPEED_MPS)_geoDriveMovingAt=nowMs;
   // ── Drive banner upkeep ───────────────────────────────────────────────────
   // Visibility can change WITHOUT a fence transition (speed crossing the
   // threshold a ping after leaving, or fading after parking somewhere
@@ -1745,6 +1760,17 @@ function _geoClearParkTimer(){
 function _geoEnterParkMode(spot){
   _geoClearParkTimer();
   if(_geoParkModeOn)return;
+  // The battery trade is for the POCKET, not the dashboard. Park mode with the
+  // app on screen is how the owner's drive banner started a quarter mile late
+  // (2026-08-11): the GPS was off while they were looking at the app, and the
+  // iOS wake-up region fires hundreds of meters past the fence. On screen =
+  // GPS stays live; the countdown re-arms, and the firing after the app is
+  // backgrounded parks for real.
+  if(typeof document!=='undefined'&&document.visibilityState==='visible'){
+    _geoParkNote('park-defer','app on screen');
+    _geoArmParkTimer(spot);
+    return;
+  }
   const Td=_geoTdPlugin();
   if(!Td||typeof Td.startParked!=='function')return;
   // Only duty-cycle a watcher that is actually running, and only when we know
@@ -2040,6 +2066,11 @@ function _geoTrackInit(){
         _geoDrainQueue();                      // back online-ish, flush queued entries
         if(_geoCurrentJob)_geoWakeAcquire();   // wake locks auto-release on hide
         _geoWakeNudge();                       // resolve where we ARE now, not eventually
+        // Same rule as the enter-side defer: an app being LOOKED AT runs live
+        // GPS. Exiting here restarts the watcher, so pulling the phone out at
+        // the truck mount picks the drive up at the driveway, not a quarter
+        // mile down the road when the wake-up region finally fires.
+        if(_geoParkModeOn)_geoExitParkMode();
       }
     });
     // Queued entries also flush the moment connectivity returns.

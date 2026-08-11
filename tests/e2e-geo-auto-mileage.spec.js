@@ -4179,8 +4179,12 @@ test.describe('Automatic mileage from drive legs', () => {
           // Arriving at the shop starts the countdown to GPS-off...
           await window.__parkCb({ latitude: a.shop.lat, longitude: a.shop.lon, accuracy: 8, speed: 0 });
           const timerArmed = _geoParkTimer != null;
+          // The phone is in the POCKET: park mode only ever engages with the
+          // app off screen (on screen the GPS deliberately stays live).
+          Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
           // ...which we fire directly rather than waiting four minutes.
           _geoEnterParkMode();
+          Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
           await new Promise(r2 => setTimeout(r2, 10));
           return {
             timerArmed,
@@ -4209,6 +4213,74 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.removedId, 'the continuous GPS watcher is removed, the blue arrow goes away').toBe('w-1');
       expect(r.watcherCleared).toBe(null);
       expect(r.parkOn).toBe(true);
+    });
+
+    test('park mode never engages while the app is on screen', async () => {
+      // The battery trade is for the pocket, not the dashboard. The owner's
+      // banner picked a drive up a quarter mile late because park mode had
+      // the GPS off while they were LOOKING at the app and iOS fired the
+      // wake-up region hundreds of meters past the fence.
+      const r = await page.evaluate(async () => {
+        const realCap = window.Capacitor;
+        const parked = [];
+        try {
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+          _geoNativeWatcherId = 'w-vis'; _geoNativeStarting = false;
+          _geoParkSpot = { lat: 38.0, lng: -94.0, name: 'Shop' };
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (name) => name === 'TdGeo' ? {
+              addListener: () => {},
+              startParked: (o) => { parked.push(o); return Promise.resolve({ armed: 1 }); },
+              stopAll: () => Promise.resolve(),
+            } : null,
+          };
+          _geoEnterParkMode();                     // visibilityState is 'visible' here
+          await new Promise(r2 => setTimeout(r2, 10));
+          return { parkedCalls: parked.length, parkOn: _geoParkModeOn, rearmed: _geoParkTimer != null };
+        } finally {
+          window.Capacitor = realCap;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+          _geoNativeWatcherId = null; _geoParkSpot = null;
+        }
+      });
+      expect(r.parkedCalls, 'GPS must stay live while the app is on screen').toBe(0);
+      expect(r.parkOn).toBe(false);
+      expect(r.rearmed, 'the countdown re-arms so backgrounding still parks').toBe(true);
+    });
+
+    test('a lone zero-speed reading holds the readout and never postpones the fade', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realWatch = _geoWatchId;
+        _supaUser = { id: 'u-hiccup' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+          _geoStopAnchor = null; _geoLastFenceAt = null; _geoLegAtShop = false;
+          _geoLastFenceLoc = null; _geoLegOrigin = null;
+          _geoDriveReset(); _geoWatchId = 78;
+          _geoDriveStartedAt = new Date(Date.now() - 5 * 60000).toISOString();
+          const ping = (c, spd) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8, speed: spd } });
+          await ping(a.ROAD, 15.2);                         // ~34 mph, on the road
+          const movingBefore = _geoDriveMovingAt;
+          await ping(a.ROAD2, 0);                           // GPS hiccup
+          const held = { mph: _geoDriveMph, movingAt: _geoDriveMovingAt };
+          await ping(a.ROAD2, 0);                           // second zero: a real stop
+          const stopped = { mph: _geoDriveMph };
+          await ping(a.ROAD, 13.4);                         // rolling again
+          const rolling = { mph: _geoDriveMph };
+          return { movingBefore, held, stopped, rolling };
+        } finally {
+          _supaUser = realUser; _geoWatchId = realWatch;
+          _geoDriveStartedAt = null; _geoDriveReset();
+          _geoStopAnchor = null; _geoLastFenceLoc = null; _geoLegOrigin = null;
+        }
+      }, { ROAD, ROAD2 });
+      expect(Math.round(r.held.mph), 'a lone zero must not zero the readout').toBe(34);
+      expect(r.held.movingAt, 'a held zero is not evidence of motion').toBe(r.movingBefore);
+      expect(r.stopped.mph, 'a stream of zeros is a real stop').toBe(0);
+      expect(Math.round(r.rolling.mph)).toBe(30);
     });
 
     test('crossing the fence re-arms the full watcher and the departing fix opens the drive', async () => {
