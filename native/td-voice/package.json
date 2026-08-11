@@ -1,0 +1,9 @@
+{
+  "name": "td-voice",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TradeDesk voice notes. On-device speech recognition (requiresOnDeviceRecognition) so a note dictated in a crawlspace or forty miles out still works, costs nothing, and never leaves the phone. Raw capability only; where the mic lives is js/voice.js.",
+  "main": "index.js",
+  "capacitor": { "ios": { "src": "ios" } },
+  "files": ["index.js", "ios/", "TdVoice.podspec"]
+}

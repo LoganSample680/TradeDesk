@@ -47,6 +47,32 @@ jobs:
       - name: Sync config and plugins into the iOS project
         run: npx cap sync ios
 
+      # Build 19 shipped without six plugins and said nothing: their
+      # package.json files were caught by a blanket .gitignore rule, so npm
+      # linked empty folders and Capacitor found 6 plugins instead of 12. The
+      # only visible sign was one line in a 300-line log. A plugin that is in
+      # the repo but not in the Podfile is not on the phone, so fail here.
+      - name: Every native plugin must have reached the Podfile
+        run: |
+          MISSING=0
+          for d in td-*/; do
+            d="${d%/}"
+            if [ ! -f "$d/package.json" ]; then
+              echo "::error::$d has no package.json (check .gitignore, it blanket-ignores package.json)"
+              MISSING=1; continue
+            fi
+            if ! grep -q "\"$d\"" package.json; then
+              echo "::error::$d is not a dependency in native/package.json"
+              MISSING=1; continue
+            fi
+            if ! grep -q "$d" ios/App/Podfile; then
+              echo "::error::$d never reached the Podfile: Capacitor did not see it as a plugin"
+              MISSING=1; continue
+            fi
+            echo "ok: $d"
+          done
+          exit $MISSING
+
       - name: Configure Info.plist (background location + consent copy)
         run: |
           PLIST=ios/App/App/Info.plist

@@ -28,7 +28,11 @@ PROJECT_PATH = [
   File.join(REPO_ROOT, 'native/ios/App/App.xcodeproj'),
   File.join(REPO_ROOT, 'ios/App/App.xcodeproj')
 ].find { |p| File.exist?(p) } or abort('[share] no generated Xcode project found')
-IOS_APP_DIR = File.dirname(File.dirname(PROJECT_PATH))
+# The .xcodeproj's own directory IS SRCROOT for every target in it, so every
+# build setting below (INFOPLIST_FILE, CODE_SIGN_ENTITLEMENTS) is relative to
+# this. Capacitor's layout is ios/App/App.xcodeproj + ios/App/App/, so going up
+# one more level lands outside the project entirely.
+IOS_APP_DIR = File.dirname(PROJECT_PATH)
 
 project = Xcodeproj::Project.open(PROJECT_PATH)
 app_target = project.targets.find { |t| t.name == 'App' } or abort('[share] no App target')

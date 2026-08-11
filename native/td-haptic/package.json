@@ -1,0 +1,13 @@
+{
+  "name": "td-haptic",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TradeDesk Taptic bridge. iOS has never implemented the web Vibration API, so every navigator.vibrate() call in the app was a silent no-op on iPhone; this exposes the real UIFeedbackGenerator vocabulary (impact / notification / selection) with pre-warmed generators. Raw capability only: which moments get which feedback lives in js/utils.js.",
+  "main": "index.js",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "files": ["index.js", "ios/", "TdHaptic.podspec"]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "td-lock",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TradeDesk handoff lock. Face ID (with passcode fallback) for the moment a contractor hands their unlocked phone to a client to sign. Raw capability only; when the app arms and releases the lock lives in js/handoff.js.",
+  "main": "index.js",
+  "capacitor": { "ios": { "src": "ios" } },
+  "files": ["index.js", "ios/", "TdLock.podspec"]
+}
