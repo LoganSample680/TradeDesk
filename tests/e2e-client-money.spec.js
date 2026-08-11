@@ -2270,12 +2270,21 @@ test.describe('Job completion, price change signature gate', () => {
       const orig = window.open;
       let openCalled = false;
       window.open = () => { openCalled = true; return { document: { write: () => {}, close: () => {} } }; };
+      // One synchronous evaluate is NOT enough for this test: openFinalInvoice
+      // opens the pay panel from a 400ms timer that re-finds the bid in the
+      // live `bids` array (bids.js). If the debounced cloud-merge reassigns
+      // `bids` during that gap, a fixture row, unlike a real record, is in no
+      // snapshot to come back from: openPayPanel then returns silently and the
+      // panel never renders. Pin the seeded bid across the async hop, and give
+      // the 400ms timer a real cushion instead of 100ms on a loaded runner.
+      const pin = setInterval(() => { if (!bids.find(x => x.id === bId)) bids.push(b); }, 40);
       return new Promise(resolve => {
         openFinalInvoice(bId);
         setTimeout(() => {
+          clearInterval(pin);
           window.open = orig;
           resolve({ openCalled, payPanelOpen: !!document.querySelector('.pay-modal-overlay') });
-        }, 500);
+        }, 1200);
       });
     }, [BID_ID]);
     expect(r.openCalled).toBe(true);
