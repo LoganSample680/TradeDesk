@@ -79,7 +79,7 @@ function _notifyArrival(clientName,jobLabel){
 function _notifyTomorrowJobs(now){
   const base=now?new Date(now):new Date();
   const d=new Date(base.getFullYear(),base.getMonth(),base.getDate()+1);
-  const key=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const key=dateKey(d);   // the shared LOCAL day key (§7.3), never a hand-rolled one
   const list=(typeof jobs!=='undefined'&&Array.isArray(jobs))?jobs:[];
   const mine=list.filter(j=>j&&j.status!=='canceled'&&j.status!=='done'&&String(j.start||'').slice(0,10)===key);
   if(!mine.length)return null;
@@ -130,7 +130,12 @@ function _notifyOverdue(now){
   if(!count)return null;
   const money=(typeof fmt==='function')?fmt(owed):('$'+owed.toFixed(2));
   return {
-    id:'overdue:'+new Date(nowMs).toISOString().slice(0,10),
+    // dateKey, NOT toISOString: the id is a LOCAL day stamp, and a UTC one
+    // rolls over at 7pm Central, which would fire this a second time the same
+    // evening. (Caught by the standing UTC-key guard in
+    // e2e-utils-exhaustive; the same class of bug as the UTC clock times the
+    // owner reported on 2026-08-10.)
+    id:'overdue:'+dateKey(new Date(nowMs)),
     title:money+' still owed',
     body:count+' job'+(count>1?'s':'')+' past due, the oldest by '+oldest+' days. Tap to chase it.',
     atMs:0
