@@ -763,8 +763,9 @@ function renderDash(){
       // (owner 2026-08-10: "comes in 3 seconds late"). Live truth replaces it
       // the moment a fix arrives (_geoFixSeen, js/geo-track.js).
       delete _nearbyEl.dataset.snap;
+      window._nearbyLiveRendered=true; // real state has painted: the optimistic boot restore is over for this page load
       try{localStorage.setItem('zp3_nearby_snap',JSON.stringify({html:_nearbyEl.innerHTML,ts:Date.now(),uid:(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null}));}catch(_e){}
-    }else if(!window._geoFixSeen&&(_nearbyEl.style.display==='none'||!_nearbyEl.style.display)&&!_nearbyEl.dataset.snap){
+    }else if(!window._geoFixSeen&&!window._nearbyLiveRendered&&(_nearbyEl.style.display==='none'||!_nearbyEl.style.display)&&!_nearbyEl.dataset.snap){
       // No live geo state YET (no fix this session): show the last session's
       // card optimistically if it is fresh, so the boot pour includes it.
       // A version-watchdog reload mid-workday is seconds old, exactly the

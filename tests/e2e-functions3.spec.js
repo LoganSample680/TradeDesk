@@ -1293,9 +1293,10 @@ test.describe('Cloud Supabase and account functions', () => {
   test('geo card snapshot: shows instantly pre-fix, first no-state fix clears it, stale never shows', async () => {
     const r = await page.evaluate(async () => {
       const el = document.getElementById('dash-nearby');
-      const savedFix = window._geoFixSeen;
+      const savedFix = window._geoFixSeen, savedLive = window._nearbyLiveRendered;
       try {
         window._geoFixSeen = false;
+        window._nearbyLiveRendered = false; // simulate a fresh boot: no live card yet this page load
         el.style.display = 'none'; el.innerHTML = ''; delete el.dataset.snap;
         const uid = (typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id) || null;
         localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div id="snap-probe">ON SITE</div>', ts: Date.now(), uid }));
@@ -1307,12 +1308,20 @@ test.describe('Cloud Supabase and account functions', () => {
         const hidden = el.style.display === 'none';
         const cleared = !localStorage.getItem('zp3_nearby_snap');
         window._geoFixSeen = false;
+        window._nearbyLiveRendered = false;
         localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div id="snap-probe2">x</div>', ts: Date.now() - 700000, uid }));
         renderDash();
         const staleShown = !!document.getElementById('snap-probe2');
-        return { shown, hidden, cleared, staleShown };
+        // Once any live card has rendered this page load, the restore is done
+        // for good, a later hidden state must never resurrect the snapshot.
+        window._nearbyLiveRendered = true;
+        localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div id="snap-probe3">x</div>', ts: Date.now(), uid }));
+        renderDash();
+        const postLiveShown = !!document.getElementById('snap-probe3');
+        return { shown, hidden, cleared, staleShown, postLiveShown };
       } finally {
         window._geoFixSeen = savedFix;
+        window._nearbyLiveRendered = savedLive;
         localStorage.removeItem('zp3_nearby_snap');
         el.style.display = 'none'; el.innerHTML = ''; delete el.dataset.snap;
         renderDash();
@@ -1322,6 +1331,7 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(r.hidden, 'the first no-state fix animates it away').toBe(true);
     expect(r.cleared, 'and clears the stored copy').toBe(true);
     expect(r.staleShown, 'a stale snapshot never shows').toBe(false);
+    expect(r.postLiveShown, 'after a live render this page load, no resurrection').toBe(false);
   });
 
   // Same-page goPg must not strip and re-add .active: that restarts the
