@@ -518,7 +518,11 @@ async function _retryPendingTrips(){
       if(rec.calc_method!==method)continue;
       if(auto&&(rec.fromCoord!==fc||rec.toCoord!==tc))continue;
       if(!(miles>0))continue;   // not a measurement: leave it pending for the next sweep
-      rec.miles=Math.round(miles*10)/10;rec.calc_method=auto?'auto_route':'address';
+      // Same observed-miles floor the live measurement applies (forced-detour
+      // rule): a leg that settles here instead must not lose it.
+      let best=miles;
+      if(auto&&rec.gpsMiles>0&&rec.gpsMiles>miles&&rec.gpsMiles<=miles*4)best=rec.gpsMiles;
+      rec.miles=Math.round(best*10)/10;rec.calc_method=auto?'auto_route':'address';
       // Keep the resolved endpoints on a manual row: the journey dedup matches
       // destinations by coordinate first, and a typed address otherwise only
       // ever matches by name.
@@ -567,6 +571,11 @@ function _mileSameJourney(a,b){
   // drives, and collapsing them by time-and-destination would eat a crew's
   // genuinely repeated runs.
   if(a.legKey&&b.legKey)return false;
+  // A trip FILED for a different day is a different journey whatever the
+  // clocks say: the bite this closes is typing in yesterday's forgotten trip
+  // minutes after arriving at the same client today, where the entry's
+  // created-timestamp lands inside today's leg window and the names match.
+  if(a.date&&b.date&&a.date!==b.date)return false;
   const wa=_mileTripWindow(a),wb=_mileTripWindow(b);
   if(!wa.end||!wb.end)return false;
   // A manual row's only timestamp may be the End Drive tap a few minutes
@@ -719,6 +728,11 @@ function autoLogDriveTrip(opts){
     // long the drive took, not just how far). Absent on stale legs, where no
     // duration was observed, and on manual rows, where none was measured.
     mins:(opts.mins>0?Math.round(opts.mins):undefined),
+    // Straight-line GPS tally for the leg, the floor the route measurement
+    // must beat: a forced detour drives real miles MapKit's ideal route never
+    // sees. Absent on stale legs and collapsed-detour legs (geo-track.js owns
+    // that judgment).
+    gpsMiles:(opts.observedMiles>0?opts.observedMiles:undefined),
     // The trip's real clock: startedIso already exists below (End Drive needs
     // it), endedIso is the verified arrival. Both absent on stale legs.
     endedIso:opts.endedIso||undefined,
@@ -764,9 +778,15 @@ function autoLogDriveTrip(opts){
       // FOREVER: a silent zero-mile trip that still prints on a tax export as a
       // real one. Staying pending is the honest state and the recoverable one.
       if(!(miles>0))return;
-      saved.miles=Math.round(miles*10)/10;saved.calc_method='auto_route';
-      // Now that this trip has its number, settle any same-journey duplicates:
-      // the longest measured row survives (owner rule 2026-08-11).
+      // The route is the answer UNLESS the wheels observably covered more (a
+      // forced detour): then the observed tally wins, capped at 4x the route
+      // so a GPS blowup can never invent a day of driving (owner rule
+      // 2026-08-11). The tally undercounts curves, so this only ever recovers
+      // miles that were provably driven.
+      let best=miles;
+      if(saved.gpsMiles>0&&saved.gpsMiles>miles&&saved.gpsMiles<=miles*4)best=saved.gpsMiles;
+      saved.miles=Math.round(best*10)/10;saved.calc_method='auto_route';
+      // Now that this trip has its number, settle any same-journey duplicates.
       _mileDedupTrips();
       saveAll();
       if(document.getElementById('mil-table'))renderAllMileage();
@@ -958,6 +978,10 @@ function _reoriginTrip(m,from){
   if(!m||!from||from.lat==null)return;
   m.from=from.addr||from.name||'';
   m.from_name=from.name||'';
+  // A re-pointed leg spans a journey the GPS tally never watched as one piece
+  // (and may include a personal stop's driving): the observed-miles floor no
+  // longer applies, only the direct route does.
+  delete m.gpsMiles;
   const fc=m.fromCoord={lat:from.lat,lng:from.lng};
   const tc=m.toCoord;
   m.miles=0;m.calc_method='pending_auto';

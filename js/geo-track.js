@@ -142,6 +142,7 @@ const _GEO_DRIVEBY_SPEED_MPS=3.6; // ~8mph
 // on arrival, so the two can differ slightly and that is fine), plus the
 // latest speed. Display state only, nothing here touches what gets logged.
 let _geoDriveMiles=0;     // straight-line miles accumulated across pings this leg
+let _geoDriveSteps=0;     // how many accumulation hops built that tally: a tally from 2 hops is a guess, from 20 it is a road trace
 let _geoDriveLastFix=null;// {lat,lng,atMs} last fix used for that accumulation
 let _geoDriveMph=0;       // latest speed reading, mph (device speed, else derived)
 let _geoDriveMovingAt=0;  // ms of the last ping at driving speed, banner visibility
@@ -157,7 +158,7 @@ function _geoDriving(){
   const _tracking=_geoWatchId!=null||(typeof _geoNativeWatcherId!=='undefined'&&_geoNativeWatcherId!=null);
   return !!(_tracking&&_geoDriveStartedAt&&(Date.now()-_geoDriveMovingAt)<_GEO_DRIVE_SHOW_MS);
 }
-function _geoDriveReset(){_geoDriveMiles=0;_geoDriveLastFix=null;_geoDriveMph=0;_geoDriveMovingAt=0;}
+function _geoDriveReset(){_geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix=null;_geoDriveMph=0;_geoDriveMovingAt=0;}
 
 // ── Offline-durable time-entry queue ──────────────────────────────────────────
 // Every arrival→departure record is written to the DEVICE first and drained to
@@ -500,7 +501,7 @@ async function _geoOnPing(pos){
       const stepFt=_geoDistFt(here,_geoDriveLastFix);
       const dtMs=nowMs-_geoDriveLastFix.atMs;
       if(stepFt>_GEO_DRIVE_ACCUM_FT){
-        _geoDriveMiles+=stepFt/5280;
+        _geoDriveMiles+=stepFt/5280;_geoDriveSteps++;
         // Derived speed as the fallback: plenty of devices ping without a
         // speed reading, and distance over time is honest for a 20-30s gap.
         if(dtMs>3000)_geoDriveMph=(stepFt/5280)/(dtMs/3600000);
@@ -731,7 +732,7 @@ async function _geoOnPing(pos){
       // conservative start.
       if(!_geoDriveStartedAt){
         _geoDriveStartedAt=nowIso;_geoLegOrigin=_geoLastFenceLoc;
-        _geoDriveMiles=0;_geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs};
+        _geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs};
       }
       _geoStopAnchor={lat:here.lat,lng:here.lng,at:nowIso,lastAt:nowIso};
     }
@@ -1263,6 +1264,19 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // the log): this leg's minutes plus any minutes carried off collapsed-detour
   // sub-legs. A stale leg claims none, same rule as the time entry above.
   let driveMins=stale?0:mins;
+  // What the wheels actually covered this leg, straight-line ping to ping
+  // (owner ask 2026-08-11: "if we take a detour because we have to, can we
+  // take the longer?"). Captured BEFORE the next leg resets the tally, and
+  // only when it is trustworthy: a watched leg (not stale, the tally is zero
+  // fiction after a sleep) with NO collapsed detour segments, because a
+  // collapsed personal stop's driving is in the tally but is not deductible
+  // (the CPA's direct-miles rule). The tally UNDERcounts real roads, so as a
+  // floor it can only ever recover miles that were provably driven.
+  const hadDetourLegs=!!(_geoLegOrigin&&_geoLegOrigin.extraDriveMins);
+  // ...and only from a leg that was DENSELY watched (>=8 accumulation hops).
+  // A tally built from a couple of hops is the undercount case by definition,
+  // it cannot evidence a detour; a real drive produces dozens of hops.
+  const obsMiles=(!stale&&!hadDetourLegs&&_geoDriveSteps>=8&&_geoDriveMiles>0.3)?Math.round(_geoDriveMiles*10)/10:null;
   if(!stale&&_geoLegOrigin&&_geoLegOrigin.extraDriveMins){driveMins+=_geoLegOrigin.extraDriveMins;delete _geoLegOrigin.extraDriveMins;}
   // ── OUT AND BACK WITH NOTHING BUSINESS IN IT ─────────────────────────────
   // Owner rule (2026-08-10): "a drive from home office shop and back shouldn't
@@ -1289,7 +1303,7 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   }
   // The arrival stamp rides along so the row can show WHEN the trip ran, not
   // just how long: a stale leg passes nothing, its clock times are fiction.
-  _geoAutoMileage(_geoLegOrigin,destLoc,legKey,stale?arrived:driveStartedAt,companyVeh,driveMins,stale?null:arrived);
+  _geoAutoMileage(_geoLegOrigin,destLoc,legKey,stale?arrived:driveStartedAt,companyVeh,driveMins,stale?null:arrived,obsMiles);
 }
 
 // ── Automatic mileage: the leg we just timed, measured ───────────────────────
@@ -1309,7 +1323,7 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
 // The row is written IMMEDIATELY at zero miles and filled in afterwards, the
 // same shape the manual trip log already uses. A dead spot at arrival is the
 // normal case on a rural site and must never cost the contractor the trip.
-function _geoAutoMileage(from,to,legKey,startedIso,companyVeh,driveMins,endedIso){
+function _geoAutoMileage(from,to,legKey,startedIso,companyVeh,driveMins,endedIso,obsMiles){
   try{
     if(typeof autoLogDriveTrip!=='function')return;
     if(!from||!to||from.lat==null||to.lat==null)return;
@@ -1375,7 +1389,7 @@ function _geoAutoMileage(from,to,legKey,startedIso,companyVeh,driveMins,endedIso
     // morning commute into a company deduction on the strength of a checkbox
     // the owner ticked about their own spare room.
     if(from.likelyHome&&!(S.homeOffice&&!_isEmployee))return;
-    autoLogDriveTrip({from,to,legKey,startedIso,endedIso:endedIso||undefined,reimbursable:unknown?undefined:reimbursable,vehicleUnknown:unknown,mins:driveMins});
+    autoLogDriveTrip({from,to,legKey,startedIso,endedIso:endedIso||undefined,reimbursable:unknown?undefined:reimbursable,vehicleUnknown:unknown,mins:driveMins,observedMiles:obsMiles||undefined});
   }catch(_e){}
 }
 

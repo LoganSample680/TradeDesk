@@ -1080,6 +1080,58 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.liveLeft).toBe(2);
     });
 
+    test('a backdated manual trip to the same client is never eaten', async () => {
+      // Arrive at John Doe at 7:57, remember at 8:03 that YESTERDAY'S trip
+      // there was never logged, type it in with yesterday's date. The entry's
+      // created-timestamp lands inside today's leg window and the names
+      // match; only the filed DATE says it is a different journey.
+      const out = await page.evaluate(() => {
+        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
+        const keep = mileage.splice(0);
+        try {
+          mileage.push(
+            { id: 1, gps: true, legKey: 'leg-a', calc_method: 'auto_route', miles: 3.2, client_id: 77,
+              to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
+              startedIso: '2026-08-11T12:51:00Z', endedIso: '2026-08-11T12:57:00Z',
+              loggedAt: '2026-08-11T12:57:02Z', date: '2026-08-11' },
+            { id: 2, calc_method: 'address', miles: 6.8, client_id: 77, to_name: 'John Doe',
+              loggedAt: '2026-08-11T13:03:00Z', date: '2026-08-10' });
+          return { healed: _mileDedupTrips(true), rows: mileage.length };
+        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
+      });
+      expect(out.healed).toBe(0);
+      expect(out.rows).toBe(2);
+    });
+
+    test('a forced detour keeps its observed miles, GPS undercount never does', async () => {
+      // The route is the answer unless the wheels observably covered more.
+      // observedMiles rides in from the leg close (geo-track owns when it is
+      // trustworthy); the measurement takes max(route, observed), capped 4x.
+      const out = await page.evaluate(async (d) => {
+        const realUser = _supaUser, realRoute = _routeDistance;
+        _supaUser = { id: 'u-detour' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 12.3, mins: 20 });
+        const keep = mileage.splice(0);
+        try {
+          const from = { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' };
+          const to = { lat: d.JOB.lat, lng: d.JOB.lon, name: 'Miller Residence', kind: 'job', clientId: 7701 };
+          const t = (m) => new Date(Date.now() - m * 60000).toISOString();
+          autoLogDriveTrip({ from, to, legKey: 'leg-det-1', startedIso: t(50), observedMiles: 17.9 }); // real detour
+          autoLogDriveTrip({ from, to, legKey: 'leg-det-2', startedIso: t(30), observedMiles: 5.1 });  // GPS undercount
+          autoLogDriveTrip({ from, to, legKey: 'leg-det-3', startedIso: t(10), observedMiles: 900 });  // GPS blowup
+          await new Promise(r => setTimeout(r, 60));
+          const by = (k) => mileage.find(m => m.legKey === k);
+          return { detour: by('leg-det-1').miles, under: by('leg-det-2').miles, blowup: by('leg-det-3').miles };
+        } finally {
+          mileage.length = 0; keep.forEach(m => mileage.push(m));
+          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
+        }
+      }, { SHOP, JOB });
+      expect(out.detour).toBe(17.9);
+      expect(out.under).toBe(12.3);
+      expect(out.blowup).toBe(12.3);
+    });
+
     test('dedup never crosses people, destinations, or distinct auto legs', async () => {
       const out = await page.evaluate(() => {
         const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
