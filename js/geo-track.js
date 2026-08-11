@@ -172,6 +172,18 @@ let _geoDrainBusy=false;
 // Why the queue last stopped draining, for diagnostics. Null while healthy.
 let _geoQueueLastError=null;
 function _geoClientKey(){return ((_supaUser&&_supaUser.id)||'anon').slice(0,8)+'-'+Date.now().toString(36)+'-'+Math.floor(Math.random()*1e6).toString(36);}
+// The key for a drive LEG, and it must be DETERMINISTIC: derived from who was
+// driving and when the leg began, nothing random. A leg can be closed more than
+// once (a buffered native event replayed, or a parking-lot reposition
+// re-delivering the arrival), and each close reaches _geoDriveEntry separately.
+// With a random key every close mints a "new" leg and the idempotency checks
+// downstream (mileage.some legKey match, the server's
+// contractor_user_id+client_key upsert) all wave the duplicate through: that is
+// exactly the owner's 2026-08-11 triple-logged drive. Same person + same leg
+// start = same key, so the second close is recognised as the first one again.
+function _geoLegKey(startedIso){
+  return ((_supaUser&&_supaUser.id)||'anon').slice(0,8)+'-leg-'+((Date.parse(startedIso)||0)).toString(36);
+}
 function _geoQueueRead(){try{return JSON.parse(localStorage.getItem(_GEO_QUEUE_KEY)||'[]');}catch(_e){return[];}}
 function _geoQueueWrite(q){try{localStorage.setItem(_GEO_QUEUE_KEY,JSON.stringify(q));}catch(_e){}}
 function _geoEnqueue(tbl,row){
@@ -1229,9 +1241,14 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // _geoIsDriveSource (/^drive/), so every money view treats it as drive time.
   const kind=companyVeh?'drive':(mode==='rider'?'drive-rider':(mode==='own'?'drive-personal':'drive-unassigned'));
   // Minted here rather than inside _geoEnqueue so the SAME key lands on the time
-  // entry and on the mileage row. That is what makes the mileage row idempotent:
-  // one leg can only ever produce one trip, however many times this runs.
-  const legKey=_geoClientKey();
+  // entry and on the mileage row, and DETERMINISTIC (person + leg start) so a
+  // re-delivered close of the same leg mints the same key again: one leg can
+  // only ever produce one trip, however many times this runs. This used to be
+  // _geoClientKey(), which is random per call, so a replayed arrival minted a
+  // fresh key and wrote a second row the idempotency was built to block (the
+  // owner's 2026-08-11 truck-reposition duplicate, same 7:51a start logged
+  // twice with two end times).
+  const legKey=_geoLegKey(driveStartedAt);
   if(!stale){
     _geoEnqueue('job_time_entries',{
       contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,

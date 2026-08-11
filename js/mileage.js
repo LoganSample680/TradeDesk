@@ -386,6 +386,9 @@ function saveEndDriveModal(){
     id:_newId(),date:gps.startTime?dateKey(new Date(gps.startTime)):todayKey(),
     vehicle:gps.vehicle,vehicleId:_vehIdForName(gps.vehicle),purpose:gps.purpose,
     loggedAt:new Date().toISOString(),
+    // When the drive BEGAN, so the journey dedup can window this row against
+    // an automatic leg that lands later (the mid-drive manual tap case).
+    startedIso:gps.startTime?new Date(gps.startTime).toISOString():undefined,
     miles:Math.round(miles*10)/10,
     client_id:gps.clientId,client_name:c?c.name:'',
     start_coords:gps.startCoords||null,
@@ -520,9 +523,111 @@ async function _retryPendingTrips(){
     }catch(e){}
   }
   if(!filled)return;   // nothing changed, do not churn a save or a re-render
+  // Freshly measured rows can now settle their duplicates (the journey dedup
+  // defers any pair where a number is still missing, so this is its retry).
+  _mileDedupTrips();
   saveAll();
   if(document.getElementById('mil-table'))renderAllMileage();
   renderDash();
+}
+
+// ── One journey, one row (owner report 2026-08-11) ───────────────────────────
+// The owner drove once to John Doe and got THREE rows: the auto leg, the same
+// leg re-closed after a parking-lot truck move, and a manual drive started
+// mid-route when they opened Drive to find the address. The rule they set:
+// rows describing the same journey collapse to ONE, and the longest measured
+// trip is the one that survives, because it covers the most of what was
+// actually driven.
+//
+// "Same journey" is deliberately strict, because deleting a real trip costs
+// real deduction money: same person, time windows that overlap, and the same
+// destination. Two genuine trips by one person to one place can never overlap
+// in time: you cannot drive to somewhere you are already driving to.
+const _MILE_DEDUP_DEST_FT=1500;         // fence radius + GPS scatter
+const _MILE_DEDUP_SLACK_MS=10*60000;    // manual rows only: loggedAt is a tap, not a clock
+function _mileTripWindow(m){
+  const end=Date.parse(m.endedIso||m.loggedAt||'')||0;
+  const start=Date.parse(m.startedIso||m.loggedAt||'')||end;
+  return {start:Math.min(start,end)||end,end:Math.max(start,end)};
+}
+function _mileSameJourney(a,b){
+  if(!a||!b||a===b)return false;
+  // Another crew member's leg is never this one, however the clocks line up.
+  // Rows with no logged_by_id are the owner's; strict equality keeps an
+  // employee's drive from ever swallowing the owner's or vice versa.
+  if((a.logged_by_id||null)!==(b.logged_by_id||null))return false;
+  // Journey-level dedup exists for the HAND-TYPED half of a double log: a
+  // manual drive tapped mid-journey against the automatic leg that lands
+  // later. Two automatic rows are only ever duplicates as twins of one leg
+  // (_mileSameLeg): the fence machine writes distinct legs for distinct
+  // drives, and collapsing them by time-and-destination would eat a crew's
+  // genuinely repeated runs.
+  if(a.legKey&&b.legKey)return false;
+  const wa=_mileTripWindow(a),wb=_mileTripWindow(b);
+  if(!wa.end||!wb.end)return false;
+  // A manual row's only timestamp may be the End Drive tap a few minutes
+  // after arrival, so the overlap gets slack.
+  const slack=_MILE_DEDUP_SLACK_MS;
+  if(!(wa.end+slack>=wb.start&&wb.end+slack>=wa.start))return false;
+  // Same destination: by coordinates when both ends are known, by client
+  // otherwise (a manual row carries no toCoord, only who it was for).
+  const near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&typeof _geoDistFt==='function'&&
+    _geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=_MILE_DEDUP_DEST_FT);
+  if(near(a.toCoord,b.toCoord))return true;
+  if(a.client_id!=null&&b.client_id!=null&&String(a.client_id)===String(b.client_id))return true;
+  return false;
+}
+// The same LEG closed twice: both automatic, same start (within jitter), same
+// endpoints. These are duplicates even before either has measured, because
+// identical endpoints can only ever measure identical.
+function _mileSameLeg(a,b){
+  if(!a||!b||!a.legKey||!b.legKey)return false;
+  // Two crew members can leave the same shop for the same job in the same
+  // minute: identical endpoints, identical clocks, two REAL drives.
+  if((a.logged_by_id||null)!==(b.logged_by_id||null))return false;
+  const sa=Date.parse(a.startedIso||''),sb=Date.parse(b.startedIso||'');
+  if(!sa||!sb||Math.abs(sa-sb)>120000)return false;
+  const near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&typeof _geoDistFt==='function'&&
+    _geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=_MILE_DEDUP_DEST_FT);
+  return near(a.fromCoord,b.fromCoord)&&near(a.toCoord,b.toCoord);
+}
+// Which of two same-journey rows survives. Longest measured miles wins (the
+// owner's rule: the trip covering the most real driving is the record). Ties
+// go to the measured automatic row over the hand-typed one, then to the
+// EARLIEST close: a re-delivered leg is stamped with the replay's clock, so
+// the earlier row is the contemporaneous one.
+function _mileTripWinner(a,b){
+  const am=a.miles>0,bm=b.miles>0;
+  if(am&&bm&&Math.abs(a.miles-b.miles)>0.05)return a.miles>b.miles?a:b;
+  if(am!==bm)return am?a:b;
+  if(!!a.legKey!==!!b.legKey)return a.legKey?a:b;
+  return (Date.parse(a.loggedAt||'')||0)<=(Date.parse(b.loggedAt||'')||0)?a:b;
+}
+function _mileDedupTrips(){
+  if(typeof mileage==='undefined'||!Array.isArray(mileage))return 0;
+  const drop=new Set();
+  for(let i=0;i<mileage.length;i++){
+    const a=mileage[i];if(!a||drop.has(a))continue;
+    for(let j=i+1;j<mileage.length;j++){
+      const b=mileage[j];if(!b||drop.has(b))continue;
+      const twin=_mileSameLeg(a,b);
+      if(!twin&&!_mileSameJourney(a,b))continue;
+      // A row still awaiting its measurement is only ever dropped as a twin of
+      // another auto row (identical endpoints, identical eventual answer).
+      // Journey-level dedup waits until both have numbers: the sweep runs
+      // again after every fill, so nothing is decided on a zero.
+      if(!twin&&!(a.miles>0&&b.miles>0))continue;
+      const loser=_mileTripWinner(a,b)===a?b:a;
+      drop.add(loser);
+      if(loser===a)break;   // a is gone, stop comparing against it
+    }
+  }
+  if(!drop.size)return 0;
+  for(const m of drop){const i=mileage.indexOf(m);if(i>=0)mileage.splice(i,1);}
+  if(typeof saveAll==='function')saveAll();
+  if(document.getElementById('mil-table'))renderAllMileage();
+  if(typeof renderDash==='function')renderDash();
+  return drop.size;
 }
 
 // ── Automatic trip, written by the geofence when a drive leg closes ──────────
@@ -627,6 +732,9 @@ function autoLogDriveTrip(opts){
       // real one. Staying pending is the honest state and the recoverable one.
       if(!(miles>0))return;
       saved.miles=Math.round(miles*10)/10;saved.calc_method='auto_route';
+      // Now that this trip has its number, settle any same-journey duplicates:
+      // the longest measured row survives (owner rule 2026-08-11).
+      _mileDedupTrips();
       saveAll();
       if(document.getElementById('mil-table'))renderAllMileage();
       if(typeof renderDash==='function')renderDash();

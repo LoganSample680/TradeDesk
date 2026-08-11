@@ -960,6 +960,115 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.tripKey).toBeTruthy();
       expect(out.tripKey).toBe(out.legKey);
     });
+
+    // ── One journey, one row (owner's triple-logged drive, 2026-08-11) ───────
+    // One real drive to a client produced THREE rows: the automatic leg, the
+    // same leg re-closed after a parking-lot truck move, and a manual drive
+    // started mid-route. Two guards now stand between that day and the log.
+
+    test('a re-closed leg mints the SAME key, so it can never write twice', async () => {
+      // The leg key was random per close, so the idempotency built on it never
+      // fired for a replayed arrival. Deterministic now: person + leg start.
+      const out = await page.evaluate(async (d) => {
+        const realUser = _supaUser, realRoute = _routeDistance;
+        _supaUser = { id: 'u-dedup' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 6 });
+        const keep = mileage.splice(0);
+        try {
+          const from = { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' };
+          const to = { lat: d.JOB.lat, lng: d.JOB.lon, name: 'John Doe', kind: 'job', clientId: 7788 };
+          const iso = new Date(Date.now() - 10 * 60000).toISOString();
+          // Two closes of one leg, the way the truck move re-delivered it:
+          // same leg start, keys minted independently at each close.
+          autoLogDriveTrip({ from, to, legKey: _geoLegKey(iso), startedIso: iso });
+          autoLogDriveTrip({ from, to, legKey: _geoLegKey(iso), startedIso: iso });
+          await new Promise(r => setTimeout(r, 30));
+          return { rows: mileage.length, stable: _geoLegKey(iso) === _geoLegKey(iso) };
+        } finally {
+          mileage.length = 0; keep.forEach(m => mileage.push(m));
+          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
+        }
+      }, { SHOP, JOB });
+      expect(out.stable).toBe(true);
+      expect(out.rows).toBe(1);
+    });
+
+    test('the triple-logged drive collapses to one row, the longest', async () => {
+      const out = await page.evaluate(() => {
+        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
+        const keep = mileage.splice(0);
+        try {
+          // The owner's three rows, verbatim shape: manual partial from
+          // mid-route, the real 7:51-7:57 leg, and its 7:51-8:01 replay.
+          mileage.push(
+            { id: 1, gps: true, calc_method: 'gps_time', miles: 2.4, client_id: 77,
+              loggedAt: '2026-08-11T12:58:30Z', startedIso: '2026-08-11T12:53:00Z', date: '2026-08-11' },
+            { id: 2, gps: true, legKey: 'leg-a', calc_method: 'auto_route', miles: 3.2, client_id: 77,
+              fromCoord: SHOP2, toCoord: JOHN, startedIso: '2026-08-11T12:51:00Z',
+              endedIso: '2026-08-11T12:57:00Z', loggedAt: '2026-08-11T12:57:02Z', date: '2026-08-11' },
+            { id: 3, gps: true, legKey: 'leg-b', calc_method: 'auto_route', miles: 3.2, client_id: 77,
+              fromCoord: SHOP2, toCoord: JOHN, startedIso: '2026-08-11T12:51:00Z',
+              endedIso: '2026-08-11T13:01:00Z', loggedAt: '2026-08-11T13:01:05Z', date: '2026-08-11' });
+          const removed = _mileDedupTrips();
+          const again = _mileDedupTrips();   // idempotent: healing must not keep healing
+          return { removed, again, rows: mileage.map(m => ({ id: m.id, miles: m.miles })) };
+        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
+      });
+      expect(out.removed).toBe(2);
+      expect(out.again).toBe(0);
+      expect(out.rows).toEqual([{ id: 2, miles: 3.2 }]);   // the longest, and the FIRST close
+    });
+
+    test('dedup waits for the measurement, then the partial manual row yields', async () => {
+      // The automatic row is born at zero miles (no signal is the normal case).
+      // Zero must never "lose" to the typed number: the pair defers, and the
+      // sweep after the fill settles it.
+      const out = await page.evaluate(() => {
+        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
+        const keep = mileage.splice(0);
+        try {
+          const manual = { id: 1, gps: true, calc_method: 'gps_time', miles: 2.4, client_id: 77,
+            loggedAt: '2026-08-11T12:58:30Z', startedIso: '2026-08-11T12:53:00Z', date: '2026-08-11' };
+          const auto = { id: 2, gps: true, legKey: 'leg-a', calc_method: 'pending_auto', miles: 0, client_id: 77,
+            fromCoord: SHOP2, toCoord: JOHN, startedIso: '2026-08-11T12:51:00Z',
+            endedIso: '2026-08-11T12:57:00Z', loggedAt: '2026-08-11T12:57:02Z', date: '2026-08-11' };
+          mileage.push(manual, auto);
+          const deferred = _mileDedupTrips();
+          auto.miles = 3.2; auto.calc_method = 'auto_route';
+          const settled = _mileDedupTrips();
+          return { deferred, settled, left: mileage.map(m => m.id) };
+        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
+      });
+      expect(out.deferred).toBe(0);
+      expect(out.settled).toBe(1);
+      expect(out.left).toEqual([2]);
+    });
+
+    test('dedup never crosses people, destinations, or distinct auto legs', async () => {
+      const out = await page.evaluate(() => {
+        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
+        const base = { gps: true, legKey: 'leg-a', calc_method: 'auto_route', miles: 3.2, client_id: 77,
+          fromCoord: SHOP2, toCoord: JOHN, startedIso: '2026-08-11T12:51:00Z',
+          endedIso: '2026-08-11T12:57:00Z', loggedAt: '2026-08-11T12:57:02Z', date: '2026-08-11' };
+        const keep = mileage.splice(0);
+        try {
+          const run = (rows) => { mileage.length = 0; rows.forEach(m => mileage.push(m)); return _mileDedupTrips(); };
+          // Same clocks, another crew member: two real drives.
+          const people = run([{ ...base }, { ...base, id: 9, legKey: 'leg-b', logged_by_id: 'emp-1' }]);
+          // Same clocks, different destination: two real drives.
+          const dests = run([{ ...base }, { ...base, id: 9, legKey: 'leg-b', client_id: 88, toCoord: { lat: 39.1, lng: -95.6 } }]);
+          // Distinct auto legs to one place, windows overlapping: the fence
+          // wrote two legs, so they are two drives. Only same-START twins and
+          // manual-vs-auto pairs ever collapse.
+          const legs = run([{ ...base }, { ...base, id: 9, legKey: 'leg-b', miles: 1.1,
+            startedIso: '2026-08-11T12:54:00Z', endedIso: '2026-08-11T12:56:00Z', loggedAt: '2026-08-11T12:56:02Z' }]);
+          return { people, dests, legs };
+        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
+      });
+      expect(out.people).toBe(0);
+      expect(out.dests).toBe(0);
+      expect(out.legs).toBe(0);
+    });
   });
 
   test.describe('no signal at the destination', () => {
