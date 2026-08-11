@@ -15,6 +15,7 @@
     "td-nav": "file:./td-nav",
     "td-notify": "file:./td-notify",
     "td-scan": "file:./td-scan",
+    "td-share": "file:./td-share",
     "td-voice": "file:./td-voice"
   },
   "devDependencies": {
