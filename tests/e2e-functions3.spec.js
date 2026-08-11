@@ -1196,12 +1196,15 @@ test.describe('Cloud Supabase and account functions', () => {
   });
 
   // While skeletons are up the overlay lift must NOT pour the cascade over
-  // shimmer bars: the pour belongs to the sync settle, one pour, real content.
-  test('boot cascade waits for the sync settle while skeletons are up', async () => {
-    const r = await page.evaluate(() => {
+  // shimmer bars, and the settle must not pour INSTANTLY either: the shimmer
+  // gets a visible beat first (owner video 2026-08-11: a fast sync used to
+  // finish the whole choreography beneath the overlay, so the loader lifted
+  // onto a fully formed page with no shimmer and no waterfall).
+  test('boot cascade waits for the settle, and the settle lets the shimmer be seen', async () => {
+    const r = await page.evaluate(async () => {
       try {
         window._bootSyncPending = true; window._bootSkelDone = false;
-        window._bootCascadeRan = false; window._sboT0 = 0;
+        window._bootCascadeRan = false; window._sboT0 = 0; window._bootShimmerT0 = null;
         document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
         document.getElementById('supa-boot-overlay')?.remove();
         const o = document.createElement('div');
@@ -1211,15 +1214,19 @@ test.describe('Cloud Supabase and account functions', () => {
         _removeBootOverlay();
         const heldForSync = !document.getElementById('pg-dash').classList.contains('boot-cascade');
         _bootSyncSettled();
-        const poursOnSettle = document.getElementById('pg-dash').classList.contains('boot-cascade');
-        return { heldForSync, poursOnSettle };
+        const pouredInstantly = document.getElementById('pg-dash').classList.contains('boot-cascade');
+        let waited = 0;
+        while (!window._bootSkelDone && waited < 3000) { await new Promise(res => setTimeout(res, 100)); waited += 100; }
+        const poured = document.getElementById('pg-dash').classList.contains('boot-cascade') || window._bootCascadeRan;
+        return { heldForSync, pouredInstantly, poured };
       } finally {
-        window._bootSyncPending = false; window._bootSkelDone = true;
+        window._bootSyncPending = false; window._bootSkelDone = true; window._bootShimmerT0 = null;
         document.getElementById('supa-boot-overlay')?.remove();
       }
     });
-    expect(r.heldForSync).toBe(true);   // overlay lifted onto shimmer, no premature pour
-    expect(r.poursOnSettle).toBe(true); // the settle pours over the real content
+    expect(r.heldForSync).toBe(true);        // overlay lifted onto shimmer, no premature pour
+    expect(r.pouredInstantly, 'the shimmer gets its visible beat before the pour').toBe(false);
+    expect(r.poured, 'then the settle pours over the real content').toBe(true);
     await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 6000 });
   });
 

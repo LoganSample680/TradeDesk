@@ -545,7 +545,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.11.26.19';
+const APP_VERSION='08.11.26.20';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1546,6 +1546,24 @@ function _armBootCascade(){
 // and every later sync call it harmlessly.
 function _bootSyncSettled(){
   if(window._bootSkelDone)return;
+  // THE SHIMMER MUST BE SEEN (owner video 2026-08-11: the loader lifted onto
+  // a fully formed page, no shimmer, no waterfall, then the geo card shoved
+  // everything down). On a fast sync the whole choreography used to settle
+  // BENEATH the overlay. Never settle while the overlay still covers the page
+  // and has not begun its fade, and once the shimmer is actually on screen
+  // give it a visible beat. Every boot then reads identically: loader ->
+  // shimmer -> one waterfall.
+  try{
+    const _ov=document.getElementById('supa-boot-overlay');
+    // Capped: if the overlay somehow never lifts (a boot-path error), the
+    // dashboard must still settle rather than shimmer forever.
+    if(!window._bootSettleWaitT0)window._bootSettleWaitT0=Date.now();
+    if(_ov&&!_ov.classList.contains('td-fadeout')&&Date.now()-window._bootSettleWaitT0<12000){setTimeout(_bootSyncSettled,120);return;}
+    if(document.querySelector('#pg-dash .td-boot-skel-on')){
+      if(!window._bootShimmerT0)window._bootShimmerT0=Date.now();
+      if(Date.now()-window._bootShimmerT0<650){setTimeout(_bootSyncSettled,130);return;}
+    }
+  }catch(_e){}
   // Hold the shimmer a beat for the FIRST geo answer, so the ON SITE / drive
   // card is part of the one waterfall instead of sliding in seconds behind it
   // (owner spec 2026-08-11: one boot path, banners included, no stutters).
@@ -2003,7 +2021,7 @@ async function supaInit(){
         // dashboard render holds the FULL shimmer (every widget + greeting),
         // one swap + one waterfall when the load below fully settles, exactly
         // like a fresh boot. _bootCascadeRan resets so this load gets its pour.
-        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;
+        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;
         goPg('pg-dash');
         try{
         const hasAccount=await loadAccountData();
