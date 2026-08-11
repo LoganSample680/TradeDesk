@@ -344,6 +344,121 @@ async function _rcptReadNativeFile(path){
     return await (await fetch(src)).blob();
   }catch(_e){return null;}
 }
+// ── On-device receipt reading (owner 2026-08-11) ─────────────────────────────
+// "Is this instant and more accurate?" Instant yes, accurate only in part, so
+// the two engines split the job by what each is actually good at:
+//
+//   Apple Vision (here)  reads the CHARACTERS. Sub-second, free, works with no
+//                        signal. Terrible at judgment: raw OCR asked for "the
+//                        total" happily returns the subtotal.
+//   The AI pass          understands the STRUCTURE. Slower, costs money, needs
+//                        a network, and is far better on a crumpled receipt.
+//
+// So Vision fills the fields the instant the scanner closes, and the AI pass
+// corrects them when it lands. Offline, the Vision read simply stands and the
+// expense still gets logged, which is the case that used to fail completely.
+async function _rcptOcrLines(path){
+  const P=_rcptNativePlugin();
+  if(!P||typeof P.recognizeText!=='function')return [];
+  try{
+    const r=await P.recognizeText({path});
+    return (r&&Array.isArray(r.lines))?r.lines:[];
+  }catch(_e){return [];}
+}
+// Money on a receipt line. Handles 1,234.56 / 1234.56 / $12.34, and refuses
+// bare integers: a quantity, a SKU, or a phone fragment is not a price.
+function _rcptMoneyIn(line){
+  const out=[];
+  const re=/\$?\s*(\d{1,3}(?:,\d{3})+|\d+)\.(\d{2})(?!\d)/g;
+  let m;
+  while((m=re.exec(String(line||'')))){
+    const v=parseFloat(m[1].replace(/,/g,'')+'.'+m[2]);
+    if(isFinite(v)&&v>0&&v<1000000)out.push(v);
+  }
+  return out;
+}
+// The judgment call OCR cannot make. Ordered by how much a contractor would
+// trust it, and every rule here exists because of how receipts actually print.
+function _rcptParseLines(lines){
+  const L=(lines||[]).map(x=>String(x||'').trim()).filter(Boolean);
+  const out={vendor:'',amount:null,date:''};
+  if(!L.length)return out;
+
+  // AMOUNT. "Total" wins, but SUBTOTAL must never be mistaken for it, and
+  // neither may the tendered cash or the change. When a receipt prints the
+  // label and the number on separate lines (very common on thermal paper),
+  // the next line is checked too.
+  let best=null;
+  L.forEach((line,i)=>{
+    const low=line.toLowerCase();
+    if(!/total|amount due|balance due|grand total/.test(low))return;
+    if(/sub\s*-?\s*total|subtotal/.test(low))return;      // the classic wrong answer
+    if(/tender|cash|change|card|tip|due back/.test(low))return;
+    const here=_rcptMoneyIn(line);
+    const next=(i+1<L.length)?_rcptMoneyIn(L[i+1]):[];
+    const pick=here.length?Math.max(...here):(next.length?Math.max(...next):null);
+    if(pick==null)return;
+    // Later totals beat earlier ones: "grand total" prints below "total".
+    if(best==null||pick>=best)best=pick;
+  });
+  if(best==null){
+    // No labelled total at all (handwritten slips, torn receipts): the largest
+    // amount in the bottom half is the honest guess. Flagged by leaving the
+    // caller to mark it low-confidence.
+    const half=L.slice(Math.floor(L.length/2));
+    const all=half.flatMap(_rcptMoneyIn);
+    if(all.length)best=Math.max(...all);
+    out.guessed=true;
+  }
+  if(best!=null)out.amount=best.toFixed(2);
+
+  // DATE. First plausible date, top-down: receipts print it in the header far
+  // more often than the footer. Two-digit years are assumed this century.
+  for(const line of L){
+    let m=line.match(/(20\d{2})-(\d{1,2})-(\d{1,2})/);
+    if(m){out.date=m[1]+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[3]).padStart(2,'0');break;}
+    m=line.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if(m){
+      const mo=+m[1],da=+m[2];
+      let yr=+m[3];
+      if(yr<100)yr+=2000;
+      if(mo>=1&&mo<=12&&da>=1&&da<=31&&yr>=2000&&yr<=2099){
+        out.date=yr+'-'+String(mo).padStart(2,'0')+'-'+String(da).padStart(2,'0');
+        break;
+      }
+    }
+  }
+
+  // VENDOR. The store name is the first real line of the header: skip lines
+  // that are an address, a phone number, a receipt number, or mostly digits.
+  for(const line of L.slice(0,6)){
+    const letters=(line.match(/[A-Za-z]/g)||[]).length;
+    if(letters<3)continue;
+    if(/\d{3}[-.\s]?\d{3}[-.\s]?\d{4}/.test(line))continue;          // phone
+    if(/^\d+\s+\w+.*(st|street|ave|avenue|rd|road|blvd|dr|drive|hwy|way|ln|lane)\b/i.test(line))continue;
+    if(/receipt|invoice|order\s*#|store\s*#|welcome|thank you/i.test(line))continue;
+    if(letters/line.length<0.5)continue;                              // mostly digits/symbols
+    out.vendor=line.replace(/\s+/g,' ').slice(0,60);
+    break;
+  }
+  return out;
+}
+// Fill the expense form from an on-device read, WITHOUT clobbering anything
+// the user (or a faster AI response) already put there.
+function _rcptApplyLocalRead(parsed){
+  if(!parsed)return 0;
+  let filled=0;
+  const set=(id,val)=>{
+    if(!val)return;
+    const el=document.getElementById(id);
+    if(!el||String(el.value||'').trim())return;   // never overwrite a real value
+    el.value=val;filled++;
+  };
+  set('em-vendor',parsed.vendor);
+  set('em-amount',parsed.amount);
+  return filled;
+}
+
 async function _rcptNativeScan(callback,allPages){
   const P=_rcptNativePlugin();
   let r=null;
@@ -355,6 +470,13 @@ async function _rcptNativeScan(callback,allPages){
   const pages=(r&&r.pages)||[];
   if(!pages.length)return;                        // cancelled: leave everything alone
   const take=allPages?pages:pages.slice(0,1);
+  // Read page one on-device FIRST: it lands in well under a second, so the
+  // fields are already filled while the AI round trip is still in flight (and
+  // they stand on their own when there is no signal at all).
+  _rcptOcrLines(pages[0]).then(lines=>{
+    if(!lines.length)return;
+    try{_rcptApplyLocalRead(_rcptParseLines(lines));}catch(_e){}
+  }).catch(()=>{});
   let delivered=0;
   for(const p of take){
     const blob=await _rcptReadNativeFile(p);

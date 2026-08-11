@@ -4,6 +4,7 @@ import UIKit
 #if canImport(VisionKit)
 import VisionKit
 #endif
+import Vision
 
 // TradeDesk receipt scanner, the native half.
 //
@@ -33,10 +34,56 @@ public class TdDocPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "TdDoc"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "scanDocument", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "scanDocument", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "recognizeText", returnType: CAPPluginReturnPromise)
     ]
 
     private var pending: CAPPluginCall?
+
+    // ── On-device text recognition (owner 2026-08-11) ────────────────────────
+    // Reads a scanned page with Apple's Vision OCR: under a second, free, and
+    // it works with NO SIGNAL, which is the real win (basements, rural jobs,
+    // parking garages, where a contractor most often photographs a receipt).
+    //
+    // Deliberately raw: this returns LINES OF TEXT, top to bottom, and makes
+    // no attempt to decide which number is the total. That judgment is the
+    // part OCR is bad at and belongs in JS (_rcptParseLines, js/finance.js)
+    // where it is testable and tunable without a build. The AI pass still
+    // runs and still wins on a messy receipt; this is what fills the fields
+    // instantly and what carries the expense when there is no network.
+    @objc func recognizeText(_ call: CAPPluginCall) {
+        guard let path = call.getString("path") else { call.reject("no path"); return }
+        guard #available(iOS 13.0, *) else { call.resolve(["lines": [], "ok": false]); return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let image = UIImage(contentsOfFile: path), let cg = image.cgImage else {
+                call.resolve(["lines": [], "ok": false])
+                return
+            }
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate      // .fast loses small print, which is where totals live
+            request.usesLanguageCorrection = false    // prices and SKUs are not words; correction mangles them
+            if #available(iOS 16.0, *) {
+                request.revision = VNRecognizeTextRequestRevision3
+            }
+            let handler = VNImageRequestHandler(cgImage: cg, orientation: .up, options: [:])
+            do { try handler.perform([request]) }
+            catch { call.resolve(["lines": [], "ok": false]); return }
+
+            // Sort top-to-bottom: Vision returns observations in confidence
+            // order, and receipt meaning is entirely positional (the total is
+            // near the bottom, the vendor at the top). Vision's Y origin is
+            // bottom-left, so descending Y is visual top-down.
+            let observations = (request.results ?? [])
+                .sorted { $0.boundingBox.midY > $1.boundingBox.midY }
+            var lines: [String] = []
+            for ob in observations {
+                guard let best = ob.topCandidates(1).first else { continue }
+                let text = best.string.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty { lines.append(text) }
+            }
+            call.resolve(["lines": lines, "ok": true])
+        }
+    }
 
     @objc func isAvailable(_ call: CAPPluginCall) {
         #if canImport(VisionKit)
