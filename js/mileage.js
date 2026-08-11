@@ -539,9 +539,9 @@ async function _retryPendingTrips(){
 // The owner drove once to John Doe and got THREE rows: the auto leg, the same
 // leg re-closed after a parking-lot truck move, and a manual drive started
 // mid-route when they opened Drive to find the address. The rule they set:
-// rows describing the same journey collapse to ONE, and the longest measured
-// trip is the one that survives, because it covers the most of what was
-// actually driven.
+// rows describing the same journey collapse to ONE. The automatic row is the
+// source of truth whenever one exists; between rows of the same kind the
+// longest measured trip survives (see _mileTripWinner).
 //
 // "Same journey" is deliberately strict, because deleting a real trip costs
 // real deduction money: same person, time windows that overlap, and the same
@@ -621,16 +621,19 @@ function _mileSameLeg(a,b,heal){
   }
   return false;
 }
-// Which of two same-journey rows survives. Longest measured miles wins (the
-// owner's rule: the trip covering the most real driving is the record). Ties
-// go to the measured automatic row over the hand-typed one, then to the
-// EARLIEST close: a re-delivered leg is stamped with the replay's clock, so
-// the earlier row is the contemporaneous one.
+// Which of two same-journey rows survives. The AUTOMATIC row is the source
+// of truth whenever one exists (owner rule 2026-08-11: "the background
+// running one should always be the source of truth"): it ran geocode to
+// geocode over the whole journey and Apple measured it, while a manual entry
+// is a number typed from memory, so distance never arbitrates BETWEEN kinds.
+// Within the same kind: longest measured wins, then the EARLIEST close, since
+// a re-delivered leg is stamped with the replay's clock and the earlier row
+// is the contemporaneous one.
 function _mileTripWinner(a,b){
+  if(!!a.legKey!==!!b.legKey)return a.legKey?a:b;
   const am=a.miles>0,bm=b.miles>0;
   if(am&&bm&&Math.abs(a.miles-b.miles)>0.05)return a.miles>b.miles?a:b;
   if(am!==bm)return am?a:b;
-  if(!!a.legKey!==!!b.legKey)return a.legKey?a:b;
   return (Date.parse(a.loggedAt||'')||0)<=(Date.parse(b.loggedAt||'')||0)?a:b;
 }
 function _mileDedupTrips(heal){
