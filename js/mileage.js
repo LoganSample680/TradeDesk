@@ -577,16 +577,23 @@ function _mileSameJourney(a,b){
   if(a.client_id!=null&&b.client_id!=null&&String(a.client_id)===String(b.client_id))return true;
   return false;
 }
-// The same LEG closed twice: both automatic, same start (within jitter), same
-// endpoints. These are duplicates even before either has measured, because
-// identical endpoints can only ever measure identical.
+// The same LEG closed twice. A re-delivered close carries the IDENTICAL
+// stored leg start (the same _geoDriveStartedAt value goes into both rows),
+// so exact equality is the discriminator, not a time window: two real legs
+// minutes apart to the same place must never read as one, and a window wide
+// enough to matter starts eating a crew's genuinely repeated runs. These are
+// duplicates even before either has measured, because identical endpoints can
+// only ever measure identical.
 function _mileSameLeg(a,b){
   if(!a||!b||!a.legKey||!b.legKey)return false;
   // Two crew members can leave the same shop for the same job in the same
   // minute: identical endpoints, identical clocks, two REAL drives.
   if((a.logged_by_id||null)!==(b.logged_by_id||null))return false;
+  // Same deterministic key = same leg, however the rows arrived (two devices
+  // syncing the same drive land here).
+  if(a.legKey===b.legKey)return true;
   const sa=Date.parse(a.startedIso||''),sb=Date.parse(b.startedIso||'');
-  if(!sa||!sb||Math.abs(sa-sb)>120000)return false;
+  if(!sa||!sb||sa!==sb)return false;
   const near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&typeof _geoDistFt==='function'&&
     _geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=_MILE_DEDUP_DEST_FT);
   return near(a.fromCoord,b.fromCoord)&&near(a.toCoord,b.toCoord);

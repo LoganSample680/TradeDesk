@@ -2239,7 +2239,15 @@ test.describe('Job completion, price change signature gate', () => {
       // evaluate. Splitting them let a debounced cloud-merge reassign the live `bids`
       // array between the mutation and the call, dropping the change order so no warning
       // fired (webkit fixture-seeding flake). Reading+acting atomically closes the race.
-      const b = bids.find(x => x.id === bId);
+      // The bid itself can ALSO vanish between seedJob's evaluate and this one
+      // (same merge, one hop earlier): a fixture row is in no snapshot to come
+      // back from, so re-seed it here rather than dereference undefined.
+      let b = bids.find(x => x.id === bId);
+      if (!b) {
+        b = { id: bId, client_id: 910002, client_name: 'Job Complete Client', amount: 1000, status: 'Closed Won', draft: false, bid_date: '2026-06-01' };
+        bids.push(b);
+      }
+      if (!clients.find(c => c.id === 910002)) clients.push({ id: 910002, name: 'Job Complete Client', phone: '316-555-9002', addr: '2 Job St' });
       b.completion_date = '2026-06-01';
       b.changeOrders = [{ id: 1, coNum: 1, date: '2026-06-01', desc: 'Extra outlet', amount: 50, delta: 50, originalAmount: 1000, newAmount: 1050 }]; // no signedAt, pending
       const orig = window.open;
@@ -2265,7 +2273,14 @@ test.describe('Job completion, price change signature gate', () => {
       // cloud-merge reassign the live `bids` array between the mutation and
       // the call (webkit fixture-seeding flake), dropping completion_date so
       // the invoice path never reaches the pay panel.
-      const b = bids.find(x => x.id === bId);
+      // Same re-seed guard as the pending-CO test above: the fixture bid can
+      // vanish between seedJob's evaluate and this one.
+      let b = bids.find(x => x.id === bId);
+      if (!b) {
+        b = { id: bId, client_id: 910002, client_name: 'Job Complete Client', amount: 1000, status: 'Closed Won', draft: false, bid_date: '2026-06-01' };
+        bids.push(b);
+      }
+      if (!clients.find(c => c.id === 910002)) clients.push({ id: 910002, name: 'Job Complete Client', phone: '316-555-9002', addr: '2 Job St' });
       b.completion_date = '2026-06-01';
       const orig = window.open;
       let openCalled = false;
