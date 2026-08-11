@@ -1757,6 +1757,8 @@ function _geoArmParkTimer(spot){
 function _geoClearParkTimer(){
   if(_geoParkTimer){clearTimeout(_geoParkTimer);_geoParkTimer=null;}
 }
+// One question, one place, and a seam the pocket-condition tests can stub.
+function _geoAppOnScreen(){try{return typeof document!=='undefined'&&document.visibilityState==='visible';}catch(_e){return false;}}
 function _geoEnterParkMode(spot){
   _geoClearParkTimer();
   if(_geoParkModeOn)return;
@@ -1766,7 +1768,7 @@ function _geoEnterParkMode(spot){
   // iOS wake-up region fires hundreds of meters past the fence. On screen =
   // GPS stays live; the countdown re-arms, and the firing after the app is
   // backgrounded parks for real.
-  if(typeof document!=='undefined'&&document.visibilityState==='visible'){
+  if(_geoAppOnScreen()){
     _geoParkNote('park-defer','app on screen');
     _geoArmParkTimer(spot);
     return;

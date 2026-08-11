@@ -4181,10 +4181,10 @@ test.describe('Automatic mileage from drive legs', () => {
           const timerArmed = _geoParkTimer != null;
           // The phone is in the POCKET: park mode only ever engages with the
           // app off screen (on screen the GPS deliberately stays live).
-          Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+          const realOnScreen = _geoAppOnScreen; _geoAppOnScreen = () => false;
           // ...which we fire directly rather than waiting four minutes.
           _geoEnterParkMode();
-          Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+          _geoAppOnScreen = realOnScreen;
           await new Promise(r2 => setTimeout(r2, 10));
           return {
             timerArmed,
@@ -4276,7 +4276,7 @@ test.describe('Automatic mileage from drive legs', () => {
           _geoDriveStartedAt = null; _geoDriveReset();
           _geoStopAnchor = null; _geoLastFenceLoc = null; _geoLegOrigin = null;
         }
-      }, { ROAD, ROAD2 });
+      }, { ROAD, ROAD2: { lat: ROAD.lat + 0.004, lon: ROAD.lon + 0.004 } });
       expect(Math.round(r.held.mph), 'a lone zero must not zero the readout').toBe(34);
       expect(r.held.movingAt, 'a held zero is not evidence of motion').toBe(r.movingBefore);
       expect(r.stopped.mph, 'a stream of zeros is a real stop').toBe(0);
@@ -4438,10 +4438,12 @@ test.describe('Automatic mileage from drive legs', () => {
           };
           // The screen was locked the whole time: no timer ever fired. This
           // single jitter ping is the only signal, and it must be enough.
+          window.__realOnScreen = _geoAppOnScreen; _geoAppOnScreen = () => false;   // phone in the pocket
           await _geoOnPing({ coords: { latitude: a.shop.lat, longitude: a.shop.lon, accuracy: 8, speed: 0 } });
           await new Promise(r2 => setTimeout(r2, 10));
           return { parkedCalls: parked.length, parkOn: _geoParkModeOn, removedId: removed[0] && removed[0].id, watcher: _geoNativeWatcherId };
         } finally {
+          if (window.__realOnScreen) { _geoAppOnScreen = window.__realOnScreen; delete window.__realOnScreen; }
           window.Capacitor = realCap; _supaUser = realUser;
           _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
           _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
@@ -4471,6 +4473,7 @@ test.describe('Automatic mileage from drive legs', () => {
               startParked: () => Promise.reject(new Error('not implemented on ios')),
             } : null,
           };
+          window.__realOnScreen = _geoAppOnScreen; _geoAppOnScreen = () => false;   // phone in the pocket
           _geoEnterParkMode();
           await new Promise(r2 => setTimeout(r2, 20));
           return {
@@ -4479,6 +4482,7 @@ test.describe('Automatic mileage from drive legs', () => {
             failLogged: _geoParkLog.some(x => x.ev === 'park-fail' && /not implemented/.test(x.x)),
           };
         } finally {
+          if (window.__realOnScreen) { _geoAppOnScreen = window.__realOnScreen; delete window.__realOnScreen; }
           window.Capacitor = realCap;
           _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
           _geoNativeWatcherId = null; _geoLastFenceLoc = null;
@@ -4556,6 +4560,7 @@ test.describe('Automatic mileage from drive legs', () => {
               stopAll: () => Promise.resolve(),
             } : null,
           };
+          window.__realOnScreen = _geoAppOnScreen; _geoAppOnScreen = () => false;   // phone in the pocket
           await _geoOnPing({ coords: { latitude: a.road.lat, longitude: a.road.lon, accuracy: 8, speed: 0 } });
           await new Promise(r2 => setTimeout(r2, 10));
           return {
@@ -4564,6 +4569,7 @@ test.describe('Automatic mileage from drive legs', () => {
             parkOn: _geoParkModeOn, removedId: removed[0] && removed[0].id,
           };
         } finally {
+          if (window.__realOnScreen) { _geoAppOnScreen = window.__realOnScreen; delete window.__realOnScreen; }
           window.Capacitor = realCap; _supaUser = realUser;
           _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
           _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
@@ -4614,6 +4620,7 @@ test.describe('Automatic mileage from drive legs', () => {
           // A lap around the yard: nine fixes 30s apart circling ROAD at
           // ~220ft radius, each step ~170ft (about 3.5 mph on foot). The
           // anchor breaks and re-births mid-lap, exactly the owner's case.
+          window.__realOnScreen = _geoAppOnScreen; _geoAppOnScreen = () => false;   // phone in the pocket
           const t0 = Date.now() - 260000;
           for (let i = 0; i < 9; i++) {
             const ang = (i / 8) * 2 * Math.PI;
@@ -4631,6 +4638,7 @@ test.describe('Automatic mileage from drive legs', () => {
             parkOn: _geoParkModeOn, removedId: removed[0] && removed[0].id,
           };
         } finally {
+          if (window.__realOnScreen) { _geoAppOnScreen = window.__realOnScreen; delete window.__realOnScreen; }
           window.Capacitor = realCap; _supaUser = realUser;
           _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
           _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
