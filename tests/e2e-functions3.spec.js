@@ -1144,11 +1144,11 @@ test.describe('Cloud Supabase and account functions', () => {
   // pours the one boot cascade. Non-destructive: static widget markup (the
   // quick-actions grid) must survive the swap untouched.
   test('boot skeletons: shimmer overlays every visible widget, statics survive the swap', async () => {
-    const r = await page.evaluate(() => {
+    const r = await page.evaluate(async () => {
       const savedTimer = window._bootSkelTimer;
       try {
         window._bootSyncPending = true; window._bootSkelDone = false; window._bootSkelTimer = null;
-        window._bootCascadeRan = false; window._sboT0 = 0;
+        window._bootCascadeRan = false; window._sboT0 = 0; window._bootShimmerT0 = null;
         document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
         document.getElementById('supa-boot-overlay')?.remove(); // settle only pours once the overlay is gone
         document.getElementById('pg-dash').classList.add('active');
@@ -1161,8 +1161,11 @@ test.describe('Cloud Supabase and account functions', () => {
         const shimmer = document.querySelectorAll('#dash-widget-root .td-boot-skel .td-skel').length;
         const modeOn = _dashSkelMode();
         const timerArmed = !!window._bootSkelTimer;
-        // The settle: one swap back to real content + the cascade pours.
+        // The settle: the shimmer gets its visible beat (owner spec
+        // 2026-08-11), then one swap back to real content + the cascade pours.
         _bootSyncSettled();
+        let waited = 0;
+        while (!window._bootSkelDone && waited < 3000) { await new Promise(res => setTimeout(res, 100)); waited += 100; }
         const after = {
           skels: document.querySelectorAll('#pg-dash .td-boot-skel').length,
           on: document.querySelectorAll('#pg-dash .td-boot-skel-on').length,
@@ -1174,7 +1177,7 @@ test.describe('Cloud Supabase and account functions', () => {
         _bootSyncSettled(); // idempotent: a late sync or the failsafe re-firing is a no-op
         return { before, skels, on, tbarSkel, quickHidden, shimmer, modeOn, timerArmed, after };
       } finally {
-        window._bootSyncPending = false; window._bootSkelDone = true;
+        window._bootSyncPending = false; window._bootSkelDone = true; window._bootShimmerT0 = null;
         try { clearTimeout(window._bootSkelTimer); } catch (e) {}
         window._bootSkelTimer = savedTimer;
       }
