@@ -1132,6 +1132,22 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.blowup).toBe(12.3);
     });
 
+    test('the heal runs after every cloud merge, not only at boot', async () => {
+      // Owner report 2026-08-11: duplicates purged during an OFFLINE boot came
+      // back. The heal's deletes never reached the cloud, and the reconnect
+      // load merged the cloud's copies straight back in with nothing left to
+      // re-collapse them. The heal must therefore ride every completed load
+      // and the realtime burst path, where the resurrection actually arrives.
+      const fs = require('fs');
+      const path = require('path');
+      const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+      const afterLoad = src.indexOf("supaSetStatus('synced');");
+      expect(afterLoad, 'load completion point exists').toBeGreaterThan(0);
+      expect(src.slice(afterLoad, afterLoad + 900), 'heal rides the load completion')
+        .toContain('_mileDedupTrips(true)');
+      expect(src, 'realtime mileage bursts re-collapse too').toContain('_rtMileHealTimer');
+    });
+
     test('dedup never crosses people, destinations, or distinct auto legs', async () => {
       const out = await page.evaluate(() => {
         const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };

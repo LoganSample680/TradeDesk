@@ -545,7 +545,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.11.26.21';
+const APP_VERSION='08.11.26.22';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -7066,6 +7066,13 @@ async function supaLoadFromCloud({silent=false}={}){
     _authSettingsLoaded=true; // authoritative cloud settings are now in S, settings saves are safe
     _loadedDataOwner=(_supaUser&&_supaUser.id)||_loadedDataOwner; // remember whose data is in memory
     supaSetStatus('synced');
+    // Mileage heal AFTER EVERY completed cloud merge, not only at boot (owner
+    // report 2026-08-11: duplicates purged on an OFFLINE boot came back). The
+    // offline heal's deletions never reached the cloud, so the reconnect load
+    // merged the cloud's copies straight back in and nothing re-collapsed
+    // them. Healing here re-collapses any resurrection the moment it arrives;
+    // the saveAll inside the sweep then propagates the deletes for real.
+    try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
 
     // ── One-time fleet lift out of the settings blob (20260809_td_vehicles) ──
     // MUST run here, after the load: only now do we know whether this account
@@ -7619,6 +7626,13 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   // every container on each echoed row left the page churning under any open modal/sheet
   // so its box never settled (clicks timed out on a slow device, "element not stable").
   // Mirrors the _lastLocalSaveAt guards at cloud.js:3597/3709/3717. Data is always applied above.
+  // A mileage row arriving over realtime can be a peer resurrecting a healed
+  // duplicate (its own offline heal never propagated). Re-collapse shortly
+  // after the burst settles; the heal is a no-op when nothing matches.
+  if(tbl==='td_mileage'){
+    clearTimeout(window._rtMileHealTimer);
+    window._rtMileHealTimer=setTimeout(()=>{try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}},1500);
+  }
   if(fromRealtime&&Date.now()-_lastLocalSaveAt<5000)return;
   if(fromRealtime){
     // BURST-COALESCED render for realtime events: a peer save that touches N rows
