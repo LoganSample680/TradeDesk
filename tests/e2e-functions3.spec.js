@@ -8248,10 +8248,13 @@ test.describe('Haptics bridge', () => {
     for (const f of fs.readdirSync(jsDir).filter(n => n.endsWith('.js'))) {
       const src = fs.readFileSync(path.join(jsDir, f), 'utf8');
       src.split('\n').forEach((line, i) => {
-        if (!/navigator\.vibrate/.test(line)) return;
-        // utils.js owns the ONE fallback inside _tdHaptic; comments are fine.
-        if (f === 'utils.js') return;
-        if (/^\s*(\/\/|\*)/.test(line)) return;
+        // Strip the comment tail BEFORE testing: this hunts for live CALLS,
+        // and the replacement call sites explain themselves in trailing
+        // comments that name the old API ("navigator.vibrate was dead on
+        // iOS"). Matching those was the check's own bug, not a real offender.
+        const code = line.split('//')[0];
+        if (!/navigator\.vibrate/.test(code)) return;
+        if (f === 'utils.js') return; // utils.js owns the ONE fallback inside _tdHaptic
         offenders.push(`${f}:${i + 1}`);
       });
     }
