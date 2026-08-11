@@ -9,7 +9,6 @@
     "@capacitor/core": "^7.0.0",
     "@capacitor/ios": "^7.0.0",
     "td-doc": "file:./td-doc",
-    "td-callerid": "file:./td-callerid",
     "td-geo": "file:./td-geo",
     "td-haptic": "file:./td-haptic",
     "td-lock": "file:./td-lock",

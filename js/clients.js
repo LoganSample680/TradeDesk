@@ -1095,9 +1095,6 @@ function saveClient(){
     if(supaEnabled()&&_supaUser)_uploadClientHub(c.id).catch(()=>{});
   }
   saveAll();
-  // A new or renumbered client changes what iOS should call this number
-  // (js/callerid.js). Debounced, so an import does one publish, not hundreds.
-  try{if(typeof _callerIdSyncSoon==='function')_callerIdSyncSoon();}catch(_e){}
   const _prevAddr=_existingClient?.addr||'';
   const _noPropData=!_existingClient?.propDataFetchedAt;
   if(street&&city&&(addr!==_prevAddr||_noPropData))_lookupPropertyData(c.id,{street,city,state,zip});
