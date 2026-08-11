@@ -65,7 +65,10 @@ test.describe('Share inbox', () => {
         const shown = !!document.getElementById('_sharein-ov');
         const rows = document.querySelectorAll('#_sharein-ov ._si-job').length;
         document.querySelector('#_sharein-ov ._si-job').click();
-        await new Promise(res => setTimeout(res, 200));
+        // The filing pipeline is genuinely async per file (read, attach,
+        // compress). The overlay CLOSING is its completion signal; a fixed
+        // sleep raced it and lost on a loaded webkit runner (2026-08-11).
+        for (let w = 0; w < 80 && document.getElementById('_sharein-ov'); w++) await new Promise(res => setTimeout(res, 50));
         const j = jobs.find(x => x.id === 6001);
         return {
           n, shown, rows,
@@ -108,7 +111,7 @@ test.describe('Share inbox', () => {
         jobs.push({ id: 6002, name: 'Partial Job', status: 'upcoming', start: todayKey(), days: 1 });
         await checkSharedInbox({ force: true });
         document.querySelector('#_sharein-ov ._si-job').click();
-        await new Promise(res => setTimeout(res, 200));
+        for (let w = 0; w < 80 && document.getElementById('_sharein-ov'); w++) await new Promise(res => setTimeout(res, 50));
         const j = jobs.find(x => x.id === 6002);
         return { photos: (j.photos || []).length, cleared: window.__cleared.slice() };
       } finally {
@@ -138,7 +141,7 @@ test.describe('Share inbox', () => {
         const afterLater = window.__cleared.length;
         await checkSharedInbox({ force: true });
         document.getElementById('_si-discard').click();
-        await new Promise(res => setTimeout(res, 120));
+        for (let w = 0; w < 40 && document.getElementById('_sharein-ov'); w++) await new Promise(res => setTimeout(res, 50));
         return { afterLater, afterDiscard: window.__cleared.length };
       } finally { window.Capacitor = realCap; document.getElementById('_sharein-ov')?.remove(); }
     }, ITEMS);
