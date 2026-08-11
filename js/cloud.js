@@ -545,7 +545,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.11.26.4';
+const APP_VERSION='08.11.26.5';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1560,6 +1560,9 @@ function _bootSyncSettled(){
   // Anything shared into TradeDesk while it was closed (js/share-inbox.js).
   // Well after the pour so it never competes with the boot render.
   try{if(typeof checkSharedInbox==='function')setTimeout(()=>checkSharedInbox(),6000);}catch(_e){}
+  // Uploads iOS finished while the app was CLOSED (js/bg-upload.js): fold the
+  // results in before anything re-queues those photos.
+  try{if(typeof _bgUpReconcile==='function'){_bgUpReconcile();_bgUpWire();}}catch(_e){}
 }
 function _removeBootOverlay(immediate){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
@@ -5622,6 +5625,10 @@ function _startOfflineWatcher(){
     // making the user relaunch the app to be offered their own photos.
     if(document.visibilityState==='visible'&&typeof checkSharedInbox==='function'){
       setTimeout(()=>{try{checkSharedInbox();}catch(_e){}},900);
+    }
+    // Same on resume: iOS may have finished transfers while we were away.
+    if(document.visibilityState==='visible'&&typeof _bgUpReconcile==='function'){
+      try{_bgUpReconcile();}catch(_e){}
     }
   });
   // 5s when offline (banner showing), 30s when fully synced
