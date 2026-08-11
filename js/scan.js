@@ -225,6 +225,177 @@ function _scanDedupeFloors(rooms){
     a.floorM2=Math.max(0,a.floorRawM2-lost);
   }
 }
+// ── Pin partition: one continuous motion (owner 2026-08-10) ─────────────────
+// "While walking each room I want to drop a pin in it to name it and keep
+// scanning... one continuous motion." The capture returns ONE merged room per
+// floor plus the pins; this splits that floor back into per-room entries so
+// every downstream consumer (lenses, rename, tints, 3D paint) works
+// unchanged. Method: rasterize the floor at 10 cm, block cells on walls,
+// flood-fill from each pin (walls stop the fill, so rooms end at their real
+// boundaries), then clip walls to each region's span and deal objects by
+// where they stand.
+function _scanPartitionFloor(r,ps){
+  if(!r||!Array.isArray(r.poly)||r.poly.length<3||!Array.isArray(ps)||ps.length<2)return [r];
+  const G=0.1,BLOCK=0.09,OFF=0.16;
+  let x0=1/0,x1=-1/0,z0=1/0,z1=-1/0;
+  r.poly.forEach(p=>{if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<z0)z0=p[1];if(p[1]>z1)z1=p[1];});
+  x0-=G;z0-=G;x1+=G;z1+=G;
+  const NX=Math.max(2,Math.ceil((x1-x0)/G)),NZ=Math.max(2,Math.ceil((z1-z0)/G));
+  if(NX*NZ>1440000)return [r]; // >120 m per side: bail to the merged floor
+  const idx=(i,j)=>j*NX+i;
+  const owner=new Int16Array(NX*NZ).fill(-1); // -1 free, -2 blocked/outside, >=0 pin
+  const segs=(r.walls||[]).map(w=>[w.ax,w.az,w.bx,w.bz]);
+  const distSeg=(px,pz,s)=>{const ax=s[0],az=s[1],bx=s[2],bz=s[3];
+    const dx=bx-ax,dz=bz-az,L2=dx*dx+dz*dz||1e-9;
+    let t=((px-ax)*dx+(pz-az)*dz)/L2;t=t<0?0:(t>1?1:t);
+    return Math.hypot(px-(ax+dx*t),pz-(az+dz*t));};
+  for(let j=0;j<NZ;j++)for(let i=0;i<NX;i++){
+    const px=x0+(i+0.5)*G,pz=z0+(j+0.5)*G;
+    if(!_scanPtInPoly(px,pz,r.poly)){owner[idx(i,j)]=-2;continue;}
+    for(let k=0;k<segs.length;k++){if(distSeg(px,pz,segs[k])<BLOCK){owner[idx(i,j)]=-2;break;}}
+  }
+  // Seed each pin at the nearest free cell (a pin dropped against a wall or a
+  // hair outside the mapped floor still lands in its room).
+  const q=[];
+  ps.forEach((p,pi)=>{
+    const ci=Math.floor((p.x-x0)/G),cj=Math.floor((p.z-z0)/G);
+    let best=-1,bd=1/0;
+    for(let dj=-15;dj<=15;dj++)for(let di=-15;di<=15;di++){
+      const i2=ci+di,j2=cj+dj;
+      if(i2<0||j2<0||i2>=NX||j2>=NZ)continue;
+      if(owner[idx(i2,j2)]!==-1)continue;
+      const d=di*di+dj*dj;
+      if(d<bd){bd=d;best=idx(i2,j2);}
+    }
+    if(best>=0){owner[best]=pi;q.push(best);}
+  });
+  let head=0;
+  while(head<q.length){
+    const c=q[head++],ci=c%NX,cj=(c/NX)|0,o=owner[c];
+    if(ci+1<NX&&owner[c+1]===-1){owner[c+1]=o;q.push(c+1);}
+    if(ci>0&&owner[c-1]===-1){owner[c-1]=o;q.push(c-1);}
+    if(cj+1<NZ&&owner[c+NX]===-1){owner[c+NX]=o;q.push(c+NX);}
+    if(cj>0&&owner[c-NX]===-1){owner[c-NX]=o;q.push(c-NX);}
+  }
+  // Walled-off pockets no fill reached: nearest pin as the crow flies.
+  for(let j=0;j<NZ;j++)for(let i=0;i<NX;i++){
+    const k=idx(i,j);if(owner[k]!==-1)continue;
+    const px=x0+(i+0.5)*G,pz=z0+(j+0.5)*G;
+    let bi=0,bd=1/0;
+    ps.forEach((p,pi)=>{const d=(p.x-px)*(p.x-px)+(p.z-pz)*(p.z-pz);if(d<bd){bd=d;bi=pi;}});
+    owner[k]=bi;
+  }
+  const ownerAt=(x,z)=>{
+    const i2=Math.floor((x-x0)/G),j2=Math.floor((z-z0)/G);
+    if(i2>=0&&j2>=0&&i2<NX&&j2<NZ&&owner[idx(i2,j2)]>=0)return owner[idx(i2,j2)];
+    let bi=0,bd=1/0;
+    ps.forEach((p,pi)=>{const d=(p.x-x)*(p.x-x)+(p.z-z)*(p.z-z);if(d<bd){bd=d;bi=pi;}});
+    return bi;
+  };
+  // Region outline: directed boundary edges of the cell mask chained into the
+  // longest loop, collinear runs merged. Grid-step staircases are invisible
+  // at plan scale and the areas come from the cells, not this outline.
+  const outline=(pi)=>{
+    const starts=new Map();
+    const key=(x,z)=>(Math.round(x*1000))+','+(Math.round(z*1000));
+    const is=(i,j)=>i>=0&&j>=0&&i<NX&&j<NZ&&owner[idx(i,j)]===pi;
+    for(let j=0;j<NZ;j++)for(let i=0;i<NX;i++){
+      if(!is(i,j))continue;
+      const xa=x0+i*G,za=z0+j*G,xb=xa+G,zb=za+G;
+      if(!is(i,j-1))starts.set(key(xa,za),[xb,za]);
+      if(!is(i+1,j))starts.set(key(xb,za),[xb,zb]);
+      if(!is(i,j+1))starts.set(key(xb,zb),[xa,zb]);
+      if(!is(i-1,j))starts.set(key(xa,za+G),[xa,za]);
+    }
+    let bestLoop=null;
+    const used=new Set();
+    for(const k0 of starts.keys()){
+      if(used.has(k0))continue;
+      const loop=[];let k=k0;
+      while(starts.has(k)&&!used.has(k)){
+        used.add(k);
+        const pt=k.split(',').map(v=>+v/1000);
+        loop.push(pt);
+        const nxt=starts.get(k);
+        k=key(nxt[0],nxt[1]);
+      }
+      if(loop.length>2&&(!bestLoop||loop.length>bestLoop.length))bestLoop=loop;
+    }
+    if(!bestLoop)return null;
+    const out=[];
+    for(let i=0;i<bestLoop.length;i++){
+      const a=bestLoop[(i+bestLoop.length-1)%bestLoop.length],b=bestLoop[i],c=bestLoop[(i+1)%bestLoop.length];
+      const colin=Math.abs((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]))<1e-9;
+      if(!colin)out.push(b);
+    }
+    return out.length>=3?out:bestLoop;
+  };
+  const out=ps.map((p,pi)=>{
+    let cells=0;
+    for(let k=0;k<owner.length;k++)if(owner[k]===pi)cells++;
+    const walls=[];
+    (r.walls||[]).forEach(w=>{
+      const dx=w.bx-w.ax,dz=w.bz-w.az,L=w.len||Math.hypot(dx,dz)||1;
+      const nx=-dz/L,nz=dx/L,n=Math.max(2,Math.ceil(L/0.2));
+      const own=[];
+      for(let s=0;s<=n;s++){
+        const t=s/n,mx=w.ax+dx*t,mz=w.az+dz*t;
+        let hit=false;
+        for(const sgn of[1,-1]){
+          const i2=Math.floor((mx+nx*OFF*sgn-x0)/G),j2=Math.floor((mz+nz*OFF*sgn-z0)/G);
+          if(i2>=0&&j2>=0&&i2<NX&&j2<NZ&&owner[idx(i2,j2)]===pi){hit=true;break;}
+        }
+        own.push(hit);
+      }
+      // Contiguous owned runs become this room's sub-walls: a wall that spans
+      // several rooms (one long exterior run) is CLIPPED to each room's part,
+      // so wall footage is honest per room. Openings ride the run they sit in.
+      let s0=-1;
+      for(let s=0;s<=n+1;s++){
+        const v=s<=n&&own[s];
+        if(v&&s0<0)s0=s;
+        if(!v&&s0>=0){
+          const t0=s0/n,t1=(s-1)/n,len=(t1-t0)*L;
+          if(len>=0.3){
+            const off0=t0*L;
+            const clipOpen=list=>list.filter(d=>d.off==null||(d.off>=off0-0.1&&d.off<=t1*L+0.1))
+              .map(d=>({...d,off:d.off!=null?Math.max(0,d.off-off0):d.off}));
+            walls.push({id:w.id+':'+pi+':'+s0,
+              ax:w.ax+dx*t0,az:w.az+dz*t0,bx:w.ax+dx*t1,bz:w.az+dz*t1,
+              len,h:w.h,ey:w.ey,doors:clipOpen(w.doors||[]),windows:clipOpen(w.windows||[])});
+          }
+          s0=-1;
+        }
+      }
+    });
+    const objects=(r.objects||[]).filter(o=>ownerAt(o.cx,o.cz)===pi).map(o=>({...o}));
+    const doors=walls.flatMap(w=>w.doors),wins=walls.flatMap(w=>w.windows);
+    return {label:p.name||('Room '+(pi+1)),walls,poly:outline(pi)||r.poly,objects,
+      floorM2:cells*G*G,floorRawM2:cells*G*G,
+      wallM2:walls.reduce((t,w)=>t+w.len*w.h,0),
+      openM2:doors.reduce((t,o)=>t+o.area,0)+wins.reduce((t,o)=>t+o.area,0),
+      perimM:walls.reduce((t,w)=>t+w.len,0),
+      hM:walls.length?Math.max(...walls.map(w=>w.h)):(r.hM||2.44),
+      doorN:doors.length,winN:wins.length,winM2:wins.reduce((t,o)=>t+o.area,0),
+      pin:{x:p.x,z:p.z}};
+  }).filter(rm=>rm.floorM2>0.5); // a pin that owned nothing drops out
+  return out.length?out:[r];
+}
+// Expand pin-mode floor segments into per-room entries. Segments without pins
+// (old builds, a floor the user never pinned) pass through untouched; one pin
+// just names the whole floor.
+function _scanExpandPins(rooms,pins){
+  if(!Array.isArray(pins)||!pins.length)return rooms;
+  const out=[];
+  (rooms||[]).forEach(r=>{
+    const st=Math.max(1,+r.story||1);
+    const ps=pins.filter(p=>Math.max(1,+p.story||1)===st);
+    if(!ps.length){out.push(r);return;}
+    if(ps.length===1){r.label=ps[0].name||r.label;out.push(r);return;}
+    _scanPartitionFloor(r,ps).forEach(part=>{part.story=st;out.push(part);});
+  });
+  return out;
+}
 // Manhattan squaring: find the room's dominant grid direction (length-weighted
 // mean of wall angles folded modulo 90 degrees, the fold-by-4 trick) and
 // rotate every wall within 6 degrees of a grid axis onto it, about its own
@@ -1056,7 +1227,8 @@ function _scanMergeResult(sc,res){
     if(r){r.story=Math.max(1,parseInt((res.stories||[])[i],10)||1);rooms.push(r);}
   });
   if(!rooms.length)return null;
-  sc.rooms=(sc.rooms||[]).concat(rooms);
+  const grown=_scanExpandPins(rooms,res.pins); // pin-mode floors split into rooms
+  sc.rooms=(sc.rooms||[]).concat(grown);
   _scanDedupeFloors(sc.rooms); // added rooms reclaim any area the old rooms bled into
   sc.photos=(sc.photos||[]).concat((res.photos||[]).map(p=>({path:p.path,cam:p.cam,room:(p.room|0)+base})));
   sc.walk=(sc.walk||[]).concat((res.walk||[]).map(k=>({path:k.path,cam:k.cam,fx:k.fx,fy:k.fy,cx:k.cx,cy:k.cy,w:k.w,h:k.h})));
@@ -1120,7 +1292,7 @@ async function startRoomScan(ctx){
     else if(!merged&&typeof showToast==='function')showToast('Could not read the scan geometry','📐');
     return merged;
   }
-  const rooms=[];
+  let rooms=[];
   res.rooms.forEach((raw,i)=>{
     const r=_scanParseRoom(raw,(res.labels||[])[i]);
     // The floor the user SAID they were on (the capture screen's Floor chip);
@@ -1128,6 +1300,7 @@ async function startRoomScan(ctx){
     if(r){r.story=Math.max(1,parseInt((res.stories||[])[i],10)||1);rooms.push(r);}
   });
   if(!rooms.length){if(typeof showToast==='function')showToast('Could not read the scan geometry','📐');return null;}
+  rooms=_scanExpandPins(rooms,res.pins); // pin-mode floors split into per-room entries
   _scanDedupeFloors(rooms); // later-walked rooms own any bleed-through overlap
   const sc=saveScan({
     id:(typeof _newId==='function'?_newId():String(Date.now())),

@@ -94,7 +94,11 @@ public class TdScanPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func pendingDraft(_ call: CAPPluginCall) {
         #if canImport(RoomPlan)
         if #available(iOS 17.0, *), let d = TdScanDraft.load() {
-            call.resolve(["exists": true, "count": d.rooms.count, "labels": d.labels, "ts": d.ts])
+            // Pins are named rooms too: a continuous-mode draft may hold pins
+            // and a world map before any floor segment has banked.
+            let pinNames = (d.pins ?? []).map { $0.name }
+            call.resolve(["exists": true, "count": max(d.rooms.count, pinNames.count),
+                          "labels": pinNames.isEmpty ? d.labels : pinNames, "ts": d.ts])
             return
         }
         #endif
@@ -167,6 +171,13 @@ struct TdKeyframe {
 // Rewritten after every finished room; deleted only on a completed deliver or
 // an explicit cancel. Whatever kills the scan (auto-lock, crash, iOS reclaim),
 // at most the room currently being walked is lost, never the whole floor.
+struct TdPin: Codable {
+    var x: Double
+    var z: Double
+    var story: Int
+    var name: String
+}
+
 @available(iOS 17.0, *)
 struct TdScanDraft: Codable {
     var rooms: [String]
@@ -175,6 +186,7 @@ struct TdScanDraft: Codable {
     var story: Int
     var worldMap: String?
     var ts: Double
+    var pins: [TdPin]?
 
     static func jsonUrl() -> URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -184,16 +196,16 @@ struct TdScanDraft: Codable {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("td_scan_draft.armap")
     }
-    static func save(rooms: [String], labels: [String], stories: [Int], story: Int) {
+    static func save(rooms: [String], labels: [String], stories: [Int], story: Int, pins: [TdPin]) {
         let mapPath = FileManager.default.fileExists(atPath: mapUrl().path) ? mapUrl().path : nil
         let d = TdScanDraft(rooms: rooms, labels: labels, stories: stories, story: story,
-                            worldMap: mapPath, ts: Date().timeIntervalSince1970)
+                            worldMap: mapPath, ts: Date().timeIntervalSince1970, pins: pins)
         if let data = try? JSONEncoder().encode(d) { try? data.write(to: jsonUrl()) }
     }
     static func load() -> TdScanDraft? {
         guard let data = try? Data(contentsOf: jsonUrl()),
               let d = try? JSONDecoder().decode(TdScanDraft.self, from: data),
-              !d.rooms.isEmpty else { return nil }
+              !(d.rooms.isEmpty && (d.pins ?? []).isEmpty) else { return nil }
         var out = d
         if out.worldMap == nil, FileManager.default.fileExists(atPath: mapUrl().path) {
             out.worldMap = mapUrl().path
@@ -225,6 +237,12 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     private var pendingSlots: [Int] = []
     private var roomLabels: [String] = []
     private var roomStories: [Int] = []
+    // ONE CONTINUOUS MOTION (owner 2026-08-10: "drop a pin in each room to
+    // name it and keep scanning, not stop start"). The capture never pauses
+    // inside a floor; a pin records where the user stood + the name they
+    // typed, and JS partitions the merged floor into rooms by pins + walls.
+    // Segment boundaries remain ONLY at floor changes and Finish.
+    private var pins: [TdPin] = []
     private var photos: [[String: Any]] = []
     private var currentStory = 1
     private var finishing = false
@@ -281,6 +299,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
                 }
             }
             currentStory = d.story
+            pins = d.pins ?? []
             if resumeWorldMapPath == nil { resumeWorldMapPath = d.worldMap }
         }
         // Resuming an earlier scan: preload its ARWorldMap so the session
@@ -340,23 +359,25 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     private func buildOverlay() {
         // NOTE: roomLabels is NOT reset here, a draft resume preloads it in
         // viewDidLoad and wiping it would orphan the recovered rooms' names.
-        styled(chip, labels.first ?? "Room", bg: UIColor(white: 0, alpha: 0.55))
+        // The chip is a passive indicator now (last pin dropped); naming
+        // happens in the pin sheet, so the chip has no tap action.
+        styled(chip, "No pins yet", bg: UIColor(white: 0, alpha: 0.55))
+        chip.titleLabel?.font = .systemFont(ofSize: 13, weight: .bold)
         styled(floorBtn, "Floor \(currentStory)", bg: UIColor(white: 0, alpha: 0.55))
         styled(cancelBtn, "Cancel", bg: UIColor(white: 0, alpha: 0.55))
-        styled(redoBtn, "Redo room", bg: UIColor(white: 0, alpha: 0.55))
+        styled(redoBtn, "Redo floor", bg: UIColor(white: 0, alpha: 0.55))
         redoBtn.titleLabel?.font = .systemFont(ofSize: 13, weight: .bold)
-        // ONE tap per doorway (owner 2026-08-10: scan a whole floor without a
-        // done-and-wait per room): Next room banks the segment, scanning never
-        // stops, the name sheet opens as you walk into the next room.
-        styled(doneRoomBtn, "Next room", bg: UIColor(red: 0.09, green: 0.37, blue: 0.65, alpha: 1))
+        // ONE CONTINUOUS MOTION: the pin button never stops the capture, it
+        // just records where the user stands + the room name they give it.
+        styled(doneRoomBtn, "📍 Pin room", bg: UIColor(red: 0.09, green: 0.37, blue: 0.65, alpha: 1))
         styled(finishBtn, "Finish", bg: UIColor(red: 0.13, green: 0.55, blue: 0.28, alpha: 1))
         styled(shutterBtn, "📷", bg: UIColor(white: 0, alpha: 0.55))
         shutterBtn.titleLabel?.font = .systemFont(ofSize: 24)
 
-        let resuming = resumeWorldMapPath != nil || !rooms.isEmpty
+        let resuming = resumeWorldMapPath != nil || !rooms.isEmpty || !pins.isEmpty
         hint.text = resuming
-            ? "Picking up your earlier scan (\(rooms.count) room\(rooms.count == 1 ? "" : "s") kept). Stand where you already scanned, then keep walking."
-            : "Walk slow, hug the walls. Tap Next room at each doorway, Finish when the floor is done."
+            ? "Picking up your earlier scan. Stand where you already scanned, then keep walking."
+            : "Walk the whole floor in one go. Drop a pin in each room to name it. Tap Floor when you head upstairs."
         hint.textColor = .white
         hint.font = .systemFont(ofSize: 12, weight: .medium)
         hint.textAlignment = .center
@@ -364,7 +385,6 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         hint.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(hint)
 
-        chip.addTarget(self, action: #selector(cycleLabel), for: .touchUpInside)
         redoBtn.addTarget(self, action: #selector(redoRoomTapped), for: .touchUpInside)
         floorBtn.addTarget(self, action: #selector(floorTapped), for: .touchUpInside)
         floorBtn.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(floorHeld(_:))))
@@ -395,37 +415,37 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         ])
     }
 
-    // TAP THE CHIP AND TYPE (owner 2026-08-10: "I want to type to name").
-    //
-    // It used to cycle a fixed list, and that WAS the naming mechanism, so a
-    // room could only ever be called one of the words we shipped. Half of every
-    // real house is "Master bath" or "Zach's office". The tap now opens a text
-    // field with the current name in it, so typing over it is the fast path.
-    //
-    // The list survives as QUICK PICKS in the same sheet, because "Kitchen"
-    // should stay one tap. It is still JS's list (CLAUDE.md 3.2): this only
-    // captures what comes back, and renaming after the scan is entirely JS
-    // (_scanRenameRoom), so how naming works can change without a build.
-    @objc private func cycleLabel() {
-        let a = UIAlertController(title: "Name this room", message: nil, preferredStyle: .alert)
+    // DROP A PIN (owner 2026-08-10: "while walking each room I want to drop a
+    // pin in it to name it and keep scanning... one continuous motion"). The
+    // capture NEVER pauses: the pin records where the user is standing plus
+    // the name they type (quick picks stay one tap; the list is still JS's,
+    // CLAUDE.md 3.2), and JS partitions the merged floor into rooms by pins
+    // and the walls between them. Blank/cancel still drops the pin with a
+    // default name; renaming later is JS (_scanRenameRoom).
+    private func presentPinSheet(x: Double, z: Double) {
+        let n = pins.filter { $0.story == currentStory }.count + 1
+        let fallback = "Room \(n)"
+        let a = UIAlertController(title: "Pin this room", message: nil, preferredStyle: .alert)
         a.addTextField { tf in
-            tf.text = self.chip.title(for: .normal)
-            tf.placeholder = "Master bath, back bedroom..."
+            tf.placeholder = fallback
             tf.autocapitalizationType = .words
             tf.clearButtonMode = .whileEditing
             tf.returnKeyType = .done
         }
-        a.addAction(UIAlertAction(title: "Use it", style: .default) { [weak self] _ in
+        let drop: (String) -> Void = { [weak self] name in
             guard let self = self else { return }
-            let t = (a.textFields?.first?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !t.isEmpty else { return }          // blank is not a name
-            self.chip.setTitle(t, for: .normal)
+            let t = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let final = t.isEmpty ? fallback : t
+            self.pins.append(TdPin(x: x, z: z, story: self.currentStory, name: final))
+            self.chip.setTitle("📍 \(final)", for: .normal)
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            self.saveDraft()
+        }
+        a.addAction(UIAlertAction(title: "Drop pin", style: .default) { _ in
+            drop(a.textFields?.first?.text ?? "")
         })
-        // Quick picks, capped so the sheet stays readable on a small phone.
-        for l in labels.prefix(6) where l != chip.title(for: .normal) {
-            a.addAction(UIAlertAction(title: l, style: .default) { [weak self] _ in
-                self?.chip.setTitle(l, for: .normal)
-            })
+        for l in labels.prefix(6) {
+            a.addAction(UIAlertAction(title: l, style: .default) { _ in drop(l) })
         }
         a.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         present(a, animated: true)
@@ -433,7 +453,20 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
 
     // Tap = up a floor, long-press = back down. Deterministic on purpose:
     // the user SAYS which floor they are on, we never guess from stairs.
+    // A floor change IS a segment boundary (RoomPlan is single-story): the
+    // current floor's walking banks into a background-built slot exactly like
+    // Finish, and the capture restarts instantly on the new floor.
+    private func bankFloorSegment() {
+        pendingSlots.append(rooms.count)
+        rooms.append(nil)
+        roomLabels.append("Floor \(currentStory)")
+        roomStories.append(currentStory)
+        captureView.captureSession.stop(pauseARSession: false)
+    }
+
     @objc private func floorTapped() {
+        finishing = false
+        bankFloorSegment()
         currentStory = min(currentStory + 1, 9)
         floorBtn.setTitle("Floor \(currentStory)", for: .normal)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -441,6 +474,8 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
 
     @objc private func floorHeld(_ g: UILongPressGestureRecognizer) {
         guard g.state == .began else { return }
+        finishing = false
+        bankFloorSegment()
         currentStory = max(currentStory - 1, 1)
         floorBtn.setTitle("Floor \(currentStory)", for: .normal)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -476,39 +511,30 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         UIApplication.shared.isIdleTimerDisabled = false
     }
 
-    // "Next room": ONE tap at the doorway. The finished segment gets a slot
-    // (built in the background), scanning restarts instantly, and the naming
-    // sheet for the NEW room opens right away, walk while you type.
+    // "📍 Pin room": records where the user stands + a name. The capture is
+    // NEVER touched, this is the whole "one continuous motion" contract.
     @objc private func doneRoomTapped() {
-        finishing = false
-        let name = chip.title(for: .normal) ?? "Room"
-        pendingSlots.append(rooms.count)
-        rooms.append(nil)
-        roomLabels.append(name.isEmpty ? "Room" : name)
-        roomStories.append(currentStory)
-        chip.setTitle(labels.first ?? "Room", for: .normal)
-        captureView.captureSession.stop(pauseARSession: false)
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        cycleLabel()
+        guard let t = arSession.currentFrame?.camera.transform else { return }
+        presentPinSheet(x: Double(t[3][0]), z: Double(t[3][2]))
     }
 
-    // Botched the room (walked it wrong, kid ran through, wrong room): throw
-    // THIS room's geometry away and walk it again. The session stays alive so
-    // already-finished rooms are untouched, and the typed name is kept: they
-    // are redoing the room, not renaming it.
+    // Botched the floor (walked it wrong, kid ran through): throw THIS
+    // floor's current walking away, pins included, and walk it again. The
+    // session stays alive so banked floors are untouched.
     @objc private func redoRoomTapped() {
         discarding = true
         finishing = false
+        pins.removeAll { $0.story == currentStory }
+        chip.setTitle("No pins yet", for: .normal)
         captureView.captureSession.stop(pauseARSession: false)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
     @objc private func finishTapped() {
         finishing = true
-        let name = chip.title(for: .normal) ?? "Room"
         pendingSlots.append(rooms.count)
         rooms.append(nil)
-        roomLabels.append(name.isEmpty ? "Room" : name)
+        roomLabels.append("Floor \(currentStory)")
         roomStories.append(currentStory)
         captureView.captureSession.stop(pauseARSession: false)
     }
@@ -643,7 +669,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
             lbl.append(i < roomLabels.count ? roomLabels[i] : "Room")
             sto.append(i < roomStories.count ? roomStories[i] : 1)
         }
-        TdScanDraft.save(rooms: roomJson, labels: lbl, stories: sto, story: currentStory)
+        TdScanDraft.save(rooms: roomJson, labels: lbl, stories: sto, story: currentStory, pins: pins)
         // A world map alongside lets the resume relocalize into the same
         // space. Async and replace-in-place; a failure just means the resumed
         // scan starts its own coordinate space (rooms still preloaded).
@@ -750,7 +776,10 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
                     "labels": self.roomLabels,
                     "stories": self.roomStories,
                     "photos": self.photos,
-                    "headingDeg": self.headingDeg
+                    "headingDeg": self.headingDeg,
+                    // The pins: JS partitions each merged floor into rooms by
+                    // these positions + the walls between them.
+                    "pins": self.pins.map { ["x": $0.x, "z": $0.z, "story": $0.story, "name": $0.name] }
                 ]
                 if let p = usdzPath { result["usdz"] = p }
                 if let p = meshPath { result["meshPly"] = p }

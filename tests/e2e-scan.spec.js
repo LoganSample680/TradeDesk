@@ -372,6 +372,71 @@ test.describe('TdScan web half', () => {
     expect(Math.abs(r.twice.a - r.once.a), 'running the pass again changes nothing').toBeLessThan(1e-9);
   });
 
+  // ONE CONTINUOUS MOTION (owner 2026-08-10): the capture returns one merged
+  // room per floor plus pins dropped while walking; the partition splits the
+  // floor into per-room entries by flood-filling from each pin with walls as
+  // barriers. Shared walls land in both rooms, long exterior walls clip to
+  // each room's span, objects and openings deal to where they stand, and a
+  // floor with no pins passes through untouched.
+  test('pin partition: a merged floor splits into named rooms with honest per-room numbers', async () => {
+    const r = await page.evaluate(() => {
+      const H = 2.4384;
+      const wall = (id, dir, cx, cz, len) => ({
+        identifier: id, category: { wall: {} }, dimensions: [len, H, 0],
+        transform: [dir[0], 0, dir[1], 0, 0, 1, 0, 0, -dir[1], 0, dir[0], 0, cx, H / 2, cz, 1],
+      });
+      const obj = (cat, cx, cz, w, d) => ({
+        identifier: cat + cx, category: { [cat]: {} }, dimensions: [w, 0.8, d],
+        transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, cx, 0.4, cz, 1],
+      });
+      const raw = JSON.stringify({
+        identifier: 'floor1', story: 0, version: 2,
+        walls: [
+          wall('w-n', [1, 0], 4, 0, 8), wall('w-s', [1, 0], 4, 3, 8),
+          wall('w-w', [0, 1], 0, 1.5, 3), wall('w-e', [0, 1], 8, 1.5, 3),
+          wall('w-mid', [0, 1], 4, 1.5, 3), // the wall between the two rooms
+        ],
+        doors: [{ identifier: 'd1', parentIdentifier: 'w-s', category: { door: { isOpen: true } },
+          dimensions: [0.9, 2.03, 0], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 6, 1, 3, 1] }],
+        windows: [], openings: [],
+        objects: [obj('table', 2.5, 1.2, 1.2, 0.8), obj('sofa', 6.5, 2.0, 1.8, 0.9)],
+        floors: [{ identifier: 'f1', category: { floor: {} }, dimensions: [8, 0, 3],
+          polygonCorners: [[0, 0, 0], [8, 0, 0], [8, 0, 3], [0, 0, 3]],
+          transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }],
+      });
+      const parsed = _scanParseRoom(raw, 'Floor 1');
+      parsed.story = 1;
+      const pins = [{ x: 2, z: 1.5, story: 1, name: 'Living room' }, { x: 6, z: 1.5, story: 1, name: 'Kitchen' }];
+      const rooms = _scanExpandPins([parsed], pins);
+      const A = rooms.find(x => x.label === 'Living room'), B = rooms.find(x => x.label === 'Kitchen');
+      // No pins: the floor passes through exactly as parsed.
+      const untouched = _scanExpandPins([_scanParseRoom(raw, 'Floor 1')], []);
+      return {
+        count: rooms.length,
+        aFloor: A && A.floorM2, bFloor: B && B.floorM2,
+        midInBoth: !!(A && B && A.walls.some(w => w.id.indexOf('w-mid') === 0) && B.walls.some(w => w.id.indexOf('w-mid') === 0)),
+        northA: A ? A.walls.filter(w => w.id.indexOf('w-n') === 0).reduce((t, w) => t + w.len, 0) : 0,
+        aObjs: A && A.objects.map(o => o.cat).join(),
+        bObjs: B && B.objects.map(o => o.cat).join(),
+        doorSide: !!(B && B.walls.some(w => w.doors.length > 0)) && !(A && A.walls.some(w => w.doors.length > 0)),
+        story: A && A.story,
+        passthrough: untouched.length === 1 && untouched[0].label === 'Floor 1',
+      };
+    });
+    expect(r.count, 'two pins make two rooms').toBe(2);
+    expect(r.aFloor, 'each side owns about half the floor').toBeGreaterThan(8);
+    expect(r.aFloor).toBeLessThan(12.5);
+    expect(Math.abs(r.aFloor - r.bFloor), 'the split is even for a symmetric floor').toBeLessThan(1.5);
+    expect(r.midInBoth, 'the dividing wall belongs to both rooms').toBe(true);
+    expect(r.northA, 'a spanning exterior wall clips to the room, never full length').toBeGreaterThan(3);
+    expect(r.northA).toBeLessThan(4.6);
+    expect(r.aObjs, 'furniture deals to the room it stands in').toBe('table');
+    expect(r.bObjs).toBe('sofa');
+    expect(r.doorSide, 'the door rides only the half of the wall it sits in').toBe(true);
+    expect(r.story, 'rooms inherit the floor number').toBe(1);
+    expect(r.passthrough, 'no pins: the merged floor passes through untouched').toBe(true);
+  });
+
   // Interruption draft (owner 2026-08-10: phone auto-locked mid-scan, data
   // lost): native keeps a draft after every finished room; a fresh capture
   // offers resume / start fresh / back out, and each choice drives the plugin
