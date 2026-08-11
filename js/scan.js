@@ -114,6 +114,11 @@ function _scanParseRoom(rawJson,label){
       cx:m.col3.x,cz:m.col3.z,w:d.w,d:d.d||d.w,h:d.h||0,
       ux:ux/ln,uz:uz/ln});
   });
+  // RoomPlan fragments one real piece into several boxes (owner screenshots
+  // 2026-08-10: a corner hutch as two stacked storages, a table as two
+  // overlapping slabs). Same-category boxes whose footprints overlap are one
+  // piece of furniture: union them so the plan draws one clean symbol.
+  _scanMergeObjects(objects);
   // Floor polygon: floors[0].polygonCorners (iOS 17) or the wall endpoints hull.
   let poly=null;
   const fl=(cr.floors||[])[0];
@@ -132,6 +137,93 @@ function _scanParseRoom(rawJson,label){
   const hM=walls.length?Math.max(...walls.map(w=>w.h)):2.44;
   return {label:label||'Room',walls,poly,objects,floorM2,wallM2,openM2,perimM,hM,
           doorN:doors.length,winN:windows.length,winM2:windows.reduce((t,o)=>t+o.area,0)};
+}
+function _scanObjCorners(o){
+  const vx=o.ux,vz=o.uz,px=-vz,pz=vx,hw=o.w/2,hd=o.d/2;
+  return [[o.cx+vx*hw+px*hd,o.cz+vz*hw+pz*hd],[o.cx-vx*hw+px*hd,o.cz-vz*hw+pz*hd],
+          [o.cx-vx*hw-px*hd,o.cz-vz*hw-pz*hd],[o.cx+vx*hw-px*hd,o.cz+vz*hw-pz*hd]];
+}
+// Oriented-rectangle overlap via separating axes: the two footprints overlap
+// unless some axis of either box separates them.
+function _scanObbOverlap(a,b){
+  const axes=[[a.ux,a.uz],[-a.uz,a.ux],[b.ux,b.uz],[-b.uz,b.ux]];
+  const ca=_scanObjCorners(a),cb=_scanObjCorners(b);
+  for(let k=0;k<axes.length;k++){
+    const x=axes[k][0],z=axes[k][1];
+    const pa=ca.map(c=>c[0]*x+c[1]*z),pb=cb.map(c=>c[0]*x+c[1]*z);
+    if(Math.max(...pa)<Math.min(...pb)||Math.max(...pb)<Math.min(...pa))return false;
+  }
+  return true;
+}
+// Union overlapping same-category boxes into one, in the bigger fragment's
+// orientation, spanning both footprints. Loops until nothing merges (a table
+// split three ways collapses in two passes).
+function _scanMergeObjects(objects){
+  if(!Array.isArray(objects))return objects;
+  let merged=true;
+  while(merged&&objects.length>1){
+    merged=false;
+    outer:
+    for(let i=0;i<objects.length;i++)for(let j=i+1;j<objects.length;j++){
+      const a=objects[i],b=objects[j];
+      if(a.cat!==b.cat||!_scanObbOverlap(a,b))continue;
+      const big=(a.w*a.d>=b.w*b.d)?a:b;
+      const ux=big.ux,uz=big.uz,px=-uz,pz=ux;
+      const pts=_scanObjCorners(a).concat(_scanObjCorners(b));
+      let minU=1/0,maxU=-1/0,minV=1/0,maxV=-1/0;
+      pts.forEach(c=>{const u=c[0]*ux+c[1]*uz,v=c[0]*px+c[1]*pz;
+        if(u<minU)minU=u;if(u>maxU)maxU=u;if(v<minV)minV=v;if(v>maxV)maxV=v;});
+      const cu=(minU+maxU)/2,cv=(minV+maxV)/2;
+      objects[i]={cat:a.cat,cx:ux*cu+px*cv,cz:uz*cu+pz*cv,
+        w:maxU-minU,d:maxV-minV,h:Math.max(a.h,b.h),ux,uz};
+      objects.splice(j,1);merged=true;break outer;
+    }
+  }
+  return objects;
+}
+// Bleed-through guard (owner screenshots 2026-08-10: scanning boxed part of
+// the NEXT room through an archway/doorway). Where two rooms on one floor
+// claim the same floor area, the room walked LATER owns it, that walk was
+// dedicated to the space, and the earlier room's bleed lobe gives it up.
+// Numbers only, grid-sampled at 5 cm (no fragile polygon boolean code); the
+// captured polygons are untouched and the original area is kept in
+// floorRawM2 so the pass is idempotent across re-saves and merges.
+function _scanPtInPoly(px,pz,poly){
+  let inside=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const xi=poly[i][0],zi=poly[i][1],xj=poly[j][0],zj=poly[j][1];
+    if(((zi>pz)!==(zj>pz))&&(px<(xj-xi)*(pz-zi)/(zj-zi)+xi))inside=!inside;
+  }
+  return inside;
+}
+function _scanDedupeFloors(rooms){
+  if(!Array.isArray(rooms)||rooms.length<2)return;
+  const G=0.05,SLIVER=0.15; // ignore hairline shared-wall overlaps
+  const bbox=r=>{let x0=1/0,x1=-1/0,z0=1/0,z1=-1/0;
+    r.poly.forEach(p=>{if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<z0)z0=p[1];if(p[1]>z1)z1=p[1];});
+    return {x0,x1,z0,z1};};
+  rooms.forEach(r=>{if(r&&r.floorRawM2==null&&typeof r.floorM2==='number')r.floorRawM2=r.floorM2;});
+  for(let i=0;i<rooms.length;i++){
+    const a=rooms[i];
+    if(!a||!Array.isArray(a.poly)||a.poly.length<3||typeof a.floorRawM2!=='number')continue;
+    const ba=bbox(a);let lost=0;
+    for(let j=i+1;j<rooms.length;j++){
+      const b=rooms[j];
+      if(!b||!Array.isArray(b.poly)||b.poly.length<3)continue;
+      if((a.story||1)!==(b.story||1))continue;
+      const bb=bbox(b);
+      const x0=Math.max(ba.x0,bb.x0),x1=Math.min(ba.x1,bb.x1);
+      const z0=Math.max(ba.z0,bb.z0),z1=Math.min(ba.z1,bb.z1);
+      if(x0>=x1||z0>=z1)continue;
+      let cells=0;
+      for(let x=x0+G/2;x<x1;x+=G)for(let z=z0+G/2;z<z1;z+=G){
+        if(_scanPtInPoly(x,z,a.poly)&&_scanPtInPoly(x,z,b.poly))cells++;
+      }
+      const m2=cells*G*G;
+      if(m2>SLIVER)lost+=m2;
+    }
+    a.floorM2=Math.max(0,a.floorRawM2-lost);
+  }
 }
 // Manhattan squaring: find the room's dominant grid direction (length-weighted
 // mean of wall angles folded modulo 90 degrees, the fold-by-4 trick) and
@@ -965,6 +1057,7 @@ function _scanMergeResult(sc,res){
   });
   if(!rooms.length)return null;
   sc.rooms=(sc.rooms||[]).concat(rooms);
+  _scanDedupeFloors(sc.rooms); // added rooms reclaim any area the old rooms bled into
   sc.photos=(sc.photos||[]).concat((res.photos||[]).map(p=>({path:p.path,cam:p.cam,room:(p.room|0)+base})));
   sc.walk=(sc.walk||[]).concat((res.walk||[]).map(k=>({path:k.path,cam:k.cam,fx:k.fx,fy:k.fy,cx:k.cx,cy:k.cy,w:k.w,h:k.h})));
   if(typeof res.worldMap==='string'&&res.worldMap)sc.worldMap=res.worldMap;   // newest map resumes best
@@ -1035,6 +1128,7 @@ async function startRoomScan(ctx){
     if(r){r.story=Math.max(1,parseInt((res.stories||[])[i],10)||1);rooms.push(r);}
   });
   if(!rooms.length){if(typeof showToast==='function')showToast('Could not read the scan geometry','📐');return null;}
+  _scanDedupeFloors(rooms); // later-walked rooms own any bleed-through overlap
   const sc=saveScan({
     id:(typeof _newId==='function'?_newId():String(Date.now())),
     clientId:(ctx&&ctx.clientId)||null,jobId:(ctx&&ctx.jobId)||null,

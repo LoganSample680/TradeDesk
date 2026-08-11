@@ -308,6 +308,70 @@ test.describe('TdScan web half', () => {
     expect(Math.abs(r.deg - 45), 'the bay keeps its real angle').toBeLessThan(0.5);
   });
 
+  // RoomPlan fragments one real piece into several boxes (owner screenshots
+  // 2026-08-10: a hutch as two stacked storages, a table as two overlapping
+  // slabs). Overlapping same-category boxes union into ONE plan symbol;
+  // separate pieces and different categories never merge.
+  test('furniture fragments: overlapping same-category boxes union into one symbol', async () => {
+    const r = await page.evaluate(() => {
+      const H = 2.4384;
+      const wall = (id, dir, cx, cz, len) => ({
+        identifier: id, category: { wall: {} }, dimensions: [len, H, 0],
+        transform: [dir[0], 0, dir[1], 0, 0, 1, 0, 0, -dir[1], 0, dir[0], 0, cx, H / 2, cz, 1],
+      });
+      const obj = (cat, cx, cz, w, d) => ({
+        identifier: cat + cx, category: { [cat]: {} }, dimensions: [w, 0.8, d],
+        transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, cx, 0.4, cz, 1],
+      });
+      const raw = JSON.stringify({
+        identifier: 'rm', story: 0, version: 2,
+        walls: [wall('w-n', [1, 0], 0, -2, 5), wall('w-s', [1, 0], 0, 2, 5)],
+        doors: [], windows: [], openings: [],
+        objects: [
+          obj('table', 0, 0, 1.8, 1.0),      // one table captured as
+          obj('table', 0.7, 0.1, 1.4, 0.9),  // two overlapping slabs
+          obj('toilet', 2.0, 1.5, 0.5, 0.7), // different cat, nearby: untouched
+        ],
+        floors: [],
+      });
+      const room = _scanParseRoom(raw, 'Frag');
+      const tables = room.objects.filter(o => o.cat === 'table');
+      const toilet = room.objects.filter(o => o.cat === 'toilet');
+      return {
+        total: room.objects.length,
+        tables: tables.length,
+        spanOk: tables.length === 1 && tables[0].w >= 2.2, // union spans both slabs
+        toilet: toilet.length,
+      };
+    });
+    expect(r.tables, 'two overlapping table slabs merge into one').toBe(1);
+    expect(r.spanOk, 'the union spans both fragments').toBe(true);
+    expect(r.toilet, 'a different category never merges in').toBe(1);
+    expect(r.total).toBe(2);
+  });
+
+  // Bleed-through de-overlap (owner screenshots 2026-08-10): where two rooms
+  // on one floor claim the same area, the later-walked room owns it and the
+  // earlier room's floor number gives it up. Raw area is kept so the pass is
+  // idempotent, and rooms on different floors never interact.
+  test('floor de-overlap: the later room owns the bleed, idempotent, per floor', async () => {
+    const r = await page.evaluate(() => {
+      const mk = (poly, story) => ({ label: 'R', poly, story, floorM2: Math.abs(_scanShoelace(poly)), walls: [], objects: [] });
+      const A = mk([[0, 0], [4, 0], [4, 3], [0, 3]], 1);      // 12 m2, bled into B's space
+      const B = mk([[3, 0], [6, 0], [6, 3], [3, 3]], 1);      // 9 m2, walked later: owns 3..4
+      const C = mk([[3, 0], [6, 0], [6, 3], [3, 3]], 2);      // same footprint, other floor
+      _scanDedupeFloors([A, B, C]);
+      const once = { a: A.floorM2, b: B.floorM2, c: C.floorM2, rawKept: A.floorRawM2 };
+      _scanDedupeFloors([A, B, C]);
+      return { once, twice: { a: A.floorM2, b: B.floorM2 } };
+    });
+    expect(Math.abs(r.once.a - 9), 'the earlier room gives up the 3 m2 overlap').toBeLessThan(0.2);
+    expect(r.once.b, 'the later room keeps its full area').toBeCloseTo(9, 5);
+    expect(r.once.c, 'a different floor never interacts').toBeCloseTo(9, 5);
+    expect(r.once.rawKept, 'the captured area survives in floorRawM2').toBeCloseTo(12, 5);
+    expect(Math.abs(r.twice.a - r.once.a), 'running the pass again changes nothing').toBeLessThan(1e-9);
+  });
+
   // Interruption draft (owner 2026-08-10: phone auto-locked mid-scan, data
   // lost): native keeps a draft after every finished room; a fresh capture
   // offers resume / start fresh / back out, and each choice drives the plugin
