@@ -545,7 +545,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.11.26.3';
+const APP_VERSION='08.11.26.4';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1878,6 +1878,7 @@ async function supaInit(){
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
           if(_cd.scans?.length)scans=_cd.scans;
+          if(_cd.equipment?.length)equipment=_cd.equipment;
           if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
           if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
           if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (no-session boot)');applySettings();_refillSettingsFormUnlessEditing();}
@@ -2123,6 +2124,7 @@ async function supaInit(){
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
           if(_cd.scans?.length)scans=_cd.scans;
+          if(_cd.equipment?.length)equipment=_cd.equipment;
           if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (offline boot, session present)');applySettings();_refillSettingsFormUnlessEditing();}
@@ -4854,6 +4856,7 @@ function _enterOfflineMode(){
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
           if(_cd.scans?.length)scans=_cd.scans;
+          if(_cd.equipment?.length)equipment=_cd.equipment;
           if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
       if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
       if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cache restore)');applySettings();_refillSettingsFormUnlessEditing();}
@@ -5385,7 +5388,7 @@ window.addEventListener('online',()=>{try{const k=_userLayoutCacheKey();if(k&&lo
 function _offlinePendingBlob(){
   // Owner falls back to _loadedDataOwner so a blob written while offline (no _supaUser)
   // is still tagged with the account it came from, the next sign-in checks this.
-  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,places,scans,ts:Date.now()});
+  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,places,scans,equipment,ts:Date.now()});
 }
 // Read offline-pending, discarding (and clearing) any blob owned by a different
 // account than the one now signed in. Returns null when nothing usable remains.
@@ -5694,7 +5697,7 @@ function _writeLocalCache(){
   try{
     const _snap={_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,payments,income,
       expenses:expenses.map(({receipt_img,...r})=>r),
-      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,vehicles,places,scans,checksState,
+      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,vehicles,places,scans,equipment,checksState,
       settings:S,cached_at:new Date().toISOString()};
     localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));
     // Delta sidecar: the server-updated_at cursor + known-cloud hashes, owner-scoped.
@@ -7353,6 +7356,7 @@ async function supaLoadFromCloud({silent=false}={}){
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
           if(_cd.scans?.length)scans=_cd.scans;
+          if(_cd.equipment?.length)equipment=_cd.equipment;
           if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cloud load FAILED, fallback)');applySettings();_refillSettingsFormUnlessEditing();}
