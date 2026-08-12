@@ -545,7 +545,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.11.26.23';
+const APP_VERSION='08.11.26.24';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1578,7 +1578,7 @@ function _bootSyncSettled(){
     const _nb=document.getElementById('dash-nearby');
     const _cardUp=!!(_nb&&_nb.style.display!=='none'&&_nb.innerHTML.trim());   // snapshot already painted it
     if(_geoComing&&!window._geoFixSeen&&!window._nearbyLiveRendered&&!_cardUp){
-      if(!window._bootGeoHoldUntil)window._bootGeoHoldUntil=Date.now()+1200;
+      if(!window._bootGeoHoldUntil)window._bootGeoHoldUntil=Date.now()+2000;
       if(Date.now()<window._bootGeoHoldUntil){setTimeout(_bootSyncSettled,150);return;}
     }
   }catch(_e){}

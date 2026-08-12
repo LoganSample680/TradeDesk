@@ -787,7 +787,12 @@ function renderDash(){
       // shows, and the first real fix either confirms or animates it away.
       try{
         const _sn=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
-        if(_sn&&_sn.html&&_sn.uid===((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null)&&(Date.now()-_sn.ts)<600000){
+        // 45 min, up from 10 (owner's 6:54p boot, video 3: a 26-minute gap
+        // made the snapshot stale, so the ON SITE card missed the waterfall
+        // and slid in 2s late). A fence-state card is durable on that scale,
+        // parked stays parked, and the live fix corrects it in place within
+        // seconds anyway; only a card from another USER is ever dangerous.
+        if(_sn&&_sn.html&&_sn.uid===((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null)&&(Date.now()-_sn.ts)<2700000){
           _nearbyEl.dataset.snap='1';
           _nearbyEl.style.animation='';
           _nearbyEl.innerHTML=_sn.html;
