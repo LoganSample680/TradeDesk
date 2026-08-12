@@ -21,7 +21,16 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@500;700;800;900&family=Inter+Tight:wght@500;600;700;800;900&family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" async id="supabase-sdk"></script>
+<!-- Vendored, NOT the jsdelivr CDN: the service worker can only cache
+     same-origin scripts (cross-origin no-cors responses are opaque, r.ok is
+     false, the cache-first branch skips them), so the CDN copy was never
+     available offline. Every dead-radio launch then booted a shell with no
+     SDK: no session, no greeting name, offline banner, even though the auth
+     token and account cache were on the device (owner report 2026-08-12).
+     Same-origin means the SW caches it like any other app script and an
+     offline boot signs in from the local session exactly like an online one.
+     Pinned 2.112.3; bump deliberately, never floating. -->
+<script src="js/vendor/supabase-js-2.112.3.min.js" async id="supabase-sdk"></script>
 <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin defer onload="_initMapKit()"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -3870,9 +3879,15 @@ if(supaEnabled()){
   else{
     const _sdk=document.getElementById('supabase-sdk');
     _sdk.addEventListener('load',supaInit);
-    // SDK failed to load (offline boot, CDN unreachable), don't strand the user
-    // on the boot overlay forever; render local data like the offline-mode path.
-    const _sdkFallback=()=>{if(typeof _removeBootOverlay==='function')_removeBootOverlay();renderDash();};
+    // SDK failed to load (offline boot, script missing), don't strand the user
+    // on the boot overlay forever; restore identity from the device cache and
+    // render local data like the offline-mode path. The greeting must carry
+    // the name on an offline boot exactly like an online one.
+    const _sdkFallback=()=>{
+      if(typeof _restoreIdentityFromCache==='function')_restoreIdentityFromCache();
+      if(typeof _removeBootOverlay==='function')_removeBootOverlay();
+      renderDash();
+    };
     _sdk.addEventListener('error',_sdkFallback);
     // The async script may have ALREADY errored before this listener attached,
     // watchdog: if the SDK still isn't present after 6s and nothing signed in,

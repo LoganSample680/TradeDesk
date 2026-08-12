@@ -8140,6 +8140,93 @@ test.describe('Version consistency', () => {
     const v = await page.evaluate(() => typeof APP_VERSION !== 'undefined' ? APP_VERSION : null);
     expect(v).toMatch(/^\d{2}\.\d{2}\.\d{2}\.\d+$/);
   });
+
+  // ── Offline boot resilience (owner report 2026-08-12: a dead-radio launch
+  // served the cached shell with the offline banner up and NO NAME in the
+  // greeting). Two guarantees, each with its own test:
+  //   1. The Supabase SDK is served from the app's own origin. The service
+  //      worker can only cache same-origin scripts (a cross-origin no-cors
+  //      response is opaque, r.ok is false, the cache-first branch skips it),
+  //      so the old jsdelivr tag was NEVER available offline: no SDK, no
+  //      session, no identity, on every offline boot, by construction.
+  //   2. Even with no SDK at all, identity restores from the device cache:
+  //      the auth token names the user, zp3_acct_<uid> has the rest.
+  test('the app serves the Supabase SDK from its own origin, never a CDN the SW cannot cache', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    const tag = html.match(/<script[^>]*id="supabase-sdk"[^>]*>/);
+    expect(tag, 'the supabase-sdk script tag exists').toBeTruthy();
+    expect(tag[0], 'SDK loads same-origin from js/vendor, offline-cacheable').toContain('src="js/vendor/supabase-js-');
+    expect(tag[0], 'no cross-origin SDK source').not.toContain('jsdelivr');
+    const src = tag[0].match(/src="([^"]+)"/)[1];
+    const bundle = fs.readFileSync(path.join(__dirname, '..', src), 'utf8');
+    expect(bundle.length, 'the vendored bundle is a real SDK, not a stub').toBeGreaterThan(100000);
+    expect(bundle.slice(0, 600), 'UMD build exposing the supabase global').toContain('var supabase=');
+    expect(bundle, 'createClient is present').toContain('createClient');
+  });
+
+  test('_restoreIdentityFromCache: an offline boot with no SDK still knows who you are', async () => {
+    const r = await page.evaluate(() => {
+      const saved = { user: _user, emp: _isEmployee, cid: _contractorUserId, trade: _activeTrade, acct: _account, cfg: _config };
+      // Park every real sb-* auth key so the test's token is the one found.
+      const parked = [];
+      Object.keys(localStorage).filter(k => /^sb-.*-auth-token$/.test(k)).forEach(k => { parked.push([k, localStorage.getItem(k)]); localStorage.removeItem(k); });
+      try {
+        localStorage.setItem('sb-testref-auth-token', JSON.stringify({ user: { id: 'uid-offline-1' } }));
+        localStorage.setItem('zp3_acct_uid-offline-1', JSON.stringify({
+          user: { id: 'uid-offline-1', email: 'dev@test.com', name: 'Dev Anderson', role: 'owner', account_id: 'a1' },
+          activeTrade: 'painting', isEmployee: false,
+        }));
+        _user = null;
+        const restored = _restoreIdentityFromCache();
+        const greeting = getDashGreeting();
+        const name = getUserName();
+        // The no-op path: a set _user is never clobbered by the cache.
+        const already = _restoreIdentityFromCache();
+        return { restored, name, greeting, already };
+      } finally {
+        localStorage.removeItem('sb-testref-auth-token');
+        localStorage.removeItem('zp3_acct_uid-offline-1');
+        parked.forEach(([k, v]) => localStorage.setItem(k, v));
+        _user = saved.user; _isEmployee = saved.emp; _contractorUserId = saved.cid;
+        _activeTrade = saved.trade; _account = saved.acct; _config = saved.cfg;
+        applyPermissions();
+      }
+    });
+    expect(r.restored, 'identity restores from the device cache without the SDK').toBe(true);
+    expect(r.name).toBe('Dev Anderson');
+    expect(r.greeting, 'the offline greeting carries the first name, same as online').toContain('Dev!');
+    expect(r.already, 'a live session is never clobbered').toBe(true);
+  });
+
+  test('_restoreIdentityFromCache: no cache means a clean false, never a throw', async () => {
+    const r = await page.evaluate(() => {
+      const saved = { user: _user };
+      const parked = [];
+      Object.keys(localStorage).filter(k => /^sb-.*-auth-token$/.test(k)).forEach(k => { parked.push([k, localStorage.getItem(k)]); localStorage.removeItem(k); });
+      try {
+        _user = null;
+        const restored = _restoreIdentityFromCache();
+        return { restored, userStillNull: _user === null };
+      } finally {
+        parked.forEach(([k, v]) => localStorage.setItem(k, v));
+        _user = saved.user;
+      }
+    });
+    expect(r.restored).toBe(false);
+    expect(r.userStillNull, 'nothing invented when nothing is cached').toBe(true);
+  });
+
+  test('the boot SDK fallback calls the identity restore before rendering', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    const fb = html.indexOf('const _sdkFallback=');
+    expect(fb, 'the SDK fallback exists').toBeGreaterThan(0);
+    expect(html.slice(fb, fb + 400), 'fallback restores identity from the device cache')
+      .toContain('_restoreIdentityFromCache');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

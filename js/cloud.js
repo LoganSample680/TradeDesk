@@ -266,6 +266,29 @@ async function sendPaymentLink(bidId){
   }
 }
 // ── Account + User loader ─────────────────────────────────────────────
+// The SDK-less last resort: the boot's _sdkFallback (index.html) calls this
+// when the Supabase script itself never loaded. Identity does not need the
+// SDK, the auth token in localStorage names the user and zp3_acct_<uid> has
+// the rest (loadAccountData writes it on every successful load below). The
+// greeting, permissions, and trade nav must never depend on a script tag
+// answering (owner report 2026-08-12: offline boot showed no name).
+function _restoreIdentityFromCache(){
+  try{
+    if(_user)return true;   // a real load already ran, nothing to do
+    const _tk=Object.keys(localStorage).find(k=>/^sb-.*-auth-token$/.test(k));
+    const _uid=_tk?((JSON.parse(localStorage.getItem(_tk)||'null')||{}).user||{}).id||null:null;
+    const _ac=_uid?JSON.parse(localStorage.getItem('zp3_acct_'+_uid)||'null'):null;
+    if(!_ac||!_ac.user)return false;
+    _user=_ac.user;
+    if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;}
+    else{_isEmployee=false;_contractorUserId=null;_employeeRecord=null;}
+    _activeTrade=_ac.activeTrade||'painting';
+    if(_ac.account){_account=_ac.account;if(_account.business_name&&!S.bname)S.bname=_account.business_name;}
+    if(_ac.config)_config=_ac.config;
+    _renderNavTradeSwitcher();applyPermissions();
+    return true;
+  }catch(_e){return false;}
+}
 async function loadAccountData(){
   if(!_supa||!_supaUser)return false;
   try{
@@ -545,7 +568,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.12.26.2';
+const APP_VERSION='08.12.26.3';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
