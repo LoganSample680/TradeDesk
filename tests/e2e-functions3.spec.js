@@ -1385,7 +1385,9 @@ test.describe('Cloud Supabase and account functions', () => {
         const cleared = !localStorage.getItem('zp3_nearby_snap');
         window._geoFixSeen = false;
         window._nearbyLiveRendered = false;
-        localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div id="snap-probe2">x</div>', ts: Date.now() - 700000, uid }));
+        // Past the 45-minute freshness window (was 10 min; owner's 26-minute
+        // gap made the card miss the waterfall, 2026-08-11).
+        localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div id="snap-probe2">x</div>', ts: Date.now() - 2760000, uid }));
         renderDash();
         const staleShown = !!document.getElementById('snap-probe2');
         // Once any live card has rendered this page load, the restore is done
