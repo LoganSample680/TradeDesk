@@ -545,7 +545,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.11.26.29';
+const APP_VERSION='08.12.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -7322,10 +7322,18 @@ async function supaLoadFromCloud({silent=false}={}){
       // got a fresh sig-feed. Co-locating it with the td-sync/user-data channels re-subscribes it
       // per account under the correct uid.
       setInterval(()=>_loadPendingInbound(),30000);
+      // A mileage row's own live measurement call can fail (one bad network
+      // moment is enough) and _initMapKit only sweeps pending trips ONCE, at
+      // boot: a mid-session failure sat at 0 miles for the rest of the day,
+      // invisible until the next full app load (owner report 2026-08-12: a
+      // 12:04p leg never got its distance while the legs before and after it
+      // did). Same 30s cadence as the inbound poll above.
+      setInterval(()=>{if(typeof _retryPendingTrips==='function')_retryPendingTrips();},30000);
       setTimeout(()=>_fetchStripeConnectStatus(),3000);
       setTimeout(()=>_loadPendingInbound(),2000);
       document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){
         checkNewSignatures();_fetchProposalViews();if(_supaUser)_loadPendingInbound();checkNearbyJob();
+        if(typeof _retryPendingTrips==='function')_retryPendingTrips();
         // FOREGROUND = the moment the user looks. The worker pulls the phone out of a
         // pocket: the app must be current NOW, not "within 60s". One tiny cursor read;
         // a reload only happens when a peer actually changed something we haven't seen
