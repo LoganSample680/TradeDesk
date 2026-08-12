@@ -1356,10 +1356,14 @@ test.describe('Cloud Supabase and account functions', () => {
         renderDash();                          // a second rebuild, like a sync echo
         await new Promise(res => setTimeout(res, 120));
         const stillQuiet = seen.length;
+        // The pour side is asserted via computed style, not events: headless
+        // WebKit does not reliably dispatch animationstart after an ancestor
+        // class flip, but animation-name resolution is deterministic.
+        const met = document.querySelector('#pg-dash .met');
+        const idleAnim = met ? getComputedStyle(met).animationName : 'missing';
         d.classList.add('boot-cascade');       // the pour is the one licensed moment
-        await new Promise(res => setTimeout(res, 120));
-        const poured = seen.length;
-        return { quiet, stillQuiet, poured, mets: document.querySelectorAll('#pg-dash .met').length };
+        const pourAnim = met ? getComputedStyle(met).animationName : 'missing';
+        return { quiet, stillQuiet, idleAnim, pourAnim, mets: document.querySelectorAll('#pg-dash .met').length };
       } finally {
         document.removeEventListener('animationstart', h, true);
         d.classList.remove('boot-cascade');
@@ -1368,7 +1372,8 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(r.mets, 'tiles exist to measure').toBeGreaterThanOrEqual(4);
     expect(r.quiet, 'a plain render never animates a tile').toBe(0);
     expect(r.stillQuiet, 'nor does a rebuild').toBe(0);
-    expect(r.poured, 'the pour still plays the entrance').toBeGreaterThanOrEqual(4);
+    expect(r.idleAnim, 'no entrance animation outside the pour').toBe('none');
+    expect(r.pourAnim, 'the pour still carries the entrance').toContain('td-met-enter');
   });
 
   // renderDash re-applied the saved widget order by re-APPENDING every card,
