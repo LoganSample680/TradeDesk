@@ -1333,6 +1333,40 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(r.settledOnFix, 'the fix releases the settle immediately').toBe(true);
   });
 
+  // The KPI tile entrance (td-met-enter) plays ONLY during the boot pour.
+  // It used to live on .met itself, so every innerHTML rebuild (sync echoes,
+  // a mileage measurement landing) replayed six tile animations: the KPI
+  // flashing on the owner's 2026-08-11 screen recording, caught by the
+  // boot-churn recorder.
+  test('KPI tiles never replay their entrance outside the boot pour', async () => {
+    const r = await page.evaluate(async () => {
+      const d = document.getElementById('pg-dash');
+      d.classList.remove('boot-cascade');
+      const seen = [];
+      const h = (e) => { if (e.animationName === 'td-met-enter') seen.push(e.target.className); };
+      document.addEventListener('animationstart', h, true);
+      try {
+        renderDash();
+        await new Promise(res => setTimeout(res, 120));
+        const quiet = seen.length;
+        renderDash();                          // a second rebuild, like a sync echo
+        await new Promise(res => setTimeout(res, 120));
+        const stillQuiet = seen.length;
+        d.classList.add('boot-cascade');       // the pour is the one licensed moment
+        await new Promise(res => setTimeout(res, 120));
+        const poured = seen.length;
+        return { quiet, stillQuiet, poured, mets: document.querySelectorAll('#pg-dash .met').length };
+      } finally {
+        document.removeEventListener('animationstart', h, true);
+        d.classList.remove('boot-cascade');
+      }
+    });
+    expect(r.mets, 'tiles exist to measure').toBeGreaterThanOrEqual(4);
+    expect(r.quiet, 'a plain render never animates a tile').toBe(0);
+    expect(r.stillQuiet, 'nor does a rebuild').toBe(0);
+    expect(r.poured, 'the pour still plays the entrance').toBeGreaterThanOrEqual(4);
+  });
+
   // renderDash re-applied the saved widget order by re-APPENDING every card,
   // and re-inserting a DOM node restarts its CSS animation: during the pour
   // window every re-render replayed the whole waterfall (owner 2026-08-10:

@@ -241,7 +241,12 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 
 /* ── Metric tiles ── */
 .mets{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px}
-.met{background:var(--bg-card);border-radius:var(--r-lg);padding:14px;display:flex;flex-direction:column;box-shadow:var(--shadow-card);transition:box-shadow .15s;overflow:hidden;min-width:0;cursor:pointer;animation:td-met-enter .22s cubic-bezier(.22,1,.36,1) both}
+.met{background:var(--bg-card);border-radius:var(--r-lg);padding:14px;display:flex;flex-direction:column;box-shadow:var(--shadow-card);transition:box-shadow .15s;overflow:hidden;min-width:0;cursor:pointer}
+/* The tile entrance plays ONLY during the boot waterfall. It used to live on
+   .met itself, so every innerHTML rebuild (sync echoes, a mileage measurement
+   landing) replayed six tile animations: the KPI flashing on the owner's
+   2026-08-11 screen recording, caught by the boot-churn recorder. */
+#pg-dash.boot-cascade .met{animation:td-met-enter .22s cubic-bezier(.22,1,.36,1) both}
 /* A staggered start per tile (nth-child) reads as the row settling in
    together rather than one flat block popping, still cheap CSS-only. */
 .met:nth-child(1){animation-delay:0ms}.met:nth-child(2){animation-delay:20ms}
