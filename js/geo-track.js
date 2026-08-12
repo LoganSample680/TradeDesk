@@ -38,6 +38,8 @@ let _geoCurrentPlace=null; // id of the known place (supply house etc.) we're in
 let _geoPlaceArrivedAt=null;// ISO arrival at that place, for dwell measurement
 let _geoShopArrivedAt=null;// ISO timestamp of shop arrival
 let _geoDriveStartedAt=null;// ISO timestamp when a drive leg began (leaving any fence)
+let _geoDrivebyRun=0;      // consecutive driving-speed fixes inside a fence (eviction debounce)
+let _geoPersistPingMs=0;   // last time the open state was snapshotted to disk mid-drive
 let _geoStopAnchor=null;   // {lat,lng,at,lastAt} while parked OUTSIDE every fence
 let _geoLegAtShop=false;   // was the LEG machine's location the shop last ping? Distinct
                            // from _geoWasInShop, which is the independent shop DWELL flag,
@@ -597,8 +599,17 @@ async function _geoOnPing(pos){
   // _GEO_DRIVEBY_SPEED_MPS above). Cleared here, before the independent shop
   // dwell block below AND before `cur`, so neither one is fooled by it.
   if((insideId||inShop||atPlaceId||atClientId)&&typeof pos.coords.speed==='number'&&pos.coords.speed>=_GEO_DRIVEBY_SPEED_MPS){
-    insideId=null;inShop=false;atPlaceId=null;atClientId=null;
-  }
+    // An ESTABLISHED occupant gets a second opinion before eviction (owner
+    // video 2026-08-11: one phantom driving-speed fix while parked at the
+    // yard closed the shop dwell, the next ping re-stamped the arrival, and
+    // the dashboard's on-site card blinked off behind its 2-minute floor).
+    // A genuine pull-away reports driving speed on consecutive fixes, so the
+    // close waits one ping; a genuine drive-BY was never established here
+    // and still masks on the first fix, exactly as before.
+    const _estab=!!(_geoWasInShop||_geoCurrentJob||_geoCurrentPlace||_geoCurrentClient);
+    _geoDrivebyRun++;
+    if(!_estab||_geoDrivebyRun>=2){insideId=null;inShop=false;atPlaceId=null;atClientId=null;}
+  }else _geoDrivebyRun=0;
   const nowIsoEarly=new Date(nowMs).toISOString();
   // ── Shop dwell, tracked on its own ────────────────────────────────────────
   // Being at the yard logs SHOP TIME, full stop (owner call 2026-08-01). It is
@@ -763,7 +774,13 @@ async function _geoOnPing(pos){
     // shop-to-job hop must not inherit the shop's dwell.
     _geoFenceEnteredAtMs=cur?nowMs:null;
     if(cur&&cur.k==='job'){_geoPersistOpen();_geoWakeAcquire();}
-    else{_geoClearOpen();_geoWakeRelease();}
+    // _geoPersistOpen, NOT _geoClearOpen: it self-clears when nothing is open,
+    // and the transition that OPENS a drive lands here (cur=null). The old
+    // clear deleted the snapshot at the exact start of every drive, so a
+    // webview crash mid-leg had nothing to restore: the leg's origin died
+    // with the session and the journey vanished from the log (owner
+    // 2026-08-11: home -> Home Depot never logged across the crash).
+    else{_geoPersistOpen();_geoWakeRelease();}
     // ARRIVAL TAP-BACK (owner 2026-08-10: "when you arrive can it route back
     // to tradedesk automatically?"). It cannot: no iOS API lets an app bring
     // itself forward, from Apple Maps or anywhere else. A notification the
@@ -864,6 +881,11 @@ async function _geoOnPing(pos){
   // Stamped AFTER the state machine, so the very ping that opens the drive
   // (already at road speed) lights the banner rather than the one after it.
   if(_geoDriveStartedAt&&!_geoMphHeldZero&&_geoDriveMph*0.44704>=_GEO_DRIVEBY_SPEED_MPS)_geoDriveMovingAt=nowMs;
+  // The open state goes to disk on a cadence, not only on hide/park/arrival:
+  // a crash between those moments used to take the open leg and its origin
+  // down with it. Ten seconds bounds the loss to one fix, and the write is a
+  // few kilobytes of localStorage, so the cost is nothing.
+  if(nowMs-_geoPersistPingMs>=10000){_geoPersistPingMs=nowMs;_geoPersistOpen();}
   // ── Drive banner upkeep ───────────────────────────────────────────────────
   // Visibility can change WITHOUT a fence transition (speed crossing the
   // threshold a ping after leaving, or fading after parking somewhere

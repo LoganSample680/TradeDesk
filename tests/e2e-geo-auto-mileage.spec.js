@@ -5110,5 +5110,163 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── Crash durability + clock honesty (owner reports 2026-08-11) ────────────
+  // Two bugs from the same evening: the webview crashed mid-drive and the
+  // home -> Home Depot leg vanished (the open-leg snapshot used to be DELETED
+  // at the exact start of every drive), and the Home Depot -> shop leg logged
+  // a 3-minute duration no vehicle can drive (the clock opened when the app
+  // relaunched mid-drive, not when the wheels did). A third from the same
+  // video: one phantom driving-speed fix while parked evicted the shop dwell
+  // and blinked the dashboard's on-site card off.
+  test.describe('crash durability and clock honesty', () => {
+    test('the open drive snapshot is on disk the moment the leg opens, and a crash restores it', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser;
+        _supaUser = { id: 'u-crash' };
+        try {
+          __seedGeo();
+          localStorage.removeItem('zp3_geo_open');
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoStopAnchor = null; _geoDriveStartedAt = null;
+          _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 30 * 60000).toISOString(); _geoLegAtShop = true;
+          _geoLastFenceAt = new Date(Date.now() - 60000).toISOString();
+          _geoLastFenceLoc = { lat: a.shop.lat, lng: a.shop.lon, name: 'Shop', kind: 'shop' };
+          _geoWatchId = 56; _geoDrivebyRun = 0; _geoDriveReset();
+          const ping = (c, spd) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8, speed: spd } });
+          await ping(a.road, 15);            // leaves the shop: the drive opens
+          const snap = JSON.parse(localStorage.getItem('zp3_geo_open') || 'null');
+          // ── the crash: every in-memory trace dies ──
+          const liveStart = _geoDriveStartedAt;
+          _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null; _geoLastFenceAt = null;
+          _geoStopAnchor = null; _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+          _geoRestoreOpen();
+          return {
+            snapHasDrive: !!(snap && snap.driveStartedAt),
+            snapOrigin: snap && snap.legOrigin && snap.legOrigin.name,
+            restoredStart: _geoDriveStartedAt, liveStart,
+            restoredOrigin: _geoLegOrigin && _geoLegOrigin.name,
+          };
+        } finally {
+          _supaUser = realUser; localStorage.removeItem('zp3_geo_open');
+          _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null; _geoLastFenceAt = null;
+          _geoStopAnchor = null; _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+          _geoGapHiddenAt = null; _geoDriveReset();
+        }
+      }, { shop: SHOP, road: ROAD });
+      expect(r.snapHasDrive, 'the snapshot goes to disk when the leg opens, not only on hide/park').toBe(true);
+      expect(r.snapOrigin).toBe('Shop');
+      expect(r.restoredStart, 'a relaunch gets the open leg back').toBe(r.liveStart);
+      expect(r.restoredOrigin, 'the origin that makes the leg billable comes back with it').toBe('Shop');
+    });
+
+    test('one phantom driving-speed fix while parked never closes the dwell; two consecutive do', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser;
+        _supaUser = { id: 'u-phantom' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoStopAnchor = null; _geoDriveStartedAt = null;
+          _geoWatchId = 57; _geoDrivebyRun = 0; _geoParkModeOn = false; _geoDriveReset();
+          const arrived = new Date(Date.now() - 20 * 60000).toISOString();
+          _geoWasInShop = true; _geoShopArrivedAt = arrived; _geoLegAtShop = true;
+          _geoLastFenceAt = new Date(Date.now() - 60000).toISOString();
+          _geoLastFenceLoc = { lat: a.shop.lat, lng: a.shop.lon, name: 'Shop', kind: 'shop' };
+          const ping = (c, spd) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8, speed: spd } });
+          await ping(a.shop, 15);            // phantom: driving speed, same kerb
+          const afterOne = { inShop: _geoWasInShop, at: _geoShopArrivedAt };
+          await ping(a.shop, 0);             // normal fix: the debounce resets
+          await ping(a.shop, 15);            // another lone phantom later
+          const afterLone = { inShop: _geoWasInShop, at: _geoShopArrivedAt };
+          await ping(a.shop, 15);            // second consecutive: a real pull-away
+          const afterTwo = { inShop: _geoWasInShop };
+          return { afterOne, afterLone, afterTwo, arrived };
+        } finally {
+          _supaUser = realUser; localStorage.removeItem('zp3_geo_open');
+          _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+          _geoDriveStartedAt = null; _geoLegOrigin = null; _geoStopAnchor = null; _geoDrivebyRun = 0;
+          _geoLastFenceLoc = null; _geoLastFenceAt = null; _geoGapHiddenAt = null; _geoDriveReset();
+        }
+      }, { shop: SHOP });
+      expect(r.afterOne.inShop, 'one speeding fix is a hiccup, not a departure').toBe(true);
+      expect(r.afterOne.at, 'the arrival stamp survives untouched').toBe(r.arrived);
+      expect(r.afterLone.inShop, 'the debounce resets on every normal fix').toBe(true);
+      expect(r.afterLone.at).toBe(r.arrived);
+      expect(r.afterTwo.inShop, 'two consecutive speeding fixes are a real pull-away').toBe(false);
+    });
+
+    test('a drive-by through the fence still masks on the FIRST fix when nothing was established', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser;
+        _supaUser = { id: 'u-driveby' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoStopAnchor = null; _geoDriveStartedAt = null;
+          _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+          _geoWatchId = 58; _geoDrivebyRun = 0; _geoDriveReset();
+          await _geoOnPing({ coords: { latitude: a.shop.lat, longitude: a.shop.lon, accuracy: 8, speed: 15 } });
+          return { inShop: _geoWasInShop, at: _geoShopArrivedAt };
+        } finally {
+          _supaUser = realUser; localStorage.removeItem('zp3_geo_open');
+          _geoWasInShop = false; _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoStopAnchor = null; _geoDrivebyRun = 0; _geoDriveReset();
+        }
+      }, { shop: SHOP });
+      expect(r.inShop, 'passing through at road speed never stamps an arrival').toBe(false);
+      expect(r.at).toBe(null);
+    });
+
+    test('the wheels cannot beat the road: an impossible window takes the route clock', async () => {
+      const r = await page.evaluate(() => {
+        const ended = '2026-08-11T23:57:00.000Z';
+        const short = { mins: 3, startedIso: '2026-08-11T23:54:00.000Z', endedIso: ended };
+        _mileFixLegClock(short, 14);
+        const plausible = { mins: 12, startedIso: 'keep-me', endedIso: ended };
+        _mileFixLegClock(plausible, 14);
+        const stale = { mins: undefined, startedIso: undefined, endedIso: undefined };
+        _mileFixLegClock(stale, 14);
+        const noEta = { mins: 3, endedIso: ended };
+        _mileFixLegClock(noEta, undefined);
+        return { short, plausible, stale, noEta };
+      });
+      expect(r.short.mins, 'a 3-minute claim on a 14-minute route is the router\'s clock now').toBe(14);
+      expect(r.short.timeInferred).toBe(true);
+      expect(r.short.startedIso, 'the start pulls back from the verified arrival').toBe('2026-08-11T23:43:00.000Z');
+      expect(r.plausible.mins, 'a watched, plausible window is observed truth and wins').toBe(12);
+      expect(r.plausible.timeInferred).toBeUndefined();
+      expect(r.plausible.startedIso).toBe('keep-me');
+      expect(r.stale.mins, 'a stale leg still claims no duration at all').toBeUndefined();
+      expect(r.noEta.mins, 'no route time means nothing to correct with').toBe(3);
+    });
+
+    test('the pending sweep applies the route clock to an impossible window', async () => {
+      const r = await page.evaluate(async () => {
+        const realRoute = _routeDistance, realUser = _supaUser;
+        _supaUser = { id: 'u-clock' };
+        window.__origMileage = mileage.slice();
+        try {
+          mileage.length = 0;
+          const ended = new Date().toISOString();
+          mileage.push({ id: 997301, date: todayKey(), gps: true, legKey: 'clock-leg-1', calc_method: 'pending_auto',
+            fromCoord: { lat: 38.24, lng: -94.24 }, toCoord: { lat: 38.0, lng: -94.0 }, miles: 0, mins: 3,
+            startedIso: new Date(Date.parse(ended) - 3 * 60000).toISOString(), endedIso: ended, loggedAt: ended });
+          window._routeDistance = _routeDistance = async () => ({ miles: 12.3, mins: 14 });
+          await _retryPendingTrips();
+          const m = mileage.find(x => x.id === 997301);
+          return { miles: m.miles, mins: m.mins, inferred: m.timeInferred,
+                   windowMs: Date.parse(m.endedIso) - Date.parse(m.startedIso) };
+        } finally {
+          window._routeDistance = _routeDistance = realRoute; _supaUser = realUser;
+          mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
+        }
+      });
+      expect(r.miles).toBe(12.3);
+      expect(r.mins).toBe(14);
+      expect(r.inferred).toBe(true);
+      expect(r.windowMs, 'displayed times match the corrected duration').toBe(14 * 60000);
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });

@@ -603,16 +603,26 @@ function renderDash(){
     // trigger a prompt.
     let _locPrompt=null;
     if(typeof _geoWasInShop!=='undefined'&&_geoWasInShop&&typeof _geoShopArrivedAt!=='undefined'&&_geoShopArrivedAt){
-      _locPrompt={key:'shop:'+_geoShopArrivedAt,at:_geoShopArrivedAt,title:'At the shop'};
+      _locPrompt={key:'shop:'+_geoShopArrivedAt,vkey:'shop',at:_geoShopArrivedAt,title:'At the shop'};
     }else if(typeof _geoCurrentPlace!=='undefined'&&_geoCurrentPlace&&typeof _geoPlaceArrivedAt!=='undefined'&&_geoPlaceArrivedAt){
       // Name it, don't label it: "At Ferguson Supply" beats "At the supply
       // house" when the contractor saved that name themselves, and a saved
       // place can just as easily be a dump, a rental yard or a home office.
       const _pl=(typeof getPlaces==='function')?getPlaces().find(p=>String(p.id)===String(_geoCurrentPlace)):null;
-      _locPrompt={key:'place:'+_geoCurrentPlace+':'+_geoPlaceArrivedAt,at:_geoPlaceArrivedAt,
+      _locPrompt={key:'place:'+_geoCurrentPlace+':'+_geoPlaceArrivedAt,vkey:'place:'+_geoCurrentPlace,at:_geoPlaceArrivedAt,
                   title:'At '+((_pl&&_pl.name)||'a saved place')};
     }
-    if(_locPrompt&&(Date.now()-Date.parse(_locPrompt.at))<120000)_locPrompt=null;
+    // The 2-minute floor stops a drive-through from prompting; it must NOT
+    // blink an already-open card off when a fence bounce or a phantom-speed
+    // eviction re-stamps the same visit's arrival (owner video 2026-08-11:
+    // the shop card popped in, then vanished a second later). vkey is the
+    // visit's identity WITHOUT the arrival stamp: same place + card already
+    // showing means the dwell was already served, whatever the stamp says.
+    const _cardOpenNow=_nearbyEl.style.display==='block';
+    if(_locPrompt&&(Date.now()-Date.parse(_locPrompt.at))<120000&&
+       !(_cardOpenNow&&window._locPromptSticky===_locPrompt.vkey))_locPrompt=null;
+    if(_locPrompt)window._locPromptSticky=_locPrompt.vkey;
+    else if(!_cardOpenNow)window._locPromptSticky=null;
     const _locPromptList=(_locPrompt&&typeof _locPromptJobs==='function')?_locPromptJobs().slice(0,5):[];
     const _showLocPrompt=!_onClock&&!_nearbyJob&&_locPromptList.length>0;
     // ON THE ROAD: the automatic system's first piece of live feedback (owner

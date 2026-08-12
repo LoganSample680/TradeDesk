@@ -1601,6 +1601,40 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       expect(r.display).not.toBe('block');
     });
 
+    test('a re-stamped arrival never blinks an already-open card off', async () => {
+      // Owner video 2026-08-11: the shop card popped in, then vanished a second
+      // later. A fence bounce (or a phantom-speed eviction) re-stamps the same
+      // visit's arrival, and the 2-minute floor treated the re-stamp as a brand
+      // new visit. Once the card is open for a location, it stays open.
+      const r = await page.evaluate(() => {
+        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, jobs: jobs.slice() };
+        _nearbyJob = null; _activeTimer = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+        jobs.length = 0;
+        jobs.push({ id: 556009, name: 'Panel Build 5', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
+        window._locPromptSticky = null;
+        _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 5 * 60000).toISOString();
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          const before = el ? el.style.display : '';
+          // The bounce: same visit, arrival stamp suddenly reads "just now".
+          _geoShopArrivedAt = new Date().toISOString();
+          renderDash();
+          const after = el ? el.style.display : '';
+          return { ok: true, before, after, html: el ? el.innerHTML : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
+          _geoCurrentPlace = orig.place; _geoPlaceArrivedAt = orig.placeAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
+          window._locPromptSticky = null;
+        }
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.before).toBe('block');
+      expect(r.after, 'the open card rides out the re-stamp').toBe('block');
+      expect(r.html).toContain('At the shop');
+    });
+
     test('a nearby job site outranks the location prompt when somehow both are true', async () => {
       const r = await page.evaluate(() => {
         const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, jobs: jobs.slice() };

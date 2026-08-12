@@ -478,6 +478,22 @@ function _initMapKit(){
   _mapkitReady=true;
   _retryPendingTrips();
 }
+// The wheels cannot beat the road (owner report 2026-08-11: Home Depot to the
+// shop "in 3 minutes", which that route cannot be driven in). A leg picked up
+// mid-drive (webview crash, app relaunch, late first fix) opens its clock
+// late, so the observed window can be a fraction of the route's own drive
+// time. When the observed minutes are under half the router's, the router's
+// time replaces them and the start is pulled back from the verified arrival
+// to match, flagged timeInferred. Payroll is untouched on purpose: the time
+// entry keeps only the observed minutes, per the owner's 2026-08-03 rule that
+// duration nobody observed is never claimed as labor.
+function _mileFixLegClock(rec,routeMins){
+  if(!rec||!(routeMins>0)||!rec.endedIso)return;
+  if(rec.mins>0&&rec.mins*2>=routeMins)return;   // plausible window, observed wins
+  rec.mins=routeMins;
+  rec.startedIso=new Date(Date.parse(rec.endedIso)-routeMins*60000).toISOString();
+  rec.timeInferred=true;
+}
 async function _retryPendingTrips(){
   // Two kinds of unfinished trip, and they resolve differently. A manual one has
   // typed ADDRESSES that still need geocoding; an automatic one already holds
@@ -508,7 +524,7 @@ async function _retryPendingTrips(){
       const fc=auto?rec.fromCoord:await _resolveCoords(rec.from);
       const tc=auto?rec.toCoord:await _resolveCoords(rec.to);
       if(!fc||!tc)continue;
-      const{miles}=await _routeDistance(fc,tc);
+      const{miles,mins:routeMins}=await _routeDistance(fc,tc);
       // SECOND re-read, after the route call. The one above catches a row that
       // had already settled when we reached it; this catches one that changed
       // WHILE we were measuring. A leg gets re-origined mid-flight when a stop
@@ -523,6 +539,7 @@ async function _retryPendingTrips(){
       let best=miles;
       if(auto&&rec.gpsMiles>0&&rec.gpsMiles>miles&&rec.gpsMiles<=miles*4)best=rec.gpsMiles;
       rec.miles=Math.round(best*10)/10;rec.calc_method=auto?'auto_route':'address';
+      if(auto)_mileFixLegClock(rec,routeMins);
       // Keep the resolved endpoints on a manual row: the journey dedup matches
       // destinations by coordinate first, and a typed address otherwise only
       // ever matches by name.
@@ -765,7 +782,7 @@ function autoLogDriveTrip(opts){
   const _fc=rec.fromCoord,_tc=rec.toCoord;
   (async()=>{
     try{
-      const{miles}=await _routeDistance(_fc,_tc);
+      const{miles,mins:routeMins}=await _routeDistance(_fc,_tc);
       const saved=mileage.find(m=>m.id===rec.id);
       if(!saved)return;
       // Stale: something re-pointed this leg while we were measuring. Writing now
@@ -786,6 +803,7 @@ function autoLogDriveTrip(opts){
       let best=miles;
       if(saved.gpsMiles>0&&saved.gpsMiles>miles&&saved.gpsMiles<=miles*4)best=saved.gpsMiles;
       saved.miles=Math.round(best*10)/10;saved.calc_method='auto_route';
+      _mileFixLegClock(saved,routeMins);
       // Now that this trip has its number, settle any same-journey duplicates.
       _mileDedupTrips();
       saveAll();
