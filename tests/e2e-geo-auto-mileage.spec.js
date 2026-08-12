@@ -5240,29 +5240,37 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.noEta.mins, 'no route time means nothing to correct with').toBe(3);
     });
 
-    test('a mid-session measurement failure is not stuck at 0 miles forever: returning to the foreground sweeps it', async () => {
+    test('a mid-session measurement failure is not stuck at 0 miles forever: swept on a live cadence and on foreground return', async () => {
       // Owner report 2026-08-12: the John Doe -> Shop leg (12:04p-12:11p) had
       // no miles at all while the legs before and after it did, same route,
       // same day. _initMapKit calls _retryPendingTrips exactly ONCE at boot;
       // a live measurement that fails mid-session (one bad network moment)
       // had nothing that would ever sweep it again short of a full reload.
-      // The foreground-return handler (the same one that pulls inbound
-      // messages and checks for new signatures) now pulls this too.
-      const calls = await page.evaluate(async () => {
-        let n = 0;
-        const real = _retryPendingTrips;
-        window._retryPendingTrips = _retryPendingTrips = () => { n++; };
-        try {
-          // Playwright pages report visibilityState 'visible' already, so
-          // firing the event alone reproduces a real return-to-app.
-          document.dispatchEvent(new Event('visibilitychange'));
-          await new Promise(res => setTimeout(res, 30));
-          return n;
-        } finally {
-          window._retryPendingTrips = _retryPendingTrips = real;
-        }
-      });
-      expect(calls, 'returning to the foreground sweeps any trip stuck at 0 miles').toBeGreaterThanOrEqual(1);
+      //
+      // The real wiring lives inside supaLoadFromCloud's cloud-timers block,
+      // gated behind a real sign-in (_cloudTimersStarted). This suite's own
+      // beforeAll deliberately stubs supaLoadFromCloud to a no-op to protect
+      // its seeded fixture arrays from being overwritten by a real load, so
+      // dispatching visibilitychange here would prove nothing: the listener
+      // is never attached in this harness. Asserting against the source is
+      // the honest check, the same pattern already used above for the heal
+      // re-run point.
+      const fs = require('fs');
+      const path = require('path');
+      const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+      const timerBlock = src.indexOf('if(!silent&&!_cloudTimersStarted)');
+      expect(timerBlock, 'the cloud-timers registration point exists').toBeGreaterThan(0);
+      // Generous window: this block registers a dozen-plus timers/listeners
+      // in sequence (the sig-poll interval, the reconcile heartbeat, the
+      // inbound-message poll, then this fix), all inside the same guarded
+      // if-block before its own visibilitychange registration closes it out.
+      const region = src.slice(timerBlock, timerBlock + 8000);
+      expect(region, 'a periodic sweep runs alongside the other live-session timers, same cadence as the inbound poll')
+        .toContain("setInterval(()=>{if(typeof _retryPendingTrips==='function')_retryPendingTrips();},30000);");
+      const visIdx = region.indexOf("addEventListener('visibilitychange'");
+      expect(visIdx, 'the foreground-return listener for this block exists').toBeGreaterThan(0);
+      expect(region.slice(visIdx, visIdx + 400), 'foreground return sweeps it too, alongside the other foreground pulls')
+        .toContain("if(typeof _retryPendingTrips==='function')_retryPendingTrips();");
     });
 
     test('the pending sweep applies the route clock to an impossible window', async () => {
