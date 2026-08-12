@@ -1341,6 +1341,10 @@ test.describe('Cloud Supabase and account functions', () => {
   test('KPI tiles never replay their entrance outside the boot pour', async () => {
     const r = await page.evaluate(async () => {
       const d = document.getElementById('pg-dash');
+      // Animations only run on VISIBLE elements: pin the page state instead
+      // of inheriting whichever page the previous test left active.
+      if (typeof goPg === 'function') goPg('pg-dash');
+      d.classList.add('active');
       d.classList.remove('boot-cascade');
       const seen = [];
       const h = (e) => { if (e.animationName === 'td-met-enter') seen.push(e.target.className); };
