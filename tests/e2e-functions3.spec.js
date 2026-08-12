@@ -8227,6 +8227,28 @@ test.describe('Version consistency', () => {
     expect(html.slice(fb, fb + 400), 'fallback restores identity from the device cache')
       .toContain('_restoreIdentityFromCache');
   });
+
+  test('the SDK-less state is never permanent: a retry loop re-injects the SDK and boots live in place', () => {
+    // Owner report 2026-08-12, from the truck: the dead boot stayed dead for
+    // a whole drive, auto mileage lost. A cached CURRENT version gives the
+    // version watchdog no mismatch to reload on, so the app itself must keep
+    // retrying the SDK and come alive the moment it loads: no reload, no
+    // force-quit, no user action.
+    const fs = require('fs');
+    const path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    const guard = html.indexOf('const _bootSupaOnce=');
+    expect(guard, 'the one-shot supaInit guard exists').toBeGreaterThan(0);
+    const retry = html.indexOf('_sdkRetryBusy');
+    expect(retry, 'the retry loop exists').toBeGreaterThan(0);
+    const region = html.slice(retry, retry + 900);
+    expect(region, 'retries the vendored same-origin SDK').toContain("_r.src='js/vendor/supabase-js-");
+    expect(region, 'boots the cloud layer the moment the SDK lands').toContain('_bootSupaOnce()');
+    // The load listener and the retry share the same guard, so supaInit can
+    // never run twice however the races land.
+    expect(html, 'the original load listener routes through the same guard')
+      .toContain("_sdk.addEventListener('load',_bootSupaOnce)");
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
