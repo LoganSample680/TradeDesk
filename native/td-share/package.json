@@ -1,0 +1,9 @@
+{
+  "name": "td-share",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TradeDesk share inbox. A no-UI share extension drops shared photos and PDFs into the App Group container; the plugin half reads that inbox so the app can ask which job. The EXTENSION target is added to the generated Xcode project by scripts/ios-add-share-target.rb, because an app extension cannot ride a pod.",
+  "main": "index.js",
+  "capacitor": { "ios": { "src": "ios/Plugin" } },
+  "files": ["index.js", "ios/", "TdShare.podspec"]
+}

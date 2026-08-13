@@ -298,7 +298,7 @@ function _renderNavTradeSwitcher(){
 }
 
 // ── Generic estimate (non-painting trades) ────────────────────────────
-let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null,_geiIsCommercial=false,_geiEmergency=false,_geiStep=1,_geiNewWork=false,_geiJobScope='repair';
+let _geiClientId=null,_geiEditBidId=null,_geiScanId=null,_geiLines=[],_geiTrade=null,_geiIsCommercial=false,_geiEmergency=false,_geiStep=1,_geiNewWork=false,_geiJobScope='repair';
 Object.defineProperty(window,'_geiClientId',{get:()=>_geiClientId,set:v=>{_geiClientId=v;},configurable:true});
 Object.defineProperty(window,'_geiEditBidId',{get:()=>_geiEditBidId,set:v=>{_geiEditBidId=v;},configurable:true});
 Object.defineProperty(window,'_geiLines',{get:()=>_geiLines,set:v=>{_geiLines=v;},configurable:true});
@@ -498,6 +498,35 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
   _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;_geiJobScope='repair';_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];
+  _geiScanId=null;
+  // Scanned rooms waiting for an estimate (js/scan.js or the Scan Estimate
+  // builder parked them): a fresh estimate for the SAME client opens
+  // pre-lined. Two seed shapes: `lines` arrives PRE-PRICED from the Scan
+  // Estimate builder (surfaces, multipliers, device counts already baked);
+  // `rooms` is the raw measured handoff. Consumed once, never leaks into
+  // another client's estimate. scanId rides onto the bid so the proposal can
+  // embed the measured floor plan.
+  if(window._scanEstimateSeed&&!bidId&&c&&String(window._scanEstimateSeed.clientId)===String(c.id)){
+    const seed=window._scanEstimateSeed;window._scanEstimateSeed=null;
+    _geiScanId=seed.scanId||null;
+    if(Array.isArray(seed.lines)&&seed.lines.length){
+      _geiLines=seed.lines.map(l=>({desc:l.desc||'',qty:l.qty||1,unit:l.unit||'ea',rate:l.rate||0,total:l.total!=null?l.total:Math.round((l.qty||1)*(l.rate||0)*100)/100,notes:l.notes||'',_byoSection:l._byoSection||'Interior'}));
+      if(typeof showToast==='function')showToast(_geiLines.length+' measured line'+(_geiLines.length>1?'s':'')+' loaded from the scan','📐');
+    }else{
+    // Billing: room total = measured wall footage x the contractor's per-sq-ft
+    // rate (Settings). Rate unset = rooms load with the quantity measured and
+    // the price theirs to type, exactly like any hand-entered line.
+    const _scanRate=Math.max(0,+(S.scanRateSqFt||0));
+    _geiLines=(seed.rooms||[]).map(r=>({
+      desc:(r.name||'Room')+' · '+(r.wallSqFt||0)+' wall sq ft, '+(r.ceilHt||'')+' ceilings'+(r.doors||r.windows?' ('+(r.doors||0)+' doors, '+(r.windows||0)+' windows)':''),
+      qty:r.wallSqFt||1,unit:'sq ft',rate:_scanRate,total:Math.round((r.wallSqFt||1)*_scanRate*100)/100,notes:'Measured by LiDAR scan',_byoSection:'Interior'
+    }));
+    if(_geiLines.length&&typeof showToast==='function'){
+      const priced=_scanRate>0;
+      showToast(_geiLines.length+' scanned room'+(_geiLines.length>1?'s':'')+(priced?' priced at $'+_scanRate+'/sq ft':' loaded, set your rate per room'),'📐');
+    }
+    }
+  }
   _tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
@@ -3018,6 +3047,7 @@ function saveGenericEstimate(draft){
       type:v('gei-desc')||_typeLabel,geiDesc:v('gei-desc')||'',
       notes:v('gei-notes'),status:draft?'Draft':'Pending',draft:!!draft,
       isFreeForm:_geiIsFreeForm||false,
+      ...(_geiScanId?{scanId:_geiScanId}:{}),
       ...(_geiIsFreeForm&&_byoItems.length?{byoItems:JSON.parse(JSON.stringify(_byoItems))}:{}),
       ...(_geiIsFreeForm?{byoCustomSections:_byoSecsSave,byoCustomTerms:_byoTermsSave}:{}),
       geiLines:JSON.parse(JSON.stringify(_geiLines)),geiTaxPct:taxPct,
@@ -3286,10 +3316,37 @@ async function sendGenericProposal(previewOnly){
   // above: once per-item prices came out, this table would just repeat the same
   // section headers and names a second time with nothing new to show. T&M doesn't
   // list materials anywhere else, so it keeps the full item table.
+  // A scan-born proposal carries the client's own measured floor plan, the
+  // thing no competitor CRM can put on paper. SVG colors carry fallbacks so
+  // it renders identically in the app, sign.html, and the hub.
+  const _scanPlanSection=(_geiScanId&&typeof getScans==='function')?(()=>{
+    const _sc=getScans().find(x=>String(x.id)===String(_geiScanId));
+    if(!_sc)return '';
+    // Color-keyed to the quote (Conduit's close-rate move, research
+    // 2026-08-09: showing the customer their own house sells the job): every
+    // room that carries quote lines gets a tint + a legend chip with its
+    // room total; rooms not in this quote stay paper-white. Lines are keyed
+    // by the 'Room · surface' desc prefix the scan builder writes.
+    const _pal=['#DCE8F5','#E7F0DC','#F5E9D4','#EFE0EF','#E0EFEA','#F2E3DD'];
+    const _fills={},_legend=[];
+    (_sc.rooms||[]).forEach((r,gi)=>{
+      const rl=_geiLines.filter(l=>((l.desc||'').indexOf((r.label||'')+' · ')===0));
+      if(!rl.length||!r.label)return;
+      const col=_pal[_legend.length%_pal.length];
+      _fills[gi]=col;
+      _legend.push('<span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#4a5568;font-weight:700"><span style="width:10px;height:10px;border-radius:3px;background:'+col+';border:1px solid #cbd5e0"></span>'+escHtml(r.label)+' · $'+Math.round(rl.reduce((t,l)=>t+(+l.total||0),0)).toLocaleString('en-US')+'</span>');
+    });
+    const _sts=(typeof _scanStories==='function')?_scanStories(_sc):[1];
+    const _plans=_sts.map(st=>
+      (_sts.length>1?'<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin:6px 0 4px">Floor '+st+'</div>':'')+
+      _scanPlanSvg(_sc,{lens:'plan',story:(_sts.length>1?st:null),roomFills:_fills})).join('');
+    return '<div style="padding:16px 18px;border-bottom:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:8px">Measured floor plan · LiDAR scan</div>'+_plans+
+      (_legend.length?'<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px">'+_legend.join('')+'</div>':'')+'</div>';
+  })():'';
   const _lineItemsSection=_geiIsFreeForm
     ?`<table style="width:100%;border-collapse:collapse"><tfoot>${_totalFooterRows}</tfoot></table>`
     :`<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th colspan="2" style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${_totalFooterRows}</tfoot></table>`;
-  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:${_pAccent}">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_scopeSection}${_rrpSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}</div>`;
+  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:${_pAccent}">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_scopeSection}${_rrpSection}${_scanPlanSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}</div>`;
   // Terms & Conditions is NOT part of the document the client reviews first,
   // it only appears in the accordion under the signature on the actual sign
   // step (owner directive 2026-07-13). The preview mirrors that: it shows

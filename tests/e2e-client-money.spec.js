@@ -2239,7 +2239,15 @@ test.describe('Job completion, price change signature gate', () => {
       // evaluate. Splitting them let a debounced cloud-merge reassign the live `bids`
       // array between the mutation and the call, dropping the change order so no warning
       // fired (webkit fixture-seeding flake). Reading+acting atomically closes the race.
-      const b = bids.find(x => x.id === bId);
+      // The bid itself can ALSO vanish between seedJob's evaluate and this one
+      // (same merge, one hop earlier): a fixture row is in no snapshot to come
+      // back from, so re-seed it here rather than dereference undefined.
+      let b = bids.find(x => x.id === bId);
+      if (!b) {
+        b = { id: bId, client_id: 910002, client_name: 'Job Complete Client', amount: 1000, status: 'Closed Won', draft: false, bid_date: '2026-06-01' };
+        bids.push(b);
+      }
+      if (!clients.find(c => c.id === 910002)) clients.push({ id: 910002, name: 'Job Complete Client', phone: '316-555-9002', addr: '2 Job St' });
       b.completion_date = '2026-06-01';
       b.changeOrders = [{ id: 1, coNum: 1, date: '2026-06-01', desc: 'Extra outlet', amount: 50, delta: 50, originalAmount: 1000, newAmount: 1050 }]; // no signedAt, pending
       const orig = window.open;
@@ -2259,20 +2267,39 @@ test.describe('Job completion, price change signature gate', () => {
   test('openFinalInvoice: no pending change orders: generates straight through, opens the pay panel', async () => {
     const BID_ID = 920009, JOB_ID = 930009;
     await seedJob(BID_ID, JOB_ID, 1000);
-    await page.evaluate(([bId]) => {
-      const b = bids.find(x => x.id === bId);
-      b.completion_date = '2026-06-01';
-    }, [BID_ID]);
     const r = await page.evaluate(([bId]) => {
+      // Seed AND act in ONE synchronous evaluate, the same fix the pending-CO
+      // test above already carries: splitting them lets the debounced
+      // cloud-merge reassign the live `bids` array between the mutation and
+      // the call (webkit fixture-seeding flake), dropping completion_date so
+      // the invoice path never reaches the pay panel.
+      // Same re-seed guard as the pending-CO test above: the fixture bid can
+      // vanish between seedJob's evaluate and this one.
+      let b = bids.find(x => x.id === bId);
+      if (!b) {
+        b = { id: bId, client_id: 910002, client_name: 'Job Complete Client', amount: 1000, status: 'Closed Won', draft: false, bid_date: '2026-06-01' };
+        bids.push(b);
+      }
+      if (!clients.find(c => c.id === 910002)) clients.push({ id: 910002, name: 'Job Complete Client', phone: '316-555-9002', addr: '2 Job St' });
+      b.completion_date = '2026-06-01';
       const orig = window.open;
       let openCalled = false;
       window.open = () => { openCalled = true; return { document: { write: () => {}, close: () => {} } }; };
+      // One synchronous evaluate is NOT enough for this test: openFinalInvoice
+      // opens the pay panel from a 400ms timer that re-finds the bid in the
+      // live `bids` array (bids.js). If the debounced cloud-merge reassigns
+      // `bids` during that gap, a fixture row, unlike a real record, is in no
+      // snapshot to come back from: openPayPanel then returns silently and the
+      // panel never renders. Pin the seeded bid across the async hop, and give
+      // the 400ms timer a real cushion instead of 100ms on a loaded runner.
+      const pin = setInterval(() => { if (!bids.find(x => x.id === bId)) bids.push(b); }, 40);
       return new Promise(resolve => {
         openFinalInvoice(bId);
         setTimeout(() => {
+          clearInterval(pin);
           window.open = orig;
           resolve({ openCalled, payPanelOpen: !!document.querySelector('.pay-modal-overlay') });
-        }, 500);
+        }, 1200);
       });
     }, [BID_ID]);
     expect(r.openCalled).toBe(true);

@@ -4,10 +4,20 @@
   "version": "1.0.0",
   "description": "Capacitor shell for TradeDesk Beta. The web app itself is NOT bundled here: the shell loads the live UAT deployment (see capacitor.config.json server.url), so day-to-day web pushes ship instantly without an App Store release. This package only exists so CI can generate the iOS project and build it.",
   "dependencies": {
+    "@capacitor-community/apple-sign-in": "latest",
+    "@capacitor-community/background-geolocation": "latest",
     "@capacitor/core": "^7.0.0",
     "@capacitor/ios": "^7.0.0",
-    "@capacitor-community/background-geolocation": "latest",
-    "@capacitor-community/apple-sign-in": "latest"
+    "td-bg-up": "file:./td-bg-up",
+    "td-doc": "file:./td-doc",
+    "td-geo": "file:./td-geo",
+    "td-haptic": "file:./td-haptic",
+    "td-lock": "file:./td-lock",
+    "td-nav": "file:./td-nav",
+    "td-notify": "file:./td-notify",
+    "td-scan": "file:./td-scan",
+    "td-share": "file:./td-share",
+    "td-voice": "file:./td-voice"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.0.0"

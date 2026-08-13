@@ -292,6 +292,45 @@ points at this URL, so it must stay alive and stably named forever.
   additive (never rename/drop what production code still reads), and new code
   must never rewrite existing records into shapes production can't read.
 
+### 3.2 Minimum iOS Builds (owner rule, 2026-08-09)
+
+The TestFlight app is a THIN SHELL: it loads the live UAT site
+(capacitor.config.json server.url). Web code is never bundled into the build,
+so every JS/HTML/CSS change ships instantly via a UAT roll (§3.1) with ZERO
+iOS builds. Firing `ios-beta.yml` costs a ~15-minute macOS run and forces the
+owner to update the app on every test device, so builds are rare and
+deliberate, never reflexive.
+
+**NEVER fire an iOS build without explicit owner approval in this session
+(owner rule 2026-08-10).** Land the native changes, say "native changed,
+build N is ready to fire," and WAIT for the owner's go-ahead. This mirrors
+the merge rule (§1.4): green code lands freely, the expensive irreversible
+step waits for a human yes. No exceptions, not even mid-debugging when the
+owner is actively testing the very feature the build carries.
+
+**An iOS build is needed ONLY when the native surface changes:**
+- New or changed Swift plugin code (`native/td-geo/`, future plugins)
+- `native/capacitor.config.json` or `native/package.json` (plugin versions)
+- Info.plist entries, entitlements, app icon, or anything in `ios-beta.yml`
+  that patches the generated project
+
+**Everything else is a UAT roll, not a build.** If unsure, ask: does this
+change any file under `native/` or the workflow's project patching? No means
+no build.
+
+**Keep the native layer dumb so this stays true.** A Swift plugin exposes
+raw capability only (arm a region, buffer an event, report a fix); every
+decision, threshold, timer, and behavior lives in JS behind
+`Capacitor.registerPlugin`. TdGeo is the reference: park timing, fence radii,
+and replay logic are all in `js/geo-track.js`, tunable forever without a
+rebuild. Putting logic in Swift that could live in JS is a rule violation,
+it converts free UAT iterations into paid builds.
+
+**The floor is ~1 build/month:** TestFlight builds expire after 90 days, and
+the monthly keep-alive cron (`ios-beta.yml` schedule) already covers that.
+Batch pending native changes into the next needed build rather than firing
+one per change.
+
 ---
 
 ## 4. Branch Protection (One-Time Setup by Repo Owner)
@@ -506,10 +545,13 @@ Some pages require a longer entrance than the global `.2s` default:
 | Page | Duration | Reason |
 |------|----------|--------|
 | `#pg-dash` | `.5s` `td-dash-enter` (scale) | Boot overlay reveal, must feel polished |
-| `#pg-cal` | `5s` `td-pg-enter` | Weather fetch is async (can take 4–5s); slow fade ensures data lands before the page is fully visible |
 
-**Rule:** Only add a per-page override when there is a concrete reason (async
-data load, elevated visual importance). Do not slow down pages arbitrarily.
+**Rule:** Only add a per-page override when there is a concrete reason
+(elevated visual importance). Do not slow down pages arbitrarily. A slow fade
+is NEVER the answer to async data (owner mandate 2026-08-09): pg-cal's old 5s
+fade existed only to hide the grid awaiting the weather fetch; the fix was to
+paint instantly with shimmer skeletons in the async slots and repaint once
+when data lands. Waiting content gets a skeleton, never a slowed page.
 
 ---
 
@@ -521,7 +563,7 @@ data load, elevated visual importance). Do not slow down pages arbitrarily.
 | Modal / bottom sheet | Fade + slide-up: `opacity 0→1, translateY 16px→0`, duration `.22s` |
 | Inline panel / card expansion | `max-height` or `opacity` transition, duration `.18s` |
 | Toast / snackbar | Already handled by existing toast util |
-| Skeleton loaders | Fade out on data arrival: `opacity 1→0`, duration `.15s` |
+| Skeleton loaders | The `.td-skel` shimmer (index.html) + `_tdSkelRows()` (utils.js): a light band sweeping left to right. MANDATORY for every async-loading surface (owner 2026-08-09), never a "Loading..." string, never a spinner, and exactly ONE swap to real content, no stacked reveals |
 
 **Easing standard:** `cubic-bezier(.22, 1, .36, 1)` for entrances (spring-like,
 snappy). `ease` for exits and fades. Never use `linear` for UI motion.
@@ -726,6 +768,28 @@ wizard, which is our edge.
   above + early account creation + dashboard checklist. Owner chose the **full restructure**.
 - Files: `js/settings.js` (`_ob`, `renderObStep`, `obStep*`, `obSubmit`), `index.html`
   (dashboard setup-checklist card), new live flow test `tests/flow/onboarding-signup-flow.spec.js`.
+
+### 9.10 Dual-Hat Accounts: Crew by Day, Owner on the Side (owner back-burnered 2026-08-09)
+
+**One login, two hats: a person who is crew on an employer's account AND owner of
+their own side business.** Today they need two emails and a sign-out/sign-in; the
+design is an in-app account switcher on one login. Owner call: park it until the
+scanned estimate is solid.
+
+- **Switcher**: profile menu flips between "Crew · {employer}" and "My business,"
+  riding the existing account-switch reset machinery (arrays, caches, offline queues).
+- **Hard wall**: employer never sees the side business; crew permissions gate the
+  other direction. RLS already scopes per account, the switcher only picks context.
+- **Tracking follows the hat**: crew mode logs drives/site time to the employer
+  exactly as now; own-business mode logs to their own mileage/jobs and the employer
+  sees nothing. Keeps payroll data clean and each business's IRS log separate.
+- **Separate wallets**: own Stripe, invoices, taxes, subscription per business.
+- **Growth loop**: "start your own business" one tap from the crew view, every
+  moonlighting apprentice is a future subscriber; no competitor supports dual roles.
+- **Blast radius (§10)**: cloud.js load/reset paths, geo attribution, offline
+  queues, memberships lookup (team_members by user across accounts). Careful
+  refactor, architect with owner (§16) in slices: (1) switcher + data wall,
+  (2) tracking-follows-the-hat, (3) sign-up growth loop.
 
 ---
 

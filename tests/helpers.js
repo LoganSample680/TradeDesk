@@ -127,18 +127,22 @@ async function mockAllExternal(page, opts = {}) {
       return route.fulfill({ status: 404, contentType: 'text/plain', body: '' });
     }
 
-    // ── Serve app locally, pass through ────────────────────────────────────
-    if (url.startsWith('http://localhost') || url.startsWith('data:')) {
-      return route.continue();
-    }
-
-    // ── Supabase CDN, stub with minimal shim ───────────────────────────────
-    if (url.includes('cdn.jsdelivr.net') && url.includes('supabase')) {
+    // ── Supabase SDK, stub with minimal shim ───────────────────────────────
+    // BEFORE the localhost pass-through: index.html now serves the SDK from
+    // its own origin (js/vendor/, for offline-boot resilience), so the shim
+    // must catch it there or every mocked test would load the real SDK. The
+    // CDN pattern stays for client.html / sign.html / intake.html.
+    if (url.includes('/js/vendor/supabase') || (url.includes('cdn.jsdelivr.net') && url.includes('supabase'))) {
       return route.fulfill({
         status: 200,
         contentType: 'application/javascript',
         body: _supabaseShim(),
       });
+    }
+
+    // ── Serve app locally, pass through ────────────────────────────────────
+    if (url.startsWith('http://localhost') || url.startsWith('data:')) {
+      return route.continue();
     }
 
     // ── Fonts, must return text/css or WebKit strict mode rejects them ────
@@ -322,8 +326,11 @@ function _supabaseShim() {
     createClient: function(url, key) {
       return {
         auth: {
-          getUser:    () => { if(global.__authFail401) return authErrorResult(); const uid = (typeof window!=='undefined'&&window.__overrideSessionUserId)||'e2e-user'; return noopResult({ user: { id: uid, email: 'test@test.com' } }); },
-          getSession: () => { if(global.__authFail401) return authErrorResult(); const uid = (typeof window!=='undefined'&&window.__overrideSessionUserId)||'e2e-user'; return noopResult({ session: { access_token: 'fake-jwt', user: { id: uid, email: 'test@test.com' } } }); },
+          // __noSession → a clean signed-out state ({session:null}, no error),
+          // the shape the real client returns after sign-out. Distinct from
+          // __authFail401, which simulates a 401 ERROR.
+          getUser:    () => { if(global.__authFail401) return authErrorResult(); if(global.__noSession) return noopResult({ user: null }); const uid = (typeof window!=='undefined'&&window.__overrideSessionUserId)||'e2e-user'; return noopResult({ user: { id: uid, email: 'test@test.com' } }); },
+          getSession: () => { if(global.__authFail401) return authErrorResult(); if(global.__noSession) return noopResult({ session: null }); const uid = (typeof window!=='undefined'&&window.__overrideSessionUserId)||'e2e-user'; return noopResult({ session: { access_token: 'fake-jwt', user: { id: uid, email: 'test@test.com' } } }); },
           signInWithPassword: () => noopResult({ user: { id: 'e2e-user' }, session: { access_token: 'fake-jwt' } }),
           signOut:    () => noopResult(null),
           // Stash the registered callback so tests can fire a synthetic SIGNED_IN/

@@ -280,7 +280,7 @@ async function renderTimeLog(){
   const el=document.getElementById('tl-list');if(!el)return;
   _tlStartOpenRefresh();
   const totalEl=document.getElementById('tl-total');
-  el.innerHTML='<div class="empty">Loading…</div>';
+  el.innerHTML='<div style="padding:6px 2px">'+_tdSkelRows(4,12)+'</div>';
   let allRows;
   try{allRows=await _timeLogRows(null);}
   catch(_e){el.innerHTML='<div class="empty">Couldn\'t load time entries.</div>';return;}

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key><string>$(DEVELOPMENT_LANGUAGE)</string>
+  <key>CFBundleDisplayName</key><string>TradeDesk</string>
+  <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+  <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
+  <key>CFBundlePackageType</key><string>XPC!</string>
+  <!-- Both must equal the containing app's or App Store Connect rejects the
+       upload. MARKETING_VERSION is copied onto this target from the App target
+       by scripts/ios-add-share-target.rb; CFBundleVersion is stamped with the
+       run number by ios-beta.yml, the same place the app's is stamped. -->
+  <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>NSExtension</key>
+  <dict>
+    <key>NSExtensionPointIdentifier</key><string>com.apple.share-services</string>
+    <key>NSExtensionPrincipalClass</key><string>$(PRODUCT_MODULE_NAME).ShareViewController</string>
+    <key>NSExtensionAttributes</key>
+    <dict>
+      <key>NSExtensionActivationRule</key>
+      <dict>
+        <key>NSExtensionActivationSupportsImageWithMaxCount</key><integer>20</integer>
+        <key>NSExtensionActivationSupportsFileWithMaxCount</key><integer>20</integer>
+        <key>NSExtensionActivationSupportsAttachmentsWithMaxCount</key><integer>20</integer>
+      </dict>
+    </dict>
+  </dict>
+</dict>
+</plist>

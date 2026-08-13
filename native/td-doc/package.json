@@ -1,0 +1,13 @@
+{
+  "name": "td-doc",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TradeDesk receipt scanner. Wraps VisionKit's VNDocumentCameraViewController, the same document scanner Notes and Files use: Apple's own edge detection, auto-capture on a steady frame, glare and low-light handling, built-in corner adjustment, and perspective correction. The web canvas pipeline stays as the browser fallback.",
+  "main": "index.js",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "files": ["index.js", "ios/", "TdDoc.podspec"]
+}

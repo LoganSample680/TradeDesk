@@ -357,8 +357,13 @@ function _geoMapKitReady(){
   return typeof mapkit!=='undefined'&&typeof _mapkitReady!=='undefined'&&_mapkitReady;
 }
 
-let _geoMapObj=null;      // the live mapkit.Map, reused across renders
-let _geoMapHost=null;     // the element it was constructed against
+// Two screens now draw Apple Maps tiles: the Places territory map (history)
+// and the Dispatch day map (today). They are different pages, but each keeps
+// its OWN {obj,host} pair rather than sharing one module-level singleton,
+// because a shared one means whichever screen rendered last destroys the
+// other's map out from under it the next time either re-renders.
+function tdMapState(){return {obj:null,host:null};}
+const _geoMapSt=tdMapState();   // the Places territory map's own state
 
 function renderGeoMap(){
   const body=document.getElementById('tr-map-body');
@@ -377,60 +382,106 @@ function renderGeoMap(){
   }
   if(cnt)cnt.textContent=pts.length?pts.length+' pinned':'';
   if(!pts.length){
-    _geoMapDestroy();
+    tdMapDestroy(_geoMapSt);
     body.innerHTML='<div style="padding:22px 4px;font-size:13px;color:var(--text3);line-height:1.6">'+
       'Nothing pinned yet. Locations are recorded automatically when you log an expense, finish a job, or send a proposal, as long as location is on.'+
       '</div>';
     return;
   }
-  if(_geoMapKitReady()){_geoRenderMapKit(body,pts);return;}
-  _geoMapDestroy();
-  _geoRenderFallback(body,pts);
+  tdMapRender({body,pts,style:_GEO_MAP_STYLE,st:_geoMapSt,hostId:'tr-map-canvas',height:320,
+    hint:'Tap a pin for details, then the arrow for directions.'});
 }
 
-function _geoMapDestroy(){
-  try{if(_geoMapObj&&_geoMapObj.destroy)_geoMapObj.destroy();}catch(_e){}
-  _geoMapObj=null;_geoMapHost=null;
+// ── The shared map renderer ─────────────────────────────────────────────────
+// One implementation, two screens: Places (where the work HAS been) and
+// Dispatch (where it is TODAY). Both want the same thing, real Apple Maps tiles
+// with a coloured pin per point and an honest plot when the tiles cannot load,
+// so this takes points plus a style map rather than letting each screen grow a
+// private copy of the same renderer.
+//
+// o = {body, pts:[{lat,lon,type,label,date}], style:{type:{c,label,glyph}},
+//      st: a tdMapState(), hostId, height, hint, onSelect(pt)}
+function tdMapDestroy(st){
+  if(!st)return;
+  try{if(st.obj&&st.obj.destroy)st.obj.destroy();}catch(_e){}
+  st.obj=null;st.host=null;
+}
+function tdMapRender(o){
+  if(o.allowKit!==false&&_geoMapKitReady()){tdMapRenderKit(o);return;}
+  tdMapDestroy(o.st);
+  tdMapRenderFallback(o);
+}
+
+// ── Apple's licence line, in code ────────────────────────────────────────────
+// The Apple Developer Program License Agreement says MapKit JS "may not be used
+// in your website and/or application running on non-Apple hardware for the
+// following commercial purposes: fleet management (including dispatch), asset
+// tracking, enterprise route optimization". A crew-location map IS all three of
+// those, so on an Android phone or a Windows desktop it must not draw Apple
+// tiles. Inside the iOS shell, and in Safari or Chrome on Apple hardware, it is
+// squarely allowed.
+//
+// Callers pass allowKit:tdAppleHardware() for anything fleet-shaped. The
+// fallback plot then renders instead, which uses none of Apple's data, so the
+// screen still works everywhere, it just stops using tiles it is not licensed
+// to use there. The Places territory map is business history rather than fleet
+// management and is not gated.
+//
+// iPadOS 13+ reports itself as Macintosh, which lands on the allowed side
+// either way, and anything unrecognised falls to the plot, which is the safe
+// direction to be wrong in.
+function tdAppleHardware(){
+  try{
+    const cap=window.Capacitor;
+    if(cap&&typeof cap.isNativePlatform==='function'&&cap.isNativePlatform()){
+      return !(typeof cap.getPlatform==='function'&&cap.getPlatform()==='android');
+    }
+    return /iPhone|iPad|iPod|Macintosh|Mac OS X/.test(navigator.userAgent||'');
+  }catch(_e){return false;}
 }
 
 // ── Real tiles ───────────────────────────────────────────────────────────────
-function _geoRenderMapKit(body,pts){
+function tdMapRenderKit(o){
+  const body=o.body,pts=o.pts,st=o.st;
+  const hostId=o.hostId||'tr-map-canvas';
+  const height=o.height||320;
   // Reuse the instance across filter toggles. Constructing a fresh mapkit.Map on
   // every render leaks the old one's tile requests and DOM.
-  let host=document.getElementById('tr-map-canvas');
-  if(!host||_geoMapHost!==host){
-    body.innerHTML='<div id="tr-map-canvas" style="height:320px;border-radius:var(--r);overflow:hidden;border:1px solid var(--border)"></div>'+
-      '<div style="font-size:10px;color:var(--text3);line-height:1.6;margin-top:8px">Tap a pin for details, then the arrow for directions.</div>';
-    host=document.getElementById('tr-map-canvas');
-    _geoMapDestroy();
+  let host=document.getElementById(hostId);
+  if(!host||st.host!==host){
+    body.innerHTML='<div id="'+hostId+'" style="height:'+height+'px;border-radius:var(--r);overflow:hidden;border:1px solid var(--border)"></div>'+
+      (o.hint?'<div style="font-size:10px;color:var(--text3);line-height:1.6;margin-top:8px">'+o.hint+'</div>':'');
+    host=document.getElementById(hostId);
+    tdMapDestroy(st);
     try{
-      _geoMapObj=new mapkit.Map(host,{
+      st.obj=new mapkit.Map(host,{
         showsCompass:mapkit.FeatureVisibility.Hidden,
         showsScale:mapkit.FeatureVisibility.Adaptive,
         showsMapTypeControl:false,
         showsZoomControl:true,
         showsUserLocationControl:true,
       });
-      _geoMapHost=host;
-    }catch(_e){_geoMapDestroy();_geoRenderFallback(body,pts);return;}
+      st.host=host;
+    }catch(_e){tdMapDestroy(st);tdMapRenderFallback(o);return;}
   }
   try{
-    _geoMapObj.removeAnnotations(_geoMapObj.annotations||[]);
+    st.obj.removeAnnotations(st.obj.annotations||[]);
     const anns=pts.map(p=>{
-      const st=_GEO_MAP_STYLE[p.type]||{c:'#666',glyph:''};
+      const stl=(o.style&&o.style[p.type])||{c:'#666',glyph:''};
       const a=new mapkit.MarkerAnnotation(new mapkit.Coordinate(p.lat,p.lon),{
-        color:st.c,
-        glyphText:st.glyph||'',
+        color:stl.c,
+        glyphText:stl.glyph||'',
         title:p.label||p.type,
         subtitle:p.date||'',
       });
+      if(typeof o.onSelect==='function')a.addEventListener('select',()=>o.onSelect(p));
       return a;
     });
-    _geoMapObj.addAnnotations(anns);
+    st.obj.addAnnotations(anns);
     // Frame everything with a little breathing room rather than hard-cropping to
     // the outermost pins.
-    if(anns.length)_geoMapObj.showItems(anns,{animate:false,padding:new mapkit.Padding(40,24,40,24)});
-  }catch(_e){_geoMapDestroy();_geoRenderFallback(body,pts);}
+    if(anns.length)st.obj.showItems(anns,{animate:false,padding:new mapkit.Padding(40,24,40,24)});
+  }catch(_e){tdMapDestroy(st);tdMapRenderFallback(o);}
 }
 
 // ── Fallback: no tiles available ─────────────────────────────────────────────
@@ -447,7 +498,8 @@ function _geoPinSvg(color){
     '<circle cx="11" cy="9.6" r="3" fill="#fff" fill-opacity=".95"/>'+
   '</svg>';
 }
-function _geoRenderFallback(body,pts){
+function tdMapRenderFallback(o){
+  const body=o.body,pts=o.pts,style=o.style||{};
   const lats=pts.map(p=>p.lat),lons=pts.map(p=>p.lon);
   const minLat=Math.min(...lats),maxLat=Math.max(...lats);
   const minLon=Math.min(...lons),maxLon=Math.max(...lons);
@@ -458,7 +510,7 @@ function _geoRenderFallback(body,pts){
   const dots=pts.slice().sort((a,b)=>b.lat-a.lat).map(p=>{
     const x=((p.lon-minLon)/spanLon)*100;
     const y=100-((p.lat-minLat)/spanLat)*100;   // north at the top
-    const st=_GEO_MAP_STYLE[p.type]||{c:'var(--text3)'};
+    const st=style[p.type]||{c:'var(--text3)'};
     const title=escHtml((p.label||p.type)+(p.date?' · '+p.date:''));
     // margin pulls the pin up its full height and left half its width, so the
     // POINT lands on the coordinate rather than the middle of the head.

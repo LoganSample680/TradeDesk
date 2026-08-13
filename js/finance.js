@@ -21,18 +21,25 @@ function openExpenseFlow(){
         '<div style="font-size:18px;font-weight:800">Log expense</div>'+
         '<button onclick="closeExpenseFlow()" style="border:none;background:none;font-size:24px;cursor:pointer;color:var(--text3)">×</button>'+
       '</div>'+
+      // Left: the two capture buttons stacked. Right: the captured pages in
+      // their own box (owner 2026-08-10: the post-scan layout read as
+      // clutter; pages belong beside Scan, prompts get the full row below).
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">'+
-        '<button id="exp-scan-area" style="border:1.5px solid var(--blue);border-radius:12px;padding:12px 8px;cursor:pointer;background:rgba(45,93,168,.06);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px" onclick="expTriggerScan()">'+
-          '<span style="font-size:22px">'+svgIcon('📷',{size:22})+'</span>'+
-          '<div style="text-align:left"><div style="font-size:13px;font-weight:700;color:var(--blue)">Scan receipt</div><div style="font-size:10px;color:var(--text3)">AI fills fields</div></div>'+
-        '</button>'+
-        '<button id="exp-attach-area" style="border:1.5px solid var(--border2);border-radius:12px;padding:12px 8px;cursor:pointer;background:var(--bg2);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px" onclick="expTriggerAttach()">'+
-          '<span style="font-size:22px">'+svgIcon('📎',{size:22})+'</span>'+
-          '<div style="text-align:left"><div style="font-size:13px;font-weight:700">Attach photo</div><div style="font-size:10px;color:var(--text3)">No sign-in needed</div></div>'+
-        '</button>'+
+        '<div style="display:flex;flex-direction:column;gap:8px">'+
+          '<button id="exp-scan-area" style="flex:1;border:1.5px solid var(--blue);border-radius:12px;padding:12px 8px;cursor:pointer;background:rgba(45,93,168,.06);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px" onclick="expTriggerScan()">'+
+            '<span style="font-size:22px">'+svgIcon('📷',{size:22})+'</span>'+
+            '<div style="text-align:left"><div style="font-size:13px;font-weight:700;color:var(--blue)">Scan receipt</div></div>'+
+          '</button>'+
+          '<button id="exp-attach-area" style="flex:1;border:1.5px solid var(--border2);border-radius:12px;padding:12px 8px;cursor:pointer;background:var(--bg2);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px" onclick="expTriggerAttach()">'+
+            '<span style="font-size:22px">'+svgIcon('📎',{size:22})+'</span>'+
+            '<div style="text-align:left"><div style="font-size:13px;font-weight:700">Attach photo</div></div>'+
+          '</button>'+
+        '</div>'+
+        '<div id="exp-pages-box" style="border:1.5px dashed var(--border2);border-radius:12px;min-height:104px;padding:8px;display:flex;align-items:center;justify-content:center">'+
+          '<div style="font-size:11px;color:var(--text3);text-align:center">Receipt pages land here</div>'+
+        '</div>'+
       '</div>'+
       '<div id="exp-scan-status" style="display:none;margin-bottom:10px"></div>'+
-      '<div id="exp-preview-img" style="display:none;margin-bottom:12px;text-align:center"></div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
         '<div class="f"><label>Vendor / Store *</label><input id="em-vendor" placeholder="Home Depot..." style="font-size:14px"></div>'+
         '<div class="f"><label>Amount * ($)</label><input id="em-amount" type="number" step="0.01" placeholder="0.00" style="font-size:14px"></div>'+
@@ -79,24 +86,27 @@ function openExpenseFlow(){
 function closeExpenseFlow(){document.getElementById('expense-modal')?.remove();_expState={imageData:null,imageKey:null,hasReceipt:false,editId:null,imagePages:[]};}
 
 function _renderExpPages(){
-  const preview=document.getElementById('exp-preview-img');if(!preview)return;
+  const box=document.getElementById('exp-pages-box');if(!box)return;
   const pages=_expState.imagePages;
-  if(!pages.length){preview.style.display='none';return;}
-  preview.style.display='block';
-  preview.innerHTML=
-    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">'+
+  if(!pages.length){
+    box.style.borderStyle='dashed';
+    box.innerHTML='<div style="font-size:11px;color:var(--text3);text-align:center">Receipt pages land here</div>';
+    return;
+  }
+  box.style.borderStyle='solid';
+  box.innerHTML=
+    '<div style="width:100%">'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">'+
     pages.map((p,i)=>
       '<div style="position:relative;text-align:center">'+
-        '<img src="data:image/jpeg;base64,'+p.b64+'" style="width:68px;height:68px;object-fit:cover;border-radius:8px;border:2px solid var(--green);display:block">'+
+        '<img src="data:image/jpeg;base64,'+p.b64+'" style="width:58px;height:58px;object-fit:cover;border-radius:8px;border:2px solid var(--green);display:block">'+
         '<button type="button" onclick="_removeExpPage('+i+')" style="position:absolute;top:-7px;right:-7px;width:20px;height:20px;border-radius:50%;border:none;background:#A32D2D;color:#fff;font-size:12px;cursor:pointer;line-height:1;padding:0;font-family:inherit">×</button>'+
-        '<div style="font-size:9px;color:var(--text3);margin-top:3px;font-weight:700">Page '+(i+1)+'</div>'+
       '</div>'
     ).join('')+
-    '<div style="display:flex;align-items:center">'+
-      '<button type="button" onclick="expTriggerAttach(true)" style="width:68px;height:68px;border-radius:8px;border:2px dashed var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:22px;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center">+</button>'+
+    '<button type="button" onclick="expTriggerAttach(true)" style="width:58px;height:58px;border-radius:8px;border:2px dashed var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:20px;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;flex:0 0 auto">+</button>'+
     '</div>'+
-    '</div>'+
-    '<div style="font-size:11px;color:var(--green-mid);font-weight:700">'+pages.length+' page'+(pages.length>1?'s':'')+' captured</div>';
+    '<div style="font-size:10px;color:var(--green-mid);font-weight:700;text-align:center;margin-top:6px">'+pages.length+' page'+(pages.length>1?'s':'')+' captured</div>'+
+    '</div>';
 }
 function _removeExpPage(idx){
   _expState.imagePages.splice(idx,1);
@@ -105,6 +115,8 @@ function _removeExpPage(idx){
 }
 
 function expTriggerAttach(addPage){
+  // allPages: Apple's scanner captures multi-page in one session ("Ready for
+  // next scan"); every page the user kept becomes an expense page.
   _showReceiptScanner(null,async blob=>{
     const attachArea=document.getElementById('exp-attach-area');
     if(attachArea)attachArea.style.opacity='.5';
@@ -117,7 +129,7 @@ function expTriggerAttach(addPage){
       _renderExpPages();
       if(attachArea){attachArea.style.opacity='1';attachArea.style.borderColor='var(--green-mid)';}
     }catch(e){if(attachArea)attachArea.style.opacity='1';}
-  });
+  },{allPages:true});
 }
 function expAttachPhotoOnly(input){expTriggerAttach();}  // legacy: redirect to live scanner
 
@@ -270,8 +282,228 @@ function _gpuDestroy(){
   Object.assign(_gpu,{dev:null,pipe:null,uniformBuf:null,edgeBuf:null,readBuf:null,tw:0,th:0});
 }
 
-function _showReceiptScanner(fileOrNull,callback){
+// The live TurboScan-style scanner ships in the APP ONLY (owner 2026-08-09).
+// It needs a camera stream held open for continuous edge detection, and mobile
+// browsers grant that inconsistently: Safari refuses it outright unless the
+// page is a top-level user gesture, and a half-working live viewfinder is a
+// worse experience than the plain camera. The shell is also the one place we
+// know NSCameraUsageDescription is present, because the build declares it.
+// Everywhere else keeps the OS camera plus the manual corner editor, which is
+// the same pipeline minus the live preview.
+function _rcptLiveCapable(){
+  try{
+    const cap=window.Capacitor;
+    if(!cap||typeof cap.isNativePlatform!=='function'||!cap.isNativePlatform())return false;
+    return !!(navigator.mediaDevices&&typeof navigator.mediaDevices.getUserMedia==='function');
+  }catch(_e){return false;}
+}
+// ── VisionKit: the real document scanner ─────────────────────────────────────
+// Apple's own (native/td-doc), the same one Notes and Files use. It beats the
+// canvas pipeline below on every axis that matters on a job site: better edge
+// detection, auto-capture on a steady frame, glare and low-light handling,
+// corner adjustment and retake built in. It only exists in the app, so the
+// canvas scanner stays as the browser's.
+function _rcptNativePlugin(){
+  try{
+    const cap=window.Capacitor;
+    if(!cap||typeof cap.isNativePlatform!=='function'||!cap.isNativePlatform())return null;
+    if(typeof cap.registerPlugin==='function')return cap.registerPlugin('TdDoc');
+    return (cap.Plugins&&cap.Plugins.TdDoc)||null;
+  }catch(_e){return null;}
+}
+let _rcptNativeOk=null;   // true | false | null (not asked yet)
+async function _rcptNativeCapable(){
+  const P=_rcptNativePlugin();
+  if(!P||typeof P.isAvailable!=='function'){_rcptNativeOk=false;return false;}
+  if(_rcptNativeOk!==null)return _rcptNativeOk;
+  try{const r=await P.isAvailable();_rcptNativeOk=!!(r&&r.available);}catch(_e){_rcptNativeOk=false;}
+  return _rcptNativeOk;
+}
+// Pages come back as file paths; the callback contract everywhere else is a
+// Blob, so they are read back through the same file bridge the LiDAR scanner's
+// photos use. Only the first page is delivered, which is exactly today's
+// one-photo-per-attach behaviour: multi-page capture is available from the
+// plugin and can be surfaced later without touching any of these call sites.
+// Read a file the native scanner wrote. convertFileSrc only resolves when the
+// WebView is served from the capacitor origin; this shell loads the REMOTE
+// UAT site, so fetch(convertFileSrc(...)) went to Cloudflare, 404ed, and the
+// old catch dumped the user into the canvas scanner right after Apple's
+// scanner had worked (owner 2026-08-10). The LiDAR plugin ships a chunked
+// file reader in the same build; receipts ride it, with convertFileSrc kept
+// for older shells that predate it.
+async function _rcptReadNativeFile(path){
+  try{
+    if(typeof _scan3dReadMesh==='function'){
+      const buf=await _scan3dReadMesh(path);
+      if(buf)return new Blob([buf],{type:'image/jpeg'});
+    }
+  }catch(_e){}
+  try{
+    const cap=window.Capacitor;
+    const src=(cap&&typeof cap.convertFileSrc==='function')?cap.convertFileSrc(path):path;
+    return await (await fetch(src)).blob();
+  }catch(_e){return null;}
+}
+// ── On-device receipt reading (owner 2026-08-11) ─────────────────────────────
+// "Is this instant and more accurate?" Instant yes, accurate only in part, so
+// the two engines split the job by what each is actually good at:
+//
+//   Apple Vision (here)  reads the CHARACTERS. Sub-second, free, works with no
+//                        signal. Terrible at judgment: raw OCR asked for "the
+//                        total" happily returns the subtotal.
+//   The AI pass          understands the STRUCTURE. Slower, costs money, needs
+//                        a network, and is far better on a crumpled receipt.
+//
+// So Vision fills the fields the instant the scanner closes, and the AI pass
+// corrects them when it lands. Offline, the Vision read simply stands and the
+// expense still gets logged, which is the case that used to fail completely.
+async function _rcptOcrLines(path){
+  const P=_rcptNativePlugin();
+  if(!P||typeof P.recognizeText!=='function')return [];
+  try{
+    const r=await P.recognizeText({path});
+    return (r&&Array.isArray(r.lines))?r.lines:[];
+  }catch(_e){return [];}
+}
+// Money on a receipt line. Handles 1,234.56 / 1234.56 / $12.34, and refuses
+// bare integers: a quantity, a SKU, or a phone fragment is not a price.
+function _rcptMoneyIn(line){
+  const out=[];
+  const re=/\$?\s*(\d{1,3}(?:,\d{3})+|\d+)\.(\d{2})(?!\d)/g;
+  let m;
+  while((m=re.exec(String(line||'')))){
+    const v=parseFloat(m[1].replace(/,/g,'')+'.'+m[2]);
+    if(isFinite(v)&&v>0&&v<1000000)out.push(v);
+  }
+  return out;
+}
+// The judgment call OCR cannot make. Ordered by how much a contractor would
+// trust it, and every rule here exists because of how receipts actually print.
+function _rcptParseLines(lines){
+  const L=(lines||[]).map(x=>String(x||'').trim()).filter(Boolean);
+  const out={vendor:'',amount:null,date:''};
+  if(!L.length)return out;
+
+  // AMOUNT. "Total" wins, but SUBTOTAL must never be mistaken for it, and
+  // neither may the tendered cash or the change. When a receipt prints the
+  // label and the number on separate lines (very common on thermal paper),
+  // the next line is checked too.
+  let best=null;
+  L.forEach((line,i)=>{
+    const low=line.toLowerCase();
+    if(!/total|amount due|balance due|grand total/.test(low))return;
+    if(/sub\s*-?\s*total|subtotal/.test(low))return;      // the classic wrong answer
+    if(/tender|cash|change|card|tip|due back/.test(low))return;
+    const here=_rcptMoneyIn(line);
+    const next=(i+1<L.length)?_rcptMoneyIn(L[i+1]):[];
+    const pick=here.length?Math.max(...here):(next.length?Math.max(...next):null);
+    if(pick==null)return;
+    // Later totals beat earlier ones: "grand total" prints below "total".
+    if(best==null||pick>=best)best=pick;
+  });
+  if(best==null){
+    // No labelled total at all (handwritten slips, torn receipts): the largest
+    // amount in the bottom half is the honest guess. Flagged by leaving the
+    // caller to mark it low-confidence.
+    const half=L.slice(Math.floor(L.length/2));
+    const all=half.flatMap(_rcptMoneyIn);
+    if(all.length)best=Math.max(...all);
+    out.guessed=true;
+  }
+  if(best!=null)out.amount=best.toFixed(2);
+
+  // DATE. First plausible date, top-down: receipts print it in the header far
+  // more often than the footer. Two-digit years are assumed this century.
+  for(const line of L){
+    let m=line.match(/(20\d{2})-(\d{1,2})-(\d{1,2})/);
+    if(m){out.date=m[1]+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[3]).padStart(2,'0');break;}
+    m=line.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if(m){
+      const mo=+m[1],da=+m[2];
+      let yr=+m[3];
+      if(yr<100)yr+=2000;
+      if(mo>=1&&mo<=12&&da>=1&&da<=31&&yr>=2000&&yr<=2099){
+        out.date=yr+'-'+String(mo).padStart(2,'0')+'-'+String(da).padStart(2,'0');
+        break;
+      }
+    }
+  }
+
+  // VENDOR. The store name is the first real line of the header: skip lines
+  // that are an address, a phone number, a receipt number, or mostly digits.
+  for(const line of L.slice(0,6)){
+    const letters=(line.match(/[A-Za-z]/g)||[]).length;
+    if(letters<3)continue;
+    if(/\d{3}[-.\s]?\d{3}[-.\s]?\d{4}/.test(line))continue;          // phone
+    if(/^\d+\s+\w+.*(st|street|ave|avenue|rd|road|blvd|dr|drive|hwy|way|ln|lane)\b/i.test(line))continue;
+    if(/receipt|invoice|order\s*#|store\s*#|welcome|thank you/i.test(line))continue;
+    if(letters/line.length<0.5)continue;                              // mostly digits/symbols
+    out.vendor=line.replace(/\s+/g,' ').slice(0,60);
+    break;
+  }
+  return out;
+}
+// Fill the expense form from an on-device read, WITHOUT clobbering anything
+// the user (or a faster AI response) already put there.
+function _rcptApplyLocalRead(parsed){
+  if(!parsed)return 0;
+  let filled=0;
+  const set=(id,val)=>{
+    if(!val)return;
+    const el=document.getElementById(id);
+    if(!el||String(el.value||'').trim())return;   // never overwrite a real value
+    el.value=val;filled++;
+  };
+  set('em-vendor',parsed.vendor);
+  set('em-amount',parsed.amount);
+  return filled;
+}
+
+async function _rcptNativeScan(callback,allPages){
+  const P=_rcptNativePlugin();
+  let r=null;
+  // Only a FAILED LAUNCH falls back to the canvas scanner. Once Apple's
+  // scanner has run, its result is the result: a read hiccup afterwards must
+  // never resurrect the old UI on top of a capture that already happened.
+  try{r=await P.scanDocument();}
+  catch(_e){if(_rcptLiveCapable())_openLiveScanner(callback);else _rcptPickFile(callback);return;}
+  const pages=(r&&r.pages)||[];
+  if(!pages.length)return;                        // cancelled: leave everything alone
+  const take=allPages?pages:pages.slice(0,1);
+  // Read page one on-device FIRST: it lands in well under a second, so the
+  // fields are already filled while the AI round trip is still in flight (and
+  // they stand on their own when there is no signal at all).
+  _rcptOcrLines(pages[0]).then(lines=>{
+    if(!lines.length)return;
+    try{_rcptApplyLocalRead(_rcptParseLines(lines));}catch(_e){}
+  }).catch(()=>{});
+  let delivered=0;
+  for(const p of take){
+    const blob=await _rcptReadNativeFile(p);
+    if(blob){try{await callback(blob);delivered++;}catch(_e){}}
+  }
+  if(!delivered&&typeof showToast==='function')showToast('Could not read the scanned pages','📷');
+}
+function _showReceiptScanner(fileOrNull,callback,opts){
   if(fileOrNull){_loadAndBuildScanUI(fileOrNull,callback);return;}
+  // Apple's scanner first inside the app.
+  if(_rcptNativePlugin()){
+    _rcptNativeCapable().then(ok=>{
+      if(ok){_rcptNativeScan(callback,!!(opts&&opts.allPages));return;}
+      if(_rcptLiveCapable()){_openLiveScanner(callback);return;}
+      _rcptPickFile(callback);
+    });
+    return;
+  }
+  // Live viewfinder: auto edge detection, hold-steady coaching, tap to shoot,
+  // then perspective-corrected and contrast-stretched on the way out.
+  // _openLiveScanner falls back to this same file path by itself if the
+  // camera is refused at runtime, so there is no dead end.
+  if(_rcptLiveCapable()){_openLiveScanner(callback);return;}
+  _rcptPickFile(callback);
+}
+// The OS camera plus the manual corner editor: the floor every platform gets.
+function _rcptPickFile(callback){
   const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.capture='environment';inp.style.display='none';
   inp.onchange=()=>{const f=inp.files[0];inp.remove();if(f)_loadAndBuildScanUI(f,callback);};
   document.body.appendChild(inp);inp.click();
@@ -299,17 +531,17 @@ async function _openLiveScanner(callback){
 
   const cancelBtn=document.createElement('button');
   cancelBtn.id='ls-cancel';
-  cancelBtn.style.cssText='position:absolute;top:calc(env(safe-area-inset-top,0px)+14px);left:16px;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.3);color:#fff;padding:8px 18px;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;z-index:3';
+  cancelBtn.style.cssText='position:absolute;top:calc(env(safe-area-inset-top, 0px) + 14px);left:16px;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.3);color:#fff;padding:8px 18px;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;z-index:3';
   cancelBtn.innerHTML=svgIcon('✕',{size:14})+' Cancel';
   ov.appendChild(cancelBtn);
 
   const hint=document.createElement('div');
-  hint.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom,0px)+120px);left:0;right:0;text-align:center;color:#fff;font-size:13px;font-weight:700;text-shadow:0 1px 6px rgba(0,0,0,.9);pointer-events:none;z-index:3;transition:color .3s';
+  hint.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom, 0px) + 120px);left:0;right:0;text-align:center;color:#fff;font-size:13px;font-weight:700;text-shadow:0 1px 6px rgba(0,0,0,.9);pointer-events:none;z-index:3;transition:color .3s';
   hint.textContent='Point camera at receipt';
   ov.appendChild(hint);
 
   const shutterWrap=document.createElement('div');
-  shutterWrap.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom,0px)+20px);left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:10px;z-index:3';
+  shutterWrap.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom, 0px) + 20px);left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:10px;z-index:3';
   shutterWrap.innerHTML=
     '<div id="ls-ready-label" style="background:rgba(0,0,0,.55);color:#fff;font-size:12px;font-weight:700;padding:5px 14px;border-radius:20px;opacity:0;transition:opacity .3s">'+svgIcon('✓',{size:12})+' Receipt detected, tap to capture</div>'+
     '<button id="ls-shutter" style="width:76px;height:76px;border-radius:50%;background:#fff;border:5px solid rgba(255,255,255,.4);cursor:pointer;box-shadow:0 4px 28px rgba(0,0,0,.6);display:block;transition:transform .1s,background .2s"></button>';
@@ -398,6 +630,17 @@ async function _openLiveScanner(callback){
   }
 
   function applyResult(raw){
+    // Owner review 2026-08-10 vs the Apple scanner: pointed at a sink, this
+    // drew a huge skewed quad across the screen and still said "receipt
+    // detected." Two guards Apple has that this lacked: the quad must LOOK
+    // like a document, and steadiness means the CORNERS held still, not that
+    // anything at all was detected 8 frames running.
+    if(raw&&!_rcptQuadSane(raw,video.videoWidth,video.videoHeight))raw=null;
+    if(raw&&detectedCorners){
+      const diag=Math.hypot(video.videoWidth,video.videoHeight)||1;
+      const move=Math.max(...raw.map((c,i)=>Math.hypot(c.x-detectedCorners[i].x,c.y-detectedCorners[i].y)));
+      if(move>diag*0.05)stableFrames=0;   // it jumped: not the same document
+    }
     if(raw){detectedCorners=raw;stableFrames=Math.min(stableFrames+1,STABLE_NEEDED+4);}
     else{detectedCorners=null;stableFrames=Math.max(stableFrames-3,0);}
     const ready=stableFrames>=STABLE_NEEDED;
@@ -600,6 +843,33 @@ function _detectDocCorners(data,tw,th,outW,outH){
   }catch(e){return null;}
 }
 
+// A detected quad must plausibly BE a document before the UI treats it as
+// one: convex, corners somewhere near square (50 to 130 degrees), covering a
+// real fraction of the frame but not effectively all of it. Everything the
+// bounding-box walk produces from counter clutter fails at least one of
+// these, which is what keeps the overlay quiet until a receipt is actually
+// in view.
+function _rcptQuadSane(q,w,h){
+  if(!q||q.length!==4||!w||!h)return false;
+  let area=0,sign=0;
+  for(let i=0;i<4;i++){
+    const a=q[i],b=q[(i+1)%4],c=q[(i+2)%4];
+    if(!a||!b||!c)return false;
+    const abx=b.x-a.x,aby=b.y-a.y,bcx=c.x-b.x,bcy=c.y-b.y;
+    const cr=abx*bcy-aby*bcx;
+    const s=Math.sign(cr)||1;
+    if(i===0)sign=s;
+    else if(s!==sign)return false;                 // not convex
+    const dot=(-abx)*bcx+(-aby)*bcy;
+    const m=(Math.hypot(abx,aby)*Math.hypot(bcx,bcy))||1;
+    const ang=Math.acos(Math.max(-1,Math.min(1,dot/m)))*180/Math.PI;
+    if(ang<50||ang>130)return false;               // nowhere near square
+    area+=a.x*b.y-b.x*a.y;
+  }
+  const fr=Math.abs(area)/2/(w*h);
+  return fr>0.10&&fr<0.95;
+}
+
 // keep old name for any callers
 function _scanDetectCorners(ctx,w,h){
   if(!w||!h)return null;
@@ -675,8 +945,10 @@ function _confirmReceiptDate(aiDate,statusEl){
       '<button id="rcpt-yes-btn" style="padding:8px;border-radius:var(--r);border:none;background:#D97706;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✓',{size:12})+' Yes</button>'+
       '<button id="rcpt-no-btn" style="padding:8px;border-radius:var(--r);border:1px solid #D97706;background:#fff;color:#92400E;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✗',{size:12})+' Let me fix it</button>'+
     '</div>';
+  // Full row under the capture grid, never crammed into a grid cell.
+  const _stat=document.getElementById('exp-scan-status');
   const scanArea=document.getElementById('exp-scan-area');
-  if(scanArea)scanArea.after(div);
+  if(_stat)_stat.after(div);else if(scanArea)scanArea.after(div);
   div.querySelector('#rcpt-yes-btn').onclick=()=>{
     const el=document.getElementById('em-date');
     if(el&&aiDate){const m=aiDate.match(/(\d{4})-(\d{2})-(\d{2})/);el.value=m?m[2]+'/'+m[3]+'/'+m[1]:aiDate;}
@@ -1054,7 +1326,10 @@ function showQuickPicker(title,subtitle,suggestions,actionType,allowNew){
   overlay.appendChild(box);
   document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
-  setTimeout(()=>{const si=document.getElementById('qp-search');if(si)si.focus();},100);
+  // No auto-focus on the search field (owner 2026-08-09): on a phone, focusing
+  // it slides the keyboard up over the suggestion list the moment the picker
+  // opens. The common path is tapping a suggested client; search is one tap
+  // away for whoever actually wants it.
 }
 
 function onQPSearch(el){
@@ -1712,7 +1987,7 @@ async function viewReceipt(expId){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   ov.className='rcpt-ov';
-  ov.innerHTML='<div style="color:#fff;font-size:13px;opacity:.6">Loading…</div>';
+  ov.innerHTML='<div class="td-skel" style="width:72vw;height:44vh;border-radius:10px"></div>';
   document.body.appendChild(ov);
   // Resolve all keys to URLs
   const srcs=[];
@@ -2642,7 +2917,7 @@ async function _openJobProfit(){
   const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='460px';
   box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('💰',{size:18})+' Job Profit</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Revenue minus materials and labor cost (wage + '+Math.round(((S.laborBurden||1.3)-1)*100)+'% overhead) from tracked crew time on site.</div>'+
-    '<div id="_job-pl-body" style="font-size:13px;color:var(--text3);max-height:60vh;overflow-y:auto">Loading…</div>'+
+    '<div id="_job-pl-body" style="font-size:13px;color:var(--text3);max-height:60vh;overflow-y:auto">'+_tdSkelRows(5,12)+'</div>'+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:10px">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -2794,7 +3069,7 @@ async function _openCrewCost(){
       _ccBtn('quarter')+'This quarter</button>'+
       _ccBtn('ytd')+'Year to date</button>'+
     '</div>'+
-    '<div id="_crew-cost-body" style="font-size:13px;color:var(--text3);max-height:56vh;overflow-y:auto">Loading…</div>'+
+    '<div id="_crew-cost-body" style="font-size:13px;color:var(--text3);max-height:56vh;overflow-y:auto">'+_tdSkelRows(5,12)+'</div>'+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:10px">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -2803,7 +3078,7 @@ async function _openCrewCost(){
 async function _crewCostRender(range){
   const body=document.getElementById('_crew-cost-body');if(!body)return;
   ['today','week','month','quarter','ytd'].forEach(r=>{const b=document.getElementById('_cc-'+r);if(b){const on=r===range;b.style.background=on?'var(--blue)':'var(--bg2)';b.style.color=on?'#fff':'var(--text)';b.style.borderColor=on?'var(--blue)':'var(--border2)';}});
-  body.textContent='Loading…';
+  body.innerHTML=_tdSkelRows(5,12);
   const todayStr=_ctDateStr(new Date());
   const [yr,mo]=todayStr.split('-').map(Number);
   let sinceStr,label;
@@ -3500,11 +3775,11 @@ function editExpense(id){
     if(saveBtn)saveBtn.textContent='Save changes';
     if(exp.receipt_keys?.length||exp.receipt_key||exp.receipt_img){
       const pc=exp.receipt_keys?.length||(exp.receipt_key?1:0);
-      const preview=document.getElementById('exp-preview-img');
-      if(preview){
-        preview.style.display='block';
-        preview.innerHTML='<div style="font-size:11px;color:var(--green-mid);font-weight:700;margin-bottom:6px">'+svgIcon('☁',{size:12})+' '+pc+' receipt page'+(pc>1?'s':'')+' on file</div>'+
-          '<button type="button" onclick="expTriggerAttach(true)" style="font-size:11px;padding:5px 10px;border-radius:var(--r);border:1.5px dashed var(--blue);background:var(--blue-lt);color:var(--blue-dk);cursor:pointer;font-family:inherit;font-weight:700">+ Add another page</button>';
+      const box=document.getElementById('exp-pages-box');
+      if(box){
+        box.style.borderStyle='solid';
+        box.innerHTML='<div style="text-align:center"><div style="font-size:11px;color:var(--green-mid);font-weight:700;margin-bottom:6px">'+svgIcon('☁',{size:12})+' '+pc+' receipt page'+(pc>1?'s':'')+' on file</div>'+
+          '<button type="button" onclick="expTriggerAttach(true)" style="font-size:11px;padding:5px 10px;border-radius:var(--r);border:1.5px dashed var(--blue);background:var(--blue-lt);color:var(--blue-dk);cursor:pointer;font-family:inherit;font-weight:700">+ Add another page</button></div>';
       }
     }
     const saveErr=document.getElementById('exp-save-err');

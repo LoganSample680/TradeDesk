@@ -379,35 +379,11 @@ function renderDash(){
   const wonBidAmts=bids.filter(b=>b.status==='Closed Won').map(b=>b.amount||0);
   const avgJobVal=wonBidAmts.length?Math.round(wonBidAmts.reduce((s,a)=>s+a,0)/wonBidAmts.length):null;
 
-  // Attention sub-text for tbar
+  // The greeting stands alone (owner 2026-08-10: the "N things need your
+  // attention today" line under it goes away altogether). Make Money Today
+  // below already IS the attention list; the sentence was a duplicate.
   const _subEl=document.getElementById('dash-sub');
-  if(_subEl&&!_isEmployee){
-    const _collectItems=bids.filter(b=>b.status==='Closed Won'&&!b.clientCancelled&&getBidBalance(b)>0.01&&b.completion_date);
-    const _collectOwed=_collectItems.reduce((s,b)=>s+getBidBalance(b),0);
-    const _urgFu=bids.filter(b=>b.status==='Pending'&&!b.signingToken&&b.followup&&b.followup<=tk).length;
-    const _pendingBids=bids.filter(b=>b.status==='Pending').length;
-    const _licAlerts=getLicenseAlerts().filter(l=>_licStatus(l)==='expired').length;
-    // Closed Won bids that still need a job scheduled and/or deposit collected
-    const _wonNeedAction=bids.filter(b=>{
-      if(b.status!=='Closed Won'||b.completion_date||b.clientCancelled)return false;
-      const depositPaid=getBidPaid(b.id)>0;
-      const hasJob=jobs.some(j=>(j.bid_id===b.id||(j.client_id===b.client_id&&!j.bid_id))&&j.eventType!=='estimate');
-      return!(hasJob&&depositPaid);
-    }).length;
-    // In-progress drafts (Draft/Pending-unsent bids)
-    const _draftCount=bids.filter(b=>!b.signingToken&&(b.status==='Draft'||(b.status==='Pending'&&!b.bid_date))).length;
-    const _attnItems=_collectItems.length+_urgFu+_pendingBids+_licAlerts+_wonNeedAction+_draftCount;
-    if(_attnItems>0){
-      let _biggestNote='';
-      if(_collectOwed>0)_biggestNote='The biggest one is '+fmt(_collectOwed)+' in outstanding balances.';
-      else if(_wonNeedAction>0)_biggestNote=_wonNeedAction+' signed job'+(+_wonNeedAction>1?'s':'')+' need scheduling or a deposit.';
-      else if(_urgFu>0)_biggestNote=_urgFu+' follow-up'+(+_urgFu>1?'s':'')+' are overdue.';
-      else if(_pendingBids>0)_biggestNote=_pendingBids+' pending proposal'+(+_pendingBids>1?'s':'')+' need attention.';
-      _subEl.textContent=_attnItems+' thing'+(_attnItems>1?'s':'')+' need'+(_attnItems===1?'s':'')+' your attention today. '+_biggestNote;
-    }else{
-      _subEl.textContent='You\'re all caught up, nothing urgent.';
-    }
-  }else if(_subEl){_subEl.textContent='';}
+  if(_subEl)_subEl.textContent='';
 
   const kpiEl=document.getElementById('dash-kpi');
   if(kpiEl&&_isEmployee){
@@ -435,7 +411,6 @@ function renderDash(){
     const jobCards=myDayJobs.map(j=>{
       const c=clients.find(x=>x.id===j.client_id)||{name:j.clientName||j.name||'Job'};
       const addr=j.addr||c.addr||'';
-      const mapsUrl=addr?'https://maps.apple.com/?daddr='+encodeURIComponent(addr):'';
       const st=(j.empStatus||{})[empId]||null;
       const statusLabel=_empStatusLabel(st);
       const statusColor=_empStatusColor(st);
@@ -456,7 +431,15 @@ function renderDash(){
         '<div style="font-size:14px;font-weight:700;margin-bottom:4px">'+escHtml(c.name)+'</div>'+
         (addr?'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
           '<div style="font-size:12px;color:var(--text2);flex:1">'+escHtml(addr)+'</div>'+
-          (mapsUrl?'<a href="'+mapsUrl+'" style="font-size:11px;font-weight:700;color:var(--blue);text-decoration:none;white-space:nowrap;min-height:36px;display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--blue)">'+svgIcon('🗺',{size:12})+' Navigate</a>':'')+
+          // Was a bare Apple Maps link that bounced the crew out of the app.
+          // Now the same tap starts turn-by-turn INSIDE TradeDesk (js/drive.js),
+          // which is what lets arrival end the drive and open this job by
+          // itself. Outside the shell driveButtonHtml still hands off to Apple
+          // Maps and relabels itself Directions, so nothing is lost in a
+          // browser: one control, two honest behaviours, never both at once.
+          (addr&&typeof driveButtonHtml==='function'
+            ?driveButtonHtml(j.id,'font-size:11px;font-weight:700;color:var(--blue);background:none;white-space:nowrap;min-height:36px;display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--blue);cursor:pointer;font-family:inherit')
+            :'')+
         '</div>':'')+
         _jobFieldNote(j,{editable:true})+
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
@@ -472,6 +455,29 @@ function renderDash(){
         (vehLabel?'<div id="_emp-vehicle-display" style="font-size:12px;color:var(--text2);margin-bottom:10px">'+svgIcon('🚗',{size:13})+' Driving: '+escHtml(vehLabel)+'</div>':'<div id="_emp-vehicle-display" style="font-size:12px;color:var(--text2);margin-bottom:10px"></div>')+
         (myDayJobs.length?jobCards:'<div style="font-size:13px;color:var(--text3);padding:12px 0;line-height:1.5">No jobs assigned for today. Check back after your contractor updates the schedule.</div>')+
       '</div>';
+  } else if(kpiEl&&typeof _dashAwaitingCloud!=='undefined'&&_dashAwaitingCloud&&typeof _supaCloudLoaded!=='undefined'&&!_supaCloudLoaded){
+    // First seconds after sign-in: the arrays are empty until the cloud load
+    // lands, so real tiles would flash $0 everywhere (owner report
+    // 2026-08-08: "nothing but zeros for a second or two"). Skeletons
+    // instead; supaLoadFromCloud's own final renderDash swaps in real values
+    // once _supaCloudLoaded is set, and the .met entrance fade covers the
+    // swap (§8.4). Gated on _dashAwaitingCloud (set only by the in-tab
+    // sign-in path, cleared when the load resolves either way) rather than
+    // on bare !_supaCloudLoaded, so an environment where no load is coming
+    // (mocked tests, a brand-new account) renders real tiles, never an
+    // endless shimmer.
+    // IDEMPOTENT (owner report 2026-08-09: "two waterfall stutter on load").
+    // Sign-in renders the dashboard several times before the cloud lands:
+    // goPg on the way in, supaLoadFromCloud's own render, then the caller's
+    // goPg. Rewriting identical skeleton markup each time restarts the CSS
+    // shimmer from frame zero, so the wave visibly jumped backwards twice
+    // before the real numbers arrived. Painting it once means one continuous
+    // sweep and exactly one swap to content (§8.4).
+    if(!kpiEl.querySelector('.met-skel-bar')){
+      kpiEl.innerHTML='<div class="mets">'+
+        Array.from({length:6}).map(()=>'<div class="met"><div class="met-skel-lbl"></div><div class="met-skel-bar"></div></div>').join('')+
+      '</div>';
+    }
   } else if(kpiEl){
     const pBids=bids.filter(b=>b.status==='Pending');
     const prevTax=showTrends?estimateTax(Math.max(0,prevInc-prevExp-Math.round(prevMi*IRS(yr-1)))):0;
@@ -597,41 +603,82 @@ function renderDash(){
     // trigger a prompt.
     let _locPrompt=null;
     if(typeof _geoWasInShop!=='undefined'&&_geoWasInShop&&typeof _geoShopArrivedAt!=='undefined'&&_geoShopArrivedAt){
-      _locPrompt={key:'shop:'+_geoShopArrivedAt,at:_geoShopArrivedAt,title:'At the shop'};
+      _locPrompt={key:'shop:'+_geoShopArrivedAt,vkey:'shop',at:_geoShopArrivedAt,title:'At the shop'};
     }else if(typeof _geoCurrentPlace!=='undefined'&&_geoCurrentPlace&&typeof _geoPlaceArrivedAt!=='undefined'&&_geoPlaceArrivedAt){
       // Name it, don't label it: "At Ferguson Supply" beats "At the supply
       // house" when the contractor saved that name themselves, and a saved
       // place can just as easily be a dump, a rental yard or a home office.
       const _pl=(typeof getPlaces==='function')?getPlaces().find(p=>String(p.id)===String(_geoCurrentPlace)):null;
-      _locPrompt={key:'place:'+_geoCurrentPlace+':'+_geoPlaceArrivedAt,at:_geoPlaceArrivedAt,
+      _locPrompt={key:'place:'+_geoCurrentPlace+':'+_geoPlaceArrivedAt,vkey:'place:'+_geoCurrentPlace,at:_geoPlaceArrivedAt,
                   title:'At '+((_pl&&_pl.name)||'a saved place')};
     }
-    if(_locPrompt&&(Date.now()-Date.parse(_locPrompt.at))<120000)_locPrompt=null;
+    // The 2-minute floor stops a drive-through from prompting; it must NOT
+    // blink an already-open card off when a fence bounce or a phantom-speed
+    // eviction re-stamps the same visit's arrival (owner video 2026-08-11:
+    // the shop card popped in, then vanished a second later). vkey is the
+    // visit's identity WITHOUT the arrival stamp: same place + card already
+    // showing means the dwell was already served, whatever the stamp says.
+    const _cardOpenNow=_nearbyEl.style.display==='block';
+    if(_locPrompt&&(Date.now()-Date.parse(_locPrompt.at))<120000&&
+       !(_cardOpenNow&&window._locPromptSticky===_locPrompt.vkey))_locPrompt=null;
+    if(_locPrompt)window._locPromptSticky=_locPrompt.vkey;
+    else if(!_cardOpenNow)window._locPromptSticky=null;
     const _locPromptList=(_locPrompt&&typeof _locPromptJobs==='function')?_locPromptJobs().slice(0,5):[];
     const _showLocPrompt=!_onClock&&!_nearbyJob&&_locPromptList.length>0;
     // ON THE ROAD: the automatic system's first piece of live feedback (owner
     // ask 2026-08-07). Reads the fence machine's own drive state, never
     // re-derived: an open drive leg with recent driving speed.
     const _driving=!_onClock&&(typeof _geoDriving==='function')&&_geoDriving();
+    // Styles hoisted OUT of the live branch: the optimistic snapshot card
+    // below needs the same keyframes before any live state exists.
+    if(!document.getElementById('_td-nearby-anim-style')){
+      const _s=document.createElement('style');_s.id='_td-nearby-anim-style';
+      // A radar-ping (concentric rings expanding from the pin) + a live status dot
+      // read as "on site, right now", the GPS moment made visible.
+      _s.textContent='@keyframes tdNearbyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}'+
+        '@keyframes tdNearbyOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(6px)}}'+
+        '@keyframes tdNearbyDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}'+
+        '@keyframes tdGeoPing{0%{transform:scale(.45);opacity:.85}80%{opacity:0}100%{transform:scale(1.18);opacity:0}}'+
+        '@keyframes tdDriveMove{0%{transform:translateX(-3px)}50%{transform:translateX(3px)}100%{transform:translateX(-3px)}}';
+      document.head.appendChild(_s);
+    }
     if(_onClock||_driving||_nearbyJob||_showLocPrompt){
-      if(!document.getElementById('_td-nearby-anim-style')){
-        const _s=document.createElement('style');_s.id='_td-nearby-anim-style';
-        // A radar-ping (concentric rings expanding from the pin) + a live status dot
-        // read as "on site, right now", the GPS moment made visible.
-        _s.textContent='@keyframes tdNearbyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}'+
-          '@keyframes tdNearbyOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(6px)}}'+
-          '@keyframes tdNearbyDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}'+
-          '@keyframes tdGeoPing{0%{transform:scale(.45);opacity:.85}80%{opacity:0}100%{transform:scale(1.18);opacity:0}}'+
-          '@keyframes tdDriveMove{0%{transform:translateX(-3px)}50%{transform:translateX(3px)}100%{transform:translateX(-3px)}}';
-        document.head.appendChild(_s);
-      }
       const _svgPin=(c,sz)=>'<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+'" fill="none" stroke="'+c+'" stroke-width="2"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
       const _fmtClk=(t)=>{try{return new Date(t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
       const _fmtDur=(ms)=>{const s=Math.max(0,Math.floor((Date.now()-ms)/1000));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return (h?h+'h ':'')+m+'m';};
       const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
+      // NEVER reveal mid-waterfall. A geo fix landing during the boot cascade
+      // used to slide this card open while the cards below were still pouring
+      // in: two animations fighting over the same layout, which is exactly the
+      // stutter the owner keeps seeing (spec 2026-08-11: one waterfall, no
+      // stutters). The content still renders (hidden); the REVEAL waits out
+      // the pour, then a fresh render slides it open once.
+      const _holdReveal=_wasHidden&&!!document.querySelector('#pg-dash.boot-cascade');
+      if(_holdReveal&&!window._nearbyPourWait){
+        window._nearbyPourWait=setInterval(()=>{
+          if(document.querySelector('#pg-dash.boot-cascade'))return;
+          clearInterval(window._nearbyPourWait);window._nearbyPourWait=null;
+          try{renderDash();}catch(_e){}
+        },140);
+      }
       if(_nearbyHideTimer){clearTimeout(_nearbyHideTimer);_nearbyHideTimer=null;} // a re-appearance mid-fade-out must not get hidden out from under it
       _nearbyEl.style.animation='';
-      _nearbyEl.style.display='block';
+      if(!_holdReveal)_nearbyEl.style.display='block';
+      if(!_holdReveal&&_wasHidden){
+        // The geo fix usually lands seconds AFTER the boot waterfall, and this
+        // card sits at the top of the dashboard: popping in at full height
+        // shoved every card below it down in one frame, which read as the
+        // whole dashboard dropping again (owner 2026-08-10). Slide the space
+        // open instead (§8.4: max-height with a known cap, never height:auto).
+        // Synchronous reflow between the two values, NOT requestAnimationFrame:
+        // rAF throttles on unfocused pages, leaving the card stuck at 0 height.
+        _nearbyEl.style.overflow='hidden';
+        _nearbyEl.style.maxHeight='0px';
+        _nearbyEl.style.transition='max-height .3s cubic-bezier(.22,1,.36,1)';
+        void _nearbyEl.offsetHeight;
+        _nearbyEl.style.maxHeight='560px';
+        setTimeout(()=>{_nearbyEl.style.maxHeight='';_nearbyEl.style.transition='';_nearbyEl.style.overflow='';},380);
+      }
       const _cardShell=(inner)=>'<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(22,163,74,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(22,163,74,.16),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f6fbf7 100%);box-shadow:0 10px 30px -12px rgba(14,107,57,.35),0 2px 8px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+inner+'</div>';
       const _cardHead=(name,addr,extra)=>'<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
           '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
@@ -735,16 +782,54 @@ function renderDash(){
         const _extra=hasBalance?'<div style="font-size:12px;color:#B45309;font-weight:700;margin-top:3px">'+fmt(nb.balance)+' owed</div>':'';
         _nearbyEl.innerHTML=_cardShell(_cardHead(nb.clientName,nb.addr,_extra)+_nbNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+nbBtns.join('')+'</div>');
       }
-    }else if(_nearbyEl.style.display!=='none'&&_nearbyEl.innerHTML.trim()){
+      // Snapshot the rendered card: the next page load shows it INSTANTLY at
+      // the settle pour instead of waiting seconds for the first GPS fix
+      // (owner 2026-08-10: "comes in 3 seconds late"). Live truth replaces it
+      // the moment a fix arrives (_geoFixSeen, js/geo-track.js).
+      delete _nearbyEl.dataset.snap;
+      window._nearbyLiveRendered=true; // real state has painted: the optimistic boot restore is over for this page load
+      try{localStorage.setItem('zp3_nearby_snap',JSON.stringify({html:_nearbyEl.innerHTML,ts:Date.now(),uid:(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null}));}catch(_e){}
+    }else if(!window._geoFixSeen&&!window._nearbyLiveRendered&&(_nearbyEl.style.display==='none'||!_nearbyEl.style.display)&&!_nearbyEl.dataset.snap){
+      // No live geo state YET (no fix this session): show the last session's
+      // card optimistically if it is fresh, so the boot pour includes it.
+      // A version-watchdog reload mid-workday is seconds old, exactly the
+      // case that felt broken. Stale (>10 min) or another user's card never
+      // shows, and the first real fix either confirms or animates it away.
+      try{
+        const _sn=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
+        // 45 min, up from 10 (owner's 6:54p boot, video 3: a 26-minute gap
+        // made the snapshot stale, so the ON SITE card missed the waterfall
+        // and slid in 2s late). A fence-state card is durable on that scale,
+        // parked stays parked, and the live fix corrects it in place within
+        // seconds anyway; only a card from another USER is ever dangerous.
+        if(_sn&&_sn.html&&_sn.uid===((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null)&&(Date.now()-_sn.ts)<2700000){
+          _nearbyEl.dataset.snap='1';
+          _nearbyEl.style.animation='';
+          _nearbyEl.innerHTML=_sn.html;
+          _nearbyEl.style.display='block';
+        }
+      }catch(_e){}
+    }else if(_nearbyEl.style.display!=='none'&&_nearbyEl.innerHTML.trim()&&(!_nearbyEl.dataset.snap||window._geoFixSeen)){
       // Slide/fade out instead of an abrupt display:none (CLAUDE.md §8): the
       // card keeps its content and animates itself away, hard-hidden only
       // once that's actually finished. Mirrors the .22s entrance (tdNearbyIn).
       _nearbyEl.style.animation='tdNearbyOut .18s ease both';
+      // Collapse the space too: without this the fade ends and everything
+      // below jumps UP one frame, the mirror of the entrance yank.
+      _nearbyEl.style.overflow='hidden';
+      _nearbyEl.style.maxHeight=_nearbyEl.offsetHeight+'px';
+      _nearbyEl.style.transition='max-height .24s ease';
+      void _nearbyEl.offsetHeight; // flush, then collapse (no rAF: throttles unfocused)
+      _nearbyEl.style.maxHeight='0px';
+      // Real truth says no card: the stored snapshot is obsolete too.
+      delete _nearbyEl.dataset.snap;
+      try{localStorage.removeItem('zp3_nearby_snap');}catch(_e){}
       _nearbyHideTimer=setTimeout(()=>{
         _nearbyHideTimer=null;
         _nearbyEl.style.display='none';
         _nearbyEl.style.animation='';
-      },180);
+        _nearbyEl.style.maxHeight='';_nearbyEl.style.transition='';_nearbyEl.style.overflow='';
+      },250);
     }
   }
   // Update new nav badges
@@ -772,7 +857,53 @@ function renderDash(){
   renderContractsDash&&renderContractsDash();
 
   setTimeout(()=>{_applyDashOrder(_getDashWidgetOrder());if(typeof _initDashDrag==='function')_initDashDrag();_applyKpiOrder();if(typeof _initKpiDrag==='function')_initKpiDrag();},0);
+  _dashApplySkeletons();
   }finally{_renderDashRunning=false;}
+}
+
+// ── One clean boot (owner 2026-08-10) ────────────────────────────────────────
+// "Dashboard load, shimmer skeleton always, then everything loads in nicely."
+// Until the FIRST cloud sync of this page load lands, every dashboard card
+// shows the shared shimmer instead of stale or zero numbers; when the sync
+// settles (_bootSyncSettled in cloud.js) the real content renders and the one
+// boot cascade pours over it. A 15 s failsafe ends the shimmer even if the
+// sync wedges, stale data beats an eternal skeleton.
+function _dashSkelMode(){
+  // _bootSyncPending is set ONLY where a signed-in boot awaits its first
+  // cloud load (cloud.js). Gating on it (never on _supaCloudLoaded, which
+  // legitimately stays false on accountless/offline/test boots) means those
+  // boots render normally instead of shimmering into the failsafe.
+  return !!window._bootSyncPending&&!window._bootSkelDone;
+}
+function _dashApplySkeletons(){
+  if(!_dashSkelMode())return;
+  if(!window._bootSkelTimer){
+    window._bootSkelTimer=setTimeout(()=>{if(typeof _bootSyncSettled==='function')_bootSyncSettled();},15000);
+  }
+  // NON-DESTRUCTIVE overlay: widgets carry static markup (quick-actions grid,
+  // card shells) that renderDash writes INTO but never rebuilds, so wiping
+  // innerHTML would gut the dashboard permanently. Instead each widget gets a
+  // removable .td-boot-skel card appended and a class that hides its real
+  // children (CSS rule next to .td-skel in index.html). The greeting bar is
+  // included: EVERYTHING shimmers until the sync settles (owner 2026-08-10).
+  const targets=[...document.querySelectorAll('#pg-dash>.tbar'),...document.querySelectorAll('#dash-widget-root>.td-dw')];
+  targets.forEach(el=>{
+    if(el.querySelector(':scope>.td-boot-skel'))return;
+    const tbar=el.classList.contains('tbar');
+    const h=tbar?44:el.offsetHeight;
+    if(!h)return; // empty/hidden conditional widgets stay collapsed, no phantom card
+    const sk=document.createElement('div');
+    sk.className='td-boot-skel'+(tbar?'':' card');
+    sk.innerHTML=(typeof _tdSkelRows==='function')?_tdSkelRows(tbar?1:Math.max(2,Math.min(5,Math.round(h/46))),tbar?18:undefined):'';
+    el.classList.add('td-boot-skel-on');
+    el.appendChild(sk);
+  });
+}
+function _dashClearSkeletons(){
+  document.querySelectorAll('#pg-dash .td-boot-skel-on').forEach(el=>{
+    el.classList.remove('td-boot-skel-on');
+    el.querySelectorAll(':scope>.td-boot-skel').forEach(s=>s.remove());
+  });
 }
 
 // ── Employee status updates from daily view ───────────────────────────────────
@@ -933,6 +1064,25 @@ function _openJobNoteEditor(jobId){
     '</div>'+
     '<button onclick="_saveJobNote('+j.id+')" class="btn btn-g" style="width:100%;height:48px;font-size:15px;font-weight:800;border-radius:var(--r);margin-top:16px">Save note</button>';
   ov.appendChild(sheet);document.body.appendChild(ov);
+  // Hold-to-talk on both note fields (js/voice.js). This is THE moment voice
+  // notes exist for: the crew is standing on site with gloves on and something
+  // to remember. Draws nothing at all on a device that cannot dictate.
+  _jnAttachMics();
+}
+// Wrap each note textarea in a row so the mic sits beside it instead of
+// stretching the field. Idempotent: re-running finds the existing row.
+function _jnAttachMics(){
+  if(typeof _voiceAttach!=='function')return;
+  ['_jn-note-ta','_jn-site-ta'].forEach(id=>{
+    const ta=document.getElementById(id);
+    if(!ta||ta.parentElement?.classList.contains('td-voice-row'))return;
+    const row=document.createElement('div');
+    row.className='td-voice-row';
+    row.style.cssText='display:flex;align-items:flex-end;gap:8px';
+    ta.parentElement.insertBefore(row,ta);
+    row.appendChild(ta);
+    _voiceAttach(id,{host:row});
+  });
 }
 
 // Pull the editor's current field values onto the job/client WITHOUT closing or
@@ -2634,7 +2784,7 @@ function openBidDetail(bidId,view){
       }).catch(()=>{});
     }
   }else if(storageKey&&typeof _supa!=='undefined'){
-    propPane.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:13px">Loading proposal…</div>';
+    propPane.innerHTML='<div style="padding:24px 16px">'+_tdSkelRows(4,13)+'</div>';
     _supa.storage.from('proposals').download(storageKey).then(({data,error})=>{
       if(error||!data){propPane.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:13px;font-style:italic">Could not load proposal from storage.</div>';return;}
       data.text().then(txt=>{
@@ -2948,7 +3098,16 @@ function _mergeDashOrder(saved) {
 function _applyDashOrder(order) {
   const root = document.getElementById('dash-widget-root');
   if (!root) return;
-  _mergeDashOrder(order).forEach(id => {
+  const want = _mergeDashOrder(order);
+  // Re-appending a DOM node RESTARTS any CSS animation running on it, and
+  // this runs on EVERY renderDash: during the boot pour window that replayed
+  // the ENTIRE waterfall whenever anything re-rendered (owner 2026-08-10:
+  // the geofence card's late render "keeps reiterating the waterfall").
+  // Touch the DOM only when the order is actually wrong.
+  const cur = [...root.querySelectorAll(':scope>.td-dw')].map(el => el.dataset.dw);
+  const present = want.filter(id => cur.includes(id));
+  if (cur.filter(id => present.includes(id)).join() === present.join()) return;
+  want.forEach(id => {
     const el = root.querySelector(`.td-dw[data-dw="${id}"]`);
     if (el) root.appendChild(el);
   });
@@ -2978,7 +3137,7 @@ function _initDashDrag() {
   function enter() {
     if (editMode) return;
     editMode = true;
-    navigator.vibrate?.(45);
+    _tdHaptic('heavy');  // long-press held: edit mode is on
     root.classList.add('td-drag-active');
     root.addEventListener('click', _swallowClick, true);
     doneBtn = document.createElement('button');
@@ -3075,7 +3234,7 @@ function _initDashDrag() {
       if (before) root.insertBefore(placeholder, before);
       else root.appendChild(placeholder);
     });
-    navigator.vibrate?.(8); // tiny tick as cards glide aside, iOS-style
+    _tdHaptic('tick'); // tiny tick as cards glide aside, iOS-style
   }
 
   function onDrop() {
@@ -3088,7 +3247,7 @@ function _initDashDrag() {
     const settled = dragEl;
     settled.classList.add('td-drop-settle');
     setTimeout(() => { try { settled.classList.remove('td-drop-settle'); } catch (_e) {} }, 320);
-    navigator.vibrate?.(12);
+    _tdHaptic('tap');    // the card settles back into the grid
     ghost?.remove(); ghost = null;
     placeholder = null; dragEl = null;
   }
@@ -3109,6 +3268,12 @@ function _applyKpiOrder() {
   const cont = document.getElementById('dash-mets-inner');
   if (!cont) return;
   const order = _getKpiOrder();
+  // Same no-op guard as _applyDashOrder: re-appending restarts animations,
+  // so skip the DOM churn when the tiles are already in order.
+  const want = order.concat(_DASH_KPI_DEFAULT.filter(id => !order.includes(id)));
+  const cur = [...cont.querySelectorAll('.met[data-kpi]')].map(el => el.dataset.kpi);
+  const present = want.filter(id => cur.includes(id));
+  if (cur.filter(id => present.includes(id)).join() === present.join()) return;
   order.forEach(id => {
     const el = cont.querySelector(`.met[data-kpi="${id}"]`);
     if (el) cont.appendChild(el);
@@ -3146,7 +3311,7 @@ function _initKpiDrag() {
   function enter() {
     if (editMode) return;
     editMode = true;
-    navigator.vibrate?.(45);
+    _tdHaptic('heavy');  // long-press held: edit mode is on
     cont.classList.add('td-drag-active');
     cont.addEventListener('click', _swallowClick, true);
     doneBtn = document.createElement('button');

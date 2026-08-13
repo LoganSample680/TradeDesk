@@ -268,6 +268,10 @@ function _isMyTimeEntry(e){
 
 function clockIn(jobId,scopeId,scopeLabel){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  // The clock is the most physical moment in the app: the crew is standing on
+  // the site with the phone in a glove. It gets its own tap regardless of
+  // which toast (if any) follows.
+  _tdHaptic('thud');
   // Defense in depth: openClockInSheet() already refuses to open on a
   // closed job, but clockIn() is reachable directly too, never let a
   // completed/cancelled job accept a new time entry either way.
@@ -311,6 +315,7 @@ function clockIn(jobId,scopeId,scopeLabel){
 
 function clockOut(saveEntry,silent){
   if(!_activeTimer)return;
+  _tdHaptic('thud');   // day's work banked, same weight as clocking in
   clearInterval(_activeTimer.timerInterval);
   const minutes=Math.max(1,Math.round((Date.now()-_activeTimer.startTime)/60000));
   const jobId=_activeTimer.jobId;

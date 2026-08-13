@@ -29,6 +29,7 @@
 
 let _geoWatchId=null;
 let _geoCurrentJob=null;   // job id the employee is currently inside the fence of
+let _geoNotifiedArrivalJob=null; // last job we fired an arrival notification for (one per arrival, not per ping)
 let _geoArrivedAt=null;    // ISO arrival timestamp for the open entry
 let _geoLastPingTs=0;      // throttle for location_pings inserts
 let _geoJobCoords={};      // jobId -> {lat,lng} geocode cache (per session)
@@ -37,6 +38,8 @@ let _geoCurrentPlace=null; // id of the known place (supply house etc.) we're in
 let _geoPlaceArrivedAt=null;// ISO arrival at that place, for dwell measurement
 let _geoShopArrivedAt=null;// ISO timestamp of shop arrival
 let _geoDriveStartedAt=null;// ISO timestamp when a drive leg began (leaving any fence)
+let _geoDrivebyRun=0;      // consecutive driving-speed fixes inside a fence (eviction debounce)
+let _geoPersistPingMs=0;   // last time the open state was snapshotted to disk mid-drive
 let _geoStopAnchor=null;   // {lat,lng,at,lastAt} while parked OUTSIDE every fence
 let _geoLegAtShop=false;   // was the LEG machine's location the shop last ping? Distinct
                            // from _geoWasInShop, which is the independent shop DWELL flag,
@@ -141,9 +144,12 @@ const _GEO_DRIVEBY_SPEED_MPS=3.6; // ~8mph
 // on arrival, so the two can differ slightly and that is fine), plus the
 // latest speed. Display state only, nothing here touches what gets logged.
 let _geoDriveMiles=0;     // straight-line miles accumulated across pings this leg
+let _geoDriveSteps=0;     // how many accumulation hops built that tally: a tally from 2 hops is a guess, from 20 it is a road trace
 let _geoDriveLastFix=null;// {lat,lng,atMs} last fix used for that accumulation
 let _geoDriveMph=0;       // latest speed reading, mph (device speed, else derived)
 let _geoDriveMovingAt=0;  // ms of the last ping at driving speed, banner visibility
+let _geoMphZeroRun=0;     // consecutive near-zero device speed readings
+let _geoMphHeldZero=false;// this ping's zero was held as a GPS hiccup, not motion
 let _geoDriveShown=false; // was the banner on screen after the last ping
 // Accumulation floor: below this the fix is parking-lot jitter, not travel.
 const _GEO_DRIVE_ACCUM_FT=100;
@@ -156,7 +162,7 @@ function _geoDriving(){
   const _tracking=_geoWatchId!=null||(typeof _geoNativeWatcherId!=='undefined'&&_geoNativeWatcherId!=null);
   return !!(_tracking&&_geoDriveStartedAt&&(Date.now()-_geoDriveMovingAt)<_GEO_DRIVE_SHOW_MS);
 }
-function _geoDriveReset(){_geoDriveMiles=0;_geoDriveLastFix=null;_geoDriveMph=0;_geoDriveMovingAt=0;}
+function _geoDriveReset(){_geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix=null;_geoDriveMph=0;_geoDriveMovingAt=0;_geoMphZeroRun=0;_geoMphHeldZero=false;}
 
 // ── Offline-durable time-entry queue ──────────────────────────────────────────
 // Every arrival→departure record is written to the DEVICE first and drained to
@@ -171,6 +177,18 @@ let _geoDrainBusy=false;
 // Why the queue last stopped draining, for diagnostics. Null while healthy.
 let _geoQueueLastError=null;
 function _geoClientKey(){return ((_supaUser&&_supaUser.id)||'anon').slice(0,8)+'-'+Date.now().toString(36)+'-'+Math.floor(Math.random()*1e6).toString(36);}
+// The key for a drive LEG, and it must be DETERMINISTIC: derived from who was
+// driving and when the leg began, nothing random. A leg can be closed more than
+// once (a buffered native event replayed, or a parking-lot reposition
+// re-delivering the arrival), and each close reaches _geoDriveEntry separately.
+// With a random key every close mints a "new" leg and the idempotency checks
+// downstream (mileage.some legKey match, the server's
+// contractor_user_id+client_key upsert) all wave the duplicate through: that is
+// exactly the owner's 2026-08-11 triple-logged drive. Same person + same leg
+// start = same key, so the second close is recognised as the first one again.
+function _geoLegKey(startedIso){
+  return ((_supaUser&&_supaUser.id)||'anon').slice(0,8)+'-leg-'+((Date.parse(startedIso)||0)).toString(36);
+}
 function _geoQueueRead(){try{return JSON.parse(localStorage.getItem(_GEO_QUEUE_KEY)||'[]');}catch(_e){return[];}}
 function _geoQueueWrite(q){try{localStorage.setItem(_GEO_QUEUE_KEY,JSON.stringify(q));}catch(_e){}}
 function _geoEnqueue(tbl,row){
@@ -263,6 +281,15 @@ function _geoPersistOpen(hiddenAt){
       localStorage.setItem(_GEO_OPEN_KEY,JSON.stringify({
         job:_geoCurrentJob,arrivedAt:_geoArrivedAt,wasInShop:_geoWasInShop,
         shopArrivedAt:_geoShopArrivedAt,driveStartedAt:_geoDriveStartedAt,
+        // WHERE THE DRIVE STARTED, not just that one is open (owner report
+        // 2026-08-09: "FBC to home didn't log", with every endpoint saved).
+        // These were memory-only, so an app kill left a restored drive with
+        // no origin, and _geoAutoMileage bails silently without one: the
+        // arrival wrote drive TIME and no mileage row at all. Park mode makes
+        // that the common case rather than the rare one, because it is
+        // designed to let iOS kill the app while parked.
+        legOrigin:_geoLegOrigin,lastFenceLoc:_geoLastFenceLoc,lastFenceAt:_geoLastFenceAt,
+        stopAnchor:_geoStopAnchor,
         hiddenAt:hiddenAt||new Date().toISOString(),uid:(_supaUser&&_supaUser.id)||null,day:todayKey()
       }));
     }else localStorage.removeItem(_GEO_OPEN_KEY);
@@ -283,7 +310,20 @@ function _geoRestoreOpen(){
     if(_geoCurrentJob||_geoArrivedAt)return; // live state wins, never clobber a running session
     _geoCurrentJob=s.job;_geoArrivedAt=s.arrivedAt;
     _geoWasInShop=!!s.wasInShop;_geoShopArrivedAt=s.shopArrivedAt;
+    // The drive comes back WITH its origin, which is what makes it billable.
+    // (A freshness cap lived here for one commit and was wrong: a 45-minute
+    // lunch is a normal parked gap, and dropping the drive threw the leg home
+    // away, the very bug being fixed. The junk-leg resurrection it aimed at
+    // is handled properly by the fence-bounce guard in _geoDriveEntry, which
+    // now works across a restart precisely BECAUSE the origin survives: a
+    // bounce restores with origin == destination and is refused.)
     _geoDriveStartedAt=s.driveStartedAt;
+    if(!_geoLegOrigin&&s.legOrigin)_geoLegOrigin=s.legOrigin;
+    if(!_geoLastFenceLoc&&s.lastFenceLoc)_geoLastFenceLoc=s.lastFenceLoc;
+    if(!_geoLastFenceAt&&s.lastFenceAt)_geoLastFenceAt=s.lastFenceAt;
+    // The stop they were parked at comes back too, so its own time entry and
+    // the detour fold still happen when they finally pull away.
+    if(!_geoStopAnchor&&s.stopAnchor)_geoStopAnchor=s.stopAnchor;
     // Job and place come back through their own vars; only the shop leg flag
     // needs seeding, or a session restored at the yard loses its next leg.
     _geoLegAtShop=!!s.wasInShop&&!s.job;
@@ -411,8 +451,28 @@ function _geoLocOfJob(j){
           jobId:j.id,clientId:j.client_id||null,addr:j.addr||(cl&&cl.addr)||''};
 }
 
+// ── Fresh-fix subscription ───────────────────────────────────────────────────
+// A one-shot listener for "a real position just came in". Deliberately NOT
+// navigator.geolocation: inside the shell that is shimmed to serve a cached fix
+// for up to two minutes, which is correct for weather and wrong for anything
+// asking where somebody is this second.
+let _geoFixSubs=[];
+function _geoOnFreshFix(fn){
+  if(typeof fn!=='function')return ()=>{};
+  _geoFixSubs.push(fn);
+  return ()=>{_geoFixSubs=_geoFixSubs.filter(f=>f!==fn);};
+}
+function _geoEmitFix(fix){
+  if(!_geoFixSubs.length)return;
+  _geoFixSubs.slice().forEach(fn=>{try{fn(fix);}catch(_e){}});
+}
+
 // ── Position handler: breadcrumb + geofence state machine ──────────────────────
 async function _geoOnPing(pos){
+  // The dashboard's optimistic geo card (renderDash, js/dashboard.js) shows
+  // the LAST session's card until real GPS truth arrives; this flag is that
+  // truth arriving, after it the live state alone decides the card.
+  window._geoFixSeen=true;
   // RE-ENTRANCY GUARD: this handler awaits network geocodes, and watchPosition can
   // fire faster than they resolve. Interleaved runs used to apply a STALE position
   // after a fresher one and flip arrive/depart backwards, overlapping pings are
@@ -425,9 +485,17 @@ async function _geoOnPing(pos){
   // First fix of the day anchors the commute guard: wherever the working day
   // started is where this person left FROM, and that leg is not deductible.
   if(typeof noteDayStart==='function')noteDayStart(here);
-  // Throttled breadcrumb (~60s)
-  const nowMs=Date.now();
+  // Throttled breadcrumb (~60s). A replayed TdGeo buffer event carries the
+  // moment it actually happened (__tdTs); everything downstream in this
+  // handler clocks off nowMs, so the whole fence machine honors it.
+  const nowMs=(pos&&pos.__tdTs)||Date.now();
   if(nowMs-_geoLastPingTs>60000){_geoLastPingTs=nowMs;_geoWritePing(here,acc);}
+  // Every fix, from every source (web watcher, native watcher, TdGeo burst,
+  // replayed buffer), funnels through here, so this is the one honest place to
+  // tell anybody waiting on a FRESH position that one just arrived. Push to
+  // locate (js/crew-locate.js) is the caller: it cannot use the shimmed
+  // getCurrentPosition, which answers from a two-minute cache on purpose.
+  _geoEmitFix({lat:here.lat,lng:here.lng,acc:Math.round(acc||0),ts:nowMs});
   // ── Live drive banner: rolling miles + speed ──────────────────────────────
   // Runs BEFORE the fence machine so the fix that closes the leg still counts
   // its last stretch of road. Straight-line ping to ping: display only, the
@@ -437,7 +505,7 @@ async function _geoOnPing(pos){
       const stepFt=_geoDistFt(here,_geoDriveLastFix);
       const dtMs=nowMs-_geoDriveLastFix.atMs;
       if(stepFt>_GEO_DRIVE_ACCUM_FT){
-        _geoDriveMiles+=stepFt/5280;
+        _geoDriveMiles+=stepFt/5280;_geoDriveSteps++;
         // Derived speed as the fallback: plenty of devices ping without a
         // speed reading, and distance over time is honest for a 20-30s gap.
         if(dtMs>3000)_geoDriveMph=(stepFt/5280)/(dtMs/3600000);
@@ -454,8 +522,21 @@ async function _geoOnPing(pos){
     }
   }
   // The device's own reading wins when present, it is current rather than a
-  // trailing average.
-  if(typeof pos.coords.speed==='number'&&pos.coords.speed>=0)_geoDriveMph=pos.coords.speed*2.23694;
+  // trailing average. EXCEPT a lone zero in the middle of road speed: that is
+  // a GPS hiccup, not a stop (owner: "at times the speed was wrong"), so the
+  // readout holds for one ping. A real stop light sends a STREAM of zeros and
+  // lands on the second one; the held ping also never counts as motion for
+  // the banner clock, so a fade is never postponed by a hiccup.
+  _geoMphHeldZero=false;
+  if(typeof pos.coords.speed==='number'&&pos.coords.speed>=0){
+    const _mphNow=pos.coords.speed*2.23694;
+    if(_mphNow<1&&_geoDriveMph>=8&&_geoMphZeroRun===0){
+      _geoMphZeroRun=1;_geoMphHeldZero=true;
+    }else{
+      _geoMphZeroRun=(_mphNow<1)?_geoMphZeroRun+1:0;
+      _geoDriveMph=_mphNow;
+    }
+  }
   // ── Home-office activity sampling ─────────────────────────────────────────
   // Sampled per ping rather than driven by visibilitychange, because a web app
   // stops getting pings the moment it is backgrounded, which is exactly the
@@ -518,8 +599,17 @@ async function _geoOnPing(pos){
   // _GEO_DRIVEBY_SPEED_MPS above). Cleared here, before the independent shop
   // dwell block below AND before `cur`, so neither one is fooled by it.
   if((insideId||inShop||atPlaceId||atClientId)&&typeof pos.coords.speed==='number'&&pos.coords.speed>=_GEO_DRIVEBY_SPEED_MPS){
-    insideId=null;inShop=false;atPlaceId=null;atClientId=null;
-  }
+    // An ESTABLISHED occupant gets a second opinion before eviction (owner
+    // video 2026-08-11: one phantom driving-speed fix while parked at the
+    // yard closed the shop dwell, the next ping re-stamped the arrival, and
+    // the dashboard's on-site card blinked off behind its 2-minute floor).
+    // A genuine pull-away reports driving speed on consecutive fixes, so the
+    // close waits one ping; a genuine drive-BY was never established here
+    // and still masks on the first fix, exactly as before.
+    const _estab=!!(_geoWasInShop||_geoCurrentJob||_geoCurrentPlace||_geoCurrentClient);
+    _geoDrivebyRun++;
+    if(!_estab||_geoDrivebyRun>=2){insideId=null;inShop=false;atPlaceId=null;atClientId=null;}
+  }else _geoDrivebyRun=0;
   const nowIsoEarly=new Date(nowMs).toISOString();
   // ── Shop dwell, tracked on its own ────────────────────────────────────────
   // Being at the yard logs SHOP TIME, full stop (owner call 2026-08-01). It is
@@ -531,7 +621,10 @@ async function _geoOnPing(pos){
     else{
       // A hidden gap since arrival: close at the last VERIFIED moment rather
       // than claiming shop time nobody observed.
-      if(_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt,_geoGapHiddenAt||undefined);
+      // nowIsoEarly rather than nothing: live they are the same moment, and a
+      // replayed TdGeo buffer fix closes the dwell at the moment the departure
+      // actually happened rather than at the replay moment.
+      if(_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt,_geoGapHiddenAt||nowIsoEarly);
       _geoShopArrivedAt=null;
     }
     _geoWasInShop=inShop;
@@ -609,8 +702,8 @@ async function _geoOnPing(pos){
       // behavior). The 'geofence-gap' source tag still marks the row as
       // gap-resolved rather than continuously observed.
       if(prev.k==='job'&&_geoArrivedAt)await _geoCloseEntry(_geoCurrentJob,nowIso,!!_geoGapHiddenAt);
-      else if(prev.k==='place'&&_geoPlaceArrivedAt)_geoClosePlaceEntry(_geoCurrentPlace,_geoPlaceArrivedAt);
-      else if(prev.k==='client'&&_geoClientArrivedAt)_geoCloseClientEntry(_geoCurrentClient,_geoClientArrivedAt);
+      else if(prev.k==='place'&&_geoPlaceArrivedAt)_geoClosePlaceEntry(_geoCurrentPlace,_geoPlaceArrivedAt,nowIso);
+      else if(prev.k==='client'&&_geoClientArrivedAt)_geoCloseClientEntry(_geoCurrentClient,_geoClientArrivedAt,nowIso);
       // prev.k==='shop' needs nothing here: the independent shop block above
       // owns that dwell, and only closes it when they actually leave the yard.
     }else if(_geoStopAnchor){
@@ -649,8 +742,11 @@ async function _geoOnPing(pos){
     if(cur){
       _geoCollapseDetours();   // unreceipted anonymous stops between here and the last real endpoint are detours
       if(legStart){
-        if(cur.k==='job')_geoDriveEntry(cur.id,legStart,null,null,legGap,curLoc,legStale);
-        else _geoDriveEntry(null,legStart,cur.name,null,legGap,curLoc,legStale);
+        // nowIso, not null: live it IS now, and a replayed TdGeo buffer fix
+        // carries the moment the arrival actually happened, so the leg's
+        // duration stays honest instead of stretching to the replay moment.
+        if(cur.k==='job')_geoDriveEntry(cur.id,legStart,null,nowIso,legGap,curLoc,legStale);
+        else _geoDriveEntry(null,legStart,cur.name,nowIso,legGap,curLoc,legStale);
       }
       _geoDriveStartedAt=null;
       _geoDriveReset();
@@ -662,7 +758,7 @@ async function _geoOnPing(pos){
       // conservative start.
       if(!_geoDriveStartedAt){
         _geoDriveStartedAt=nowIso;_geoLegOrigin=_geoLastFenceLoc;
-        _geoDriveMiles=0;_geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs};
+        _geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs};
       }
       _geoStopAnchor={lat:here.lat,lng:here.lng,at:nowIso,lastAt:nowIso};
     }
@@ -674,8 +770,33 @@ async function _geoOnPing(pos){
     _geoPlaceArrivedAt=(cur&&cur.k==='place')?nowIso:null;
     _geoCurrentClient=(cur&&cur.k==='client')?cur.id:null;
     _geoClientArrivedAt=(cur&&cur.k==='client')?nowIso:null;
+    // The park dwell clock starts at the moment THIS fence was entered; a
+    // shop-to-job hop must not inherit the shop's dwell.
+    _geoFenceEnteredAtMs=cur?nowMs:null;
     if(cur&&cur.k==='job'){_geoPersistOpen();_geoWakeAcquire();}
-    else{_geoClearOpen();_geoWakeRelease();}
+    // _geoPersistOpen, NOT _geoClearOpen: it self-clears when nothing is open,
+    // and the transition that OPENS a drive lands here (cur=null). The old
+    // clear deleted the snapshot at the exact start of every drive, so a
+    // webview crash mid-leg had nothing to restore: the leg's origin died
+    // with the session and the journey vanished from the log (owner
+    // 2026-08-11: home -> Home Depot never logged across the crash).
+    else{_geoPersistOpen();_geoWakeRelease();}
+    // ARRIVAL TAP-BACK (owner 2026-08-10: "when you arrive can it route back
+    // to tradedesk automatically?"). It cannot: no iOS API lets an app bring
+    // itself forward, from Apple Maps or anywhere else. A notification the
+    // driver taps is the sanctioned equivalent, and this is the moment we
+    // know they arrived. Only on a REAL job-fence entry, never a shop hop.
+    if(cur&&cur.k==='job'&&_geoCurrentJob!==_geoNotifiedArrivalJob){
+      _geoNotifiedArrivalJob=_geoCurrentJob;
+      try{
+        if(typeof _notifyArrival==='function'){
+          const _j=(typeof jobs!=='undefined'&&jobs.find)?jobs.find(x=>String(x.id)===String(_geoCurrentJob)):null;
+          const _c=(_j&&_j.client_id!=null&&typeof getClientById==='function')?getClientById(_j.client_id):null;
+          _notifyArrival((_c&&_c.name)||(_j&&_j.name)||'the job site',_j&&_j.name);
+        }
+      }catch(_e){}
+    }
+    if(!(cur&&cur.k==='job'))_geoNotifiedArrivalJob=null;   // re-arm for the next arrival
     // The dashboard's "ON SITE" card (renderDash, js/dashboard.js) reads
     // _geoCurrentJob/_geoCurrentPlace/_geoWasInShop straight off this module,
     // but nothing in this handler ever told it those changed. Every OTHER path
@@ -693,12 +814,78 @@ async function _geoOnPing(pos){
   // The last fix that still put them inside something. This is the only
   // departure evidence a single-ping transition ever has.
   if(cur){_geoLastFenceAt=nowIso;_geoLastFenceLoc=curLoc;}
+  // ── TdGeo duty cycle ──────────────────────────────────────────────────────
+  // Two parked shapes, both head toward GPS-off (no-op outside the shell):
+  // settled inside a FENCE and not driving, or below driving speed outside
+  // every fence: an anonymous stop, or ON FOOT. Judged on speed rather than
+  // displacement, because a walker resets the stop anchor forever and GPS
+  // never shut off (owner report 2026-08-09: "I walk everywhere with my
+  // phone"). The countdown timer alone is NOT trusted: WKWebView suspends JS
+  // timers with the screen locked, so any ping whose dwell has ALREADY passed
+  // the threshold parks right now; the timer covers the screen-on case.
+  // Driving kills the countdown and both dwell clocks.
+  {
+    // Quiet clock upkeep: device-reported speed when present, distance over
+    // time between two decent fixes when not. Only driving speed clears it.
+    // Bad-accuracy fixes can't clear it either: an indoor phone bouncing
+    // hundreds of meters between cell fixes is exactly the case that must
+    // still park. Failing toward GPS-off is safe, a wrong park self-heals
+    // within a couple hundred meters of real driving via the exit region.
+    let _mps=(typeof pos.coords.speed==='number'&&pos.coords.speed>=0)?pos.coords.speed:null;
+    if(_mps==null&&_geoParkPrevFix&&acc<=_GEO_GAP_EXIT_MAX_ACC_M&&_geoParkPrevFix.acc<=_GEO_GAP_EXIT_MAX_ACC_M){
+      const _dtS=(nowMs-_geoParkPrevFix.atMs)/1000;
+      if(_dtS>=5)_mps=(_geoDistFt(here,_geoParkPrevFix)*0.3048)/_dtS;
+    }
+    if(_mps!=null&&_mps>=_GEO_DRIVEBY_SPEED_MPS)_geoQuietSinceMs=null;
+    else if(_geoQuietSinceMs==null)_geoQuietSinceMs=nowMs;
+    _geoParkPrevFix={lat:here.lat,lng:here.lng,atMs:nowMs,acc:acc};
+    // Five minutes at the same kerb IS this app's definition of a stop, so the
+    // leg that got them here is written the moment it qualifies rather than
+    // whenever they happen to drive off again (owner report 2026-08-09: the
+    // drive home never logged, because nobody drives away from home).
+    if(!cur&&_geoStopAnchor&&_geoDriveStartedAt&&
+       (nowMs-(Date.parse(_geoStopAnchor.at)||nowMs))>=_GEO_STOP_MS){
+      _geoSettleStopLeg(_geoStopAnchor,nowIso);
+    }
+    let _parkSpot=null,_parkDwellStart=null;
+    if(cur&&!_geoDriveStartedAt){
+      if(!_geoFenceEnteredAtMs)_geoFenceEnteredAtMs=nowMs;
+      _parkSpot=_geoLastFenceLoc;_parkDwellStart=_geoFenceEnteredAtMs;
+    }else if(!cur&&_geoQuietSinceMs!=null){
+      // Dwell = the EARLIER of "position settled here" (the stop anchor's
+      // birth) and "dropped below driving speed" (the quiet clock). A
+      // stationary truck parks on the anchor exactly as before; a walker,
+      // whose anchor keeps re-birthing, parks on the quiet clock.
+      _geoFenceEnteredAtMs=null;
+      _parkSpot=_geoStopAnchor?{lat:_geoStopAnchor.lat,lng:_geoStopAnchor.lng,name:'stop'}
+                              :{lat:here.lat,lng:here.lng,name:'stop'};
+      const _aAt=_geoStopAnchor?(Date.parse(_geoStopAnchor.at)||Infinity):Infinity;
+      const _qAt=_geoQuietSinceMs!=null?_geoQuietSinceMs:Infinity;
+      _parkDwellStart=isFinite(Math.min(_aAt,_qAt))?Math.min(_aAt,_qAt):null;
+    }else{
+      // Driving (quiet clock cleared), or inside a fence with a drive still
+      // open. Either way nothing is parked, so nothing may count down: the
+      // old code left the timer armed across a whole screen-on drive.
+      _geoFenceEnteredAtMs=null;
+    }
+    if(_parkSpot&&_parkDwellStart){
+      if(!_geoParkModeOn&&(nowMs-_parkDwellStart)>=_GEO_PARK_AFTER_MS)_geoEnterParkMode(_parkSpot);
+      else _geoArmParkTimer(_parkSpot);
+    }else{
+      _geoClearParkTimer();
+    }
+  }
   // Whatever branch ran, THIS completed ping resolved any hidden gap, a stale
   // marker must never truncate a later, fully-visible close.
   _geoGapHiddenAt=null;
   // Stamped AFTER the state machine, so the very ping that opens the drive
   // (already at road speed) lights the banner rather than the one after it.
-  if(_geoDriveStartedAt&&_geoDriveMph*0.44704>=_GEO_DRIVEBY_SPEED_MPS)_geoDriveMovingAt=nowMs;
+  if(_geoDriveStartedAt&&!_geoMphHeldZero&&_geoDriveMph*0.44704>=_GEO_DRIVEBY_SPEED_MPS)_geoDriveMovingAt=nowMs;
+  // The open state goes to disk on a cadence, not only on hide/park/arrival:
+  // a crash between those moments used to take the open leg and its origin
+  // down with it. Ten seconds bounds the loss to one fix, and the write is a
+  // few kilobytes of localStorage, so the cost is nothing.
+  if(nowMs-_geoPersistPingMs>=10000){_geoPersistPingMs=nowMs;_geoPersistOpen();}
   // ── Drive banner upkeep ───────────────────────────────────────────────────
   // Visibility can change WITHOUT a fence transition (speed crossing the
   // threshold a ping after leaving, or fading after parking somewhere
@@ -812,9 +999,9 @@ function _geoBindInteract(){
 function _geoIsPlaceSource(s){return String(s||'')==='place';}
 // Time at a known place, closed on departure. Bounded by a real fence at both
 // ends, so unlike an off-job stop this is verified work time.
-function _geoClosePlaceEntry(placeId,arrivedAt){
+function _geoClosePlaceEntry(placeId,arrivedAt,departedIso){
   if(!arrivedAt)return;
-  const departed=new Date().toISOString();
+  const departed=departedIso||new Date().toISOString();
   // Same rule as the shop: a saved place marked home_office bills active app
   // time only, every other kind bills the dwell.
   const mins=_geoHomeDwell
@@ -871,9 +1058,9 @@ function _geoClientAt(here){
 // The visit itself, closed on departure: same shape as a place visit (the
 // client's name is the destination), so it lands in the day's story and the
 // Time at Places report without a new table or source.
-function _geoCloseClientEntry(clientId,arrivedAt){
+function _geoCloseClientEntry(clientId,arrivedAt,departedIso){
   if(!arrivedAt)return;
-  const departed=new Date().toISOString();
+  const departed=departedIso||new Date().toISOString();
   const mins=Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrivedAt))/60000));
   if(mins<2)return;               // a pass-through, not a visit
   if(!_supaUser)return;
@@ -887,11 +1074,69 @@ function _geoCloseClientEntry(clientId,arrivedAt){
 // A stop is only real once they LEAVE it, which is also the first moment it can
 // be bounded at both ends. Both edges use a VERIFIED ping rather than now: the
 // same rule the hidden-gap close follows, never claim time nobody observed.
+// The stop's own location descriptor. A stop has no geocode, so it is its own
+// endpoint. `likelyHome` rides along because a leg that STARTS at home is a
+// commute, and a commute is not a deductible mile however plainly the GPS saw
+// it. A likely-home stop is NAMED (owner report 2026-08-09: "drove FBC to
+// home and it didn't log"): "Home" is a real endpoint on the log, and naming
+// it also keeps _geoCollapseDetours from folding the end of the day away as
+// if it were a passed-through errand.
+function _geoStopLoc(a,ms){
+  const atHome=(typeof _placeIsLikelyHome==='function')&&_placeIsLikelyHome({lat:a.lat,lng:a.lng},ms);
+  return {lat:a.lat,lng:a.lng,kind:'stop',likelyHome:atHome,
+          name:atHome?(S.homeOffice?'Home Office':'Home'):'Stop'};
+}
+// SETTLE THE LEG WHEN THEY PARK, NOT WHEN THEY LEAVE (owner report
+// 2026-08-09: FBC -> lunch -> home logged nothing).
+//
+// The inbound leg used to be written by _geoCloseStop, which only runs on
+// DEPARTURE from the stop. Park at home for the night and the leg you just
+// drove has nowhere to be written: the anchor lives in memory only, the shell
+// kills GPS four minutes into the park, and iOS eventually kills the app, so
+// the last drive of the day evaporated. Worse, that is exactly the leg a
+// contractor looks for the moment they walk in the door.
+//
+// Once a stop is real (the app's own five-minute definition, or the moment
+// park mode is about to cut GPS) the leg into it is written immediately and
+// the leg is split at the kerb. Idempotent via a.legClosed, so the later
+// departure never double-logs. A stop that turns out to be a passed-through
+// errand is still folded by _geoCollapseDetours on the next fence arrival,
+// which removes this row and rewrites the direct one, unchanged.
+function _geoSettleStopLeg(a,nowIso){
+  if(!a||a.legClosed||!_geoDriveStartedAt)return false;
+  // Fold any earlier personal stop FIRST, so the row written here runs from
+  // the last real endpoint (the CPA rule: a lunch stop in the middle makes
+  // one trip with a detour, not two trips).
+  _geoCollapseDetours();
+  const ms=Math.max(0,Date.parse(a.lastAt||nowIso)-Date.parse(a.at));
+  const stopLoc=_geoStopLoc(a,ms);
+  stopLoc.prevOrigin=_geoLegOrigin||null;
+  _geoDriveEntry(null,_geoDriveStartedAt,null,a.at,false,stopLoc);
+  a.legClosed=true;
+  _geoDriveStartedAt=a.lastAt||nowIso;   // the leg out starts when they pull away
+  _geoDriveReset();
+  _geoLegOrigin=stopLoc;
+  return true;
+}
 function _geoCloseStop(a){
   if(!a||!a.at||!a.lastAt)return;
   const ms=Date.parse(a.lastAt)-Date.parse(a.at);
   if(!(ms>=_GEO_STOP_MS))return;          // a light, not a stop
   const mins=Math.max(0,Math.round(ms/60000));
+  // Already settled when they parked: the leg and the split are done, only
+  // the departure time needs refining to the last fix seen at the kerb.
+  if(a.legClosed){
+    _geoDriveStartedAt=a.lastAt;
+    _geoDriveReset();
+    if(typeof recordUnknownStop==='function')recordUnknownStop({lat:a.lat,lng:a.lng},ms);
+    if(!_supaUser)return;
+    _geoEnqueue('job_time_entries',{
+      contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+      job_id:null,arrived_at:a.at,departed_at:a.lastAt,minutes:mins,
+      dest_place:null,source:'stop'
+    });
+    return;
+  }
   // Split the leg at the kerb. Without this the parked minutes ride out on the
   // drive entry, which is the entire defect. Either way the next leg begins the
   // moment they pulled out.
@@ -902,16 +1147,9 @@ function _geoCloseStop(a){
   // the time this ran on arriving at the yard, _geoWasInShop was already true,
   // so the leg out of lunch never restarted and the trip home logged nothing.
   // A stop has no geocode, so it is its own endpoint: the inbound leg ends at
-  // the kerb they parked at, and the outbound leg starts from the same spot.
-  // `likelyHome` rides along because a leg that STARTS at home is a commute,
-  // and a commute is not a deductible mile however plainly the GPS saw it.
-  const atHome=(typeof _placeIsLikelyHome==='function')&&_placeIsLikelyHome({lat:a.lat,lng:a.lng},ms);
-  const stopLoc={lat:a.lat,lng:a.lng,kind:'stop',likelyHome:atHome,
-                 // A declared home office is a named business location on the
-                 // log, not an anonymous "Stop". The row has to read
-                 // "Home Office -> Ace Supply" or it is not a mileage record
-                 // anyone could defend a year later.
-                 name:(atHome&&S.homeOffice)?'Home Office':'Stop'};
+  // the kerb they parked at, and the outbound leg starts from the same spot
+  // (_geoStopLoc above owns that descriptor and the home naming).
+  const stopLoc=_geoStopLoc(a,ms);
   // Where the leg INTO this stop began, carried on the stop itself. If the stop
   // turns out to be personal, that is the point the next leg has to be measured
   // from: a lunch break in the middle of a supply-house-to-job-site run does not
@@ -1000,6 +1238,52 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   if(!driveStartedAt)return;
   const arrived=endedIso||new Date().toISOString();
   const mins=Math.max(0,Math.round((Date.parse(arrived)-Date.parse(driveStartedAt))/60000));
+  // FENCE-BOUNCE GUARD (owner report 2026-08-09: two 2-minute "FBC to FBC
+  // trips" from GPS jitter at one church). A leg that starts and ends at the
+  // SAME location with almost no movement observed is a fix that wobbled
+  // across the fence line, not a drive: no time entry, no mileage row. A
+  // real out-and-back loop from the same door survives on the moved-miles
+  // test; the rolling straight-line accumulator is reset per leg.
+  let sameSpot=false;
+  if(destLoc&&_geoLegOrigin&&!stale){
+    const sameId=(destLoc.placeId&&destLoc.placeId===_geoLegOrigin.placeId)||
+                 (destLoc.clientId&&destLoc.clientId===_geoLegOrigin.clientId)||
+                 (destLoc.jobId&&destLoc.jobId===_geoLegOrigin.jobId);
+    sameSpot=sameId||(_geoLegOrigin.lat!=null&&_geoDistFt(destLoc,{lat:_geoLegOrigin.lat,lng:_geoLegOrigin.lng})<400);
+    if(sameSpot&&_geoDriveMiles<0.3)return;
+  }
+  // ── GAP-ECHO GUARD (owner 2026-08-12: four real drives, SEVEN rows) ──────
+  // A GAP leg is INFERRED: a single ping bridged the whole drive, and the
+  // origin comes from fence state (_geoLastFenceAt/_geoLastFenceLoc) that
+  // survives boots. A day of crash/reopen cycles therefore RE-derives the
+  // same journey on every wake that lands at the destination with stale
+  // state, each time minting a fresh leg key and a fictional clock, which
+  // is exactly the shape the dedup must not touch (distinct auto legs).
+  // The discriminator is time-ordered coverage: if an auto row for this
+  // person already runs this same origin -> destination and was logged
+  // SINCE the moment we were last seen at the origin, this close is an
+  // echo of that row, not a drive: no mileage, no time entry. A genuine
+  // second run of the same route survives because its predecessor was
+  // logged BEFORE the origin was re-visited.
+  //
+  // STALE legs only: an echo's defining feature is fence state HOURS out of
+  // date (a restored pre-drive snapshot), which is exactly the stale shape.
+  // A fresh-state gap leg's inference window is real observation, and the
+  // fixture worlds in CI legitimately compress clocks there.
+  if(gap&&stale&&typeof mileage!=='undefined'&&Array.isArray(mileage)&&_geoLegOrigin&&destLoc){
+    try{
+      const _since=Date.parse(_geoLastFenceAt||'')||0;
+      const _me=(_isEmployee&&_supaUser)?_supaUser.id:null;
+      const _near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&_geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=1500);
+      // _since>0 is load-bearing: with no anchor, "logged since" would match
+      // the whole history and a real leg could be blocked by last week's run.
+      const _covered=_since>0&&mileage.some(m=>m&&m.gps&&m.legKey&&
+        (m.logged_by_id||null)===_me&&
+        (Date.parse(m.loggedAt||'')||0)>=_since&&
+        _near(m.fromCoord,_geoLegOrigin)&&_near(m.toCoord,destLoc));
+      if(_covered){_geoParkNote('gap-echo-skip',(destLoc&&destLoc.name)||'');return;}
+    }catch(_e){}
+  }
   // `stale` = the departure could not be inferred (the phone was asleep across
   // the gap, see _GEO_MAX_INFERRED_LEG_MS). The two halves of a leg are split
   // deliberately here: the DISTANCE is measured geocode to geocode and is real
@@ -1027,9 +1311,14 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // _geoIsDriveSource (/^drive/), so every money view treats it as drive time.
   const kind=companyVeh?'drive':(mode==='rider'?'drive-rider':(mode==='own'?'drive-personal':'drive-unassigned'));
   // Minted here rather than inside _geoEnqueue so the SAME key lands on the time
-  // entry and on the mileage row. That is what makes the mileage row idempotent:
-  // one leg can only ever produce one trip, however many times this runs.
-  const legKey=_geoClientKey();
+  // entry and on the mileage row, and DETERMINISTIC (person + leg start) so a
+  // re-delivered close of the same leg mints the same key again: one leg can
+  // only ever produce one trip, however many times this runs. This used to be
+  // _geoClientKey(), which is random per call, so a replayed arrival minted a
+  // fresh key and wrote a second row the idempotency was built to block (the
+  // owner's 2026-08-11 truck-reposition duplicate, same 7:51a start logged
+  // twice with two end times).
+  const legKey=_geoLegKey(driveStartedAt);
   if(!stale){
     _geoEnqueue('job_time_entries',{
       contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
@@ -1044,10 +1333,46 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // the log): this leg's minutes plus any minutes carried off collapsed-detour
   // sub-legs. A stale leg claims none, same rule as the time entry above.
   let driveMins=stale?0:mins;
+  // What the wheels actually covered this leg, straight-line ping to ping
+  // (owner ask 2026-08-11: "if we take a detour because we have to, can we
+  // take the longer?"). Captured BEFORE the next leg resets the tally, and
+  // only when it is trustworthy: a watched leg (not stale, the tally is zero
+  // fiction after a sleep) with NO collapsed detour segments, because a
+  // collapsed personal stop's driving is in the tally but is not deductible
+  // (the CPA's direct-miles rule). The tally UNDERcounts real roads, so as a
+  // floor it can only ever recover miles that were provably driven.
+  const hadDetourLegs=!!(_geoLegOrigin&&_geoLegOrigin.extraDriveMins);
+  // ...and only from a leg that was DENSELY watched (>=8 accumulation hops).
+  // A tally built from a couple of hops is the undercount case by definition,
+  // it cannot evidence a detour; a real drive produces dozens of hops.
+  const obsMiles=(!stale&&!hadDetourLegs&&_geoDriveSteps>=8&&_geoDriveMiles>0.3)?Math.round(_geoDriveMiles*10)/10:null;
   if(!stale&&_geoLegOrigin&&_geoLegOrigin.extraDriveMins){driveMins+=_geoLegOrigin.extraDriveMins;delete _geoLegOrigin.extraDriveMins;}
+  // ── OUT AND BACK WITH NOTHING BUSINESS IN IT ─────────────────────────────
+  // Owner rule (2026-08-10): "a drive from home office shop and back shouldn't
+  // count either unless there was a business stop that day."
+  //
+  // This is the other half of the Target run. Once the personal stop is
+  // collapsed out of the middle (_geoCollapseDetours / the personal branch in
+  // mileage.js), what is left is a leg whose ORIGIN AND DESTINATION ARE THE
+  // SAME PLACE. That shape can only ever mean a round trip with nothing
+  // business in it, because a business stop would have ENDED the leg there and
+  // started a new one: shop to supply house to shop is two legs, neither of
+  // which starts and ends in the same spot. So same place in, same place out,
+  // no miles.
+  //
+  // The DRIVE TIME still goes in, above. A crew member driving is being paid
+  // for it whatever the errand turned out to be, and stripping the hours would
+  // be a payroll bug dressed up as a mileage fix. Only the deduction goes.
+  //
+  // Distinct from the fence-bounce guard higher up, which drops the whole leg
+  // including the time, because that one never happened at all.
+  if(sameSpot){
+    _geoParkNote('roundtrip-no-miles',destLoc&&(destLoc.name||destLoc.kind)||'');
+    return;
+  }
   // The arrival stamp rides along so the row can show WHEN the trip ran, not
   // just how long: a stale leg passes nothing, its clock times are fiction.
-  _geoAutoMileage(_geoLegOrigin,destLoc,legKey,stale?arrived:driveStartedAt,companyVeh,driveMins,stale?null:arrived);
+  _geoAutoMileage(_geoLegOrigin,destLoc,legKey,stale?arrived:driveStartedAt,companyVeh,driveMins,stale?null:arrived,obsMiles);
 }
 
 // ── Automatic mileage: the leg we just timed, measured ───────────────────────
@@ -1067,7 +1392,7 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
 // The row is written IMMEDIATELY at zero miles and filled in afterwards, the
 // same shape the manual trip log already uses. A dead spot at arrival is the
 // normal case on a rural site and must never cost the contractor the trip.
-function _geoAutoMileage(from,to,legKey,startedIso,companyVeh,driveMins,endedIso){
+function _geoAutoMileage(from,to,legKey,startedIso,companyVeh,driveMins,endedIso,obsMiles){
   try{
     if(typeof autoLogDriveTrip!=='function')return;
     if(!from||!to||from.lat==null||to.lat==null)return;
@@ -1133,7 +1458,7 @@ function _geoAutoMileage(from,to,legKey,startedIso,companyVeh,driveMins,endedIso
     // morning commute into a company deduction on the strength of a checkbox
     // the owner ticked about their own spare room.
     if(from.likelyHome&&!(S.homeOffice&&!_isEmployee))return;
-    autoLogDriveTrip({from,to,legKey,startedIso,endedIso:endedIso||undefined,reimbursable:unknown?undefined:reimbursable,vehicleUnknown:unknown,mins:driveMins});
+    autoLogDriveTrip({from,to,legKey,startedIso,endedIso:endedIso||undefined,reimbursable:unknown?undefined:reimbursable,vehicleUnknown:unknown,mins:driveMins,observedMiles:obsMiles||undefined});
   }catch(_e){}
 }
 
@@ -1267,6 +1592,15 @@ async function _geoReadPermission(){
     if(_cap&&typeof _cap.isNativePlatform==='function'&&_cap.isNativePlatform()){
       if(_geoNativeWatcherId!=null)return 'granted';
       if(localStorage.getItem('geo_owner_consent')==='declined')return 'denied';
+      // The plugin's watcher reported an OS-level permission failure and no
+      // success since: the phone's Settings are the only fix, say so.
+      if(localStorage.getItem('td_geo_os_denied')==='1')return 'denied';
+      // Consent given on this device and no denial on record: granted. This
+      // is what makes the checklist SURVIVE sign-out/sign-in (owner report
+      // 2026-08-08: "onboarding didn't persist my location"): the watcher
+      // takes seconds to spin up after sign-in, and gating 'granted' on it
+      // alone re-flashed the item on every boot.
+      if(localStorage.getItem('geo_owner_consent')==='1')return 'granted';
       return 'prompt';
     }
   }catch(_e){}
@@ -1351,17 +1685,6 @@ function _geoNativePlugin(){
     return (cap.Plugins&&cap.Plugins.BackgroundGeolocation)||null;
   }catch(_e){return null;}
 }
-// TEMPORARY diagnostic (owner report 2026-08-07: still seeing the plain
-// website location prompt in the shell, no shop geofence). There's no Mac
-// to attach a debugger to the device, so this surfaces the actual runtime
-// state as an on-screen toast instead of a console log nobody can read.
-// Remove once the native watcher is confirmed working from a real device.
-function _geoNativeDiag(msg){
-  try{
-    if(!(window.Capacitor&&typeof window.Capacitor.isNativePlatform==='function'&&window.Capacitor.isNativePlatform()))return;
-    if(typeof showToast==='function')showToast('[geo diag] '+msg,'🛠',9000);
-  }catch(_e){}
-}
 // ── Native geolocation shim: the plugin is the ONLY GPS source in the shell ──
 // Any web-API call (navigator.geolocation.*) inside WKWebView pops Apple's
 // per-WEBSITE prompt ("uat...pages.dev would like to use your location") even
@@ -1412,11 +1735,14 @@ function _geoInstallGeoShim(){
         if(_geoNativeWatcherId==null&&!_geoNativeStarting){
           const BG=_geoNativePlugin();
           if(BG&&typeof BG.addWatcher==='function'){
+            // Persisted like the main watcher: a reload mid-one-shot would
+            // otherwise orphan it natively (same leak as the big one).
             let oneId=null,done=false;
+            const oneDrop=()=>{if(oneId){try{BG.removeWatcher({id:oneId});}catch(_e){}_geoForgetWatcher(oneId);oneId=null;}};
             Promise.resolve(BG.addWatcher({requestPermissions:false,stale:true},(loc)=>{
               if(loc&&!done){done=true;_geoShimDeliver(_geoShimPos(loc));}
-              if(oneId){try{BG.removeWatcher({id:oneId});}catch(_e){}oneId=null;}
-            })).then(id=>{oneId=id;if(done&&oneId){try{BG.removeWatcher({id:oneId});}catch(_e){}oneId=null;}},()=>{});
+              oneDrop();
+            })).then(id=>{oneId=id;_geoRememberWatcher(id);if(done)oneDrop();},()=>{});
           }
         }
       }catch(_e){if(typeof err==='function')err({code:2,message:String(_e&&_e.message||_e)});}
@@ -1431,16 +1757,263 @@ function _geoInstallGeoShim(){
     return true;
   }catch(_e){return false;}
 }
+// ── TdGeo park mode: GPS off while parked, geofence hardware watches ──────────
+// The continuous background watcher above is what pins the blue arrow in the
+// Dynamic Island and drains the battery all evening at the home office (owner
+// report 2026-08-08). Parked inside a fence for a few minutes, the native TdGeo
+// plugin (native/td-geo) takes over: full GPS goes OFF, and iOS's near-free
+// region monitoring + significant-location-change hardware watches for
+// departure. Crossing the fence re-arms the full watcher, and every native
+// event that fired while the WebView was asleep or dead is buffered to disk
+// and replayed into the fence machine (with its ORIGINAL timestamp) on the
+// next boot, so a drive that started with the app killed still logs.
+let _geoParkTimer=null;         // countdown from fence entry to GPS-off
+let _geoParkModeOn=false;       // TdGeo regions armed, continuous watcher removed
+let _geoFenceEnteredAtMs=null;  // when the CURRENT fence was entered (dwell clock)
+const _GEO_PARK_AFTER_MS=4*60*1000;  // parked this long inside a fence => GPS off
+// "Parked" means NOT DRIVING, not "not moving". A phone in the pocket of
+// somebody WALKING drifts past _GEO_STOP_FT every minute or two, so the stop
+// anchor re-births forever and its dwell never reached four minutes: GPS ran
+// all day on foot (owner report 2026-08-09: "I walk everywhere with my
+// phone"). This clock marks when driving-speed evidence was last seen;
+// walking pace and jitter hold it, and four quiet minutes park the GPS
+// wherever they happen to be standing.
+let _geoQuietSinceMs=null;   // ms when "below driving speed" began, null while driving
+let _geoParkPrevFix=null;    // {lat,lng,atMs,acc} prior fix, derives speed when the device reports none
+// Owner-readable diagnostics (owner report 2026-08-09: "30 minutes and still
+// got that blue arrow", with zero visibility into why). Every park-mode
+// transition and failure is journaled here, persisted, and readable on-device
+// through _geoDiagPanel(), so the next report comes with the reason attached.
+let _geoParkLog=[];
+try{_geoParkLog=JSON.parse(localStorage.getItem('td_geo_park_log')||'[]')||[];}catch(_e){}
+function _geoParkNote(ev,extra){
+  try{
+    _geoParkLog.push({t:new Date().toISOString().slice(5,19),ev:ev,x:extra?String(extra).slice(0,140):''});
+    if(_geoParkLog.length>30)_geoParkLog.splice(0,_geoParkLog.length-30);
+    localStorage.setItem('td_geo_park_log',JSON.stringify(_geoParkLog));
+  }catch(_e){}
+}
+function _geoTdPlugin(){
+  try{
+    const cap=window.Capacitor;
+    if(!cap||typeof cap.isNativePlatform!=='function'||!cap.isNativePlatform())return null;
+    if(typeof cap.registerPlugin==='function')return cap.registerPlugin('TdGeo');
+    return (cap.Plugins&&cap.Plugins.TdGeo)||null;
+  }catch(_e){return null;}
+}
+let _geoParkSpot=null;   // where to center the region when the countdown fires
+function _geoArmParkTimer(spot){
+  if(spot)_geoParkSpot=spot;
+  if(_geoParkTimer||_geoParkModeOn)return;
+  if(!_geoTdPlugin())return;             // browser/PWA: park mode does not exist
+  _geoParkTimer=setTimeout(()=>_geoEnterParkMode(_geoParkSpot),_GEO_PARK_AFTER_MS);
+}
+function _geoClearParkTimer(){
+  if(_geoParkTimer){clearTimeout(_geoParkTimer);_geoParkTimer=null;}
+}
+// One question, one place, and a seam the pocket-condition tests can stub.
+function _geoAppOnScreen(){try{return typeof document!=='undefined'&&document.visibilityState==='visible';}catch(_e){return false;}}
+function _geoEnterParkMode(spot){
+  _geoClearParkTimer();
+  if(_geoParkModeOn)return;
+  // The battery trade is for the POCKET, not the dashboard. Park mode with the
+  // app on screen is how the owner's drive banner started a quarter mile late
+  // (2026-08-11): the GPS was off while they were looking at the app, and the
+  // iOS wake-up region fires hundreds of meters past the fence. On screen =
+  // GPS stays live; the countdown re-arms, and the firing after the app is
+  // backgrounded parks for real.
+  if(_geoAppOnScreen()){
+    _geoParkNote('park-defer','app on screen');
+    _geoArmParkTimer(spot);
+    return;
+  }
+  const Td=_geoTdPlugin();
+  if(!Td||typeof Td.startParked!=='function')return;
+  // Only duty-cycle a watcher that is actually running, and only when we know
+  // where we are parked: a fence, or (owner report 2026-08-09, arrow still on
+  // after 4 minutes parked outside every fence) the anonymous STOP anchor.
+  if(_geoNativeWatcherId==null&&!_geoNativeStarting){_geoParkNote('park-skip','no watcher');return;}
+  const _at=spot||_geoLastFenceLoc;
+  if(!_at){_geoParkNote('park-skip','no park spot');return;}
+  // LAST CHANCE BEFORE THE GPS GOES DARK. Parking cuts the fix stream, and
+  // iOS may kill the app long before they drive off, so any leg still open
+  // into this stop is settled here or it is lost (owner report 2026-08-09:
+  // the drive home never logged).
+  if(_geoStopAnchor&&_geoDriveStartedAt)_geoSettleStopLeg(_geoStopAnchor,new Date().toISOString());
+  // Parking is the moment we know the app may not be alive for the next fix,
+  // so the open leg and its ORIGIN go to disk here rather than relying on a
+  // screen-lock event that may already have passed.
+  _geoPersistOpen();
+  // The region is the fence plus slack: region monitoring is coarser than GPS
+  // (cell/wifi assisted), and an exit that fires a little late is fine, the
+  // re-armed watcher's first fix re-runs the fence machine with real truth.
+  // An anonymous stop/foot park gets a wider region (250m floor): somebody
+  // parked on foot keeps strolling, and a lap around the yard or the block
+  // must not ping-pong the GPS awake every couple of minutes.
+  const radiusM=_at.name==='stop'
+    ?Math.max(_geoFenceFt()*0.3048+60,250)
+    :_geoFenceFt()*0.3048+60;
+  _geoParkNote('park-try',_at.name||'stop');
+  Promise.resolve(Td.startParked({regions:[{id:'fence',lat:_at.lat,lng:_at.lng,radius:radiusM}]}))
+    .then((r)=>{
+      _geoParkModeOn=true;
+      _geoParkNote('park-on','armed='+((r&&r.armed)!=null?r.armed:'?'));
+      if(_geoNativeWatcherId!=null){
+        const BG=_geoNativePlugin();
+        try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id:_geoNativeWatcherId});}catch(_e){}
+        _geoForgetWatcher(_geoNativeWatcherId);
+        _geoNativeWatcherId=null;
+        if(typeof _shadowLiveGpsStop==='function')_shadowLiveGpsStop();
+      }
+    },(err)=>{
+      // A failed attempt must never die silently (it did, and the arrow sat
+      // there all evening): journal the reason and retry on the countdown.
+      _geoParkNote('park-fail',(err&&(err.message||err.code))||err);
+      _geoArmParkTimer();
+    });
+}
+function _geoExitParkMode(){
+  _geoClearParkTimer();
+  if(!_geoParkModeOn)return;
+  _geoParkModeOn=false;
+  // Fresh observation window on wake: if this exit was a real drive the next
+  // fixes clear the quiet clock; if it was a walk out of the region, GPS gets
+  // four minutes to confirm and then parks again at the new spot.
+  _geoQuietSinceMs=Date.now();_geoParkPrevFix=null;
+  _geoParkNote('park-exit');
+  const Td=_geoTdPlugin();
+  try{if(Td&&typeof Td.stopAll==='function')Td.stopAll();}catch(_e){}
+  startGeoTracking();
+}
+// crew-locate.js loads after this file, so the journal is read through a guard
+// rather than called directly.
+function _geoLocateHistory(){
+  try{return (typeof _crewLocateHistory==='function')?(_crewLocateHistory()||[]):[];}catch(_e){return [];}
+}
+// On-device diagnostics: state + the park journal, in a standard zmodal.
+// Reachable from Settings (the button unhides only inside the shell).
+function _geoDiagPanel(){
+  if(document.getElementById('_geo-diag-ov'))return;
+  const dwellMin=_geoFenceEnteredAtMs?Math.round((Date.now()-_geoFenceEnteredAtMs)/60000):null;
+  const state=[
+    ['Shell',(_geoTdPlugin()?'yes':'no')],
+    ['GPS watcher',_geoNativeWatcherId!=null?String(_geoNativeWatcherId):'off'],
+    ['Park mode',_geoParkModeOn?'ON (GPS off)':'off'],
+    ['Park countdown',_geoParkTimer?'running':'idle'],
+    ['In fence',_geoLastFenceLoc?((_geoLastFenceLoc.name||_geoLastFenceLoc.kind||'yes')+(dwellMin!=null?' · '+dwellMin+' min':'')):'no'],
+    ['Below drive speed',_geoQuietSinceMs?Math.round((Date.now()-_geoQuietSinceMs)/60000)+' min':'no (moving)'],
+    ['Consent',localStorage.getItem('geo_owner_consent')||'unset'],
+    ['OS denied',localStorage.getItem('td_geo_os_denied')==='1'?'yes':'no'],
+  ];
+  const ov=document.createElement('div');ov.id='_geo-diag-ov';ov.className='zmodal-overlay';
+  const m=document.createElement('div');m.className='zmodal';
+  m.innerHTML=
+    '<div style="font-size:16px;font-weight:800;margin-bottom:10px">Location diagnostics</div>'+
+    state.map(([k,v])=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">'+k+'</span><span style="font-weight:600">'+escHtml(String(v))+'</span></div>').join('')+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:12px 0 4px">Recent events</div>'+
+    '<div style="max-height:32vh;overflow-y:auto;font-size:11px;font-family:ui-monospace,monospace;line-height:1.6">'+
+      (_geoParkLog.length?_geoParkLog.slice().reverse().map(r=>'<div>'+escHtml(r.t)+' '+escHtml(r.ev)+(r.x?' · '+escHtml(r.x):'')+'</div>').join(''):'<div style="color:var(--text3)">Nothing yet.</div>')+
+    '</div>'+
+    // A quiet record of every Locate this phone answered. Nobody is notified
+    // when one happens (owner call 2026-08-09), so this exists for support and
+    // for the case where a check is ever disputed, not as a crew-facing feed.
+    // The panel itself is developer-gated, so it is not something crew browse.
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:12px 0 4px">Locate requests</div>'+
+    '<div style="max-height:20vh;overflow-y:auto;font-size:11px;line-height:1.6">'+
+      (_geoLocateHistory().length
+        ?_geoLocateHistory().slice().reverse().map(r=>{
+            let when='';try{when=new Date(r.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});}catch(_e){when=String(r.at||'');}
+            return '<div>'+escHtml(when)+' · '+escHtml(r.by||'A manager')+' · '+escHtml(r.answered?'shared':'not shared ('+(r.reason||'')+')')+'</div>';
+          }).join('')
+        :'<div style="color:var(--text3)">None.</div>')+
+    '</div>'+
+    '<button class="btn btn-p" style="width:100%;margin-top:14px;padding:12px" onclick="document.getElementById(\'_geo-diag-ov\').remove()">Close</button>';
+  ov.appendChild(m);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+// A native event, live (listener) or replayed (drainBuffer). Replayed events
+// carry __tdTs so the fence machine clocks them at the moment they actually
+// happened, not at boot: without that, a buffered overnight drive collapses to
+// zero minutes and drops under the 2-minute floor.
+async function _geoTdEvent(ev,replay){
+  if(!ev||typeof ev!=='object')return;
+  // The shadow engine (js/geo-shadow.js) sees the SAME raw event, so any
+  // difference in what the two engines conclude is genuinely the engine and
+  // not the sensor. It can only ever write to its own local journal.
+  if(!replay&&typeof shadowIngest==='function'){try{shadowIngest(ev);}catch(_e){}}
+  const hasFix=typeof ev.lat==='number'&&typeof ev.lng==='number';
+  if(!replay&&_geoParkModeOn){
+    const out=ev.type==='regionExit'||
+      (hasFix&&_geoLastFenceLoc&&_geoDistFt({lat:ev.lat,lng:ev.lng},_geoLastFenceLoc)>_geoFenceFt());
+    if(out)_geoExitParkMode();
+  }
+  if(!hasFix)return;
+  return _geoOnPing({
+    coords:{latitude:ev.lat,longitude:ev.lng,accuracy:ev.acc||0,
+            speed:(typeof ev.speed==='number'&&ev.speed>=0)?ev.speed:null},
+    __tdTs:(replay&&typeof ev.ts==='number')?ev.ts:undefined
+  });
+}
+function _geoTdInit(){
+  if(window._geoTdBound)return;
+  const Td=_geoTdPlugin();
+  if(!Td)return;
+  window._geoTdBound=true;
+  try{
+    if(typeof Td.addListener==='function')Td.addListener('geoEvent',(ev)=>{_geoTdEvent(ev);});
+  }catch(_e){}
+  // Anything that fired while the WebView was asleep or the app was dead
+  // (region monitoring relaunches a killed app) replays oldest-first, awaited
+  // one at a time so the fence machine sees them in order.
+  try{
+    if(typeof Td.drainBuffer==='function'){
+      Promise.resolve(Td.drainBuffer()).then(r=>{
+        const fixes=((r&&r.fixes)||[]).slice().sort((a,b)=>(a.ts||0)-(b.ts||0));
+        (async()=>{for(const f of fixes){try{await _geoTdEvent(f,true);}catch(_e){}}})();
+      },()=>{});
+    }
+  }catch(_e){}
+}
+// ── Stale native watcher bookkeeping ─────────────────────────────────────────
+// THE LEAK (owner report 2026-08-09, arrow on 18 minutes into park mode): a
+// WebView reload (version watchdog, crash) wipes JS memory, but watchers live
+// NATIVELY in the plugin and keep GPS running. Every reload added a fresh
+// watcher, park/stop only ever removed the newest one, and the orphans from
+// earlier reloads pinned the location arrow forever. The owner's own journal
+// proved it: four watcher-on ids, one removal. Every id is therefore
+// persisted the moment it exists, and every start first kills any persisted
+// id that is not the current one.
+function _geoRememberWatcher(id){
+  if(id==null)return;
+  try{
+    const ids=JSON.parse(localStorage.getItem('td_geo_watcher_ids')||'[]')||[];
+    if(!ids.includes(id)){ids.push(id);localStorage.setItem('td_geo_watcher_ids',JSON.stringify(ids));}
+  }catch(_e){}
+}
+function _geoForgetWatcher(id){
+  if(id==null)return;
+  try{
+    const ids=(JSON.parse(localStorage.getItem('td_geo_watcher_ids')||'[]')||[]).filter(x=>x!==id);
+    localStorage.setItem('td_geo_watcher_ids',JSON.stringify(ids));
+  }catch(_e){}
+}
+function _geoStaleWatcherSweep(BG){
+  let ids=[];
+  try{ids=JSON.parse(localStorage.getItem('td_geo_watcher_ids')||'[]')||[];}catch(_e){}
+  const stale=ids.filter(id=>id!==_geoNativeWatcherId);
+  stale.forEach(id=>{try{BG.removeWatcher({id});}catch(_e){}});
+  try{localStorage.setItem('td_geo_watcher_ids',JSON.stringify(_geoNativeWatcherId!=null?[_geoNativeWatcherId]:[]));}catch(_e){}
+  if(stale.length)_geoParkNote('stale-sweep',stale.length+' orphaned');
+}
 // ── Start / stop ───────────────────────────────────────────────────────────────
 function startGeoTracking(){
   if(_geoWatchId!=null||_geoNativeWatcherId!=null||_geoNativeStarting)return;
-  const _cap=window.Capacitor;
-  _geoNativeDiag('Capacitor='+(typeof _cap)+' native='+(_cap&&typeof _cap.isNativePlatform==='function'?_cap.isNativePlatform():'n/a')+' registerPlugin='+(_cap?typeof _cap.registerPlugin:'n/a')+' Plugins.BG='+(_cap&&_cap.Plugins?typeof _cap.Plugins.BackgroundGeolocation:'n/a'));
   const BG=_geoNativePlugin();
-  _geoNativeDiag('BG='+(BG?'found':'NULL')+' addWatcher='+(BG?typeof BG.addWatcher:'n/a'));
   if(BG&&typeof BG.addWatcher==='function'){
     // Native shell: the background watcher also fires in the foreground, so it
     // fully replaces the web watcher rather than doubling it up.
+    _geoTdInit();   // bind the park-mode event stream + replay anything buffered
+    _geoStaleWatcherSweep(BG);   // kill watchers orphaned by a prior reload
     _geoNativeStarting=true;
     try{
       Promise.resolve(BG.addWatcher({
@@ -1448,8 +2021,16 @@ function startGeoTracking(){
         backgroundTitle:'TradeDesk tracking is on',
         requestPermissions:true,stale:false,distanceFilter:25
       },(loc,err)=>{
-        if(err){_geoNativeDiag('watcher callback ERROR: '+(err.message||JSON.stringify(err)));return;}
+        if(err){
+          // A permission-shaped error is the one denial signal the shell ever
+          // gets (the WebView permission API is meaningless here). Recorded so
+          // _geoReadPermission can honestly say 'denied' and the checklist
+          // routes to the phone-Settings walkthrough.
+          try{if(/permission|denied|authoriz/i.test(String(err.message||err.code||'')))localStorage.setItem('td_geo_os_denied','1');}catch(_e){}
+          return;
+        }
         if(!loc)return;
+        try{localStorage.removeItem('td_geo_os_denied');}catch(_e){}
         // Every plugin fix also feeds the geolocation shim, so weather, the
         // nearby-job card, and trip addresses ride the same stream without
         // ever touching the web API (and its per-website prompt).
@@ -1463,27 +2044,41 @@ function startGeoTracking(){
         }});
       })).then(id=>{
         _geoNativeStarting=false;_geoNativeWatcherId=id||null;
-        _geoNativeDiag('addWatcher RESOLVED, id='+id);
+        _geoRememberWatcher(_geoNativeWatcherId);
+        // The live engine owns the radio from here; the clock that measures
+        // its cost starts with it (js/geo-shadow.js).
+        if(typeof _shadowLiveGpsStart==='function')_shadowLiveGpsStart();
+        if(typeof startShadowEngine==='function'){try{startShadowEngine();}catch(_e){}}
+        _geoParkNote('watcher-on',String(id||''));
         // The watcher running IS the shell's 'granted' state: refresh the
         // dashboard's permission cache so "Turn on location" clears itself.
         try{if(typeof _geoRefreshPermCache==='function')_geoRefreshPermCache();}catch(_e){}
       },
-               (e)=>{_geoNativeStarting=false;_geoNativeDiag('addWatcher REJECTED: '+(e&&(e.message||JSON.stringify(e))));});
+               (e)=>{_geoNativeStarting=false;_geoParkNote('watcher-fail',(e&&e.message)||e);});
       return;
-    }catch(_e){_geoNativeStarting=false;_geoNativeDiag('addWatcher THREW: '+(_e&&_e.message));}
+    }catch(_e){_geoNativeStarting=false;}
   }
-  _geoNativeDiag('FALLING BACK to plain web watchPosition (no background)');
   if(!navigator.geolocation)return;
   try{
     _geoWatchId=navigator.geolocation.watchPosition(_geoOnPing,()=>{},{enableHighAccuracy:true,maximumAge:30000,timeout:20000});
   }catch(_e){}
 }
 function stopGeoTracking(){
+  // Park mode dies with tracking: regions persist in CoreLocation across app
+  // kills, so sign-out must disarm them or the NEXT account's session could be
+  // woken by the previous account's fence.
+  _geoClearParkTimer();
+  _geoParkModeOn=false;
+  _geoFenceEnteredAtMs=null;
+  _geoQuietSinceMs=null;_geoParkPrevFix=null;
+  {const Td=_geoTdPlugin();try{if(Td&&typeof Td.stopAll==='function')Td.stopAll();}catch(_e){}}
   if(_geoNativeWatcherId!=null){
     const BG=_geoNativePlugin();
     try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id:_geoNativeWatcherId});}catch(_e){}
+    _geoForgetWatcher(_geoNativeWatcherId);
     _geoNativeWatcherId=null;
   }
+  if(typeof _shadowLiveGpsStop==='function')_shadowLiveGpsStop();
   _geoNativeStarting=false;
   if(_geoWatchId!=null){try{navigator.geolocation.clearWatch(_geoWatchId);}catch(_e){}_geoWatchId=null;}
   if(_geoNudgeTimer){clearTimeout(_geoNudgeTimer);_geoNudgeTimer=null;}
@@ -1527,6 +2122,11 @@ function _geoTrackInit(){
         _geoDrainQueue();                      // back online-ish, flush queued entries
         if(_geoCurrentJob)_geoWakeAcquire();   // wake locks auto-release on hide
         _geoWakeNudge();                       // resolve where we ARE now, not eventually
+        // Same rule as the enter-side defer: an app being LOOKED AT runs live
+        // GPS. Exiting here restarts the watcher, so pulling the phone out at
+        // the truck mount picks the drive up at the driveway, not a quarter
+        // mile down the road when the wake-up region finally fires.
+        if(_geoParkModeOn)_geoExitParkMode();
       }
     });
     // Queued entries also flush the moment connectivity returns.
@@ -1545,6 +2145,11 @@ function _geoTrackInit(){
   // owner ran dispatch route optimization, so shop-time logging silently never
   // fired until then, kick the one-time geocode here so it always works.
   if(!(S.officeLat&&S.officeLon)&&typeof _geoOfficeCoords==='function')_geoOfficeCoords();
+  // Join the account's locate channel. Deliberately BEFORE the consent
+  // branches below: a phone that has not consented still answers "sharing is
+  // off" rather than going silent, because silence would otherwise be read as
+  // an asleep phone and the manager would keep asking.
+  if(typeof _crewLocateInit==='function'){try{_crewLocateInit();}catch(_e){}}
   if(_isEmployee){
     if(!_employeeRecord)return;
     // Tracking being a condition of the job is the OWNER's call and stays that
@@ -1638,3 +2243,15 @@ function _geoSetConsent(yes){
 // isNativePlatform is answerable by the time this file parses. No-op in every
 // browser and PWA.
 _geoInstallGeoShim();
+// The Settings diagnostics button exists only where park mode does: the shell.
+try{
+  const _dCap=window.Capacitor;
+  if(_dCap&&typeof _dCap.isNativePlatform==='function'&&_dCap.isNativePlatform()){
+    // One group, revealed as a unit under Settings → Developer (owner
+    // 2026-08-09: these belong with the dev tools, not next to Cloud sync).
+    // The Developer row itself is already gated to dev accounts, so this is
+    // the second gate: they only mean anything where the engines run.
+    const _grp=document.getElementById('dev-geo-tools');
+    if(_grp)_grp.style.display='';
+  }
+}catch(_e){}

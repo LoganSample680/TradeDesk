@@ -193,26 +193,28 @@ test.describe('finance.js: exhaustive coverage', () => {
     test('empty imagePages, hides preview element', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [];
-        try { _renderExpPages(); return { ok: true, display: document.getElementById('exp-preview-img')?.style.display }; }
+        // Pages moved into #exp-pages-box (owner 2026-08-10 layout swap):
+        // empty state shows the dashed placeholder, never hides.
+        try { _renderExpPages(); return { ok: true, empty: /Receipt pages land here/.test(document.getElementById('exp-pages-box')?.innerHTML || '') }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.display).toBe('none');
+      expect(r.empty).toBe(true);
     });
 
     test('one page, shows preview with page thumbnail', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aGVsbG8=', key: null }];
-        try { _renderExpPages(); return { ok: true, display: document.getElementById('exp-preview-img')?.style.display }; }
+        try { _renderExpPages(); return { ok: true, thumbs: (document.getElementById('exp-pages-box')?.querySelectorAll('img') || []).length }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.display).toBe('block');
+      expect(r.thumbs).toBe(1);
     });
 
     test('missing preview element, does not throw', async () => {
       const r = await page.evaluate(() => {
-        document.getElementById('exp-preview-img')?.remove();
+        document.getElementById('exp-pages-box')?.remove();
         try { _renderExpPages(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
@@ -224,7 +226,7 @@ test.describe('finance.js: exhaustive coverage', () => {
         _expState.imagePages = [{ b64: 'aGVsbG8=', key: null }];
         try {
           _renderExpPages(); _renderExpPages(); _renderExpPages();
-          const imgs = document.getElementById('exp-preview-img')?.querySelectorAll('img') || [];
+          const imgs = document.getElementById('exp-pages-box')?.querySelectorAll('img') || [];
           return { ok: true, imgCount: imgs.length };
         } catch (e) { return { ok: false, err: e.message }; }
       });
@@ -1963,6 +1965,25 @@ test.describe('finance.js: exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.hasTitle).toBe(true);
       expect(r.hasSearch).toBe(true);
+    });
+
+    // Owner report (2026-08-09): opening Start Proposal auto-focused the
+    // search field, which slides the phone keyboard up over the suggestion
+    // list. The picker must open calm: search present, nothing focused.
+    test('the search field is never auto-focused on open', async () => {
+      const r = await page.evaluate(async () => {
+        try {
+          document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+          showQuickPicker('Start Proposal', 'Which client?', [], 'estimate', true);
+          // The old bug focused on a 100ms timer, so wait past it.
+          await new Promise(r2 => setTimeout(r2, 200));
+          const si = document.getElementById('qp-search');
+          return { ok: true, hasSearch: !!si, focused: document.activeElement === si };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasSearch).toBe(true);
+      expect(r.focused, 'no auto-focus, no surprise keyboard').toBe(false);
     });
 
     test('suggestions array with items, renders suggestion buttons', async () => {

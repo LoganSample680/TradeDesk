@@ -85,6 +85,9 @@ function esignPadHTML(prefix, opts){
 // into the pad in the shared cursive face, and auto-manage the placeholder,
 // callers no longer hand-wire any of this per surface.
 function esignWire(prefix, opts){
+  // The phone is about to be handed to a client (js/handoff.js). No-op in
+  // the client portals, which run this same code on the CLIENT's device.
+  try{if(typeof _handoffArm==='function')_handoffArm();}catch(_e){}
   opts = opts || {};
   const canvas = document.getElementById(opts.canvasId || (prefix + '-canvas'));
   if (!canvas) return null;
@@ -183,6 +186,9 @@ function esignTypedToCanvas(prefix, name){
 // Validate + produce the signature result. Messaging matches the old per-site
 // copy so nothing user-facing changes.
 function esignResult(prefix, opts){
+  // Signature captured: the handoff is over, the phone is back in the
+  // owner's hand, so the lock stands down without a prompt.
+  try{if(typeof _handoffDisarm==='function')_handoffDisarm();}catch(_e){}
   opts = opts || {};
   const pad = _ESIGN_PADS[prefix];
   const fail = (err) => {

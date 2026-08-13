@@ -457,19 +457,25 @@ function _showEstimateStylePicker(c,overrideAddr){
   const ov=document.createElement('div');
   ov.id='_style-pick-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:9000;background:var(--bg2);overflow-y:auto;opacity:0;transform:translateY(22px);transition:opacity .38s ease,transform .42s cubic-bezier(.22,.8,.2,1)';
-  const card=(id,tone,icon,eyebrow,title,sub,bullets)=>{
+  // Scanning is hardware, not a setting: a phone without LiDAR can never do it,
+  // so the card is greyed rather than failing on tap, and it explains itself
+  // (owner 2026-08-09). _scanCapable() answers synchronously off a cached
+  // RoomPlan capability probe, never a hardcoded model list.
+  const scanLocked=(typeof _scanCapable!=='function')||!_scanCapable();
+  const card=(id,tone,icon,eyebrow,title,sub,bullets,locked)=>{
     const bul=bullets.map(b=>'<li><span>'+svgIcon('✓')+'</span>'+b+'</li>').join('');
-    return `<button class="chooser-card chooser-${tone}" onclick="_pickEstStyle('${id}')">
-      <div class="chooser-card-eyebrow">${eyebrow}</div>
+    const act=locked?'_scanWhyNoLidar()':`_pickEstStyle('${id}')`;
+    return `<button class="chooser-card chooser-${tone}" onclick="${act}"${locked?' style="opacity:.55;filter:grayscale(1)"':''}>
+      <div class="chooser-card-eyebrow"${locked?' style="color:var(--text3)"':''}>${locked?'Needs a Pro iPhone':eyebrow}</div>
       <div class="chooser-card-icon">${icon}</div>
       <div class="chooser-card-title">${title}</div>
-      <div class="chooser-card-sub">${sub}</div>
+      <div class="chooser-card-sub">${locked?'This phone has no LiDAR sensor to measure with':sub}</div>
       <ul class="chooser-card-bullets">${bul}</ul>
-      <div class="chooser-card-cta">Start →</div>
+      <div class="chooser-card-cta">${locked?'Which iPhones? →':'Start →'}</div>
     </button>`;
   };
   ov.innerHTML=
-    '<div style="max-width:760px;margin:0 auto;padding:24px 20px 40px">'+
+    '<div style="max-width:760px;margin:0 auto;padding:calc(24px + env(safe-area-inset-top,0px)) 20px calc(40px + env(safe-area-inset-bottom,0px))">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'+
         '<div>'+
           '<div class="tbar-eyebrow">Pick proposal type</div>'+
@@ -478,6 +484,8 @@ function _showEstimateStylePicker(c,overrideAddr){
         '<button class="btn btn-ghost" onclick="_closeStylePicker()">Cancel</button>'+
       '</div>'+
       '<div class="chooser-grid">'+
+        card('scan','blue',svgIcon('📐',{size:36}),'Measured by LiDAR','Scan Estimate','Built from the rooms you scanned, nothing typed',
+          ['Every quantity measured, not guessed','Per-surface rates price rooms instantly','High ceilings auto-flagged from the scan','The proposal shows their floor plan'],scanLocked)+
         card('freeform','green',svgIcon('🧩',{size:36}),'A la carte','Build Your Own','List every service with its own price',
           ['Price each service individually','Mix labor, materials &amp; add-ons','Deposit collected upfront','Easy to upsell extras'])+
         card('tm','amber',svgIcon('⏱️',{size:36}),'Unknown scope','Time &amp; Materials','Flexible billing when you can\'t lock in a price',
@@ -496,6 +504,16 @@ function _pickEstStyle(style){
   // instead of flashing to the dashboard behind it.
   if(style==='tm'){openTMEstimate(c);}
   else if(style==='freeform'){openFreeFormEstimate(c);}
+  else if(style==='scan'){
+    // Belt and braces: the card is greyed out on a phone that cannot scan, but
+    // this is the one entry point, so it refuses there too rather than opening
+    // a builder with nothing to build from.
+    if(typeof _scanCapable==='function'&&!_scanCapable()){
+      if(typeof _scanWhyNoLidar==='function')_scanWhyNoLidar();
+      return;
+    }
+    if(typeof openScanEstimate==='function')openScanEstimate(c);
+  }
 }
 
 function _doOpenEstimate(c,_overrideAddr,_forceTrade){
@@ -1458,6 +1476,7 @@ function renderClientDetail(){
   renderCDTimeline();
   renderClientNotes();
   renderCDRisk();
+  if(typeof _renderCDScans==='function')_renderCDScans();
   renderCDEstimatesUpcoming();
   renderCDOpportunities();
   renderCDAddresses();
@@ -2380,7 +2399,7 @@ function _cpOpen(bidId,view){
         const choices=prop.colorChoices||[];if(!choices.length)return;const cd=document.createElement('div');cd.style.cssText='background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px';cd.innerHTML='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">'+svgIcon('🎨')+' Client Color Selections</div>'+choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('');propPane.insertBefore(cd,propPane.firstChild);}catch(e){}});}).catch(()=>{});
     }
   }else if(_cpStorageKey&&typeof _supa!=='undefined'){
-    propPane.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:13px">Loading proposal…</div>';
+    propPane.innerHTML='<div style="padding:24px 16px">'+_tdSkelRows(4,13)+'</div>';
     _supa.storage.from('proposals').download(_cpStorageKey).then(({data,error})=>{
       if(error||!data){propPane.innerHTML='<div style="padding:40px;text-align:center;color:var(--text3);font-style:italic">Could not load proposal.</div>';return;}
       data.text().then(txt=>{try{

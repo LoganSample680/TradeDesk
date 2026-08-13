@@ -190,6 +190,25 @@ function _buildClientHubSnapshot(clientId){
     return {id:j.id,bid_id:j.bid_id||null,name:j.name||'Job',start:j.start||'',days:j.days||0,status:j.status||'scheduled',completion_date:j.completion_date||'',photos:jPhotos};
   });
   const snapshotPayments=cpayments.map(p=>({date:p.date||'',type:p.type||'',amount:p.amount||0,bid_id:p.bid_id||null,ref:p.ref||'',method:p.method||''}));
+  // Floor plans (TdScan). THE GATE LIVES HERE, server-side of the client:
+  // a locked scan ships ONLY teaser facts (name, room count, rounded sq ft,
+  // price), never geometry or the SVG, so no amount of view-source or
+  // screenshot beats it. Unlocked (bought standalone, or the bid signed and
+  // paid IN FULL) ships the pre-rendered plan SVG and per-room numbers.
+  const snapshotScans=(typeof getScans==='function'?getScans():[])
+    .filter(s=>String(s.clientId)===String(clientId))
+    .map(s=>{
+      const unlocked=(typeof scanUnlocked==='function')&&scanUnlocked(s);
+      const totalSqFt=Math.round(_scanSqFt((s.rooms||[]).reduce((t,r)=>t+r.floorM2,0)));
+      const base={id:s.id,name:s.name||'Floor plan',roomCount:(s.rooms||[]).length,
+                  totalSqFt:unlocked?totalSqFt:Math.round(totalSqFt/50)*50,
+                  price:s.price!=null?s.price:null,unlocked:!!unlocked};
+      if(unlocked){
+        base.svg=_scanPlanSvg(s,{lens:'plan',sheet:true,title:s.name||'Floor plan'});
+        base.rooms=(s.rooms||[]).map(r=>({label:r.label,sqFt:Math.round(_scanSqFt(r.floorM2)),ceilHt:_scanFtIn(r.hM)}));
+      }
+      return base;
+    });
   const jobPhotos=clientPhotos.map(p=>({url:p.url,thumbUrl:p.thumbUrl||'',type:p.type,caption:p.caption||'',job_name:p.job_name||'',job_id:p.job_id||null,uploadedAt:p.uploadedAt||''}));
   // Extract optional chaining BEFORE the return object, Safari crashes on ?. inside { }
   const _snapUserId=_effectiveUid()||'';
@@ -202,6 +221,7 @@ function _buildClientHubSnapshot(clientId){
   const _snapCancelStatute=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].statute:'16 CFR Part 429';
   return {
     clientId,clientName:c.name,clientEmail:c.email||'',clientPhone:c.phone||'',clientAddr:c.addr||'',
+    scans:snapshotScans,
     contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
     brandColor:adaBrand(S.brandColor)||'',
     // logoUrl when the CURRENT logo is confirmed uploaded (hash match); base64
@@ -856,8 +876,25 @@ async function renderCalGrid(){
   }
   // Validation: drop any cell whose year is outside plausible range
   const validCells=cells.filter(({d})=>d.getFullYear()>=2020&&d.getFullYear()<=2099);
-  // Fetch weather (cached: won't block render on repeat calls)
-  const weather=await fetchWeather()||{};
+  // Weather NEVER blocks the paint (owner mandate 2026-08-09: no double
+  // waterfall). The old code awaited fetchWeather here, holding the entire
+  // grid hostage to a 4-5s network call, and pg-cal's 5s page fade existed
+  // only to hide that. Now: paint instantly with whatever is cached, shimmer
+  // the weather slot while a fetch is out, and repaint ONCE when it lands.
+  const _wxFresh=typeof _weatherCache!=='undefined'&&_weatherCache&&(Date.now()-_weatherCacheTime)<1800000;
+  const weather=(typeof _weatherCache!=='undefined'&&_weatherCache)||{};
+  const wxPending=!_wxFresh&&!!(S.weatherLat&&S.weatherLon);
+  if(wxPending){
+    Promise.resolve(fetchWeather()).then(w=>{
+      // Repaint only when a FRESH map actually landed and the calendar is
+      // still the page on screen. The freshness check is the loop guard: an
+      // in-flight fetch hands back the stale cache immediately, and repainting
+      // on that would kick another fetch forever. A failed fetch leaves cells
+      // weatherless, the same outcome as before.
+      const fresh=w&&Object.keys(w).length&&_weatherCache&&(Date.now()-_weatherCacheTime)<1800000;
+      if(fresh&&document.getElementById('pg-cal')?.classList.contains('active'))renderCalGrid();
+    },()=>{});
+  }
   validCells.forEach(({d,other})=>{
     const key=dateKey(d),isToday=key===tk,dj=getJobsOnDay(key);
     const wx=!other?weather[key]:null;
@@ -870,7 +907,8 @@ async function renderCalGrid(){
     html+='<div class="'+cls+'"'+(clickable?' onclick="expandCalDay(\''+key+'\')" style="cursor:pointer"':'')+'>'+
       '<div style="display:flex;justify-content:space-between;align-items:center">'+
         '<div class="cdn">'+d.getDate()+'</div>'+
-        (wx?'<div style="font-size:13px;line-height:1" title="'+wx.label+' · '+wx.hi+'°/'+wx.lo+'°F'+'">'+wx.icon+'</div>':'') +
+        (wx?'<div style="font-size:13px;line-height:1" title="'+wx.label+' · '+wx.hi+'°/'+wx.lo+'°F'+'">'+wx.icon+'</div>'
+           :(wxPending&&!other?'<div class="td-skel" style="width:14px;height:12px"></div>':'')) +
       '</div>'+
       (wx?'<div style="font-size:9px;color:'+(wx.rain?'#A32D2D':'var(--text3)')+';font-weight:600;margin-bottom:1px;line-height:1">'+wx.hi+'°/'+wx.lo+'°'+(wx.precip>20?' · '+wx.precip+'%':'')+'</div>':'')+
       dj.map(({job,isBuf})=>{

@@ -1,0 +1,9 @@
+{
+  "name": "td-notify",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TradeDesk local notifications. Scheduled ON the phone, so no server, no APNs, no per-message cost, and they fire with no signal: tomorrow's first job, an overdue invoice, and the arrival tap-back from Apple Maps. Raw capability only; what gets scheduled and what it says lives in js/notify.js.",
+  "main": "index.js",
+  "capacitor": { "ios": { "src": "ios" } },
+  "files": ["index.js", "ios/", "TdNotify.podspec"]
+}

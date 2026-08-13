@@ -386,6 +386,9 @@ function saveEndDriveModal(){
     id:_newId(),date:gps.startTime?dateKey(new Date(gps.startTime)):todayKey(),
     vehicle:gps.vehicle,vehicleId:_vehIdForName(gps.vehicle),purpose:gps.purpose,
     loggedAt:new Date().toISOString(),
+    // When the drive BEGAN, so the journey dedup can window this row against
+    // an automatic leg that lands later (the mid-drive manual tap case).
+    startedIso:gps.startTime?new Date(gps.startTime).toISOString():undefined,
     miles:Math.round(miles*10)/10,
     client_id:gps.clientId,client_name:c?c.name:'',
     start_coords:gps.startCoords||null,
@@ -475,6 +478,22 @@ function _initMapKit(){
   _mapkitReady=true;
   _retryPendingTrips();
 }
+// The wheels cannot beat the road (owner report 2026-08-11: Home Depot to the
+// shop "in 3 minutes", which that route cannot be driven in). A leg picked up
+// mid-drive (webview crash, app relaunch, late first fix) opens its clock
+// late, so the observed window can be a fraction of the route's own drive
+// time. When the observed minutes are under half the router's, the router's
+// time replaces them and the start is pulled back from the verified arrival
+// to match, flagged timeInferred. Payroll is untouched on purpose: the time
+// entry keeps only the observed minutes, per the owner's 2026-08-03 rule that
+// duration nobody observed is never claimed as labor.
+function _mileFixLegClock(rec,routeMins){
+  if(!rec||!(routeMins>0)||!rec.endedIso)return;
+  if(rec.mins>0&&rec.mins*2>=routeMins)return;   // plausible window, observed wins
+  rec.mins=routeMins;
+  rec.startedIso=new Date(Date.parse(rec.endedIso)-routeMins*60000).toISOString();
+  rec.timeInferred=true;
+}
 async function _retryPendingTrips(){
   // Two kinds of unfinished trip, and they resolve differently. A manual one has
   // typed ADDRESSES that still need geocoding; an automatic one already holds
@@ -505,7 +524,7 @@ async function _retryPendingTrips(){
       const fc=auto?rec.fromCoord:await _resolveCoords(rec.from);
       const tc=auto?rec.toCoord:await _resolveCoords(rec.to);
       if(!fc||!tc)continue;
-      const{miles}=await _routeDistance(fc,tc);
+      const{miles,mins:routeMins}=await _routeDistance(fc,tc);
       // SECOND re-read, after the route call. The one above catches a row that
       // had already settled when we reached it; this catches one that changed
       // WHILE we were measuring. A leg gets re-origined mid-flight when a stop
@@ -515,14 +534,172 @@ async function _retryPendingTrips(){
       if(rec.calc_method!==method)continue;
       if(auto&&(rec.fromCoord!==fc||rec.toCoord!==tc))continue;
       if(!(miles>0))continue;   // not a measurement: leave it pending for the next sweep
-      rec.miles=Math.round(miles*10)/10;rec.calc_method=auto?'auto_route':'address';
+      // Same observed-miles floor the live measurement applies (forced-detour
+      // rule): a leg that settles here instead must not lose it.
+      let best=miles;
+      if(auto&&rec.gpsMiles>0&&rec.gpsMiles>miles&&rec.gpsMiles<=miles*4)best=rec.gpsMiles;
+      rec.miles=Math.round(best*10)/10;rec.calc_method=auto?'auto_route':'address';
+      if(auto)_mileFixLegClock(rec,routeMins);
+      // Keep the resolved endpoints on a manual row: the journey dedup matches
+      // destinations by coordinate first, and a typed address otherwise only
+      // ever matches by name.
+      if(!auto){rec.fromCoord=rec.fromCoord||fc;rec.toCoord=rec.toCoord||tc;}
       filled++;
     }catch(e){}
   }
   if(!filled)return;   // nothing changed, do not churn a save or a re-render
+  // Freshly measured rows can now settle their duplicates (the journey dedup
+  // defers any pair where a number is still missing, so this is its retry).
+  _mileDedupTrips();
   saveAll();
   if(document.getElementById('mil-table'))renderAllMileage();
   renderDash();
+}
+
+// ── One journey, one row (owner report 2026-08-11) ───────────────────────────
+// The owner drove once to John Doe and got THREE rows: the auto leg, the same
+// leg re-closed after a parking-lot truck move, and a manual drive started
+// mid-route when they opened Drive to find the address. The rule they set:
+// rows describing the same journey collapse to ONE. The automatic row is the
+// source of truth whenever one exists; between rows of the same kind the
+// longest measured trip survives (see _mileTripWinner).
+//
+// "Same journey" is deliberately strict, because deleting a real trip costs
+// real deduction money: same person, time windows that overlap, and the same
+// destination. Two genuine trips by one person to one place can never overlap
+// in time: you cannot drive to somewhere you are already driving to.
+const _MILE_DEDUP_DEST_FT=1500;         // fence radius + GPS scatter
+const _MILE_DEDUP_SLACK_MS=10*60000;    // manual rows only: loggedAt is a tap, not a clock
+function _mileTripWindow(m){
+  const end=Date.parse(m.endedIso||m.loggedAt||'')||0;
+  const start=Date.parse(m.startedIso||m.loggedAt||'')||end;
+  return {start:Math.min(start,end)||end,end:Math.max(start,end)};
+}
+function _mileSameJourney(a,b){
+  if(!a||!b||a===b)return false;
+  // Another crew member's leg is never this one, however the clocks line up.
+  // Rows with no logged_by_id are the owner's; strict equality keeps an
+  // employee's drive from ever swallowing the owner's or vice versa.
+  if((a.logged_by_id||null)!==(b.logged_by_id||null))return false;
+  // Journey-level dedup exists for the HAND-TYPED half of a double log: a
+  // manual drive tapped mid-journey against the automatic leg that lands
+  // later. Two automatic rows are only ever duplicates as twins of one leg
+  // (_mileSameLeg): the fence machine writes distinct legs for distinct
+  // drives, and collapsing them by time-and-destination would eat a crew's
+  // genuinely repeated runs.
+  if(a.legKey&&b.legKey)return false;
+  // A trip FILED for a different day is a different journey whatever the
+  // clocks say: the bite this closes is typing in yesterday's forgotten trip
+  // minutes after arriving at the same client today, where the entry's
+  // created-timestamp lands inside today's leg window and the names match.
+  if(a.date&&b.date&&a.date!==b.date)return false;
+  const wa=_mileTripWindow(a),wb=_mileTripWindow(b);
+  if(!wa.end||!wb.end)return false;
+  // A manual row's only timestamp may be the End Drive tap a few minutes
+  // after arrival, so the overlap gets slack.
+  const slack=_MILE_DEDUP_SLACK_MS;
+  if(!(wa.end+slack>=wb.start&&wb.end+slack>=wa.start))return false;
+  // Same destination: by coordinates when both ends are known, by client
+  // otherwise (a manual row carries no toCoord, only who it was for).
+  const near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&typeof _geoDistFt==='function'&&
+    _geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=_MILE_DEDUP_DEST_FT);
+  if(near(a.toCoord,b.toCoord))return true;
+  if(a.client_id!=null&&b.client_id!=null&&String(a.client_id)===String(b.client_id))return true;
+  // A "Log a trip" row can carry NO client link and NO coordinates, only the
+  // destination's name (the owner's 2026-08-11 mid-drive trip did). The name
+  // plus an overlapping window for the same person is still one journey.
+  const names=m=>[m.to_name,m.client_name].map(s=>String(s||'').trim().toLowerCase()).filter(s=>s.length>2);
+  const na=names(a),nb=names(b);
+  if(na.length&&nb.length&&na.some(n=>nb.indexOf(n)>=0))return true;
+  return false;
+}
+// The same LEG closed twice. A re-delivered close carries the IDENTICAL
+// stored leg start (the same _geoDriveStartedAt value goes into both rows),
+// so exact equality is the discriminator, not a time window: two real legs
+// minutes apart to the same place must never read as one, and a window wide
+// enough to matter starts eating a crew's genuinely repeated runs. These are
+// duplicates even before either has measured, because identical endpoints can
+// only ever measure identical.
+function _mileSameLeg(a,b,heal){
+  if(!a||!b||!a.legKey||!b.legKey)return false;
+  // Two crew members can leave the same shop for the same job in the same
+  // minute: identical endpoints, identical clocks, two REAL drives.
+  if((a.logged_by_id||null)!==(b.logged_by_id||null))return false;
+  // Same deterministic key = same leg, however the rows arrived (two devices
+  // syncing the same drive land here).
+  if(a.legKey===b.legKey)return true;
+  const near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&typeof _geoDistFt==='function'&&
+    _geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=_MILE_DEDUP_DEST_FT);
+  if(!near(a.fromCoord,b.fromCoord)||!near(a.toCoord,b.toCoord))return false;
+  const sa=Date.parse(a.startedIso||''),sb=Date.parse(b.startedIso||'');
+  if(!sa||!sb)return false;
+  if(sa===sb)return true;
+  // HEAL (boot only): same endpoints and OVERLAPPING clocks are one drive,
+  // because nobody can start the same journey again while still finishing it.
+  // The owner's replay pair carried starts seconds apart (the two closes read
+  // the leg start from different state variables), so exact equality alone
+  // left them standing. This stays out of the live sweep because CI fixtures
+  // fabricate overlapping clocks for legs that are deliberately distinct;
+  // boot-time in a test runs before any fixture exists.
+  if(heal){
+    const wa=_mileTripWindow(a),wb=_mileTripWindow(b);
+    if(wa.end&&wb.end&&wa.end>=wb.start&&wb.end>=wa.start)return true;
+  }
+  return false;
+}
+// Which of two same-journey rows survives. The AUTOMATIC row is the source
+// of truth whenever one exists (owner rule 2026-08-11: "the background
+// running one should always be the source of truth"): it ran geocode to
+// geocode over the whole journey and Apple measured it, while a manual entry
+// is a number typed from memory, so distance never arbitrates BETWEEN kinds.
+// Within the same kind: longest measured wins, then the EARLIEST close, since
+// a re-delivered leg is stamped with the replay's clock and the earlier row
+// is the contemporaneous one.
+function _mileTripWinner(a,b){
+  if(!!a.legKey!==!!b.legKey)return a.legKey?a:b;
+  const am=a.miles>0,bm=b.miles>0;
+  if(am&&bm&&Math.abs(a.miles-b.miles)>0.05)return a.miles>b.miles?a:b;
+  if(am!==bm)return am?a:b;
+  return (Date.parse(a.loggedAt||'')||0)<=(Date.parse(b.loggedAt||'')||0)?a:b;
+}
+function _mileDedupTrips(heal){
+  if(typeof mileage==='undefined'||!Array.isArray(mileage))return 0;
+  const drop=new Set();
+  for(let i=0;i<mileage.length;i++){
+    const a=mileage[i];if(!a||drop.has(a))continue;
+    for(let j=i+1;j<mileage.length;j++){
+      const b=mileage[j];if(!b||drop.has(b))continue;
+      const twin=_mileSameLeg(a,b,heal);
+      if(!twin&&!_mileSameJourney(a,b))continue;
+      // A row still awaiting its measurement is only ever dropped as a twin of
+      // another auto row (identical endpoints, identical eventual answer).
+      // Journey-level dedup waits until both have numbers: the sweep runs
+      // again after every fill, so nothing is decided on a zero.
+      //
+      // ONE-WAY exception (day-simulator fuzzer find, 2026-08-13): a MEASURED
+      // automatic row absorbs an UNMEASURED manual one of the same journey
+      // now rather than never. A manual trip whose From was left blank (the
+      // realistic mid-drive tap) can never be measured, there is no origin to
+      // route from, so waiting for its number left it as a permanent 0-mile
+      // duplicate. Deleting it early loses nothing: the winner rule hands the
+      // journey to the automatic row whatever the numbers say. The reverse
+      // stays deferred, a pending AUTO row must prove it can measure before
+      // it may eat the only real number in the pair.
+      if(!twin&&!(a.miles>0&&b.miles>0)){
+        const autoMeasured=(a.legKey&&a.miles>0&&!b.legKey)||(b.legKey&&b.miles>0&&!a.legKey);
+        if(!autoMeasured)continue;
+      }
+      const loser=_mileTripWinner(a,b)===a?b:a;
+      drop.add(loser);
+      if(loser===a)break;   // a is gone, stop comparing against it
+    }
+  }
+  if(!drop.size)return 0;
+  for(const m of drop){const i=mileage.indexOf(m);if(i>=0)mileage.splice(i,1);}
+  if(typeof saveAll==='function')saveAll();
+  if(document.getElementById('mil-table'))renderAllMileage();
+  if(typeof renderDash==='function')renderDash();
+  return drop.size;
 }
 
 // ── Automatic trip, written by the geofence when a drive leg closes ──────────
@@ -581,6 +758,11 @@ function autoLogDriveTrip(opts){
     // long the drive took, not just how far). Absent on stale legs, where no
     // duration was observed, and on manual rows, where none was measured.
     mins:(opts.mins>0?Math.round(opts.mins):undefined),
+    // Straight-line GPS tally for the leg, the floor the route measurement
+    // must beat: a forced detour drives real miles MapKit's ideal route never
+    // sees. Absent on stale legs and collapsed-detour legs (geo-track.js owns
+    // that judgment).
+    gpsMiles:(opts.observedMiles>0?opts.observedMiles:undefined),
     // The trip's real clock: startedIso already exists below (End Drive needs
     // it), endedIso is the verified arrival. Both absent on stale legs.
     endedIso:opts.endedIso||undefined,
@@ -613,7 +795,7 @@ function autoLogDriveTrip(opts){
   const _fc=rec.fromCoord,_tc=rec.toCoord;
   (async()=>{
     try{
-      const{miles}=await _routeDistance(_fc,_tc);
+      const{miles,mins:routeMins}=await _routeDistance(_fc,_tc);
       const saved=mileage.find(m=>m.id===rec.id);
       if(!saved)return;
       // Stale: something re-pointed this leg while we were measuring. Writing now
@@ -626,7 +808,17 @@ function autoLogDriveTrip(opts){
       // FOREVER: a silent zero-mile trip that still prints on a tax export as a
       // real one. Staying pending is the honest state and the recoverable one.
       if(!(miles>0))return;
-      saved.miles=Math.round(miles*10)/10;saved.calc_method='auto_route';
+      // The route is the answer UNLESS the wheels observably covered more (a
+      // forced detour): then the observed tally wins, capped at 4x the route
+      // so a GPS blowup can never invent a day of driving (owner rule
+      // 2026-08-11). The tally undercounts curves, so this only ever recovers
+      // miles that were provably driven.
+      let best=miles;
+      if(saved.gpsMiles>0&&saved.gpsMiles>miles&&saved.gpsMiles<=miles*4)best=saved.gpsMiles;
+      saved.miles=Math.round(best*10)/10;saved.calc_method='auto_route';
+      _mileFixLegClock(saved,routeMins);
+      // Now that this trip has its number, settle any same-journey duplicates.
+      _mileDedupTrips();
       saveAll();
       if(document.getElementById('mil-table'))renderAllMileage();
       if(typeof renderDash==='function')renderDash();
@@ -680,9 +872,33 @@ async function _autoNameStopTrip(rec,to){
     // date and would have healed it on the next load; this makes the first
     // answer right instead of the second.
     const legDay=(rec&&rec.date)||todayKey();
-    const personal=!!(poi.name&&_poiIsPersonal(poi.category)&&
-                      !(typeof expenseForStop==='function'&&
-                        expenseForStop({lat:to.lat,lng:to.lng,name:poi.name,day:legDay})));
+    // ── WHAT MAKES AN UNSCHEDULED STOP BUSINESS ──────────────────────────────
+    // Exactly two things, and neither of them is a guess about what the shop
+    // sells (owner 2026-08-10: "the only places that could return as a business
+    // expense is if that place is explicitly listed under their places as a
+    // supply house"):
+    //
+    //   1. It is one of THEIR OWN saved places, with a kind that is business
+    //      (shop, supply house, home office, business meeting). placeAt matches
+    //      on the pin, inside that place's own fence.
+    //   2. There is a receipt at that pin on the leg's day. The contractor
+    //      spending money there IS the claim, and it is evidence they already
+    //      have to keep.
+    //
+    // Everything else comes off the log. This replaced a name-matching guess at
+    // which shops are supply houses, which was mine and was wrong: whether a
+    // Target run is a supply run is the contractor's call, not a regex's. An
+    // unsaved stop is offered as a place to save (js/places.js repeat-stop
+    // suggestions), and saving it as a supply house makes every future stop
+    // there count.
+    //
+    // Still only NAMED stops: an unnamed one is the geofence layer's business
+    // (_geoCollapseDetours), and this must not judge it twice.
+    const savedPlace=(typeof placeAt==='function')?placeAt({lat:to.lat,lon:to.lng}):null;
+    const savedIsBusiness=!!(savedPlace&&_PLACE_KIND_TO_PURPOSE[savedPlace.kind]);
+    const hasReceipt=!!(typeof expenseForStop==='function'&&
+                        expenseForStop({lat:to.lat,lng:to.lng,name:poi.name,day:legDay}));
+    const personal=!!poi.name&&!savedIsBusiness&&!hasReceipt;
     // And patch a leg out of here that was ALREADY written. Which of the two
     // landed first depends on how long Apple took against how long they were
     // parked, and a record must not depend on that race.
@@ -736,7 +952,9 @@ async function _autoNameStopTrip(rec,to){
       // address column the manual log already uses for the same thing.
       saved.to_name=poi.name;
       saved.to=poi.addr||poi.name;
-      saved.purpose=_autoTripPurpose({kind:_poiPlaceKind(poi.category)});
+      // The saved place's own kind is the truth; the category guess is only the
+      // fallback for the receipt-without-a-saved-place case.
+      saved.purpose=_autoTripPurpose({kind:(savedPlace&&savedPlace.kind)||_poiPlaceKind(poi.category)});
     }
     saveAll();
     if(document.getElementById('mil-table'))renderAllMileage();
@@ -791,6 +1009,10 @@ function _reoriginTrip(m,from){
   if(!m||!from||from.lat==null)return;
   m.from=from.addr||from.name||'';
   m.from_name=from.name||'';
+  // A re-pointed leg spans a journey the GPS tally never watched as one piece
+  // (and may include a personal stop's driving): the observed-miles floor no
+  // longer applies, only the direct route does.
+  delete m.gpsMiles;
   const fc=m.fromCoord={lat:from.lat,lng:from.lng};
   const tc=m.toCoord;
   m.miles=0;m.calc_method='pending_auto';
@@ -1056,23 +1278,20 @@ async function _poiAt(coord){
   }catch(_e){}
   return null;
 }
-// Apple's POI categories mapped onto the four kinds a contractor cares about.
-// Anything unrecognised stays 'supply', which is the existing default and the
-// overwhelmingly common case for a place they keep stopping at.
+// Apple's POI categories mapped onto the kinds a contractor cares about.
+//
+// A SUGGESTION ONLY. This prefills the kind dropdown when they save a new place
+// (js/places.js) and names the purpose on a receipt-backed stop that has no
+// saved place yet. It decides no money on its own: what makes a stop
+// deductible is the place THEY saved, or a receipt (see _autoNameStopTrip).
+// A previous version of this file guessed supply houses from their names; that
+// guess is deleted, because whether a shop is a supply house is the
+// contractor's call.
 function _poiPlaceKind(category){
   const c=String(category||'');
-  if(/Store|Hardware|Home|Building|Supply|Warehouse|Wholesale/i.test(c))return 'supply';
-  if(_poiIsPersonal(c))return 'other';
+  if(/Hardware|Building|Lumber|Wholesale|Warehouse|Supply/i.test(c))return 'supply';
+  if(/Restaurant|Cafe|Food|Bakery|Brewery|Bar/i.test(c))return 'other';
   return 'supply';
-}
-// The one category that makes a stop PERSONAL rather than a work errand, and so
-// the one that keeps a leg off the mileage log entirely. Deliberately narrow: it
-// only ever subtracts a trip, so a loose pattern here silently costs the
-// contractor deductions they earned. Kept as its own predicate rather than read
-// off _poiPlaceKind's 'other', because that function's catch-all is 'supply' and
-// a future category landing in 'other' must not start deleting trips.
-function _poiIsPersonal(category){
-  return /Restaurant|Cafe|Food|Bakery|Brewery|Bar/i.test(String(category||''));
 }
 async function _routeDistance(fromCoords,toCoords){
   // MapKit Directions, primary
@@ -1564,12 +1783,27 @@ function openLogTripModal(opts){
       '<button type="button" onclick="calculateAndShowRoute()" style="background:none;border:none;color:var(--blue);font-size:12px;font-weight:600;cursor:pointer;padding:0">↺ Recalculate</button>'+
     '</div>'+
     '<input type="hidden" id="lm-map-app" value="">'+
+    // ONE MAP AND NONE (owner call 2026-08-10: "only show Apple Maps on Apple
+    // devices and give a none option for back completing mileage, then Google
+    // on android devices and desktops").
+    //
+    // Offering a contractor a map their device cannot open is a button that
+    // does nothing, and a third choice nobody on that device would ever pick
+    // is just something to mis-tap. So the sheet shows the one map this device
+    // actually has, already selected, plus None for a trip somebody is
+    // back-filling a week later. Save trip is the start button.
+    //
+    // What "Apple Maps" MEANS still varies invisibly: in the app it is our own
+    // full-screen Apple Maps drive (js/drive.js), in Safari it opens the Maps
+    // app. Same promise, best available version of it.
     (!opts.editId?
       '<div class="f" style="margin-bottom:14px">'+
-        '<label style="margin-bottom:6px;display:block">Open in maps after saving <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
+        // No "(optional)" tag: None is right there saying so (owner 2026-08-10).
+        '<label style="margin-bottom:6px;display:block">Navigate after saving</label>'+
         '<div style="display:flex;gap:8px">'+
-          '<button type="button" id="lm-map-apple" onclick="_selectTripMapApp(\'apple\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:42px"> Apple Maps</button>'+
-          '<button type="button" id="lm-map-google" onclick="_selectTripMapApp(\'google\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:42px"> Google Maps</button>'+
+          (_tripMapForDevice()==='apple'
+            ?'<button type="button" id="lm-map-apple" onclick="_selectTripMapApp(\'apple\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:42px"> Apple Maps</button>'
+            :'<button type="button" id="lm-map-google" onclick="_selectTripMapApp(\'google\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:42px"> Google Maps</button>')+
           '<button type="button" id="lm-map-none" onclick="_selectTripMapApp(\'\')" class="btn" style="flex:1;font-size:13px;min-height:42px;color:var(--text3)">None</button>'+
         '</div>'+
       '</div>':'')+
@@ -1585,9 +1819,16 @@ function openLogTripModal(opts){
   document.body.appendChild(overlay);
   // Auto-select map app based on device (skip in edit mode)
   if(!opts.editId){
-    const _ua=navigator.userAgent||'';
-    const _defMap=/iPhone|iPad|iPod/i.test(_ua)?'apple':/Android/i.test(_ua)?'google':'';
-    if(_defMap)setTimeout(()=>_selectTripMapApp(_defMap),50);
+    // The one map this device has is also the one already selected, so the
+    // common trip is Save and go.
+    const _defMap=_tripMapForDevice();
+    // Synchronously, NOT on a timer. The buttons are already in the DOM: they
+    // were built into the overlay's innerHTML before the appendChild above, so
+    // there is nothing to wait for. The old 50ms defer left the sheet showing
+    // no selection for its first frames, which is a real flicker on a phone
+    // and a race for anything reading the state, and it is what made this test
+    // fail on WebKit and pass on Chromium.
+    if(_defMap)_selectTripMapApp(_defMap);
     // Auto-grab GPS for starting location if not pre-filled
     if(!opts.fromAddress)setTimeout(()=>grabMyLocation(false),300);
   }
@@ -1687,10 +1928,27 @@ async function calculateAndShowRoute(){
     zAlert(e.message+'\n\nTip: Try typing the city and state, or pick from the search suggestions.',{title:'Could not calculate route'});
   }finally{if(btn){btn.disabled=false;btn.innerHTML=svgIcon('🗺',{size:12})+' Calculate miles';}}
 }
+// WHICH MAP THIS DEVICE ACTUALLY HAS. One definition, used by both the chooser
+// and the preselect, so the button on screen and the link behind it can never
+// disagree.
+//
+// Apple hardware gets Apple Maps, and that includes a Mac (owner 2026-08-10:
+// "Mac's get Apple always"): maps:// is an Apple URL scheme and opens the real
+// Maps app on an iPhone, an iPad and a desktop Mac alike. Everything else,
+// Android, Windows and Linux, gets Google, whose handoff is a plain
+// google.com/maps web link that opens in a tab anywhere.
+//
+// The rule is now simply "Apple device, Apple Maps", with no phone-versus-desk
+// exception to remember.
+function _tripMapForDevice(){
+  return /iPhone|iPad|iPod|Macintosh|Mac OS X/i.test(navigator.userAgent||'')?'apple':'google';
+}
 function openTripInMaps(which,from,to){
   if(!to||!which)return;
   const enc=s=>encodeURIComponent(s);
   if(which==='apple'){
+    // Only ever reached on Apple hardware, because that is the only place the
+    // Apple button is rendered, so the scheme is always the right call.
     window.location.href='maps://?daddr='+enc(to)+'&dirflg=d';
   } else if(which==='google'){
     window.open('https://www.google.com/maps/dir/?api=1'+(from?'&origin='+enc(from):'')+'&destination='+enc(to)+'&travelmode=driving','_blank');
@@ -1729,7 +1987,26 @@ function saveLoggedTrip(){
   saveAll();
   closeTopModal();
   showToast('Trip saved, calculating mileage…','🚗');
-  if(mapApp&&to){
+  if(mapApp==='apple'&&to&&typeof driveCapable==='function'&&driveCapable()){
+    // Apple Maps, in the app: same tiles, same directions, without leaving.
+    // The app stays alive, so saveAll's debounce is in no danger and there is
+    // nothing to flush. Coordinates come from whatever the route calculation
+    // already resolved, and are only geocoded if the destination was typed and
+    // never looked up. If that lookup fails we fall back to the Maps app,
+    // because the contractor asked to be navigated, not to be told no.
+    (async()=>{
+      try{
+        let tc=_lmCoords.to;
+        if(!tc&&typeof _resolveCoords==='function')tc=await _resolveCoords(to);
+        if(tc&&tc.lat!=null&&typeof startDriveTo==='function'){
+          await startDriveTo({lat:tc.lat,lng:tc.lng,label:to});
+          return;
+        }
+      }catch(_e){}
+      _flushSaveNow();
+      openTripInMaps('apple',from,to);
+    })();
+  }else if(mapApp&&to){
     // iOS will suspend the PWA when we hand off to Apple/Google Maps, the 2s
     // debounce in saveAll() dies before firing. Push to Supabase NOW so the
     // in-flight fetch survives the app switch.

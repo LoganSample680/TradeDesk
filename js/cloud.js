@@ -36,6 +36,15 @@ function _parseSubInvitePayload(raw){
   if(raw||subRaw||grantTok)history.replaceState(null,'',window.location.pathname);
 })();
 
+// One clean boot, phase 0 (owner 2026-08-10: "EVERYTHING is the skeleton
+// shimmer right away before I even see it"): decide SYNCHRONOUSLY at script
+// parse, before any dashboard paint, whether this page load will sync. A
+// stored auth token means a signed-in boot with a cloud load coming, so every
+// render from the very first one holds shimmer skeletons. The flag clears on
+// the no-session / no-account / offline-catch paths, and _bootSyncSettled
+// flips _bootSkelDone when the load fully finishes.
+try{for(let _i=0;_i<localStorage.length;_i++){const _k=localStorage.key(_i);if(_k&&_k.indexOf('sb-')===0&&_k.indexOf('auth-token')>-1){window._bootSyncPending=true;break;}}}catch(_e){}
+
 async function _fetchStripeConnectStatus(){
   if(!supaEnabled()||!_supaUser)return null;
   // CREW: the status that matters is the BOSS's (payments from any link route to the
@@ -257,6 +266,29 @@ async function sendPaymentLink(bidId){
   }
 }
 // ── Account + User loader ─────────────────────────────────────────────
+// The SDK-less last resort: the boot's _sdkFallback (index.html) calls this
+// when the Supabase script itself never loaded. Identity does not need the
+// SDK, the auth token in localStorage names the user and zp3_acct_<uid> has
+// the rest (loadAccountData writes it on every successful load below). The
+// greeting, permissions, and trade nav must never depend on a script tag
+// answering (owner report 2026-08-12: offline boot showed no name).
+function _restoreIdentityFromCache(){
+  try{
+    if(_user)return true;   // a real load already ran, nothing to do
+    const _tk=Object.keys(localStorage).find(k=>/^sb-.*-auth-token$/.test(k));
+    const _uid=_tk?((JSON.parse(localStorage.getItem(_tk)||'null')||{}).user||{}).id||null:null;
+    const _ac=_uid?JSON.parse(localStorage.getItem('zp3_acct_'+_uid)||'null'):null;
+    if(!_ac||!_ac.user)return false;
+    _user=_ac.user;
+    if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;}
+    else{_isEmployee=false;_contractorUserId=null;_employeeRecord=null;}
+    _activeTrade=_ac.activeTrade||'painting';
+    if(_ac.account){_account=_ac.account;if(_account.business_name&&!S.bname)S.bname=_account.business_name;}
+    if(_ac.config)_config=_ac.config;
+    _renderNavTradeSwitcher();applyPermissions();
+    return true;
+  }catch(_e){return false;}
+}
 async function loadAccountData(){
   if(!_supa||!_supaUser)return false;
   try{
@@ -536,9 +568,31 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.08.26.6';
+const APP_VERSION='08.12.26.7';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
+// True only for the window between an in-tab sign-in landing on the dashboard
+// and the cloud load resolving (either way). renderDash shows skeleton KPI
+// tiles instead of $0 placeholders while it is set, owner report 2026-08-09:
+// "when I sign in sync fires but I see nothing but zeros for a second or two."
+// Deliberately NOT inferred from bare !_supaCloudLoaded: an environment where
+// no load is coming (mocked tests, brand-new account) must render real tiles.
+let _dashAwaitingCloud=false;
+// Fail-safe ceiling on the skeletons (owner report 2026-08-09: shimmer
+// looping forever in the shell with nothing arriving). A skeleton promises
+// ONE swap to content; if the cloud load hasn't settled by this deadline the
+// tiles drop to whatever local data exists and the load repaints on arrival.
+let _dashSkelMaxMs=8000;
+let _dashSkelTimer=null;
+function _dashArmSkelWatchdog(){
+  clearTimeout(_dashSkelTimer);
+  _dashSkelTimer=setTimeout(()=>{
+    if(_dashAwaitingCloud){
+      _dashAwaitingCloud=false;
+      try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}
+    }
+  },_dashSkelMaxMs);
+}
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
 // flips true only when the td-sync channel confirms SUBSCRIBED (delivery is live).
 // Anything that depends on actually RECEIVING peer changes should gate on this, not
@@ -577,7 +631,7 @@ let _lastKnownIds={
   td_clients:new Set(),td_bids:new Set(),td_jobs:new Set(),
   td_income:new Set(),td_expenses:new Set(),td_mileage:new Set(),
   td_payments:new Set(),td_liens:new Set(),td_time_entries:new Set(),
-  td_licenses:new Set(),td_events:new Set(),td_contracts:new Set(),td_agreements:new Set(),td_photos:new Set()
+  td_licenses:new Set(),td_events:new Set(),td_contracts:new Set(),td_agreements:new Set(),td_photos:new Set(),td_equipment:new Set()
 };
 
 // DELTA SYNC. Per-table Map(id -> content hash of the row payload the SERVER currently
@@ -1219,6 +1273,8 @@ const _TD_TABLES=[
   {t:'td_maintenance', get:()=>maintenance, set:v=>{maintenance.length=0;v.forEach(r=>maintenance.push(r));}, tx:null},
   {t:'td_vehicles',    get:()=>vehicles,    set:v=>{vehicles.length=0;v.forEach(r=>vehicles.push(r));},     tx:null},
   {t:'td_places',      get:()=>places,      set:v=>{places.length=0;v.forEach(r=>places.push(r));},         tx:null},
+  {t:'td_scans',       get:()=>scans,       set:v=>{scans.length=0;v.forEach(r=>scans.push(r));},           tx:null},
+  {t:'td_equipment',   get:()=>equipment,   set:v=>{equipment.length=0;v.forEach(r=>equipment.push(r));},   tx:null},
   {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
     tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
 ];
@@ -1470,6 +1526,13 @@ function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _armBootCascade(){
   const d=document.getElementById('pg-dash');
   if(!d||!d.classList.contains('active'))return;
+  // ONE pour per page load (owner 2026-08-10: "the tiles at the top are
+  // waterfalling 3 times"). Boot re-renders (local paint, cloud load,
+  // settings apply) each re-armed the ripple, so the cards visibly restarted
+  // their entrance mid-flight. The first arm wins; later renders just update
+  // content in place.
+  if(window._bootCascadeRan)return;
+  window._bootCascadeRan=true;
   // Cascade plays RIGHT AWAY as the boot overlay lifts, including BEHIND a boot
   // popup (owner: blank white behind a popup looks odd; the dashboard should be
   // filling in under the popup's scrim). Delays are assigned over VISIBLE cards
@@ -1501,6 +1564,71 @@ function _armBootCascade(){
     d.querySelectorAll('.tbar,#dash-widget-root>.td-dw').forEach(el=>{el.style.animationDelay='';});
   }catch(_e){}},total);
 }
+// The moment the boot's first cloud sync lands: end the shimmer, render the
+// real content, pour the one cascade. Idempotent; the 15 s skeleton failsafe
+// and every later sync call it harmlessly.
+function _bootSyncSettled(){
+  if(window._bootSkelDone)return;
+  // THE SHIMMER MUST BE SEEN (owner video 2026-08-11: the loader lifted onto
+  // a fully formed page, no shimmer, no waterfall, then the geo card shoved
+  // everything down). On a fast sync the whole choreography used to settle
+  // BENEATH the overlay. Never settle while the overlay still covers the page
+  // and has not begun its fade, and once the shimmer is actually on screen
+  // give it a visible beat. Every boot then reads identically: loader ->
+  // shimmer -> one waterfall.
+  try{
+    const _ov=document.getElementById('supa-boot-overlay');
+    // Capped: if the overlay somehow never lifts (a boot-path error), the
+    // dashboard must still settle rather than shimmer forever.
+    if(!window._bootSettleWaitT0)window._bootSettleWaitT0=Date.now();
+    if(_ov&&!_ov.classList.contains('td-fadeout')&&Date.now()-window._bootSettleWaitT0<12000){setTimeout(_bootSyncSettled,120);return;}
+    if(document.querySelector('#pg-dash .td-boot-skel-on')){
+      if(!window._bootShimmerT0)window._bootShimmerT0=Date.now();
+      if(Date.now()-window._bootShimmerT0<650){setTimeout(_bootSyncSettled,130);return;}
+    }
+  }catch(_e){}
+  // Hold the shimmer a beat for the FIRST geo answer, so the ON SITE / drive
+  // card is part of the one waterfall instead of sliding in seconds behind it
+  // (owner spec 2026-08-11: one boot path, banners included, no stutters).
+  // Native shell with tracking coming up only, and never more than 1.2s past
+  // the cloud sync: GPS gets a beat, not a veto. CoreLocation hands back its
+  // last known fix almost immediately, so this usually costs ~200ms.
+  try{
+    const _geoComing=(typeof _geoTdPlugin==='function'&&_geoTdPlugin())&&
+      ((typeof _geoWatchId!=='undefined'&&_geoWatchId!=null)||
+       (typeof _geoNativeWatcherId!=='undefined'&&_geoNativeWatcherId!=null)||
+       (typeof _geoNativeStarting!=='undefined'&&_geoNativeStarting));
+    const _nb=document.getElementById('dash-nearby');
+    const _cardUp=!!(_nb&&_nb.style.display!=='none'&&_nb.innerHTML.trim());   // snapshot already painted it
+    if(_geoComing&&!window._geoFixSeen&&!window._nearbyLiveRendered&&!_cardUp){
+      if(!window._bootGeoHoldUntil)window._bootGeoHoldUntil=Date.now()+2000;
+      if(Date.now()<window._bootGeoHoldUntil){setTimeout(_bootSyncSettled,150);return;}
+    }
+  }catch(_e){}
+  window._bootSkelDone=true;
+  try{clearTimeout(window._bootSkelTimer);}catch(_e){}
+  window._bootSkelTimer=null; // next sign-in this session must arm a fresh failsafe
+  try{if(typeof _dashClearSkeletons==='function')_dashClearSkeletons();}catch(_e){}
+  try{if(typeof renderDash==='function')renderDash();}catch(_e){}
+  // Pour only if the boot overlay already lifted. A fast sync that settles
+  // while the overlay is still up must leave the pour to _removeBootOverlay
+  // (skel mode is off now, so the lift arms it), or the once-guard would burn
+  // the cascade invisibly behind the overlay.
+  const _o=document.getElementById('supa-boot-overlay');
+  if(!_o||_o.classList.contains('td-fadeout'))try{_armBootCascade();}catch(_e){}
+  // Anything shared into TradeDesk while it was closed (js/share-inbox.js).
+  // Well after the pour so it never competes with the boot render.
+  try{if(typeof checkSharedInbox==='function')setTimeout(()=>checkSharedInbox(),6000);}catch(_e){}
+  // Uploads iOS finished while the app was CLOSED (js/bg-upload.js): fold the
+  // results in before anything re-queues those photos.
+  try{if(typeof _bgUpReconcile==='function'){_bgUpReconcile();_bgUpWire();}}catch(_e){}
+  // Mileage rows describing one journey collapse to the longest (js/mileage.js,
+  // owner rule 2026-08-11). Run after the cloud rows are in, so duplicates
+  // logged before the dedup existed, or by another device, heal here too.
+  // heal=true: boot is the one moment the wider overlapping-clocks twin rule
+  // is safe, the live sweep stays strict (see _mileSameLeg).
+  try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
+}
 function _removeBootOverlay(immediate){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
   // A version/SW update arrived during this boot and a reload is queued (new
@@ -1527,7 +1655,15 @@ function _removeBootOverlay(immediate){
     // Boot waterfall, popup-gated (owner rule: "waterfall builds after popups;
     // no popups → after boot load"). _armBootCascade holds the cards invisible,
     // waits out any boot popup (collect alert, verdicts), then pours them in.
-    try{_armBootCascade();}catch(_e){}
+    // A signed-in fresh boot stays in skeleton until the first sync settles;
+    // _bootSyncSettled pours the cascade then. Everything else pours now.
+    // Applying the skeletons HERE guarantees the reveal is 100% shimmer even
+    // if no render has run yet this boot.
+    if(typeof _dashSkelMode==='function'&&_dashSkelMode()){
+      try{if(typeof _dashApplySkeletons==='function')_dashApplySkeletons();}catch(_e){}
+    }else{
+      try{_armBootCascade();}catch(_e){}
+    }
   }
   o.classList.add('td-fadeout');
   setTimeout(()=>{
@@ -1748,7 +1884,18 @@ async function supaInit(){
       _saveSessionBackup(session);
       const hasAccount=await loadAccountData();
       if(hasAccount){
-        await supaLoadFromCloud();
+        // One clean boot: flag the in-flight first sync so every dashboard
+        // render holds shimmer skeletons until it settles. Settle fires on
+        // success (inside supaLoadFromCloud) OR failure (the finally), so an
+        // offline boot never sits shimmering waiting on the 15 s failsafe.
+        window._bootSyncPending=true;
+        // Reveal the dashboard as full shimmer RIGHT AWAY (the overlay's min
+        // stage time still applies), instead of holding the spinner for the
+        // whole sync: the load continues behind the skeletons and
+        // _bootSyncSettled swaps + pours the moment it fully finishes.
+        try{goPg('pg-dash');}catch(_e){}
+        _removeBootOverlay();
+        try{await supaLoadFromCloud();}finally{_bootSyncSettled();}
         _supaCloudLoaded=true;
       } else {
         // Signed in but no data at all. Route them INTO onboarding ONLY when THIS boot
@@ -1760,6 +1907,7 @@ async function supaInit(){
         // an overlay that would block the whole UI.
         _authSettingsLoaded=true;
         supaSetStatus('cloud');
+        window._bootSyncPending=false; // no cloud load coming: render real (empty) content, no shimmer hold
         if(_oauthRet&&!window._obInProgress&&typeof _beginOAuthOnboarding==='function'){
           _beginOAuthOnboarding();
         } else {
@@ -1772,8 +1920,18 @@ async function supaInit(){
       // No valid session, load from cache if available, regardless of navigator.onLine
       // (iOS reports onLine:true even on airplane mode, so the flag is not reliable).
       // onAuthStateChange + _startOfflineWatcher must always be reached below, so no early return.
+      window._bootSyncPending=false; // no sync coming this boot: no shimmer hold
       let _cacheLoaded=false;
-      const _cc=localStorage.getItem('zp3_cloud_cache');
+      // The cache is for OFFLINE BLIPS, where the stored auth token still
+      // exists but could not refresh. A deliberate sign-out removes the token
+      // first and wipes the footprint after; force-closing between those two
+      // steps used to leave a half-wiped cache that booted as a dashboard of
+      // zeros with no way to sign in (owner 2026-08-10). No stored token
+      // means signed out on purpose: login screen, always.
+      let _hasStoredToken=false;
+      try{for(let _i=0;_i<localStorage.length;_i++){const _k=localStorage.key(_i);if(_k&&_k.indexOf('sb-')===0&&_k.indexOf('auth-token')>-1){_hasStoredToken=true;break;}}}catch(_e){}
+      if(!_hasStoredToken){try{localStorage.removeItem('zp3_cloud_cache');}catch(_e){}}
+      const _cc=_hasStoredToken?localStorage.getItem('zp3_cloud_cache'):null;
       if(_cc){
         try{
           const _cd=JSON.parse(_cc);
@@ -1787,6 +1945,8 @@ async function supaInit(){
           if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
+          if(_cd.scans?.length)scans=_cd.scans;
+          if(_cd.equipment?.length)equipment=_cd.equipment;
           if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
           if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
           if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (no-session boot)');applySettings();_refillSettingsFormUnlessEditing();}
@@ -1839,6 +1999,8 @@ async function supaInit(){
           // Wipe the outgoing account's in-memory records so they can't be merged/pushed up.
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           vehicles=[]; // fleet is a synced array (td_vehicles) now, not a settings key
+          scans=[];    // same rule: td_scans is account data, never carried across
+          equipment=[];// and the client's units belong to THAT account only
           places=[];   // same for geocoded locations (td_places)
           // Crew caches are keyed by EMAIL, so without this the next account's
           // roster renders the previous account's location status against any
@@ -1873,7 +2035,18 @@ async function supaInit(){
         // only reachable from Settings, so every account switch on the same device
         // landed the incoming account back on Settings until the load finally finished
         // and the goPg('pg-dash') calls below caught up.
+        // The dash is about to render with empty arrays: skeleton tiles, not $0s,
+        // until the cloud load below resolves (see _dashAwaitingCloud). The
+        // watchdog caps how long that promise can hold if the load stalls.
+        _dashAwaitingCloud=true;
+        _dashArmSkelWatchdog();
+        // One clean load, sign-in edition (owner 2026-08-10): the sign-in
+        // dashboard render holds the FULL shimmer (every widget + greeting),
+        // one swap + one waterfall when the load below fully settles, exactly
+        // like a fresh boot. _bootCascadeRan resets so this load gets its pour.
+        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;
         goPg('pg-dash');
+        try{
         const hasAccount=await loadAccountData();
         if(hasAccount){
           // Trigger merge path if _mergeOnSignIn is set OR if zp3_offline_pending exists.
@@ -1933,11 +2106,13 @@ async function supaInit(){
           // SIGNED_IN branch is reached by same-device account switches, which must land
           // on the dashboard, not onboarding.
           _authSettingsLoaded=true;
+          _dashAwaitingCloud=false; // nothing to load, a new account's zeros are the truth
           _removeBootOverlay();
           renderDash();
           supaSetStatus('cloud');
           goPg('pg-dash');
         }
+        }finally{_bootSyncSettled();}
         // Existing-account sub-invite: a contractor who already runs TradeDesk
         // arrived via a referral link and SIGNED IN (not onboarded, new
         // accounts are suppressed by the _obInProgress return at the top, and
@@ -1996,8 +2171,14 @@ async function supaInit(){
     _startOfflineWatcher();
   }catch(e){
     console.warn('Supabase init failed:',e);
+    window._bootSyncPending=false; // init failed, no sync coming: cache or empty renders real, no shimmer hold
     // Even if Supabase itself won't init (e.g. no network), try serving from cache
-    const _cc=localStorage.getItem('zp3_cloud_cache');
+    // Same signed-out gate as the no-session branch: an interrupted deliberate
+    // sign-out (token already gone, wipe unfinished) must never boot its
+    // half-wiped cache as a dashboard here either.
+    let _hasTok=false;
+    try{for(let _i=0;_i<localStorage.length;_i++){const _k=localStorage.key(_i);if(_k&&_k.indexOf('sb-')===0&&_k.indexOf('auth-token')>-1){_hasTok=true;break;}}}catch(_e2){}
+    const _cc=_hasTok?localStorage.getItem('zp3_cloud_cache'):null;
     if(_cc){
       try{
         const _cd=JSON.parse(_cc);
@@ -2010,6 +2191,8 @@ async function supaInit(){
         if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
+          if(_cd.scans?.length)scans=_cd.scans;
+          if(_cd.equipment?.length)equipment=_cd.equipment;
           if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (offline boot, session present)');applySettings();_refillSettingsFormUnlessEditing();}
@@ -2401,6 +2584,15 @@ function renderDispatch(){
           (addr?'<div style="font-size:11px;color:var(--text3);margin-bottom:4px">'+addr+'</div>':'')+
           (note?'<div style="margin-bottom:6px">'+note+'</div>':'')+
           _dispatchStatusLine(j.id)+
+          // Drive is the point of a dispatch card: the next thing anybody does
+          // with it is go there. In the app it opens turn-by-turn inside
+          // TradeDesk (js/drive.js); in a browser it is the Apple Maps handoff
+          // it has always been, and the label says which so the button never
+          // promises something it cannot do.
+          '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">'+
+            (typeof driveButtonHtml==='function'?driveButtonHtml(j.id):'')+
+            (c.phone?'<button onclick="driveTextEta(\''+j.id+'\')" style="font-size:12px;font-weight:700;background:none;color:var(--text2);border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;cursor:pointer;font-family:inherit">'+svgIcon('💬')+' Text ETA</button>':'')+
+          '</div>'+
         '</div>'+
         '<div style="flex-shrink:0">'+assignBtn+'</div>'+
       '</div>'+
@@ -2437,14 +2629,14 @@ function renderDispatch(){
   el.innerHTML=
     '<div class="tbar"><div class="tbar-title">'+svgIcon('📋')+' Dispatch Board</div>'+
       '<div style="display:flex;gap:6px">'+
-        (S.teamTracking?'<button onclick="_renderCrewMap()" style="font-size:12px;padding:6px 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">'+svgIcon('📍')+' Crew map</button>':'')+
         '<button onclick="goPg(\'pg-jobs\')" style="font-size:12px;padding:6px 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">← Jobs</button>'+
       '</div>'+
     '</div>'+
-    '<div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 10px">'+tab('crew','By crew')+tab('timeline','Timeline')+'</div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 10px">'+tab('crew','By crew')+tab('timeline','Timeline')+tab('map','Map')+'</div>'+
     '<div id="_dispatch-body" style="padding:0 12px 12px">'+
-      _dispatchVehicleGapHtml()+
-      (_dispatchView==='timeline'?_dispatchTimelineHtml(emps,todayJobs):
+      (_dispatchView==='map'?'':_dispatchVehicleGapHtml())+
+      (_dispatchView==='map'?'':
+      _dispatchView==='timeline'?_dispatchTimelineHtml(emps,todayJobs):
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Unassigned</div>'+
       '<div id="dispatch-unassigned" style="margin-bottom:20px">'+unassignedHtml+'</div>'+
       (emps.length
@@ -2455,7 +2647,14 @@ function renderDispatch(){
   _initDispatchDrag();
 }
 let _dispatchView='crew';
-function setDispatchView(v){_dispatchView=(v==='timeline'?'timeline':'crew');renderDispatch();}
+function setDispatchView(v){
+  _dispatchView=(v==='timeline'||v==='map')?v:'crew';
+  renderDispatch();
+  // The map paints into the same body the other two views use, after the board
+  // has rebuilt it. It supersedes the old Crew map modal outright: same crew,
+  // same Locate button, plus today's jobs and estimates on real tiles.
+  if(_dispatchView==='map'&&typeof openDayMap==='function')openDayMap();
+}
 
 // ── The day, by the clock ───────────────────────────────────────────────────
 // One strip per crew member across the working day, built from the times the
@@ -2744,7 +2943,7 @@ function _initDispatchDrag(){
     card.style.boxShadow='0 6px 20px rgba(0,0,0,.18)';
     card.style.position='relative';
     card.style.zIndex='5';
-    navigator.vibrate&&navigator.vibrate(20);
+    _tdHaptic('thud');   // card lifted for a drag (native Taptic; navigator.vibrate was dead on iOS)
   });
 
   host.addEventListener('pointermove',e=>{
@@ -2860,43 +3059,6 @@ function _crewMemberName(uid){
   const emp=(S.employees||[]).find(e=>String(e.employee_user_id||'')===String(uid));
   return (emp&&emp.name)||'';
 }
-// ── Crew live map (manager view of last-known location per employee) ──────────
-async function _renderCrewMap(){
-  document.getElementById('_crew-map-ov')?.remove();
-  const ov=document.createElement('div');ov.id='_crew-map-ov';ov.className='zmodal-overlay';
-  const box=document.createElement('div');box.className='zmodal';
-  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('📍')+' Crew locations</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Last-known position during today\'s business hours.</div>'+
-    '<div id="_crew-map-body" style="font-size:13px;color:var(--text3)">Loading…</div>'+
-    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:10px">Close</button>';
-  ov.appendChild(box);document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  if(!supaEnabled()||!_supaUser){const b=document.getElementById('_crew-map-body');if(b)b.textContent='Sign in to see crew locations.';return;}
-  const cid=_contractorUserId||_supaUser.id;
-  const since=new Date(Date.now()-12*3600000).toISOString();
-  let rows=[];
-  try{
-    const{data}=await _supa.from('location_pings').select('employee_user_id,lat,lon,ts')
-      .eq('contractor_user_id',cid).gte('ts',since).order('ts',{ascending:false});
-    rows=data||[];
-  }catch(_e){}
-  const latest={};
-  rows.forEach(r=>{if(!latest[r.employee_user_id])latest[r.employee_user_id]=r;});
-  const keys=Object.keys(latest);
-  const b=document.getElementById('_crew-map-body');if(!b)return;
-  if(!keys.length){b.innerHTML='<div style="padding:8px 0">No location pings yet today. Crew appear here once they\'re on the clock with sharing enabled.</div>';return;}
-  b.innerHTML=keys.map(uid=>{
-    const r=latest[uid];
-    const nm=escHtml(_crewMemberName(uid)||'Crew member');
-    const ago=_timeAgo(r.ts);
-    const mapUrl='https://www.google.com/maps?q='+r.lat+','+r.lon;
-    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
-      '<div><div style="font-size:13px;font-weight:700">'+nm+'</div><div style="font-size:11px;color:var(--text3)">'+svgIcon('📍')+' '+ago+'</div></div>'+
-      '<a href="'+mapUrl+'" target="_blank" style="font-size:11px;font-weight:700;background:var(--blue-lt);color:var(--blue);border:1px solid var(--blue);border-radius:var(--r);padding:6px 10px;text-decoration:none">'+svgIcon('🗺')+' Map</a>'+
-    '</div>';
-  }).join('');
-}
-
 // ── Vehicle-start-of-shift picker ────────────────────────────────────────────
 // Crew have always been asked this. Owners now are too when they run more than
 // one truck (owner call 2026-08-01: "for multiple vehicles I kind of like a
@@ -4761,6 +4923,8 @@ function _enterOfflineMode(){
       if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
+          if(_cd.scans?.length)scans=_cd.scans;
+          if(_cd.equipment?.length)equipment=_cd.equipment;
           if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
       if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
       if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cache restore)');applySettings();_refillSettingsFormUnlessEditing();}
@@ -5057,6 +5221,11 @@ function _saveSessionBackup(session){
 // cross-account SIGNED_IN reset where an involuntary SIGNED_OUT never wiped). Idempotent.
 function _teardownRealtimeChannels(){
   try{if(_supa&&typeof _supa.removeAllChannels==='function')_supa.removeAllChannels();}catch(_e){}
+  // The locate channel goes with them. removeAllChannels already closed it, but
+  // crew-locate.js caches the handle and the account it belongs to; leaving that
+  // behind would let the next account signed in on this phone think it is still
+  // joined and answer nobody.
+  if(typeof _crewLocateTeardown==='function'){try{_crewLocateTeardown();}catch(_e){}}
   _syncBroadcastChannel=null;
   _realtimeSubscribed=false; // force the next account's load to re-subscribe under ITS uid
   _tdRealtimeReady=false;    // channels are gone, delivery is no longer live
@@ -5071,7 +5240,7 @@ function _teardownRealtimeChannels(){
 function _wipeLocalAccountData(){
   clearTimeout(_syncTimer);_syncTimer=null; // prevent a live timer from flushing emptied arrays
   _teardownRealtimeChannels(); // CRITICAL: close A's live channels so they can't re-deliver A's rows into B
-  _supaCloudLoaded=false;_realtimeSubscribed=false;_loadInProgress=false;clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;clearTimeout(_reconcileTimer);_reconcileTimer=null;clearTimeout(_writeCacheTimer);_writeCacheTimer=null;
+  _supaCloudLoaded=false;_realtimeSubscribed=false;_loadInProgress=false;_dashAwaitingCloud=false;clearTimeout(_dashSkelTimer);_dashSkelTimer=null;clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;clearTimeout(_reconcileTimer);_reconcileTimer=null;clearTimeout(_writeCacheTimer);_writeCacheTimer=null;
   // Reset the "settings are authoritative" gate too. It guards the dashboard setup
   // checklist (dashboard.js): if it survives a sign-out, the next sign-in renders the
   // checklist for one frame against the OLD/empty state before the new load corrects
@@ -5093,6 +5262,7 @@ function _wipeLocalAccountData(){
   // outgoing account's trucks stay in memory and render under the next login,
   // which is the exact cross-account bleed the S.vehicles reset below guarded.
   vehicles=[];
+  scans=[];equipment=[];
   places=[];
   _teamGeo={};_teamGeoLoaded=false;_teamComp={};_teamCompLoaded=false;
   // Inbound-lead review queue is account-scoped in-memory state that lived OUTSIDE
@@ -5286,7 +5456,7 @@ window.addEventListener('online',()=>{try{const k=_userLayoutCacheKey();if(k&&lo
 function _offlinePendingBlob(){
   // Owner falls back to _loadedDataOwner so a blob written while offline (no _supaUser)
   // is still tagged with the account it came from, the next sign-in checks this.
-  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,places,ts:Date.now()});
+  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,places,scans,equipment,ts:Date.now()});
 }
 // Read offline-pending, discarding (and clearing) any blob owned by a different
 // account than the one now signed in. Returns null when nothing usable remains.
@@ -5343,7 +5513,9 @@ function _flushSaveNow(){
 // ── Offline / reconnect watcher ────────────────────────────────────────────
 function _showOfflineBanner(syncing){
   const b=document.getElementById('offline-banner');if(!b)return;
-  if(syncing){b.textContent='Syncing...';b.style.background='#2563eb';b.style.color='#fff';}
+  // The blue Syncing pill retired (owner 2026-08-10): the skeleton shimmer IS
+  // the syncing signal now. Only the amber offline state still banners.
+  if(syncing){_hideOfflineBanner();return;}
   else{b.textContent='Offline: changes saved locally';b.style.background='#D97706';b.style.color='#1a1a1a';}
   b.style.opacity='1';b.style.transform='translateY(0)';b.style.pointerEvents='auto';
 }
@@ -5513,6 +5685,16 @@ function _startOfflineWatcher(){
       }
     }
     if(document.visibilityState==='visible'&&_isOfflineState())_probeAndSync();
+    // Coming back from the share sheet is the MOST likely moment something is
+    // waiting in the inbox (js/share-inbox.js), so ask right here rather than
+    // making the user relaunch the app to be offered their own photos.
+    if(document.visibilityState==='visible'&&typeof checkSharedInbox==='function'){
+      setTimeout(()=>{try{checkSharedInbox();}catch(_e){}},900);
+    }
+    // Same on resume: iOS may have finished transfers while we were away.
+    if(document.visibilityState==='visible'&&typeof _bgUpReconcile==='function'){
+      try{_bgUpReconcile();}catch(_e){}
+    }
   });
   // 5s when offline (banner showing), 30s when fully synced
   const _tick=()=>{
@@ -5558,7 +5740,7 @@ function _paintCacheForDelta(uid){
   try{
     const cc=JSON.parse(localStorage.getItem('zp3_cloud_cache')||'null');
     if(!cc||cc._owner!==uid)return false;
-    const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos,td_maintenance:cc.maintenance,td_vehicles:cc.vehicles,td_places:cc.places};
+    const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos,td_maintenance:cc.maintenance,td_vehicles:cc.vehicles,td_places:cc.places,td_equipment:cc.equipment};
     const _ptTs=Date.now();
     for(const{t,set}of _TD_TABLES){
       // A cache written by an OLDER app version has no key for a table added
@@ -5587,7 +5769,7 @@ function _writeLocalCache(){
   try{
     const _snap={_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,payments,income,
       expenses:expenses.map(({receipt_img,...r})=>r),
-      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,vehicles,places,checksState,
+      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,vehicles,places,scans,equipment,checksState,
       settings:S,cached_at:new Date().toISOString()};
     localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));
     // Delta sidecar: the server-updated_at cursor + known-cloud hashes, owner-scoped.
@@ -6899,10 +7081,21 @@ async function supaLoadFromCloud({silent=false}={}){
     // itself inside renderDash() below.
     if(typeof _applyTabOrder==='function'&&typeof _getTabOrder==='function')_applyTabOrder(_getTabOrder());
 
+    // NOTE: the boot skeleton settle (_bootSyncSettled) deliberately does NOT
+    // fire here. This function keeps rendering after this point; the boot
+    // path's finally settles once the WHOLE load is done, so the shimmer swaps
+    // to real content exactly once (owner 2026-08-10: no mid-load stutters).
     _supaCloudLoaded=true;_loadedFromCacheOnly=false;_mergeOnSignIn=false;
     _authSettingsLoaded=true; // authoritative cloud settings are now in S, settings saves are safe
     _loadedDataOwner=(_supaUser&&_supaUser.id)||_loadedDataOwner; // remember whose data is in memory
     supaSetStatus('synced');
+    // Mileage heal AFTER EVERY completed cloud merge, not only at boot (owner
+    // report 2026-08-11: duplicates purged on an OFFLINE boot came back). The
+    // offline heal's deletions never reached the cloud, so the reconnect load
+    // merged the cloud's copies straight back in and nothing re-collapsed
+    // them. Healing here re-collapses any resurrection the moment it arrives;
+    // the saveAll inside the sweep then propagates the deletes for real.
+    try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
 
     // ── One-time fleet lift out of the settings blob (20260809_td_vehicles) ──
     // MUST run here, after the load: only now do we know whether this account
@@ -7013,6 +7206,12 @@ async function supaLoadFromCloud({silent=false}={}){
       }catch(_e){}
     }
 
+    // Cleared BEFORE this render, not in the finally below it. The data has
+    // landed, so this is the paint that should show real numbers; leaving the
+    // flag set made it draw skeletons one more time and pushed the real swap
+    // onto whatever incidental render happened next, which is the second half
+    // of the sign-in stutter (owner report 2026-08-09).
+    _dashAwaitingCloud=false;
     renderDash();
     renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
     if(typeof _startPropQueue==='function')setTimeout(_startPropQueue,5000);
@@ -7146,10 +7345,18 @@ async function supaLoadFromCloud({silent=false}={}){
       // got a fresh sig-feed. Co-locating it with the td-sync/user-data channels re-subscribes it
       // per account under the correct uid.
       setInterval(()=>_loadPendingInbound(),30000);
+      // A mileage row's own live measurement call can fail (one bad network
+      // moment is enough) and _initMapKit only sweeps pending trips ONCE, at
+      // boot: a mid-session failure sat at 0 miles for the rest of the day,
+      // invisible until the next full app load (owner report 2026-08-12: a
+      // 12:04p leg never got its distance while the legs before and after it
+      // did). Same 30s cadence as the inbound poll above.
+      setInterval(()=>{if(typeof _retryPendingTrips==='function')_retryPendingTrips();},30000);
       setTimeout(()=>_fetchStripeConnectStatus(),3000);
       setTimeout(()=>_loadPendingInbound(),2000);
       document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){
         checkNewSignatures();_fetchProposalViews();if(_supaUser)_loadPendingInbound();checkNearbyJob();
+        if(typeof _retryPendingTrips==='function')_retryPendingTrips();
         // FOREGROUND = the moment the user looks. The worker pulls the phone out of a
         // pocket: the app must be current NOW, not "within 60s". One tiny cursor read;
         // a reload only happens when a peer actually changed something we haven't seen
@@ -7235,6 +7442,8 @@ async function supaLoadFromCloud({silent=false}={}){
         if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
+          if(_cd.scans?.length)scans=_cd.scans;
+          if(_cd.equipment?.length)equipment=_cd.equipment;
           if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cloud load FAILED, fallback)');applySettings();_refillSettingsFormUnlessEditing();}
@@ -7252,13 +7461,18 @@ async function supaLoadFromCloud({silent=false}={}){
             }
           }
         }catch(_oe){}
+        // Same rule on the cache-fallback path: whatever we have IS the
+        // answer now, so this render must be the real one.
+        _dashAwaitingCloud=false;
         if(!silent){_removeBootOverlay();renderDash();}
         _showOfflineBanner();supaSetStatus('error');return;
       }catch(_ce){console.warn('Cache load failed:',_ce);}
     }
+    _dashAwaitingCloud=false; // nothing more is coming, zeros are now the truth
     _removeBootOverlay();renderDash();supaSetStatus('error');
   }finally{
     _loadInProgress=false;
+    _dashAwaitingCloud=false; // load settled either way, whatever we have is what shows
     // A version/SW-update reload arrived mid-load and was deferred (see
     // _autoSaveAndReload). The load has now settled, so it's safe to reload into
     // the new code without stranding the app. setTimeout lets this finally unwind
@@ -7443,6 +7657,13 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   // every container on each echoed row left the page churning under any open modal/sheet
   // so its box never settled (clicks timed out on a slow device, "element not stable").
   // Mirrors the _lastLocalSaveAt guards at cloud.js:3597/3709/3717. Data is always applied above.
+  // A mileage row arriving over realtime can be a peer resurrecting a healed
+  // duplicate (its own offline heal never propagated). Re-collapse shortly
+  // after the burst settles; the heal is a no-op when nothing matches.
+  if(tbl==='td_mileage'){
+    clearTimeout(window._rtMileHealTimer);
+    window._rtMileHealTimer=setTimeout(()=>{try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}},1500);
+  }
   if(fromRealtime&&Date.now()-_lastLocalSaveAt<5000)return;
   if(fromRealtime){
     // BURST-COALESCED render for realtime events: a peer save that touches N rows

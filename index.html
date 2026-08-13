@@ -21,7 +21,16 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@500;700;800;900&family=Inter+Tight:wght@500;600;700;800;900&family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" async id="supabase-sdk"></script>
+<!-- Vendored, NOT the jsdelivr CDN: the service worker can only cache
+     same-origin scripts (cross-origin no-cors responses are opaque, r.ok is
+     false, the cache-first branch skips them), so the CDN copy was never
+     available offline. Every dead-radio launch then booted a shell with no
+     SDK: no session, no greeting name, offline banner, even though the auth
+     token and account cache were on the device (owner report 2026-08-12).
+     Same-origin means the SW caches it like any other app script and an
+     offline boot signs in from the local session exactly like an online one.
+     Pinned 2.112.3; bump deliberately, never floating. -->
+<script src="js/vendor/supabase-js-2.112.3.min.js" async id="supabase-sdk"></script>
 <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin defer onload="_initMapKit()"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -195,7 +204,9 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    holes. Backwards `both` fill keeps each card invisible until its turn. */
 #pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:td-card-cascade .72s cubic-bezier(.33,1,.68,1) both;will-change:opacity,transform}
 @media (prefers-reduced-motion:reduce){#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:none}}
-#pg-cal.active{animation:td-pg-enter 5s cubic-bezier(.22,1,.36,1) both}
+/* pg-cal enters at the standard .2s now. Its old 5s slow fade existed only to
+   hide the grid holding for the async weather fetch; the grid paints instantly
+   with td-skel weather chips and repaints once when weather lands (§8.3). */
 #pg-leads,#pg-jobs,#pg-money{padding-top:8px}
 .drive-active .pg{padding-top:70px}
 .clock-active .pg{padding-top:70px}
@@ -239,12 +250,34 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 
 /* ── Metric tiles ── */
 .mets{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px}
-.met{background:var(--bg-card);border-radius:var(--r-lg);padding:14px;display:flex;flex-direction:column;box-shadow:var(--shadow-card);transition:box-shadow .15s;overflow:hidden;min-width:0;cursor:pointer;animation:td-met-enter .22s cubic-bezier(.22,1,.36,1) both}
+.met{background:var(--bg-card);border-radius:var(--r-lg);padding:14px;display:flex;flex-direction:column;box-shadow:var(--shadow-card);transition:box-shadow .15s;overflow:hidden;min-width:0;cursor:pointer}
+/* The tile entrance plays ONLY during the boot waterfall. It used to live on
+   .met itself, so every innerHTML rebuild (sync echoes, a mileage measurement
+   landing) replayed six tile animations: the KPI flashing on the owner's
+   2026-08-11 screen recording, caught by the boot-churn recorder. */
+#pg-dash.boot-cascade .met{animation:td-met-enter .22s cubic-bezier(.22,1,.36,1) both}
 /* A staggered start per tile (nth-child) reads as the row settling in
    together rather than one flat block popping, still cheap CSS-only. */
 .met:nth-child(1){animation-delay:0ms}.met:nth-child(2){animation-delay:20ms}
 .met:nth-child(3){animation-delay:40ms}.met:nth-child(4){animation-delay:60ms}
 .met:nth-child(5){animation-delay:80ms}.met:nth-child(6){animation-delay:100ms}
+/* Sign-in skeletons (§8.4): pulsing placeholders inside the same .met tiles
+   until the first cloud load lands, so the dashboard never flashes $0. */
+/* Shimmer skeleton, THE app-wide loading treatment (owner mandate 2026-08-09):
+   anything that loads async shows these sweeping placeholders, never a
+   "Loading..." string, never a second stacked reveal animation on top. A light
+   band sweeps left to right across the gray bar until real data pops in. The
+   band is var(--bg) blended into var(--border), correct in both themes.
+   Use class td-skel (plus _tdSkelRows() in utils.js for list shapes). */
+@keyframes td-skel{0%{background-position:100% 0}100%{background-position:0 0}}
+.td-skel,.met-skel-lbl,.met-skel-bar{background:linear-gradient(90deg,var(--border) 30%,var(--bg) 50%,var(--border) 70%);background-size:400% 100%;animation:td-skel 1.3s ease infinite;border-radius:6px}
+.met-skel-lbl{height:10px;width:60%;border-radius:4px;margin-bottom:10px}
+.met-skel-bar{height:22px;width:80%}
+/* One clean boot: while the first sync of a signed-in page load is in flight,
+   each dashboard widget hides its real children behind an appended
+   .td-boot-skel shimmer card (js/dashboard.js _dashApplySkeletons), removed in
+   one swap when the sync settles. Non-destructive: the real markup stays. */
+#pg-dash>.tbar.td-boot-skel-on>*:not(.td-boot-skel),#dash-widget-root>.td-dw.td-boot-skel-on>*:not(.td-boot-skel){display:none!important}
 .met:hover{box-shadow:var(--shadow-hover)}
 .met-l{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .met-v{font-family:var(--font-display);font-size:22px;font-weight:900;line-height:1;letter-spacing:-.7px;color:var(--text);overflow:hidden;white-space:nowrap}
@@ -1376,7 +1409,11 @@ body.dark .cal-cell.other{background:var(--cream)}
             <span class="qa-ico"><span data-ico="👤" data-ico-size="24"></span></span><span>New lead</span>
           </button>
           <button class="qa" id="qa-drive-btn" style="--qa-tint:linear-gradient(155deg,#3D74C6 0%,#24508F 100%);--qa-glow:rgba(45,93,168,.35)" onclick="quickAction('drive')">
-            <span class="qa-ico"><span data-ico="🚗" data-ico-size="24"></span></span><span>Drive</span>
+            <!-- "Log miles", not "Drive": Drive now means turn-by-turn navigation
+                 on the job cards above (js/drive.js), and this button records a
+                 mileage trip. Two controls on one screen sharing a word is the
+                 kind of thing a contractor mis-taps once and stops trusting. -->
+            <span class="qa-ico"><span data-ico="🚗" data-ico-size="24"></span></span><span>Log miles</span>
           </button>
           <button class="qa" id="qa-estimate-btn" style="--qa-tint:linear-gradient(155deg,#8B5CF6 0%,#6D28D9 100%);--qa-glow:rgba(109,40,217,.35)" onclick="quickAction('estimate')">
             <span class="qa-ico"><span data-ico="📋" data-ico-size="24"></span></span><span>Proposal</span>
@@ -1629,6 +1666,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="card" id="cd-opp-card" style="display:none"><div id="cd-opportunities"></div></div>
     <div class="card" id="cd-client-mets"></div>
     <div id="cd-notes-mount" style="margin-bottom:14px"></div>
+    <div id="cd-scans-mount" style="margin-bottom:14px"></div>
     <div id="cd-timeline-mount" style="margin-bottom:14px"></div>
     <div id="cd-risk-mount" style="margin-bottom:14px"></div>
   </div>
@@ -3005,7 +3043,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div><div style="font-size:15px;font-weight:800">Connected services</div><div style="font-size:11px;color:var(--text3)">at a glance</div></div>
         </div>
         <div id="integrations-list">
-          <div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">Loading…</div>
+          <div style="padding:14px 16px"><div class="td-skel" style="height:12px;width:88%;margin:10px 0"></div><div class="td-skel" style="height:12px;width:72%;margin:10px 0"></div><div class="td-skel" style="height:12px;width:56%;margin:10px 0"></div></div>
         </div>
       </div>
       <!-- How you get paid, always visible; controls which options a client sees at signing -->
@@ -3022,10 +3060,18 @@ body.dark .cal-cell.other{background:var(--cream)}
               <input type="checkbox" id="set-accept-check" style="width:18px;height:18px;margin-top:1px;accent-color:var(--blue);flex-shrink:0">
               <div><div style="font-size:13px;font-weight:700">Accept check</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Client can choose to pay by check.</div></div>
             </label>
-            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none;padding:12px 0">
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none;padding:12px 0;border-bottom:1px solid var(--border)">
               <input type="checkbox" id="set-allow-pay-later" style="width:18px;height:18px;margin-top:1px;accent-color:var(--blue);flex-shrink:0">
               <div><div style="font-size:13px;font-weight:700">Allow pay later</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Client signs now, no money due at signing, settles up any way before the job's done.</div></div>
             </label>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)">
+              <div><div style="font-size:13px;font-weight:700">Floor plan price</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Default when selling a scanned floor plan standalone. Adjustable per scan.</div></div>
+              <div style="display:flex;align-items:center;gap:4px;flex-shrink:0"><span style="font-size:13px;color:var(--text2)">$</span><input type="number" id="set-scan-price" min="0" step="1" style="width:72px;padding:9px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit"></div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0">
+              <div><div style="font-size:13px;font-weight:700">Scan rate per wall sq ft</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Auto-prices scanned rooms when they load into an estimate: room total = measured wall footage times this. Leave 0 to price each room by hand.</div></div>
+              <div style="display:flex;align-items:center;gap:4px;flex-shrink:0"><span style="font-size:13px;color:var(--text2)">$</span><input type="number" id="set-scan-rate" min="0" step="0.05" style="width:72px;padding:9px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit"></div>
+            </div>
           </div>
         </div>
         <button class="btn btn-p" onclick="saveSettings()" style="width:100%;margin-top:8px;padding:13px">Save</button>
@@ -3127,7 +3173,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
     <div style="padding:16px">
       <div id="set-cloud-status-ui" style="margin-bottom:16px">
-        <div style="font-size:12px;color:var(--text3);padding:8px 0">Loading sync status…</div>
+        <div style="padding:8px 0"><div class="td-skel" style="height:12px;width:80%;margin:8px 0"></div><div class="td-skel" style="height:12px;width:60%;margin:8px 0"></div></div>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
         <button class="btn btn-p" onclick="if(supaEnabled())supaSignOut()" style="width:100%;padding:13px">Sign out of cloud sync</button>
@@ -3199,6 +3245,16 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px" id="dev-trade-grid"></div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:14px">Dev account only, changes business_type in DB immediately.</div>
       <div id="dev-support-section" style="margin-bottom:14px"></div>
+
+      <!-- Location engine tools. Dev accounts only (this whole panel), and the
+           buttons unhide only inside the app, where the engines actually run. -->
+      <div id="dev-geo-tools" style="display:none;border-top:1px solid var(--border);padding-top:14px;margin-bottom:14px">
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px"><span data-ico="🧭" data-ico-size="14"></span> Location engine</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button id="set-geo-diag-btn" class="btn" onclick="_geoDiagPanel()" style="width:100%;padding:13px;font-size:13px">Location diagnostics</button>
+          <button id="set-geo-shadow-btn" class="btn" onclick="_shadowPanel()" style="width:100%;padding:13px;font-size:13px">Engine comparison</button>
+        </div>
+      </div>
 
       <!-- Legal Compliance Inspector -->
       <div style="border-top:1px solid var(--border);padding-top:14px">
@@ -3671,7 +3727,21 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/jobs.js"></script>
 <script src="js/mileage.js"></script>
 <script src="js/geo-track.js"></script>
+<script src="js/geo-shadow.js"></script>
+<script src="js/crew-locate.js"></script>
 <script src="js/places.js"></script>
+<!-- after places.js: the day map draws through its shared tdMapRender -->
+<script src="js/day-map.js"></script>
+<script src="js/drive.js"></script>
+<script src="js/notify.js"></script>
+<script src="js/handoff.js"></script>
+<script src="js/voice.js"></script>
+<script src="js/equipment.js"></script>
+<script src="js/share-inbox.js"></script>
+<script src="js/bg-upload.js"></script>
+<script src="js/scan.js"></script>
+<script src="js/scan-estimate.js"></script>
+<script src="js/scan-3d.js"></script>
 <script src="js/legal.js"></script>
 <script src="js/proposals.js"></script>
 <script src="js/sales-tax.js"></script>
@@ -3804,19 +3874,49 @@ if(supaEnabled()){
       },720);
     }
   })();
-  // Supabase script is async, may not be ready when inline JS finishes
-  if(window.supabase){supaInit();}
+  // Supabase script is async, may not be ready when inline JS finishes.
+  // One-shot guard: the original tag's load event, the retry loop below, and
+  // the immediate path can all try to boot the cloud layer; only one may.
+  let _supaBootRan=false;
+  const _bootSupaOnce=()=>{if(_supaBootRan||!window.supabase)return;_supaBootRan=true;supaInit();};
+  if(window.supabase){_bootSupaOnce();}
   else{
     const _sdk=document.getElementById('supabase-sdk');
-    _sdk.addEventListener('load',supaInit);
-    // SDK failed to load (offline boot, CDN unreachable), don't strand the user
-    // on the boot overlay forever; render local data like the offline-mode path.
-    const _sdkFallback=()=>{if(typeof _removeBootOverlay==='function')_removeBootOverlay();renderDash();};
+    _sdk.addEventListener('load',_bootSupaOnce);
+    // SDK failed to load (offline boot, script missing), don't strand the user
+    // on the boot overlay forever; restore identity from the device cache and
+    // render local data like the offline-mode path. The greeting must carry
+    // the name on an offline boot exactly like an online one.
+    const _sdkFallback=()=>{
+      if(typeof _restoreIdentityFromCache==='function')_restoreIdentityFromCache();
+      if(typeof _removeBootOverlay==='function')_removeBootOverlay();
+      renderDash();
+    };
     _sdk.addEventListener('error',_sdkFallback);
     // The async script may have ALREADY errored before this listener attached,
     // watchdog: if the SDK still isn't present after 6s and nothing signed in,
     // fall back to local data instead of an infinite boot overlay.
     setTimeout(()=>{if(!window.supabase&&typeof _supaUser!=='undefined'&&!_supaUser)_sdkFallback();},6000);
+    // The fallback is a waiting room, not a destination (owner 2026-08-12,
+    // from the truck: auto mileage dead for a whole drive because the dead
+    // boot never tried again). Retry the same-origin SDK every 20s; the
+    // moment it lands, boot the cloud layer live IN PLACE: sign-in, sync,
+    // geo tracking, drive banner, no reload and no user action. The version
+    // watchdog cannot cover this case: a cached CURRENT version has no
+    // mismatch to reload on, so without this retry the dead state was
+    // permanent until a force-quit.
+    let _sdkRetryBusy=false;
+    setInterval(()=>{
+      if(_supaBootRan)return;
+      if(window.supabase){_bootSupaOnce();return;}
+      if(_sdkRetryBusy)return;
+      _sdkRetryBusy=true;
+      const _r=document.createElement('script');
+      _r.src='js/vendor/supabase-js-2.112.3.min.js';
+      _r.onload=()=>{_sdkRetryBusy=false;_bootSupaOnce();};
+      _r.onerror=()=>{_sdkRetryBusy=false;try{_r.remove();}catch(_e){}};
+      document.head.appendChild(_r);
+    },20000);
   }
   // Cmd+K / Ctrl+K global search
   document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();openSearch();}});

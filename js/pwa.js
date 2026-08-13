@@ -154,11 +154,9 @@ async function _pwaHandleSharedPhoto(){
         try{b64=await compressAndEncodeImage(b,900,0.75);}
         catch(_ce){showToast('Could not read that image','⚠️');return;}
         _expState.imageData={b64,type:'image/jpeg'};_expState.hasReceipt=true;
-        const preview=document.getElementById('exp-preview-img');
-        if(preview){
-          preview.style.display='block';
-          preview.innerHTML='<img src="data:image/jpeg;base64,'+b64+'" style="max-height:80px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green-mid);margin-top:4px;font-weight:700">'+svgIcon('📎',{size:11})+' Photo attached</div>';
-        }
+        // Shared photos ride the same pages box the scanner fills.
+        _expState.imagePages.push({b64,key:null});
+        if(typeof _renderExpPages==='function')_renderExpPages();
       });
     },300);
   }catch(e){}

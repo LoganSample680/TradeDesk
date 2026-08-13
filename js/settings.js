@@ -808,6 +808,8 @@ function loadSettingsForm(){
   const _pmCash=document.getElementById('set-accept-cash');if(_pmCash)_pmCash.checked=S.acceptCash!==false;
   const _pmCheck=document.getElementById('set-accept-check');if(_pmCheck)_pmCheck.checked=S.acceptCheck!==false;
   const _pmLater=document.getElementById('set-allow-pay-later');if(_pmLater)_pmLater.checked=S.allowPayLater!==false;
+  const _scanP=document.getElementById('set-scan-price');if(_scanP)_scanP.value=(S.scanDefaultPrice!=null?S.scanDefaultPrice:99);
+  const _scanR=document.getElementById('set-scan-rate');if(_scanR)_scanR.value=(S.scanRateSqFt!=null?S.scanRateSqFt:0);
   const ccEl=document.getElementById('set-cc-surcharge-enabled');if(ccEl){ccEl.checked=!!S.ccSurchargeEnabled;const pctWrap=document.getElementById('set-cc-surcharge-pct-wrap');if(pctWrap)pctWrap.style.display=S.ccSurchargeEnabled?'block':'none';}
   const ccPctEl=document.getElementById('set-cc-surcharge-pct');if(ccPctEl)ccPctEl.value=S.ccSurchargePct||3;
   const fcPctEl=document.getElementById('set-finance-charge-pct');if(fcPctEl)fcPctEl.value=S.financeChargePct!=null?S.financeChargePct:1.5;
@@ -841,6 +843,8 @@ function saveSettings(){
     acceptCash:document.getElementById('set-accept-cash')?document.getElementById('set-accept-cash').checked:(S.acceptCash!==false),
     acceptCheck:document.getElementById('set-accept-check')?document.getElementById('set-accept-check').checked:(S.acceptCheck!==false),
     allowPayLater:document.getElementById('set-allow-pay-later')?document.getElementById('set-allow-pay-later').checked:(S.allowPayLater!==false),
+    scanDefaultPrice:document.getElementById('set-scan-price')?Math.max(0,Math.round(+document.getElementById('set-scan-price').value||0)):(S.scanDefaultPrice!=null?S.scanDefaultPrice:99),
+    scanRateSqFt:document.getElementById('set-scan-rate')?Math.max(0,+document.getElementById('set-scan-rate').value||0):(S.scanRateSqFt!=null?S.scanRateSqFt:0),
     ccSurchargeEnabled:!!(document.getElementById('set-cc-surcharge-enabled')?document.getElementById('set-cc-surcharge-enabled').checked:false),
     ccSurchargePct:parseFloat((document.getElementById('set-cc-surcharge-pct')?document.getElementById('set-cc-surcharge-pct').value:'3')||'3')||3,
     financeChargePct:parseFloat((document.getElementById('set-finance-charge-pct')?document.getElementById('set-finance-charge-pct').value:'1.5')||'1.5')||1.5,
@@ -1682,7 +1686,13 @@ function _obShowTos(e){if(e)e.preventDefault();if(typeof zAlert==='function')zAl
 // Nonce dance per Apple's spec: Apple gets the SHA-256, Supabase gets the raw.
 async function _obNativeApple(){
   const cap=window.Capacitor;
-  const AppleP=(typeof cap.registerPlugin==='function')?cap.registerPlugin('SignInWithApple'):(cap.Plugins&&cap.Plugins.SignInWithApple);
+  // registerPlugin throws on a SECOND call for the same name in Capacitor 7,
+  // which turned every tap after the first into a dead click. Register once.
+  if(!window._applePluginCache){
+    try{window._applePluginCache=(typeof cap.registerPlugin==='function')?cap.registerPlugin('SignInWithApple'):(cap.Plugins&&cap.Plugins.SignInWithApple);}
+    catch(_e){window._applePluginCache=(cap.Plugins&&cap.Plugins.SignInWithApple)||null;}
+  }
+  const AppleP=window._applePluginCache;
   if(!AppleP||typeof AppleP.authorize!=='function')return false;   // plugin absent: this shell build predates it
   const raw=(crypto.randomUUID()+crypto.randomUUID()).replace(/-/g,'');
   const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw));
@@ -1705,11 +1715,25 @@ function _obOAuth(provider){
     const _cap=window.Capacitor;
     if(provider==='apple'&&_cap&&typeof _cap.isNativePlatform==='function'&&_cap.isNativePlatform()){
       _obNativeApple().then(handled=>{
-        if(handled===false){if(typeof showToast==='function')showToast('Update TradeDesk Beta in TestFlight for Apple sign-in, or use email','⚠️',5000);}
+        if(handled===false){
+          const errEl=document.getElementById('supa-login-err');
+          if(errEl)errEl.textContent='Update TradeDesk Beta in TestFlight for Apple sign-in, or use email.';
+          if(typeof showToast==='function')showToast('Update TradeDesk Beta in TestFlight for Apple sign-in, or use email','⚠️',5000);
+        }
       }).catch(e=>{
-        // User-cancelled sheets land here too; stay quiet for those.
-        const msg=String(e&&(e.message||e.errorMessage)||'');
-        if(!/cancel|1001/i.test(msg)&&typeof showToast==='function')showToast('Apple sign-in didn\'t go through, use email for now','⚠️',5000);
+        // User-cancelled sheets stay quiet. EVERYTHING else says exactly what
+        // broke (owner 2026-08-10: a swallowed error read as a dead click and
+        // left nothing to diagnose from), and console.error feeds the live
+        // error log so the failure is on record even if the toast is missed.
+        const msg=String(e&&(e.message||e.errorMessage)||e||'');
+        if(/cancel|1001/i.test(msg))return;
+        try{console.error('apple-signin: '+msg);}catch(_e2){}
+        // The login screen is a FULL-SCREEN overlay, so toasts render under
+        // it and read as silence (owner 2026-08-10: "isn't showing any
+        // toasts"). Write the error into the login screen's own error line.
+        const errEl=document.getElementById('supa-login-err');
+        if(errEl)errEl.textContent='Apple sign-in error: '+(msg||'unknown').slice(0,140);
+        if(typeof showToast==='function')showToast('Apple sign-in error: '+(msg||'unknown').slice(0,120),'⚠️',7000);
       });
       return;
     }

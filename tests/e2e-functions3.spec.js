@@ -16,6 +16,182 @@ test.describe('Dashboard filter and pipeline functions', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
+  // Owner report (2026-08-09): "when I sign in sync fires but I see nothing
+  // but zeros for a second or two." While _dashAwaitingCloud is set (the
+  // in-tab sign-in window before the cloud load resolves) the KPI area shows
+  // skeleton tiles, never $0 placeholders; resolution swaps in real tiles.
+  // The flag defaults to false, so a mocked environment with no load coming
+  // (this very harness) must render real tiles, never an endless shimmer.
+  test('sign-in skeleton KPIs: shimmer while the cloud load is pending, real tiles otherwise', async () => {
+    const r = await page.evaluate(() => {
+      try {
+        const defaulted = _dashAwaitingCloud;
+        _dashAwaitingCloud = true;
+        renderDash();
+        const skelWhileWaiting = document.querySelectorAll('#dash-kpi .met-skel-bar').length;
+        const realWhileWaiting = document.querySelectorAll('#dash-mets-inner .met').length;
+        _dashAwaitingCloud = false;
+        renderDash();
+        const skelAfter = document.querySelectorAll('#dash-kpi .met-skel-bar').length;
+        const realAfter = document.querySelectorAll('#dash-mets-inner .met').length;
+        return { defaulted, skelWhileWaiting, realWhileWaiting, skelAfter, realAfter };
+      } finally { _dashAwaitingCloud = false; renderDash(); }
+    });
+    expect(r.defaulted, 'no load pending in this harness, the flag must default off').toBe(false);
+    expect(r.skelWhileWaiting, 'six skeleton tiles while the load is pending').toBe(6);
+    expect(r.realWhileWaiting, 'no $0 tiles while the load is pending').toBe(0);
+    expect(r.skelAfter, 'skeletons gone once the load resolved').toBe(0);
+    expect(r.realAfter, 'real KPI tiles back once the load resolved').toBeGreaterThanOrEqual(6);
+  });
+
+  // Owner report (2026-08-09): "every time I sign in I get a two waterfall
+  // stutter on total load." Sign-in renders the dashboard several times before
+  // the cloud lands (goPg in, the load's own render, the caller's goPg), and
+  // each render rewrote identical skeleton markup, restarting the CSS shimmer
+  // from frame zero. Two visible jumps backwards, then the real numbers. The
+  // skeleton is painted ONCE now, and the flag clears before the post-load
+  // render so that paint is the real one: exactly one swap (§8.4).
+  test('sign-in paints the skeleton once and swaps once, however many renders fire', async () => {
+    const r = await page.evaluate(() => {
+      const realAwait = _dashAwaitingCloud, realLoaded = _supaCloudLoaded;
+      const seq = [];
+      const snap = () => {
+        const el = document.getElementById('dash-kpi');
+        const skel = el && el.querySelector('.met-skel-bar');
+        return { skel: !!skel, node: skel || null };
+      };
+      try {
+        _dashAwaitingCloud = true; _supaCloudLoaded = false;
+        renderDash();
+        const first = snap();
+        seq.push(first.skel ? 'skeleton' : 'real');
+        renderDash(); renderDash();          // the redundant sign-in renders
+        const after = snap();
+        _dashAwaitingCloud = false; _supaCloudLoaded = true;
+        renderDash();
+        seq.push(snap().skel ? 'skeleton' : 'real');
+        return { seq, rebuilt: after.node !== first.node };
+      } finally { _dashAwaitingCloud = realAwait; _supaCloudLoaded = realLoaded; renderDash(); }
+    });
+    expect(r.seq, 'one skeleton, one swap, nothing in between').toEqual(['skeleton', 'real']);
+    expect(r.rebuilt, 'a repeat render must not rebuild the shimmer nodes').toBe(false);
+  });
+
+  // Owner report (2026-08-09, second sighting): skeletons shimmering forever
+  // in the shell with nothing arriving. A stalled cloud load left
+  // _dashAwaitingCloud set with no path back. The watchdog caps the promise:
+  // past the deadline the tiles drop to local data and any late load repaints.
+  test('the skeleton watchdog drops a stalled cloud load to real tiles', async () => {
+    const r = await page.evaluate(async () => {
+      const realMax = _dashSkelMaxMs;
+      try {
+        _dashSkelMaxMs = 60;
+        _dashAwaitingCloud = true;
+        _dashArmSkelWatchdog();
+        renderDash();
+        const skelBefore = document.querySelectorAll('#dash-kpi .met-skel-bar').length;
+        await new Promise(r2 => setTimeout(r2, 200));
+        const flagAfter = _dashAwaitingCloud;
+        renderDash();
+        const skelAfter = document.querySelectorAll('#dash-kpi .met-skel-bar').length;
+        const realAfter = document.querySelectorAll('#dash-mets-inner .met').length;
+        return { skelBefore, flagAfter, skelAfter, realAfter };
+      } finally { _dashSkelMaxMs = realMax; _dashAwaitingCloud = false; clearTimeout(_dashSkelTimer); renderDash(); }
+    });
+    expect(r.skelBefore, 'skeletons up while waiting').toBe(6);
+    expect(r.flagAfter, 'the watchdog clears the stalled flag').toBe(false);
+    expect(r.skelAfter, 'no endless shimmer').toBe(0);
+    expect(r.realAfter).toBeGreaterThanOrEqual(6);
+  });
+
+  // Owner mandate (2026-08-09): shimmer skeletons are THE loading treatment.
+  // The calendar was the worst offender: renderCalGrid awaited the weather
+  // fetch before painting anything, and pg-cal's 5s page fade existed only to
+  // hide that. These pin the fix: instant paint, shimmer chips in the weather
+  // slots, one repaint when weather lands, and the 5s fade gone for good.
+  test('calendar grid paints instantly with shimmer weather chips, no fetch-blocking, no 5s fade', async () => {
+    const r = await page.evaluate(async () => {
+      const realCache = _weatherCache, realTime = _weatherCacheTime;
+      const realLat = S.weatherLat, realLon = S.weatherLon;
+      const realFetch = window.fetchWeather;
+      try {
+        S.weatherLat = 39.0; S.weatherLon = -95.0;
+        _weatherCache = null; _weatherCacheTime = 0;
+        goPg('pg-cal');
+        let resolveFetch;
+        const gate = new Promise(res => { resolveFetch = res; });
+        window.fetchWeather = async () => { await gate; return {}; };
+        const t0 = performance.now();
+        await renderCalGrid();
+        const paintMs = performance.now() - t0;
+        const chips = document.querySelectorAll('#cal-grid .td-skel').length;
+        const cells = document.querySelectorAll('#cal-grid .cal-cell:not(.other)').length;
+        resolveFetch();
+        const anim = getComputedStyle(document.getElementById('pg-cal')).animationDuration;
+        return { paintMs, chips, cells, anim };
+      } finally {
+        _weatherCache = realCache; _weatherCacheTime = realTime;
+        S.weatherLat = realLat; S.weatherLon = realLon;
+        window.fetchWeather = realFetch;
+        goPg('pg-dash');
+      }
+    });
+    expect(r.paintMs, 'the grid paints without waiting on the weather fetch').toBeLessThan(1500);
+    expect(r.chips, 'every current-month cell shows a shimmer chip while weather is out').toBe(r.cells);
+    expect(r.anim, 'the 5s masking fade is gone, standard entrance only').not.toBe('5s');
+  });
+
+  test('cached weather renders icons with zero shimmer chips and zero refetch', async () => {
+    const r = await page.evaluate(async () => {
+      const realCache = _weatherCache, realTime = _weatherCacheTime;
+      const realLat = S.weatherLat, realLon = S.weatherLon;
+      const realFetch = window.fetchWeather;
+      let fetches = 0;
+      try {
+        S.weatherLat = 39.0; S.weatherLon = -95.0;
+        const map = {};
+        const d = new Date();
+        for (let i = 0; i < 45; i++) {
+          const k = dateKey(new Date(d.getFullYear(), d.getMonth(), 1 + i - 7));
+          map[k] = { icon: '☀️', label: 'Sunny', rain: false, hi: 75, lo: 55, precip: 0 };
+        }
+        _weatherCache = map; _weatherCacheTime = Date.now();
+        window.fetchWeather = async () => { fetches++; return map; };
+        goPg('pg-cal');
+        await renderCalGrid();
+        return {
+          fetches,
+          chips: document.querySelectorAll('#cal-grid .td-skel').length,
+          hasIcons: document.getElementById('cal-grid').innerHTML.includes('☀️'),
+        };
+      } finally {
+        _weatherCache = realCache; _weatherCacheTime = realTime;
+        S.weatherLat = realLat; S.weatherLon = realLon;
+        window.fetchWeather = realFetch;
+        goPg('pg-dash');
+      }
+    });
+    expect(r.fetches, 'fresh cache means no fetch at all').toBe(0);
+    expect(r.chips).toBe(0);
+    expect(r.hasIcons).toBe(true);
+  });
+
+  test('the shared shimmer utility exists and every placeholder rides it', async () => {
+    const r = await page.evaluate(() => {
+      const probe = document.createElement('div');
+      probe.className = 'td-skel';
+      document.body.appendChild(probe);
+      const cs = getComputedStyle(probe);
+      const out = { anim: cs.animationName, bgSize: cs.backgroundSize };
+      probe.remove();
+      out.rows = typeof _tdSkelRows === 'function' ? _tdSkelRows(3) : '';
+      return out;
+    });
+    expect(r.anim).toBe('td-skel');
+    expect(r.bgSize).toBe('400% 100%');
+    expect((r.rows.match(/td-skel/g) || []).length, '_tdSkelRows emits the shared class').toBe(3);
+  });
+
   test('setDashFeedFilter: changes feed filter without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof setDashFeedFilter !== 'function') return { skip: true };
@@ -818,6 +994,7 @@ test.describe('Cloud Supabase and account functions', () => {
   test('boot waterfall, arms synchronously, staggers visible cards, self-removes', async () => {
     const r = await page.evaluate(() => {
       window._sboT0 = 0; // neutralize min-stage-time (tested separately)
+      window._bootCascadeRan = false;   // simulate a FRESH boot: one pour per page load
       document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
       document.getElementById('supa-boot-overlay')?.remove();
       const o = document.createElement('div');
@@ -855,6 +1032,7 @@ test.describe('Cloud Supabase and account functions', () => {
   test('boot waterfall, plays behind an open boot popup (no blank backdrop)', async () => {
     const r = await page.evaluate(() => {
       window._sboT0 = 0;
+      window._bootCascadeRan = false;   // fresh boot: one pour per page load
       document.getElementById('supa-boot-overlay')?.remove();
       const o = document.createElement('div');
       o.id = 'supa-boot-overlay';
@@ -877,6 +1055,7 @@ test.describe('Cloud Supabase and account functions', () => {
   // until it has been on screen ~2.8s, then lifts.
   test('boot overlay min stage time, fast loads hold before the lift-away', async () => {
     const r0 = await page.evaluate(() => {
+      window._bootCascadeRan = false;   // fresh boot: one pour per page load
       document.getElementById('supa-boot-overlay')?.remove();
       const o = document.createElement('div');
       o.id = 'supa-boot-overlay';
@@ -955,6 +1134,410 @@ test.describe('Cloud Supabase and account functions', () => {
     });
     expect(r.keptOnDeferred).toBe(true);  // deferred mid-boot reload → overlay held
     expect(r.keptOnPending).toBe(true);   // reload already executing → overlay held
+  });
+
+  // ── One clean boot (owner 2026-08-10) ─────────────────────────────────────
+  // "Dashboard load, shimmer skeleton always, then everything loads in nicely."
+  // Until the FIRST cloud sync of a signed-in page load lands, every visible
+  // dashboard widget hides its real content behind an appended .td-boot-skel
+  // shimmer card; _bootSyncSettled removes them in one swap, re-renders, and
+  // pours the one boot cascade. Non-destructive: static widget markup (the
+  // quick-actions grid) must survive the swap untouched.
+  test('boot skeletons: shimmer overlays every visible widget, statics survive the swap', async () => {
+    const r = await page.evaluate(async () => {
+      const savedTimer = window._bootSkelTimer;
+      try {
+        window._bootSyncPending = true; window._bootSkelDone = false; window._bootSkelTimer = null;
+        window._bootCascadeRan = false; window._sboT0 = 0; window._bootShimmerT0 = null;
+        document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+        document.getElementById('supa-boot-overlay')?.remove(); // settle only pours once the overlay is gone
+        document.getElementById('pg-dash').classList.add('active');
+        const before = document.querySelectorAll('#dash-quick .qa').length;
+        _dashApplySkeletons();
+        const skels = document.querySelectorAll('#dash-widget-root>.td-dw>.td-boot-skel').length;
+        const on = document.querySelectorAll('#dash-widget-root>.td-dw.td-boot-skel-on').length;
+        const tbarSkel = document.querySelectorAll('#pg-dash>.tbar>.td-boot-skel').length;
+        const quickHidden = getComputedStyle(document.getElementById('dash-quick')).display === 'none';
+        const shimmer = document.querySelectorAll('#dash-widget-root .td-boot-skel .td-skel').length;
+        const modeOn = _dashSkelMode();
+        const timerArmed = !!window._bootSkelTimer;
+        // The settle: the shimmer gets its visible beat (owner spec
+        // 2026-08-11), then one swap back to real content + the cascade pours.
+        _bootSyncSettled();
+        let waited = 0;
+        while (!window._bootSkelDone && waited < 3000) { await new Promise(res => setTimeout(res, 100)); waited += 100; }
+        const after = {
+          skels: document.querySelectorAll('#pg-dash .td-boot-skel').length,
+          on: document.querySelectorAll('#pg-dash .td-boot-skel-on').length,
+          qas: document.querySelectorAll('#dash-quick .qa').length,
+          quickVisible: getComputedStyle(document.getElementById('dash-quick')).display !== 'none',
+          cascade: document.getElementById('pg-dash').classList.contains('boot-cascade'),
+          modeOff: !_dashSkelMode(),
+        };
+        _bootSyncSettled(); // idempotent: a late sync or the failsafe re-firing is a no-op
+        return { before, skels, on, tbarSkel, quickHidden, shimmer, modeOn, timerArmed, after };
+      } finally {
+        window._bootSyncPending = false; window._bootSkelDone = true; window._bootShimmerT0 = null;
+        try { clearTimeout(window._bootSkelTimer); } catch (e) {}
+        window._bootSkelTimer = savedTimer;
+      }
+    });
+    expect(r.modeOn).toBe(true);                 // boot sync in flight = skel mode
+    expect(r.skels).toBeGreaterThanOrEqual(3);   // every visible widget shimmer-covered
+    expect(r.on).toBe(r.skels);                  // hide-class rides with each overlay
+    expect(r.tbarSkel).toBeGreaterThanOrEqual(1); // the greeting bar shimmers too
+    expect(r.quickHidden).toBe(true);            // real content hidden, never destroyed
+    expect(r.shimmer).toBeGreaterThanOrEqual(6); // actual .td-skel bands render
+    expect(r.timerArmed).toBe(true);             // 15s failsafe armed against a wedged sync
+    expect(r.after.skels).toBe(0);               // one swap: overlays gone
+    expect(r.after.on).toBe(0);
+    expect(r.after.qas).toBe(r.before);          // static quick actions intact after the swap
+    expect(r.after.quickVisible).toBe(true);
+    expect(r.after.cascade).toBe(true);          // the pour rides the settle
+    expect(r.after.modeOff).toBe(true);
+    await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 6000 });
+  });
+
+  // While skeletons are up the overlay lift must NOT pour the cascade over
+  // shimmer bars, and the settle must not pour INSTANTLY either: the shimmer
+  // gets a visible beat first (owner video 2026-08-11: a fast sync used to
+  // finish the whole choreography beneath the overlay, so the loader lifted
+  // onto a fully formed page with no shimmer and no waterfall).
+  test('boot cascade waits for the settle, and the settle lets the shimmer be seen', async () => {
+    const r = await page.evaluate(async () => {
+      try {
+        window._bootSyncPending = true; window._bootSkelDone = false;
+        window._bootCascadeRan = false; window._sboT0 = 0; window._bootShimmerT0 = null;
+        document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+        document.getElementById('supa-boot-overlay')?.remove();
+        const o = document.createElement('div');
+        o.id = 'supa-boot-overlay';
+        document.body.appendChild(o);
+        document.getElementById('pg-dash').classList.add('active');
+        _removeBootOverlay();
+        const heldForSync = !document.getElementById('pg-dash').classList.contains('boot-cascade');
+        _bootSyncSettled();
+        const pouredInstantly = document.getElementById('pg-dash').classList.contains('boot-cascade');
+        let waited = 0;
+        while (!window._bootSkelDone && waited < 3000) { await new Promise(res => setTimeout(res, 100)); waited += 100; }
+        const poured = document.getElementById('pg-dash').classList.contains('boot-cascade') || window._bootCascadeRan;
+        return { heldForSync, pouredInstantly, poured };
+      } finally {
+        window._bootSyncPending = false; window._bootSkelDone = true; window._bootShimmerT0 = null;
+        document.getElementById('supa-boot-overlay')?.remove();
+      }
+    });
+    expect(r.heldForSync).toBe(true);        // overlay lifted onto shimmer, no premature pour
+    expect(r.pouredInstantly, 'the shimmer gets its visible beat before the pour').toBe(false);
+    expect(r.poured, 'then the settle pours over the real content').toBe(true);
+    await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 6000 });
+  });
+
+  // The geo ON SITE card lands seconds after the boot waterfall and sits at
+  // the top of the dashboard. It must slide its space open (max-height
+  // transition, §8.4) instead of shoving every card below it down in one
+  // frame, which read as the whole dashboard dropping again (owner
+  // 2026-08-10). Same on hide: the space collapses, no jump-up.
+  test('geo ON SITE card slides open and collapses closed, never yanks layout', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = (typeof _activeTimer !== 'undefined') ? _activeTimer : null;
+      const el = document.getElementById('dash-nearby');
+      el.style.display = 'none'; el.innerHTML = '';
+      try {
+        _activeTimer = { startTime: Date.now() - 60000, clientName: 'Geo Test', jobId: null };
+        renderDash();
+        const during = { maxH: el.style.maxHeight, trans: el.style.transition, disp: el.style.display };
+        await new Promise(res => setTimeout(res, 500));
+        const settled = { maxH: el.style.maxHeight, overflow: el.style.overflow, visible: el.style.display === 'block' };
+        _activeTimer = null;
+        renderDash();          // state gone: card animates away and collapses
+        const hiding = { trans: el.style.transition, anim: el.style.animation };
+        await new Promise(res => setTimeout(res, 400));
+        const hidden = { disp: el.style.display, maxH: el.style.maxHeight };
+        return { during, settled, hiding, hidden };
+      } finally { _activeTimer = saved; renderDash(); }
+    });
+    expect(r.during.disp).toBe('block');
+    expect(r.during.maxH).toBe('560px');             // expand target set synchronously (no rAF)
+    expect(r.during.trans).toContain('max-height');  // transitioning open from the flushed 0
+    expect(r.settled.maxH).toBe('');                 // cleanup: no residual cap
+    expect(r.settled.visible).toBe(true);
+    expect(r.hiding.trans).toContain('max-height');  // exit collapses the space
+    expect(r.hidden.disp).toBe('none');              // fully hidden after
+    expect(r.hidden.maxH).toBe('');                  // and cleaned up
+  });
+
+  // One waterfall, no stutters (owner spec 2026-08-11): a geo fix landing
+  // MID-pour must not slide the ON SITE card open while the cards below are
+  // still cascading in. The reveal waits out the pour, then slides once.
+  test('geo card never reveals mid-waterfall, slides in right after it', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = (typeof _activeTimer !== 'undefined') ? _activeTimer : null;
+      const el = document.getElementById('dash-nearby');
+      const d = document.getElementById('pg-dash');
+      el.style.display = 'none'; el.innerHTML = '';
+      try {
+        d.classList.add('boot-cascade');           // the pour is mid-flight
+        _activeTimer = { startTime: Date.now() - 60000, clientName: 'Pour Test', jobId: null };
+        renderDash();
+        const during = { disp: el.style.display, waiting: !!window._nearbyPourWait };
+        d.classList.remove('boot-cascade');        // pour finishes
+        await new Promise(res => setTimeout(res, 400));
+        const after = { disp: el.style.display, cleared: !window._nearbyPourWait };
+        return { during, after };
+      } finally {
+        _activeTimer = saved; d.classList.remove('boot-cascade');
+        if (window._nearbyPourWait) { clearInterval(window._nearbyPourWait); window._nearbyPourWait = null; }
+        renderDash();
+      }
+    });
+    expect(r.during.disp, 'held hidden while the waterfall runs').toBe('none');
+    expect(r.during.waiting, 'a reveal is queued for the end of the pour').toBe(true);
+    expect(r.after.disp, 'revealed right after the pour').toBe('block');
+    expect(r.after.cleared, 'the wait disarms itself').toBe(true);
+  });
+
+  // The settle holds the shimmer briefly for the FIRST geo answer in the
+  // native shell, so the banner joins the waterfall; a browser (no shell)
+  // settles instantly, and the hold is capped so GPS can never veto the boot.
+  test('boot settle gives the first geo fix a beat, but only in the shell', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const el = document.getElementById('dash-nearby');
+      const keep = { d: el.style.display, h: el.innerHTML };
+      try {
+        // Shell present, tracking coming up, no fix yet, no card painted.
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: (n) => n === 'TdGeo' ? { addListener: () => {} } : null };
+        window._geoTdBound = true;
+        _geoNativeStarting = true;
+        el.style.display = 'none'; el.innerHTML = '';
+        window._geoFixSeen = false; window._nearbyLiveRendered = false;
+        window._bootSyncPending = true; window._bootSkelDone = false;
+        window._bootCascadeRan = true;             // pour already spent: isolate the hold
+        window._bootGeoHoldUntil = null;
+        _bootSyncSettled();
+        const heldForGeo = !window._bootSkelDone;
+        window._geoFixSeen = true;                 // the fix lands
+        await new Promise(res => setTimeout(res, 260));
+        const settledOnFix = window._bootSkelDone;
+        return { heldForGeo, settledOnFix };
+      } finally {
+        window.Capacitor = realCap; window._geoTdBound = undefined;
+        _geoNativeStarting = false;
+        window._bootSyncPending = false; window._bootSkelDone = true;
+        window._bootGeoHoldUntil = null; window._geoFixSeen = false;
+        el.style.display = keep.d; el.innerHTML = keep.h;
+      }
+    });
+    expect(r.heldForGeo, 'shell boot waits a beat for the first fix').toBe(true);
+    expect(r.settledOnFix, 'the fix releases the settle immediately').toBe(true);
+  });
+
+  // The KPI tile entrance (td-met-enter) plays ONLY during the boot pour.
+  // It used to live on .met itself, so every innerHTML rebuild (sync echoes,
+  // a mileage measurement landing) replayed six tile animations: the KPI
+  // flashing on the owner's 2026-08-11 screen recording, caught by the
+  // boot-churn recorder.
+  test('KPI tiles never replay their entrance outside the boot pour', async () => {
+    const r = await page.evaluate(async () => {
+      const d = document.getElementById('pg-dash');
+      // Animations only run on VISIBLE elements: pin the page state instead
+      // of inheriting whichever page the previous test left active.
+      if (typeof goPg === 'function') goPg('pg-dash');
+      d.classList.add('active');
+      d.classList.remove('boot-cascade');
+      const seen = [];
+      const h = (e) => { if (e.animationName === 'td-met-enter') seen.push(e.target.className); };
+      document.addEventListener('animationstart', h, true);
+      try {
+        renderDash();
+        await new Promise(res => setTimeout(res, 120));
+        const quiet = seen.length;
+        renderDash();                          // a second rebuild, like a sync echo
+        await new Promise(res => setTimeout(res, 120));
+        const stillQuiet = seen.length;
+        // The pour side is asserted via computed style, not events: headless
+        // WebKit does not reliably dispatch animationstart after an ancestor
+        // class flip, but animation-name resolution is deterministic.
+        const met = document.querySelector('#pg-dash .met');
+        const idleAnim = met ? getComputedStyle(met).animationName : 'missing';
+        d.classList.add('boot-cascade');       // the pour is the one licensed moment
+        const pourAnim = met ? getComputedStyle(met).animationName : 'missing';
+        return { quiet, stillQuiet, idleAnim, pourAnim, mets: document.querySelectorAll('#pg-dash .met').length };
+      } finally {
+        document.removeEventListener('animationstart', h, true);
+        d.classList.remove('boot-cascade');
+      }
+    });
+    expect(r.mets, 'tiles exist to measure').toBeGreaterThanOrEqual(4);
+    expect(r.quiet, 'a plain render never animates a tile').toBe(0);
+    expect(r.stillQuiet, 'nor does a rebuild').toBe(0);
+    expect(r.idleAnim, 'no entrance animation outside the pour').toBe('none');
+    expect(r.pourAnim, 'the pour still carries the entrance').toContain('td-met-enter');
+  });
+
+  // renderDash re-applied the saved widget order by re-APPENDING every card,
+  // and re-inserting a DOM node restarts its CSS animation: during the pour
+  // window every re-render replayed the whole waterfall (owner 2026-08-10:
+  // the geofence card render "keeps reiterating the waterfall"). The order
+  // appliers are strict no-ops when the DOM already matches.
+  test('widget order applier never touches the DOM when already in order', async () => {
+    const r = await page.evaluate(async () => {
+      const root = document.getElementById('dash-widget-root');
+      let adds = 0;
+      const mo = new MutationObserver(muts => muts.forEach(m => { adds += m.addedNodes.length; }));
+      mo.observe(root, { childList: true });
+      _applyDashOrder(_getDashWidgetOrder());
+      await new Promise(res => setTimeout(res, 30));
+      const noop = adds;
+      const cur = [...root.querySelectorAll(':scope>.td-dw')].map(el => el.dataset.dw);
+      _applyDashOrder([...cur].reverse());
+      await new Promise(res => setTimeout(res, 30));
+      const moved = adds;
+      _applyDashOrder(cur);
+      await new Promise(res => setTimeout(res, 30));
+      mo.disconnect();
+      const back = [...root.querySelectorAll(':scope>.td-dw')].map(el => el.dataset.dw).join();
+      return { noop, moved, restored: back === cur.join() };
+    });
+    expect(r.noop, 'matching order: zero DOM churn, zero animation restarts').toBe(0);
+    expect(r.moved, 'a real reorder still moves nodes').toBeGreaterThan(0);
+    expect(r.restored).toBe(true);
+  });
+
+  // The geo card waits seconds for the first GPS fix; the dashboard now shows
+  // the LAST session's card instantly (fresh + same user only) and lets the
+  // first real fix confirm or remove it (owner 2026-08-10: "comes in 3
+  // seconds late... load all this in instantly").
+  test('geo card snapshot: shows instantly pre-fix, first no-state fix clears it, stale never shows', async () => {
+    const r = await page.evaluate(async () => {
+      const el = document.getElementById('dash-nearby');
+      const savedFix = window._geoFixSeen, savedLive = window._nearbyLiveRendered;
+      try {
+        window._geoFixSeen = false;
+        window._nearbyLiveRendered = false; // simulate a fresh boot: no live card yet this page load
+        el.style.display = 'none'; el.innerHTML = ''; delete el.dataset.snap;
+        const uid = (typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id) || null;
+        localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div id="snap-probe">ON SITE</div>', ts: Date.now(), uid }));
+        renderDash();
+        const shown = el.style.display === 'block' && !!document.getElementById('snap-probe');
+        window._geoFixSeen = true; // GPS truth arrives and finds no live state
+        renderDash();
+        await new Promise(res => setTimeout(res, 350));
+        const hidden = el.style.display === 'none';
+        const cleared = !localStorage.getItem('zp3_nearby_snap');
+        window._geoFixSeen = false;
+        window._nearbyLiveRendered = false;
+        // Past the 45-minute freshness window (was 10 min; owner's 26-minute
+        // gap made the card miss the waterfall, 2026-08-11).
+        localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div id="snap-probe2">x</div>', ts: Date.now() - 2760000, uid }));
+        renderDash();
+        const staleShown = !!document.getElementById('snap-probe2');
+        // Once any live card has rendered this page load, the restore is done
+        // for good, a later hidden state must never resurrect the snapshot.
+        window._nearbyLiveRendered = true;
+        localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div id="snap-probe3">x</div>', ts: Date.now(), uid }));
+        renderDash();
+        const postLiveShown = !!document.getElementById('snap-probe3');
+        return { shown, hidden, cleared, staleShown, postLiveShown };
+      } finally {
+        window._geoFixSeen = savedFix;
+        window._nearbyLiveRendered = savedLive;
+        localStorage.removeItem('zp3_nearby_snap');
+        el.style.display = 'none'; el.innerHTML = ''; delete el.dataset.snap;
+        renderDash();
+      }
+    });
+    expect(r.shown, 'fresh same-user snapshot renders before any fix').toBe(true);
+    expect(r.hidden, 'the first no-state fix animates it away').toBe(true);
+    expect(r.cleared, 'and clears the stored copy').toBe(true);
+    expect(r.staleShown, 'a stale snapshot never shows').toBe(false);
+    expect(r.postLiveShown, 'after a live render this page load, no resurrection').toBe(false);
+  });
+
+  // Same-page goPg must not strip and re-add .active: that restarts the
+  // td-pg-enter animation, and boot/sign-in flows call goPg('pg-dash')
+  // several times, so each restart replayed the whole page pour (owner
+  // 2026-08-10: "weird waterfalls"). Real navigation still swaps pages.
+  test('goPg to the already-active page keeps .active untouched (no entrance replay)', async () => {
+    const r = await page.evaluate(async () => {
+      goPg('pg-dash');
+      await new Promise(res => setTimeout(res, 30));
+      const el = document.getElementById('pg-dash');
+      let mutations = 0;
+      const mo = new MutationObserver(muts => { mutations += muts.length; });
+      mo.observe(el, { attributes: true, attributeFilter: ['class'] });
+      goPg('pg-dash');            // same page: zero class churn
+      await new Promise(res => setTimeout(res, 30));
+      const same = mutations;
+      mo.disconnect();
+      goPg('pg-cal');             // real navigation still swaps
+      const moved = document.querySelector('.pg.active')?.id;
+      goPg('pg-dash');
+      return { same, moved, back: document.querySelector('.pg.active')?.id };
+    });
+    expect(r.same).toBe(0);          // no strip/re-add, no animation restart
+    expect(r.moved).toBe('pg-cal');  // navigation away unaffected
+    expect(r.back).toBe('pg-dash');  // and back
+  });
+
+  // The blue "Syncing..." pill retired (owner 2026-08-10): the skeleton shimmer
+  // IS the syncing signal now. Only the amber offline state still banners.
+  test('offline banner: syncing state shows nothing, offline state still banners amber', async () => {
+    const r = await page.evaluate(() => {
+      let b = document.getElementById('offline-banner');
+      const made = !b;
+      if (!b) { b = document.createElement('div'); b.id = 'offline-banner'; b.style.cssText = 'position:fixed;left:-9999px'; document.body.appendChild(b); }
+      b.textContent = ''; b.style.opacity = '0';
+      _showOfflineBanner(true);
+      const syncing = { text: b.textContent, opacity: b.style.opacity };
+      _showOfflineBanner(false);
+      const offline = { text: b.textContent, opacity: b.style.opacity };
+      _hideOfflineBanner();
+      if (made) b.remove();
+      return { syncing, offline };
+    });
+    expect(r.syncing.text).not.toContain('Syncing'); // no blue pill content
+    expect(r.syncing.opacity).toBe('0');             // and it never shows
+    expect(r.offline.text).toContain('Offline');     // amber offline state still real
+    expect(r.offline.opacity).toBe('1');
+  });
+
+  // Owner 2026-08-10: "continue with apple isn't showing any toasts." The login
+  // screen is a full-screen overlay that renders ABOVE toasts, so a failure has
+  // to land on the login screen's own #supa-login-err line to be seen at all.
+  test('Apple sign-in failure writes onto the login screen error line', async () => {
+    const r = await page.evaluate(async () => {
+      const savedCap = window.Capacitor, savedNative = window._obNativeApple, savedCE = console.error;
+      const errEl = document.createElement('div');
+      errEl.id = 'supa-login-err'; errEl.style.cssText = 'position:fixed;left:-9999px';
+      document.body.appendChild(errEl);
+      try {
+        console.error = () => {}; // the path intentionally logs; keep the shard's capture clean
+        window.Capacitor = { isNativePlatform: () => true };
+        window._obNativeApple = () => Promise.reject(new Error('AKAuthenticationError -7026'));
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 60));
+        const failText = errEl.textContent;
+        errEl.textContent = '';
+        window._obNativeApple = () => Promise.resolve(false); // plugin missing in this shell build
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 60));
+        const staleText = errEl.textContent;
+        errEl.textContent = '';
+        window._obNativeApple = () => Promise.reject(new Error('user cancelled, code 1001'));
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 60));
+        const cancelText = errEl.textContent;
+        return { failText, staleText, cancelText };
+      } finally {
+        console.error = savedCE; window.Capacitor = savedCap; window._obNativeApple = savedNative;
+        errEl.remove();
+      }
+    });
+    expect(r.failText).toContain('Apple sign-in error: AKAuthenticationError -7026');
+    expect(r.staleText).toContain('Update TradeDesk Beta in TestFlight');
+    expect(r.cancelText).toBe(''); // user-cancelled sheets stay quiet
   });
 
   // §8.4 popup entrance: every .zmodal card must ride the td-modal-in animation
@@ -7557,6 +8140,115 @@ test.describe('Version consistency', () => {
     const v = await page.evaluate(() => typeof APP_VERSION !== 'undefined' ? APP_VERSION : null);
     expect(v).toMatch(/^\d{2}\.\d{2}\.\d{2}\.\d+$/);
   });
+
+  // ── Offline boot resilience (owner report 2026-08-12: a dead-radio launch
+  // served the cached shell with the offline banner up and NO NAME in the
+  // greeting). Two guarantees, each with its own test:
+  //   1. The Supabase SDK is served from the app's own origin. The service
+  //      worker can only cache same-origin scripts (a cross-origin no-cors
+  //      response is opaque, r.ok is false, the cache-first branch skips it),
+  //      so the old jsdelivr tag was NEVER available offline: no SDK, no
+  //      session, no identity, on every offline boot, by construction.
+  //   2. Even with no SDK at all, identity restores from the device cache:
+  //      the auth token names the user, zp3_acct_<uid> has the rest.
+  test('the app serves the Supabase SDK from its own origin, never a CDN the SW cannot cache', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    const tag = html.match(/<script[^>]*id="supabase-sdk"[^>]*>/);
+    expect(tag, 'the supabase-sdk script tag exists').toBeTruthy();
+    expect(tag[0], 'SDK loads same-origin from js/vendor, offline-cacheable').toContain('src="js/vendor/supabase-js-');
+    expect(tag[0], 'no cross-origin SDK source').not.toContain('jsdelivr');
+    const src = tag[0].match(/src="([^"]+)"/)[1];
+    const bundle = fs.readFileSync(path.join(__dirname, '..', src), 'utf8');
+    expect(bundle.length, 'the vendored bundle is a real SDK, not a stub').toBeGreaterThan(100000);
+    expect(bundle.slice(0, 600), 'UMD build exposing the supabase global').toContain('var supabase=');
+    expect(bundle, 'createClient is present').toContain('createClient');
+  });
+
+  test('_restoreIdentityFromCache: an offline boot with no SDK still knows who you are', async () => {
+    const r = await page.evaluate(() => {
+      const saved = { user: _user, emp: _isEmployee, cid: _contractorUserId, trade: _activeTrade, acct: _account, cfg: _config };
+      // Park every real sb-* auth key so the test's token is the one found.
+      const parked = [];
+      Object.keys(localStorage).filter(k => /^sb-.*-auth-token$/.test(k)).forEach(k => { parked.push([k, localStorage.getItem(k)]); localStorage.removeItem(k); });
+      try {
+        localStorage.setItem('sb-testref-auth-token', JSON.stringify({ user: { id: 'uid-offline-1' } }));
+        localStorage.setItem('zp3_acct_uid-offline-1', JSON.stringify({
+          user: { id: 'uid-offline-1', email: 'dev@test.com', name: 'Dev Anderson', role: 'owner', account_id: 'a1' },
+          activeTrade: 'painting', isEmployee: false,
+        }));
+        _user = null;
+        const restored = _restoreIdentityFromCache();
+        const greeting = getDashGreeting();
+        const name = getUserName();
+        // The no-op path: a set _user is never clobbered by the cache.
+        const already = _restoreIdentityFromCache();
+        return { restored, name, greeting, already };
+      } finally {
+        localStorage.removeItem('sb-testref-auth-token');
+        localStorage.removeItem('zp3_acct_uid-offline-1');
+        parked.forEach(([k, v]) => localStorage.setItem(k, v));
+        _user = saved.user; _isEmployee = saved.emp; _contractorUserId = saved.cid;
+        _activeTrade = saved.trade; _account = saved.acct; _config = saved.cfg;
+        applyPermissions();
+      }
+    });
+    expect(r.restored, 'identity restores from the device cache without the SDK').toBe(true);
+    expect(r.name).toBe('Dev Anderson');
+    expect(r.greeting, 'the offline greeting carries the first name, same as online').toContain('Dev!');
+    expect(r.already, 'a live session is never clobbered').toBe(true);
+  });
+
+  test('_restoreIdentityFromCache: no cache means a clean false, never a throw', async () => {
+    const r = await page.evaluate(() => {
+      const saved = { user: _user };
+      const parked = [];
+      Object.keys(localStorage).filter(k => /^sb-.*-auth-token$/.test(k)).forEach(k => { parked.push([k, localStorage.getItem(k)]); localStorage.removeItem(k); });
+      try {
+        _user = null;
+        const restored = _restoreIdentityFromCache();
+        return { restored, userStillNull: _user === null };
+      } finally {
+        parked.forEach(([k, v]) => localStorage.setItem(k, v));
+        _user = saved.user;
+      }
+    });
+    expect(r.restored).toBe(false);
+    expect(r.userStillNull, 'nothing invented when nothing is cached').toBe(true);
+  });
+
+  test('the boot SDK fallback calls the identity restore before rendering', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    const fb = html.indexOf('const _sdkFallback=');
+    expect(fb, 'the SDK fallback exists').toBeGreaterThan(0);
+    expect(html.slice(fb, fb + 400), 'fallback restores identity from the device cache')
+      .toContain('_restoreIdentityFromCache');
+  });
+
+  test('the SDK-less state is never permanent: a retry loop re-injects the SDK and boots live in place', () => {
+    // Owner report 2026-08-12, from the truck: the dead boot stayed dead for
+    // a whole drive, auto mileage lost. A cached CURRENT version gives the
+    // version watchdog no mismatch to reload on, so the app itself must keep
+    // retrying the SDK and come alive the moment it loads: no reload, no
+    // force-quit, no user action.
+    const fs = require('fs');
+    const path = require('path');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    const guard = html.indexOf('const _bootSupaOnce=');
+    expect(guard, 'the one-shot supaInit guard exists').toBeGreaterThan(0);
+    const retry = html.indexOf('_sdkRetryBusy');
+    expect(retry, 'the retry loop exists').toBeGreaterThan(0);
+    const region = html.slice(retry, retry + 900);
+    expect(region, 'retries the vendored same-origin SDK').toContain("_r.src='js/vendor/supabase-js-");
+    expect(region, 'boots the cloud layer the moment the SDK lands').toContain('_bootSupaOnce()');
+    // The load listener and the retry share the same guard, so supaInit can
+    // never run twice however the races land.
+    expect(html, 'the original load listener routes through the same guard')
+      .toContain("_sdk.addEventListener('load',_bootSupaOnce)");
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -7651,4 +8343,155 @@ test.describe('Dollar-field comma formatting, shared helpers + every real call s
       expect(result.hasHandler, `${fieldName} must call _fmtMoneyInput on input`).toBe(true);
     });
   }
+});
+
+// ── Haptics (owner 2026-08-10: "haptics everywhere needs a go") ──────────────
+// The app used to call navigator.vibrate(), which iOS has NEVER implemented
+// in Safari or WKWebView: every one of those six calls was a silent no-op on
+// iPhone. _tdHaptic routes to the native Taptic plugin in the shell and falls
+// back to vibrate elsewhere, so the feel is real on the device that matters.
+test.describe('Haptics bridge', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('native shell: every kind maps to a real Taptic call, unknown kinds still fire', async () => {
+    const r = await page.evaluate(() => {
+      const realCap = window.Capacitor, realPlugin = window._tdHapticPlugin;
+      const calls = [];
+      try {
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: (n) => n === 'TdHaptic' ? {
+            impact: (o) => { calls.push('impact:' + (o && o.style)); return Promise.resolve(); },
+            notify: (o) => { calls.push('notify:' + (o && o.type)); return Promise.resolve(); },
+            select: () => { calls.push('select'); return Promise.resolve(); },
+          } : null,
+        };
+        window._tdHapticPlugin = undefined; // force re-resolution against the stub
+        ['tick', 'tap', 'thud', 'heavy', 'win', 'warn', 'fail', 'nonsense-kind'].forEach(k => _tdHaptic(k));
+        return { calls };
+      } finally { window.Capacitor = realCap; window._tdHapticPlugin = realPlugin; }
+    });
+    expect(r.calls).toEqual([
+      'select',            // tick
+      'impact:light',      // tap
+      'impact:medium',     // thud
+      'impact:heavy',      // heavy
+      'notify:success',    // win
+      'notify:warning',    // warn
+      'notify:error',      // fail
+      'impact:light',      // unknown kind degrades to a plain tap, never throws
+    ]);
+  });
+
+  test('no native shell: falls back to navigator.vibrate, and a missing API is silent', async () => {
+    const r = await page.evaluate(() => {
+      const realCap = window.Capacitor, realPlugin = window._tdHapticPlugin, realVibe = navigator.vibrate;
+      const buzzes = [];
+      try {
+        window.Capacitor = undefined;
+        window._tdHapticPlugin = undefined;
+        Object.defineProperty(navigator, 'vibrate', { value: (v) => { buzzes.push(v); return true; }, configurable: true });
+        _tdHaptic('win');
+        _tdHaptic('tick');
+        const withApi = JSON.parse(JSON.stringify(buzzes));
+        // A browser with no Vibration API at all (desktop Safari) must be a
+        // silent no-op, never a thrown error inside a button handler.
+        Object.defineProperty(navigator, 'vibrate', { value: undefined, configurable: true });
+        let threw = false;
+        try { _tdHaptic('fail'); } catch (e) { threw = true; }
+        return { withApi, threw };
+      } finally {
+        window.Capacitor = realCap; window._tdHapticPlugin = realPlugin;
+        Object.defineProperty(navigator, 'vibrate', { value: realVibe, configurable: true });
+      }
+    });
+    expect(r.withApi.length, 'both kinds buzzed through the web fallback').toBe(2);
+    expect(Array.isArray(r.withApi[0]), 'win is a rhythm, not a single buzz').toBe(true);
+    expect(r.withApi[1], 'tick is the shortest single buzz').toBe(8);
+    expect(r.threw, 'no Vibration API is silent, never a thrown error').toBe(false);
+  });
+
+  test('S.hapticsOff silences the whole app from one switch', async () => {
+    const r = await page.evaluate(() => {
+      const realOff = S.hapticsOff, realCap = window.Capacitor, realPlugin = window._tdHapticPlugin;
+      const calls = [];
+      try {
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: () => ({ impact: () => { calls.push('i'); return Promise.resolve(); },
+                                   notify: () => { calls.push('n'); return Promise.resolve(); },
+                                   select: () => { calls.push('s'); return Promise.resolve(); } }),
+        };
+        window._tdHapticPlugin = undefined;
+        S.hapticsOff = true;
+        ['tick', 'tap', 'win', 'fail'].forEach(k => _tdHaptic(k));
+        const whileOff = calls.length;
+        S.hapticsOff = false;
+        _tdHaptic('tap');
+        return { whileOff, afterOn: calls.length };
+      } finally { S.hapticsOff = realOff; window.Capacitor = realCap; window._tdHapticPlugin = realPlugin; }
+    });
+    expect(r.whileOff, 'the switch silences every kind').toBe(0);
+    expect(r.afterOn, 'and turning it back on restores them').toBe(1);
+  });
+
+  test('showToast carries the haptic: warnings warn, wins win, notices tick', async () => {
+    const r = await page.evaluate(() => {
+      const realCap = window.Capacitor, realPlugin = window._tdHapticPlugin;
+      const calls = [];
+      try {
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: () => ({
+            impact: (o) => { calls.push('impact:' + (o && o.style)); return Promise.resolve(); },
+            notify: (o) => { calls.push('notify:' + (o && o.type)); return Promise.resolve(); },
+            select: () => { calls.push('select'); return Promise.resolve(); },
+          }),
+        };
+        window._tdHapticPlugin = undefined;
+        showToast('saved', '✓');
+        showToast('careful', '⚠️');
+        showToast('money in', '💰');
+        showToast('just so you know', '⏱');
+        document.querySelectorAll('.toast').forEach(t => t.remove());
+        return { calls };
+      } finally { window.Capacitor = realCap; window._tdHapticPlugin = realPlugin; }
+    });
+    expect(r.calls).toEqual(['notify:success', 'notify:warning', 'notify:success', 'select']);
+  });
+
+  test('dead navigator.vibrate call sites are gone from the app source', async () => {
+    // §7: the old API was silently dead on iOS. Every call site must route
+    // through _tdHaptic now, so none may call navigator.vibrate directly.
+    const fs = require('fs');
+    const path = require('path');
+    const jsDir = path.join(__dirname, '..', 'js');
+    const offenders = [];
+    for (const f of fs.readdirSync(jsDir).filter(n => n.endsWith('.js'))) {
+      const src = fs.readFileSync(path.join(jsDir, f), 'utf8');
+      src.split('\n').forEach((line, i) => {
+        // Strip the comment tail BEFORE testing: this hunts for live CALLS,
+        // and the replacement call sites explain themselves in trailing
+        // comments that name the old API ("navigator.vibrate was dead on
+        // iOS"). Matching those was the check's own bug, not a real offender.
+        const code = line.split('//')[0];
+        if (!/navigator\.vibrate/.test(code)) return;
+        if (f === 'utils.js') return; // utils.js owns the ONE fallback inside _tdHaptic
+        offenders.push(`${f}:${i + 1}`);
+      });
+    }
+    expect(offenders, 'no direct navigator.vibrate outside the _tdHaptic fallback').toEqual([]);
+  });
+
+  test('no console errors during haptics tests', async () => {
+    assertNoErrors(page, 'haptics bridge');
+  });
 });

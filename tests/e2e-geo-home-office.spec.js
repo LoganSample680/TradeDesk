@@ -79,12 +79,16 @@ test.describe('Home office: presence is not work', () => {
           await ping(a.origin);
           cursor += stepMs;
         }
-        // Rewind the arrival to a real-clock `dwellMins` ago. It has to be the
-        // REAL clock: the closers stamp departure with `new Date()`, which V8
-        // does not route through an overridden Date.now, so a controlled-cursor
-        // arrival would leave the wall-clock dwell at zero and every one of
-        // these tests would pass even with the fix reverted.
-        const startIso = new Date(realNow.call(Date) - a.dwellMins * 60000).toISOString();
+        // Rewind the arrival to `dwellMins` before the CURSOR. Same clock the
+        // closers now stamp departure with: the closing ping's own nowMs (so a
+        // TdGeo buffer replay closes a visit at the moment it actually
+        // happened), which routes through the overridden Date.now here. The
+        // guards all survive the clock switch: a wall-clock-billing regression
+        // at a home office reads cursor-to-cursor and bills the full dwell
+        // (fails the 0-minute tests), and a revert to new Date() departure
+        // reads real-now minus a cursor-past arrival, ~zero minutes, and fails
+        // the full-dwell tests below.
+        const startIso = new Date(cursor - a.dwellMins * 60000).toISOString();
         if (_geoShopArrivedAt) _geoShopArrivedAt = startIso;
         if (_geoPlaceArrivedAt) _geoPlaceArrivedAt = startIso;
 
@@ -104,12 +108,18 @@ test.describe('Home office: presence is not work', () => {
                                   .reduce((n, r) => n + (r.minutes || 0), 0);
 
   test.describe('the shop is the house', () => {
-    test.beforeAll(async () => {
+    // beforeEACH, not beforeAll: the sync fabric can replace the `places`
+    // array mid-file (the documented WebKit places-wipe flake, see the note in
+    // e2e-geo-drive-matrix). Losing the Home Office fixture silently turns
+    // this describe's activeMs billing into wall-clock billing, and
+    // "fourteen hours asleep" bills 840 (the exact 2026-08-09 shard-3
+    // failure). Re-seeding per test makes the fixture unstealable.
+    test.beforeEach(async () => {
       await page.evaluate((d) => {
         S.officeLat = d.HOME.lat; S.officeLon = d.HOME.lon;
         S.teamTracking = true;
         if (typeof places !== 'undefined') places.length = 0;
-        savePlace({ name: 'Home Office', kind: 'home_office', lat: d.HOME.lat, lon: d.HOME.lon, confirmedBy: 'manual' });
+        savePlace({ id: 'homeoffice-fixture', name: 'Home Office', kind: 'home_office', lat: d.HOME.lat, lon: d.HOME.lon, confirmedBy: 'manual' });
       }, { HOME });
     });
 
@@ -174,9 +184,10 @@ test.describe('Home office: presence is not work', () => {
             cursor += 5 * 60000;
           }
           cursor += 60 * 60000;                     // pocketed: no pings at all
-          // Real clock, for the same reason occupy() uses one: this is what makes
-          // the assertion below fail if the wall-clock fallback ever comes back.
-          _geoShopArrivedAt = new Date(realNow.call(Date) - 120 * 60000).toISOString();
+          // Cursor clock, for the same reason occupy() uses it: a wall-clock
+          // fallback would bill cursor-to-cursor, 120 minutes, and fail the
+          // 55-65 band below.
+          _geoShopArrivedAt = new Date(cursor - 120 * 60000).toISOString();
           out.length = 0;
           await ping(a.ROAD);                       // walks back out two hours later
           return out;

@@ -2,6 +2,10 @@ function openMobileMore(){const p=document.getElementById('mtb-more-popup');if(p
 function closeMobileMore(){const p=document.getElementById('mtb-more-popup');if(p)p.style.display='none';}
 function mobileNavTo(pg){closeMobileMore();goPg(pg);}
 function goPg(id){
+  // HANDOFF LOCK (js/handoff.js): while a client is signing on this phone,
+  // leaving the signature screen takes the owner's face. Returns false and
+  // re-runs this navigation itself once unlocked.
+  if(typeof _handoffGuardNav==='function'&&!_handoffGuardNav(id))return;
   // Redirect employees away from restricted pages
   if(_isEmployee){
     const _empBlocked=['pg-taxes','pg-tracker','pg-team','pg-settings','pg-checklist',
@@ -17,11 +21,18 @@ function goPg(id){
   // Preserve currentClientId across navigation, only clear on explicit new client selection
   if(id==='pg-dash')window._fromDash=false;
   try{if(window._obs)window._obs.track('page',id);}catch(_e){} // live page-view telemetry (inert on localhost)
-  document.querySelectorAll('.pg').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
   const _pgEl=document.getElementById(id);
   if(!_pgEl){console.error('[goPg] element not found:',id);if(id!=='pg-dash')goPg('pg-dash');return;}
-  _pgEl.classList.add('active');
+  // Re-navigating to the page already on screen must NOT strip and re-add
+  // .active: that restarts the td-pg-enter animation, and boot/sign-in flows
+  // that call goPg('pg-dash') more than once made the whole page visibly
+  // re-pour each time (owner 2026-08-10: "weird waterfalls"). Same-page calls
+  // still re-render and scroll to top below, they just skip the entrance.
+  if(!_pgEl.classList.contains('active')){
+    document.querySelectorAll('.pg').forEach(p=>p.classList.remove('active'));
+    _pgEl.classList.add('active');
+  }
+  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
   const nb=document.getElementById({
     'pg-leads':'nb-leads','pg-jobs':'nb-jobs','pg-money':'nb-money',
     'pg-schedule':'nb-jobs',
@@ -178,7 +189,7 @@ function _initTabBarDrag() {
   function enter() {
     if (editMode) return;
     editMode = true;
-    navigator.vibrate?.(45);
+    _tdHaptic('heavy');  // long-press held: edit mode is on
     tabbar.classList.add('td-drag-active');
     inner.classList.add('td-drag-active', 'mtb-inner');
     tabbar.addEventListener('click', _swallowClick, true);

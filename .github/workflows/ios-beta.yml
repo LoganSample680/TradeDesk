@@ -47,6 +47,32 @@ jobs:
       - name: Sync config and plugins into the iOS project
         run: npx cap sync ios
 
+      # Build 19 shipped without six plugins and said nothing: their
+      # package.json files were caught by a blanket .gitignore rule, so npm
+      # linked empty folders and Capacitor found 6 plugins instead of 12. The
+      # only visible sign was one line in a 300-line log. A plugin that is in
+      # the repo but not in the Podfile is not on the phone, so fail here.
+      - name: Every native plugin must have reached the Podfile
+        run: |
+          MISSING=0
+          for d in td-*/; do
+            d="${d%/}"
+            if [ ! -f "$d/package.json" ]; then
+              echo "::error::$d has no package.json (check .gitignore, it blanket-ignores package.json)"
+              MISSING=1; continue
+            fi
+            if ! grep -q "\"$d\"" package.json; then
+              echo "::error::$d is not a dependency in native/package.json"
+              MISSING=1; continue
+            fi
+            if ! grep -q "$d" ios/App/Podfile; then
+              echo "::error::$d never reached the Podfile: Capacitor did not see it as a plugin"
+              MISSING=1; continue
+            fi
+            echo "ok: $d"
+          done
+          exit $MISSING
+
       - name: Configure Info.plist (background location + consent copy)
         run: |
           PLIST=ios/App/App/Info.plist
@@ -54,6 +80,17 @@ jobs:
             /usr/libexec/PlistBuddy -c "Set :NSLocationWhenInUseUsageDescription 'TradeDesk logs your work drives and time on site for your business records.'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :NSLocationAlwaysAndWhenInUseUsageDescription string 'Choose Always so drives and job-site time keep logging while your phone is in your pocket. Tracking follows your business-hours and consent settings.'" "$PLIST" || \
             /usr/libexec/PlistBuddy -c "Set :NSLocationAlwaysAndWhenInUseUsageDescription 'Choose Always so drives and job-site time keep logging while your phone is in your pocket. Tracking follows your business-hours and consent settings.'" "$PLIST"
+          # TdScan (RoomPlan): ARKit uses the camera; missing this string crashes on scan start.
+          /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'TradeDesk uses the camera and LiDAR to scan rooms into floor plans for your estimates.'" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSCameraUsageDescription 'TradeDesk uses the camera and LiDAR to scan rooms into floor plans for your estimates.'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSMotionUsageDescription string 'TradeDesk reads the motion coprocessor to timestamp when a drive started and ended, so job time and mileage are accurate without running GPS all day.'" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSMotionUsageDescription 'TradeDesk reads the motion coprocessor to timestamp when a drive started and ended, so job time and mileage are accurate without running GPS all day.'" "$PLIST"
+          # TdVoice: on-device dictation needs BOTH the mic and the speech
+          # entitlement strings; a missing one is an instant crash on first press.
+          /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'TradeDesk turns what you say into job notes, so you can record details without stopping work.'" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription 'TradeDesk turns what you say into job notes, so you can record details without stopping work.'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSSpeechRecognitionUsageDescription string 'Your voice notes are transcribed on this iPhone. The audio never leaves your device.'" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSSpeechRecognitionUsageDescription 'Your voice notes are transcribed on this iPhone. The audio never leaves your device.'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$PLIST" || true
           # Standard HTTPS only: answers TestFlight's export-compliance question
@@ -83,6 +120,23 @@ jobs:
           sed -i '' 's|PRODUCT_BUNDLE_IDENTIFIER = app.tradedesk.beta;|PRODUCT_BUNDLE_IDENTIFIER = app.tradedesk.beta;\n\t\t\t\tCODE_SIGN_ENTITLEMENTS = App/App.entitlements;|g' ios/App/App.xcodeproj/project.pbxproj
           grep -n "CODE_SIGN_ENTITLEMENTS" ios/App/App.xcodeproj/project.pbxproj
 
+      - name: Share extension target
+        # An app EXTENSION cannot ride a CocoaPod: it needs its own target,
+        # bundle id, entitlements, and an embed phase in the app. The project
+        # is regenerated every build, so the target is rebuilt every build too
+        # (idempotent, safe on a retry). Runs AFTER the entitlements step
+        # because it appends the App Group to the file that step writes.
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          gem install xcodeproj --no-document || sudo gem install xcodeproj --no-document
+          ruby ../scripts/ios-add-share-target.rb
+          # Same build number as the app, stamped from the same place. An
+          # extension whose CFBundleVersion differs from its host is rejected
+          # by App Store Connect after the whole archive has been built.
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" ios/App/ShareExt/Info.plist
+          /usr/libexec/PlistBuddy -c "Print" ios/App/App/App.entitlements
+
       - name: App icon from the repo's PWA icon
         # The generated project ships Capacitor's placeholder icon (owner:
         # "where's our TradeDesk logo?"). Refill every slot in the appiconset
@@ -108,12 +162,18 @@ jobs:
           mkdir -p ~/private_keys
           printf '%s' "$APPSTORE_API_KEY" > ~/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
 
-      - name: Archive (unsigned; signing happens at export)
+      - name: Archive (ad-hoc signed; real signing happens at export)
         # Automatic signing at ARCHIVE time demands a DEVELOPMENT profile,
         # which requires a registered device on the team, and this account
         # has none (build #2: "Your team has no devices"). App Store
-        # DISTRIBUTION profiles need no devices, so the archive builds
-        # unsigned and the export step does the cloud-managed signing.
+        # DISTRIBUTION profiles need no devices, so the archive signs AD HOC
+        # (identity "-", no profile needed) and the export step swaps in the
+        # real cloud-managed signature. Ad hoc, NOT unsigned: an unsigned
+        # archive (CODE_SIGNING_ALLOWED=NO, builds 1-14) embeds ZERO
+        # entitlements, so the export re-sign had nothing to preserve and
+        # build 14 shipped without com.apple.developer.applesignin, Apple
+        # sign-in then died at runtime with ASAuthorizationError 1000. Ad-hoc
+        # signing bakes the entitlements into the binary; export keeps them.
         run: |
           xcodebuild -workspace ios/App/App.xcworkspace \
             -scheme App \
@@ -123,8 +183,9 @@ jobs:
             archive \
             DEVELOPMENT_TEAM=${{ secrets.APPLE_TEAM_ID }} \
             IPHONEOS_DEPLOYMENT_TARGET=15.0 \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_REQUIRED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
 
       - name: Export the signed IPA
         run: |
@@ -140,15 +201,42 @@ jobs:
           </plist>
           EOF
           /usr/libexec/PlistBuddy -c "Set :teamID ${{ secrets.APPLE_TEAM_ID }}" build/export.plist
-          xcodebuild -exportArchive \
-            -archivePath build/App.xcarchive \
-            -exportPath build/ipa \
-            -exportOptionsPlist build/export.plist \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.APPSTORE_KEY_ID }}.p8 \
-            -authenticationKeyID ${{ secrets.APPSTORE_KEY_ID }} \
-            -authenticationKeyIssuerID ${{ secrets.APPSTORE_ISSUER_ID }}
+          # Apple's auth endpoint throttles under repeated builds, and the
+          # export is also where -allowProvisioningUpdates registers any NEW
+          # bundle id (the share extension added one). A throttled call reports
+          # "Authentication failed" followed by "No profiles were found", which
+          # looks exactly like a permissions problem. Retry before believing it.
+          for attempt in 1 2 3; do
+            if xcodebuild -exportArchive \
+              -archivePath build/App.xcarchive \
+              -exportPath build/ipa \
+              -exportOptionsPlist build/export.plist \
+              -allowProvisioningUpdates \
+              -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.APPSTORE_KEY_ID }}.p8 \
+              -authenticationKeyID ${{ secrets.APPSTORE_KEY_ID }} \
+              -authenticationKeyIssuerID ${{ secrets.APPSTORE_ISSUER_ID }}; then
+              break
+            fi
+            if [ "$attempt" = 3 ]; then
+              echo "::error::export failed 3 times. If every attempt said 'Authentication failed' plus 'No profiles for app.tradedesk.beta.share', the App Store Connect key cannot register that new bundle id and it has to be created by hand in the developer portal."
+              exit 1
+            fi
+            echo "export attempt $attempt failed, backing off"
+            sleep $((attempt * 45))
+            rm -rf build/ipa
+          done
           ls -la build/ipa
+
+      - name: Verify the applesignin entitlement survived signing
+        # Build 14's only symptom was a runtime error 1000 on the phone. Fail
+        # the build RIGHT HERE if the exported app lost the entitlement, so a
+        # signing regression can never ride to TestFlight silently again.
+        run: |
+          IPA=$(ls build/ipa/*.ipa | head -1)
+          unzip -q "$IPA" -d build/ipa/unpacked
+          APP=$(ls -d build/ipa/unpacked/Payload/*.app | head -1)
+          codesign -d --entitlements :- "$APP" | tee /tmp/ents.plist
+          grep -q 'com.apple.developer.applesignin' /tmp/ents.plist
 
       - name: Upload to TestFlight
         env:

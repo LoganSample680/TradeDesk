@@ -208,6 +208,17 @@ function zPrompt(msg, onOk, opts={}){
 
 function showToast(msg,icon,duration){
   icon=icon||'✓';duration=duration||3500;
+  // Haptics ride the toast, ONE hook for ~200 call sites (owner 2026-08-10:
+  // "haptics everywhere"). The icon already encodes the outcome at every one
+  // of those sites, so the feel follows the meaning for free: a warning
+  // buzzes like a warning, a win lands like a win, and a plain notice ticks.
+  // Deliberately not per-call-site: 200 hand-tuned haptics would drift out of
+  // sync with their copy the first time anyone edited a message.
+  try{
+    const _warn=/⚠|❌|🚫/.test(icon);
+    const _win=/✓|✅|💰|🎉|📄/.test(icon);
+    _tdHaptic(_warn?'warn':(_win?'win':'tick'));
+  }catch(_e){}
   // Renders the icon arg as a real SVG when we have one mapped (js/icons.js):
   // covers ~200 showToast call sites app-wide from one place, instead of
   // touching each call site's emoji argument individually.
@@ -398,3 +409,76 @@ function _tdInstallShellWindowOpen(){
   }catch(_e){return false;}
 }
 _tdInstallShellWindowOpen();
+
+// ── Haptics (owner 2026-08-10: "haptics everywhere needs a go") ───────────────
+// THE BUG THIS REPLACES: the app called navigator.vibrate() in six places, and
+// iOS has never implemented the Vibration API in Safari or WKWebView. Every
+// one of those calls was a silent no-op on the exact device our customers
+// carry, so the app has always felt flat in the hand on iPhone.
+//
+// One call site for the whole app. Native Taptic when the shell provides it
+// (td-haptic), navigator.vibrate as the Android/PWA fallback, silent
+// everywhere else. Never throws and never awaits: a haptic is decoration, it
+// must never delay or break the action it decorates.
+//
+// The vocabulary is deliberately about MEANING, not hardware:
+//   tick    a small thing happened (a card moved, a tab switched)
+//   tap     a control committed (button pressed, item picked up)
+//   thud    something big and deliberate (sign out, delete, clock out)
+//   win     it worked and it MATTERS (payment collected, proposal signed)
+//   warn    needs attention (validation stopped you)
+//   fail    it did not work (save failed, card declined)
+const _TD_HAPTIC_MAP={
+  tick:{fn:'select'},
+  tap:{fn:'impact',arg:{style:'light'}},
+  thud:{fn:'impact',arg:{style:'medium'}},
+  heavy:{fn:'impact',arg:{style:'heavy'}},
+  win:{fn:'notify',arg:{type:'success'}},
+  warn:{fn:'notify',arg:{type:'warning'}},
+  fail:{fn:'notify',arg:{type:'error'}}
+};
+// Web fallback durations, chosen to echo the native feel as closely as one
+// buzz can. Arrays are patterns (a rhythm), which Android honors.
+const _TD_VIBE_MAP={tick:8,tap:12,thud:25,heavy:40,win:[18,60,28],warn:[24,70,24],fail:[40,60,40,60,40]};
+// Resolution caches only a SUCCESS, never a failure, and lives on window like
+// the Apple sign-in plugin cache (§7.3). A negative answer must stay
+// re-checkable: utils.js can execute before Capacitor finishes injecting its
+// bridge, and caching that "no" would leave the shell with dead haptics for
+// the whole session, the exact class of bug this feature exists to fix.
+function _tdHapticNative(){
+  if(window._tdHapticPlugin)return window._tdHapticPlugin;
+  try{
+    const cap=window.Capacitor;
+    if(cap&&typeof cap.isNativePlatform==='function'&&cap.isNativePlatform()){
+      if(typeof cap.registerPlugin==='function')window._tdHapticPlugin=cap.registerPlugin('TdHaptic');
+      else if(cap.Plugins&&cap.Plugins.TdHaptic)window._tdHapticPlugin=cap.Plugins.TdHaptic;
+    }
+  }catch(_e){window._tdHapticPlugin=null;}
+  return window._tdHapticPlugin||null;
+}
+function _tdHaptic(kind){
+  // Owner-controllable: one switch silences the whole app for anyone who
+  // finds it fussy, without touching a single call site.
+  try{if(typeof S!=='undefined'&&S&&S.hapticsOff)return;}catch(_e){}
+  const spec=_TD_HAPTIC_MAP[kind]||_TD_HAPTIC_MAP.tap;
+  const P=_tdHapticNative();
+  if(P&&typeof P[spec.fn]==='function'){
+    try{const r=P[spec.fn](spec.arg||{});if(r&&r.catch)r.catch(()=>{});}catch(_e){}
+    return;
+  }
+  try{const v=_TD_VIBE_MAP[kind];if(navigator.vibrate&&v!=null)navigator.vibrate(v);}catch(_e){}
+}
+
+// ── Shimmer skeleton rows (§8.4) ──────────────────────────────────────────────
+// The app-wide loading treatment: any async surface renders these instead of a
+// "Loading..." string, and real content replaces them in ONE swap when data
+// lands, never a second stacked reveal. Widths vary so a list of them reads
+// like content, not stripes.
+function _tdSkelRows(n,h){
+  let out='';
+  const count=n||3,ht=h||12;
+  for(let i=0;i<count;i++){
+    out+='<div class="td-skel" style="height:'+ht+'px;width:'+(88-(i%3)*16)+'%;margin:10px 0"></div>';
+  }
+  return out;
+}

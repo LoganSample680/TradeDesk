@@ -15,4 +15,11 @@ _shot_*.png
 
 # native/ is a real npm package the iOS build needs; the blanket package.json
 # ignore above predates it and silently dropped it from the first workflow PR.
+#
+# The wildcard is deliberate. This used to be one line per plugin, and build 19
+# proved why that is a trap: six new plugins were added, nobody remembered to
+# add six more lines, and their package.json files were silently never
+# committed. Capacitor then found 6 plugins instead of 12 and the build shipped
+# without them. One pattern covers every plugin ever added.
 !native/package.json
+!native/*/package.json
