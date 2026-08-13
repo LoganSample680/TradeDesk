@@ -2995,6 +2995,14 @@ test.describe('Automatic mileage from drive legs', () => {
       _supaUser = { id: 'u-overnight' };
       window._routeDistance = _routeDistance = async () => ({ miles: 9.4, mins: 18 });
       window._geoEnqueue = (tbl, row) => queued.push({ tbl, row });
+      // Isolated log: a stale leg now checks the log for an already-covering
+      // row (the gap-echo guard), and this fixture fabricates a 14-hour clock
+      // inside a session whose earlier tests logged the same shop -> job leg
+      // minutes ago on the WALL clock. In the real world those rows could only
+      // exist during the sleep if they were echoes; in the compressed fixture
+      // world they are unrelated tests. Give the fabricated night its own log.
+      const savedLog = mileage.slice();
+      mileage.length = 0;
       const before = mileage.length;
       try {
         __seedGeo();
@@ -3022,6 +3030,7 @@ test.describe('Automatic mileage from drive legs', () => {
       } finally {
         _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
         window._geoEnqueue = realEnq;
+        mileage.length = 0; savedLog.forEach(m => mileage.push(m));
       }
     }, { SHOP, JOB, hours: hoursAgo });
 
@@ -5271,6 +5280,80 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(visIdx, 'the foreground-return listener for this block exists').toBeGreaterThan(0);
       expect(region.slice(visIdx, visIdx + 400), 'foreground return sweeps it too, alongside the other foreground pulls')
         .toContain("if(typeof _retryPendingTrips==='function')_retryPendingTrips();");
+    });
+
+    test('a stale re-derivation of an already-logged journey is an echo: no mileage, no time entry', async () => {
+      // Owner report 2026-08-12: four real drives, SEVEN rows. Fence state
+      // survives boots, so every wake-at-the-destination with a stale
+      // pre-drive snapshot re-derived the same journey with a fresh leg key,
+      // invisible to the dedup by design. The echo guard: a stale gap leg
+      // whose origin -> destination is already covered by an auto row logged
+      // SINCE we were last seen at the origin writes nothing at all.
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue;
+        const queued = []; const savedLog = mileage.slice(); mileage.length = 0;
+        _supaUser = { id: 'u-echo' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 12.3, mins: 14 });
+        window._geoEnqueue = (tbl, row) => queued.push({ tbl, row });
+        try {
+          __seedGeo();
+          const nowIso = new Date().toISOString();
+          _geoLegOrigin = { lat: a.shop.lat, lng: a.shop.lon, name: 'Shop', kind: 'shop' };
+          _geoLastFenceAt = new Date(Date.now() - 14 * 3600000).toISOString();   // state 14h stale
+          // The live session already logged this exact journey two hours ago.
+          mileage.unshift({ id: 997401, gps: true, legKey: 'cov-1', calc_method: 'auto_route', miles: 12.3,
+            date: todayKey(), loggedAt: new Date(Date.now() - 2 * 3600000).toISOString(),
+            fromCoord: { lat: a.shop.lat, lng: a.shop.lon }, toCoord: { lat: a.job.lat, lng: a.job.lon } });
+          const before = mileage.length;
+          _geoDriveEntry(null, nowIso, null, nowIso, true, { lat: a.job.lat, lng: a.job.lon, name: 'Job', kind: 'job' }, true);
+          await new Promise(r2 => setTimeout(r2, 30));
+          return { added: mileage.length - before, timeEntries: queued.filter(q => q.tbl === 'job_time_entries').length };
+        } finally {
+          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute; window._geoEnqueue = realEnq;
+          mileage.length = 0; savedLog.forEach(m => mileage.push(m));
+          _geoLegOrigin = null; _geoLastFenceAt = null;
+        }
+      }, { shop: SHOP, job: JOB });
+      expect(r.added, 'an echo of a logged journey writes no mileage row').toBe(0);
+      expect(r.timeEntries, 'and no time entry either').toBe(0);
+    });
+
+    test('a genuinely lost drive still recovers: the same route logged BEFORE the origin re-visit is no cover', async () => {
+      // The ordering guard is what keeps twice-daily runs safe: yesterday's
+      // (or this morning's) run of the same route was logged BEFORE we were
+      // last seen at the origin, so it cannot cover THIS leg, and the stale
+      // recovery still writes the miles (hours stay unclaimed, per the
+      // 2026-08-03 rule).
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue;
+        const queued = []; const savedLog = mileage.slice(); mileage.length = 0;
+        _supaUser = { id: 'u-echo2' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 12.3, mins: 14 });
+        window._geoEnqueue = (tbl, row) => queued.push({ tbl, row });
+        try {
+          __seedGeo();
+          const nowIso = new Date().toISOString();
+          _geoLegOrigin = { lat: a.shop.lat, lng: a.shop.lon, name: 'Shop', kind: 'shop' };
+          _geoLastFenceAt = new Date(Date.now() - 14 * 3600000).toISOString();
+          // Same route, logged 15h ago: BEFORE the 14h-old origin visit.
+          mileage.unshift({ id: 997402, gps: true, legKey: 'cov-2', calc_method: 'auto_route', miles: 12.3,
+            date: todayKey(), loggedAt: new Date(Date.now() - 15 * 3600000).toISOString(),
+            fromCoord: { lat: a.shop.lat, lng: a.shop.lon }, toCoord: { lat: a.job.lat, lng: a.job.lon } });
+          const before = mileage.length;
+          _geoDriveEntry(null, nowIso, null, nowIso, true, { lat: a.job.lat, lng: a.job.lon, name: 'Job', kind: 'job' }, true);
+          await new Promise(r2 => setTimeout(r2, 30));
+          const added = mileage.length - before;
+          const row = added > 0 ? mileage[0] : null;
+          return { added, miles: row && row.miles, timeEntries: queued.filter(q => q.tbl === 'job_time_entries').length };
+        } finally {
+          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute; window._geoEnqueue = realEnq;
+          mileage.length = 0; savedLog.forEach(m => mileage.push(m));
+          _geoLegOrigin = null; _geoLastFenceAt = null;
+        }
+      }, { shop: SHOP, job: JOB });
+      expect(r.added, 'the lost drive is real and still logs').toBe(1);
+      expect(r.miles, 'measured like any recovered stale leg').toBe(12.3);
+      expect(r.timeEntries, 'a duration nobody observed is still never claimed').toBe(0);
     });
 
     test('the pending sweep applies the route clock to an impossible window', async () => {

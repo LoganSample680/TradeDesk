@@ -1252,6 +1252,38 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
     sameSpot=sameId||(_geoLegOrigin.lat!=null&&_geoDistFt(destLoc,{lat:_geoLegOrigin.lat,lng:_geoLegOrigin.lng})<400);
     if(sameSpot&&_geoDriveMiles<0.3)return;
   }
+  // ── GAP-ECHO GUARD (owner 2026-08-12: four real drives, SEVEN rows) ──────
+  // A GAP leg is INFERRED: a single ping bridged the whole drive, and the
+  // origin comes from fence state (_geoLastFenceAt/_geoLastFenceLoc) that
+  // survives boots. A day of crash/reopen cycles therefore RE-derives the
+  // same journey on every wake that lands at the destination with stale
+  // state, each time minting a fresh leg key and a fictional clock, which
+  // is exactly the shape the dedup must not touch (distinct auto legs).
+  // The discriminator is time-ordered coverage: if an auto row for this
+  // person already runs this same origin -> destination and was logged
+  // SINCE the moment we were last seen at the origin, this close is an
+  // echo of that row, not a drive: no mileage, no time entry. A genuine
+  // second run of the same route survives because its predecessor was
+  // logged BEFORE the origin was re-visited.
+  //
+  // STALE legs only: an echo's defining feature is fence state HOURS out of
+  // date (a restored pre-drive snapshot), which is exactly the stale shape.
+  // A fresh-state gap leg's inference window is real observation, and the
+  // fixture worlds in CI legitimately compress clocks there.
+  if(gap&&stale&&typeof mileage!=='undefined'&&Array.isArray(mileage)&&_geoLegOrigin&&destLoc){
+    try{
+      const _since=Date.parse(_geoLastFenceAt||'')||0;
+      const _me=(_isEmployee&&_supaUser)?_supaUser.id:null;
+      const _near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&_geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=1500);
+      // _since>0 is load-bearing: with no anchor, "logged since" would match
+      // the whole history and a real leg could be blocked by last week's run.
+      const _covered=_since>0&&mileage.some(m=>m&&m.gps&&m.legKey&&
+        (m.logged_by_id||null)===_me&&
+        (Date.parse(m.loggedAt||'')||0)>=_since&&
+        _near(m.fromCoord,_geoLegOrigin)&&_near(m.toCoord,destLoc));
+      if(_covered){_geoParkNote('gap-echo-skip',(destLoc&&destLoc.name)||'');return;}
+    }catch(_e){}
+  }
   // `stale` = the departure could not be inferred (the phone was asleep across
   // the gap, see _GEO_MAX_INFERRED_LEG_MS). The two halves of a leg are split
   // deliberately here: the DISTANCE is measured geocode to geocode and is real
