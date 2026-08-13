@@ -1044,6 +1044,33 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.left).toEqual([2]);
     });
 
+    test('a MEASURED auto row absorbs an UNMEASURED manual one now, not never (fuzzer find 2026-08-13)', async () => {
+      // A manual trip whose From was left blank (the realistic mid-drive tap)
+      // can never be measured: no origin to route from. "Wait until both have
+      // numbers" therefore left it as a permanent 0-mile duplicate. Deleting
+      // it early loses nothing, the winner rule hands the journey to the
+      // automatic row whatever the numbers say. The REVERSE still defers
+      // (previous test): a pending auto row must prove it can measure before
+      // it may eat the only real number in the pair.
+      const out = await page.evaluate(() => {
+        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
+        const keep = mileage.splice(0);
+        try {
+          const manual = { id: 11, calc_method: 'pending', miles: 0, client_id: 77,
+            from: '', from_name: '', to: 'John Doe', to_name: 'John Doe',
+            loggedAt: '2026-08-11T12:55:30Z', date: '2026-08-11' };
+          const auto = { id: 12, gps: true, legKey: 'leg-abs', calc_method: 'auto_route', miles: 3.2, client_id: 77,
+            fromCoord: SHOP2, toCoord: JOHN, startedIso: '2026-08-11T12:51:00Z',
+            endedIso: '2026-08-11T12:57:00Z', loggedAt: '2026-08-11T12:57:02Z', date: '2026-08-11' };
+          mileage.push(manual, auto);
+          const dropped = _mileDedupTrips();
+          return { dropped, left: mileage.map(m => m.id) };
+        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
+      });
+      expect(out.dropped, 'the unmeasurable manual row is absorbed immediately').toBe(1);
+      expect(out.left).toEqual([12]);
+    });
+
     test("the phone's real rows: heal mode collapses what the strict sweep must not", async () => {
       // The shapes that actually survived on the owner's phone (2026-08-11
       // screenshot): a "Log a trip" row with no startedIso, no coords, no

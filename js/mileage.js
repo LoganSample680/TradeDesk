@@ -675,7 +675,20 @@ function _mileDedupTrips(heal){
       // another auto row (identical endpoints, identical eventual answer).
       // Journey-level dedup waits until both have numbers: the sweep runs
       // again after every fill, so nothing is decided on a zero.
-      if(!twin&&!(a.miles>0&&b.miles>0))continue;
+      //
+      // ONE-WAY exception (day-simulator fuzzer find, 2026-08-13): a MEASURED
+      // automatic row absorbs an UNMEASURED manual one of the same journey
+      // now rather than never. A manual trip whose From was left blank (the
+      // realistic mid-drive tap) can never be measured, there is no origin to
+      // route from, so waiting for its number left it as a permanent 0-mile
+      // duplicate. Deleting it early loses nothing: the winner rule hands the
+      // journey to the automatic row whatever the numbers say. The reverse
+      // stays deferred, a pending AUTO row must prove it can measure before
+      // it may eat the only real number in the pair.
+      if(!twin&&!(a.miles>0&&b.miles>0)){
+        const autoMeasured=(a.legKey&&a.miles>0&&!b.legKey)||(b.legKey&&b.miles>0&&!a.legKey);
+        if(!autoMeasured)continue;
+      }
       const loser=_mileTripWinner(a,b)===a?b:a;
       drop.add(loser);
       if(loser===a)break;   // a is gone, stop comparing against it

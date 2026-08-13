@@ -85,11 +85,14 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
       window._geoWatchId = _geoWatchId = 41;
       window._geoAppOnScreen = () => true;        // pings come from the script
     }, GEO);
-    // Fake clock, installed at the real present so todayKey() stays honest;
-    // the day then plays forward in fabricated hours.
-    await page.clock.install({ time: new Date() });
+    // Fake clock: every simulated day starts at the SAME 9:00am (newDay
+    // resets it). Seeds and days must not inherit each other's clock drift:
+    // drifted hours expire the seeded jobs' fences and trip the likely-home
+    // heuristic, and a batch must not depend on the wall-clock hour it runs.
+    await page.clock.install({ time: _day0() });
   });
   test.afterAll(async () => { await page.context().close(); });
+  function _day0() { const d = new Date(); d.setHours(9, 0, 0, 0); return d; }
 
   // ── The day engine ────────────────────────────────────────────────────────
   const ping = (c, spd) => page.evaluate(([c2, s]) =>
@@ -111,15 +114,24 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
     for (let t = 0; t < mins; t += step) { await ping(at, 0); await ff(step); }
   }
   async function newDay() {
-    await page.evaluate(() => {
+    await page.clock.setSystemTime(_day0());   // every day begins at the same 9:00am
+    await page.evaluate((G) => {
       mileage.length = 0; window.__enq.length = 0;
       _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
       _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoCurrentClient = null; _geoClientArrivedAt = null;
       _geoStopAnchor = null; _geoDriveStartedAt = null; _geoLegOrigin = null;
       _geoLastFenceLoc = null; _geoLastFenceAt = null; _geoLegAtShop = false; _geoGapHiddenAt = null;
       _geoDrivebyRun = 0; _geoDriveReset(); _geoPingBusy = false;
+      // Jobs re-seeded on TODAY as the fake clock sees it, so a long run
+      // never expires its own fences.
+      jobs.length = 0;
+      jobs.push({ id: 9911, name: 'John Repaint', eventType: 'job', status: 'upcoming',
+                  start: todayKey(), days: 1, lat: G.JOB1.lat, lon: G.JOB1.lon, client_id: 8801, addr: '2950 SW McClure Rd' });
+      jobs.push({ id: 9912, name: 'Beta Build', eventType: 'job', status: 'upcoming',
+                  start: todayKey(), days: 1, lat: G.JOB2.lat, lon: G.JOB2.lon, client_id: 8802, addr: '900 SE Quincy St' });
+      _geoJobCoords = {};
       try { localStorage.removeItem('zp3_geo_open'); localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
-    });
+    }, GEO);
   }
   async function closeDay() {
     await page.evaluate(async () => { await _retryPendingTrips(); await new Promise(r => setTimeout(r, 5)); });
@@ -256,6 +268,152 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
       { from: 'Home Office', to: 'John',        miles: routeMiles(GEO.HOMEOFF, GEO.JOB1), auto: true },
       { from: 'John',        to: 'Home Office', miles: routeMiles(GEO.JOB1, GEO.HOMEOFF), auto: true },
     ]);
+  });
+
+  test('day 5: a forced detour saves the OBSERVED miles; a GPS blowup stays capped at the route', async () => {
+    test.setTimeout(120000);
+    // Owner ask 2026-08-13: "what happens if the drive itself is longer than
+    // the reported MapKit mileage? What saves?" The wheels do, when the leg
+    // was densely watched, and never past 4x the route.
+    await newDay();
+    await dwell(GEO.JOB1, 8);
+    // Leg A: JOB1 -> SHOP the LONG way (bridge out): nine dense road fixes
+    // trace a dogleg roughly twice the direct route.
+    const DOG = [
+      { lat: 39.0300, lon: -95.7350 }, { lat: 39.0400, lon: -95.7300 }, { lat: 39.0450, lon: -95.7200 },
+      { lat: 39.0450, lon: -95.7100 }, { lat: 39.0400, lon: -95.7000 }, { lat: 39.0300, lon: -95.6980 },
+      { lat: 39.0200, lon: -95.6990 }, { lat: 39.0120, lon: -95.7000 }, { lat: 39.0060, lon: -95.7000 },
+    ];
+    await ping(GEO.JOB1, 0); await ff(1);
+    for (const p of DOG) { await ping(p, 13); await ff(1.5); }
+    await ping(GEO.SHOP, 0); await ff(0.5);
+    await dwell(GEO.SHOP, 8);
+    // Harness-side expected tally: the same hops the accumulator saw (the
+    // drive opens on the first out-of-fence fix, so it starts at DOG[0]).
+    const mi = (a, b) => {
+      const R = (x) => x * Math.PI / 180;
+      return 3958.8 * Math.acos(Math.min(1, Math.sin(R(a.lat)) * Math.sin(R(b.lat)) +
+        Math.cos(R(a.lat)) * Math.cos(R(b.lat)) * Math.cos(R(b.lon - a.lon))));
+    };
+    let tally = 0;
+    for (let i = 1; i < DOG.length; i++) tally += mi(DOG[i - 1], DOG[i]);
+    tally += mi(DOG[DOG.length - 1], GEO.SHOP);
+    // Leg B: SHOP -> SUP2 with a garbage trace (teleporting fixes): the tally
+    // blows past 4x the route, so the ROUTE saves, never the blowup.
+    await ping(GEO.SHOP, 0); await ff(1);
+    for (let i = 0; i < 9; i++) {
+      await ping({ lat: GEO.SHOP.lat + (i % 2 ? 0.08 : -0.08), lon: -95.7000 - i * 0.005 }, 13); await ff(1);
+    }
+    await ping(GEO.SUP2, 0); await ff(0.5);
+    await dwell(GEO.SUP2, 8);
+    const d = await closeDay();
+    expect(d.rows.length, JSON.stringify(d.rows)).toBe(2);
+    const [rA, rB] = d.rows;
+    expect(String(rA.from)).toContain('John');
+    expect(String(rA.to)).toContain('Shop');
+    const directA = routeMiles(GEO.JOB1, GEO.SHOP);
+    expect(rA.miles, 'the observed detour beats the route').toBeGreaterThan(directA);
+    expect(Math.abs(rA.miles - tally), `observed tally saves, got ${rA.miles} want ~${Math.round(tally * 10) / 10}`).toBeLessThanOrEqual(0.3);
+    expect(String(rB.from)).toContain('Shop');
+    expect(String(rB.to)).toContain('Ferguson');
+    expect(Math.abs(rB.miles - routeMiles(GEO.SHOP, GEO.SUP2)), `blowup capped, the route saves, got ${rB.miles}`).toBeLessThanOrEqual(0.15);
+  });
+
+  test('fuzz days: six seeded random days, oracle-checked, every combination of stop, manual, crash, echo, phantom', async () => {
+    test.setTimeout(300000);
+    // The generator composes days from the same building blocks the real
+    // world does, deterministic per seed. The oracle: one row per real
+    // journey, endpoint to endpoint, direct route miles, the automatic row
+    // surviving. Seeds 1-500 ran green on the local harness 2026-08-13; the
+    // six here keep the property alive on every push. A failing seed
+    // reproduces exactly by number.
+    const PSTOPS = [
+      { lat: 39.0050, lon: -95.7100 },
+      { lat: 38.9850, lon: -95.7150 },
+      { lat: 39.0150, lon: -95.6900 },
+    ];
+    const NAME = { SHOP: 'Shop', HOMEOFF: 'Home Office', JOB1: 'John', JOB2: 'Beta', SUP1: 'Ace', SUP2: 'Ferguson' };
+    const mulberry32 = (seed) => {
+      let a = seed >>> 0;
+      return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    };
+    const crashNow = () => page.evaluate(() => {
+      _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null; _geoLastFenceAt = null;
+      _geoStopAnchor = null; _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+      _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoCurrentClient = null; _geoClientArrivedAt = null;
+      _geoCurrentJob = null; _geoArrivedAt = null;
+      _geoRestoreOpen();
+    });
+    const echoAttack = async (prevPoint, atPoint) => {
+      await page.evaluate(([p]) => {
+        _geoCurrentClient = null; _geoClientArrivedAt = null; _geoCurrentJob = null; _geoArrivedAt = null;
+        _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
+        _geoLegAtShop = false; _geoDriveStartedAt = null; _geoLegOrigin = null; _geoStopAnchor = null;
+        _geoLastFenceLoc = { lat: p.lat, lng: p.lon, name: 'Prev', kind: 'place' };
+        _geoLastFenceAt = new Date(Date.now() - 6 * 3600000).toISOString();
+      }, [prevPoint]);
+      await ping(atPoint, 0); await ff(1);
+    };
+    const KEYS = Object.keys(GEO).filter(k => k !== 'PSTOP');
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const rnd = mulberry32(seed * 7919 + 13);
+      const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
+      const legCount = 4 + Math.floor(rnd() * 4);
+      let at = pick(KEYS);
+      const legs = [];
+      for (let i = 0; i < legCount; i++) {
+        let to = pick(KEYS);
+        while (to === at) to = pick(KEYS);
+        legs.push({ from: at, to,
+          stop: rnd() < 0.3 ? pick(PSTOPS) : null,
+          manual: rnd() < 0.25, crash: rnd() < 0.2,
+          echoAfter: rnd() < 0.25, phantomAfter: rnd() < 0.25 });
+        at = to;
+      }
+      await newDay();
+      await dwell(GEO[legs[0].from], 6);
+      for (const leg of legs) {
+        const F = GEO[leg.from], T = GEO[leg.to];
+        await ping(F, 0); await ff(1);
+        if (leg.stop) {
+          await ping(mid(F, leg.stop, 0.5), 13); await ff(5);
+          if (leg.crash) await crashNow();
+          await dwell(leg.stop, 25);
+          await ping(mid(leg.stop, T, 0.5), 13); await ff(6);
+        } else {
+          await ping(mid(F, T, 0.3), 13); await ff(5);
+          if (leg.crash) await crashNow();
+          if (leg.manual) {
+            await page.evaluate(([toKey]) => {
+              const nm = { SHOP: ['Shop', null], HOMEOFF: ['Home Office', null],
+                           JOB1: ['John Doe', 8801], JOB2: ['Beta LLC', 8802],
+                           SUP1: ['Ace Supply', null], SUP2: ['Ferguson Supply', null] }[toKey];
+              mileage.unshift({ id: _newId(), date: todayKey(), loggedAt: new Date().toISOString(),
+                vehicle: 'F-250', from: '', from_name: '', to: nm[0], to_name: nm[0],
+                start: 0, end: 0, miles: 0, purpose: 'Job site', client_id: nm[1],
+                client_name: nm[1] ? nm[0] : '', notes: '', created_at: new Date().toISOString(),
+                calc_method: 'pending' });
+            }, [leg.to]);
+          }
+          await ping(mid(F, T, 0.7), 13); await ff(5);
+        }
+        await ping(T, 0); await ff(1);
+        if (leg.echoAfter) await echoAttack(F, T);
+        if (leg.phantomAfter) { await ping(T, 15); await ff(1); await ping(T, 0); }
+        await dwell(T, 8);
+      }
+      const d = await closeDay();
+      const tag = `seed ${seed} [${legs.map(l => `${l.from}>${l.to}${l.stop ? '+stop' : ''}${l.manual ? '+man' : ''}${l.crash ? '+crash' : ''}${l.echoAfter ? '+echo' : ''}${l.phantomAfter ? '+phantom' : ''}`).join(' ')}]`;
+      expect(d.rows.length, `${tag}: got ${JSON.stringify(d.rows)}`).toBe(legs.length);
+      legs.forEach((l, i) => {
+        const r = d.rows[i];
+        expect(String(r.from), `${tag} row${i + 1} origin`).toContain(NAME[l.from]);
+        expect(String(r.to), `${tag} row${i + 1} destination`).toContain(NAME[l.to]);
+        expect(Math.abs(r.miles - routeMiles(GEO[l.from], GEO[l.to])), `${tag} row${i + 1} direct miles, got ${r.miles}`).toBeLessThanOrEqual(0.15);
+        expect(r.legKey, `${tag} row${i + 1} auto survived`).toBeTruthy();
+      });
+    }
   });
 
   test('no console errors across every simulated day', async () => { await assertNoErrors(page); });
