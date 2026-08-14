@@ -2080,6 +2080,15 @@ function startGeoTracking(){
         if(typeof _shadowLiveGpsStart==='function')_shadowLiveGpsStart();
         if(typeof startShadowEngine==='function'){try{startShadowEngine();}catch(_e){}}
         _geoParkNote('watcher-on',String(id||''));
+        // Chain the Motion & Fitness ask right behind the location grant
+        // (owner 2026-08-14): one consent flow, prompts in sequence, never
+        // stacked. The first coprocessor query is what surfaces the dialog;
+        // the errand classifier (_mileWalkedDuring, js/mileage.js) needs the
+        // grant to read walk windows out of the activity history.
+        try{
+          const _Td=_geoTdPlugin();
+          if(_Td&&typeof _Td.motionSince==='function')Promise.resolve(_Td.motionSince({sinceMs:Date.now()-60000})).catch(()=>{});
+        }catch(_e){}
         // The watcher running IS the shell's 'granted' state: refresh the
         // dashboard's permission cache so "Turn on location" clears itself.
         try{if(typeof _geoRefreshPermCache==='function')_geoRefreshPermCache();}catch(_e){}

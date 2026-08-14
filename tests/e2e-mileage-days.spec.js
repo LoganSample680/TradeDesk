@@ -368,6 +368,62 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
     expect(pB.miles, `the pauseless dogleg is a real detour, observed saves, got ${pB.miles} vs route ${routeJS}`).toBeGreaterThan(routeJS + 0.5);
   });
 
+  test('day 7: a 90-second pickup the time rule cannot see is caught by the coprocessor walk record', async () => {
+    test.setTimeout(120000);
+    // Owner 2026-08-14: "time isn't a good enough factor, is there something
+    // better in Apple's toolkit?" There is: the motion coprocessor records
+    // driving/walking/still around the clock, and TdGeo.motionSince already
+    // queries it. A walk inside the leg is the bulletproof errand signal: a
+    // red light or a jam never produces walking, a counter pickup always
+    // does, however fast. The measurement asks before the detour floor
+    // collects; walking disqualifies it (direct route saves), a driving-only
+    // record leaves the floor collecting (the control leg), and no signal at
+    // all falls back to the 2.5-minute time rule (day 6).
+    await newDay();
+    const OUT7 = [
+      { lat: 39.0260, lon: -95.7300 }, { lat: 39.0300, lon: -95.7240 }, { lat: 39.0330, lon: -95.7160 }, { lat: 39.0345, lon: -95.7080 },
+    ];
+    const BACK7 = [
+      { lat: 39.0290, lon: -95.7000 }, { lat: 39.0220, lon: -95.7000 }, { lat: 39.0150, lon: -95.7000 }, { lat: 39.0080, lon: -95.7000 }, { lat: 39.0040, lon: -95.7000 },
+    ];
+    await dwell(GEO.JOB1, 8);
+    // Leg A: walked. The motion stub answers relative to the query window.
+    await page.evaluate(() => {
+      window.__realTd = window._geoTdPlugin;
+      window._geoTdPlugin = () => ({ motionSince: async (o) => ({ available: true, transitions: [
+        { kind: 'driving', ts: (o.sinceMs || 0) + 130000 },
+        { kind: 'onFoot', ts: (o.sinceMs || 0) + 6 * 60000 },
+        { kind: 'driving', ts: (o.sinceMs || 0) + 8 * 60000 },
+      ] }) });
+    });
+    await ping(GEO.JOB1, 0); await ff(1);
+    for (const p of OUT7) { await ping(p, 13); await ff(0.7); }
+    await ping({ lat: 39.0350, lon: -95.7000 }, 0); await ff(0.8);   // 96 seconds at the counter,
+    await ping({ lat: 39.0350, lon: -95.7000 }, 0); await ff(0.8);   // invisible to the time rule
+    for (const p of BACK7) { await ping(p, 13); await ff(0.7); }
+    await ping(GEO.SHOP, 0); await ff(0.5);
+    await dwell(GEO.SHOP, 8);
+    // Leg B control: same dogleg back, motion record driving-only.
+    await page.evaluate(() => {
+      window._geoTdPlugin = () => ({ motionSince: async (o) => ({ available: true, transitions: [
+        { kind: 'driving', ts: (o.sinceMs || 0) + 130000 },
+      ] }) });
+    });
+    await ping(GEO.SHOP, 0); await ff(1);
+    for (const p of [...BACK7].reverse().concat([{ lat: 39.0350, lon: -95.7000 }], [...OUT7].reverse())) { await ping(p, 13); await ff(0.7); }
+    await ping(GEO.JOB1, 0); await ff(0.5);
+    await dwell(GEO.JOB1, 8);
+    const d = await closeDay();
+    await page.evaluate(() => { window._geoTdPlugin = window.__realTd || (() => null); delete window.__realTd; });
+    const routeJS = routeMiles(GEO.JOB1, GEO.SHOP);
+    expect(d.rows.length, JSON.stringify(d.rows)).toBe(2);
+    const [wA, wB] = d.rows;
+    expect(String(wA.to)).toContain('Shop');
+    expect(Math.abs(wA.miles - routeJS), `the walk disqualifies the floor, direct saves, got ${wA.miles} want ${routeJS}`).toBeLessThanOrEqual(0.15);
+    expect(String(wB.to)).toContain('John');
+    expect(wB.miles, `driving-only record: the observed detour still collects, got ${wB.miles} vs route ${routeJS}`).toBeGreaterThan(routeJS + 0.5);
+  });
+
   test('fuzz days: six seeded random days, oracle-checked, every combination of stop, manual, crash, echo, phantom', async () => {
     test.setTimeout(300000);
     // The generator composes days from the same building blocks the real

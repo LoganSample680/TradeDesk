@@ -5430,6 +5430,80 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.timeEntries, 'a duration nobody observed is still never claimed').toBe(0);
     });
 
+    test('_mileWalkedDuring: the coprocessor walk check reads windows honestly', async () => {
+      // Owner 2026-08-14: "time isn't a good enough factor." The motion
+      // coprocessor's answer to "did the human leave the vehicle" comes
+      // through TdGeo.motionSince; this proves the JS reading of it: a 40s+
+      // on-foot window inside the leg is a walk, driving/still-only is not,
+      // walking BEFORE the drive (to the truck) never counts, and no plugin
+      // at all answers null (fall back to the time rule), never false.
+      const r = await page.evaluate(async () => {
+        const realTd = window._geoTdPlugin;
+        const s = Date.now() - 20 * 60000, e = Date.now();
+        const iso = (ms) => new Date(ms).toISOString();
+        const withTd = (transitions) => { window._geoTdPlugin = () => ({ motionSince: async () => ({ available: true, transitions }) }); };
+        try {
+          withTd([{ kind: 'driving', ts: s }, { kind: 'onFoot', ts: s + 8 * 60000 }, { kind: 'driving', ts: s + 11 * 60000 }]);
+          const walked = await _mileWalkedDuring(iso(s), iso(e));
+          withTd([{ kind: 'driving', ts: s }, { kind: 'still', ts: s + 8 * 60000 }, { kind: 'driving', ts: s + 11 * 60000 }]);
+          const jam = await _mileWalkedDuring(iso(s), iso(e));
+          withTd([{ kind: 'onFoot', ts: s - 5 * 60000 }, { kind: 'driving', ts: s }]);
+          const preWalk = await _mileWalkedDuring(iso(s), iso(e));
+          withTd([{ kind: 'driving', ts: s }, { kind: 'onFoot', ts: s + 8 * 60000 }, { kind: 'driving', ts: s + 8 * 60000 + 20000 }]);
+          const blip = await _mileWalkedDuring(iso(s), iso(e));
+          window._geoTdPlugin = () => null;
+          const noPlugin = await _mileWalkedDuring(iso(s), iso(e));
+          return { walked, jam, preWalk, blip, noPlugin };
+        } finally { window._geoTdPlugin = realTd; }
+      });
+      expect(r.walked, 'a 3-minute walk mid-leg is an errand').toBe(true);
+      expect(r.jam, 'a standstill with nobody leaving the vehicle is not').toBe(false);
+      expect(r.preWalk, 'the walk TO the truck never counts').toBe(false);
+      expect(r.blip, 'a 20-second hop out is below the 40s bar').toBe(false);
+      expect(r.noPlugin, 'no signal answers null, never an answer').toBe(null);
+    });
+
+    test('a walk inside the leg disqualifies the detour floor at measurement time', async () => {
+      // The fast-pickup hole: an errand quicker than the 2.5-minute time rule
+      // still puts extra miles in the observed tally. The measurement now
+      // asks the coprocessor before the floor collects: walked = the direct
+      // route saves; no walk on record = the floor still collects (the same
+      // answer as no motion signal at all, proven by the detour tests above).
+      const r = await page.evaluate(async () => {
+        const realRoute = _routeDistance, realUser = _supaUser, realTd = window._geoTdPlugin;
+        _supaUser = { id: 'u-walk' };
+        window.__origMileage = mileage.slice();
+        try {
+          mileage.length = 0;
+          const ended = new Date().toISOString();
+          const started = new Date(Date.now() - 14 * 60000).toISOString();
+          const mk = (id, legKey) => ({ id, date: todayKey(), gps: true, legKey, calc_method: 'pending_auto',
+            fromCoord: { lat: 39.02, lng: -95.73 }, toCoord: { lat: 39.0, lng: -95.7 }, miles: 0, mins: 14,
+            gpsMiles: 5.3, startedIso: started, endedIso: ended, loggedAt: ended });
+          window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 9 });
+          // Walked: the floor stands down.
+          mileage.push(mk(997501, 'walk-leg-1'));
+          window._geoTdPlugin = () => ({ motionSince: async () => ({ available: true,
+            transitions: [{ kind: 'driving', ts: Date.parse(started) }, { kind: 'onFoot', ts: Date.parse(started) + 5 * 60000 }, { kind: 'driving', ts: Date.parse(started) + 9 * 60000 }] }) });
+          await _retryPendingTrips();
+          const walkedRow = mileage.find(m => m.id === 997501);
+          // No walk: the floor collects.
+          mileage.length = 0; mileage.push(mk(997502, 'walk-leg-2'));
+          window._geoTdPlugin = () => ({ motionSince: async () => ({ available: true,
+            transitions: [{ kind: 'driving', ts: Date.parse(started) }] }) });
+          await _retryPendingTrips();
+          const jamRow = mileage.find(m => m.id === 997502);
+          return { walkedMiles: walkedRow.miles, walkedPaused: !!walkedRow.pausedLeg, jamMiles: jamRow.miles };
+        } finally {
+          window._routeDistance = _routeDistance = realRoute; _supaUser = realUser; window._geoTdPlugin = realTd;
+          mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
+        }
+      });
+      expect(r.walkedMiles, 'walked leg saves the DIRECT route').toBe(3.2);
+      expect(r.walkedPaused, 'and carries the errand mark').toBe(true);
+      expect(r.jamMiles, 'no walk on record: the observed detour still collects').toBe(5.3);
+    });
+
     test('the pending sweep applies the route clock to an impossible window', async () => {
       const r = await page.evaluate(async () => {
         const realRoute = _routeDistance, realUser = _supaUser;

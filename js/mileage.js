@@ -487,6 +487,34 @@ function _initMapKit(){
 // to match, flagged timeInferred. Payroll is untouched on purpose: the time
 // entry keeps only the observed minutes, per the owner's 2026-08-03 rule that
 // duration nobody observed is never claimed as labor.
+// Did the human LEAVE THE VEHICLE during this leg? The motion coprocessor
+// records driving/walking/still around the clock at no cost to us
+// (TdGeo.motionSince queries its history, low-confidence samples already
+// filtered native-side). A walk of 40+ seconds inside the leg's clock is the
+// bulletproof errand signal the time-dwell rule can never give: a red light
+// or a traffic jam never produces walking, a counter pickup always does,
+// however fast it was (owner 2026-08-14: "time isn't a good enough factor").
+// Returns true (walked), false (no walk on record), or null (no signal: web
+// build, permission denied, no coprocessor), and the caller must treat null
+// as "fall back to the time rule", never as an answer.
+async function _mileWalkedDuring(startedIso,endedIso){
+  try{
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    if(!Td||typeof Td.motionSince!=='function')return null;
+    const s=Date.parse(startedIso||'')||0,e=Date.parse(endedIso||'')||0;
+    if(!s||!e||e<=s)return null;
+    const r=await Td.motionSince({sinceMs:s-120000});
+    if(!r||!r.available||!Array.isArray(r.transitions))return null;
+    const tr=r.transitions.filter(t=>t&&t.ts<=e+120000).sort((a,b)=>a.ts-b.ts);
+    for(let i=0;i<tr.length;i++){
+      if(tr[i].kind!=='onFoot')continue;
+      if(tr[i].ts<s-60000)continue;                 // walking BEFORE the drive is the walk to the truck
+      const until=(i+1<tr.length)?tr[i+1].ts:e;     // on foot until the next transition (or leg end)
+      if(Math.min(until,e)-tr[i].ts>=40000)return true;
+    }
+    return false;
+  }catch(_e){return null;}
+}
 function _mileFixLegClock(rec,routeMins){
   if(!rec||!(routeMins>0)||!rec.endedIso)return;
   if(rec.mins>0&&rec.mins*2>=routeMins)return;   // plausible window, observed wins
@@ -535,9 +563,15 @@ async function _retryPendingTrips(){
       if(auto&&(rec.fromCoord!==fc||rec.toCoord!==tc))continue;
       if(!(miles>0))continue;   // not a measurement: leave it pending for the next sweep
       // Same observed-miles floor the live measurement applies (forced-detour
-      // rule): a leg that settles here instead must not lose it.
+      // rule): a leg that settles here instead must not lose it, and the same
+      // walk check disqualifies it (an errand is an errand however late the
+      // measurement lands).
       let best=miles;
-      if(auto&&rec.gpsMiles>0&&rec.gpsMiles>miles&&rec.gpsMiles<=miles*4)best=rec.gpsMiles;
+      if(auto&&rec.gpsMiles>0&&rec.gpsMiles>miles&&rec.gpsMiles<=miles*4){
+        const walked=await _mileWalkedDuring(rec.startedIso,rec.endedIso);
+        if(walked===true)rec.pausedLeg=true;
+        else best=rec.gpsMiles;
+      }
       rec.miles=Math.round(best*10)/10;rec.calc_method=auto?'auto_route':'address';
       if(auto)_mileFixLegClock(rec,routeMins);
       // Keep the resolved endpoints on a manual row: the journey dedup matches
@@ -813,8 +847,19 @@ function autoLogDriveTrip(opts){
       // so a GPS blowup can never invent a day of driving (owner rule
       // 2026-08-11). The tally undercounts curves, so this only ever recovers
       // miles that were provably driven.
+      //
+      // Before the floor collects, the motion coprocessor gets the last word:
+      // a walk inside the leg means an errand the time-dwell rule missed (a
+      // pickup faster than 2.5 minutes), and an errand's extra driving is
+      // never a forced detour, so the direct route saves. Walking can only
+      // ever DISQUALIFY the floor, absence never widens it: a drive-thru
+      // errand shows no walk and stays whatever the time rule said.
       let best=miles;
-      if(saved.gpsMiles>0&&saved.gpsMiles>miles&&saved.gpsMiles<=miles*4)best=saved.gpsMiles;
+      if(saved.gpsMiles>0&&saved.gpsMiles>miles&&saved.gpsMiles<=miles*4){
+        const walked=await _mileWalkedDuring(saved.startedIso,saved.endedIso);
+        if(walked===true)saved.pausedLeg=true;
+        else best=saved.gpsMiles;
+      }
       saved.miles=Math.round(best*10)/10;saved.calc_method='auto_route';
       _mileFixLegClock(saved,routeMins);
       // Now that this trip has its number, settle any same-journey duplicates.
