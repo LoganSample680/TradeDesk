@@ -162,7 +162,22 @@ function _geoDriving(){
   const _tracking=_geoWatchId!=null||(typeof _geoNativeWatcherId!=='undefined'&&_geoNativeWatcherId!=null);
   return !!(_tracking&&_geoDriveStartedAt&&(Date.now()-_geoDriveMovingAt)<_GEO_DRIVE_SHOW_MS);
 }
-function _geoDriveReset(){_geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix=null;_geoDriveMph=0;_geoDriveMovingAt=0;_geoMphZeroRun=0;_geoMphHeldZero=false;}
+function _geoDriveReset(){_geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix=null;_geoDriveMph=0;_geoDriveMovingAt=0;_geoMphZeroRun=0;_geoMphHeldZero=false;_geoDriveHadPause=false;}
+// A PAUSE is a sub-stop sit: too long for any red light, too short for the
+// five-minute stop machinery (owner's Domino's run, 2026-08-13: a 3-4 minute
+// pizza pickup mid-route). Judged on POSITION DWELL (the stop anchor), never
+// on iOS speed readings, which cannot be made trustworthy fix-by-fix. Its one
+// consumer is the observed-miles detour floor: a leg with a pause in it had
+// an errand, not a forced detour, so the direct route is what saves (the
+// CPA's direct-miles rule). Pauses of 5+ minutes are real stops and belong
+// to the split machinery, so they are deliberately NOT flagged here.
+let _geoDriveHadPause=false;
+const _GEO_PAUSE_MS=150000;   // 2.5 min: above any signal light, below a stop
+function _geoNotePause(a){
+  if(!a||!a.at||!a.lastAt)return;
+  const ms=Date.parse(a.lastAt)-Date.parse(a.at);
+  if(ms>=_GEO_PAUSE_MS&&ms<_GEO_STOP_MS)_geoDriveHadPause=true;
+}
 
 // ── Offline-durable time-entry queue ──────────────────────────────────────────
 // Every arrival→departure record is written to the DEVICE first and drained to
@@ -672,6 +687,11 @@ async function _geoOnPing(pos){
       // Still outside everything: accumulate the dwell that makes this a STOP.
       if(_geoStopAnchor&&_geoDistFt(here,_geoStopAnchor)<=_GEO_STOP_FT)_geoStopAnchor.lastAt=nowIso;
       else{
+        // Pulling away from a kerb the anchor was watching: if the sit was a
+        // sub-stop PAUSE (2.5-5 min, the pizza pickup), the leg is marked
+        // before the anchor is replaced, so the detour floor knows this trace
+        // contains an errand rather than a forced detour.
+        _geoNotePause(_geoStopAnchor);
         if(_geoStopAnchor)_geoCloseStop(_geoStopAnchor);
         _geoStopAnchor={lat:here.lat,lng:here.lng,at:nowIso,lastAt:nowIso};
       }
@@ -759,6 +779,7 @@ async function _geoOnPing(pos){
       if(!_geoDriveStartedAt){
         _geoDriveStartedAt=nowIso;_geoLegOrigin=_geoLastFenceLoc;
         _geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs};
+        _geoDriveHadPause=false;
       }
       _geoStopAnchor={lat:here.lat,lng:here.lng,at:nowIso,lastAt:nowIso};
     }
@@ -1342,10 +1363,19 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // (the CPA's direct-miles rule). The tally UNDERcounts real roads, so as a
   // floor it can only ever recover miles that were provably driven.
   const hadDetourLegs=!!(_geoLegOrigin&&_geoLegOrigin.extraDriveMins);
+  // The live anchor may still be holding an unnoted pause when the arrival
+  // fence closes the leg directly (sparse pings: pizza counter to the shop
+  // door in one fix). Note it before the floor is judged.
+  _geoNotePause(_geoStopAnchor);
   // ...and only from a leg that was DENSELY watched (>=8 accumulation hops).
   // A tally built from a couple of hops is the undercount case by definition,
   // it cannot evidence a detour; a real drive produces dozens of hops.
-  const obsMiles=(!stale&&!hadDetourLegs&&_geoDriveSteps>=8&&_geoDriveMiles>0.3)?Math.round(_geoDriveMiles*10)/10:null;
+  // ...and never from a leg with a PAUSE in it (owner's Domino's run,
+  // 2026-08-13: a 3-minute pickup mid-route made the observed tally beat the
+  // route and the errand's extra miles got claimed). A paused leg had an
+  // errand; the direct route is the deductible answer, so the floor stands
+  // down. A genuinely forced detour never sits still for 2.5 minutes.
+  const obsMiles=(!stale&&!hadDetourLegs&&!_geoDriveHadPause&&_geoDriveSteps>=8&&_geoDriveMiles>0.3)?Math.round(_geoDriveMiles*10)/10:null;
   if(!stale&&_geoLegOrigin&&_geoLegOrigin.extraDriveMins){driveMins+=_geoLegOrigin.extraDriveMins;delete _geoLegOrigin.extraDriveMins;}
   // ── OUT AND BACK WITH NOTHING BUSINESS IN IT ─────────────────────────────
   // Owner rule (2026-08-10): "a drive from home office shop and back shouldn't

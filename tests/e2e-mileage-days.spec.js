@@ -319,6 +319,55 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
     expect(Math.abs(rB.miles - routeMiles(GEO.SHOP, GEO.SUP2)), `blowup capped, the route saves, got ${rB.miles}`).toBeLessThanOrEqual(0.15);
   });
 
+  test('day 6: a pizza-pickup PAUSE disqualifies the detour floor; a pauseless detour still collects observed miles', async () => {
+    test.setTimeout(120000);
+    // Owner's Domino's run, 2026-08-13: John Doe -> 3-minute pizza pickup ->
+    // Shop logged 5.3 mi (the full driven path) instead of the 3.2-mile
+    // direct route. A sub-5-minute errand is not a STOP (that threshold
+    // protects red lights), so the leg stayed whole, and the observed-miles
+    // floor then paid the errand's extra driving as if it were a forced
+    // detour. The fix judges POSITION DWELL, never iOS speed: a 2.5-minute
+    // sit at one kerb marks the leg paused, and a paused leg's floor stands
+    // down, the direct route saves (the CPA's direct-miles rule). The
+    // control leg proves the floor itself still works: same dogleg with no
+    // pause is a real detour and the observed miles save.
+    await newDay();
+    const PIZZA = { lat: 39.0350, lon: -95.7000 };
+    const OUT = [
+      { lat: 39.0260, lon: -95.7300 }, { lat: 39.0300, lon: -95.7240 }, { lat: 39.0330, lon: -95.7160 },
+      { lat: 39.0345, lon: -95.7080 },
+    ];
+    const BACK = [
+      { lat: 39.0290, lon: -95.7000 }, { lat: 39.0220, lon: -95.7000 }, { lat: 39.0150, lon: -95.7000 },
+      { lat: 39.0080, lon: -95.7000 }, { lat: 39.0040, lon: -95.7000 },
+    ];
+    await dwell(GEO.JOB1, 8);
+    await ping(GEO.JOB1, 0); await ff(1);
+    for (const p of OUT) { await ping(p, 13); await ff(0.7); }
+    // The pickup: five fixes at the same kerb, ~3.2 minutes of anchor dwell.
+    for (let i = 0; i < 5; i++) { await ping(PIZZA, 0); await ff(0.8); }
+    for (const p of BACK) { await ping(p, 13); await ff(0.7); }
+    await ping(GEO.SHOP, 0); await ff(0.5);
+    await dwell(GEO.SHOP, 8);
+    // Control: the same dogleg home, no pause anywhere.
+    await ping(GEO.SHOP, 0); await ff(1);
+    for (const p of [...BACK].reverse()) { await ping(p, 13); await ff(0.7); }
+    await ping(PIZZA, 13); await ff(0.7);
+    for (const p of [...OUT].reverse()) { await ping(p, 13); await ff(0.7); }
+    await ping(GEO.JOB1, 0); await ff(0.5);
+    await dwell(GEO.JOB1, 8);
+    const d = await closeDay();
+    const routeJS = routeMiles(GEO.JOB1, GEO.SHOP);
+    expect(d.rows.length, JSON.stringify(d.rows)).toBe(2);
+    const [pA, pB] = d.rows;
+    expect(String(pA.from)).toContain('John');
+    expect(String(pA.to)).toContain('Shop');
+    expect(Math.abs(pA.miles - routeJS), `paused leg takes the DIRECT route, got ${pA.miles} want ${routeJS}`).toBeLessThanOrEqual(0.15);
+    expect(String(pB.from)).toContain('Shop');
+    expect(String(pB.to)).toContain('John');
+    expect(pB.miles, `the pauseless dogleg is a real detour, observed saves, got ${pB.miles} vs route ${routeJS}`).toBeGreaterThan(routeJS + 0.5);
+  });
+
   test('fuzz days: six seeded random days, oracle-checked, every combination of stop, manual, crash, echo, phantom', async () => {
     test.setTimeout(300000);
     // The generator composes days from the same building blocks the real
