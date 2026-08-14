@@ -8218,6 +8218,39 @@ test.describe('Version consistency', () => {
     expect(r.userStillNull, 'nothing invented when nothing is cached').toBe(true);
   });
 
+  test('boot skeletons are component-shaped per widget, never one generic blob', async () => {
+    // Owner 2026-08-14: every tile gets its OWN shimmer shaped like itself.
+    // The KPI widget shimmers as six metric tiles, quick actions as three
+    // round buttons, the calendar as a seven-cell week, and an unknown
+    // widget still falls back to generic rows rather than a blank hole.
+    const r = await page.evaluate(() => {
+      const saved = { pending: window._bootSyncPending, done: window._bootSkelDone, timer: window._bootSkelTimer };
+      try {
+        goPg('pg-dash');
+        document.getElementById('pg-dash').classList.add('active');
+        window._bootSyncPending = true; window._bootSkelDone = false;
+        _dashApplySkeletons();
+        const shape = (dw) => document.querySelector('#dash-widget-root>.td-dw[data-dw="' + dw + '"]>.td-boot-skel');
+        const kpi = shape('kpi'), quick = shape('quick'), cal = shape('calendar');
+        return {
+          kpiTiles: kpi ? kpi.querySelectorAll(':scope>div>div').length : 0,
+          quickButtons: quick ? quick.querySelectorAll('.td-skel[style*="border-radius:14px"]').length : 0,
+          calCells: cal ? cal.querySelectorAll('div[style*="repeat(7"] .td-skel').length : 0,
+          fallbackHasRows: _tdSkelShape('никто', 120).includes('td-skel'),
+        };
+      } finally {
+        _dashClearSkeletons();
+        window._bootSyncPending = saved.pending; window._bootSkelDone = saved.done;
+        try { clearTimeout(window._bootSkelTimer); } catch (e) {}
+        window._bootSkelTimer = saved.timer;
+      }
+    });
+    expect(r.kpiTiles, 'the KPI skeleton is six tiles').toBe(6);
+    expect(r.quickButtons, 'quick actions skeleton is three round buttons').toBe(3);
+    expect(r.calCells, 'the calendar skeleton is a seven-cell week').toBe(7);
+    expect(r.fallbackHasRows, 'unknown widgets fall back to generic shimmer rows').toBe(true);
+  });
+
   test('the boot SDK fallback calls the identity restore before rendering', () => {
     const fs = require('fs');
     const path = require('path');

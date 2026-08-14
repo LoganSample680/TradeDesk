@@ -875,6 +875,33 @@ function _dashSkelMode(){
   // boots render normally instead of shimmering into the failsafe.
   return !!window._bootSyncPending&&!window._bootSkelDone;
 }
+// Component-shaped boot skeletons (owner 2026-08-14: every tile gets its OWN
+// shimmer shaped like itself, never one generic blob). Composed entirely from
+// the existing .td-skel shimmer primitive (§8.4), keyed by the widget's own
+// data-dw id so the skeleton mirrors exactly what will pour into its place:
+// the KPI widget shimmers as six metric tiles, quick actions as three round
+// buttons, the calendar as a week strip, and so on. Unknown widgets fall back
+// to the generic rows so a future widget is never a blank hole.
+function _tdSkelShape(kind,h){
+  const band=(ht,w,extra)=>'<div class="td-skel" style="height:'+ht+'px;width:'+w+';'+(extra||'')+'"></div>';
+  const tile=()=>'<div style="border:1px solid var(--border);border-radius:var(--r);padding:10px">'+band(9,'55%','margin-bottom:8px')+band(16,'70%')+'</div>';
+  switch(kind){
+    case 'tbar':return band(18,'52%','margin:6px 0');
+    case 'kpi':return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+[tile(),tile(),tile(),tile(),tile(),tile()].join('')+'</div>';
+    case 'feed':return band(13,'42%','margin:2px 0 12px')+
+      [0,1,2].map(()=>'<div style="display:flex;align-items:center;gap:10px;margin:10px 0">'+band(30,'30px','border-radius:8px;flex:none')+'<div style="flex:1">'+band(11,'70%','margin-bottom:6px')+band(9,'45%')+'</div></div>').join('');
+    case 'quick':return '<div style="display:flex;gap:18px;justify-content:space-around;padding:4px 0">'+
+      [0,1,2].map(()=>'<div style="text-align:center">'+band(46,'46px','border-radius:14px;margin:0 auto 6px')+band(8,'40px','margin:0 auto')+'</div>').join('')+'</div>';
+    case 'pipeline':return band(13,'38%','margin:2px 0 10px')+band(40,'100%','border-radius:10px')+
+      '<div style="display:flex;gap:8px;margin-top:10px">'+band(10,'22%')+band(10,'22%')+band(10,'22%')+'</div>';
+    case 'calendar':return band(13,'34%','margin:2px 0 10px')+
+      '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">'+Array.from({length:7},()=>band(42,'100%','border-radius:8px')).join('')+'</div>';
+    case 'sources':return band(13,'40%','margin:2px 0 10px')+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+band(24,'28%','border-radius:99px')+band(24,'34%','border-radius:99px')+band(24,'24%','border-radius:99px')+'</div>';
+    case 'goal':return band(13,'44%','margin:2px 0 10px')+band(14,'100%','border-radius:99px')+band(10,'30%','margin-top:8px');
+    default:return (typeof _tdSkelRows==='function')?_tdSkelRows(Math.max(2,Math.min(5,Math.round((h||120)/46)))):'';
+  }
+}
 function _dashApplySkeletons(){
   if(!_dashSkelMode())return;
   if(!window._bootSkelTimer){
@@ -894,7 +921,7 @@ function _dashApplySkeletons(){
     if(!h)return; // empty/hidden conditional widgets stay collapsed, no phantom card
     const sk=document.createElement('div');
     sk.className='td-boot-skel'+(tbar?'':' card');
-    sk.innerHTML=(typeof _tdSkelRows==='function')?_tdSkelRows(tbar?1:Math.max(2,Math.min(5,Math.round(h/46))),tbar?18:undefined):'';
+    sk.innerHTML=_tdSkelShape(tbar?'tbar':(el.dataset.dw||''),h);
     el.classList.add('td-boot-skel-on');
     el.appendChild(sk);
   });
