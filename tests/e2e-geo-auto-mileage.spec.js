@@ -5504,6 +5504,68 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.jamMiles, 'no walk on record: the observed detour still collects').toBe(5.3);
     });
 
+    test('the retroactive walk sweep corrects a week of over-paid errand legs: reductions only, once per session', async () => {
+      // Owner 2026-08-14: the coprocessor stores about a week, so it can
+      // correct data and rows. Rows whose measurement KEPT the observed tally
+      // (the floor collected) get the walk question after the load settles:
+      // walked = re-measured down to the direct route. Rows outside the week,
+      // rows with a driving-only record, and hand-edited rows (tally no
+      // longer matches) are untouched, and the sweep runs once per session.
+      const r = await page.evaluate(async () => {
+        const realRoute = _routeDistance, realTd = window._geoTdPlugin, realRan = window._mileMotionHealRan;
+        window.__origMileage = mileage.slice();
+        try {
+          mileage.length = 0;
+          const mk = (id, endMsAgo, miles, gpsMiles) => {
+            const end = Date.now() - endMsAgo;
+            return { id, date: todayKey(), gps: true, legKey: 'heal-' + id, calc_method: 'auto_route',
+              miles, gpsMiles, mins: 12,
+              fromCoord: { lat: 39.02, lng: -95.73 }, toCoord: { lat: 39.0, lng: -95.7 },
+              startedIso: new Date(end - 14 * 60000).toISOString(), endedIso: new Date(end).toISOString(),
+              loggedAt: new Date(end).toISOString() };
+          };
+          const A = mk(998601, 2 * 86400000, 5.3, 5.3);    // walked, in window -> corrects
+          const B = mk(998602, 3 * 86400000, 5.3, 5.3);    // driving-only -> untouched
+          const C = mk(998603, 9 * 86400000, 5.3, 5.3);    // beyond the week -> untouched
+          const D = mk(998604, 2 * 86400000, 3.2, 5.3);    // hand-edited -> untouched
+          mileage.push(A, B, C, D);
+          window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 9 });
+          const aStart = Date.parse(A.startedIso);
+          window._geoTdPlugin = () => ({ motionSince: async (o) => {
+            // Only row A's window carries a walk.
+            const isA = Math.abs((o.sinceMs || 0) - (aStart - 120000)) < 60000;
+            return { available: true, transitions: isA
+              ? [{ kind: 'driving', ts: aStart }, { kind: 'onFoot', ts: aStart + 5 * 60000 }, { kind: 'driving', ts: aStart + 9 * 60000 }]
+              : [{ kind: 'driving', ts: (o.sinceMs || 0) + 130000 }] };
+          } });
+          window._mileMotionHealRan = false;
+          const fixed1 = await _mileMotionHealSweep();
+          const after = Object.fromEntries(mileage.map(m => [m.id, { miles: m.miles, paused: !!m.pausedLeg }]));
+          const fixed2 = await _mileMotionHealSweep();   // session guard: never twice
+          return { fixed1, fixed2, after };
+        } finally {
+          window._routeDistance = _routeDistance = realRoute; window._geoTdPlugin = realTd; window._mileMotionHealRan = realRan;
+          mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
+        }
+      });
+      expect(r.fixed1, 'exactly the walked in-window row corrects').toBe(1);
+      expect(r.after[998601], 'walked leg reduced to the direct route and marked').toEqual({ miles: 3.2, paused: true });
+      expect(r.after[998602].miles, 'driving-only record untouched').toBe(5.3);
+      expect(r.after[998603].miles, 'beyond the coprocessor week untouched').toBe(5.3);
+      expect(r.after[998604], 'hand-edited row untouched, never re-marked').toEqual({ miles: 3.2, paused: false });
+      expect(r.fixed2, 'once per session, never a second stampede').toBe(0);
+    });
+
+    test('the walk sweep rides the load settle point beside the dedup heal', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+      const anchor = src.indexOf('_loadedDataOwner=(_supaUser');
+      expect(anchor).toBeGreaterThan(0);
+      expect(src.slice(anchor, anchor + 2200), 'sweep fires after every completed load')
+        .toContain("_mileMotionHealSweep==='function')_mileMotionHealSweep()");
+    });
+
     test('the pending sweep applies the route clock to an impossible window', async () => {
       const r = await page.evaluate(async () => {
         const realRoute = _routeDistance, realUser = _supaUser;

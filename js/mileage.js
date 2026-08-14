@@ -515,6 +515,45 @@ async function _mileWalkedDuring(startedIso,endedIso){
     return false;
   }catch(_e){return null;}
 }
+// The coprocessor keeps roughly a WEEK of history, so rows that already paid
+// an errand's detour (measured before the walk check shipped, or measured
+// while the webview was dead) are still correctable after the fact (owner
+// 2026-08-14: "you said iPhone stores it for a week and it could correct
+// data and rows"). Once per session, after the cloud load settles: every
+// recent auto row whose measurement KEPT the observed tally (the floor
+// collected) gets the walk question, and a walked leg re-measures down to
+// the direct route. Corrections only ever REDUCE a row, the safe direction
+// for an IRS log; a hand-edited row no longer matches its tally and is
+// naturally left alone; capped at 20 rows so a huge log can never stampede
+// the router.
+async function _mileMotionHealSweep(){
+  try{
+    if(window._mileMotionHealRan)return 0;
+    window._mileMotionHealRan=true;
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    if(!Td||typeof Td.motionSince!=='function')return 0;
+    const weekAgo=Date.now()-7*86400000;
+    const cands=mileage.filter(m=>m&&m.gps&&m.legKey&&!m.pausedLeg&&
+      m.calc_method==='auto_route'&&m.gpsMiles>0&&m.miles>0&&
+      Math.abs(m.miles-Math.round(m.gpsMiles*10)/10)<0.05&&
+      m.startedIso&&m.endedIso&&(Date.parse(m.endedIso)||0)>=weekAgo&&
+      m.fromCoord&&m.toCoord);
+    let fixed=0;
+    for(const m of cands.slice(0,20)){
+      const walked=await _mileWalkedDuring(m.startedIso,m.endedIso);
+      if(walked!==true)continue;
+      const{miles}=await _routeDistance(m.fromCoord,m.toCoord);
+      if(!(miles>0)||miles>=m.miles)continue;   // only ever reduce
+      m.miles=Math.round(miles*10)/10;m.pausedLeg=true;fixed++;
+    }
+    if(fixed){
+      saveAll();
+      if(document.getElementById('mil-table'))renderAllMileage();
+      if(typeof renderDash==='function')renderDash();
+    }
+    return fixed;
+  }catch(_e){return 0;}
+}
 function _mileFixLegClock(rec,routeMins){
   if(!rec||!(routeMins>0)||!rec.endedIso)return;
   if(rec.mins>0&&rec.mins*2>=routeMins)return;   // plausible window, observed wins
