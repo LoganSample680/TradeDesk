@@ -2349,7 +2349,11 @@ function _milRenderTripList(shown,yr){
     '</div>';
   }).join('');
   const purpRow=purpChips?'<div class="mil-purp-row">'+purpChips+'</div>':'';
-  el.innerHTML='<div class="mil-list">'+purpRow+days.map(([date,trips],dayIdx)=>{
+  // Year -> month -> day, the SAME accordion the Books ledgers use (owner
+  // 2026-08-13: "same accordion constant logic, no new hand-rolled accordion").
+  // _bkMonthAcc/_bkTogMonth (finance.js) own the month shell; the day cards
+  // inside are mileage's existing owner-approved day accordions, unchanged.
+  const _dayCard=([date,trips],dayOpen)=>{
     const dayMi=trips.reduce((s,t)=>s+(t.miles||0),0);
     const dayDed=trips.reduce((s,t)=>s+(t.miles||0)*irsRate,0);
     const needsCount=trips.filter(t=>!t.purpose).length;
@@ -2357,7 +2361,7 @@ function _milRenderTripList(shown,yr){
     const dateObj=new Date(y,mo-1,d);
     const dow=dateObj.toLocaleDateString('en-US',{weekday:'short'}).toUpperCase().slice(0,3);
     const monthShort=dateObj.toLocaleDateString('en-US',{month:'short'}).toUpperCase();
-    const openClass=dayIdx===0?' open':'';
+    const openClass=dayOpen?' open':'';
     const reviewClass=needsCount?' has-review':'';
     const _sorted=trips.slice().sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
     const tripRows=_sorted.map((r,i)=>{
@@ -2448,7 +2452,23 @@ function _milRenderTripList(shown,yr){
       '</button>'+
       '<div class="mil-day-body"'+(!openClass?' style="display:none"':'')+'>'+tripRows+'</div>'+
     '</div>';
-  }).join('')+'</div>';
+  };
+  const byMonth={};
+  days.forEach(d=>{const mo=d[0].slice(0,7);(byMonth[mo]||(byMonth[mo]=[])).push(d);});
+  const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
+  const curMo=todayKey().slice(0,7);
+  el.innerHTML='<div class="mil-list">'+purpRow+'<div class="bk-months">'+months.map((mo,mIdx)=>{
+    const moDays=byMonth[mo];
+    const moTripsN=moDays.reduce((s,[,t])=>s+t.length,0);
+    const moMi=moDays.reduce((s,[,t])=>s+t.reduce((x,r)=>x+(r.miles||0),0),0);
+    // The newest month's newest day arrives open, the same at-a-glance
+    // landing the flat list gave; everything older is one tap away.
+    const inner=moDays.map((d,dIdx)=>_dayCard(d,mIdx===0&&dIdx===0)).join('');
+    return _bkMonthAcc('mil',mo,_bkMonthLabel(mo),
+      moTripsN+' trip'+(moTripsN!==1?'s':'')+' · '+moDays.length+' day'+(moDays.length!==1?'s':''),
+      '<div style="font-size:15px;font-weight:900;color:var(--text);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+moMi.toFixed(1)+' mi</div>',
+      inner,mo>=curMo);
+  }).join('')+'</div></div>';
 }
 
 function _milTogDay(date){

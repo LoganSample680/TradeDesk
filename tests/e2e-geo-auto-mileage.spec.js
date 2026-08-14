@@ -288,6 +288,53 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.meta).toContain('10:47a');
       expect(out.meta.indexOf('·')).toBeGreaterThan(-1);   // duration and clock on ONE grouped line
     });
+
+    test('the log is year -> month -> day on the SAME Books accordion, never a hand-rolled one', async () => {
+      // Owner 2026-08-13: "same accordion constant logic, no new hand rolled
+      // accordion please." The month shell is _bkMonthAcc/_bkTogMonth from
+      // finance.js, the one Income/Expenses/Time Log already share; the day
+      // cards inside are mileage's existing day accordions, unchanged.
+      const out = await page.evaluate(() => {
+        window.__origMileage = mileage.slice();
+        mileage.length = 0;
+        const yr = todayKey().slice(0, 4);
+        const curMo = todayKey().slice(0, 7);
+        // Two months: one row today, two rows in an earlier month this year.
+        const older = curMo.endsWith('-01') ? yr + '-12' : curMo.slice(0, 5) + String(parseInt(curMo.slice(5)) - 1).padStart(2, '0');
+        mileage.push({ id: 991101, date: todayKey(), from_name: 'Shop', to_name: 'Miller Residence', miles: 4.1, purpose: 'Job site', gps: true, created_at: new Date().toISOString() });
+        mileage.push({ id: 991102, date: older + '-05', from_name: 'Shop', to_name: 'Ace Supply', miles: 2.2, purpose: 'Supply run', gps: true, created_at: new Date().toISOString() });
+        mileage.push({ id: 991103, date: older + '-06', from_name: 'Ace Supply', to_name: 'Shop', miles: 2.2, purpose: 'Supply run', gps: true, created_at: new Date().toISOString() });
+        renderAllMileage();
+        const list = document.getElementById('mil-table');
+        const monthEls = [...list.querySelectorAll('.bk-month')];
+        const cur = document.getElementById('bk-mil-mo-' + curMo);
+        const old = document.getElementById('bk-mil-mo-' + older);
+        const res = {
+          months: monthEls.length,
+          usesSharedShell: monthEls.every(m => m.querySelector('.bk-month-hd') && m.querySelector('.bk-month-body')),
+          curOpen: !!(cur && cur.classList.contains('open')),
+          oldClosed: !!(old && !old.classList.contains('open')),
+          oldBodyHidden: old ? old.querySelector('.bk-month-body').style.display === 'none' : null,
+          // The day cards live INSIDE month bodies now, never loose in the list.
+          daysInsideMonths: [...list.querySelectorAll('.mil-day')].every(d => d.closest('.bk-month-body')),
+          oldMonthDayCount: old ? old.querySelectorAll('.mil-day').length : 0,
+          curSub: cur ? (cur.querySelector('.bk-month-sub')?.innerText || '') : '',
+          // The shared toggler works on the mileage months too.
+          togWorks: (() => { if (!old) return false; _bkTogMonth('mil', older); return old.classList.contains('open') && old.querySelector('.bk-month-body').style.display !== 'none'; })(),
+        };
+        mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
+        return res;
+      });
+      expect(out.months, 'one accordion per month').toBe(2);
+      expect(out.usesSharedShell, 'the Books month shell, not a hand-rolled one').toBe(true);
+      expect(out.curOpen, 'the current month arrives open').toBe(true);
+      expect(out.oldClosed, 'older months arrive collapsed').toBe(true);
+      expect(out.oldBodyHidden).toBe(true);
+      expect(out.daysInsideMonths, 'every day card nests inside a month body').toBe(true);
+      expect(out.oldMonthDayCount, 'the older month holds its two days').toBe(2);
+      expect(out.curSub, 'month sub reads trips and days').toContain('1 trip');
+      expect(out.togWorks, 'the shared _bkTogMonth toggler opens mileage months').toBe(true);
+    });
   });
 
   // ── "Which vehicle are you driving today?" ─────────────────────────────────
