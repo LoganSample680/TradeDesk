@@ -2083,7 +2083,7 @@ function startGeoTracking(){
         // Chain the Motion & Fitness ask right behind the location grant
         // (owner 2026-08-14): one consent flow, prompts in sequence, never
         // stacked. The first coprocessor query is what surfaces the dialog;
-        // the errand classifier (_mileWalkedDuring, js/mileage.js) needs the
+        // the errand classifier (_mileTapeHadPause, js/mileage.js) needs the
         // grant to read walk windows out of the activity history.
         try{
           const _Td=_geoTdPlugin();

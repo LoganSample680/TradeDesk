@@ -5430,7 +5430,7 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.timeEntries, 'a duration nobody observed is still never claimed').toBe(0);
     });
 
-    test('_mileWalkedDuring: the coprocessor walk check reads windows honestly', async () => {
+    test('_mileTapeHadPause: the coprocessor walk check reads windows honestly', async () => {
       // Owner 2026-08-14: "time isn't a good enough factor." The motion
       // coprocessor's answer to "did the human leave the vehicle" comes
       // through TdGeo.motionSince; this proves the JS reading of it: a 40s+
@@ -5444,27 +5444,33 @@ test.describe('Automatic mileage from drive legs', () => {
         const withTd = (transitions) => { window._geoTdPlugin = () => ({ motionSince: async () => ({ available: true, transitions }) }); };
         try {
           withTd([{ kind: 'driving', ts: s }, { kind: 'onFoot', ts: s + 8 * 60000 }, { kind: 'driving', ts: s + 11 * 60000 }]);
-          const walked = await _mileWalkedDuring(iso(s), iso(e));
+          const walked = await _mileTapeHadPause(iso(s), iso(e));
           // THE REAL PICKUP TAPE (owner 2026-08-14 "didn't correct"): walk 30s,
           // STILL at the counter 3 minutes, walk 30s, drive. The out-of-vehicle
           // span runs first-walk to next-DRIVING; measured to the next
           // transition of any kind, both walks were ignorable blips.
           withTd([{ kind: 'driving', ts: s }, { kind: 'onFoot', ts: s + 8 * 60000 }, { kind: 'still', ts: s + 8 * 60000 + 30000 }, { kind: 'onFoot', ts: s + 11 * 60000 }, { kind: 'driving', ts: s + 11 * 60000 + 30000 }]);
-          const counterStop = await _mileWalkedDuring(iso(s), iso(e));
+          const counterStop = await _mileTapeHadPause(iso(s), iso(e));
           withTd([{ kind: 'driving', ts: s }, { kind: 'still', ts: s + 8 * 60000 }, { kind: 'driving', ts: s + 11 * 60000 }]);
-          const jam = await _mileWalkedDuring(iso(s), iso(e));
+          const drivethru = await _mileTapeHadPause(iso(s), iso(e));
+          withTd([{ kind: 'driving', ts: s }, { kind: 'still', ts: s + 8 * 60000 }, { kind: 'driving', ts: s + 8 * 60000 + 90000 }]);
+          const shortStill = await _mileTapeHadPause(iso(s), iso(e));
+          withTd([{ kind: 'driving', ts: s }]);
+          const jam = await _mileTapeHadPause(iso(s), iso(e));
           withTd([{ kind: 'onFoot', ts: s - 5 * 60000 }, { kind: 'driving', ts: s }]);
-          const preWalk = await _mileWalkedDuring(iso(s), iso(e));
+          const preWalk = await _mileTapeHadPause(iso(s), iso(e));
           withTd([{ kind: 'driving', ts: s }, { kind: 'onFoot', ts: s + 8 * 60000 }, { kind: 'driving', ts: s + 8 * 60000 + 20000 }]);
-          const blip = await _mileWalkedDuring(iso(s), iso(e));
+          const blip = await _mileTapeHadPause(iso(s), iso(e));
           window._geoTdPlugin = () => null;
-          const noPlugin = await _mileWalkedDuring(iso(s), iso(e));
-          return { walked, counterStop, jam, preWalk, blip, noPlugin };
+          const noPlugin = await _mileTapeHadPause(iso(s), iso(e));
+          return { walked, counterStop, drivethru, shortStill, jam, preWalk, blip, noPlugin };
         } finally { window._geoTdPlugin = realTd; }
       });
       expect(r.walked, 'a 3-minute walk mid-leg is an errand').toBe(true);
       expect(r.counterStop, 'walk-still-walk, the real pickup tape, is an errand').toBe(true);
-      expect(r.jam, 'a standstill with nobody leaving the vehicle is not').toBe(false);
+      expect(r.drivethru, 'a 3-minute STILL is the drive-thru/curbside tape, same evidence as the live dwell rule').toBe(true);
+      expect(r.shortStill, 'a 90-second still is a long light, below the 2.5-minute bar').toBe(false);
+      expect(r.jam, 'a rolling jam (driving-only tape) never disqualifies a real detour').toBe(false);
       expect(r.preWalk, 'the walk TO the truck never counts').toBe(false);
       expect(r.blip, 'a 20-second hop straight back to driving is below the 40s bar').toBe(false);
       expect(r.noPlugin, 'no signal answers null, never an answer').toBe(null);

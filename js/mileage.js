@@ -487,17 +487,25 @@ function _initMapKit(){
 // to match, flagged timeInferred. Payroll is untouched on purpose: the time
 // entry keeps only the observed minutes, per the owner's 2026-08-03 rule that
 // duration nobody observed is never claimed as labor.
-// Did the human LEAVE THE VEHICLE during this leg? The motion coprocessor
+// Did this leg contain an ERRAND, by the motion coprocessor's tape? The chip
 // records driving/walking/still around the clock at no cost to us
 // (TdGeo.motionSince queries its history, low-confidence samples already
-// filtered native-side). A walk of 40+ seconds inside the leg's clock is the
-// bulletproof errand signal the time-dwell rule can never give: a red light
-// or a traffic jam never produces walking, a counter pickup always does,
-// however fast it was (owner 2026-08-14: "time isn't a good enough factor").
-// Returns true (walked), false (no walk on record), or null (no signal: web
-// build, permission denied, no coprocessor), and the caller must treat null
-// as "fall back to the time rule", never as an answer.
-async function _mileWalkedDuring(startedIso,endedIso){
+// filtered native-side). TWO signatures qualify, matching the live pause
+// rule's semantics exactly:
+//   WALK  : 40+ seconds on foot, measured from the first walk to the next
+//           DRIVING transition (the real pickup tape is walk -> STILL at the
+//           counter -> walk -> drive, so any-next-transition measured a
+//           30-second walk as an ignorable blip).
+//   STILL : 2.5+ minutes motionless mid-leg: a drive-thru, a curbside
+//           pickup, the same position-dwell evidence the LIVE pause rule
+//           keys on, read off a different sensor (owner 2026-08-14: "still
+//           didn't correct", a pickup with no walk on the tape). A rolling
+//           jam never sits continuously still that long and never
+//           produces a walk, so real forced detours keep collecting.
+// Returns true (errand on tape), false (clean driving tape), or null (no
+// signal: web build, permission denied, no coprocessor); the caller must
+// treat null as "fall back to the time rule", never as an answer.
+async function _mileTapeHadPause(startedIso,endedIso){
   try{
     const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
     if(!Td||typeof Td.motionSince!=='function')return null;
@@ -506,18 +514,15 @@ async function _mileWalkedDuring(startedIso,endedIso){
     const r=await Td.motionSince({sinceMs:s-120000});
     if(!r||!r.available||!Array.isArray(r.transitions))return null;
     const tr=r.transitions.filter(t=>t&&t.ts<=e+120000).sort((a,b)=>a.ts-b.ts);
-    for(let i=0;i<tr.length;i++){
-      if(tr[i].kind!=='onFoot')continue;
-      if(tr[i].ts<s-60000)continue;                 // walking BEFORE the drive is the walk to the truck
-      // The pickup signature on the tape is walk -> STILL at the counter ->
-      // walk -> drive, so the out-of-vehicle span runs from the first walk to
-      // the next DRIVING transition, never to the next transition of any
-      // kind: measured that way, a 30-second walk each side of a 3-minute
-      // counter wait read as two ignorable blips and the errand passed as a
-      // detour (owner 2026-08-14: "didn't correct").
+    const spanToDrive=(i)=>{
       let until=e;
       for(let j=i+1;j<tr.length;j++){if(tr[j].kind==='driving'||tr[j].kind==='cycling'){until=tr[j].ts;break;}}
-      if(Math.min(until,e)-tr[i].ts>=40000)return true;
+      return Math.min(until,e)-tr[i].ts;
+    };
+    for(let i=0;i<tr.length;i++){
+      if(tr[i].ts<s-60000)continue;                 // before the drive: the walk TO the truck
+      if(tr[i].kind==='onFoot'&&spanToDrive(i)>=40000)return true;
+      if(tr[i].kind==='still'&&spanToDrive(i)>=150000)return true;
     }
     return false;
   }catch(_e){return null;}
@@ -547,7 +552,7 @@ async function _mileMotionHealSweep(){
       m.fromCoord&&m.toCoord);
     let fixed=0;
     for(const m of cands.slice(0,20)){
-      const walked=await _mileWalkedDuring(m.startedIso,m.endedIso);
+      const walked=await _mileTapeHadPause(m.startedIso,m.endedIso);
       // The verdict trail is what turns the next "didn't correct" report
       // into a diagnosis instead of a guess: true/false/null per row, in the
       // same diag notes the geo engine already keeps.
@@ -562,6 +567,9 @@ async function _mileMotionHealSweep(){
       saveAll();
       if(document.getElementById('mil-table'))renderAllMileage();
       if(typeof renderDash==='function')renderDash();
+      // Corrections announce themselves: silent rewrites of money records
+      // read as data loss when the owner spots the changed number later.
+      try{if(typeof showToast==='function')showToast(fixed+' trip'+(fixed===1?'':'s')+' corrected to direct miles (errand detected)','🚗');}catch(_e){}
     }
     return fixed;
   }catch(_e){return 0;}
@@ -619,7 +627,7 @@ async function _retryPendingTrips(){
       // measurement lands).
       let best=miles;
       if(auto&&rec.gpsMiles>0&&rec.gpsMiles>miles&&rec.gpsMiles<=miles*4){
-        const walked=await _mileWalkedDuring(rec.startedIso,rec.endedIso);
+        const walked=await _mileTapeHadPause(rec.startedIso,rec.endedIso);
         if(walked===true)rec.pausedLeg=true;
         else best=rec.gpsMiles;
       }
@@ -907,7 +915,7 @@ function autoLogDriveTrip(opts){
       // errand shows no walk and stays whatever the time rule said.
       let best=miles;
       if(saved.gpsMiles>0&&saved.gpsMiles>miles&&saved.gpsMiles<=miles*4){
-        const walked=await _mileWalkedDuring(saved.startedIso,saved.endedIso);
+        const walked=await _mileTapeHadPause(saved.startedIso,saved.endedIso);
         if(walked===true)saved.pausedLeg=true;
         else best=saved.gpsMiles;
       }
