@@ -371,12 +371,20 @@ function calcTax(){
         if(p.costTotal>0&&p.miles===0)return '<div style="font-size:11px;margin-bottom:5px;line-height:1.5"><span style="font-weight:700">'+escHtml(p.label)+'</span>: actual costs '+fmt(p.actualCmp)+', <span style="color:var(--amber);font-weight:700">no trips logged. Track drives all year so the mileage side is real.</span></div>';
         const winLbl=p.winner==='mileage'?'Standard mileage':'Actual expenses';
         const usingWinner=p.winner===p.method;
+        // A winner the vehicle CANNOT legally move to is not advice, it is a
+        // trap (owner 2026-08-14). The same guard the vehicle form enforces
+        // decides what this line is allowed to suggest.
+        const g=(!usingWinner&&typeof _vehFlipGuard==='function')
+          ?_vehFlipGuard({deductionMethod:p.method,firstYearMethod:p.firstYearMethod,isLeased:p.isLeased},p.winner):null;
+        const tail=usingWinner?' ✓'
+          :(g&&!g.ok
+            ?', <span style="color:var(--text3);font-weight:700">locked to '+(p.method==='mileage'?'mileage':'actual')+': '+escHtml(g.short)+'</span>'
+            :', <span style="color:var(--amber);font-weight:700">switching could save '+fmt(p.delta)+'/yr'+(g&&g.short?' ('+escHtml(g.short)+')':'')+', confirm with your tax pro</span>');
         return '<div style="font-size:11px;margin-bottom:5px;line-height:1.5">'+
           '<span style="font-weight:700">'+escHtml(p.label)+'</span> <span style="color:var(--text3)">('+p.bizUse+'% business use)</span><br>'+
           'Mileage '+fmt(p.mileDed)+' ('+p.miles.toFixed(0)+' mi) vs Actual '+fmt(p.actualCmp)+' (all logged costs) → '+
-          '<span style="font-weight:700;color:'+(usingWinner?'var(--green-mid)':'var(--amber)')+'">'+winLbl+' wins by '+fmt(p.delta)+'</span>'+
-          ' · using '+(p.method==='mileage'?'mileage':'actual')+
-          (usingWinner?' ✓':', <span style="color:var(--amber);font-weight:700">switching could save '+fmt(p.delta)+'/yr (IRS switching rules apply, confirm with your tax pro)</span>')+
+          '<span style="font-weight:700;color:'+(usingWinner?'var(--green-mid)':(g&&!g.ok?'var(--text3)':'var(--amber)'))+'">'+winLbl+' wins by '+fmt(p.delta)+'</span>'+
+          ' · using '+(p.method==='mileage'?'mileage':'actual')+tail+
         '</div>';
       }).join('')+
       (_vd.untagged?'<div style="font-size:10px;color:var(--amber);margin-top:4px">'+svgIcon('⚠️')+' '+_vd.untagged+' vehicle expense'+(_vd.untagged>1?'s':'')+' ('+fmt(_vd.untaggedTotal)+') not linked to a vehicle, not deducted. Edit each expense and pick its vehicle.</div>':'')+
