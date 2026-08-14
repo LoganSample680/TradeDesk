@@ -509,7 +509,14 @@ async function _mileWalkedDuring(startedIso,endedIso){
     for(let i=0;i<tr.length;i++){
       if(tr[i].kind!=='onFoot')continue;
       if(tr[i].ts<s-60000)continue;                 // walking BEFORE the drive is the walk to the truck
-      const until=(i+1<tr.length)?tr[i+1].ts:e;     // on foot until the next transition (or leg end)
+      // The pickup signature on the tape is walk -> STILL at the counter ->
+      // walk -> drive, so the out-of-vehicle span runs from the first walk to
+      // the next DRIVING transition, never to the next transition of any
+      // kind: measured that way, a 30-second walk each side of a 3-minute
+      // counter wait read as two ignorable blips and the errand passed as a
+      // detour (owner 2026-08-14: "didn't correct").
+      let until=e;
+      for(let j=i+1;j<tr.length;j++){if(tr[j].kind==='driving'||tr[j].kind==='cycling'){until=tr[j].ts;break;}}
       if(Math.min(until,e)-tr[i].ts>=40000)return true;
     }
     return false;
@@ -541,11 +548,16 @@ async function _mileMotionHealSweep(){
     let fixed=0;
     for(const m of cands.slice(0,20)){
       const walked=await _mileWalkedDuring(m.startedIso,m.endedIso);
+      // The verdict trail is what turns the next "didn't correct" report
+      // into a diagnosis instead of a guess: true/false/null per row, in the
+      // same diag notes the geo engine already keeps.
+      try{if(typeof _geoParkNote==='function')_geoParkNote('walk-check',String(m.id)+' '+String(walked));}catch(_e){}
       if(walked!==true)continue;
       const{miles}=await _routeDistance(m.fromCoord,m.toCoord);
       if(!(miles>0)||miles>=m.miles)continue;   // only ever reduce
       m.miles=Math.round(miles*10)/10;m.pausedLeg=true;fixed++;
     }
+    try{if(typeof _geoParkNote==='function')_geoParkNote('walk-sweep','cands='+cands.length+' fixed='+fixed);}catch(_e){}
     if(fixed){
       saveAll();
       if(document.getElementById('mil-table'))renderAllMileage();

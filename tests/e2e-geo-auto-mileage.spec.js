@@ -5445,6 +5445,12 @@ test.describe('Automatic mileage from drive legs', () => {
         try {
           withTd([{ kind: 'driving', ts: s }, { kind: 'onFoot', ts: s + 8 * 60000 }, { kind: 'driving', ts: s + 11 * 60000 }]);
           const walked = await _mileWalkedDuring(iso(s), iso(e));
+          // THE REAL PICKUP TAPE (owner 2026-08-14 "didn't correct"): walk 30s,
+          // STILL at the counter 3 minutes, walk 30s, drive. The out-of-vehicle
+          // span runs first-walk to next-DRIVING; measured to the next
+          // transition of any kind, both walks were ignorable blips.
+          withTd([{ kind: 'driving', ts: s }, { kind: 'onFoot', ts: s + 8 * 60000 }, { kind: 'still', ts: s + 8 * 60000 + 30000 }, { kind: 'onFoot', ts: s + 11 * 60000 }, { kind: 'driving', ts: s + 11 * 60000 + 30000 }]);
+          const counterStop = await _mileWalkedDuring(iso(s), iso(e));
           withTd([{ kind: 'driving', ts: s }, { kind: 'still', ts: s + 8 * 60000 }, { kind: 'driving', ts: s + 11 * 60000 }]);
           const jam = await _mileWalkedDuring(iso(s), iso(e));
           withTd([{ kind: 'onFoot', ts: s - 5 * 60000 }, { kind: 'driving', ts: s }]);
@@ -5453,13 +5459,14 @@ test.describe('Automatic mileage from drive legs', () => {
           const blip = await _mileWalkedDuring(iso(s), iso(e));
           window._geoTdPlugin = () => null;
           const noPlugin = await _mileWalkedDuring(iso(s), iso(e));
-          return { walked, jam, preWalk, blip, noPlugin };
+          return { walked, counterStop, jam, preWalk, blip, noPlugin };
         } finally { window._geoTdPlugin = realTd; }
       });
       expect(r.walked, 'a 3-minute walk mid-leg is an errand').toBe(true);
+      expect(r.counterStop, 'walk-still-walk, the real pickup tape, is an errand').toBe(true);
       expect(r.jam, 'a standstill with nobody leaving the vehicle is not').toBe(false);
       expect(r.preWalk, 'the walk TO the truck never counts').toBe(false);
-      expect(r.blip, 'a 20-second hop out is below the 40s bar').toBe(false);
+      expect(r.blip, 'a 20-second hop straight back to driving is below the 40s bar').toBe(false);
       expect(r.noPlugin, 'no signal answers null, never an answer').toBe(null);
     });
 
@@ -5535,7 +5542,7 @@ test.describe('Automatic mileage from drive legs', () => {
             // Only row A's window carries a walk.
             const isA = Math.abs((o.sinceMs || 0) - (aStart - 120000)) < 60000;
             return { available: true, transitions: isA
-              ? [{ kind: 'driving', ts: aStart }, { kind: 'onFoot', ts: aStart + 5 * 60000 }, { kind: 'driving', ts: aStart + 9 * 60000 }]
+              ? [{ kind: 'driving', ts: aStart }, { kind: 'onFoot', ts: aStart + 5 * 60000 }, { kind: 'still', ts: aStart + 5 * 60000 + 30000 }, { kind: 'onFoot', ts: aStart + 8 * 60000 }, { kind: 'driving', ts: aStart + 8 * 60000 + 30000 }]
               : [{ kind: 'driving', ts: (o.sinceMs || 0) + 130000 }] };
           } });
           window._mileMotionHealRan = false;

@@ -393,6 +393,7 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
       window._geoTdPlugin = () => ({ motionSince: async (o) => ({ available: true, transitions: [
         { kind: 'driving', ts: (o.sinceMs || 0) + 130000 },
         { kind: 'onFoot', ts: (o.sinceMs || 0) + 6 * 60000 },
+        { kind: 'still', ts: (o.sinceMs || 0) + 6 * 60000 + 30000 },
         { kind: 'driving', ts: (o.sinceMs || 0) + 8 * 60000 },
       ] }) });
     });
