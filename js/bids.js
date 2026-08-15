@@ -839,7 +839,11 @@ function openPayPanel(bidId, autoType){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const balance=getBidBalance(bid);
   const total=bid.amount||0;
-  const deposit25=Math.round(Math.min(total*.25,balance)*100)/100;
+  // The deposit THIS CONTRACT calls for, not a hardcoded 25%. A bid that set its own
+  // deposit (50% up front, a flat $2,000, a state-capped figure) must offer that number,
+  // otherwise the panel silently records the wrong amount.
+  const depositDue=Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
+  const depositPct=total>0?Math.round(depositDue/total*100):25;
   const rawPaid=getBidPaid(bidId);
   const overpaidAmt=Math.round((rawPaid-total)*100)/100;
   const _payClient=getClientById(bid.client_id);
@@ -908,8 +912,8 @@ function openPayPanel(bidId, autoType){
   // Secondary: deposit + custom as small 2-col row
   const depositSecondary=rawPaid<0.01
     ?'<button type="button" id="mpay-btn-deposit" data-ptype="deposit" onclick="selectPayType(this,'+bidId+')" style="flex:1;padding:10px 12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left">'+
-        '<div style="font-size:12px;font-weight:700">Deposit 25%</div>'+
-        '<div style="font-size:13px;font-weight:800;color:var(--blue);margin-top:2px">'+fmt(deposit25)+'</div>'+
+        '<div style="font-size:12px;font-weight:700">Deposit '+depositPct+'%</div>'+
+        '<div style="font-size:13px;font-weight:800;color:var(--blue);margin-top:2px">'+fmt(depositDue)+'</div>'+
       '</button>'
     :'';
   const customSecondary='<button type="button" data-ptype="custom" onclick="selectPayType(this,'+bidId+')" style="flex:1;padding:10px 12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left">'+
@@ -1149,17 +1153,21 @@ function reopenEstimate(bidId){
 function selectPayType(btn, bidId){
   // Deselect all, keep collect button green but dimmed
   const typeContainer=document.getElementById('mpay-type-btns');
+  // An UNSELECTED "Collect full balance" is drawn as a green outline, never a dimmed
+  // solid green. Owner report 2026-08-15: picking Deposit greyed the full-balance
+  // button to 45% and it read as disabled, so the collect card looked like it refused
+  // to take the whole payment. Outline says "not selected"; dimmed says "unavailable".
   if(typeContainer)typeContainer.querySelectorAll('button[data-ptype]').forEach(b=>{
-    if(b.dataset.ptype==='final'){b.style.background='var(--green)';b.style.border='none';b.style.color='#fff';b.style.opacity='.45';}
+    if(b.dataset.ptype==='final'){b.style.background='var(--bg2)';b.style.border='1.5px solid var(--green)';b.style.color='var(--green)';b.style.opacity='1';}
     else{b.style.borderColor='var(--border2)';b.style.background='var(--bg2)';b.style.color='var(--text)';b.style.opacity='';}
   });
   const ptype=btn.dataset.ptype;
-  if(ptype==='final'){btn.style.opacity='1';}
+  if(ptype==='final'){btn.style.background='var(--green)';btn.style.border='none';btn.style.color='#fff';btn.style.opacity='1';}
   else{btn.style.borderColor='var(--blue)';btn.style.background='var(--blue-lt)';btn.style.color='var(--text)';}
   const bid=bids.find(b=>b.id==bidId);if(!bid)return;
   const balance=getBidBalance(bid);
   const total=bid.amount||0;
-  const deposit25=Math.round(total*.25*100)/100;
+  const depositDue=Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
   const tf=document.getElementById('mpay-type');if(tf)tf.value=ptype==='custom'?'partial':ptype;
   const amtRow=document.getElementById('mpay-amount-row');
   const amtEl=document.getElementById('mpay-amount');
@@ -1167,19 +1175,23 @@ function selectPayType(btn, bidId){
   const submitBtn=document.getElementById('mpay-submit-btn');
   const dateLabel=document.getElementById('mpay-date-label');
   const mRow=document.getElementById('mpay-method-row');
+  // Deposit and full-balance PRE-FILL the amount, they never lock it. A client hands
+  // over whatever they hand over: the whole job at deposit time, half of the balance,
+  // a rounded-up cheque. A readOnly field made those real payments impossible to record
+  // from the collect card (owner report 2026-08-15). logPayment still refuses anything
+  // over the balance, so an overpayment can't sneak through.
   if(ptype==='deposit'){
-    const depositAmt=Math.min(deposit25,balance);
-    if(amtEl)amtEl.value=_moneyStr(depositAmt);
+    if(amtEl)amtEl.value=_moneyStr(depositDue);
     if(amtRow)amtRow.style.display='block';
-    if(hint)hint.textContent='25% of '+fmt(total);
-    if(amtEl){amtEl.readOnly=true;amtEl.style.background='var(--bg2)';amtEl.style.color='var(--text3)';}
+    if(hint)hint.textContent='tap to change';
+    if(amtEl){amtEl.readOnly=false;amtEl.style.background='';amtEl.style.color='';}
     if(submitBtn){submitBtn.textContent='Record payment';submitBtn.style.background='var(--green)';}
     if(dateLabel)dateLabel.textContent='Date received';
   } else if(ptype==='final'){
     if(amtEl)amtEl.value=_moneyStr(balance);
     if(amtRow)amtRow.style.display='block';
-    if(hint)hint.textContent='remaining balance';
-    if(amtEl){amtEl.readOnly=true;amtEl.style.background='var(--bg2)';amtEl.style.color='var(--text3)';}
+    if(hint)hint.textContent='tap to change';
+    if(amtEl){amtEl.readOnly=false;amtEl.style.background='';amtEl.style.color='';}
     if(submitBtn){submitBtn.textContent='Record payment';submitBtn.style.background='var(--green)';}
     if(dateLabel)dateLabel.textContent='Date received';
   } else if(ptype==='stripe'){
