@@ -1,20 +1,20 @@
 // @ts-check
 /**
- * Collect panel: the full amount is always payable.
+ * The pay panel: three ways to get paid, and the full amount is always payable.
  *
- * Owner report 2026-08-15: "collect screen in make money today doesn't allow the
- * full thing to be paid." Root cause was two-fold in js/bids.js:
- *   1. selectPayType() set readOnly=true on #mpay-amount for the deposit and
- *      final types, so a client who handed over the WHOLE job at deposit time
- *      (or a partial cheque against the balance) could not be recorded at all.
- *   2. The unselected "Collect <full balance>" button was drawn as solid green at
- *      45% opacity, which reads as a disabled control.
- * Plus a related wrong-number bug: the deposit preset was hardcoded to 25% of the
- * total, ignoring the deposit the bid actually contracted for.
+ * Owner directive 2026-08-15: "the current payment screen on collect which action and
+ * everywhere else has a ton of shit bolted on it... manual way to log money (Venmo,
+ * cash, check), a way to send them their client hub where they can pay online (middle
+ * option), and last one, tap to pay."
  *
- * These tests are the permanent guard (CLAUDE.md §13.4): they fail if the amount
- * field is ever locked again, if the full-balance button is dimmed, or if the
- * deposit preset stops honouring bid.deposit.
+ * The panel it replaced stacked a full-balance button, a tap-to-pay strip, a card-link
+ * tile, a QR tile, a deposit preset and a custom-amount button on one screen, and the
+ * amount field was readOnly for the deposit and final types, so "it only lets me hit
+ * the deposit": whatever number the app computed was the only number recordable.
+ *
+ * These tests are the permanent guard (CLAUDE.md §13.4): they fail if a fourth option
+ * gets bolted on, if the amount field is ever locked again, if picking an amount chip
+ * traps the panel on that amount, or if the deposit preset stops honouring bid.deposit.
  */
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
@@ -23,7 +23,7 @@ const BID_25 = 940100;   // no explicit deposit → falls back to 25%
 const BID_50 = 940200;   // contracted 50% deposit
 const BID_BAL = 940300;  // completed job, part paid, balance owing
 
-test.describe('Collect panel: full amount is always payable', () => {
+test.describe('Pay panel: three options, full amount always payable', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -41,68 +41,85 @@ test.describe('Collect panel: full amount is always payable', () => {
     }, [CLIENT_ID, BID_25, BID_50, BID_BAL]);
   });
 
-  test.afterEach(() => { assertNoErrors(page, 'collect panel'); });
+  test.afterEach(() => { assertNoErrors(page, 'pay panel'); });
 
-  test('deposit auto-select still shows the full balance as a live green button', async () => {
-    const r = await page.evaluate(async (bid) => {
-      openPayPanel(bid, 'deposit');
-      await new Promise(res => setTimeout(res, 150));
-      const cb = document.getElementById('mpay-btn-final');
-      const st = getComputedStyle(cb);
+  test('exactly three ways to pay, in order: manual, their link, tap to pay', async () => {
+    const r = await page.evaluate((bid) => {
+      openPayPanel(bid);
+      const opts = [...document.querySelectorAll('#mpay-type-btns button')]
+        .map(b => ({ m: b.dataset.pmethod || null, t: b.textContent.replace(/\s+/g, ' ').trim() }));
+      return { count: opts.length, opts };
+    }, BID_25);
+    expect(r.count).toBe(3);
+    expect(r.opts[0].m).toBe('manual');
+    expect(r.opts[0].t).toContain('Log a payment');
+    expect(r.opts[0].t).toMatch(/Cash, check, Venmo/);
+    expect(r.opts[1].m).toBe('stripe');
+    expect(r.opts[1].t).toContain('Send their payment link');
+    expect(r.opts[2].m).toBe(null);          // tap to pay is not selectable yet
+    expect(r.opts[2].t).toContain('Tap to pay');
+  });
+
+  test('manual is pre-selected with the balance filled in and editable', async () => {
+    const r = await page.evaluate((bid) => {
+      openPayPanel(bid);
+      const amt = document.getElementById('mpay-amount');
       return {
-        exists: !!cb,
-        text: cb.textContent.replace(/\s+/g, ' ').trim(),
-        opacity: parseFloat(st.opacity),
-        selectedType: document.getElementById('mpay-type').value,
+        detailsShown: document.getElementById('mpay-detail-fields').style.display !== 'none',
+        value: amt.value,
+        readOnly: amt.readOnly,
+        type: document.getElementById('mpay-type').value,
+        submit: document.getElementById('mpay-submit-btn').textContent,
       };
     }, BID_25);
-    expect(r.exists).toBe(true);
-    // The full contract value, offered even though deposit is the selected type
-    expect(r.text).toContain('$5,000.00');
-    // Never dimmed: a 45%-opacity green button reads as disabled
-    expect(r.opacity).toBeGreaterThanOrEqual(0.99);
-    expect(r.selectedType).toBe('deposit');
-  });
-
-  test('deposit amount is editable, not locked', async () => {
-    const r = await page.evaluate(async (bid) => {
-      openPayPanel(bid, 'deposit');
-      await new Promise(res => setTimeout(res, 150));
-      const amt = document.getElementById('mpay-amount');
-      return { readOnly: amt.readOnly, value: amt.value };
-    }, BID_25);
+    expect(r.detailsShown).toBe(true);
+    expect(r.value).toBe('5,000.00');
     expect(r.readOnly).toBe(false);
-    expect(r.value).toBe('1,250.00'); // 25% fallback when the bid set no deposit
+    expect(r.type).toBe('final');
+    expect(r.submit).toBe('Record payment');
   });
 
-  test('deposit preset honours the deposit the bid contracted for', async () => {
-    const r = await page.evaluate(async (bid) => {
+  test('a deposit entry point fills the deposit but never locks the panel to it', async () => {
+    const r = await page.evaluate((bid) => {
       openPayPanel(bid, 'deposit');
-      await new Promise(res => setTimeout(res, 150));
-      const secondary = document.getElementById('mpay-btn-deposit');
+      const before = document.getElementById('mpay-amount').value;
+      // The client handed over the whole job: one tap on the balance chip
+      document.getElementById('mpay-btn-final').click();
+      return {
+        before,
+        after: document.getElementById('mpay-amount').value,
+        readOnly: document.getElementById('mpay-amount').readOnly,
+        type: document.getElementById('mpay-type').value,
+      };
+    }, BID_25);
+    expect(r.before).toBe('1,250.00');   // 25% fallback when the bid set no deposit
+    expect(r.after).toBe('5,000.00');
+    expect(r.readOnly).toBe(false);
+    expect(r.type).toBe('final');
+  });
+
+  test('the deposit chip honours the deposit the bid contracted for', async () => {
+    const r = await page.evaluate((bid) => {
+      openPayPanel(bid, 'deposit');
+      const chip = document.getElementById('mpay-btn-deposit');
       return {
         amount: document.getElementById('mpay-amount').value,
-        label: secondary ? secondary.textContent.replace(/\s+/g, ' ').trim() : null,
+        chip: chip ? chip.textContent.replace(/\s+/g, ' ').trim() : null,
       };
     }, BID_50);
-    expect(r.amount).toBe('4,000.00');       // not 25% ($2,000)
-    expect(r.label).toContain('Deposit 50%');
+    expect(r.amount).toBe('4,000.00');      // not 25% ($2,000)
+    expect(r.chip).toBe('Deposit $4,000.00');
   });
 
-  test('the whole job can be collected from the deposit card', async () => {
-    const r = await page.evaluate(async (bid) => {
+  test('the whole job can be collected from a deposit entry point', async () => {
+    const r = await page.evaluate((bid) => {
       openPayPanel(bid, 'deposit');
-      await new Promise(res => setTimeout(res, 150));
-      // The contractor was handed the WHOLE job, so they tap the full-balance button
       document.getElementById('mpay-btn-final').click();
-      const amt = document.getElementById('mpay-amount');
       document.getElementById('mpay-date').value = todayKey();
       logPayment();
       const err = document.getElementById('mpay-err');
       return {
-        typed: amt ? amt.value : null,
         errShown: err ? err.style.display !== 'none' : false,
-        errText: err ? err.textContent : '',
         paid: getBidPaid(bid),
         balance: getBidBalance(bids.find(b => b.id === bid)),
       };
@@ -113,10 +130,8 @@ test.describe('Collect panel: full amount is always payable', () => {
   });
 
   test('a typed partial amount against the balance is recorded', async () => {
-    const r = await page.evaluate(async (bid) => {
+    const r = await page.evaluate((bid) => {
       openPayPanel(bid);
-      await new Promise(res => setTimeout(res, 150));
-      document.getElementById('mpay-btn-final').click();
       const amt = document.getElementById('mpay-amount');
       amt.value = '1,000.00';   // client paid part of the $3,750 balance
       document.getElementById('mpay-date').value = todayKey();
@@ -134,11 +149,9 @@ test.describe('Collect panel: full amount is always payable', () => {
   });
 
   test('editable field still refuses more than the balance', async () => {
-    const r = await page.evaluate(async (bid) => {
+    const r = await page.evaluate((bid) => {
       const before = payments.filter(p => p.bid_id === bid).length;
       openPayPanel(bid);
-      await new Promise(res => setTimeout(res, 150));
-      document.getElementById('mpay-btn-final').click();
       document.getElementById('mpay-amount').value = '99,999.00';
       document.getElementById('mpay-date').value = todayKey();
       logPayment();
@@ -150,5 +163,52 @@ test.describe('Collect panel: full amount is always payable', () => {
     expect(r.after).toBe(r.before);
     expect(r.errShown).toBe(true);
     expect(r.errText).toContain('exceeds balance');
+  });
+
+  test('the payment-link option swaps the form for the hub explainer', async () => {
+    const r = await page.evaluate((bid) => {
+      openPayPanel(bid);
+      document.querySelector('#mpay-type-btns button[data-pmethod="stripe"]').click();
+      const out = {
+        detailsHidden: document.getElementById('mpay-detail-fields').style.display === 'none',
+        hubShown: document.getElementById('mpay-hub-fields').style.display !== 'none',
+        type: document.getElementById('mpay-type').value,
+        submit: document.getElementById('mpay-submit-btn').textContent,
+      };
+      // ...and going back to manual restores the money form
+      document.querySelector('#mpay-type-btns button[data-pmethod="manual"]').click();
+      out.backToManual = document.getElementById('mpay-detail-fields').style.display !== 'none'
+        && document.getElementById('mpay-hub-fields').style.display === 'none';
+      closePayPanel();
+      return out;
+    }, BID_BAL);
+    expect(r.detailsHidden).toBe(true);
+    expect(r.hubShown).toBe(true);
+    expect(r.type).toBe('stripe');
+    expect(r.submit).toBe('Send the link');
+    expect(r.backToManual).toBe(true);
+  });
+
+  test('refunds stay tucked behind one text link, not bolted onto the panel', async () => {
+    const r = await page.evaluate((bid) => {
+      openPayPanel(bid);
+      const adj = document.getElementById('_mpay-adj-btns');
+      const hiddenAtRest = adj.style.display === 'none';
+      _mpayToggleAdj();
+      const shown = adj.style.display !== 'none';
+      const refundBtn = adj.querySelector('[data-pmethod="refund"]');
+      refundBtn.click();
+      const out = {
+        hiddenAtRest, shown,
+        type: document.getElementById('mpay-type').value,
+        submit: document.getElementById('mpay-submit-btn').textContent,
+      };
+      closePayPanel();
+      return out;
+    }, BID_BAL);
+    expect(r.hiddenAtRest).toBe(true);
+    expect(r.shown).toBe(true);
+    expect(r.type).toBe('refund');
+    expect(r.submit).toBe('Issue refund');
   });
 });
