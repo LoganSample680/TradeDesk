@@ -2004,7 +2004,10 @@ function getDashGreeting(){
   const hr=new Date().getHours();
   const time=hr<12?'Good Morning':hr<17?'Good Afternoon':'Good Evening';
   const name=getUserName()||'';
-  return name?time+', '+name.split(' ')[0]+'!':time+'!';
+  // Friday-evening nod (js/milestones.js): one changed word when the week is
+  // genuinely finished, never a popup.
+  const egg=(typeof _eggGreetingSuffix==='function')?_eggGreetingSuffix():'';
+  return (name?time+', '+name.split(' ')[0]+'!':time+'!')+egg;
 }
 
 
@@ -2035,6 +2038,8 @@ function runSearch(q){
   const el=document.getElementById('search-results');if(!el)return;
   q=(q||'').toLowerCase().trim();
   if(!q){el.innerHTML='<div class="search-empty">Start typing to search...</div>';return;}
+  const _rival=(typeof _eggRivalResult==='function')?_eggRivalResult(q):'';
+  if(_rival){el.innerHTML=_rival;return;}
   const results=[];
 
   // Clients

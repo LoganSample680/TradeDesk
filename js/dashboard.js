@@ -579,6 +579,10 @@ function renderDash(){
   const _btnPStyle='font-size:11px';
   const _xStyle='font-size:11px;color:var(--text3);padding:6px 8px;background:var(--bg);border-color:var(--border2)';
   // Estimates in progress + sent proposals now live in renderTodayFeed()
+  // Milestones ride the render that already computed everything they read
+  // (js/milestones.js): dashboard only, once ever per milestone, never over
+  // a modal or mid-boot.
+  try{if(typeof checkMilestones==='function')setTimeout(checkMilestones,900);}catch(_e){}
   renderGoal();
   checkGoalPrompt();
   renderLeadSources();
