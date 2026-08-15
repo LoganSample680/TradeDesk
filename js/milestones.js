@@ -160,20 +160,91 @@ function _msClose(){
 // Rules: never in the way, never destructive, always reversible, and never
 // fires while the contractor is doing something that matters.
 
-// 1. BLUEPRINT MODE. Seven taps on the wrench logo. The app goes to
-// white-on-blue drafting paper until you tap it off again. It is the one
-// theme a trade app has earned the right to have.
-function _eggBlueprintStyles(){
-  if(document.getElementById('_egg-bp-style'))return;
-  const s=document.createElement('style');s.id='_egg-bp-style';
-  s.textContent=
-    'body.td-blueprint{background:#0E3A6B!important}'+
-    'body.td-blueprint .pg,body.td-blueprint .card,body.td-blueprint .td-dw{'+
-      'background-image:linear-gradient(rgba(255,255,255,.07) 1px,transparent 1px),'+
-      'linear-gradient(90deg,rgba(255,255,255,.07) 1px,transparent 1px);background-size:22px 22px}'+
-    '@keyframes eggSpin{to{transform:rotate(360deg)}}'+
-    '.egg-spin{animation:eggSpin .7s cubic-bezier(.22,1,.36,1)}';
-  document.head.appendChild(s);
+// 1. THE NUMBERS. Seven taps on the logo opens the business's own vital
+// statistics (owner 2026-08-15: "could bring up the cool facts about their
+// business"). Better than a costume: these are the figures a contractor
+// never sees assembled anywhere, and the ones worth saying out loud to a
+// client standing in their driveway. Everything is computed from data
+// already in memory, nothing is stored, and it closes on a tap.
+function _eggStatsHtml(){
+  const st=_msStats();
+  const num=v=>typeof v==='number'&&isFinite(v)?v:0;
+  let firstDay=null,clientCount=0,repeatClients=0,biggest=0,states=new Set(),crew=0,photos=0,onTime=0;
+  try{
+    const allDates=[]
+      .concat((typeof jobs!=='undefined'?jobs:[]).map(j=>j&&j.start))
+      .concat((typeof bids!=='undefined'?bids:[]).map(b=>b&&b.date))
+      .concat((typeof payments!=='undefined'?payments:[]).map(p=>p&&p.date))
+      .filter(d=>typeof d==='string'&&/^\d{4}-\d{2}-\d{2}/.test(d)).sort();
+    firstDay=allDates[0]||null;
+    const cl=(typeof clients!=='undefined'?clients:[]);
+    clientCount=cl.length;
+    // A repeat customer is the single best health signal a trade business
+    // has, and nothing in the app surfaces it today.
+    const perClient={};
+    (typeof jobs!=='undefined'?jobs:[]).forEach(j=>{if(j&&j.client_id!=null)perClient[j.client_id]=(perClient[j.client_id]||0)+1;});
+    repeatClients=Object.values(perClient).filter(n=>n>1).length;
+    biggest=(typeof bids!=='undefined'?bids:[]).filter(b=>b&&b.status==='Closed Won')
+      .reduce((mx,b)=>Math.max(mx,num(b.total)),0);
+    cl.forEach(c=>{const m=String(c&&c.addr||'').match(/,\s*([A-Z]{2})\b/);if(m)states.add(m[1]);});
+    crew=(typeof _teamMembers!=='undefined'&&Array.isArray(_teamMembers))?_teamMembers.length:0;
+    photos=(typeof photos!=='undefined'&&Array.isArray(photos))?photos.length:0;
+  }catch(_e){}
+  const days=firstDay?Math.max(1,Math.round((Date.now()-Date.parse(firstDay))/86400000)):0;
+  const years=days?(days/365):0;
+  const perYear=years>=0.25?Math.round(st.jobs/Math.max(years,0.25)):0;
+  const row=(label,value,note)=>
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.08)">'+
+      '<div><div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.92)">'+label+'</div>'+
+        (note?'<div style="font-size:11px;color:rgba(255,255,255,.45);margin-top:1px">'+note+'</div>':'')+'</div>'+
+      '<div style="font-size:17px;font-weight:900;color:#F5C451;font-variant-numeric:tabular-nums;white-space:nowrap;margin-left:14px">'+value+'</div>'+
+    '</div>';
+  const rows=[
+    days?row('In business','<span class="egg-n" data-to="'+days+'">0</span> days',firstDay?('first record '+firstDay):''):'',
+    row('Revenue tracked',fmt(st.revenue),'every dollar through the app'),
+    row('Jobs completed','<span class="egg-n" data-to="'+st.jobs+'">0</span>',perYear?('about '+perYear+' a year'):''),
+    clientCount?row('Clients','<span class="egg-n" data-to="'+clientCount+'">0</span>',repeatClients?(repeatClients+' came back for more'):''):'',
+    st.miles?row('Business miles','<span class="egg-n" data-to="'+Math.round(st.miles)+'">0</span>','logged automatically'):'',
+    st.signed?row('Proposals signed','<span class="egg-n" data-to="'+st.signed+'">0</span>','people saying yes'):'',
+    biggest?row('Biggest job',fmt(biggest),'your ceiling so far'):'',
+    states.size>1?row('States worked','<span class="egg-n" data-to="'+states.size+'">0</span>',[...states].join(', ')):'',
+    crew?row('Crew','<span class="egg-n" data-to="'+crew+'">0</span>','people who work with you'):'',
+  ].filter(Boolean).join('');
+  return '<div style="position:relative;background:linear-gradient(150deg,#132542,#0C1729);border:1px solid rgba(245,196,81,.3);border-radius:20px;padding:24px 22px 22px;max-width:420px;width:100%;max-height:88vh;overflow-y:auto">'+
+    '<div style="font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#F5C451">Your numbers</div>'+
+    '<div style="font-size:20px;font-weight:900;color:#fff;margin:3px 0 4px;letter-spacing:-.4px">'+escHtml((typeof S!=='undefined'&&S.bname)||'Your business')+'</div>'+
+    '<div style="font-size:11px;color:rgba(255,255,255,.45);margin-bottom:8px">Nobody else is keeping score. TradeDesk is.</div>'+
+    rows+
+    '<button class="btn btn-p" onclick="_eggCloseStats()" style="width:100%;padding:12px;font-size:14px;font-weight:800;margin-top:18px">Close</button>'+
+  '</div>';
+}
+function _eggCloseStats(){try{document.getElementById('egg-stats')?.remove();}catch(_e){}}
+function _eggShowStats(){
+  _msStyles();
+  if(document.getElementById('egg-stats'))return;
+  const ov=document.createElement('div');
+  ov.id='egg-stats';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(8,14,26,.8);display:flex;align-items:center;justify-content:center;padding:20px;animation:fadein .2s';
+  ov.innerHTML='<div class="ms-box">'+_eggStatsHtml()+'</div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)_eggCloseStats();});
+  // The counters tally up, same reasoning as the verdict screen: a number
+  // that counts reads as measured, a number that appears reads as printed.
+  const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+  ov.querySelectorAll('.egg-n').forEach((el,i)=>{
+    const to=parseInt(el.dataset.to,10)||0;
+    if(reduce||to<=0){el.textContent=to.toLocaleString();return;}
+    setTimeout(()=>{
+      const t0=performance.now(),dur=700;
+      const tick=(now)=>{
+        const p=Math.min(1,(now-t0)/dur),e2=1-Math.pow(1-p,3);
+        el.textContent=Math.round(to*e2).toLocaleString();
+        if(p<1)requestAnimationFrame(tick);else el.textContent=to.toLocaleString();
+      };
+      requestAnimationFrame(tick);
+    },90+i*70);
+  });
+  try{if(typeof _hapticSuccess==='function')_hapticSuccess();}catch(_e){}
 }
 function _eggLogoTap(){
   try{
@@ -182,12 +253,7 @@ function _eggLogoTap(){
     window._eggTapT=setTimeout(()=>{window._eggTaps=0;},1600);
     if(window._eggTaps<7)return;
     window._eggTaps=0;
-    _eggBlueprintStyles();
-    const on=document.body.classList.toggle('td-blueprint');
-    const logo=document.querySelector('.tbar-logo,#dash-logo,.brand-logo');
-    if(logo){logo.classList.remove('egg-spin');void logo.offsetWidth;logo.classList.add('egg-spin');}
-    if(typeof showToast==='function')showToast(on?'Blueprint mode. Tap the logo seven times to go back.':'Back to normal.','📐');
-    try{S.blueprintMode=on;S.settingsTs=Date.now();if(typeof saveAll==='function')saveAll();}catch(_e){}
+    _eggShowStats();
   }catch(_e){}
 }
 
@@ -216,13 +282,3 @@ function _eggGreetingSuffix(){
   }catch(_e){return '';}
 }
 
-// Blueprint mode survives a reload: it is a preference once chosen, not a
-// per-session gag, and an egg that vanishes on refresh feels broken.
-try{
-  if(typeof S!=='undefined'&&S&&S.blueprintMode){_eggBlueprintStyles();document.body.classList.add('td-blueprint');}
-  else{
-    document.addEventListener('DOMContentLoaded',()=>{
-      try{if(S&&S.blueprintMode){_eggBlueprintStyles();document.body.classList.add('td-blueprint');}}catch(_e){}
-    });
-  }
-}catch(_e){}
