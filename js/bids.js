@@ -877,9 +877,17 @@ function openPayPanel(bidId, autoType){
   // the only one that actually recorded anything. Now: log money you already have,
   // send them their hub to pay online, or tap to pay. Amount presets live inside the
   // manual option where they belong, and refunds stay tucked behind one text link.
-  const _opt=(pm,icon,title,sub,extra)=>
-    '<button type="button" data-pmethod="'+pm+'" onclick="selectPayType(this,'+bidId+')"'+
-      ' style="width:100%;padding:14px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:12px;text-align:left;box-sizing:border-box">'+
+  // BOTH card routes are gated on Stripe (owner rule 2026-08-15): the hub charges the
+  // client's card through the connected account, and tap-to-pay will run on the same
+  // account, so neither can do anything until Stripe is connected. They render greyed
+  // and locked until then, never hidden, the contractor should see what they're missing.
+  // Greyed is not DEAD (§13.1): tapping the locked hub option walks them to Connect.
+  const stripeOn=!!(_stripeConnectStatus&&_stripeConnectStatus.charges_enabled);
+  const _opt=(pm,icon,title,sub,extra,opts)=>{
+    const o=opts||{};
+    return '<button type="button" '+(o.locked?'data-plocked="'+pm+'"':'data-pmethod="'+pm+'"')+
+      ' onclick="'+(o.onclick||('selectPayType(this,'+bidId+')'))+'"'+
+      ' style="width:100%;padding:14px;border-radius:var(--r);border:1.5px '+(o.locked?'dashed':'solid')+' var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:12px;text-align:left;box-sizing:border-box'+(o.locked?';opacity:.55':'')+'">'+
       '<span style="flex-shrink:0;width:34px;height:34px;border-radius:10px;background:var(--bg);display:flex;align-items:center;justify-content:center">'+icon+'</span>'+
       '<span style="flex:1;min-width:0">'+
         '<span style="display:block;font-size:14px;font-weight:800">'+title+'</span>'+
@@ -887,23 +895,22 @@ function openPayPanel(bidId, autoType){
       '</span>'+
       (extra||'<span style="flex-shrink:0;font-size:18px;font-weight:900;color:var(--text3)">&#8250;</span>')+
     '</button>';
-  const soonTag='<span style="flex-shrink:0;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:3px 7px;border-radius:10px;background:var(--border2);color:var(--text3)">Coming soon</span>';
-  const hubSub=_stripeConnectStatus?.charges_enabled
-    ?'They pay by card in their hub'
-    :'Connect Stripe in Settings to accept cards';
+  };
+  const _tag=t=>'<span style="flex-shrink:0;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:3px 7px;border-radius:10px;background:var(--border2);color:var(--text3)">'+t+'</span>';
   const manualOpt=_opt('manual',svgIcon('💵',{size:18}),'Log a payment','Cash, check, Venmo, Zelle');
-  const hubOpt=balance>0.50?_opt('stripe',svgIcon('🔗',{size:18}),'Send their payment link',hubSub):'';
+  const hubOpt=balance>0.50
+    ?(stripeOn
+      ?_opt('stripe',svgIcon('🔗',{size:18}),'Send payment link','They pay by card in their hub')
+      :_opt('stripe',svgIcon('🔗',{size:18}),'Send payment link','Connect Stripe to take cards',_tag('Locked'),{locked:true,onclick:'_mpayNeedStripe()'}))
+    :'';
   // Tap their card in person, the reader-driven flow ships with the native app
   // (owner decision 2026-07-10). Reserving the slot now so the native build only
   // has to swap this handler for the real one, not design new pay-panel UI.
   const tapOpt=balance>0.50
-    ?'<button type="button" onclick="_tapToPaySoon()" style="width:100%;padding:14px;border-radius:var(--r);border:1.5px dashed var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:12px;text-align:left;box-sizing:border-box;opacity:.8">'+
-        '<span style="flex-shrink:0;width:34px;height:34px;border-radius:10px;background:var(--bg);display:flex;align-items:center;justify-content:center">'+svgIcon('📶',{size:18})+'</span>'+
-        '<span style="flex:1;min-width:0">'+
-          '<span style="display:block;font-size:14px;font-weight:800">Tap to pay</span>'+
-          '<span style="display:block;font-size:11.5px;color:var(--text3);margin-top:1px">Their card, your phone</span>'+
-        '</span>'+soonTag+
-      '</button>'
+    ?_opt('tap',svgIcon('📶',{size:18}),'Tap to pay',
+       stripeOn?'Their card, your phone':'Connect Stripe to take cards',
+       _tag(stripeOn?'Coming soon':'Locked'),
+       {locked:true,onclick:stripeOn?'_tapToPaySoon()':'_mpayNeedStripe()'})
     :'';
   // Amount presets: the deposit this contract calls for and the whole balance. They
   // only fill the field, they never lock it.
@@ -992,6 +999,18 @@ function autoFillPayAmount(){
 // Reader-driven tap-to-pay ships with the native app (owner decision 2026-07-10),
 // native NFC requires a native shell, not buildable as a web app. This keeps the
 // pay-panel slot reserved now so native only has to swap this handler.
+// The locked card routes are not dead buttons: tapping one says why it's locked and
+// walks straight to the Connect screen, which is the single thing standing between the
+// contractor and both of them.
+function _mpayNeedStripe(){
+  zConfirm('Card payments run through Stripe, so the client hub and tap to pay stay locked until your account is connected. It takes a couple of minutes.',
+    ()=>{
+      closePayPanel();
+      goPg('pg-settings');
+      setTimeout(()=>{if(typeof _openStripeConnect==='function')_openStripeConnect();},250);
+    },
+    {title:'Connect Stripe first',yes:'Connect Stripe',no:'Not now',danger:false});
+}
 function _tapToPaySoon(){
   zAlert('Tap to pay is coming with the TradeDesk app. For now, tap Collect for cash/check, or send the client the QR code to pay by card.',{title:'Coming soon'});
 }

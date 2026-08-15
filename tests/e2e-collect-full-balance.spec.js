@@ -45,9 +45,11 @@ test.describe('Pay panel: three options, full amount always payable', () => {
 
   test('exactly three ways to pay, in order: manual, their link, tap to pay', async () => {
     const r = await page.evaluate((bid) => {
+      window._stripeConnectStatus = { charges_enabled: true };
       openPayPanel(bid);
       const opts = [...document.querySelectorAll('#mpay-type-btns button')]
         .map(b => ({ m: b.dataset.pmethod || null, t: b.textContent.replace(/\s+/g, ' ').trim() }));
+      window._stripeConnectStatus = null;
       return { count: opts.length, opts };
     }, BID_25);
     expect(r.count).toBe(3);
@@ -55,9 +57,80 @@ test.describe('Pay panel: three options, full amount always payable', () => {
     expect(r.opts[0].t).toContain('Log a payment');
     expect(r.opts[0].t).toMatch(/Cash, check, Venmo/);
     expect(r.opts[1].m).toBe('stripe');
-    expect(r.opts[1].t).toContain('Send their payment link');
+    expect(r.opts[1].t).toContain('Send payment link');
     expect(r.opts[2].m).toBe(null);          // tap to pay is not selectable yet
     expect(r.opts[2].t).toContain('Tap to pay');
+  });
+
+  // Owner rule 2026-08-15: "paying through client hub via card and tap to pay should
+  // be grey until stripe is connected." Both charge through the connected account, so
+  // neither can work without it. Greyed and locked, never hidden, and never dead.
+  test('both card routes are locked and greyed until Stripe is connected', async () => {
+    const r = await page.evaluate((bid) => {
+      window._stripeConnectStatus = null;
+      openPayPanel(bid);
+      const btns = [...document.querySelectorAll('#mpay-type-btns button')];
+      const hub = btns.find(b => /payment link/i.test(b.textContent));
+      const tap = btns.find(b => /Tap to pay/i.test(b.textContent));
+      const out = {
+        // Locked: not selectable as a method, so selectPayType can never land on it
+        hubSelectable: !!hub.dataset.pmethod,
+        tapSelectable: !!tap.dataset.pmethod,
+        hubLocked: hub.dataset.plocked || null,
+        tapLocked: tap.dataset.plocked || null,
+        hubOpacity: parseFloat(getComputedStyle(hub).opacity),
+        tapOpacity: parseFloat(getComputedStyle(tap).opacity),
+        hubText: hub.textContent.replace(/\s+/g, ' ').trim(),
+        tapText: tap.textContent.replace(/\s+/g, ' ').trim(),
+        // Not dead: both route to the one thing that unlocks them
+        hubClick: hub.getAttribute('onclick'),
+        tapClick: tap.getAttribute('onclick'),
+      };
+      // Manual is unaffected by the gate, cash never needed Stripe
+      out.manualSelectable = !!btns.find(b => b.dataset.pmethod === 'manual');
+      out.manualOpacity = parseFloat(getComputedStyle(btns[0]).opacity);
+      closePayPanel();
+      return out;
+    }, BID_25);
+    expect(r.hubSelectable).toBe(false);
+    expect(r.tapSelectable).toBe(false);
+    expect(r.hubLocked).toBe('stripe');
+    expect(r.tapLocked).toBe('tap');
+    expect(r.hubOpacity).toBeLessThan(0.7);
+    expect(r.tapOpacity).toBeLessThan(0.7);
+    expect(r.hubText.toLowerCase()).toContain('locked');
+    expect(r.tapText.toLowerCase()).toContain('locked');
+    expect(r.hubText).toContain('Connect Stripe');
+    expect(r.hubClick).toBe('_mpayNeedStripe()');
+    expect(r.tapClick).toBe('_mpayNeedStripe()');
+    expect(r.manualSelectable).toBe(true);
+    expect(r.manualOpacity).toBeGreaterThanOrEqual(0.99);
+  });
+
+  test('connecting Stripe unlocks the hub route and leaves tap to pay coming soon', async () => {
+    const r = await page.evaluate((bid) => {
+      window._stripeConnectStatus = { charges_enabled: true };
+      openPayPanel(bid);
+      const btns = [...document.querySelectorAll('#mpay-type-btns button')];
+      const hub = btns.find(b => /payment link/i.test(b.textContent));
+      const tap = btns.find(b => /Tap to pay/i.test(b.textContent));
+      const out = {
+        hubSelectable: !!hub.dataset.pmethod,
+        hubOpacity: parseFloat(getComputedStyle(hub).opacity),
+        hubText: hub.textContent.replace(/\s+/g, ' ').trim(),
+        tapText: tap.textContent.replace(/\s+/g, ' ').trim(),
+        tapClick: tap.getAttribute('onclick'),
+      };
+      closePayPanel();
+      window._stripeConnectStatus = null;
+      return out;
+    }, BID_25);
+    expect(r.hubSelectable).toBe(true);
+    expect(r.hubOpacity).toBeGreaterThanOrEqual(0.99);
+    expect(r.hubText).toContain('They pay by card in their hub');
+    expect(r.hubText.toLowerCase()).not.toContain('locked');
+    expect(r.tapText.toLowerCase()).toContain('coming soon');   // Stripe is not its only blocker
+    expect(r.tapClick).toBe('_tapToPaySoon()');
   });
 
   test('manual is pre-selected with the balance filled in and editable', async () => {
@@ -167,6 +240,7 @@ test.describe('Pay panel: three options, full amount always payable', () => {
 
   test('the payment-link option swaps the form for the hub explainer', async () => {
     const r = await page.evaluate((bid) => {
+      window._stripeConnectStatus = { charges_enabled: true };
       openPayPanel(bid);
       document.querySelector('#mpay-type-btns button[data-pmethod="stripe"]').click();
       const out = {
@@ -180,6 +254,7 @@ test.describe('Pay panel: three options, full amount always payable', () => {
       out.backToManual = document.getElementById('mpay-detail-fields').style.display !== 'none'
         && document.getElementById('mpay-hub-fields').style.display === 'none';
       closePayPanel();
+      window._stripeConnectStatus = null;
       return out;
     }, BID_BAL);
     expect(r.detailsHidden).toBe(true);

@@ -1878,27 +1878,48 @@ test.describe('bids.js: exhaustive coverage', () => {
     });
 
     // Tap-to-pay slot reserved for the native app (owner decision 2026-07-10), must
-    // not be a dead button (CLAUDE.md §14.1): tapping it shows an honest "coming
-    // soon" message pointing to what works today, not a silent no-op.
-    test('Tap to pay button is present, not a dead button, and does not claim to charge a card', async () => {
+    // not be a dead button (CLAUDE.md §14.1): tapping it shows an honest message
+    // pointing to what works today, not a silent no-op.
+    //
+    // Behaviour change 2026-08-15 (owner rule): tap to pay is now GATED on Stripe,
+    // same as the client hub, because both charge the card through the connected
+    // account. Previously the button always said "coming soon" and always called
+    // _tapToPaySoon(). Now that is the CONNECTED case; with Stripe off it reads
+    // "Locked" and routes to Connect. Neither state is a dead button, which is what
+    // this test has always existed to prove, so both states are asserted.
+    test('Tap to pay is present in both Stripe states and is never a dead button', async () => {
       const r = await page.evaluate(() => {
-        document.querySelectorAll('.pay-modal-overlay,.zmodal-overlay').forEach(e => e.remove());
-        try { openPayPanel(77702, 'final'); } catch (_) {}
-        const btn = [...document.querySelectorAll('.pay-modal-overlay button')]
-          .find(b => b.getAttribute('onclick') === '_tapToPaySoon()');
-        const foundBtn = !!btn;
-        const label = btn ? btn.textContent : '';
-        btn && btn.click();
-        const modal = document.querySelector('.zmodal-overlay .zmodal-msg');
-        const modalText = modal ? modal.textContent : '';
-        document.querySelectorAll('.pay-modal-overlay,.zmodal-overlay').forEach(e => e.remove());
-        return { foundBtn, label, modalText };
+        const orig = window._stripeConnectStatus;
+        const probe = (connected) => {
+          window._stripeConnectStatus = connected ? { charges_enabled: true } : null;
+          document.querySelectorAll('.pay-modal-overlay,.zmodal-overlay').forEach(e => e.remove());
+          try { openPayPanel(77702, 'final'); } catch (_) {}
+          const btn = [...document.querySelectorAll('.pay-modal-overlay button')]
+            .find(b => /Tap to pay/.test(b.textContent));
+          const out = { found: !!btn, label: btn ? btn.textContent : '', onclick: btn ? btn.getAttribute('onclick') : '' };
+          btn && btn.click();
+          const modal = document.querySelector('.zmodal-overlay .zmodal-msg');
+          out.modalText = modal ? modal.textContent : '';
+          document.querySelectorAll('.pay-modal-overlay,.zmodal-overlay').forEach(e => e.remove());
+          return out;
+        };
+        const on = probe(true), off = probe(false);
+        window._stripeConnectStatus = orig;
+        return { on, off };
       });
-      expect(r.foundBtn, 'Tap to pay button must be present in the pay panel').toBe(true);
-      expect(r.label).toContain('Tap to pay');
-      expect(r.label.toLowerCase()).toContain('coming soon');
-      expect(r.modalText, 'tapping it must show a real message, not silently no-op').toContain('coming');
-      expect(r.modalText.toLowerCase()).not.toContain('charged');
+      // Stripe connected: honest "coming soon", never a claim that a card was charged
+      expect(r.on.found, 'Tap to pay must be present in the pay panel').toBe(true);
+      expect(r.on.label).toContain('Tap to pay');
+      expect(r.on.label.toLowerCase()).toContain('coming soon');
+      expect(r.on.onclick).toBe('_tapToPaySoon()');
+      expect(r.on.modalText, 'tapping it must show a real message, not silently no-op').toContain('coming');
+      expect(r.on.modalText.toLowerCase()).not.toContain('charged');
+      // Stripe off: locked, and tapping walks to Connect rather than doing nothing
+      expect(r.off.found, 'Tap to pay must still be visible when Stripe is off').toBe(true);
+      expect(r.off.label.toLowerCase()).toContain('locked');
+      expect(r.off.onclick).toBe('_mpayNeedStripe()');
+      expect(r.off.modalText.toLowerCase()).toContain('stripe');
+      expect(r.off.modalText.toLowerCase()).not.toContain('charged');
     });
 
     test('sets activePayBidId', async () => {
