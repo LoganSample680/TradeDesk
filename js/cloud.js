@@ -568,7 +568,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.14.26.9';
+const APP_VERSION='08.14.26.10';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1544,7 +1544,18 @@ function _armBootCascade(){
   try{
     const root=d.querySelector('#dash-widget-root');
     const tbar=d.querySelector('.tbar');
-    const base=60,step=95;
+    // The waterfall now SPANS the same 1.8s beat the shimmer holds for
+    // (owner 2026-08-15: "match the waterfall drop css to 1.8 seconds"), so
+    // the boot reads as one continuous piece of choreography instead of a
+    // long wait followed by a quick flick. The stagger is COMPUTED from the
+    // card count rather than fixed, because a fixed step makes the span
+    // depend on how many widgets happen to be visible: four cards would
+    // finish in half the time seven do. Clamped so a very short dashboard
+    // does not crawl and a very long one does not machine-gun.
+    const base=60,_travel=820,_target=1800;
+    const _n=[...(d.querySelector('#dash-widget-root')||{children:[]}).children]
+      .filter(el=>el.nodeType===1&&el.classList.contains('td-dw')&&el.offsetHeight>2).length;
+    const step=Math.round(Math.min(240,Math.max(90,(_target-base-_travel)/Math.max(1,_n-1))));
     if(tbar)tbar.style.animationDelay='0ms';
     if(root){
       let i=0;
@@ -1558,7 +1569,7 @@ function _armBootCascade(){
     }
   }catch(_e){}
   d.classList.add('boot-cascade');
-  const total=60+Math.max(1,count)*95+720+260;    // last card start + travel + slack
+  const total=60+Math.max(1,count)*240+820+260;   // last card start + travel + slack, at the widest stagger
   setTimeout(()=>{try{
     d.classList.remove('boot-cascade');
     d.querySelectorAll('.tbar,#dash-widget-root>.td-dw').forEach(el=>{el.style.animationDelay='';});
