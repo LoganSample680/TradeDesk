@@ -348,7 +348,12 @@ function renderDash(){
   const _incomeSum=income.filter(r=>r.date&&_dashInRange(r.date)).reduce((s,r)=>s+r.amount,0);
   const _paymentsSum=payments.filter(p=>p.date&&_dashInRange(p.date)&&p.amount!==0).reduce((s,p)=>s+p.amount,0);
   const tInc=_incomeSum+_paymentsSum;
-  const tExp=expenses.filter(e=>e.date&&_dashInRange(e.date)).reduce((s,e)=>s+e.amount,0);
+  // Vehicle money inside the mileage rate never reaches the money views
+  // (owner rule 2026-08-15, _expHiddenByMileage in js/fleet.js): on the
+  // standard rate those costs are already paid per mile, so showing them as
+  // spend the contractor can act on is noise. They come straight back if the
+  // vehicle moves to actual expenses.
+  const tExp=expenses.filter(e=>e.date&&_dashInRange(e.date)&&!(typeof _expHiddenByMileage==='function'&&_expHiddenByMileage(e))).reduce((s,e)=>s+e.amount,0);
   // Deductible only. tMi feeds mileDed, net, and the tax estimate below, so a
   // crew member's own-car miles landing here would show the owner a profit lower
   // than the truth twice over: once as a deduction that isn't theirs, and again

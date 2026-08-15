@@ -339,6 +339,35 @@ function _isVehicleExpense(e){
 // The history lives on the vehicle record: firstYearMethod ('' unknown,
 // 'mileage', 'actual') and isLeased, both set in the vehicle form. Unknown
 // history warns instead of blocking, the app must never invent a lockout.
+// Vehicle money that is INSIDE the standard mileage rate does not appear in
+// the money views at all (owner rule 2026-08-15: "vehicle shit for expenses
+// don't show at all on dashboard or the cards if mileage deduction is being
+// utilized, if it's not then they show"). Not deleted, HIDDEN: the year-end
+// verdict can only tell you which method wins if both sides were tracked all
+// year, so the rows stay in the data and keep feeding _vehSchedC, the Fleet
+// screens, and the comparison. Flip a vehicle to actual expenses and its
+// costs reappear everywhere, because there they are a real deduction.
+//
+// The id list comes from _vehSchedC itself (excludedIds), the same engine
+// that decides what leaves the Schedule C, so a row can never be hidden in
+// one place and counted in another. Cached per year+signature: renderDash
+// and the ledgers all ask on every paint.
+function _expHiddenByMileage(e){
+  try{
+    if(!e||typeof _isVehicleExpense!=='function'||!_isVehicleExpense(e))return false;
+    const vehs=(typeof getVehicles==='function')?getVehicles():[];
+    if(!vehs.length)return false;
+    const hit=(typeof _vehLinkMatches==='function')?vehs.find(v=>_vehLinkMatches(e,v)):null;
+    // Money nobody linked to a truck stays VISIBLE when there is more than one
+    // truck it could belong to: that is a loose end the contractor should see
+    // and fix, not something the app quietly buries. With a single vehicle
+    // there is nothing ambiguous, so it follows that vehicle's method, exactly
+    // as the deduction engine already treats it.
+    const veh=hit||(vehs.length===1?vehs[0]:null);
+    if(!veh)return false;
+    return (veh.deductionMethod||'mileage')!=='actual';
+  }catch(_e){return false;}
+}
 function _vehFlipGuard(v,target){
   const first=(v&&v.firstYearMethod)||'';
   const cur=(v&&v.deductionMethod)||'mileage';
