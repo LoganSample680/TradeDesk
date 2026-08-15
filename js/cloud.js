@@ -568,7 +568,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.14.26.6';
+const APP_VERSION='08.14.26.7';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1567,6 +1567,11 @@ function _armBootCascade(){
 // The moment the boot's first cloud sync lands: end the shimmer, render the
 // real content, pour the one cascade. Idempotent; the 15 s skeleton failsafe
 // and every later sync call it harmlessly.
+// How long the boot shimmer must be VISIBLE before the dashboard is allowed
+// to pour (owner 2026-08-14). One constant, so the beat is tunable in one
+// place instead of hiding as a magic number inside the settle gate.
+const _BOOT_MIN_SHIMMER_MS=1800;
+
 function _bootSyncSettled(){
   if(window._bootSkelDone)return;
   // THE SHIMMER MUST BE SEEN (owner video 2026-08-11: the loader lifted onto
@@ -1584,7 +1589,15 @@ function _bootSyncSettled(){
     if(_ov&&!_ov.classList.contains('td-fadeout')&&Date.now()-window._bootSettleWaitT0<12000){setTimeout(_bootSyncSettled,120);return;}
     if(document.querySelector('#pg-dash .td-boot-skel-on')){
       if(!window._bootShimmerT0)window._bootShimmerT0=Date.now();
-      if(Date.now()-window._bootShimmerT0<650){setTimeout(_bootSyncSettled,130);return;}
+      // 1.8s, not 650ms (owner 2026-08-14: "they fire way too quickly and
+      // load in way too fast, it's jarring"). A shimmer that flashes past is
+      // worse than none: the eye registers movement, not information, and
+      // the pour lands before the shape it was standing in has been read.
+      // This is a MINIMUM on a state that is real (the sync genuinely has
+      // not finished), never an artificial delay on data already in hand,
+      // so it stays inside §8.3's rule: skeletons for waiting content, never
+      // a slow fade over a ready screen.
+      if(Date.now()-window._bootShimmerT0<_BOOT_MIN_SHIMMER_MS){setTimeout(_bootSyncSettled,130);return;}
     }
   }catch(_e){}
   // Hold the shimmer a beat for the FIRST geo answer, so the ON SITE / drive

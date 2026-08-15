@@ -579,8 +579,15 @@ async function _milePersonalStopSweep(){
       // whole job is removing rows. Anything the app can recognise as work
       // is refused before the personal test is even asked.
       if(inb.client_id!=null)continue;
-      const _bizPurp=String(inb.purpose||'');
-      if(_bizPurp&&_bizPurp!=='Other'&&_bizPurp!=='Personal')continue;
+      // NOT the row's purpose. That label is the app's own inference, and
+      // _poiPlaceKind stamps 'supply' on ANY non-food business, so a gas
+      // station became a "Supply run" the moment a fuel receipt made it look
+      // business, and that label then protected the row from ever being
+      // re-judged (owner 2026-08-14: "Casey's loop is still in it"). Only
+      // facts the CONTRACTOR established count as business here: a client
+      // link, a real job site, a place they saved, or money they spent that
+      // qualifies. Anything the app guessed is exactly what this sweep exists
+      // to second-guess.
       const _atJob=(typeof jobs!=='undefined'&&Array.isArray(jobs))&&jobs.some(j=>j&&j.lat!=null&&near({lat:j.lat,lng:j.lon},inb.toCoord));
       if(_atJob)continue;
       const _atClient=(typeof clients!=='undefined'&&Array.isArray(clients))&&clients.some(c=>c&&c.lat!=null&&near({lat:c.lat,lng:c.lng!=null?c.lng:c.lon},inb.toCoord));

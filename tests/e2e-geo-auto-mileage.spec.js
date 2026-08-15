@@ -5613,7 +5613,11 @@ test.describe('Automatic mileage from drive legs', () => {
           mileage.push(
             { id: 1, gps: true, legKey: 'L1', calc_method: 'auto_route', miles: 4.0, date: d, from_name: 'Home Office', to_name: 'John Doe', client_id: 8801, purpose: 'Job site',
               fromCoord: HOME, toCoord: JOHN, startedIso: d + 'T13:00:00Z', endedIso: d + 'T13:12:00Z', loggedAt: d + 'T13:12:02Z' },
-            { id: 3, gps: true, legKey: 'L3', calc_method: 'auto_route', miles: 4.7, date: d, from_name: 'John Doe', to_name: 'Caseys', purpose: 'Other',
+            // 'Supply run' is what the app ACTUALLY stamped here: _poiPlaceKind
+            // labels any non-food business 'supply'. That label blocked the
+            // sweep until the purpose guard came out, so the fixture carries
+            // it or the test cannot catch the regression.
+            { id: 3, gps: true, legKey: 'L3', calc_method: 'auto_route', miles: 4.7, date: d, from_name: 'John Doe', to_name: 'Caseys', purpose: 'Supply run',
               fromCoord: JOHN, toCoord: CASEYS, startedIso: d + 'T15:45:41Z', endedIso: d + 'T16:36:00Z', loggedAt: d + 'T16:36:02Z',
               passedThrough: { stop: { lat: 39.025, lng: -95.728, name: 'Shawnee County Public Library' } } },
             { id: 4, gps: true, legKey: 'L4', calc_method: 'auto_route', miles: 4.5, date: d, from_name: 'Caseys', to_name: 'John Doe', client_id: 8801, purpose: 'Job site',
