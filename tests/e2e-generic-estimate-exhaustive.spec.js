@@ -3509,7 +3509,15 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         const ov = document.getElementById('_scope-sheet-ov');
         const sheet = ov?.firstElementChild;
         const res = {
-          overlayCenters: getComputedStyle(ov).alignItems === 'center' && getComputedStyle(ov).justifyContent === 'center',
+          // Geometric, not mechanical: the overlay centres via margin:auto since
+          // 2026-08-15 (flex-start keeps a too-tall modal's top reachable), so
+          // assert the sheet actually sits centred rather than align-items:center.
+          overlayCenters: (() => {
+            const o = ov.getBoundingClientRect(), b = ov.firstElementChild.getBoundingClientRect();
+            return getComputedStyle(ov).justifyContent === 'center'
+              && getComputedStyle(ov).alignItems !== 'flex-end'
+              && Math.abs((b.top - o.top) - (o.bottom - b.bottom)) < 60;
+          })(),
           sheetIsZmodal: sheet?.classList.contains('zmodal'),
           sheetPosition: sheet ? getComputedStyle(sheet).position : null,
         };
@@ -3723,24 +3731,35 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       // The vertical-centering guarantee: a fixed inset:0 overlay, flex-centered,
       // with symmetric top/bottom padding and a single child (the sheet). If any of
       // these regress, the sheet stops being centered.
-      const cs = await page.evaluate(() => {
+      await page.evaluate(() => {
         document.getElementById('_addrpick-ov')?.remove();
         const c = { id: 96107, name: 'CSS Co', addr: '3 C St, Town, KS 60000',
           extraAddresses: [{ label: 'D', addr: '4 D St, Town, KS 60000' }] };
         clients = clients.filter(x => x.id !== 96107).concat([c]);
         pickClientAddress(96107, () => {});
+      });
+      // Measure AFTER the .24s entrance settles: td-modal-in starts at
+      // translateY(16px), which skews a mid-flight rect by 16px each way.
+      await page.waitForTimeout(320);
+      const cs = await page.evaluate(() => {
         const ov = document.getElementById('_addrpick-ov');
         const s = getComputedStyle(ov);
         return { position: s.position, display: s.display, alignItems: s.alignItems,
           justifyContent: s.justifyContent, padTop: parseFloat(s.paddingTop),
           padBottom: parseFloat(s.paddingBottom), children: ov.children.length,
+          gapTop: ov.firstElementChild.getBoundingClientRect().top - ov.getBoundingClientRect().top,
+          gapBottom: ov.getBoundingClientRect().bottom - ov.firstElementChild.getBoundingClientRect().bottom,
           top: ov.getBoundingClientRect().top, bottom: Math.round(ov.getBoundingClientRect().bottom),
           vh: window.innerHeight };
       });
       expect(cs.position).toBe('fixed');
       expect(cs.display).toBe('flex');
-      expect(cs.alignItems).toBe('center');
+      // The overlay centres with auto margins rather than align-items:center since
+      // 2026-08-15, so that a sheet taller than the screen keeps its top reachable.
+      // The guarantee this test exists for is the RESULT: equal gap above and below.
+      expect(cs.alignItems).not.toBe('flex-end');
       expect(cs.justifyContent).toBe('center');
+      expect(Math.abs(cs.gapTop - cs.gapBottom)).toBeLessThanOrEqual(1.5);
       expect(cs.padTop).toBe(cs.padBottom);            // symmetric vertical padding
       expect(cs.children).toBe(1);                     // only the sheet, nothing skewing the cross-axis
       expect(cs.top).toBe(0);                           // overlay fills the viewport top-to-bottom

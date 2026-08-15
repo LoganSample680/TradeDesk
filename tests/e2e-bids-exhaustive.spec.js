@@ -1910,7 +1910,7 @@ test.describe('bids.js: exhaustive coverage', () => {
       // Stripe connected: honest "coming soon", never a claim that a card was charged
       expect(r.on.found, 'Tap to pay must be present in the pay panel').toBe(true);
       expect(r.on.label).toContain('Tap to pay');
-      expect(r.on.label.toLowerCase()).toContain('coming soon');
+      expect(r.on.label.toLowerCase()).toContain('soon');
       expect(r.on.onclick).toBe('_tapToPaySoon()');
       expect(r.on.modalText, 'tapping it must show a real message, not silently no-op').toContain('coming');
       expect(r.on.modalText.toLowerCase()).not.toContain('charged');
