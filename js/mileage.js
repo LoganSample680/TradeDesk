@@ -553,8 +553,7 @@ async function _mileTapeHadPause(startedIso,endedIso){
 async function _milePersonalStopSweep(){
   try{
     if(window._milePersonalSweepRan)return 0;
-    window._milePersonalSweepRan=true;
-    if(typeof mileage==='undefined'||!Array.isArray(mileage))return 0;
+    if(typeof mileage==='undefined'||!Array.isArray(mileage)||!mileage.length)return 0;
     const weekAgo=Date.now()-14*86400000;
     const near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&typeof _geoDistFt==='function'&&
       _geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=_MILE_DEDUP_DEST_FT);
@@ -562,6 +561,11 @@ async function _milePersonalStopSweep(){
     const rows=mileage.filter(m=>m&&m.gps&&m.legKey&&m.toCoord&&m.fromCoord&&
       (Date.parse(m.endedIso||m.loggedAt||'')||0)>=weekAgo)
       .sort((a,b)=>String(a.startedIso||a.loggedAt||'').localeCompare(String(b.startedIso||b.loggedAt||'')));
+    if(rows.length<2)return 0;   // nothing to pair yet: try again next load
+    // The trail that makes the next 'it did not collapse' a diagnosis instead
+    // of a guess: how many rows were even eligible to pair.
+    try{if(typeof _geoParkNote==='function')_geoParkNote('stop-sweep','rows='+rows.length);}catch(_e){}
+    window._milePersonalSweepRan=true;
     let fixed=0;
     for(let i=0;i<rows.length-1&&fixed<10;i++){
       const inb=rows[i],out=rows[i+1];
@@ -592,9 +596,17 @@ async function _milePersonalStopSweep(){
       if(_atJob)continue;
       const _atClient=(typeof clients!=='undefined'&&Array.isArray(clients))&&clients.some(c=>c&&c.lat!=null&&near({lat:c.lat,lng:c.lng!=null?c.lng:c.lon},inb.toCoord));
       if(_atClient)continue;
+      // Only a saved place with a BUSINESS kind protects the stop, exactly
+      // the test the live path uses (savedIsBusiness in _autoNameStopTrip).
+      // 'Any saved place' was too broad: a gas station saved for navigation,
+      // or auto-suggested by the repeat-stop finder, became permanently
+      // untouchable and the loop never collapsed (owner 2026-08-15).
       const savedPlace=(typeof placeAt==='function')?placeAt(P):null;
-      if(savedPlace)continue;   // ANY saved place is somewhere they named on purpose
-      if(_bizReceiptForStop({lat:inb.toCoord.lat,lng:inb.toCoord.lng,name,day}))continue;
+      if(savedPlace&&typeof _PLACE_KIND_TO_PURPOSE!=='undefined'&&_PLACE_KIND_TO_PURPOSE[savedPlace.kind])continue;
+      if(_bizReceiptForStop({lat:inb.toCoord.lat,lng:inb.toCoord.lng,name,day})){
+        try{if(typeof _geoParkNote==='function')_geoParkNote('stop-keep',name+' receipt');}catch(_e){}
+        continue;
+      }
       // P is personal. Collapse.
       const crumb={stop:{lat:inb.toCoord.lat,lng:inb.toCoord.lng,name,addr:inb.to||'',kind:'stop'},
                    day,leg:Object.assign({},inb),origin:{lat:inb.fromCoord.lat,lng:inb.fromCoord.lng,name:inb.from_name||''}};
@@ -627,6 +639,7 @@ async function _milePersonalStopSweep(){
 async function _mileMotionHealSweep(){
   try{
     if(window._mileMotionHealRan)return 0;
+    if(typeof mileage==='undefined'||!Array.isArray(mileage)||!mileage.length)return 0;
     window._mileMotionHealRan=true;
     const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
     if(!Td||typeof Td.motionSince!=='function')return 0;
