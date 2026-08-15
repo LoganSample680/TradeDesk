@@ -3738,11 +3738,15 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         clients = clients.filter(x => x.id !== 96107).concat([c]);
         pickClientAddress(96107, () => {});
       });
-      // Measure AFTER the .24s entrance settles: td-modal-in starts at
-      // translateY(16px), which skews a mid-flight rect by 16px each way.
-      await page.waitForTimeout(320);
+      // Measure the SETTLED layout: td-modal-in starts at translateY(16px), so a
+      // mid-flight rect is off by 16px each way (32px between the two gaps). A
+      // wall-clock wait is a race, WebKit was still mid-animation at 320ms, so the
+      // entrance is switched off outright before measuring. Centring is a layout
+      // fact, it does not depend on the animation.
       const cs = await page.evaluate(() => {
         const ov = document.getElementById('_addrpick-ov');
+        ov.firstElementChild.style.animation = 'none';
+        void ov.firstElementChild.offsetHeight;   // flush the style change
         const s = getComputedStyle(ov);
         return { position: s.position, display: s.display, alignItems: s.alignItems,
           justifyContent: s.justifyContent, padTop: parseFloat(s.paddingTop),
