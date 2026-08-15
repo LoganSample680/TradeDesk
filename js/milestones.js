@@ -283,71 +283,7 @@ function _eggGreetingSuffix(){
 }
 
 
-// ── Tracking diagnostics ─────────────────────────────────────────────────────
-// The geo/mileage engines have written a running note trail to
-// localStorage('td_geo_park_log') for weeks with NO WAY TO SEE IT (owner
-// 2026-08-15: "diagnostic trail is that under dev tools in settings?" - it
-// was not, and there was no dev tools section either). A trail nobody can
-// read is not a diagnostic, it is a log file in a locked drawer: every
-// "it still didn't work" report had to be answered with a theory instead of
-// evidence. Settings > About > Tracking diagnostics, newest first, with one
-// tap to copy the whole thing into a message.
-function openTrackingDiag(){
-  let log=[];
-  try{log=JSON.parse(localStorage.getItem('td_geo_park_log')||'[]')||[];}catch(_e){}
-  const rows=log.slice().reverse();
-  const state=[];
-  try{
-    state.push(['Version',(typeof APP_VERSION!=='undefined'?APP_VERSION:'?')]);
-    state.push(['Tracking',(typeof _geoWatchId!=='undefined'&&_geoWatchId!=null)||(typeof _geoNativeWatcherId!=='undefined'&&_geoNativeWatcherId!=null)?'on':'off']);
-    state.push(['Mileage rows',String((typeof mileage!=='undefined'?mileage:[]).length)]);
-    state.push(['Personal sweep',window._milePersonalSweepRan?'ran this session':'not yet']);
-    state.push(['Motion sweep',window._mileMotionHealRan?'ran this session':'not yet']);
-    state.push(['Motion plugin',(typeof _geoTdPlugin==='function'&&_geoTdPlugin())?'present':'none (web build)']);
-  }catch(_e){}
-  const ov=document.createElement('div');
-  ov.id='diag-panel';
-  ov.style.cssText='position:fixed;inset:0;z-index:9997;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;animation:fadein .15s';
-  ov.innerHTML=
-    '<div style="background:var(--bg);border-radius:16px;width:100%;max-width:520px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden">'+
-      '<div style="padding:16px 18px 10px;display:flex;justify-content:space-between;align-items:center">'+
-        '<div style="font-size:16px;font-weight:800">Tracking diagnostics</div>'+
-        '<button onclick="document.getElementById(\'diag-panel\').remove()" style="border:none;background:none;font-size:24px;color:var(--text3);cursor:pointer;line-height:1">×</button>'+
-      '</div>'+
-      '<div style="padding:0 18px 10px">'+
-        state.map(([k,v])=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)">'+
-          '<span style="color:var(--text3)">'+escHtml(k)+'</span><span style="font-weight:700">'+escHtml(v)+'</span></div>').join('')+
-      '</div>'+
-      '<div style="flex:1;overflow-y:auto;padding:6px 18px 12px">'+
-        (rows.length
-          ?rows.map(r=>'<div style="font-family:ui-monospace,monospace;font-size:11px;padding:5px 0;border-bottom:1px solid var(--border);color:var(--text2);word-break:break-word">'+
-             '<span style="color:var(--text3)">'+escHtml(r.t||'')+'</span> '+
-             '<span style="font-weight:700;color:var(--text)">'+escHtml(r.ev||'')+'</span>'+
-             (r.x?' <span>'+escHtml(r.x)+'</span>':'')+'</div>').join('')
-          :'<div style="font-size:12px;color:var(--text3);padding:14px 0;line-height:1.6">Nothing logged yet. The trail fills as the tracker parks, opens drives, and sweeps the mileage log.</div>')+
-      '</div>'+
-      '<div style="padding:12px 18px 16px;border-top:1px solid var(--border)">'+
-        '<button class="btn btn-p" onclick="_diagCopy()" style="width:100%;padding:12px;font-size:14px;font-weight:700">Copy everything</button>'+
-      '</div>'+
-    '</div>';
-  document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  window.__diagText=state.map(([k,v])=>k+': '+v).join('\n')+'\n\n'+
-    rows.map(r=>(r.t||'')+' '+(r.ev||'')+(r.x?' '+r.x:'')).join('\n');
-}
-function _diagCopy(){
-  const txt=window.__diagText||'';
-  try{
-    navigator.clipboard.writeText(txt).then(
-      ()=>{if(typeof showToast==='function')showToast('Copied. Paste it in a message.','📋');},
-      ()=>_diagCopyFallback(txt));
-  }catch(_e){_diagCopyFallback(txt);}
-}
-function _diagCopyFallback(txt){
-  try{
-    const ta=document.createElement('textarea');
-    ta.value=txt;ta.style.cssText='position:fixed;top:-1000px';
-    document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();
-    if(typeof showToast==='function')showToast('Copied. Paste it in a message.','📋');
-  }catch(_e){}
-}
+// (Tracking diagnostics live in the EXISTING Location diagnostics panel,
+// js/geo-track.js _geoDiagPanel, under Settings > Developer. A second viewer
+// was written here and deleted: the app already had one, and §7.3 says point
+// the existing surface at the new data instead of hand-rolling a parallel.)

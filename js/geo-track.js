@@ -1925,6 +1925,16 @@ function _geoLocateHistory(){
 }
 // On-device diagnostics: state + the park journal, in a standard zmodal.
 // Reachable from Settings (the button unhides only inside the shell).
+function _geoDiagCopy(){
+  const txt=window.__geoDiagText||'';
+  const done=()=>{try{if(typeof showToast==='function')showToast('Copied. Paste it in a message.','\ud83d\udccb');}catch(_e){}};
+  try{
+    navigator.clipboard.writeText(txt).then(done,()=>{
+      const ta=document.createElement('textarea');ta.value=txt;ta.style.cssText='position:fixed;top:-1000px';
+      document.body.appendChild(ta);ta.select();try{document.execCommand('copy');}catch(_e){}ta.remove();done();
+    });
+  }catch(_e){}
+}
 function _geoDiagPanel(){
   if(document.getElementById('_geo-diag-ov'))return;
   const dwellMin=_geoFenceEnteredAtMs?Math.round((Date.now()-_geoFenceEnteredAtMs)/60000):null;
@@ -1937,6 +1947,13 @@ function _geoDiagPanel(){
     ['Below drive speed',_geoQuietSinceMs?Math.round((Date.now()-_geoQuietSinceMs)/60000)+' min':'no (moving)'],
     ['Consent',localStorage.getItem('geo_owner_consent')||'unset'],
     ['OS denied',localStorage.getItem('td_geo_os_denied')==='1'?'yes':'no'],
+    // The mileage side of the same story: a sweep that never ran is the
+    // difference between "the rule is wrong" and "the rule never executed",
+    // and that distinction cost four rounds of guessing (owner 2026-08-15).
+    ['Mileage rows',String((typeof mileage!=='undefined'&&mileage.length)||0)],
+    ['Personal-stop sweep',window._milePersonalSweepRan?'ran':'not yet'],
+    ['Motion sweep',window._mileMotionHealRan?'ran':'not yet'],
+    ['App version',(typeof APP_VERSION!=='undefined'?APP_VERSION:'?')],
   ];
   const ov=document.createElement('div');ov.id='_geo-diag-ov';ov.className='zmodal-overlay';
   const m=document.createElement('div');m.className='zmodal';
@@ -1960,7 +1977,12 @@ function _geoDiagPanel(){
           }).join('')
         :'<div style="color:var(--text3)">None.</div>')+
     '</div>'+
-    '<button class="btn btn-p" style="width:100%;margin-top:14px;padding:12px" onclick="document.getElementById(\'_geo-diag-ov\').remove()">Close</button>';
+    // Copy, because a diagnostic you cannot get OFF the phone is only half a
+    // diagnostic: the owner reads it in a truck and pastes it into a message.
+    '<button class="btn" style="width:100%;margin-top:14px;padding:12px" onclick="_geoDiagCopy()">Copy everything</button>'+
+    '<button class="btn btn-p" style="width:100%;margin-top:8px;padding:12px" onclick="document.getElementById(\'_geo-diag-ov\').remove()">Close</button>';
+  window.__geoDiagText=state.map(([k,v])=>k+': '+v).join('\n')+'\n\n'+
+    _geoParkLog.slice().reverse().map(r=>(r.t||'')+' '+(r.ev||'')+(r.x?' '+r.x:'')).join('\n');
   ov.appendChild(m);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
