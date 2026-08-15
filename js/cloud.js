@@ -568,7 +568,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.15.26.5';
+const APP_VERSION='08.15.26.6';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1537,39 +1537,47 @@ function _armBootCascade(){
   // popup (owner: blank white behind a popup looks odd; the dashboard should be
   // filling in under the popup's scrim). Delays are assigned over VISIBLE cards
   // ONLY, so hidden/empty widgets (crew/alerts/contracts with no data) leave no
-  // gaps: the ripple flows smoothly top→bottom over exactly what's on screen.
+  // gaps: the ripple flows smoothly over exactly what's on screen.
   // Backwards `both` fill keeps each card invisible until its own delay elapses,
   // so no boot-hold class (and no blank-hold) is needed.
+  //
+  // DIRECTION: bottom → top (owner 2026-08-15, PR #69 screen recording). The
+  // recording is an iPhone unlock: the icon grid settles from the BOTTOM rows
+  // up, the top row is the last thing to finish resolving. The owner wants our
+  // pour to read like that piece of motion but run the OTHER WAY, so the deepest
+  // card on the page starts first, the wave climbs, and the greeting bar lands
+  // last as the page finishes filling. Only the ORDER changed; each card still
+  // does the same gentle fade + 14px rise (scale was rejected earlier for
+  // blurring text mid-flight).
   let count=0;
   try{
     const root=d.querySelector('#dash-widget-root');
     const tbar=d.querySelector('.tbar');
-    // The waterfall now SPANS the same 1.8s beat the shimmer holds for
-    // (owner 2026-08-15: "match the waterfall drop css to 1.8 seconds"), so
-    // the boot reads as one continuous piece of choreography instead of a
-    // long wait followed by a quick flick. The stagger is COMPUTED from the
-    // card count rather than fixed, because a fixed step makes the span
-    // depend on how many widgets happen to be visible: four cards would
-    // finish in half the time seven do. Clamped so a very short dashboard
-    // does not crawl and a very long one does not machine-gun.
+    // The waterfall SPANS the same 1.8s beat the shimmer holds for (owner
+    // 2026-08-15: "match the waterfall drop css to 1.8 seconds"), so the boot
+    // reads as one continuous piece of choreography instead of a long wait
+    // followed by a quick flick. The stagger is COMPUTED from the card count
+    // rather than fixed, because a fixed step makes the span depend on how many
+    // widgets happen to be visible: four cards would finish in half the time
+    // seven do. Clamped so a very short dashboard does not crawl and a very long
+    // one does not machine-gun. The greeting bar is one more beat on the end of
+    // the wave, so it is counted here too.
     const base=60,_travel=820,_target=1800;
-    const _n=[...(d.querySelector('#dash-widget-root')||{children:[]}).children]
-      .filter(el=>el.nodeType===1&&el.classList.contains('td-dw')&&el.offsetHeight>2).length;
+    const cards=root?[...root.children].filter(el=>el.nodeType===1&&el.classList.contains('td-dw')):[];
+    const vis=cards.filter(el=>el.offsetHeight>2);   // read BEFORE the class → natural layout height
+    const _n=vis.length+1;                           // +1 for the tbar, which now rides in last
     const step=Math.round(Math.min(240,Math.max(90,(_target-base-_travel)/Math.max(1,_n-1))));
-    if(tbar)tbar.style.animationDelay='0ms';
-    if(root){
-      let i=0;
-      [...root.children].forEach(el=>{
-        if(el.nodeType!==1||!el.classList.contains('td-dw'))return;
-        const visible=el.offsetHeight>2;          // read BEFORE the class → natural layout height
-        el.style.animationDelay=(base+(visible?i:Math.max(0,i-1))*step)+'ms';
-        if(visible)i++;
-      });
-      count=i;
-    }
+    // Rank from the BOTTOM: the last visible card is rank 0 and goes first.
+    cards.forEach(el=>{
+      const idx=vis.indexOf(el);
+      el.style.animationDelay=(base+(idx>=0?(vis.length-1-idx):0)*step)+'ms';
+    });
+    count=vis.length;
+    // The header is the top of the page, so the climbing wave reaches it last.
+    if(tbar)tbar.style.animationDelay=(base+count*step)+'ms';
   }catch(_e){}
   d.classList.add('boot-cascade');
-  const total=60+Math.max(1,count)*240+820+260;   // last card start + travel + slack, at the widest stagger
+  const total=60+(Math.max(1,count)+1)*240+820+260;   // last starter (the tbar) + travel + slack, at the widest stagger
   setTimeout(()=>{try{
     d.classList.remove('boot-cascade');
     d.querySelectorAll('.tbar,#dash-widget-root>.td-dw').forEach(el=>{el.style.animationDelay='';});

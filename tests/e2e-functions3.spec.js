@@ -1027,6 +1027,48 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(cleared.delay).toBe('');          // inline stagger cleaned up
   });
 
+  // DIRECTION (owner 2026-08-15, PR #69 screen recording): the wave climbs from
+  // the BOTTOM of the page to the top, the opposite of the iPhone unlock in the
+  // recording, where the icon grid settles bottom-up with the top row finishing
+  // last. Deepest card starts first, greeting bar lands last. This test exists
+  // because direction is invisible to every other cascade assertion: they only
+  // check that SOME inline delay was assigned.
+  test('boot cascade climbs bottom → top, greeting bar last', async () => {
+    const r = await page.evaluate(() => {
+      window._sboT0 = 0;
+      window._bootCascadeRan = false;
+      document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+      document.getElementById('supa-boot-overlay')?.remove();
+      const o = document.createElement('div');
+      o.id = 'supa-boot-overlay';
+      document.body.appendChild(o);
+      const dash = document.getElementById('pg-dash');
+      dash.classList.add('active');
+      const heights = [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.offsetHeight);
+      _removeBootOverlay();
+      const ms = el => parseFloat(el.style.animationDelay) || 0;
+      const cards = [...document.querySelectorAll('#dash-widget-root > .td-dw')];
+      const visible = cards.filter((el, i) => heights[i] > 2);
+      const tbar = document.querySelector('#pg-dash > .tbar');
+      return {
+        n: visible.length,
+        delays: visible.map(ms),
+        tbar: tbar ? ms(tbar) : null,
+      };
+    });
+    if (r.n < 2) return;   // a dashboard with one card has no direction to assert
+    // Each card higher up the page starts LATER than the one below it
+    for (let i = 1; i < r.delays.length; i++) {
+      expect(r.delays[i - 1], `card ${i - 1} must start after card ${i} (bottom-up)`)
+        .toBeGreaterThan(r.delays[i]);
+    }
+    // The header sits above every card, so it is the last thing to arrive
+    expect(r.tbar).toBeGreaterThan(Math.max(...r.delays));
+    // ...and the whole pour still lands inside the 1.8s beat the shimmer holds for
+    expect(r.tbar).toBeLessThanOrEqual(1800 - 820 + 1);
+    await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 8000 });
+  });
+
   // OWNER RULE (revised): the cascade plays BEHIND a boot popup, a popup being
   // open must NOT stop the dashboard from filling in under its scrim.
   test('boot waterfall, plays behind an open boot popup (no blank backdrop)', async () => {
