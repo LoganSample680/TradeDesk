@@ -817,12 +817,17 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 .search-empty{padding:32px;text-align:center;color:var(--text-3);font-size:14px}
 
 /* ── Modals ── */
-.zmodal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;animation:fadein .18s ease;overflow-y:auto}
+/* align-items:flex-start + margin:auto on the card, NOT align-items:center: a
+   centred flex child taller than the overlay has its top clipped with no way to
+   scroll to it. margin:auto still centres a short modal. Safe-area padding keeps
+   the card out from under the Dynamic Island / status bar (owner screenshot
+   2026-08-15: the Get paid title sat under the clock). */
+.zmodal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:max(20px,calc(env(safe-area-inset-top,0px) + 12px)) 20px max(20px,calc(env(safe-area-inset-bottom,0px) + 12px));animation:fadein .18s ease;overflow-y:auto;overscroll-behavior:contain}
 /* §8.4 modal entrance: the card fades + slides up + settles from a slight scale
    while the dim layer fades, no more hard pop. One rule covers every popup
    (zAlert/zConfirm/collect/complete-job/…, all ~57 creation sites use .zmodal). */
 @keyframes td-modal-in{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
-.zmodal{background:var(--bg-card);border-radius:var(--r-xl);padding:24px 22px;width:100%;max-width:360px;box-shadow:var(--shadow-modal);animation:td-modal-in .24s cubic-bezier(.22,1,.36,1) both}
+.zmodal{background:var(--bg-card);border-radius:var(--r-xl);padding:24px 22px;width:100%;max-width:360px;margin:auto;box-shadow:var(--shadow-modal);animation:td-modal-in .24s cubic-bezier(.22,1,.36,1) both}
 @media (prefers-reduced-motion:reduce){.zmodal{animation:none}}
 .zmodal-title{font-size:16px;font-weight:800;margin-bottom:8px}
 .zmodal-msg{font-size:14px;color:var(--text-2);line-height:1.5;margin-bottom:18px}
@@ -985,7 +990,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   .cal-cell{min-height:64px;padding:4px}
   .tbl th,.tbl td{padding:8px;font-size:11px}
   #proposals-list .tbl th:nth-child(3),#proposals-list .tbl td:nth-child(3){display:none}
-  .zmodal-overlay{padding:10px}
+  .zmodal-overlay{padding:max(10px,calc(env(safe-area-inset-top,0px) + 8px)) 10px max(10px,calc(env(safe-area-inset-bottom,0px) + 8px))}
   .tbar-r{width:100%;flex-wrap:wrap}
 }
 @media(max-width:380px){

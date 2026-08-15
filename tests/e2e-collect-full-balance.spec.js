@@ -54,10 +54,9 @@ test.describe('Pay panel: three options, full amount always payable', () => {
     }, BID_25);
     expect(r.count).toBe(3);
     expect(r.opts[0].m).toBe('manual');
-    expect(r.opts[0].t).toContain('Log a payment');
-    expect(r.opts[0].t).toMatch(/Cash, check, Venmo/);
+    expect(r.opts[0].t).toContain('Log it');
     expect(r.opts[1].m).toBe('stripe');
-    expect(r.opts[1].t).toContain('Send payment link');
+    expect(r.opts[1].t).toContain('Send link');
     expect(r.opts[2].m).toBe(null);          // tap to pay is not selectable yet
     expect(r.opts[2].t).toContain('Tap to pay');
   });
@@ -70,7 +69,7 @@ test.describe('Pay panel: three options, full amount always payable', () => {
       window._stripeConnectStatus = null;
       openPayPanel(bid);
       const btns = [...document.querySelectorAll('#mpay-type-btns button')];
-      const hub = btns.find(b => /payment link/i.test(b.textContent));
+      const hub = btns.find(b => /Send link/i.test(b.textContent));
       const tap = btns.find(b => /Tap to pay/i.test(b.textContent));
       const out = {
         // Locked: not selectable as a method, so selectPayType can never land on it
@@ -100,7 +99,7 @@ test.describe('Pay panel: three options, full amount always payable', () => {
     expect(r.tapOpacity).toBeLessThan(0.7);
     expect(r.hubText.toLowerCase()).toContain('locked');
     expect(r.tapText.toLowerCase()).toContain('locked');
-    expect(r.hubText).toContain('Connect Stripe');
+    expect(r.hubText.toLowerCase()).toContain('locked');
     expect(r.hubClick).toBe('_mpayNeedStripe()');
     expect(r.tapClick).toBe('_mpayNeedStripe()');
     expect(r.manualSelectable).toBe(true);
@@ -112,7 +111,7 @@ test.describe('Pay panel: three options, full amount always payable', () => {
       window._stripeConnectStatus = { charges_enabled: true };
       openPayPanel(bid);
       const btns = [...document.querySelectorAll('#mpay-type-btns button')];
-      const hub = btns.find(b => /payment link/i.test(b.textContent));
+      const hub = btns.find(b => /Send link/i.test(b.textContent));
       const tap = btns.find(b => /Tap to pay/i.test(b.textContent));
       const out = {
         hubSelectable: !!hub.dataset.pmethod,
@@ -127,9 +126,8 @@ test.describe('Pay panel: three options, full amount always payable', () => {
     }, BID_25);
     expect(r.hubSelectable).toBe(true);
     expect(r.hubOpacity).toBeGreaterThanOrEqual(0.99);
-    expect(r.hubText).toContain('They pay by card in their hub');
     expect(r.hubText.toLowerCase()).not.toContain('locked');
-    expect(r.tapText.toLowerCase()).toContain('coming soon');   // Stripe is not its only blocker
+    expect(r.tapText.toLowerCase()).toContain('soon');   // Stripe is not its only blocker
     expect(r.tapClick).toBe('_tapToPaySoon()');
   });
 
@@ -181,7 +179,7 @@ test.describe('Pay panel: three options, full amount always payable', () => {
       };
     }, BID_50);
     expect(r.amount).toBe('4,000.00');      // not 25% ($2,000)
-    expect(r.chip).toBe('Deposit $4,000.00');
+    expect(r.chip).toBe('Deposit $4,000');
   });
 
   test('the whole job can be collected from a deposit entry point', async () => {
@@ -264,6 +262,31 @@ test.describe('Pay panel: three options, full amount always payable', () => {
     expect(r.backToManual).toBe(true);
   });
 
+  // "How they paid" is pills, not a <select>: one tap instead of open-scroll-confirm.
+  // #mpay-method stays a real field so logPayment and every caller read one value.
+  test('payment method is one tap, and the reference placeholder follows it', async () => {
+    const r = await page.evaluate((bid) => {
+      openPayPanel(bid);
+      const pills = [...document.querySelectorAll('#mpay-method-pills button[data-pmeth]')].map(b => b.dataset.pmeth);
+      const out = { pills, initial: document.getElementById('mpay-method').value };
+      out.initialPlaceholder = document.getElementById('mpay-ref').placeholder;
+      document.querySelector('#mpay-method-pills button[data-pmeth="Venmo"]').click();
+      out.afterTap = document.getElementById('mpay-method').value;
+      out.venmoPlaceholder = document.getElementById('mpay-ref').placeholder;
+      // The old <select> API still works for anything that sets the field directly
+      document.getElementById('mpay-method').value = 'Cash';
+      out.settable = document.getElementById('mpay-method').value;
+      closePayPanel();
+      return out;
+    }, BID_BAL);
+    expect(r.pills).toEqual(['Cash', 'Check', 'Venmo', 'Zelle', 'Card', 'Other']);
+    expect(r.initial).toBe('Check');
+    expect(r.initialPlaceholder).toContain('Check #');
+    expect(r.afterTap).toBe('Venmo');          // ONE tap, no select to open
+    expect(r.venmoPlaceholder).toContain('Reference');
+    expect(r.settable).toBe('Cash');
+  });
+
   test('refunds stay tucked behind one text link, not bolted onto the panel', async () => {
     const r = await page.evaluate((bid) => {
       openPayPanel(bid);
@@ -286,4 +309,44 @@ test.describe('Pay panel: three options, full amount always payable', () => {
     expect(r.type).toBe('refund');
     expect(r.submit).toBe('Issue refund');
   });
+
+  // The modal must never sit under the status bar / Dynamic Island, and its top
+  // must stay reachable when it is taller than the screen (owner screenshot
+  // 2026-08-15: the "Get paid" title was behind the clock). Centring a flex child
+  // taller than its scroll container clips the top with no way to scroll up;
+  // flex-start + margin:auto centres short modals and keeps tall ones reachable.
+  for (const vh of [844, 640, 560]) {
+    test(`modal clears the status bar and stays reachable at 390x${vh}`, async ({ browser }) => {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: vh }, bypassCSP: true });
+      const p2 = await ctx.newPage();
+      await mockAllExternal(p2);
+      await p2.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await waitForAppBoot(p2);
+      const r = await p2.evaluate(() => {
+        clients.push({ id: 940900, name: 'Safe Area', phone: '3165550100', addr: '1 A St' });
+        bids.push({ id: 940901, client_id: 940900, client_name: 'Safe Area', amount: 5000, deposit: 1250, status: 'Closed Won', completion_date: todayKey() });
+        openPayPanel(940901);
+        const ov = document.querySelector('.pay-modal-overlay');
+        const m = ov.querySelector('.zmodal');
+        const cs = getComputedStyle(ov);
+        ov.scrollTop = -99999;                       // try as hard as possible to reach the top
+        return {
+          align: cs.alignItems,
+          padTop: parseFloat(cs.paddingTop),
+          modalTop: m.getBoundingClientRect().top,
+          titleTop: m.querySelector('div').getBoundingClientRect().top,
+          overflow: cs.overflowY,
+        };
+      });
+      await ctx.close();
+      expect(r.align).toBe('flex-start');            // never center: it clips tall modals
+      expect(r.overflow).toBe('auto');
+      // Phone widths use the 10px floor; on a notched device the same rule resolves
+      // to env(safe-area-inset-top) + 8, which is what clears the Dynamic Island.
+      expect(r.padTop).toBeGreaterThanOrEqual(10);
+      // The card never starts above its own padding, so nothing hides under the notch
+      expect(r.modalTop).toBeGreaterThanOrEqual(r.padTop - 1);
+      expect(r.titleTop).toBeGreaterThan(0);
+    });
+  }
 });
