@@ -202,7 +202,7 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    fills in under the popup's scrim. Delays are assigned in JS (_armBootCascade)
    over VISIBLE cards only, inline animation-delay wins, so no fixed nth-child
    holes. Backwards `both` fill keeps each card invisible until its turn. */
-#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:td-card-cascade .82s cubic-bezier(.33,1,.68,1) both;will-change:opacity,transform}
+#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:td-card-cascade .62s cubic-bezier(.33,1,.68,1) both;will-change:opacity,transform}
 @media (prefers-reduced-motion:reduce){#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:none}}
 /* pg-cal enters at the standard .2s now. Its old 5s slow fade existed only to
    hide the grid holding for the async weather fetch; the grid paints instantly

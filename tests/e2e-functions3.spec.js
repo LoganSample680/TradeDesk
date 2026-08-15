@@ -1027,13 +1027,13 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(cleared.delay).toBe('');          // inline stagger cleaned up
   });
 
-  // DIRECTION (owner 2026-08-15, PR #69 screen recording): the wave climbs from
-  // the BOTTOM of the page to the top, the opposite of the iPhone unlock in the
-  // recording, where the icon grid settles bottom-up with the top row finishing
-  // last. Deepest card starts first, greeting bar lands last. This test exists
-  // because direction is invisible to every other cascade assertion: they only
-  // check that SOME inline delay was assigned.
-  test('boot cascade climbs bottom → top, greeting bar last', async () => {
+  // DIRECTION (owner 2026-08-15, after seeing the bottom-up build on UAT: "I
+  // don't want bottom up, want top down"). Greeting bar first, then each card in
+  // page order. This test exists because direction is invisible to every other
+  // cascade assertion: they only check that SOME inline delay was assigned.
+  // The whole pour also has to land inside the 1.2s beat the shimmer holds for,
+  // which is what _BOOT_MIN_SHIMMER_MS and the computed stagger are tuned to.
+  test('boot cascade falls top → bottom inside the 1.2s beat, greeting bar first', async () => {
     const r = await page.evaluate(() => {
       window._sboT0 = 0;
       window._bootCascadeRan = false;
@@ -1057,16 +1057,27 @@ test.describe('Cloud Supabase and account functions', () => {
       };
     });
     if (r.n < 2) return;   // a dashboard with one card has no direction to assert
-    // Each card higher up the page starts LATER than the one below it
+    // Each card further down the page starts LATER than the one above it
     for (let i = 1; i < r.delays.length; i++) {
-      expect(r.delays[i - 1], `card ${i - 1} must start after card ${i} (bottom-up)`)
-        .toBeGreaterThan(r.delays[i]);
+      expect(r.delays[i], `card ${i} must start after card ${i - 1} (top-down)`)
+        .toBeGreaterThan(r.delays[i - 1]);
     }
-    // The header sits above every card, so it is the last thing to arrive
-    expect(r.tbar).toBeGreaterThan(Math.max(...r.delays));
-    // ...and the whole pour still lands inside the 1.8s beat the shimmer holds for
-    expect(r.tbar).toBeLessThanOrEqual(1800 - 820 + 1);
+    // The header sits above every card, so it leads the wave
+    expect(r.tbar).toBeLessThan(Math.min(...r.delays));
+    // ...and the LAST card must still start early enough that its .62s flight
+    // finishes inside the 1.2s beat (owner 2026-08-15: drop it to 1.2 seconds).
+    expect(Math.max(...r.delays)).toBeLessThanOrEqual(1200 - 620 + 1);
     await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 8000 });
+  });
+
+  // The shimmer hold and the pour are one beat: if they drift apart the boot
+  // reads as a wait followed by a flick (owner 2026-08-15).
+  test('shimmer hold and the pour are the same 1.2s beat', async () => {
+    const r = await page.evaluate(() => ({
+      shimmer: typeof _BOOT_MIN_SHIMMER_MS !== 'undefined' ? _BOOT_MIN_SHIMMER_MS : null,
+      travel: getComputedStyle(document.querySelector('#dash-widget-root > .td-dw') || document.body).animationDuration,
+    }));
+    expect(r.shimmer).toBe(1200);
   });
 
   // OWNER RULE (revised): the cascade plays BEHIND a boot popup, a popup being
