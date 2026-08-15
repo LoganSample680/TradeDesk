@@ -2076,6 +2076,7 @@ async function openExportPanel(){
         '</select>'+
       '</div>'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Choose format</div>'+
+      exportOptionHTML('openVehicleVerdict(getExportYear())','🚗','Year-end vehicle verdict','Mileage rate vs actual expenses, worked out per truck, with the IRS switching rules applied. See which method wins before you file, then generate the full report.')+
       exportOptionHTML('exportAllDataCSV()','📦','Everything: one CSV','Every client, lead, proposal, job, payment, income, expense, mileage, and time entry in one file. Clients, leads, proposals, jobs, payments, income, expenses, mileage, all labeled sections.')+
       exportOptionHTML('exportAllXLSX()','📊','Income · Expenses · Mileage, Excel','One workbook, three sheets. All years of income, expenses, and mileage, dollar columns formatted, SUM totals at the bottom of each sheet.')+
       exportOptionHTML('exportPLCSV()','📈','Profit & Loss CSV','Income vs expenses vs mileage deduction, net profit at the bottom. Hand straight to your accountant.')+
