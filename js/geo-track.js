@@ -1240,7 +1240,10 @@ function _geoCollapseDetours(){
         Math.abs(m.toCoord.lat-stop.lat)<=1e-5&&Math.abs(m.toCoord.lng-stop.lng)<=1e-5);
       const inbound=idx>=0?mileage[idx]:null;
       const day=(inbound&&inbound.date)||todayKey();
-      if(typeof expenseForStop==='function'&&expenseForStop({lat:stop.lat,lng:stop.lng,name:stop.name,day}))break;
+      // _bizReceiptForStop, not expenseForStop: vehicle-operating money is
+      // inside the mileage rate and can never make a stop a business
+      // destination (js/mileage.js owns that rule).
+      if(typeof _bizReceiptForStop==='function'&&_bizReceiptForStop({lat:stop.lat,lng:stop.lng,name:stop.name,day}))break;
       if(idx>=0)mileage.splice(idx,1);
       const back=stop.prevOrigin;
       back.passedThrough={stop:{lat:stop.lat,lng:stop.lng,name:stop.name||'Stop',addr:'',kind:'stop'},

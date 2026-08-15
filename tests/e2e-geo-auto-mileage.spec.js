@@ -5579,6 +5579,116 @@ test.describe('Automatic mileage from drive legs', () => {
         .toContain("_mileMotionHealSweep==='function')_mileMotionHealSweep()");
     });
 
+    test("the owner's real Friday: personal loop off the deduction, job sites untouched", async () => {
+      // Owner's 2026-08-14 day: home office -> John Doe -> library (personal
+      // notary) -> Casey's (gas, logged as an expense) -> John Doe -> shop.
+      // The app logged the Casey's legs as deductible because a FUEL receipt
+      // satisfied the "money spent here" test, money already inside the
+      // mileage rate. Three fixes meet here: fuel no longer qualifies a stop
+      // on a mileage-method vehicle, the retroactive sweep re-judges named
+      // stops after the fact, and a loop returning to the same business point
+      // claims nothing. Job sites and clients are refused before the personal
+      // test is asked: the first cut of this sweep collapsed John Doe himself
+      // out of the day, which is the worst failure a row-removing sweep has.
+      const r = await page.evaluate(async () => {
+        const realRoute = _routeDistance;
+        const keep = { m: mileage.slice(), e: expenses.slice(), v: vehicles.slice(), c: clients.slice(), j: jobs.slice(), p: places.slice(), ran: window._milePersonalSweepRan };
+        const HOME = { lat: 39.0300, lng: -95.7600 }, JOHN = { lat: 39.0208, lng: -95.7351 };
+        const CASEYS = { lat: 39.0300, lng: -95.7200 }, SHOP = { lat: 39.0000, lng: -95.7000 };
+        const d = todayKey();
+        try {
+          window._routeDistance = _routeDistance = async (f, t) => {
+            const R = (x) => x * Math.PI / 180;
+            const dd = 3958.8 * Math.acos(Math.min(1, Math.sin(R(f.lat)) * Math.sin(R(t.lat)) +
+              Math.cos(R(f.lat)) * Math.cos(R(t.lat)) * Math.cos(R(t.lng - f.lng))));
+            return { miles: Math.round(dd * 1.25 * 10) / 10, mins: 9 };
+          };
+          vehicles.length = 0; vehicles.push({ id: 'v1', name: 'F-250', status: 'active', deductionMethod: 'mileage' });
+          places.length = 0; savePlace({ name: 'Home Office', kind: 'home_office', lat: HOME.lat, lon: HOME.lng, confirmedBy: 'manual' });
+          clients.length = 0; clients.push({ id: 8801, name: 'John Doe', addr: '2950 SW McClure Rd', lat: JOHN.lat, lng: JOHN.lng });
+          jobs.length = 0; jobs.push({ id: 9911, name: 'John Repaint', client_id: 8801, lat: JOHN.lat, lon: JOHN.lng, start: d, days: 1, status: 'upcoming' });
+          expenses.length = 0;
+          expenses.push({ id: 77, date: d, cat: 'fuel', amount: 141.5, vendor: 'Caseys', vehicleId: 'v1', vehicleName: 'F-250', lat: CASEYS.lat, lon: CASEYS.lng });
+          mileage.length = 0;
+          mileage.push(
+            { id: 1, gps: true, legKey: 'L1', calc_method: 'auto_route', miles: 4.0, date: d, from_name: 'Home Office', to_name: 'John Doe', client_id: 8801, purpose: 'Job site',
+              fromCoord: HOME, toCoord: JOHN, startedIso: d + 'T13:00:00Z', endedIso: d + 'T13:12:00Z', loggedAt: d + 'T13:12:02Z' },
+            { id: 3, gps: true, legKey: 'L3', calc_method: 'auto_route', miles: 4.7, date: d, from_name: 'John Doe', to_name: 'Caseys', purpose: 'Other',
+              fromCoord: JOHN, toCoord: CASEYS, startedIso: d + 'T15:45:41Z', endedIso: d + 'T16:36:00Z', loggedAt: d + 'T16:36:02Z',
+              passedThrough: { stop: { lat: 39.025, lng: -95.728, name: 'Shawnee County Public Library' } } },
+            { id: 4, gps: true, legKey: 'L4', calc_method: 'auto_route', miles: 4.5, date: d, from_name: 'Caseys', to_name: 'John Doe', client_id: 8801, purpose: 'Job site',
+              fromCoord: CASEYS, toCoord: JOHN, startedIso: d + 'T16:49:00Z', endedIso: d + 'T16:58:00Z', loggedAt: d + 'T16:58:02Z' },
+            { id: 5, gps: true, legKey: 'L5', calc_method: 'auto_route', miles: 3.2, date: d, from_name: 'John Doe', to_name: 'Shop', purpose: 'Shop',
+              fromCoord: JOHN, toCoord: SHOP, startedIso: d + 'T22:00:00Z', endedIso: d + 'T22:08:00Z', loggedAt: d + 'T22:08:02Z' }
+          );
+          window._milePersonalSweepRan = false;
+          const fixed = await _milePersonalStopSweep();
+          return { fixed, rows: mileage.map(m => m.from_name + ' -> ' + m.to_name), total: +mileage.reduce((s, m) => s + (m.miles || 0), 0).toFixed(1) };
+        } finally {
+          window._routeDistance = _routeDistance = realRoute;
+          mileage.length = 0; keep.m.forEach(x => mileage.push(x));
+          expenses.length = 0; keep.e.forEach(x => expenses.push(x));
+          vehicles.length = 0; keep.v.forEach(x => vehicles.push(x));
+          clients.length = 0; keep.c.forEach(x => clients.push(x));
+          jobs.length = 0; keep.j.forEach(x => jobs.push(x));
+          places.length = 0; keep.p.forEach(x => places.push(x));
+          window._milePersonalSweepRan = keep.ran;
+        }
+      });
+      expect(r.fixed, 'the Casey\'s loop is the one thing collapsed').toBe(1);
+      expect(r.rows, 'the day is the two real business drives, nothing else')
+        .toEqual(['Home Office -> John Doe', 'John Doe -> Shop']);
+      expect(r.total, 'deductible miles match the IRS reading of the day').toBe(7.2);
+    });
+
+    test('a fuel receipt never qualifies a stop on a mileage vehicle; materials always do', async () => {
+      const r = await page.evaluate(() => {
+        const keep = { e: expenses.slice(), v: vehicles.slice() };
+        const CASEYS = { lat: 39.0300, lng: -95.7200 };
+        const d = todayKey();
+        try {
+          vehicles.length = 0; vehicles.push({ id: 'v1', name: 'F-250', status: 'active', deductionMethod: 'mileage' });
+          expenses.length = 0;
+          expenses.push({ id: 77, date: d, cat: 'fuel', amount: 141.5, vendor: 'Caseys', vehicleId: 'v1', vehicleName: 'F-250', lat: CASEYS.lat, lon: CASEYS.lng });
+          expenses.push({ id: 78, date: d, cat: 'materials', amount: 200, vendor: 'Sherwin', lat: 39.05, lon: -95.66 });
+          const fuelOnMileage = !!_bizReceiptForStop({ lat: CASEYS.lat, lng: CASEYS.lng, name: 'Caseys', day: d });
+          vehicles[0].deductionMethod = 'actual';
+          const fuelOnActual = !!_bizReceiptForStop({ lat: CASEYS.lat, lng: CASEYS.lng, name: 'Caseys', day: d });
+          const materials = !!_bizReceiptForStop({ lat: 39.05, lng: -95.66, name: 'Sherwin', day: d });
+          return { fuelOnMileage, fuelOnActual, materials };
+        } finally {
+          expenses.length = 0; keep.e.forEach(x => expenses.push(x));
+          vehicles.length = 0; keep.v.forEach(x => vehicles.push(x));
+        }
+      });
+      expect(r.fuelOnMileage, 'fuel is inside the rate: it cannot make a stop a destination').toBe(false);
+      expect(r.fuelOnActual, 'on actual expenses the same receipt is a real standalone deduction').toBe(true);
+      expect(r.materials, 'money spent on the job still proves a business stop').toBe(true);
+    });
+
+    test('dedup keeps the CORRECTED row, not the longer orphan it replaced', async () => {
+      const r = await page.evaluate(() => {
+        const keep = mileage.slice();
+        const JOHN = { lat: 39.0208, lng: -95.7351 }, CASEYS = { lat: 39.0300, lng: -95.7200 };
+        const d = todayKey();
+        try {
+          mileage.length = 0;
+          mileage.push(
+            { id: 2, gps: true, legKey: 'A', calc_method: 'auto_route', miles: 5.6, date: d, from_name: 'John Doe', to_name: 'Stop',
+              fromCoord: JOHN, toCoord: CASEYS, startedIso: d + 'T15:45:04Z', endedIso: d + 'T15:59:00Z', loggedAt: d + 'T15:59:02Z' },
+            { id: 3, gps: true, legKey: 'B', calc_method: 'auto_route', miles: 4.7, date: d, from_name: 'John Doe', to_name: 'Caseys',
+              fromCoord: JOHN, toCoord: CASEYS, startedIso: d + 'T15:45:41Z', endedIso: d + 'T16:36:00Z', loggedAt: d + 'T16:36:02Z',
+              passedThrough: { stop: { lat: 39.025, lng: -95.728, name: 'Shawnee County Public Library' } } }
+          );
+          _mileDedupTrips(true);
+          return mileage.map(m => ({ id: m.id, to: m.to_name, miles: m.miles }));
+        } finally { mileage.length = 0; keep.forEach(x => mileage.push(x)); }
+      });
+      expect(r.length, 'one journey, one row').toBe(1);
+      expect(r[0].id, 'the breadcrumbed, corrected row survives').toBe(3);
+      expect(r[0].miles, 'and its collapsed distance is what stands, not the orphan\'s inflated one').toBe(4.7);
+    });
+
     test('the pending sweep applies the route clock to an impossible window', async () => {
       const r = await page.evaluate(async () => {
         const realRoute = _routeDistance, realUser = _supaUser;

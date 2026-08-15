@@ -538,6 +538,85 @@ async function _mileTapeHadPause(startedIso,endedIso){
 // for an IRS log; a hand-edited row no longer matches its tally and is
 // naturally left alone; capped at 20 rows so a huge log can never stampede
 // the router.
+// Re-judge NAMED stops after the fact (owner 2026-08-14: the Casey's loop).
+// The personal/business decision runs once, the moment Apple names the stop.
+// If the app died mid-day, or the rule itself changed (fuel receipts stopped
+// qualifying), that decision is never revisited and a personal stop stays on
+// the log forever as a deductible destination. This sweep walks recent auto
+// rows in pairs, X -> P followed by P -> Y, and when P fails the SAME
+// business test the live path uses (a saved business place, or a qualifying
+// receipt), it collapses the pair the way the live collapse would have:
+// one direct X -> Y row, breadcrumbed so a receipt can still rebuild it, or
+// NOTHING at all when X and Y are the same place, because a loop that
+// touched no business point drove no business miles. Reductions only, once
+// per session, capped, and announced.
+async function _milePersonalStopSweep(){
+  try{
+    if(window._milePersonalSweepRan)return 0;
+    window._milePersonalSweepRan=true;
+    if(typeof mileage==='undefined'||!Array.isArray(mileage))return 0;
+    const weekAgo=Date.now()-14*86400000;
+    const near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&typeof _geoDistFt==='function'&&
+      _geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=_MILE_DEDUP_DEST_FT);
+    // Chronological, so "the leg out of P" is the row right after "the leg in".
+    const rows=mileage.filter(m=>m&&m.gps&&m.legKey&&m.toCoord&&m.fromCoord&&
+      (Date.parse(m.endedIso||m.loggedAt||'')||0)>=weekAgo)
+      .sort((a,b)=>String(a.startedIso||a.loggedAt||'').localeCompare(String(b.startedIso||b.loggedAt||'')));
+    let fixed=0;
+    for(let i=0;i<rows.length-1&&fixed<10;i++){
+      const inb=rows[i],out=rows[i+1];
+      if(!mileage.includes(inb)||!mileage.includes(out))continue;
+      if(!near(inb.toCoord,out.fromCoord))continue;            // not the same waypoint
+      if((inb.logged_by_id||null)!==(out.logged_by_id||null))continue;
+      const name=String(inb.to_name||'').trim();
+      if(!name||name==='Stop')continue;                        // unnamed is the fence layer's job
+      const day=inb.date||todayKey();
+      const P={lat:inb.toCoord.lat,lon:inb.toCoord.lng};
+      // A CLIENT or JOB SITE is a business destination by definition, and
+      // placeAt knows nothing about either: the first pass of this sweep
+      // collapsed John Doe's job site straight out of the day and merged the
+      // legs around it, which is the worst possible failure for a sweep whose
+      // whole job is removing rows. Anything the app can recognise as work
+      // is refused before the personal test is even asked.
+      if(inb.client_id!=null)continue;
+      const _bizPurp=String(inb.purpose||'');
+      if(_bizPurp&&_bizPurp!=='Other'&&_bizPurp!=='Personal')continue;
+      const _atJob=(typeof jobs!=='undefined'&&Array.isArray(jobs))&&jobs.some(j=>j&&j.lat!=null&&near({lat:j.lat,lng:j.lon},inb.toCoord));
+      if(_atJob)continue;
+      const _atClient=(typeof clients!=='undefined'&&Array.isArray(clients))&&clients.some(c=>c&&c.lat!=null&&near({lat:c.lat,lng:c.lng!=null?c.lng:c.lon},inb.toCoord));
+      if(_atClient)continue;
+      const savedPlace=(typeof placeAt==='function')?placeAt(P):null;
+      if(savedPlace)continue;   // ANY saved place is somewhere they named on purpose
+      if(_bizReceiptForStop({lat:inb.toCoord.lat,lng:inb.toCoord.lng,name,day}))continue;
+      // P is personal. Collapse.
+      const crumb={stop:{lat:inb.toCoord.lat,lng:inb.toCoord.lng,name,addr:inb.to||'',kind:'stop'},
+                   day,leg:Object.assign({},inb),origin:{lat:inb.fromCoord.lat,lng:inb.fromCoord.lng,name:inb.from_name||''}};
+      const idx=mileage.indexOf(inb);
+      if(idx>=0)mileage.splice(idx,1);
+      if(near(inb.fromCoord,out.toCoord)){
+        // Left a business point, wandered, came back to it: no business miles
+        // exist to claim (the round-trip rule, applied after the fact).
+        const oi=mileage.indexOf(out);
+        if(oi>=0)mileage.splice(oi,1);
+      }else{
+        out.from_name=inb.from_name||out.from_name;
+        out.from=inb.from||out.from;
+        out.fromCoord=inb.fromCoord;
+        out.passedThrough=crumb;
+        const r=await _routeDistance(out.fromCoord,out.toCoord).catch(()=>null);
+        if(r&&r.miles>0){out.miles=Math.round(r.miles*10)/10;out.calc_method='auto_route';}
+      }
+      fixed++;
+    }
+    if(fixed){
+      saveAll();
+      if(document.getElementById('mil-table'))renderAllMileage();
+      if(typeof renderDash==='function')renderDash();
+      try{if(typeof showToast==='function')showToast(fixed+' personal stop'+(fixed===1?'':'s')+' taken off the deduction','🧾');}catch(_e){}
+    }
+    return fixed;
+  }catch(_e){return 0;}
+}
 async function _mileMotionHealSweep(){
   try{
     if(window._mileMotionHealRan)return 0;
@@ -750,6 +829,19 @@ function _mileSameLeg(a,b,heal){
 // is the contemporaneous one.
 function _mileTripWinner(a,b){
   if(!!a.legKey!==!!b.legKey)return a.legKey?a:b;
+  // A CORRECTED row beats the orphan it replaced, before distance is ever
+  // compared (owner 2026-08-14: the library leg survived as "Stop" while its
+  // own replacement was deleted). When a personal stop collapses, the app
+  // writes a new row measured from the last real endpoint and carrying the
+  // breadcrumb; the original inbound row is the stale half of that same
+  // journey. "Longest wins" is exactly backwards there, because the orphan is
+  // longer BY the detour: keeping it re-inflates the miles the collapse just
+  // removed. Breadcrumb first, then a named destination over a bare "Stop",
+  // and only then the distance rule for the cases those cannot separate.
+  const ap=!!(a.passedThrough&&a.passedThrough.stop),bp=!!(b.passedThrough&&b.passedThrough.stop);
+  if(ap!==bp)return ap?a:b;
+  const aStop=String(a.to_name||'').trim()==='Stop',bStop=String(b.to_name||'').trim()==='Stop';
+  if(aStop!==bStop)return aStop?b:a;
   const am=a.miles>0,bm=b.miles>0;
   if(am&&bm&&Math.abs(a.miles-b.miles)>0.05)return a.miles>b.miles?a:b;
   if(am!==bm)return am?a:b;
@@ -948,6 +1040,33 @@ function autoLogDriveTrip(opts){
 // mid-workday is far more often at a supply yard or a gate than at a sandwich
 // counter, and dropping a real leg costs them money in a way that keeping an
 // unnamed one does not. Silence from the router is not evidence of lunch.
+// Does a receipt at this pin prove the stop was a BUSINESS DESTINATION?
+// expenseForStop answers "is there an expense here", which is not the same
+// question (owner 2026-08-14, the Casey's run): vehicle-operating money
+// (fuel, service, the truck itself) is already inside the standard mileage
+// rate, so it can never be the evidence that makes a stop a destination.
+// Counting it would deduct the same gallon twice, once in the rate and again
+// as the trip taken to buy it. The exclusion reuses _isVehicleExpense, the
+// SAME definition the Schedule C engine already excludes from the deduction,
+// so the two engines can never drift apart on what a vehicle expense is.
+// On an ACTUAL-expense vehicle the receipt is a real standalone deduction
+// that is not baked into any rate, so there it still qualifies.
+function _bizReceiptForStop(o){
+  try{
+    if(typeof expenseForStop!=='function')return null;
+    const e=expenseForStop(o);
+    if(!e)return null;
+    if(typeof _isVehicleExpense==='function'&&_isVehicleExpense(e)){
+      const veh=(typeof getVehicles==='function'&&typeof _vehLinkMatches==='function')
+        ?getVehicles().find(v=>_vehLinkMatches(e,v)):null;
+      // Unlinked vehicle money defaults to the mileage method, matching the
+      // deduction engine's own default: the conservative read, and the one
+      // that cannot invent miles.
+      if(((veh&&veh.deductionMethod)||'mileage')!=='actual')return null;
+    }
+    return e;
+  }catch(_e){return null;}
+}
 async function _autoNameStopTrip(rec,to){
   try{
     if(typeof _poiAt!=='function')return;
@@ -1000,8 +1119,7 @@ async function _autoNameStopTrip(rec,to){
     // (_geoCollapseDetours), and this must not judge it twice.
     const savedPlace=(typeof placeAt==='function')?placeAt({lat:to.lat,lon:to.lng}):null;
     const savedIsBusiness=!!(savedPlace&&_PLACE_KIND_TO_PURPOSE[savedPlace.kind]);
-    const hasReceipt=!!(typeof expenseForStop==='function'&&
-                        expenseForStop({lat:to.lat,lng:to.lng,name:poi.name,day:legDay}));
+    const hasReceipt=!!_bizReceiptForStop({lat:to.lat,lng:to.lng,name:poi.name,day:legDay});
     const personal=!!poi.name&&!savedIsBusiness&&!hasReceipt;
     // And patch a leg out of here that was ALREADY written. Which of the two
     // landed first depends on how long Apple took against how long they were
@@ -1084,7 +1202,10 @@ function reviewDetourReceipts(){
   let n=0;
   mileage.filter(m=>m&&m.passedThrough&&m.passedThrough.stop).forEach(m=>{
     const c=m.passedThrough,s=c.stop;
-    if(!expenseForStop({lat:s.lat,lng:s.lng,name:s.name,day:c.day}))return;
+    // Same rule as the collapse itself: a fuel or service receipt on a
+    // mileage-method vehicle never resurrects a detour, or the gallon would
+    // deduct twice.
+    if(!_bizReceiptForStop({lat:s.lat,lng:s.lng,name:s.name,day:c.day}))return;
     // It WAS for the business after all. The leg in goes back, exactly as it was
     // written, and this leg goes back to starting at the stop.
     if(c.leg&&!mileage.some(x=>x.legKey===c.leg.legKey)){
