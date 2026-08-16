@@ -2664,11 +2664,17 @@ function openInvoice(bidId){
   //
   // So: every line of work is listed, in plain language, with NO price against it.
   // Detail proves value. Broken-out cost creates leverage against the contractor.
-  const _items=(bid.lineItems&&bid.lineItems.length)?bid.lineItems:null;
+  // bid.scope is built by the snapshot from the estimate's OWN scope: paint surfaces
+  // grouped by room, generic/BYO scope chips, the free-text description. Strings
+  // only, by construction, so there is no price here to leak. lineItems is still
+  // honoured for anything that carries them.
+  const _scope=(bid.scope&&bid.scope.length)?bid.scope
+    :(bid.lineItems&&bid.lineItems.length)?bid.lineItems.map(function(it){return it.desc||it.name||'Work';})
+    :null;
   html+='<table class="inv-table"><thead><tr><th>Work performed</th></tr></thead><tbody>';
-  if(_items){
-    _items.forEach(function(it){
-      html+='<tr><td>'+esc(it.desc||it.name||'Work')+'</td></tr>';
+  if(_scope){
+    _scope.forEach(function(line){
+      html+='<tr><td>'+esc(typeof line==='string'?line:(line&&(line.desc||line.name))||'Work')+'</td></tr>';
     });
   }else{
     html+='<tr><td>'+esc(bid.type||'Professional services')+'<br><span style="font-size:11px;color:#666">'+esc(h.clientAddr||'')+'</span></td></tr>';

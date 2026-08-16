@@ -250,6 +250,34 @@ test.describe('Paid invoice: what the client sees', () => {
     expect(r.leaksQty).toBe(false);
   });
 
+  // Where the scope actually comes from (owner 2026-08-16: "how does it pull details
+  // from the proposal"). The snapshot derives bid.scope from the estimate's own
+  // scope, so the invoice lists the real job rather than the estimate type alone.
+  test('the work list comes from the estimate scope carried on the snapshot', async () => {
+    const r = await page.evaluate(() => {
+      _hub.salesTaxRate = 0;
+      _hub.bids = [{ id: 7012, amount: 2375, type: 'Interior repaint', completion_date: '2026-08-14',
+        scope: ['Living Room: walls, ceiling', 'Hallway: walls', 'Trim and doors throughout'] }];
+      _hub.payments = [];
+      openInvoice(7012);
+      const rows = [...document.querySelectorAll('.inv-table tbody tr')].map(t => t.textContent.trim());
+      return { rows };
+    });
+    expect(r.rows).toEqual(['Living Room: walls, ceiling', 'Hallway: walls', 'Trim and doors throughout']);
+  });
+
+  test('no scope on the estimate falls back to one honest line, never a blank table', async () => {
+    const r = await page.evaluate(() => {
+      _hub.bids = [{ id: 7013, amount: 900, type: 'Service call', completion_date: '2026-08-14' }];
+      _hub.payments = [];
+      openInvoice(7013);
+      const rows = [...document.querySelectorAll('.inv-table tbody tr')];
+      return { count: rows.length, text: rows.map(t => t.textContent).join(' ') };
+    });
+    expect(r.count).toBe(1);
+    expect(r.text).toContain('Service call');
+  });
+
   test('no labor, material or other cost split anywhere on the document', async () => {
     const txt = await page.evaluate(() => {
       _hub.bids = [{ id: 7011, amount: 841.28, type: 'Service repair', completion_date: '2026-08-14',

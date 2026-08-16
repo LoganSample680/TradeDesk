@@ -176,7 +176,38 @@ function _buildClientHubSnapshot(clientId){
     const _fcRate=(S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5)/100/30;
     const financeCharge=balance>0.01&&_fcDaysOverdue>0?Math.round(balance*_fcRate*_fcDaysOverdue*100)/100:0;
     const daysOverdue=balance>0.01?_fcDaysOverdue:0;
-    return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',
+    // SCOPE for the invoice's "Work performed" list: the estimate's own scope, in
+    // the estimate's own words, DESCRIPTIONS ONLY. No qty, no rate, no amount, the
+    // same one-price rule the document follows (owner 2026-08-16). Paint estimates
+    // group their surfaces by room; generic and BYO estimates carry scope chips and
+    // a free-text description; a diagnostic carries desc. Empty means the invoice
+    // falls back to the estimate type as a single line.
+    const _hubScope=(()=>{
+      const out=[];
+      const _surf=Array.isArray(b.surfaces)?b.surfaces:[];
+      if(_surf.length){
+        const byRoom={};
+        _surf.forEach(sf=>{
+          const _r=String(sf&&sf.room||'').trim()||'Work area';
+          const _t=String(sf&&sf.type||'').trim();
+          (byRoom[_r]=byRoom[_r]||[]).push(_t||'surface');
+        });
+        Object.keys(byRoom).forEach(r=>{
+          const kinds=[...new Set(byRoom[r])];
+          out.push(kinds.length?r+': '+kinds.join(', '):r);
+        });
+      }
+      (Array.isArray(b.scopeChips)?b.scopeChips:[]).forEach(c=>{
+        const _c=typeof c==='string'?c:(c&&(c.label||c.name||''));
+        if(_c&&out.indexOf(_c)===-1)out.push(String(_c));
+      });
+      String(b.geiDesc||b.desc||'').split(/\r?\n/).forEach(l=>{
+        const _l=l.trim().replace(/^[-•*]\s*/,'');
+        if(_l&&out.indexOf(_l)===-1)out.push(_l);
+      });
+      return out.slice(0,40);
+    })();
+    return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',scope:_hubScope,
       // Signed-document fields (diagnostic charges + any bid signed in person):
       // the hub renders these through the shared esign signed-doc block.
       kind:b.kind||'',desc:b.desc||'',signed:!!b.signed,signerName:b.signerName||'',sigData:b.sigData||'',
