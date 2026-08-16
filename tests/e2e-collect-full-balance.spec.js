@@ -97,16 +97,15 @@ test.describe('Pay panel: three options, full amount always payable', () => {
     expect(r.tapLocked).toBe('tap');
     expect(r.hubOpacity).toBeLessThan(0.7);
     expect(r.tapOpacity).toBeLessThan(0.7);
-    expect(r.hubText.toLowerCase()).toContain('locked');
-    expect(r.tapText.toLowerCase()).toContain('locked');
-    expect(r.hubText.toLowerCase()).toContain('locked');
+    // Grey is the whole signal (owner 2026-08-15: no LOCKED badge). The reason is
+    // delivered by the tap, so what must hold is that the tap goes somewhere useful.
     expect(r.hubClick).toBe('_mpayNeedStripe()');
     expect(r.tapClick).toBe('_mpayNeedStripe()');
     expect(r.manualSelectable).toBe(true);
     expect(r.manualOpacity).toBeGreaterThanOrEqual(0.99);
   });
 
-  test('connecting Stripe unlocks the hub route and leaves tap to pay coming soon', async () => {
+  test('connecting Stripe unlocks the hub route and leaves tap to pay unavailable', async () => {
     const r = await page.evaluate((bid) => {
       window._stripeConnectStatus = { charges_enabled: true };
       openPayPanel(bid);
@@ -127,8 +126,7 @@ test.describe('Pay panel: three options, full amount always payable', () => {
     expect(r.hubSelectable).toBe(true);
     expect(r.hubOpacity).toBeGreaterThanOrEqual(0.99);
     expect(r.hubText.toLowerCase()).not.toContain('locked');
-    expect(r.tapText.toLowerCase()).toContain('soon');   // Stripe is not its only blocker
-    expect(r.tapClick).toBe('_tapToPaySoon()');
+    expect(r.tapClick).toBe('_tapToPaySoon()');   // Stripe is not tap-to-pay's only blocker
   });
 
   test('manual is pre-selected with the balance filled in and editable', async () => {

@@ -886,25 +886,25 @@ function openPayPanel(bidId, autoType){
   // what they're missing. Greyed is not DEAD (§13.1): tapping a locked one walks
   // them to Connect.
   const stripeOn=!!(_stripeConnectStatus&&_stripeConnectStatus.charges_enabled);
-  // A greyed segment with no reason on it is just a broken button. `note` is the
-  // one-word why, in 8px caps under the label: LOCKED until Stripe is connected,
-  // SOON for tap-to-pay once it is.
-  const _opt=(pm,icon,label,locked,onclick,note)=>
-    '<button type="button" '+(locked?'data-plocked="'+pm+'"':'data-pmethod="'+pm+'"')+
+  // A route the account can't use yet is simply GREY (owner 2026-08-15: no LOCKED
+  // badge, no COMING SOON badge). Tapping it is what explains itself: both greyed
+  // routes open the Connect-Stripe prompt, so the control is never dead, it just
+  // doesn't wear its status on its face.
+  const _opt=(pm,icon,label,off,onclick)=>
+    '<button type="button" '+(off?'data-plocked="'+pm+'"':'data-pmethod="'+pm+'"')+
       ' onclick="'+(onclick||('selectPayType(this,'+bidId+')'))+'"'+
-      ' style="flex:1;min-width:0;padding:8px 4px;border-radius:var(--r-sm,8px);border:none;background:none;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:2px'+(locked?';opacity:.5':'')+'">'+
-      icon+
-      '<span style="font-size:11px;font-weight:800;letter-spacing:-.1px;white-space:nowrap">'+label+'</span>'+
-      (note?'<span style="font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);white-space:nowrap">'+note+'</span>':'')+
+      ' style="flex:1;min-width:0;padding:10px 4px;border-radius:10px;border:none;background:none;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:5px;transition:background .14s ease'+(off?';opacity:.38':'')+'">'+
+      '<span style="display:flex;align-items:center;justify-content:center;width:26px;height:26px">'+icon+'</span>'+
+      '<span style="font-size:11.5px;font-weight:800;letter-spacing:-.15px;white-space:nowrap">'+label+'</span>'+
     '</button>';
   const _needStripe=balance>0.50&&!stripeOn;
   const methodRow=
-    '<div id="mpay-type-btns" style="display:flex;gap:2px;padding:3px;border-radius:var(--r);background:var(--bg2);box-shadow:inset 0 0 0 1px var(--border2)">'+
-      _opt('manual',svgIcon('💵',{size:17}),'Log it',false)+
-      (balance>0.50?_opt('stripe',svgIcon('🔗',{size:17}),'Send link',_needStripe,_needStripe?'_mpayNeedStripe()':null,_needStripe?'Locked':''):'')+
-      (balance>0.50?_opt('tap',svgIcon('📶',{size:17}),'Tap to pay',true,stripeOn?'_tapToPaySoon()':'_mpayNeedStripe()',stripeOn?'Soon':'Locked'):'')+
+    '<div id="mpay-type-btns" style="display:flex;gap:3px;padding:4px;border-radius:13px;background:var(--cream);box-shadow:inset 0 0 0 1px var(--border2)">'+
+      _opt('manual',svgIcon('💵',{size:19,color:'var(--green)'}),'Log it',false)+
+      (balance>0.50?_opt('stripe',svgIcon('🔗',{size:19,color:'var(--denim)'}),'Send link',_needStripe,_needStripe?'_mpayNeedStripe()':null):'')+
+      (balance>0.50?_opt('tap',svgIcon('📶',{size:19,color:'#C0720A'}),'Tap to pay',true,stripeOn?'_tapToPaySoon()':'_mpayNeedStripe()'):'')+
     '</div>'+
-    '<div id="mpay-hint" style="font-size:11.5px;color:var(--text3);text-align:center;margin:7px 0 12px"></div>';
+    '<div id="mpay-hint" style="font-size:11.5px;color:var(--text3);text-align:center;margin:9px 0 14px"></div>';
   // Amount presets: the deposit this contract calls for and the whole balance.
   // They only fill the field, they never lock it. Shown only when there is a real
   // CHOICE, one lone chip repeating the number above it is noise.
@@ -925,18 +925,34 @@ function openPayPanel(bidId, autoType){
     payMethods.map(m=>'<button type="button" data-pmeth="'+m+'" onclick="_mpayPickMethod(\''+m+'\')" style="flex:1 1 30%;padding:9px 6px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--text)">'+m+'</button>').join('')+
   '</div>';
 
+  // The sheet leads with an INK BAND, the same dark surface as the nav and the tab
+  // bar, with the money reversed out of it. A white form-card headed by a 19px
+  // title read like a settings screen; the number is the reason this screen exists,
+  // so it gets the weight. The band shows what is OWED, the field below shows what
+  // is being COLLECTED, which are different figures on a partial payment.
   overlay.innerHTML=
-    '<div class="zmodal">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">'+
-        '<div style="font-size:19px;font-weight:800">Get paid</div>'+
-        '<button onclick="closePayPanel()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">'+svgIcon('✕',{size:20})+'</button>'+
+    '<div class="zmodal" style="padding:0;overflow:hidden">'+
+      '<div style="background:var(--ink);color:var(--text-cream);padding:18px 22px 20px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">'+
+          '<div style="min-width:0">'+
+            '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.13em;color:var(--text-cream-3)">Get paid</div>'+
+            '<div style="font-size:15px;font-weight:700;color:var(--text-cream-2);margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(bid.client_name||'')+'</div>'+
+          '</div>'+
+          '<button onclick="closePayPanel()" style="flex-shrink:0;border:none;background:rgba(245,239,226,.10);border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-cream-2);padding:0">'+svgIcon('✕',{size:17,color:'currentColor'})+'</button>'+
+        '</div>'+
+        '<div style="display:flex;align-items:baseline;gap:9px;margin-top:12px">'+
+          '<div style="font-family:var(--font-display,inherit);font-size:38px;font-weight:900;letter-spacing:-1.6px;line-height:1">'+fmt(balance)+'</div>'+
+          '<div style="font-size:11.5px;font-weight:700;color:var(--text-cream-3);text-transform:uppercase;letter-spacing:.08em">owed</div>'+
+        '</div>'+
+        (total>balance+0.01?'<div style="font-size:11.5px;color:var(--text-cream-3);margin-top:4px">'+fmt(total-balance)+' of '+fmt(total)+' already paid</div>':'')+
       '</div>'+
-      '<div style="font-size:12.5px;color:var(--text3);margin-bottom:14px">'+escHtml(bid.client_name||'')+' &middot; <strong style="color:var(--text)">'+fmt(balance)+'</strong> owed of '+fmt(total)+'</div>'+
+      '<div style="padding:16px 22px 22px">'+
       overpaidBanner+
       '<input type="hidden" id="mpay-type">'+
       methodRow+
       '<div id="mpay-detail-fields" style="display:none">'+
         '<div id="mpay-amount-row" style="display:none">'+
+          '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.11em;color:var(--text3);margin-bottom:7px">Collecting</div>'+
           '<div style="position:relative">'+
             '<span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:20px;font-weight:800;color:var(--text3);pointer-events:none">$</span>'+
             '<input type="text" id="mpay-amount" placeholder="0.00" inputmode="decimal" oninput="_fmtMoneyInput(this)"'+
@@ -965,9 +981,10 @@ function openPayPanel(bidId, autoType){
       '</div>'+
       '<div id="mpay-err" style="display:none;font-size:12px;color:#A32D2D;background:#FEE8E8;border-radius:var(--r);padding:8px 10px;margin:10px 0 0"></div>'+
       '<button id="mpay-submit-btn" onclick="logPayment()" style="display:none;width:100%;margin-top:14px;padding:15px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">Record payment</button>'+
-      '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border2)">'+
+      '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border2)">'+
         '<button type="button" onclick="_mpayToggleAdj()" style="background:none;border:none;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;color:var(--text3);padding:2px 0;text-align:left">Adjustments &amp; refunds</button>'+
         '<div id="_mpay-adj-btns" style="display:none">'+refundBtn+cancelRefundBtn+'</div>'+
+      '</div>'+
       '</div>'+
     '</div>';
 

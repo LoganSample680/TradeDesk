@@ -1910,13 +1910,14 @@ test.describe('bids.js: exhaustive coverage', () => {
       // Stripe connected: honest "coming soon", never a claim that a card was charged
       expect(r.on.found, 'Tap to pay must be present in the pay panel').toBe(true);
       expect(r.on.label).toContain('Tap to pay');
-      expect(r.on.label.toLowerCase()).toContain('soon');
+      // No status badge on the control since 2026-08-15 (owner: an unavailable route
+      // is just grey). The TAP is what explains itself, which is what this test is
+      // really for, so the not-a-dead-button assertions below carry the weight now.
       expect(r.on.onclick).toBe('_tapToPaySoon()');
       expect(r.on.modalText, 'tapping it must show a real message, not silently no-op').toContain('coming');
       expect(r.on.modalText.toLowerCase()).not.toContain('charged');
       // Stripe off: locked, and tapping walks to Connect rather than doing nothing
       expect(r.off.found, 'Tap to pay must still be visible when Stripe is off').toBe(true);
-      expect(r.off.label.toLowerCase()).toContain('locked');
       expect(r.off.onclick).toBe('_mpayNeedStripe()');
       expect(r.off.modalText.toLowerCase()).toContain('stripe');
       expect(r.off.modalText.toLowerCase()).not.toContain('charged');
