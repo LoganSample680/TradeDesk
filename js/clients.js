@@ -2655,14 +2655,31 @@ function _cdPropCardHtml(c,a,idx,total){
     // property and in this body for multi, so the expanded body adds only the
     // lead flag, access note, and work history.
     // Work items, one clean chronological list with a type tag.
+    // A won proposal with nothing on the calendar is the single most useful fact on
+    // this card and it was not stated anywhere (owner 2026-08-16: drove to a job that
+    // had a won bid and no schedule). Flagged on the row itself, in amber.
+    const _jobForBid=b=>hist.jobs.some(j=>j.bid_id===b.id||(!j.bid_id&&j.client_id===b.client_id&&(j.name||'')===(b.name||'')));
     const items=[
-      ...hist.proposals.map(b=>({kind:'Proposal',accent:'var(--blue)',name:b.type||b.name||'Proposal',date:b.bid_date||(b.created?String(b.created).slice(0,10):''),amount:b.amount||0,meta:b.status||''})),
-      ...hist.jobs.map(j=>({kind:'Job',accent:'#1f9d57',name:j.name||'Job',date:j.start||'',amount:j.value||0,meta:(j.status==='completed'||j.status==='done')&&j.end?('Done '+_cdDShort(j.end)):(j.status||'')})),
+      ...hist.proposals.map(b=>{
+        const _won=b.status==='Closed Won';
+        const _unsched=_won&&!_jobForBid(b);
+        return {kind:'Proposal',accent:'var(--blue)',name:b.type||b.name||'Proposal',
+          date:b.bid_date||(b.created?String(b.created).slice(0,10):''),amount:b.amount||0,
+          meta:b.status||'',flag:_unsched?'Not scheduled':''};
+      }),
+      // A job created from a proposal carries no value of its own, so showing its
+      // own 0 next to a signed contract reads as free work. Fall back to the bid.
+      ...hist.jobs.map(j=>{
+        const _b=j.bid_id?hist.proposals.find(b=>b.id===j.bid_id):null;
+        return {kind:'Job',accent:'#1f9d57',name:j.name||'Job',date:j.start||'',
+          amount:Number(j.value||0)||(_b?Number(_b.amount||0):0),
+          meta:(j.status==='completed'||j.status==='done')&&j.end?('Done '+_cdDShort(j.end)):(j.status||'')};
+      }),
     ].sort((x,y)=>String(y.date).localeCompare(String(x.date)));
     const rows=items.map(it=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border)">
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.name)}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:1px"><span style="color:${it.accent};font-weight:700">${it.kind}</span>${it.date?'  ·  '+_cdDShort(it.date):''}${it.meta?'  ·  '+escHtml(it.meta):''}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px"><span style="color:${it.accent};font-weight:700">${it.kind}</span>${it.date?'  ·  '+_cdDShort(it.date):''}${it.meta?'  ·  '+escHtml(it.meta):''}${it.flag?'  ·  <span style="color:#8A4E00;font-weight:800">'+escHtml(it.flag)+'</span>':''}</div>
       </div>
       ${money?`<div style="font-size:13px;font-weight:700;color:var(--text);flex-shrink:0">${fmt(it.amount)}</div>`:''}
     </div>`).join('');

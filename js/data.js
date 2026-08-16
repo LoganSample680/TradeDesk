@@ -462,8 +462,24 @@ function getPropertyHistory(client,addr){
   const cid=client.id,k=_addrKey(addr||client.addr);
   const match=a=>_addrKey(a||client.addr)===k;
   const jobIds={};
-  (typeof bids!=='undefined'?bids:[]).forEach(b=>{if(b.client_id===cid&&match(b.addr))res.proposals.push(b);});
-  (typeof jobs!=='undefined'?jobs:[]).forEach(j=>{if(j.client_id===cid&&match(j.addr)){res.jobs.push(j);res.billed+=Number(j.value||0);jobIds[j.id]=1;}});
+  // BILLED is the money contracted at this address, and that lives on the WON BID,
+  // not on the job. Jobs created from a bid carry value 0 (the money stays on the
+  // proposal), so summing only j.value made a property with a signed $772.88 job and
+  // no schedule read "$0.00 of $0.00 paid" (owner screenshot 2026-08-16). Won bids
+  // count; a job linked to one of them does NOT add again, or the same contract
+  // would be counted twice; a standalone job with its own value still counts.
+  const wonBidIds={};
+  (typeof bids!=='undefined'?bids:[]).forEach(b=>{
+    if(b.client_id!==cid||!match(b.addr))return;
+    res.proposals.push(b);
+    if(b.status==='Closed Won'){res.billed+=Number(b.amount||0);wonBidIds[b.id]=1;}
+  });
+  (typeof jobs!=='undefined'?jobs:[]).forEach(j=>{
+    if(j.client_id!==cid||!match(j.addr))return;
+    res.jobs.push(j);
+    if(!(j.bid_id&&wonBidIds[j.bid_id]))res.billed+=Number(j.value||0);
+    jobIds[j.id]=1;
+  });
   (typeof payments!=='undefined'?payments:[]).forEach(p=>{
     if(p.client_id!==cid)return;
     if(p.job_id!=null&&jobIds[p.job_id])res.paid+=Number(p.amount||0);
