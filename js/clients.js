@@ -2559,6 +2559,142 @@ function _cdMapAddr(i){const a=_cdAddrList[i];if(a)window.open('https://maps.app
 function _cdDShort(s){if(!s)return '';const d=new Date(s);return isNaN(d)?String(s):d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}
 // Compact money for the property value header: $385K, $1.2M (no cents on a home value).
 function _cdCompactMoney(n){n=Number(n)||0;if(n>=1e6)return '$'+(n/1e6).toFixed(n%1e6?1:0).replace(/\.0$/,'')+'M';if(n>=1e3)return '$'+Math.round(n/1e3)+'K';return '$'+Math.round(n);}
+// ── Past work rows (owner-approved layout 2026-08-16: "tap to open") ────────
+// Collapsed: what it was, when it finished, what it cost + paid state, and the
+// warranty chip, the first question on every callback. Open: photos, what we
+// used, scope, crew, and Quote this again. Research: contractors open old jobs
+// to answer a callback (warranty? what color?) or to quote repeat work.
+function _cdWarrantyChip(completionDate){
+  const w=(typeof getWarrantyStatus==='function')?getWarrantyStatus(completionDate):null;
+  if(!w)return '';
+  const fg=w.active?'var(--green-mid)':'var(--text3)';
+  const bg=w.active?'var(--green-lt)':'var(--bg2)';
+  return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;padding:3px 8px;border-radius:20px;margin-top:6px;background:${bg};color:${fg}"><span style="width:6px;height:6px;border-radius:50%;background:currentColor"></span>${escHtml(w.label)}</span>`;
+}
+function _cdPastThumbs(photos){
+  if(!photos.length)return '';
+  const shown=photos.slice(0,3);
+  const extra=photos.length-shown.length;
+  return `<div style="display:flex;gap:6px;margin-bottom:10px">`+
+    shown.map(p=>`<img src="${p.data}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border2)">`).join('')+
+    (extra>0?`<div style="width:64px;height:64px;border-radius:8px;border:1px solid var(--border2);background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--text2)">+${extra}</div>`:'')+
+  `</div>`;
+}
+function _cdPastSpec(specs){
+  if(!specs.length)return '';
+  const lines=specs.slice(0,8).map(s=>
+    `${s.where?escHtml(s.where)+' ':''}<strong>${escHtml(s.item||'')}</strong>${s.finish?', '+escHtml(s.finish):''}`).join('<br>');
+  return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:9px 11px;margin-bottom:10px">
+    <div style="font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-bottom:4px">What we used</div>
+    <div style="font-size:12.5px;line-height:1.5;color:var(--text)">${lines}</div>
+  </div>`;
+}
+function _cdPastDetail(label,val){
+  return val?`<div style="display:flex;font-size:12px;padding:3px 0;color:var(--text2)"><span style="color:var(--text3);width:92px;flex-shrink:0">${label}</span><div style="min-width:0">${val}</div></div>`:'';
+}
+// The paid state under the amount: green when settled, red with the number owed.
+function _cdPaidState(amount,paid){
+  const bal=Math.max(0,(amount||0)-paid);
+  return bal<0.01
+    ?`<span style="display:block;font-size:9.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:var(--green-mid);margin-top:2px">Paid in full</span>`
+    :`<span style="display:block;font-size:9.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#A32D2D;margin-top:2px">${fmt(bal)} still owed</span>`;
+}
+function _cdPastBidRow(b,hist,money){
+  const key='_cdpastOpen_'+b.id;
+  const isOpen=!!window[key];
+  const linked=hist.jobs.filter(j=>j.bid_id===b.id);
+  const paid=(typeof getBidPaid==='function')?getBidPaid(b.id):0;
+  const name=b.type||b.name||'Job';
+  let bodyHtml='';
+  if(isOpen){
+    const photos=linked.flatMap(j=>Array.isArray(j.photos)?j.photos:[]);
+    const specs=linked.flatMap(j=>Array.isArray(j.specUsed)?j.specUsed:[]);
+    const scope=(typeof _bidScopeLines==='function')?_bidScopeLines(b).slice(0,4).join('; '):'';
+    const crew=[...new Set(linked.map(j=>{
+      const e=(S.employees||[]).find(x=>String(x.id)===String(j.assignedTo));
+      return e?(e.name||''):'';
+    }).filter(Boolean))].join(', ');
+    // Days on site: earliest scheduled start through the completion date.
+    let days='';
+    const starts=linked.map(j=>j.start).filter(Boolean).sort();
+    if(starts.length&&b.completion_date){
+      const d0=new Date(starts[0]),d1=new Date(b.completion_date);
+      const n=Math.round((d1-d0)/86400000)+1;
+      if(n>=1&&n<366)days=n+(n===1?' day':' days')+' ('+_cdDShort(starts[0])+' to '+_cdDShort(b.completion_date)+')';
+    }
+    bodyHtml=`<div style="border-top:1px dashed var(--border2);margin-top:10px;padding-top:10px" onclick="event.stopPropagation()">
+      ${_cdPastThumbs(photos)}
+      ${_cdPastSpec(specs)}
+      ${_cdPastDetail('Scope',scope?escHtml(scope):'')}
+      ${_cdPastDetail('Crew',crew?escHtml(crew):'')}
+      ${_cdPastDetail('Days on site',days?escHtml(days):'')}
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button onclick="viewBidFromTimeline(${b.id})" class="btn" style="flex:1;padding:9px;font-size:12px;font-weight:800">View proposal</button>
+        <button onclick="_cdQuoteAgain(${b.id})" class="btn btn-p" style="flex:1;padding:9px;font-size:12px;font-weight:800">Quote this again</button>
+      </div>
+    </div>`;
+  }
+  return `<div onclick="window['${key}']=!window['${key}'];renderCDAddresses()" style="padding:10px 0;border-top:1px solid var(--border);cursor:pointer">
+    <div style="display:flex;align-items:flex-start;gap:10px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13.5px;font-weight:700;color:var(--text)">${escHtml(name)}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px">Finished ${_cdDShort(b.completion_date)}</div>
+        ${_cdWarrantyChip(b.completion_date)}
+      </div>
+      ${money?`<div style="text-align:right;flex-shrink:0"><span style="font-size:13px;font-weight:800;color:var(--text)">${fmt(b.amount||0)}</span>${_cdPaidState(b.amount,paid)}</div>`:''}
+      <span style="color:var(--text3);font-size:13px;align-self:center;flex-shrink:0">${isOpen?'▾':'▸'}</span>
+    </div>
+    ${bodyHtml}
+  </div>`;
+}
+// A standalone finished job (no proposal behind it): same row, its own photos
+// and spec, no proposal to view or re-quote.
+function _cdPastJobRow(j,money){
+  const key='_cdpastOpen_j'+j.id;
+  const isOpen=!!window[key];
+  const fin=j.end||j.start||'';
+  let bodyHtml='';
+  if(isOpen){
+    bodyHtml=`<div style="border-top:1px dashed var(--border2);margin-top:10px;padding-top:10px" onclick="event.stopPropagation()">
+      ${_cdPastThumbs(Array.isArray(j.photos)?j.photos:[])}
+      ${_cdPastSpec(Array.isArray(j.specUsed)?j.specUsed:[])}
+      ${_cdPastDetail('Notes',j.notes?escHtml(j.notes):'')}
+    </div>`;
+  }
+  return `<div onclick="window['${key}']=!window['${key}'];renderCDAddresses()" style="padding:10px 0;border-top:1px solid var(--border);cursor:pointer">
+    <div style="display:flex;align-items:flex-start;gap:10px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13.5px;font-weight:700;color:var(--text)">${escHtml(j.name||'Job')}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px">Finished ${_cdDShort(fin)}</div>
+        ${_cdWarrantyChip(fin)}
+      </div>
+      ${money?`<div style="text-align:right;flex-shrink:0"><span style="font-size:13px;font-weight:800;color:var(--text)">${fmt(j.value||0)}</span></div>`:''}
+      <span style="color:var(--text3);font-size:13px;align-self:center;flex-shrink:0">${isOpen?'▾':'▸'}</span>
+    </div>
+    ${bodyHtml}
+  </div>`;
+}
+// "Quote this again": the old job is the best estimate template the account
+// owns. Clone the bid as a fresh pending proposal, everything about the money
+// and scope kept, everything about the old signature/completion/tokens
+// stripped, exactly the _geiDuplicate Option-B pattern (§7.3).
+function _cdQuoteAgain(bidId){
+  const src=bids.find(x=>x.id===bidId);
+  if(!src)return;
+  const copy=JSON.parse(JSON.stringify(src));
+  copy.id=_newBidId();
+  copy.status='pending';
+  copy.draft=false;
+  copy.bid_date=todayKey();
+  delete copy.completion_date;delete copy.completedAt;
+  delete copy.signed;delete copy.signedAt;delete copy.signerName;delete copy.sigData;
+  delete copy.signingToken;delete copy.proposalKey;delete copy.proposalSentDate;
+  delete copy.lostReason;delete copy.lostNote;delete copy.lostAt;
+  bids.unshift(copy);
+  saveAll();
+  showToast('New proposal drafted from '+(src.type||src.name||'the old job')+'. Review and send.','📋');
+  viewBidFromTimeline(copy.id);
+}
 // One property card = one address: Zillow facts + pre-1978 lead trigger + the
 // crew site note + every proposal/job at THIS address with dates, dollars, and
 // running billed/paid totals. Same card for the primary and every extra address.
@@ -2659,8 +2795,17 @@ function _cdPropCardHtml(c,a,idx,total){
     // this card and it was not stated anywhere (owner 2026-08-16: drove to a job that
     // had a won bid and no schedule). Flagged on the row itself, in amber.
     const _jobForBid=b=>hist.jobs.some(j=>j.bid_id===b.id||(!j.bid_id&&j.client_id===b.client_id&&(j.name||'')===(b.name||'')));
+    // Finished work leaves the open list and becomes a Past work row (layout the
+    // owner picked 2026-08-16): the collapsed row states what it was, when it
+    // finished, what it cost and whether it's paid, and the warranty status; a
+    // tap opens photos, what we used, scope, crew, and Quote this again.
+    const _jobDone=j=>j.status==='completed'||j.status==='done';
+    const pastBids=hist.proposals.filter(b=>b.status==='Closed Won'&&b.completion_date);
+    const pastBidIds={};pastBids.forEach(b=>pastBidIds[b.id]=1);
+    const pastJobs=hist.jobs.filter(j=>!j.bid_id&&_jobDone(j));
+    const pastJobIds={};pastJobs.forEach(j=>pastJobIds[j.id]=1);
     const items=[
-      ...hist.proposals.map(b=>{
+      ...hist.proposals.filter(b=>!pastBidIds[b.id]).map(b=>{
         const _won=b.status==='Closed Won';
         const _unsched=_won&&!_jobForBid(b);
         return {kind:'Proposal',accent:'var(--blue)',name:b.type||b.name||'Proposal',
@@ -2669,7 +2814,8 @@ function _cdPropCardHtml(c,a,idx,total){
       }),
       // A job created from a proposal carries no value of its own, so showing its
       // own 0 next to a signed contract reads as free work. Fall back to the bid.
-      ...hist.jobs.map(j=>{
+      // Jobs whose contract is already in Past work ride that row, not this list.
+      ...hist.jobs.filter(j=>!pastJobIds[j.id]&&!(j.bid_id&&pastBidIds[j.bid_id])).map(j=>{
         const _b=j.bid_id?hist.proposals.find(b=>b.id===j.bid_id):null;
         return {kind:'Job',accent:'#1f9d57',name:j.name||'Job',date:j.start||'',
           amount:Number(j.value||0)||(_b?Number(_b.amount||0):0),
@@ -2684,13 +2830,24 @@ function _cdPropCardHtml(c,a,idx,total){
       ${money?`<div style="font-size:13px;font-weight:700;color:var(--text);flex-shrink:0">${fmt(it.amount)}</div>`:''}
     </div>`).join('');
     const totalSpan=money?`<span style="font-size:12px;color:var(--text2)"><strong style="color:var(--text)">${fmt(hist.paid)}</strong> <span style="color:var(--text3)">of ${fmt(hist.billed)} paid</span></span>`:'';
-    const workBlock=workCount?`<div>
+    const workBlock=items.length?`<div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
         <span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Work at this address</span>
         ${totalSpan}
       </div>
       ${rows}
-    </div>`:`<div style="font-size:12px;color:var(--text3);padding:2px 0">No proposals or jobs at this address yet.</div>`;
+    </div>`:(workCount?'':`<div style="font-size:12px;color:var(--text3);padding:2px 0">No proposals or jobs at this address yet.</div>`);
+    const pastRows=[
+      ...pastBids.map(b=>({fin:b.completion_date,html:_cdPastBidRow(b,hist,money)})),
+      ...pastJobs.map(j=>({fin:j.end||j.start||'',html:_cdPastJobRow(j,money)})),
+    ].sort((x,y)=>String(y.fin).localeCompare(String(x.fin))).map(r=>r.html).join('');
+    const pastBlock=pastRows?`<div style="margin-top:${items.length?14:0}px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
+        <span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Past work</span>
+        ${items.length?'':totalSpan}
+      </div>
+      ${pastRows}
+    </div>`:'';
     // Footer: data source / lookup + map + remove.
     const srcLink=p.assessorUrl
       ?`<a href="${escHtml(p.assessorUrl)}" target="_blank" style="font-size:12px;color:var(--blue);text-decoration:none">${p.propDataSource==='zillow'?'View on Zillow →':'County record →'}</a>`
@@ -2702,7 +2859,7 @@ function _cdPropCardHtml(c,a,idx,total){
       <button onclick="_cdMapAddr(${idx})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--text2)">Map</button>
       ${removeBtn}
     </div>`;
-    body=`<div style="padding:0 14px 14px">${single?'':factsLine}${leadRow}${noteRow}${workBlock}${footer}</div>`;
+    body=`<div style="padding:0 14px 14px">${single?'':factsLine}${leadRow}${noteRow}${workBlock}${pastBlock}${footer}</div>`;
   }
   return `<div style="background:var(--bg-card,var(--bg));border:1px solid var(--line-2);border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:var(--shadow-card)">${header}${body}</div>`;
 }

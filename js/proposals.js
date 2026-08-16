@@ -156,6 +156,35 @@ async function processGalleryUpload(input){
 }
 
 // ── Client Hub ──────────────────────────────────────────────────────────────
+// A bid's scope as plain description lines, the estimate's own words with no
+// numbers: paint estimates group surfaces by room, generic/BYO carry scope
+// chips and free text, a diagnostic carries desc. Used by the hub invoice's
+// "Work performed" and the property card's Past work rows.
+function _bidScopeLines(b){
+  const out=[];
+  const _surf=Array.isArray(b.surfaces)?b.surfaces:[];
+  if(_surf.length){
+    const byRoom={};
+    _surf.forEach(sf=>{
+      const _r=String(sf&&sf.room||'').trim()||'Work area';
+      const _t=String(sf&&sf.type||'').trim();
+      (byRoom[_r]=byRoom[_r]||[]).push(_t||'surface');
+    });
+    Object.keys(byRoom).forEach(r=>{
+      const kinds=[...new Set(byRoom[r])];
+      out.push(kinds.length?r+': '+kinds.join(', '):r);
+    });
+  }
+  (Array.isArray(b.scopeChips)?b.scopeChips:[]).forEach(c=>{
+    const _c=typeof c==='string'?c:(c&&(c.label||c.name||''));
+    if(_c&&out.indexOf(_c)===-1)out.push(String(_c));
+  });
+  String(b.geiDesc||b.desc||'').split(/\r?\n/).forEach(l=>{
+    const _l=l.trim().replace(/^[-•*]\s*/,'');
+    if(_l&&out.indexOf(_l)===-1)out.push(_l);
+  });
+  return out.slice(0,40);
+}
 function _buildClientHubSnapshot(clientId){
   const c=clients.find(x=>x.id===clientId);if(!c)return null;
   const cbids=bids.filter(b=>b.client_id===clientId);
@@ -178,35 +207,9 @@ function _buildClientHubSnapshot(clientId){
     const daysOverdue=balance>0.01?_fcDaysOverdue:0;
     // SCOPE for the invoice's "Work performed" list: the estimate's own scope, in
     // the estimate's own words, DESCRIPTIONS ONLY. No qty, no rate, no amount, the
-    // same one-price rule the document follows (owner 2026-08-16). Paint estimates
-    // group their surfaces by room; generic and BYO estimates carry scope chips and
-    // a free-text description; a diagnostic carries desc. Empty means the invoice
-    // falls back to the estimate type as a single line.
-    const _hubScope=(()=>{
-      const out=[];
-      const _surf=Array.isArray(b.surfaces)?b.surfaces:[];
-      if(_surf.length){
-        const byRoom={};
-        _surf.forEach(sf=>{
-          const _r=String(sf&&sf.room||'').trim()||'Work area';
-          const _t=String(sf&&sf.type||'').trim();
-          (byRoom[_r]=byRoom[_r]||[]).push(_t||'surface');
-        });
-        Object.keys(byRoom).forEach(r=>{
-          const kinds=[...new Set(byRoom[r])];
-          out.push(kinds.length?r+': '+kinds.join(', '):r);
-        });
-      }
-      (Array.isArray(b.scopeChips)?b.scopeChips:[]).forEach(c=>{
-        const _c=typeof c==='string'?c:(c&&(c.label||c.name||''));
-        if(_c&&out.indexOf(_c)===-1)out.push(String(_c));
-      });
-      String(b.geiDesc||b.desc||'').split(/\r?\n/).forEach(l=>{
-        const _l=l.trim().replace(/^[-•*]\s*/,'');
-        if(_l&&out.indexOf(_l)===-1)out.push(_l);
-      });
-      return out.slice(0,40);
-    })();
+    // same one-price rule the document follows (owner 2026-08-16). Shared with the
+    // property card's Past work rows via _bidScopeLines below.
+    const _hubScope=_bidScopeLines(b);
     return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',scope:_hubScope,
       // Signed-document fields (diagnostic charges + any bid signed in person):
       // the hub renders these through the shared esign signed-doc block.

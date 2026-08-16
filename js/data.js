@@ -487,6 +487,26 @@ function getPropertyHistory(client,addr){
   });
   return res;
 }
+// Warranty status for a completed job: the shop's warranty period (Settings,
+// already printed on every proposal's Terms) counted from the completion date.
+// Returns null when there is no completion date; otherwise {active, until,
+// label} where label is ready-to-render ("Under warranty until Aug 2027").
+function getWarrantyStatus(completionDate){
+  if(!completionDate)return null;
+  const start=new Date(completionDate);
+  if(isNaN(start))return null;
+  const period=String((typeof S!=='undefined'&&S.warrantyPeriod)||'1 year');
+  const m=period.match(/(\d+)\s*(day|month|year)/i);
+  const n=m?parseInt(m[1],10):1;
+  const unit=m?m[2].toLowerCase():'year';
+  const until=new Date(start);
+  if(unit==='day')until.setDate(until.getDate()+n);
+  else if(unit==='month')until.setMonth(until.getMonth()+n);
+  else until.setFullYear(until.getFullYear()+n);
+  const active=Date.now()<=until.getTime();
+  const when=until.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+  return {active,until,label:active?('Under warranty until '+when):('Warranty ended '+when)};
+}
 function getClientTier(c){
   if(!c)return 'C';
   if(c.tier)return c.tier;

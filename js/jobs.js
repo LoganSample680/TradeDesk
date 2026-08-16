@@ -1133,6 +1133,34 @@ function openJobSheet(clientId){
       '</div>';
   }
 
+  // ── What we used (owner 2026-08-16) ──────────────────────────
+  // Spec recall: colors, sheens, model numbers, logged while the crew is
+  // standing on site, because "type it in later" never happens. Feeds the
+  // Past work rows on the property card, where a callback two years out
+  // starts with "what did we put in here." Rides the same job record the
+  // photos do, so it syncs with td_jobs for free.
+  let specHtml='';
+  if(photoJobId){
+    const specs=Array.isArray(jobForPhotos.specUsed)?jobForPhotos.specUsed:[];
+    specHtml=
+      '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">'+svgIcon('🎨')+' What we used</div>'+
+        (specs.length?specs.map((s,si)=>
+          '<div style="display:flex;align-items:baseline;gap:8px;padding:6px 0;border-bottom:1px solid var(--border2);font-size:13px">'+
+            (s.where?'<span style="color:var(--text3);flex-shrink:0">'+escHtml(s.where)+'</span>':'')+
+            '<span style="font-weight:700;flex:1;min-width:0;word-break:break-word">'+escHtml(s.item||'')+(s.finish?'<span style="font-weight:500;color:var(--text2)">, '+escHtml(s.finish)+'</span>':'')+'</span>'+
+            '<button onclick="removeJobSpec('+photoJobId+','+si+','+clientId+')" style="background:none;border:none;color:var(--text3);font-size:15px;cursor:pointer;padding:0 2px;font-family:inherit;flex-shrink:0">×</button>'+
+          '</div>').join('')
+        :'<div style="font-size:12px;color:var(--text3);margin-bottom:2px">Colors, sheens, model numbers. Logged now, remembered on every callback.</div>')+
+        '<div style="display:flex;gap:6px;margin-top:8px">'+
+          '<input type="text" id="_specWhere-'+photoJobId+'" maxlength="40" placeholder="Where" style="width:76px;flex-shrink:0;padding:8px 9px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;font-family:inherit">'+
+          '<input type="text" id="_specItem-'+photoJobId+'" maxlength="80" placeholder="What (SW 7015 Repose Gray)" style="flex:1;min-width:0;padding:8px 9px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;font-family:inherit">'+
+          '<input type="text" id="_specFin-'+photoJobId+'" maxlength="30" placeholder="Finish" style="width:66px;flex-shrink:0;padding:8px 9px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;font-family:inherit">'+
+          '<button onclick="addJobSpec('+photoJobId+','+clientId+')" style="padding:8px 12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">Add</button>'+
+        '</div>'+
+      '</div>';
+  }
+
   // ── Actual material costs vs estimated ──────────────────────
   const clientExpenses=expenses.filter(e=>e.client_id===clientId);
   let actualCostsHtml='';
@@ -1345,7 +1373,7 @@ function openJobSheet(clientId){
         '<div style="font-size:10px;color:var(--text3);margin-top:6px">Includes 10% waste · '+_coats+' coat'+(_coats!==1?'s':'')+' · Verify with SW rep for dark colors</div>'+
       '</div>';
   }
-  body.innerHTML=payHtml+schedHtml+assignedEmpHtml+coHistoryHtml+supplyHtml+scopeHtml+photosHtml+paintOrderHtml+actualCostsHtml+subsHtml+visitNotesHtml+tasksHtml+actionsHtml;
+  body.innerHTML=payHtml+schedHtml+assignedEmpHtml+coHistoryHtml+supplyHtml+scopeHtml+photosHtml+specHtml+paintOrderHtml+actualCostsHtml+subsHtml+visitNotesHtml+tasksHtml+actionsHtml;
   box.appendChild(body);
   ov.appendChild(box);
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
@@ -1709,6 +1737,29 @@ function addJobPhoto(jobId,input,type,caption){
     }
   };
   reader.readAsDataURL(file);
+}
+// "What we used" entries live on the same job record the photos do. Reopen the
+// sheet after a change, matching the photo buttons' own refresh pattern.
+function addJobSpec(jobId,clientId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const g=id=>document.getElementById(id);
+  const item=(g('_specItem-'+jobId)?.value||'').trim();
+  if(!item){showToast('Type what you used first','🎨');return;}
+  const where=(g('_specWhere-'+jobId)?.value||'').trim();
+  const finish=(g('_specFin-'+jobId)?.value||'').trim();
+  if(!Array.isArray(j.specUsed))j.specUsed=[];
+  j.specUsed.push({where,item,finish});
+  saveAll();
+  document.querySelector('.zmodal-overlay')?.remove();
+  openJobSheet(clientId);
+}
+function removeJobSpec(jobId,idx,clientId){
+  const j=jobs.find(x=>x.id===jobId);
+  if(!j||!Array.isArray(j.specUsed))return;
+  j.specUsed.splice(idx,1);
+  saveAll();
+  document.querySelector('.zmodal-overlay')?.remove();
+  openJobSheet(clientId);
 }
 async function _drainPhotoQueue(){
   if(!supaEnabled()||!_supaUser||!_supa)return;
