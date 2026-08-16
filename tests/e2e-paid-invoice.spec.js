@@ -151,6 +151,62 @@ test.describe('Paid invoice: what the client sees', () => {
     expect(r.saysPaid).toBe(false);
   });
 
+  // Research 2026-08-16: a trade invoice is expected to carry the licence number,
+  // the business address, an itemised breakdown with a tax line, and payment terms.
+  // A one-line "Services, $2,375" with no licence is the thing clients query.
+  test('the invoice carries what a trade invoice is expected to carry', async () => {
+    const txt = await page.evaluate(() => {
+      Object.assign(_hub, {
+        contractorName: 'Sample Brothers Painting', contractorPhone: '(785) 555-0142',
+        contractorAddr: '2950 SW McClure Rd, Topeka KS 66614', contractorEmail: 'billing@samplebros.com',
+        contractorLicense: 'KS-PC-44821', salesTaxRate: 9.15, warrantyPeriod: '2 years', financeChargePct: 1.5,
+      });
+      _hub.bids = [{ id: 7005, amount: 2375, type: 'Interior repaint', bid_date: '2026-08-01', completion_date: '2026-08-14',
+        lineItems: [{ desc: 'Wall prep', qty: 3, rate: 185, amount: 555 }, { desc: 'Two coats', qty: 8, rate: 68.75, amount: 550 }] }];
+      _hub.payments = [{ bid_id: 7005, amount: 594, date: '2026-08-02', type: 'deposit', method: 'Check', ref: '1042' }];
+      openInvoice(7005);
+      return document.getElementById('inv-content').textContent.replace(/\s+/g, ' ');
+    });
+    expect(txt).toContain('KS-PC-44821');                 // licence number, not just a chip
+    expect(txt).toContain('2950 SW McClure Rd');           // business address
+    expect(txt).toContain('billing@samplebros.com');
+    expect(txt).toContain('Wall prep');                    // itemised, not one lump line
+    expect(txt).toContain('Two coats');
+    expect(txt).toMatch(/Sales tax \(9\.15%\)/);          // tax broken out
+    expect(txt).toMatch(/Subtotal/);
+    expect(txt).toMatch(/Check #1042/);                    // payment method and reference
+    expect(txt).toMatch(/Due on receipt/);                 // terms stated on an unpaid invoice
+    expect(txt).toMatch(/Workmanship warranty: 2 years/);
+    expect(txt).toMatch(/1\.5% monthly service charge/);
+  });
+
+  test('subtotal plus tax always equals the contract total', async () => {
+    const r = await page.evaluate(() => {
+      _hub.salesTaxRate = 9.15;
+      _hub.bids = [{ id: 7006, amount: 2375, type: 'Repaint', completion_date: '2026-08-14' }];
+      _hub.payments = [];
+      openInvoice(7006);
+      // Scrape the TOTALS block only: the line-item table repeats the same figures
+      // as rate and amount, so scanning the whole document reads the wrong numbers.
+      const t = document.querySelector('.inv-totals').textContent.replace(/\s+/g, ' ');
+      const nums = (t.match(/\$[\d,]+\.\d\d/g) || []).map(x => parseFloat(x.replace(/[$,]/g, '')));
+      return { sub: nums[0], tax: nums[1], total: nums[2] };
+    });
+    expect(r.sub + r.tax).toBeCloseTo(r.total, 2);
+    expect(r.total).toBeCloseTo(2375, 2);
+  });
+
+  test('no tax rate set means no tax line at all', async () => {
+    const txt = await page.evaluate(() => {
+      _hub.salesTaxRate = 0;
+      _hub.bids = [{ id: 7007, amount: 1000, type: 'Repair', completion_date: '2026-08-14' }];
+      _hub.payments = [];
+      openInvoice(7007);
+      return document.getElementById('inv-content').textContent;
+    });
+    expect(txt).not.toMatch(/Sales tax/);
+  });
+
   test('a paid bid shows its invoice even when the job was never marked complete', async () => {
     const r = await page.evaluate(() => {
       // No completion_date on either bid: the old gate hid the invoice entirely

@@ -321,6 +321,16 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .inv-title-block h1{font-size:32px;font-weight:800;color:#1a1a18;letter-spacing:-.02em}
 .inv-title-num{font-size:12px;color:#666;margin-top:4px}
 .inv-two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:28px}
+@media(max-width:560px){
+  /* Phone: the letterhead and the bill-to grid stack instead of squeezing, and the
+     line-item table drops its rate column so Description keeps room to read. */
+  .inv-header{flex-direction:column;gap:14px}
+  .inv-title-block{text-align:left}
+  .inv-two-col{grid-template-columns:1fr;gap:16px}
+  .inv-totals{width:100%}
+  .inv-table th:nth-child(2),.inv-table td:nth-child(2),
+  .inv-table th:nth-child(3),.inv-table td:nth-child(3){display:none}
+}
 .inv-section-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#999;margin-bottom:6px}
 .inv-client-name{font-size:16px;font-weight:700}
 .inv-detail{font-size:13px;color:#444;margin-top:2px;line-height:1.5}
@@ -2592,31 +2602,82 @@ function openInvoice(bidId){
   // in NORMAL FLOW under the header rule rather than absolutely over the corner,
   // because on a phone the corner already holds the invoice number, the date and the
   // close button, and an absolute stamp lands on top of all three.
-  let html='<div class="inv-header"><div><div class="inv-co-name">'+esc(h.contractorName)+'</div>';
-  if(h.contractorPhone)html+='<div class="inv-co-sub">'+esc(h.contractorPhone)+'</div>';
-  html+='</div><div class="inv-title-block"><h1>INVOICE</h1><div class="inv-title-num">'+invNum+'</div><div class="inv-title-num">'+today+'</div></div></div>';
+  // LETTERHEAD. Research 2026-08-16: a trade invoice is expected to carry the logo,
+  // the business address and email, and the LICENSE NUMBER, not just a name and a
+  // phone. Branded invoices are reported to be paid materially faster than plain
+  // ones, and for most trades the licence number on the bill is the norm.
+  const _logo=h.logoUrl||h.logoData||'';
+  let html='<div class="inv-header"><div style="min-width:0">';
+  if(_logo)html+='<img src="'+esc(_logo)+'" alt="" style="max-height:54px;max-width:190px;object-fit:contain;margin-bottom:10px;display:block">';
+  html+='<div class="inv-co-name">'+esc(h.contractorName)+'</div>';
+  if(h.contractorAddr)html+='<div class="inv-co-sub">'+esc(h.contractorAddr)+'</div>';
+  const _coLine=[h.contractorPhone,h.contractorEmail].filter(Boolean).join(' &middot; ');
+  if(_coLine)html+='<div class="inv-co-sub">'+_coLine+'</div>';
+  if(h.contractorLicense)html+='<div class="inv-co-sub" style="font-weight:700;color:#444">Lic. '+esc(h.contractorLicense)+'</div>';
+  html+='</div>';
+  // Invoice meta as a labelled block, not three loose grey lines: number, issued,
+  // due. The DUE DATE is the single strongest lever on getting paid on time, so it
+  // is stated rather than implied.
+  const _issued=bid.completion_date||job&&job.completion_date||'';
+  const _terms=isPaid?'':(h.invoiceTerms||'Due on receipt');
+  html+='<div class="inv-title-block"><h1>INVOICE</h1>'+
+    '<div class="inv-title-num"><strong>'+invNum+'</strong></div>'+
+    '<div class="inv-title-num">Issued '+today+'</div>'+
+    (_terms?'<div class="inv-title-num" style="color:#1a1a18;font-weight:700">'+esc(_terms)+'</div>':'')+
+  '</div></div>';
   if(isPaid)html+='<div style="display:flex;justify-content:flex-end;margin:18px 0 16px"><div style="transform:rotate(-8deg);border:3px solid #3B8C2A;color:#3B8C2A;border-radius:10px;padding:5px 18px;font-size:22px;font-weight:900;letter-spacing:4px;opacity:.75">PAID</div></div>';
   html+='<div class="inv-two-col"><div><div class="inv-section-label">Bill to</div><div class="inv-client-name">'+esc(h.clientName)+'</div>';
   if(h.clientAddr)html+='<div class="inv-detail">'+esc(h.clientAddr)+'</div>';
   if(h.clientPhone)html+='<div class="inv-detail">'+esc(h.clientPhone)+'</div>';
-  html+='</div><div><div class="inv-section-label">Job details</div>';
-  html+='<div class="inv-detail"><strong>Type:</strong> '+esc(bid.type||'Services')+'</div>';
-  if(bid.bid_date)html+='<div class="inv-detail"><strong>Proposal date:</strong> '+esc(bid.bid_date)+'</div>';
-  if(job&&job.completion_date)html+='<div class="inv-detail"><strong>Completed:</strong> '+fmtDate(job.completion_date)+'</div>';
+  html+='</div><div><div class="inv-section-label">Job</div>';
+  html+='<div class="inv-detail"><strong>'+esc(bid.type||'Services')+'</strong></div>';
+  if(h.clientAddr)html+='<div class="inv-detail">'+esc(h.clientAddr)+'</div>';
+  if(bid.bid_date)html+='<div class="inv-detail">Proposal '+esc(bid.bid_date)+'</div>';
+  if(_issued)html+='<div class="inv-detail">Completed '+fmtDate(_issued)+'</div>';
   html+='</div></div>';
-  html+='<table class="inv-table"><thead><tr><th>Description</th><th style="text-align:right">Amount</th></tr></thead><tbody>';
-  html+='<tr><td>'+esc(bid.type||'Professional services')+'<br><span style="font-size:11px;color:#666">'+esc(h.clientAddr||'')+'</span></td><td class="amt">'+fmt(bid.amount)+'</td></tr>';
+  // ITEMISED. A single "Services, $2,375" line is the thing clients query, and the
+  // research is consistent that trade invoices break the work out. Real line items
+  // when the estimate carried them, otherwise the scope as one honest line rather
+  // than invented detail.
+  const _items=(bid.lineItems&&bid.lineItems.length)?bid.lineItems:null;
+  html+='<table class="inv-table"><thead><tr><th>Description</th><th style="text-align:right;width:72px">Qty</th><th style="text-align:right;width:96px">Rate</th><th style="text-align:right;width:100px">Amount</th></tr></thead><tbody>';
+  if(_items){
+    _items.forEach(function(it){
+      const _q=it.qty!=null?it.qty:1,_r=it.rate!=null?it.rate:(it.amount||0);
+      html+='<tr><td>'+esc(it.desc||it.name||'Work')+'</td><td class="amt">'+esc(String(_q))+'</td><td class="amt">'+fmt(_r)+'</td><td class="amt">'+fmt(it.amount!=null?it.amount:(_q*_r))+'</td></tr>';
+    });
+  }else{
+    html+='<tr><td>'+esc(bid.type||'Professional services')+'<br><span style="font-size:11px;color:#666">'+esc(h.clientAddr||'')+'</span></td><td class="amt">1</td><td class="amt">'+fmt(bid.amount)+'</td><td class="amt">'+fmt(bid.amount)+'</td></tr>';
+  }
   html+='</tbody></table>';
-  html+='<div class="inv-totals"><div class="inv-total-row"><span>Subtotal</span><span>'+fmt(bid.amount)+'</span></div>';
+  // TOTALS. Subtotal, tax when the contractor charges it, then payments applied,
+  // then the balance. Tax gets its own line because a lump sum with tax baked in
+  // is the other thing clients query.
+  const _taxRate=parseFloat(h.salesTaxRate)||0;
+  const _gross=bid.amount||0;
+  const _sub=_taxRate>0?Math.round((_gross/(1+_taxRate/100))*100)/100:_gross;
+  const _tax=Math.round((_gross-_sub)*100)/100;
+  html+='<div class="inv-totals"><div class="inv-total-row"><span>Subtotal</span><span>'+fmt(_sub)+'</span></div>';
+  if(_tax>0.004)html+='<div class="inv-total-row"><span>Sales tax ('+_taxRate+'%)</span><span>'+fmt(_tax)+'</span></div>';
+  html+='<div class="inv-total-row" style="font-weight:700"><span>Total</span><span>'+fmt(_gross)+'</span></div>';
   bidPayments.filter(p=>p.amount>0).forEach(p=>{
-    html+='<div class="inv-total-row" style="color:#3B8C2A"><span>Payment ('+esc(p.date||'')+'): '+esc(tl[p.type]||p.type||'Payment')+'</span><span>('+fmt(p.amount)+')</span></div>';
+    const _pm=p.method?' &middot; '+esc(p.method):'';
+    const _rf=p.ref?' #'+esc(p.ref):'';
+    html+='<div class="inv-total-row" style="color:#3B8C2A"><span>'+esc(fmtDate(p.date)||'')+' &middot; '+esc(tl[p.type]||p.type||'Payment')+_pm+_rf+'</span><span>('+fmt(p.amount)+')</span></div>';
   });
-  html+='<div class="inv-total-row inv-total-grand"><span>Balance due</span><span>'+fmt(balance)+'</span></div></div>';
+  html+='<div class="inv-total-row inv-total-grand"><span>'+(isPaid?'Balance':'Balance due')+'</span><span>'+fmt(balance)+'</span></div></div>';
   html+='<div style="background:'+bdBg+';border:2px solid '+bdBrd+';border-radius:8px;padding:16px 20px;margin-top:24px;display:flex;justify-content:space-between;align-items:center">';
   html+='<div><div style="font-size:12px;font-weight:700;color:'+bdClr+';text-transform:uppercase;letter-spacing:.05em">'+(isPaid?'Paid in full '+svgIcon('✓',{size:12}):'Balance due')+'</div>';
   html+='<div style="font-size:11px;color:'+bdClr+';margin-top:3px">'+(isPaid?'Thank you for your business!':'Please remit payment at your earliest convenience')+'</div>';
   if(!isPaid&&h.stripeEnabled)html+='<button id="pay-inv-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" style="margin-top:10px;background:var(--red);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 10px rgba(180,40,40,.30)">Pay Now, Secure Checkout</button>';
   html+='</div><div style="font-size:28px;font-weight:800;color:'+bdClr+'">'+fmt(balance)+'</div></div>';
+  // Terms strip: warranty and the late fee the contractor actually charges, stated
+  // once, in small print, the way a trade invoice states them.
+  const _termBits=[];
+  if(h.warrantyPeriod)_termBits.push('Workmanship warranty: '+esc(h.warrantyPeriod));
+  if(!isPaid&&h.financeChargePct)_termBits.push('Past 30 days, '+h.financeChargePct+'% monthly service charge may apply');
+  if(h.contractorLicense)_termBits.push('License '+esc(h.contractorLicense));
+  if(_termBits.length)html+='<div style="margin-top:20px;padding:12px 14px;background:#FAFAF8;border:1px solid #ECEAE6;border-radius:8px;font-size:11px;color:#555;line-height:1.7">'+_termBits.join('<br>')+'</div>';
   html+='<div class="inv-footer-text">'+esc(h.contractorName)+' · '+(h.contractorPhone?esc(h.contractorPhone)+' · ':'')+'Thank you for choosing us!</div>';
   html+='<div style="margin-top:40px;padding-top:20px;border-top:1px solid #e0e0dc;display:flex;gap:10px" class="no-print">';
   html+='<button onclick="window.print()" class="btn" style="width:auto;flex:1;padding:12px">'+svgIcon('⬇',{size:14})+' Save as PDF</button>';

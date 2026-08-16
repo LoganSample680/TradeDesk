@@ -222,6 +222,19 @@ function _buildClientHubSnapshot(clientId){
     clientId,clientName:c.name,clientEmail:c.email||'',clientPhone:c.phone||'',clientAddr:c.addr||'',
     scans:snapshotScans,
     contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
+    // Letterhead facts an invoice is expected to carry (research 2026-08-16: a
+    // trade invoice is expected to show the business address, email and LICENSE
+    // NUMBER, not just a name and a phone). trustLicense above is the marketing
+    // chip; this is the number itself, and it renders only when it is a real
+    // entry rather than the "Licensed & Insured" default marker.
+    contractorAddr:[S.baddr,[S.bcity,S.bzip].filter(Boolean).join(' ')].filter(Boolean).join(', '),
+    contractorEmail:S.bemail||'',
+    contractorLicense:(()=>{
+      const _b=String(S.blic||'').trim();
+      if(!_b||/^licensed (&|and) insured$/i.test(_b))return '';
+      return _b;
+    })(),
+    salesTaxRate:parseFloat(S.salesTaxRate)||0,
     brandColor:adaBrand(S.brandColor)||'',
     // logoUrl when the CURRENT logo is confirmed uploaded (hash match); base64
     // logoData only as the fallback so the snapshot stays small in the normal
