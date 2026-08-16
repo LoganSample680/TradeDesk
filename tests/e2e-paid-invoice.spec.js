@@ -170,10 +170,10 @@ test.describe('Paid invoice: what the client sees', () => {
     expect(txt).toContain('KS-PC-44821');                 // licence number, not just a chip
     expect(txt).toContain('2950 SW McClure Rd');           // business address
     expect(txt).toContain('billing@samplebros.com');
-    expect(txt).toContain('Wall prep');                    // itemised, not one lump line
+    expect(txt).toContain('Wall prep');                    // scope in words, line by line
     expect(txt).toContain('Two coats');
-    expect(txt).toMatch(/Sales tax \(9\.15%\)/);          // tax broken out
-    expect(txt).toMatch(/Subtotal/);
+    expect(txt).toMatch(/Sales tax \(9\.15%\)/);          // tax broken out, it is a legal line
+    expect(txt).toMatch(/Contract price/);
     expect(txt).toMatch(/Check #1042/);                    // payment method and reference
     expect(txt).toMatch(/Due on receipt/);                 // terms stated on an unpaid invoice
     expect(txt).toMatch(/Workmanship warranty: 2 years/);
@@ -216,6 +216,50 @@ test.describe('Paid invoice: what the client sees', () => {
       return { fallsBackToUs: /contractorName:\s*S\.bname\|\|'TradeDesk'/.test(src) };
     });
     expect(r.fallsBackToUs).toBe(false);
+  });
+
+  // ONE PRICE (owner 2026-08-16, after the DL Smith Electric invoice: breaking out
+  // Labor / Material / Other hands the client three numbers to argue with, and none
+  // of them were the deal). Scope is listed in full; cost is not attached to it.
+  test('scope lines carry no price, rate or quantity', async () => {
+    const r = await page.evaluate(() => {
+      _hub.salesTaxRate = 0;
+      _hub.bids = [{ id: 7010, amount: 2375, type: 'Interior repaint', completion_date: '2026-08-14',
+        lineItems: [{ desc: 'Wall prep, patch and sand', qty: 3, rate: 185, amount: 555 },
+                    { desc: 'Two coats, Duration', qty: 8, rate: 68.75, amount: 550 }] }];
+      _hub.payments = [];
+      openInvoice(7010);
+      const tbl = document.querySelector('.inv-table');
+      const heads = [...tbl.querySelectorAll('th')].map(t => t.textContent.trim());
+      const body = tbl.querySelector('tbody').textContent;
+      return {
+        heads,
+        cols: tbl.querySelectorAll('tbody tr:first-child td').length,
+        showsScope: /Wall prep/.test(body) && /Two coats/.test(body),
+        // None of the per-line economics may appear anywhere in the table
+        leaksRate: /185|68\.75/.test(body),
+        leaksAmount: /555|550/.test(body),
+        leaksQty: /\b3\b|\b8\b/.test(body),
+      };
+    });
+    expect(r.heads).toEqual(['Work performed']);   // one column, no Qty/Rate/Amount
+    expect(r.cols).toBe(1);
+    expect(r.showsScope).toBe(true);
+    expect(r.leaksRate).toBe(false);
+    expect(r.leaksAmount).toBe(false);
+    expect(r.leaksQty).toBe(false);
+  });
+
+  test('no labor, material or other cost split anywhere on the document', async () => {
+    const txt = await page.evaluate(() => {
+      _hub.bids = [{ id: 7011, amount: 841.28, type: 'Service repair', completion_date: '2026-08-14',
+        lineItems: [{ desc: 'Rebuilt service riser', qty: 1, rate: 420, amount: 420 }] }];
+      _hub.payments = [];
+      openInvoice(7011);
+      return document.getElementById('inv-content').textContent;
+    });
+    expect(txt).not.toMatch(/\bLabor\b/i);
+    expect(txt).not.toMatch(/\bMaterials?\b/i);
   });
 
   test('subtotal plus tax always equals the contract total', async () => {

@@ -328,8 +328,6 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
   .inv-title-block{text-align:left}
   .inv-two-col{grid-template-columns:1fr;gap:16px}
   .inv-totals{width:100%}
-  .inv-table th:nth-child(2),.inv-table td:nth-child(2),
-  .inv-table th:nth-child(3),.inv-table td:nth-child(3){display:none}
 }
 .inv-section-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#999;margin-bottom:6px}
 .inv-client-name{font-size:16px;font-weight:700}
@@ -2635,19 +2633,26 @@ function openInvoice(bidId){
   if(bid.bid_date)html+='<div class="inv-detail">Proposal '+esc(bid.bid_date)+'</div>';
   if(_issued)html+='<div class="inv-detail">Completed '+fmtDate(_issued)+'</div>';
   html+='</div></div>';
-  // ITEMISED. A single "Services, $2,375" line is the thing clients query, and the
-  // research is consistent that trade invoices break the work out. Real line items
-  // when the estimate carried them, otherwise the scope as one honest line rather
-  // than invented detail.
+  // SCOPE IN WORDS, ONE PRICE. The invoice mirrors the proposal (owner 2026-08-16:
+  // "we follow the proposal logic itself, total price to do the job that's it").
+  //
+  // The generic invoicing advice says to break out qty, rate, labour and materials.
+  // That advice is written for cost-plus and commercial billing, where the client
+  // contracted to see the costs. On a fixed price it is a liability: the DL Smith
+  // Electric invoice the owner sent over exposes Labor 420 / Material 250.26 /
+  // Other 135, and every one of those is a number a homeowner can argue with. None
+  // of them were the deal. The deal was a price to do the job.
+  //
+  // So: every line of work is listed, in plain language, with NO price against it.
+  // Detail proves value. Broken-out cost creates leverage against the contractor.
   const _items=(bid.lineItems&&bid.lineItems.length)?bid.lineItems:null;
-  html+='<table class="inv-table"><thead><tr><th>Description</th><th style="text-align:right;width:72px">Qty</th><th style="text-align:right;width:96px">Rate</th><th style="text-align:right;width:100px">Amount</th></tr></thead><tbody>';
+  html+='<table class="inv-table"><thead><tr><th>Work performed</th></tr></thead><tbody>';
   if(_items){
     _items.forEach(function(it){
-      const _q=it.qty!=null?it.qty:1,_r=it.rate!=null?it.rate:(it.amount||0);
-      html+='<tr><td>'+esc(it.desc||it.name||'Work')+'</td><td class="amt">'+esc(String(_q))+'</td><td class="amt">'+fmt(_r)+'</td><td class="amt">'+fmt(it.amount!=null?it.amount:(_q*_r))+'</td></tr>';
+      html+='<tr><td>'+esc(it.desc||it.name||'Work')+'</td></tr>';
     });
   }else{
-    html+='<tr><td>'+esc(bid.type||'Professional services')+'<br><span style="font-size:11px;color:#666">'+esc(h.clientAddr||'')+'</span></td><td class="amt">1</td><td class="amt">'+fmt(bid.amount)+'</td><td class="amt">'+fmt(bid.amount)+'</td></tr>';
+    html+='<tr><td>'+esc(bid.type||'Professional services')+'<br><span style="font-size:11px;color:#666">'+esc(h.clientAddr||'')+'</span></td></tr>';
   }
   html+='</tbody></table>';
   // TOTALS. Subtotal, tax when the contractor charges it, then payments applied,
@@ -2657,9 +2662,14 @@ function openInvoice(bidId){
   const _gross=bid.amount||0;
   const _sub=_taxRate>0?Math.round((_gross/(1+_taxRate/100))*100)/100:_gross;
   const _tax=Math.round((_gross-_sub)*100)/100;
-  html+='<div class="inv-totals"><div class="inv-total-row"><span>Subtotal</span><span>'+fmt(_sub)+'</span></div>';
-  if(_tax>0.004)html+='<div class="inv-total-row"><span>Sales tax ('+_taxRate+'%)</span><span>'+fmt(_tax)+'</span></div>';
-  html+='<div class="inv-total-row" style="font-weight:700"><span>Total</span><span>'+fmt(_gross)+'</span></div>';
+  // Tax stays broken out even under the one-price rule: sales tax is a legal line
+  // the client is entitled to see, and it is not a number anyone haggles over.
+  html+='<div class="inv-totals">';
+  if(_tax>0.004){
+    html+='<div class="inv-total-row"><span>Contract price</span><span>'+fmt(_sub)+'</span></div>'+
+          '<div class="inv-total-row"><span>Sales tax ('+_taxRate+'%)</span><span>'+fmt(_tax)+'</span></div>';
+  }
+  html+='<div class="inv-total-row" style="font-weight:700"><span>'+(_tax>0.004?'Total':'Contract price')+'</span><span>'+fmt(_gross)+'</span></div>';
   bidPayments.filter(p=>p.amount>0).forEach(p=>{
     const _pm=p.method?' &middot; '+esc(p.method):'';
     const _rf=p.ref?' #'+esc(p.ref):'';
