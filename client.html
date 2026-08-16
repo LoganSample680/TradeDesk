@@ -312,8 +312,27 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-chat-send{padding:11px 18px;border-radius:22px;background:var(--ink);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0}
 
 /* ── Invoice overlay ── */
-#inv-overlay{position:fixed;inset:0;background:#fff;z-index:500;overflow-y:auto;display:none}
-.inv-wrap{position:relative;max-width:680px;margin:0 auto;padding:32px 24px 60px}
+/* The document sits on a soft ground as a white sheet with a shadow, instead of
+   filling the screen edge to edge in white (owner 2026-08-16: give the plain white
+   some pop). A financial document earns trust by looking restrained, so the pop is
+   the paper metaphor and one brand band, not colour across the page. */
+#inv-overlay{position:fixed;inset:0;background:linear-gradient(180deg,#EEF0F4 0%,#F6F7F9 42%,#EEF0F4 100%);z-index:500;overflow-y:auto;display:none}
+.inv-wrap{position:relative;max-width:680px;margin:26px auto 40px;padding:38px 30px 44px;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(27,22,18,.14),0 2px 6px rgba(27,22,18,.06)}
+/* Brand band across the top of the sheet, the contractor's colour, the way a real
+   letterhead is printed. Rides --denim, which hub boot sets to their brand. */
+.inv-wrap::before{content:'';position:absolute;top:0;left:0;right:0;height:7px;background:var(--denim);border-radius:14px 14px 0 0}
+.inv-totals{background:#FAFAF8;border:1px solid #EFEDE9;border-radius:10px;padding:14px 16px}
+@media(max-width:560px){.inv-wrap{margin:12px auto 24px;padding:26px 18px 32px;border-radius:12px}}
+@media print{
+  /* The pop is screen dressing. Print gets a clean sheet: no ground, no shadow, no
+     rounded corners, and the brand band kept because that IS their letterhead. */
+  #inv-overlay{background:#fff}
+  .inv-wrap{margin:0;padding:0 0 24px;box-shadow:none;border-radius:0;max-width:none}
+  .inv-wrap::before{border-radius:0}
+  .inv-totals{background:transparent;border:none;padding:0}
+  .no-print{display:none!important}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
 .inv-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;padding-bottom:24px;border-bottom:3px solid var(--denim)}
 .inv-co-name{font-size:24px;font-weight:800;color:var(--denim);font-family:var(--font-display)}
 .inv-co-sub{font-size:12px;color:#666;margin-top:4px}
@@ -336,7 +355,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .inv-table th{text-align:left;padding:8px 10px;background:#f5f5f3;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#666;border-bottom:1px solid #e0e0dc}
 .inv-table td{padding:10px;border-bottom:1px solid #f0eeec;font-size:13px;vertical-align:top}
 .inv-table td.amt{text-align:right;font-weight:600}
-.inv-totals{margin-left:auto;width:260px}
+.inv-totals{margin-left:auto;width:290px}
 .inv-total-row{display:flex;justify-content:space-between;padding:6px 0;font-size:13px;border-bottom:1px solid #f0eeec}
 .inv-total-grand{font-size:16px;font-weight:800;border-top:2px solid #1a1a18;border-bottom:none;padding-top:10px;margin-top:4px}
 .inv-footer-text{margin-top:40px;padding-top:16px;border-top:1px solid #e0e0dc;font-size:11px;color:#999;text-align:center}
