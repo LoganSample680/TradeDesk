@@ -206,14 +206,16 @@ test.describe('Past work rows + what-we-used capture', () => {
       itemEl.value = 'SW 7006 Extra White';
       finEl.value = 'semi-gloss';
       addJobSpec(981340, c.id);
-      const j = jobs.find(x => x.id === 981340);
+      // Snapshot NOW: specUsed[0] is a live reference and the removeJobSpec
+      // below splices it away before the return object is built.
+      const entry = { ...(jobs.find(x => x.id === 981340).specUsed || [])[0] };
       const reopened = !!document.querySelector('.zmodal-overlay');
       const shows = /SW 7006 Extra White/.test(document.querySelector('.zmodal-overlay')?.innerHTML || '');
       // Remove it again through the sheet's own control path.
       removeJobSpec(981340, 0, c.id);
       const after = jobs.find(x => x.id === 981340).specUsed.length;
       document.querySelector('.zmodal-overlay')?.remove();
-      return { noInputs: false, entry: j.specUsed && j.specUsed[0], reopened, shows, after };
+      return { noInputs: false, entry, reopened, shows, after };
     }, CID);
     expect(r.noInputs).toBe(false);
     expect(r.entry).toEqual({ where: 'Trim', item: 'SW 7006 Extra White', finish: 'semi-gloss' });
