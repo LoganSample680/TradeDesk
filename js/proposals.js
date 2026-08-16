@@ -221,7 +221,12 @@ function _buildClientHubSnapshot(clientId){
   return {
     clientId,clientName:c.name,clientEmail:c.email||'',clientPhone:c.phone||'',clientAddr:c.addr||'',
     scans:snapshotScans,
-    contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
+    // WHITE LABEL: never our name on their document. The old fallback printed
+    // "TradeDesk" as the business name to a client whose contractor had not set one,
+    // which is the one string that must never reach a client-facing invoice or
+    // proposal. Falls back to the owner's own name, then to nothing at all.
+    contractorName:S.bname||((typeof getOwnerName==='function'&&getOwnerName())||''),
+    contractorPhone:S.bphone||'',
     // Letterhead facts an invoice is expected to carry (research 2026-08-16: a
     // trade invoice is expected to show the business address, email and LICENSE
     // NUMBER, not just a name and a phone). trustLicense above is the marketing

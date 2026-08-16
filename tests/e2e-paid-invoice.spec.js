@@ -180,6 +180,44 @@ test.describe('Paid invoice: what the client sees', () => {
     expect(txt).toMatch(/1\.5% monthly service charge/);
   });
 
+  // White label: the client's document is the CONTRACTOR's document. Their logo,
+  // their brand colour on the accents, their name, and our name nowhere on it.
+  test('the invoice is the contractor brand, with no TradeDesk anywhere on it', async () => {
+    const r = await page.evaluate(() => {
+      Object.assign(_hub, {
+        contractorName: 'Sample Brothers Painting',
+        logoData: 'data:image/svg+xml;base64,PHN2Zy8+', brandColor: '#7A2E1E',
+      });
+      // Hub boot applies the contractor's colour to --denim once, on load. Mirroring
+      // that here checks the thing that can actually regress: the invoice INHERITING
+      // the brand token rather than hardcoding our own blue into the letterhead.
+      document.documentElement.style.setProperty('--denim', '#7A2E1E');
+      _hub.bids = [{ id: 7008, amount: 1000, type: 'Repaint', completion_date: '2026-08-14' }];
+      _hub.payments = [];
+      openInvoice(7008);
+      const box = document.getElementById('inv-content');
+      const img = box.querySelector('img');
+      const name = box.querySelector('.inv-co-name');
+      return {
+        logo: img ? img.getAttribute('src').slice(0, 24) : null,
+        nameColour: name ? getComputedStyle(name).color : '',
+        text: box.textContent,
+      };
+    });
+    expect(r.logo).toContain('data:image/svg+xml');       // their logo, on the document
+    expect(r.nameColour).toBe('rgb(122, 46, 30)');        // their brand colour, not our denim
+    expect(r.text).not.toMatch(/TradeDesk/i);             // our name never reaches their client
+  });
+
+  test('a contractor with no business name never prints ours instead', async () => {
+    const r = await page.evaluate(() => {
+      // The snapshot builder used to fall back to the literal string 'TradeDesk'
+      const src = typeof buildProposalSnapshot === 'function' ? buildProposalSnapshot.toString() : '';
+      return { fallsBackToUs: /contractorName:\s*S\.bname\|\|'TradeDesk'/.test(src) };
+    });
+    expect(r.fallsBackToUs).toBe(false);
+  });
+
   test('subtotal plus tax always equals the contract total', async () => {
     const r = await page.evaluate(() => {
       _hub.salesTaxRate = 9.15;
