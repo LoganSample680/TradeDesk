@@ -52,7 +52,6 @@ test.describe('settings.js: exhaustive coverage', () => {
       ensureEl('set-brandcolor', 'input');
       ensureEl('set-subdomain-status');
       ensureEl('integrations-list');
-      ensureEl('stripe-surcharge-wrap');
       ensureEl('lic-page-body');
     });
   });
@@ -64,7 +63,7 @@ test.describe('settings.js: exhaustive coverage', () => {
         'set-index-view','set-meta-biz','set-meta-branding','set-meta-rates',
         'set-meta-legal','set-meta-taxes','set-meta-cloud','set-meta-notifications',
         'set-meta-integrations','set-index-meta','set-brand-swatches','set-brand-selected',
-        'set-brandcolor','set-subdomain-status','integrations-list','stripe-surcharge-wrap',
+        'set-brandcolor','set-subdomain-status','integrations-list',
         'lic-page-body'
       ];
       ids.forEach(id => { const el = document.getElementById(id); if (el) el.remove(); });

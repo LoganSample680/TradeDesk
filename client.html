@@ -1701,8 +1701,6 @@ function renderPayments(){
     // Pay buttons, single "Pay now" opens embedded Stripe modal
     if(!isPaid&&h.stripeEnabled){
       html+='<div style="background:var(--bg-card);padding:14px 16px;border-bottom:1px solid var(--border)">';
-      const surchargeOn=!!h.ccSurchargeEnabled;
-      const pct=h.ccSurchargePct||3;
       const bigBtn=(fn,amtCents,label)=>'<button id="pay-btn-'+bid_id+'" onclick="'+fn+'('+bid_id+')" style="display:block;width:100%;padding:14px;border-radius:12px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 18px rgba(180,40,40,.30);margin-bottom:10px">'+label+', Secure Checkout</button>';
       if(!depPaid&&deposit>0.01&&balance>deposit+0.01){
         html+=bigBtn('payBalance',Math.round(balance*100),'Pay in full '+fmt(balance));

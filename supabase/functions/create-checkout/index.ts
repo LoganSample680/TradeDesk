@@ -23,13 +23,24 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const {
       amount, currency, paymentMethod, paymentType,
-      surchargeAmount,
+      surchargeAmount: _ignoredSurcharge,
       proposalKey, clientName, clientEmail, businessName,
       bidId, contractorUserId, notifyEmail,
       signatureDataUrl, signerName,
       successUrl, cancelUrl,
       embedded,
     } = body;
+
+    // TradeDesk never adds a fee to what the client pays (owner rule 2026-08-15:
+    // "we can't allow passing fees to the person until stripe natively does it").
+    // The client UI no longer sends one, but this is the gate that matters: a stale
+    // cached sign.html or client.html can still POST here for a long time, and only
+    // the server can refuse it. Surcharging is banned outright in CT, MA, ME and PR,
+    // capped at 2% in CO, capped at 3% by the card networks everywhere else, and can
+    // never exceed actual cost of acceptance. Rather than carry that map, we charge
+    // the amount owed and nothing else.
+    if (_ignoredSurcharge) console.warn('surchargeAmount ignored, surcharging is disabled');
+    const surchargeAmount = 0;
 
     // Validate signatureDataUrl to prevent arbitrary blob storage
     if (signatureDataUrl) {
@@ -194,21 +205,6 @@ Deno.serve(async (req) => {
       },
       quantity: 1,
     }];
-
-    if (surchargeAmount && surchargeAmount > 0) {
-      const surchargePct = Math.round((surchargeAmount / amount) * 100);
-      lineItems.push({
-        price_data: {
-          currency: currency || 'usd',
-          product_data: {
-            name: 'Credit card processing fee',
-            description: `${surchargePct}% fee — covers card processing costs`,
-          },
-          unit_amount: surchargeAmount,
-        },
-        quantity: 1,
-      });
-    }
 
     const explicitMethodTypes = paymentMethod === 'us_bank_account'
       ? (['us_bank_account'] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[])

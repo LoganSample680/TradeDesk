@@ -158,9 +158,6 @@ function _renderIntegrations() {
       </div>
       <button class="btn btn-sm" onclick="${r.onclick}" style="flex-shrink:0;font-size:12px">${r.action}</button>
     </div>`).join('');
-  // Show Stripe surcharge wrap when Stripe is connected
-  const sw = document.getElementById('stripe-surcharge-wrap');
-  if (sw) sw.style.display = stripeOk ? 'block' : 'none';
 }
 function _openStripeConnect() {
   const el = document.getElementById('stripe-connect-status-ui');
@@ -810,8 +807,6 @@ function loadSettingsForm(){
   const _pmLater=document.getElementById('set-allow-pay-later');if(_pmLater)_pmLater.checked=S.allowPayLater!==false;
   const _scanP=document.getElementById('set-scan-price');if(_scanP)_scanP.value=(S.scanDefaultPrice!=null?S.scanDefaultPrice:99);
   const _scanR=document.getElementById('set-scan-rate');if(_scanR)_scanR.value=(S.scanRateSqFt!=null?S.scanRateSqFt:0);
-  const ccEl=document.getElementById('set-cc-surcharge-enabled');if(ccEl){ccEl.checked=!!S.ccSurchargeEnabled;const pctWrap=document.getElementById('set-cc-surcharge-pct-wrap');if(pctWrap)pctWrap.style.display=S.ccSurchargeEnabled?'block':'none';}
-  const ccPctEl=document.getElementById('set-cc-surcharge-pct');if(ccPctEl)ccPctEl.value=S.ccSurchargePct||3;
   const fcPctEl=document.getElementById('set-finance-charge-pct');if(fcPctEl)fcPctEl.value=S.financeChargePct!=null?S.financeChargePct:1.5;
   const wpEl=document.getElementById('set-warranty-period');if(wpEl)wpEl.value=S.warrantyPeriod||'1 year';
   _renderLogoPreviewBiz();
@@ -822,6 +817,12 @@ function saveSettings(){
   // never filled this session (loadSettingsForm not yet run), harvesting would
   // rebuild S from empty inputs and wipe every saved value, exactly the bug
   // where registerDevice() wiped settings on every boot. Persist S as-is instead.
+  // Accounts that had "pass the card fee to the client" switched on before it was
+  // removed still carry these two keys in their saved settings, and S={...S,...}
+  // would round-trip them forever. Nothing reads them any more, but a stale key is
+  // how a removed feature comes back to life by accident (§7). Cleared here, ABOVE
+  // the form guard, so it also happens for accounts that never open Settings.
+  delete S.ccSurchargeEnabled;delete S.ccSurchargePct;
   if(!window._settingsFormFilled){saveAll();return;}
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
   setOwnerName(gs('set-owner-name')||getOwnerName()||'');
@@ -845,8 +846,6 @@ function saveSettings(){
     allowPayLater:document.getElementById('set-allow-pay-later')?document.getElementById('set-allow-pay-later').checked:(S.allowPayLater!==false),
     scanDefaultPrice:document.getElementById('set-scan-price')?Math.max(0,Math.round(+document.getElementById('set-scan-price').value||0)):(S.scanDefaultPrice!=null?S.scanDefaultPrice:99),
     scanRateSqFt:document.getElementById('set-scan-rate')?Math.max(0,+document.getElementById('set-scan-rate').value||0):(S.scanRateSqFt!=null?S.scanRateSqFt:0),
-    ccSurchargeEnabled:!!(document.getElementById('set-cc-surcharge-enabled')?document.getElementById('set-cc-surcharge-enabled').checked:false),
-    ccSurchargePct:parseFloat((document.getElementById('set-cc-surcharge-pct')?document.getElementById('set-cc-surcharge-pct').value:'3')||'3')||3,
     financeChargePct:parseFloat((document.getElementById('set-finance-charge-pct')?document.getElementById('set-finance-charge-pct').value:'1.5')||'1.5')||1.5,
     warrantyPeriod:document.getElementById('set-warranty-period')?.value||'1 year',
     salesTaxRate:(()=>{const _sr=v('set-sales-tax-rate').trim();return _sr===''?0:parseFloat(_sr)||0;})(),

@@ -1488,8 +1488,6 @@ let _manualPayMethod='cash';
 function _renderSignPayBtns(){
   const container=document.getElementById('sign-pay-btns');if(!container)return;
   const stripeOk=_prop?.stripeConnectEnabled!==false;
-  const surchargeOn=!!(_prop?.ccSurchargeEnabled);
-  const pct=_prop?.ccSurchargePct||3;
   let html='';
   if(stripeOk){
     // "Secure Checkout" not "Secure Checkout" (owner 2026-07-14): the processor
@@ -1500,8 +1498,7 @@ function _renderSignPayBtns(){
       '<button id="_pay-now-btn" onclick="_paySign(\'stripe\')" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:15px;border-radius:12px;border:none;background:#1b1612;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;text-align:center;box-shadow:0 4px 18px rgba(27,22,18,.28);margin-bottom:10px;letter-spacing:-.2px">'+
         '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="opacity:.9"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'+
         'Pay Now, Secure Checkout'+
-      '</button>'+
-      (surchargeOn?'<div style="font-size:11px;color:#b45309;text-align:center;margin-bottom:16px">'+pct+'% fee on credit cards · debit cards &amp; bank transfer are free</div>':'');
+      '</button>';
   }
   // Identical, evenly-spaced options under the hero button (owner 2026-07-14):
   // Pay Later · Check · Cash, same style, one equal grid. "Pay Later" is
