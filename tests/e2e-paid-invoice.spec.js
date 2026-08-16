@@ -115,6 +115,50 @@ test.describe('Paid invoice: what the client sees', () => {
     expect(txt).toMatch(/Balance due/i);
   });
 
+  // Owner 2026-08-16 asked whether unpaid gets a red stamp. It does, but only once
+  // it is LATE. Every invoice starts unpaid, and a red stamp on the day it is handed
+  // over accuses a client who has not had a chance to pay.
+  test('an unpaid invoice within terms carries no stamp at all', async () => {
+    const txt = await page.evaluate(() => {
+      _hub.bids = [{ id: 7020, amount: 2375, type: 'Repaint', completion_date: '2026-08-14', daysOverdue: 0 }];
+      _hub.payments = [{ bid_id: 7020, amount: 500, date: '2026-08-15', type: 'deposit', method: 'Check' }];
+      openInvoice(7020);
+      return document.getElementById('inv-content').textContent;
+    });
+    expect(txt).not.toMatch(/PAST DUE/);
+    expect(txt).not.toMatch(/\bPAID\b/);
+    expect(txt).toMatch(/at your earliest convenience/i);
+  });
+
+  test('an overdue invoice stamps PAST DUE in red and says how late', async () => {
+    const r = await page.evaluate(() => {
+      _hub.bids = [{ id: 7021, amount: 2375, type: 'Repaint', completion_date: '2026-06-14', daysOverdue: 17 }];
+      _hub.payments = [{ bid_id: 7021, amount: 500, date: '2026-06-15', type: 'deposit', method: 'Check' }];
+      openInvoice(7021);
+      const box = document.getElementById('inv-content');
+      // The wrapper and the stamp both read exactly "PAST DUE"; take the innermost.
+      const stamp = [...box.querySelectorAll('div')].filter(d => d.textContent.trim() === 'PAST DUE').pop();
+      return {
+        text: box.textContent,
+        stampColour: stamp ? getComputedStyle(stamp).color : null,
+      };
+    });
+    expect(r.text).toMatch(/PAST DUE/);
+    expect(r.text).toMatch(/17 days past due/);
+    expect(r.stampColour).toBe('rgb(163, 45, 45)');   // red, not the amber of a current bill
+  });
+
+  test('one day late reads "1 day", not "1 days"', async () => {
+    const txt = await page.evaluate(() => {
+      _hub.bids = [{ id: 7022, amount: 900, type: 'Repair', completion_date: '2026-07-14', daysOverdue: 1 }];
+      _hub.payments = [];
+      openInvoice(7022);
+      return document.getElementById('inv-content').textContent;
+    });
+    expect(txt).toMatch(/1 day past due/);
+    expect(txt).not.toMatch(/1 days past due/);
+  });
+
   // Owner 2026-08-15: the invoice should land in Documents when they wrap up paying.
   test('a settled invoice files itself into Documents tagged Paid', async () => {
     const r = await page.evaluate(() => {

@@ -2613,7 +2613,10 @@ function openInvoice(bidId){
   const invNum='INV-'+String(bidId).slice(-6).toUpperCase();
   const today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const tl={deposit:'Deposit',final:'Final payment',stripe:'Online payment',card:'Card payment',check:'Check',cash:'Cash',ach:'Bank transfer'};
-  const bdBg=isPaid?'#F0FBF0':'#FFF8F0',bdBrd=isPaid?'#63B841':'#E89A3C',bdClr=isPaid?'#3B8C2A':'#B8600A';
+  const _isLate=!isPaid&&(bid.daysOverdue||0)>0;
+  const bdBg=isPaid?'#F0FBF0':_isLate?'#FEF2F2':'#FFF8F0',
+        bdBrd=isPaid?'#63B841':_isLate?'#A32D2D':'#E89A3C',
+        bdClr=isPaid?'#3B8C2A':_isLate?'#A32D2D':'#B8600A';
   // A real stamp on the document, not just a badge in the totals block: the client
   // saves this as a PDF and it has to read as PAID at a glance months later. It sits
   // in NORMAL FLOW under the header rule rather than absolutely over the corner,
@@ -2642,7 +2645,15 @@ function openInvoice(bidId){
     '<div class="inv-title-num">Issued '+today+'</div>'+
     (_terms?'<div class="inv-title-num" style="color:#1a1a18;font-weight:700">'+esc(_terms)+'</div>':'')+
   '</div></div>';
-  if(isPaid)html+='<div style="display:flex;justify-content:flex-end;margin:18px 0 16px"><div style="transform:rotate(-8deg);border:3px solid #3B8C2A;color:#3B8C2A;border-radius:10px;padding:5px 18px;font-size:22px;font-weight:900;letter-spacing:4px;opacity:.75">PAID</div></div>';
+  // STAMPS. Paid gets a green one. Unpaid gets NOTHING until it is actually late:
+  // every invoice starts unpaid, and stamping one red the day it is handed over
+  // reads as an accusation against a client who has not had a chance to pay yet.
+  // Past terms it is earned, expected, and the whole point of a stamp. daysOverdue
+  // is computed on the snapshot: days beyond 30 from completion or signing.
+  const _late=!isPaid&&(bid.daysOverdue||0)>0;
+  const _stamp=(txt,col)=>'<div style="display:flex;justify-content:flex-end;margin:18px 0 16px"><div style="transform:rotate(-8deg);border:3px solid '+col+';color:'+col+';border-radius:10px;padding:5px 18px;font-size:22px;font-weight:900;letter-spacing:4px;opacity:.75;white-space:nowrap">'+txt+'</div></div>';
+  if(isPaid)html+=_stamp('PAID','#3B8C2A');
+  else if(_late)html+=_stamp('PAST DUE','#A32D2D');
   html+='<div class="inv-two-col"><div><div class="inv-section-label">Bill to</div><div class="inv-client-name">'+esc(h.clientName)+'</div>';
   if(h.clientAddr)html+='<div class="inv-detail">'+esc(h.clientAddr)+'</div>';
   if(h.clientPhone)html+='<div class="inv-detail">'+esc(h.clientPhone)+'</div>';
@@ -2703,7 +2714,7 @@ function openInvoice(bidId){
   html+='<div class="inv-total-row inv-total-grand"><span>'+(isPaid?'Balance':'Balance due')+'</span><span>'+fmt(balance)+'</span></div></div>';
   html+='<div style="background:'+bdBg+';border:2px solid '+bdBrd+';border-radius:8px;padding:16px 20px;margin-top:24px;display:flex;justify-content:space-between;align-items:center">';
   html+='<div><div style="font-size:12px;font-weight:700;color:'+bdClr+';text-transform:uppercase;letter-spacing:.05em">'+(isPaid?'Paid in full '+svgIcon('✓',{size:12}):'Balance due')+'</div>';
-  html+='<div style="font-size:11px;color:'+bdClr+';margin-top:3px">'+(isPaid?'Thank you for your business!':'Please remit payment at your earliest convenience')+'</div>';
+  html+='<div style="font-size:11px;color:'+bdClr+';margin-top:3px">'+(isPaid?'Thank you for your business!':_late?(bid.daysOverdue+' day'+(bid.daysOverdue===1?'':'s')+' past due'):'Please remit payment at your earliest convenience')+'</div>';
   if(!isPaid&&h.stripeEnabled)html+='<button id="pay-inv-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" style="margin-top:10px;background:var(--red);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 10px rgba(180,40,40,.30)">Pay Now, Secure Checkout</button>';
   html+='</div><div style="font-size:28px;font-weight:800;color:'+bdClr+'">'+fmt(balance)+'</div></div>';
   // Terms strip: warranty and the late fee the contractor actually charges, stated
