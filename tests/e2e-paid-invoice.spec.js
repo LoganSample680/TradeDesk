@@ -115,6 +115,42 @@ test.describe('Paid invoice: what the client sees', () => {
     expect(txt).toMatch(/Balance due/i);
   });
 
+  // Owner 2026-08-15: the invoice should land in Documents when they wrap up paying.
+  test('a settled invoice files itself into Documents tagged Paid', async () => {
+    const r = await page.evaluate(() => {
+      _hub.bids = [{ id: 7001, amount: 2375, type: 'Interior repaint', status: 'Closed Won', bid_date: '2026-08-01', signedAt: '2026-08-01T15:00:00Z' }];
+      _hub.payments = [{ bid_id: 7001, amount: 2375, date: '2026-08-15', type: 'final', method: 'Check' }];
+      renderDocuments();
+      const el = document.getElementById('view-documents');
+      const html = el ? el.innerHTML : '';
+      return {
+        hasRow: /openInvoice\(7001\)/.test(html),
+        paidTag: />Paid</.test(html),
+        paidMeta: /Paid in full/.test(html),
+        headerPaid: /Paid/.test(html),
+      };
+    });
+    // No completion_date on the bid: only the paid state puts it in Documents
+    expect(r.hasRow).toBe(true);
+    expect(r.paidTag).toBe(true);
+    expect(r.paidMeta).toBe(true);
+  });
+
+  // The accordion header used (bid.balance||0)<0.01, which is 0<0.01 on a snapshot
+  // with no balance field, so an UNPAID job wore a Paid header.
+  test('an unpaid bid never reads as Paid, even with no balance field in the snapshot', async () => {
+    const r = await page.evaluate(() => {
+      _hub.bids = [{ id: 7003, amount: 5000, type: 'Deck rebuild', status: 'Closed Won', bid_date: '2026-08-01', signedAt: '2026-08-01T15:00:00Z' }];
+      _hub.payments = [];   // nothing paid, and no bid.balance anywhere
+      renderDocuments();
+      const html = (document.getElementById('view-documents') || {}).innerHTML || '';
+      return { paid: _hubBidPaid(7003), saysBalanceDue: /Balance due/.test(html), saysPaid: />Paid</.test(html) };
+    });
+    expect(r.paid).toBe(false);
+    expect(r.saysBalanceDue).toBe(true);
+    expect(r.saysPaid).toBe(false);
+  });
+
   test('a paid bid shows its invoice even when the job was never marked complete', async () => {
     const r = await page.evaluate(() => {
       // No completion_date on either bid: the old gate hid the invoice entirely

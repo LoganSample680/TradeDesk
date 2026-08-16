@@ -2177,7 +2177,10 @@ function renderDocuments(){
 
   // One accordion card per signed estimate, invoice + agreement nested inside
   wonBids.forEach((bid,i)=>{
-    const isPaid=(bid.balance||0)<0.01;
+    // _hubBidPaid, not (bid.balance||0)<0.01: a snapshot without a balance field
+    // made that expression 0<0.01, so an UNPAID job wore a Paid header. One reader
+    // for settled, derived from the payments the hub always carries.
+    const isPaid=_hubBidPaid(bid.id);
     const autoOpen=i===0;
     const _hasEpaDoc=!!(bid.epaAckAt||(h.epaRequired&&bid.signedAt));
     const _bidCOs=bid.changeOrders||[];
@@ -2199,14 +2202,25 @@ function renderDocuments(){
     // Collapsible body
     html+='<div id="db-'+bid.id+'" style="background:var(--bg-card);display:'+(autoOpen?'block':'none')+'">';
     html+='<div style="padding:0 16px">';
-    if(bid.completion_date){
+    // Same rule as the accordion's invoice link: normally gated on the job being
+    // marked complete, but a PAID bid always files its invoice here (owner
+    // 2026-08-15: it should land in Documents when they wrap up paying).
+    if(bid.completion_date||_hubBidPaid(bid.id)){
       const _isDiag=bid.kind==='diagnostic';
       if(_isDiag&&(bid.signedAt||bid.signed)){
         // Signed diagnostic charge, a real signed document (notes + date + signature).
         const _dgMeta=svgIcon('✍',{size:11})+' Signed by '+esc(bid.signerName||'client')+' · '+new Date(bid.signedAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
         html+=_docRow(svgIcon('📄',{size:18}),'Diagnostic Charge',_dgMeta,'<span class="hub-doc-tag hub-doc-tag-contract" style="margin-left:6px">Signed</span>','openDiagnosticDoc('+bid.id+')','');
       }else{
-        html+=_docRow(svgIcon('📄',{size:18}),_isDiag?'Diagnostic Charge':'Invoice',_isDiag?(esc(bid.desc||'Diagnostic visit')):'View or print a detailed invoice','<span class="hub-doc-tag hub-doc-tag-invoice" style="margin-left:6px">'+(_isDiag?'Diagnostic':'Invoice')+'</span>','openInvoice('+bid.id+')','');
+        // A settled invoice files itself as PAID: the tag and the subtitle both say
+        // so, because this list is the thing a client scrolls a year later looking
+        // for proof they paid.
+        const _invPaid=!_isDiag&&_hubBidPaid(bid.id);
+        const _invMeta=_isDiag?(esc(bid.desc||'Diagnostic visit'))
+          :_invPaid?('Paid in full &middot; '+fmt(bid.amount||0)):'View or print a detailed invoice';
+        const _invTag=_isDiag?'Diagnostic':_invPaid?'Paid':'Invoice';
+        const _invTagCls=_invPaid?'hub-doc-tag hub-doc-tag-contract':'hub-doc-tag hub-doc-tag-invoice';
+        html+=_docRow(svgIcon('📄',{size:18}),_isDiag?'Diagnostic Charge':'Invoice',_invMeta,'<span class="'+_invTagCls+'" style="margin-left:6px">'+_invTag+'</span>','openInvoice('+bid.id+')','');
       }
     }
     if(bid.proposalKey){
