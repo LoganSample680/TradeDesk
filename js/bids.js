@@ -1027,6 +1027,48 @@ function _mpayNeedStripe(){
 function _tapToPaySoon(){
   zAlert('Tap to pay is coming with the TradeDesk app. For now, tap Collect for cash/check, or send the client the QR code to pay by card.',{title:'Coming soon'});
 }
+// The invoice the client sees IS the hub's invoice view, deep-linked with
+// #invoice-<bidId>, so there is no second document to build or keep in sync. It
+// already carries the paid-in-full state; _refreshClientHub (called at the end of
+// logPayment) publishes the payment that flips it. This is just the send action,
+// offered on the banner the moment a payment lands.
+function _invoiceBannerBtn(bidId,paidInFull){
+  if(!bidId)return '';
+  return '<div style="background:'+(paidInFull?'#0B3A06':'#14304A')+';padding:9px 16px;text-align:center">'+
+    '<button onclick="_sendPaidInvoice('+bidId+')" style="background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.34);color:#fff;font-size:13px;font-weight:800;padding:7px 16px;border-radius:6px;cursor:pointer;font-family:inherit">'+
+      (paidInFull?'Send the paid invoice':'Send the receipt')+
+    '</button></div>';
+}
+// Publish first, THEN hand over the link: sending a client a link to an invoice
+// that has not been re-uploaded yet shows them a stale balance, which is the one
+// thing an invoice must never do.
+async function _sendPaidInvoice(bidId){
+  const bid=bids.find(b=>b.id===bidId);if(!bid)return;
+  const c=getClientById(bid.client_id);
+  if(!c){showToast('No client on this job.','⚠');return;}
+  document.querySelectorAll('[data-invbanner]').forEach(e=>e.remove());
+  try{
+    if(typeof _uploadClientHub==='function')await _uploadClientHub(c.id);
+  }catch(_e){}
+  if(!c.clientToken||!_supaUser){zAlert('This client has no hub link yet. Send them a proposal or a payment link first and the invoice will ride along.');return;}
+  const url=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+c.id+'#invoice-'+bidId;
+  const paid=getBidBalance(bid)<0.01;
+  const first=(c.name||'').split(' ')[0]||'there';
+  const body=paid
+    ?'Hi '+first+', thanks again! Here is your paid invoice for '+fmt(bid.amount)+': '+url
+    :'Hi '+first+', here is your updated invoice: '+url;
+  const ov=document.createElement('div');ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('📄')+(paid?' Paid invoice ready':' Invoice ready')+'</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'')+' &middot; '+(paid?'marked paid in full':fmt(getBidBalance(bid))+' still owed')+'</div>'+
+    '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:12px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+escHtml(url)+'</div>'+
+    (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:'+String(c.phone).replace(/\D/g,'')+'?body=\'+encodeURIComponent('+JSON.stringify(body)+')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Text it to them</button>':'')+
+    '<button onclick="navigator.clipboard.writeText('+JSON.stringify(url)+').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📋')+' Copy link</button>'+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
 function closePayPanel(){document.querySelectorAll('.pay-modal-overlay').forEach(e=>e.remove());const cdp=document.getElementById('cd-pay-panel');if(cdp)cdp.style.display='none';activePayBidId=null;}
 function showPayQr(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
@@ -1448,9 +1490,10 @@ function logPayment(){
       '</div>'+
       '<div style="background:#1A4A0A;color:#fff;padding:10px 16px;text-align:center;font-size:13px">'+
         svgIcon('💰',{size:13})+' Set aside <strong>'+fmt(reserveFromThis)+'</strong> from this payment for taxes ('+reserveRate+'%)'+
-      '</div>';
+      '</div>'+
+      _invoiceBannerBtn(_savedBidId,true);
     document.body.appendChild(banner);
-    setTimeout(()=>banner.remove(),5000);
+    setTimeout(()=>banner.remove(),9000);
     // NOTE: do NOT auto-log to income here, payments array is the source of truth for bid revenue.
     // Income array is for manual non-bid entries only. Auto-logging caused dashboard double-counting.
   } else {
@@ -1463,11 +1506,12 @@ function logPayment(){
       '<div style="background:#1A3A5A;color:#fff;padding:8px 16px;text-align:center;font-size:12px">'+
         '&#128176; Set aside <strong>'+fmt(reserveFromThis)+'</strong> from this payment for taxes ('+reserveRate+'%)'+
       '</div>'+
+      _invoiceBannerBtn(_savedBidId,false)+
       (bid.surfaces?.length?'<div style="background:#2D4A1A;color:#fff;padding:8px 16px;text-align:center;font-size:12px">'+
         '&#128230; Deposit received, <button onclick="this.closest(\'div\').parentElement.remove();showSupplyList('+bid.id+')" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:4px;cursor:pointer;font-family:inherit">Order materials now →</button>'+
       '</div>':'');
     document.body.appendChild(banner);
-    setTimeout(()=>banner.remove(),4000);
+    setTimeout(()=>banner.remove(),9000);
   }
   renderCDBids();renderDash();renderMoneyPage();refreshCollectLabel();
   _refreshClientHub(bid.client_id);

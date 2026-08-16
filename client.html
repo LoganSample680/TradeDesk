@@ -313,7 +313,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 
 /* ── Invoice overlay ── */
 #inv-overlay{position:fixed;inset:0;background:#fff;z-index:500;overflow-y:auto;display:none}
-.inv-wrap{max-width:680px;margin:0 auto;padding:32px 24px 60px}
+.inv-wrap{position:relative;max-width:680px;margin:0 auto;padding:32px 24px 60px}
 .inv-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;padding-bottom:24px;border-bottom:3px solid var(--denim)}
 .inv-co-name{font-size:24px;font-weight:800;color:var(--denim);font-family:var(--font-display)}
 .inv-co-sub{font-size:12px;color:#666;margin-top:4px}
@@ -1748,8 +1748,11 @@ function renderPayments(){
       html+='</div>';
     }
 
-    // Invoice link, only once the job is marked complete (same gate as Documents)
-    if(bid.completion_date){
+    // Invoice link. Normally gated on the job being marked complete, but a bid that
+    // is PAID IN FULL always shows it: the moment they have paid is exactly the
+    // moment they want the receipt, and a contractor who collected without ticking
+    // "complete" must not be able to hide the invoice by accident.
+    if(bid.completion_date||_hubBidPaid(bid_id)){
       html+='<button onclick="openInvoice('+bid_id+')" style="display:flex;align-items:center;gap:10px;width:100%;padding:12px 16px;background:var(--bg-card);border:none;border-top:0;cursor:pointer;font-family:inherit;text-align:left">';
       html+='<div style="width:32px;height:32px;background:var(--bg);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">'+svgIcon('📄')+'</div>';
       html+='<div style="flex:1;font-size:13px;font-weight:700;color:var(--text)">View invoice</div>';
@@ -2551,9 +2554,18 @@ function openDiagnosticDoc(bidId){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   document.body.appendChild(ov);
 }
+// Is this bid settled? One reader for the balance so the invoice gate, the stamp
+// and the totals block can never disagree with each other.
+function _hubBidPaid(bidId){
+  const h=_hub;if(!h)return false;
+  const b=(h.bids||[]).find(x=>x.id===bidId);if(!b)return false;
+  const paid=(h.payments||[]).filter(p=>p.bid_id===bidId||(!p.bid_id&&h.bids.length===1))
+    .reduce((s,p)=>s+(p.amount||0),0);
+  return (b.amount||0)>0&&((b.amount||0)-paid)<0.01;
+}
 function openInvoice(bidId){
   const h=_hub,bid=h.bids.find(b=>b.id===bidId);if(!bid)return;
-  const job=h.jobs.find(j=>j.bid_id===bidId);
+  const job=(h.jobs||[]).find(j=>j.bid_id===bidId);
   const bidPayments=h.payments.filter(p=>p.bid_id===bidId||(!p.bid_id&&h.bids.length===1));
   const totalPaid=bidPayments.filter(p=>p.amount>0).reduce((s,p)=>s+p.amount,0);
   const balance=Math.max(0,(bid.amount||0)-totalPaid),isPaid=balance<0.01;
@@ -2561,9 +2573,15 @@ function openInvoice(bidId){
   const today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const tl={deposit:'Deposit',final:'Final payment',stripe:'Online payment',card:'Card payment',check:'Check',cash:'Cash',ach:'Bank transfer'};
   const bdBg=isPaid?'#F0FBF0':'#FFF8F0',bdBrd=isPaid?'#63B841':'#E89A3C',bdClr=isPaid?'#3B8C2A':'#B8600A';
+  // A real stamp on the document, not just a badge in the totals block: the client
+  // saves this as a PDF and it has to read as PAID at a glance months later. It sits
+  // in NORMAL FLOW under the header rule rather than absolutely over the corner,
+  // because on a phone the corner already holds the invoice number, the date and the
+  // close button, and an absolute stamp lands on top of all three.
   let html='<div class="inv-header"><div><div class="inv-co-name">'+esc(h.contractorName)+'</div>';
   if(h.contractorPhone)html+='<div class="inv-co-sub">'+esc(h.contractorPhone)+'</div>';
   html+='</div><div class="inv-title-block"><h1>INVOICE</h1><div class="inv-title-num">'+invNum+'</div><div class="inv-title-num">'+today+'</div></div></div>';
+  if(isPaid)html+='<div style="display:flex;justify-content:flex-end;margin:18px 0 16px"><div style="transform:rotate(-8deg);border:3px solid #3B8C2A;color:#3B8C2A;border-radius:10px;padding:5px 18px;font-size:22px;font-weight:900;letter-spacing:4px;opacity:.75">PAID</div></div>';
   html+='<div class="inv-two-col"><div><div class="inv-section-label">Bill to</div><div class="inv-client-name">'+esc(h.clientName)+'</div>';
   if(h.clientAddr)html+='<div class="inv-detail">'+esc(h.clientAddr)+'</div>';
   if(h.clientPhone)html+='<div class="inv-detail">'+esc(h.clientPhone)+'</div>';
