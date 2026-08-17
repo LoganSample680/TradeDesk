@@ -2131,6 +2131,7 @@ function startGeoTracking(){
         // The watcher running IS the shell's 'granted' state: refresh the
         // dashboard's permission cache so "Turn on location" clears itself.
         try{if(typeof _geoRefreshPermCache==='function')_geoRefreshPermCache();}catch(_e){}
+        try{if(typeof _motionRefreshPermCache==='function')_motionRefreshPermCache();}catch(_e){}
       },
                (e)=>{_geoNativeStarting=false;_geoParkNote('watcher-fail',(e&&e.message)||e);});
       return;

@@ -1416,9 +1416,12 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       window._qrHasSourceCached = () => false;
       // 'location' is the 7th item and, like QR, is noSkip: drive mileage and job
       // hours are the whole time-tracking product and neither works without the
-      // permission. Pin the cache to 'prompt' (not granted) so the fresh-account
-      // case renders it as outstanding, the same way the QR cache is pinned.
+      // permission. 'motion' is the 8th, skippable but still shown outstanding
+      // by default. Pin both caches to 'prompt' (not granted) so the fresh-
+      // account case renders them as outstanding, the same way the QR cache is
+      // pinned.
       const _origPerm = _geoPermCache; _geoPermCache = 'prompt';
+      const _origMotionPerm = _motionPermCache; _motionPermCache = 'prompt';
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const ctas = card ? [...card.querySelectorAll('.td-setup-row button.td-setup-cta')] : [];
@@ -1432,11 +1435,12 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       places.length = 0; _savedPlaces.forEach(p => places.push(p));
       window._qrHasSourceCached = _origQrCache;
       _geoPermCache = _origPerm;
+      _motionPermCache = _origMotionPerm;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
       return out;
     });
     if (r.skip) return;
-    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 7 CTAs (5 optional + QR + location)').toBe(7);
+    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 8 CTAs (5 optional + QR + location + motion)').toBe(8);
     expect(r.allHaveClass, 'Add vehicle / Add places / Connect / Add logo / Set up / Create / Turn on all carry the transition class').toBe(true);
     expect(r.hasTransition, 'the CTA button has a real, non-zero CSS transition').toBe(true);
   });
@@ -1475,11 +1479,13 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedDone = S.setupDone, _origSave = window.saveAll;
       const _origQrCache = window._qrHasSourceCached;
       window.saveAll = () => {};
-      // Vehicle added (done); the four optional items skipped; QR and location
-      // marked done via their caches (NEITHER can be skipped, so "everything
-      // clear" requires done:true for both, not skipped) → nothing left.
+      // Vehicle added (done); the optional (skippable) items skipped; QR and
+      // location marked done via their caches (NEITHER can be skipped, so
+      // "everything clear" requires done:true for both, not skipped) →
+      // nothing left. Motion is skippable like places/getpaid/logo/team, so
+      // it joins the skipped list rather than needing its own cache pinned.
       _setVehicles([{ id: 1, name: '2019 F-150' }]); S.vehiclesTs = Date.now();
-      S.setupSkipped = ['places', 'getpaid', 'logo', 'team']; S.setupDone = false;
+      S.setupSkipped = ['places', 'getpaid', 'logo', 'team', 'motion']; S.setupDone = false;
       window._qrHasSourceCached = () => true;
       const _origPerm2 = _geoPermCache; _geoPermCache = 'granted';
       _renderDashSetupTodo();

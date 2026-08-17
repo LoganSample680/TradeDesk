@@ -29,7 +29,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         CAPPluginMethod(name: "burstFix", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "motionSince", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stats", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "motionPermStatus", returnType: CAPPluginReturnPromise)
     ]
 
     private var locationManager: CLLocationManager?
@@ -242,6 +243,24 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 call.resolve(["opened": ok])
             }
         }
+    }
+
+    // CMMotionActivityManager has no separate "request permission" API the
+    // way CLLocationManager does: the FIRST call to queryActivityStarting
+    // (motionSince, below) is what triggers the system prompt when the
+    // status is .notDetermined. This method only READS the current status,
+    // so the JS onboarding checklist can show the right copy/CTA before
+    // deciding whether to fire that first query or route to Settings.
+    @objc func motionPermStatus(_ call: CAPPluginCall) {
+        let status: String
+        switch CMMotionActivityManager.authorizationStatus() {
+        case .notDetermined: status = "prompt"
+        case .restricted: status = "restricted"
+        case .denied: status = "denied"
+        case .authorized: status = "granted"
+        @unknown default: status = "prompt"
+        }
+        call.resolve(["status": status, "available": CMMotionActivityManager.isActivityAvailable()])
     }
 
     @objc func stopAll(_ call: CAPPluginCall) {

@@ -256,6 +256,31 @@ final class TdGeoPluginTests: XCTestCase {
         wait(for: [exp], timeout: 5)
     }
 
+    // MARK: - motionPermStatus: read-only, never crashes, no arguments needed
+
+    func testMotionPermStatus_resolvesWithStatusAndAvailability() {
+        let exp = expectation(description: "motionPermStatus")
+        plugin.motionPermStatus(makeCall(method: "motionPermStatus", onSuccess: { data in
+            let status = data?["status"] as? String
+            XCTAssertNotNil(status, "must always report a status string")
+            XCTAssertTrue(["prompt", "restricted", "denied", "granted"].contains(status ?? ""),
+                           "status must be one of the four documented values, got \(status ?? "nil")")
+            XCTAssertNotNil(data?["available"], "must report device capability independent of authorization")
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 5)
+    }
+
+    func testMotionPermStatus_ignoresExtraneousOptions() {
+        // Read-only status check, arguments in options should be harmless.
+        let exp = expectation(description: "motionPermStatus with junk options")
+        plugin.motionPermStatus(makeCall(method: "motionPermStatus", options: ["unexpected": "junk", "n": 42], onSuccess: { data in
+            XCTAssertNotNil(data?["status"])
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 5)
+    }
+
     // MARK: - stats: reset actually zeroes the counters
 
     func testStats_resetTrueZeroesGpsOnMs() {

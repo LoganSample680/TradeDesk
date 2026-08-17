@@ -338,6 +338,91 @@ test.describe('Crew location permission', () => {
     expect(out.p).toBe(false);
   });
 
+  // ── 5b. Motion & Fitness, same shape as location, skippable ────────────────
+  // (owner ask 2026-08-17: "we need it allowed to get all the functionality",
+  // surfaced in the same onboarding checklist as location, reusing the exact
+  // same openSettings deep link since it isn't location-specific.)
+
+  test('motion: granted/unsupported complete the task, prompt/denied/restricted do not', async () => {
+    const out = await page.evaluate(() => {
+      const states = ['granted', 'unsupported', 'prompt', 'denied', 'restricted'];
+      const results = {};
+      states.forEach(s => { _motionPermCache = s; results[s] = _motionPermDone(); });
+      return results;
+    });
+    expect(out.granted).toBe(true);
+    expect(out.unsupported).toBe(true);
+    expect(out.prompt).toBe(false);
+    expect(out.denied).toBe(false);
+    expect(out.restricted).toBe(false);
+  });
+
+  test('motion: no native shell at all counts as unsupported, never nags a browser user', async () => {
+    const out = await page.evaluate(async () => {
+      _motionPermCache = null;
+      const realGetPlugin = window._geoTdPlugin;
+      window._geoTdPlugin = () => null;
+      _motionRefreshPermCache();
+      await new Promise(r => setTimeout(r, 10));
+      window._geoTdPlugin = realGetPlugin;
+      return { state: _motionPermState(), done: _motionPermDone() };
+    });
+    expect(out.state).toBe('unsupported');
+    expect(out.done).toBe(true);
+  });
+
+  test('motion: denied gets the one-tap Settings deep link, not a dead re-prompt button', async () => {
+    const out = await page.evaluate(async () => {
+      _motionPermCache = 'denied';
+      let openedSettings = false, queriedMotion = false;
+      const realGetPlugin = window._geoTdPlugin;
+      window._geoTdPlugin = () => ({
+        openSettings: () => { openedSettings = true; return Promise.resolve({ opened: true }); },
+        motionSince: () => { queriedMotion = true; return Promise.resolve({ available: true, transitions: [] }); },
+      });
+      _setupTodoGo('motion');
+      await new Promise(r => setTimeout(r, 10));
+      window._geoTdPlugin = realGetPlugin;
+      return { openedSettings, queriedMotion };
+    });
+    expect(out.openedSettings).toBe(true);
+    // Querying again would be the dead button, denied means Settings only.
+    expect(out.queriedMotion).toBe(false);
+  });
+
+  test('motion: never-asked fires the real query, which IS the OS prompt (no separate request API)', async () => {
+    const out = await page.evaluate(async () => {
+      _motionPermCache = 'prompt';
+      let queriedMotion = false, openedSettings = false;
+      const realGetPlugin = window._geoTdPlugin;
+      window._geoTdPlugin = () => ({
+        openSettings: () => { openedSettings = true; return Promise.resolve({ opened: true }); },
+        motionSince: () => { queriedMotion = true; return Promise.resolve({ available: true, transitions: [] }); },
+        motionPermStatus: () => Promise.resolve({ status: 'granted', available: true }),
+      });
+      _setupTodoGo('motion');
+      await new Promise(r => setTimeout(r, 10));
+      window._geoTdPlugin = realGetPlugin;
+      return { queriedMotion, openedSettings, state: _motionPermState() };
+    });
+    expect(out.queriedMotion).toBe(true);
+    expect(out.openedSettings).toBe(false);
+    // The refresh after the query landed should have picked up the new status.
+    expect(out.state).toBe('granted');
+  });
+
+  test('motion: tapping with no native shell at all is a safe no-op', async () => {
+    const out = await page.evaluate(() => {
+      const realGetPlugin = window._geoTdPlugin;
+      window._geoTdPlugin = () => null;
+      let threw = false;
+      try { _setupTodoGo('motion'); } catch (e) { threw = true; }
+      window._geoTdPlugin = realGetPlugin;
+      return threw;
+    });
+    expect(out).toBe(false);
+  });
+
   // ── 6. Employees never leak into another account's roster ──────────────────
 
   test('the crew status cache is keyed per account and resets on switch', async () => {

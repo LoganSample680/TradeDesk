@@ -117,6 +117,7 @@ function _renderDashSetupTodo(){
   // Kick the async permission read once per paint. It re-renders only when the
   // state actually CHANGES, so this can never loop.
   _geoRefreshPermCache();
+  _motionRefreshPermCache();
   // The full setup checklist (owner 2026-07-14, research-backed). Every task shows
   // from day one and drops off the moment it's done (or the contractor skips an
   // optional one); the whole card collapses once nothing's left. Copy is money/
@@ -187,6 +188,19 @@ function _renderDashSetupTodo(){
         ?'Location is off, so drive mileage and job hours have stopped logging. Takes two taps in your phone settings.'
         :'Your drive miles and hours on each job log themselves, no timesheets, no odometer photos. Work hours only.',
       cta:_geoPermState()==='denied'?'Fix it':'Turn on',noSkip:true},
+    // Motion & Fitness: skippable, unlike location. It sharpens WHEN a drive
+    // actually started/stopped (the motion coprocessor's own history corrects
+    // a late-firing geofence exit), mileage still logs without it, just with
+    // occasionally softer start/stop timestamps. Same denied/prompt/unsupported
+    // shape as location, reusing the exact same Settings deep link
+    // (TdGeo.openSettings isn't location-specific, it just opens the app's
+    // Settings page).
+    {id:'motion',done:_motionPermDone(),icon:'🏃',
+      title:_motionPermState()==='denied'?'Turn motion access back on':'Allow motion & fitness',
+      sub:_motionPermState()==='denied'
+        ?'Motion access is off, so drive start/stop times may run a little softer. Takes two taps in your phone settings.'
+        :'Times exactly when a drive starts and stops, using the motion coprocessor already running on your phone.',
+      cta:_motionPermState()==='denied'?'Fix it':'Allow'},
   ];
   const remaining=ALL.filter(t=>!t.done&&!skipped.includes(t.id));
   // Endowed progress: credit the 3 things signup genuinely finished (account, trade,
@@ -340,6 +354,28 @@ function _geoRefreshPermCache(){
     }).catch(()=>{});
   }catch(_e){}
 }
+// Same cache-then-render shape as location, just backed by TdGeo.motionPermStatus
+// instead of navigator.permissions (CoreMotion has no web equivalent at all). No
+// native shell at all (browser/PWA) counts as 'unsupported', same treatment
+// Safari gets for location, nothing to nag about on a platform that can't ask.
+let _motionPermCache=null;
+function _motionPermState(){return _motionPermCache||'prompt';}
+function _motionPermDone(){const s=_motionPermState();return s==='granted'||s==='unsupported';}
+function _motionRefreshPermCache(){
+  const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+  if(!Td||typeof Td.motionPermStatus!=='function'){
+    if(_motionPermCache!=='unsupported'){_motionPermCache='unsupported';_renderDashSetupTodo();}
+    return;
+  }
+  try{
+    Td.motionPermStatus().then(r=>{
+      const st=(r&&r.available===false)?'unsupported':((r&&r.status)||'prompt');
+      if(st===_motionPermCache)return;
+      _motionPermCache=st;
+      _renderDashSetupTodo();
+    }).catch(()=>{});
+  }catch(_e){}
+}
 function _setupTodoGo(id){
   if(id==='location'){
     // Denied: the OS will not re-prompt from script, so a button that "asks
@@ -365,6 +401,24 @@ function _setupTodoGo(id){
     // records a real acknowledgment. Either way the OS prompt fires inside this tap.
     if(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _geoNoticeSheet==='function'){_geoNoticeSheet();return;}
     if(typeof _geoSetConsent==='function'){_geoSetConsent(true);return;}
+    return;
+  }
+  if(id==='motion'){
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    if(!Td)return;   // no native shell, nothing to prompt (browser counts as unsupported/done)
+    // Same reasoning as location: once denied, the OS never re-shows its own
+    // dialog from script, so route straight to Settings instead of a dead button.
+    if(_motionPermState()==='denied'){
+      if(typeof Td.openSettings==='function')Td.openSettings().catch(()=>{});
+      return;
+    }
+    // CoreMotion has no separate "request permission" call, per motionSince's
+    // own comment in TdGeoPlugin.swift: the first query IS the prompt when the
+    // status is not yet determined. Re-check the cache once it resolves so the
+    // card clears the moment they answer the system dialog either way.
+    if(typeof Td.motionSince==='function'){
+      Td.motionSince({}).then(()=>{if(typeof _motionRefreshPermCache==='function')_motionRefreshPermCache();}).catch(()=>{});
+    }
     return;
   }
   if(id==='vehicle'){if(typeof openAddVehicleModal==='function')openAddVehicleModal();return;}
