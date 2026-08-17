@@ -1486,8 +1486,9 @@ function saveQuickExpense(clientId){
   const _qeDateEl=document.getElementById('qe-date');
   const _qeDateVal=_qeDateEl?_qeDateEl.value||todayKey():todayKey();
   const _qeVeh=document.getElementById('qe-vehicle');
+  const _qeExpId=_newId();
   expenses.unshift({
-    id:_newId(),
+    id:_qeExpId,
     date:_qeDateVal,
     loggedAt:new Date().toISOString(),
     cat,
@@ -1504,6 +1505,13 @@ function saveQuickExpense(clientId){
   });
   expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
   saveAll();
+  // A supply-run card launched this modal (hidden field, js/mileage.js
+  // _supplyRunScan): the saved receipt/expense is the proof that commits the
+  // held mileage, both books settled in one save.
+  const _qeRun=document.getElementById('qe-supply-run');
+  if(_qeRun&&_qeRun.value&&typeof resolveSupplyRun==='function'){
+    resolveSupplyRun(_qeRun.value,'receipt',_qeExpId);
+  }
   const overlay=document.querySelector('.zmodal-overlay');
   if(overlay)overlay.remove();
   showToast(vendor+', '+fmt(amount)+' logged '+svgIcon('✓'),'💰');

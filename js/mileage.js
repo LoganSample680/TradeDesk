@@ -990,6 +990,23 @@ function autoLogDriveTrip(opts){
     rec.logged_by_id=_supaUser.id;
     rec.logged_by_name=(typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.name)||_supaUser.email;
   }
+  // RECEIPT-GATED SUPPLY RUNS (owner design 2026-08-17). The destination used
+  // to be proof enough: any leg touching a 'supply' place logged as business
+  // unconditionally, which is exactly how a Sunday personal Home Depot run
+  // became two business legs in the IRS log. Now the RECEIPT is the proof:
+  // legs touching a supply place are written HELD (pendingReceipt), excluded
+  // from every deduction total (deductibleTrips), until the dashboard card
+  // resolves the run. A scanned receipt commits mileage and expense in one
+  // motion; Personal keeps the rows but off the books (the odometer story
+  // stays unbroken, which is what a CPA wants); business-without-receipt
+  // commits with a noReceipt flag after the honest disclaimer. Unanswered
+  // runs go personal after 7 days (_supplyRunSweep): the log can never carry
+  // an unproven store run.
+  const _supplyStop=(to&&to.kind==='supply')?to:((from&&from.kind==='supply')?from:null);
+  if(_supplyStop){
+    rec.pendingReceipt=true;
+    rec.supplyRunKey=date+'|'+String(_supplyStop.name||_supplyStop.addr||'store');
+  }
   mileage.unshift(rec);
   saveAll();
   // The endpoints THIS measurement is for, captured before the await. The row can
@@ -1302,11 +1319,85 @@ function _reoriginTrip(m,from){
 function unattributedTrips(list){
   return (list||[]).filter(m=>m&&m.vehicleUnknown);
 }
+// pendingReceipt rows are HELD supply runs awaiting the receipt card's answer;
+// personal rows were answered "not business". Both stay in the log (unbroken
+// odometer story) and out of every money total, and this filter is the single
+// choke point every total already flows through.
 function deductibleTrips(list){
-  return (list||[]).filter(m=>m&&!m.reimbursable&&!m.vehicleUnknown);
+  return (list||[]).filter(m=>m&&!m.reimbursable&&!m.vehicleUnknown&&!m.pendingReceipt&&!m.personal);
 }
 function reimbursableTrips(list){
-  return (list||[]).filter(m=>m&&m.reimbursable&&!m.vehicleUnknown);
+  return (list||[]).filter(m=>m&&m.reimbursable&&!m.vehicleUnknown&&!m.pendingReceipt&&!m.personal);
+}
+// ── Receipt-gated supply runs (owner design 2026-08-17) ─────────────────────
+// The held legs of one store visit, grouped for the dashboard card.
+function pendingSupplyRuns(){
+  const by={};
+  (mileage||[]).forEach(m=>{
+    if(!m||!m.pendingReceipt||!m.supplyRunKey)return;
+    (by[m.supplyRunKey]=by[m.supplyRunKey]||[]).push(m);
+  });
+  return Object.keys(by).map(k=>{
+    const rows=by[k];
+    return {key:k,date:k.split('|')[0]||'',name:k.split('|').slice(1).join('|')||'Store',
+      miles:rows.reduce((s,m)=>s+(m.miles||0),0),count:rows.length,rows};
+  }).sort((a,b)=>b.date.localeCompare(a.date));
+}
+// The three doors. 'personal' keeps the rows, marked off the books.
+// 'noreceipt' commits as business carrying a noReceipt flag (the disclaimer
+// was shown before calling this). 'receipt' commits and links the expense
+// that proved it.
+function resolveSupplyRun(key,mode,expenseId){
+  let n=0;
+  (mileage||[]).forEach(m=>{
+    if(!m||m.supplyRunKey!==key||!m.pendingReceipt)return;
+    delete m.pendingReceipt;n++;
+    if(mode==='personal'){m.personal=true;m.purpose='Personal';}
+    else if(mode==='noreceipt'){m.noReceipt=true;}
+    else if(mode==='receipt'&&expenseId!=null){m.receiptExpenseId=expenseId;}
+  });
+  if(n){saveAll();typeof renderDash==='function'&&renderDash();}
+  return n;
+}
+// Unanswered for a week goes personal, quietly. Conservative on purpose: the
+// business log can then never contain a store run nobody stood behind.
+function _supplyRunSweep(){
+  const cutoff=Date.now()-7*86400000;let n=0;
+  (mileage||[]).forEach(m=>{
+    if(!m||!m.pendingReceipt)return;
+    const t=Date.parse((m.date||'')+'T12:00:00');
+    if(isFinite(t)&&t<cutoff){delete m.pendingReceipt;m.personal=true;m.purpose='Personal';n++;}
+  });
+  if(n)saveAll();
+  return n;
+}
+function _supplyRunPersonal(k){
+  resolveSupplyRun(decodeURIComponent(k),'personal');
+  if(typeof showToast==='function')showToast('Marked personal, kept off the books','🚗');
+}
+function _supplyRunNoReceipt(k){
+  zConfirm('Save this run as business without a receipt?\n\nYour mileage log itself substantiates the miles, but the IRS requires receipts for expenses of $75 or more and can disallow undocumented claims if audited.',
+    ()=>{resolveSupplyRun(decodeURIComponent(k),'noreceipt');if(typeof showToast==='function')showToast('Logged as business, no receipt on file','⚠️');},
+    {title:'No receipt',yes:'Save as business'});
+}
+// Scan door: the existing quick-expense modal (it carries the receipt
+// scanner). The run key rides INSIDE the modal as a hidden field, never a
+// global, so backing out of the modal can never leak the key onto some later,
+// unrelated expense.
+function _supplyRunScan(k){
+  const key=decodeURIComponent(k);
+  if(typeof showQuickExpenseModal!=='function')return;
+  showQuickExpenseModal(null,null);
+  setTimeout(()=>{
+    const m=document.querySelector('.zmodal-overlay .zmodal');
+    if(!m)return;
+    const h=document.createElement('input');
+    h.type='hidden';h.id='qe-supply-run';h.value=key;
+    m.appendChild(h);
+    const v=document.getElementById('qe-vendor');
+    const store=key.split('|').slice(1).join('|');
+    if(v&&!v.value&&store)v.value=store;
+  },120);
 }
 // The one tap that settles an unattributed drive. 'truck' moves it into the
 // deduction, 'own' into what the business owes them, 'rider' means they were a
@@ -2599,8 +2690,11 @@ function _milRenderTripList(shown,yr){
   // _bkMonthAcc/_bkTogMonth (finance.js) own the month shell; the day cards
   // inside are mileage's existing owner-approved day accordions, unchanged.
   const _dayCard=([date,trips],dayOpen)=>{
-    const dayMi=trips.reduce((s,t)=>s+(t.miles||0),0);
-    const dayDed=trips.reduce((s,t)=>s+(t.miles||0)*irsRate,0);
+    const dayMi=trips.reduce((s,t)=>s+(t.miles||0),0);/*miles-not-deduction*/
+    // The "+$" figure is a DEDUCTION preview, so it flows through the same
+    // choke point every real total uses: held (pendingReceipt) and personal
+    // rows drive dayMi (distance really driven) but never this number.
+    const dayDed=deductibleTrips(trips).reduce((s,t)=>s+(t.miles||0)*irsRate,0);
     const needsCount=trips.filter(t=>!t.purpose).length;
     const [y,mo,d]=date.split('-').map(Number);
     const dateObj=new Date(y,mo-1,d);
@@ -2644,6 +2738,12 @@ function _milRenderTripList(shown,yr){
       }
       const durTxt=r.mins>0?(typeof _dispatchDur==='function'?_dispatchDur(r.mins):r.mins+'m'):'';
       const metaTxt=[durTxt,clockLine].filter(Boolean).join(' · ');
+      // Supply-run state, one small line under the numbers: held rows are
+      // waiting on the dashboard receipt card, personal/no-receipt rows show
+      // how they resolved so the log reads honestly at a glance.
+      const stateBadge=r.pendingReceipt?'<div style="font-size:10px;font-weight:800;color:#F59E0B">Held · receipt?</div>'
+        :(r.personal?'<div style="font-size:10px;font-weight:700;color:var(--text3)">Personal</div>'
+        :(r.noReceipt?'<div style="font-size:10px;font-weight:700;color:var(--text3)">No receipt</div>':''));
       return '<div class="mil-day-trip'+needsClass+'" data-lp-id="'+r.id+'" data-lp-type="mileage" data-lp-label="'+escHtml((r.from_name||r.from||'Start')+' → '+(r.to_name||r.to||'End')+' · '+(r.miles||0).toFixed(1)+' mi')+'">'+
         '<div class="mil-day-trip-route">'+
           '<div class="mil-route-spine"><div class="mil-route-pin-s"></div><div class="mil-route-spine-line"></div><div class="mil-route-pin-e"></div></div>'+
@@ -2670,6 +2770,7 @@ function _milRenderTripList(shown,yr){
           '<div class="mil-trip-stats">'+
             (r.miles?'<div class="mil-trip-mi">'+(+r.miles).toFixed(1)+' mi</div>':'')+
             (metaTxt?'<div class="mil-trip-meta">'+metaTxt+'</div>':'')+
+            stateBadge+
           '</div>'+
         '</div>'+
       '</div>';
@@ -2690,7 +2791,7 @@ function _milRenderTripList(shown,yr){
         '<div class="mil-day-r">'+
           '<div class="mil-day-stats">'+
             '<div class="mil-day-miles">'+dayMi.toFixed(1)+'<span style="font-size:11px;color:var(--text-3);font-weight:600"> mi</span></div>'+
-            '<div class="mil-day-ded">+'+fmt(dayDed)+'</div>'+
+            (dayDed>0?'<div class="mil-day-ded">+'+fmt(dayDed)+'</div>':'')+
           '</div>'+
           '<div class="mil-day-chev">▸</div>'+
         '</div>'+

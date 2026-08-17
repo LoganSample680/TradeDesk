@@ -1915,6 +1915,35 @@ function renderTodayFeed(){
   // ($9,500 not $9,500.00); amounts with real cents keep them.
   const _mmtAmt=v=>fmt(v).replace(/\.00$/,'');
 
+  // HELD SUPPLY RUNS (owner design 2026-08-17): a drive that touched a supply
+  // store is not business until somebody stands behind it. The three doors:
+  // Personal (kept, off the books), No receipt (business, flagged, after the
+  // honest IRS disclaimer), Scan receipt (expense + mileage settled in one
+  // save). Rendered with the alerts, above the sections: an unanswered run is
+  // blocking real money truth. The sweep quietly retires week-old ones to
+  // personal first, so stale cards never pile up.
+  if(typeof _supplyRunSweep==='function')_supplyRunSweep();
+  if(typeof pendingSupplyRuns==='function')pendingSupplyRuns().forEach(run=>{
+    const ek=encodeURIComponent(run.key);
+    alertItems.push(
+      // The doors sit on their OWN full-width row under the text: three
+      // buttons beside the body overflow a 390px card and clip the primary
+      // action, which is the one that matters most (§15.1, nothing bleeds).
+      '<div class="tf-card" style="border-left:3px solid var(--amber);flex-wrap:wrap">'+
+        '<div class="tf-icon">'+svgIcon('🧾',{size:18})+'</div>'+
+        '<div class="tf-body" style="min-width:0">'+
+          '<div class="tf-name">'+escHtml(run.name)+' run</div>'+
+          '<div class="tf-sub" style="color:var(--amber)">'+run.date+(run.miles>0?' · '+run.miles.toFixed(1)+' mi':'')+' · mileage held until you answer</div>'+
+        '</div>'+
+        '<div class="tf-acts" style="display:flex;gap:6px;flex-wrap:wrap;width:100%;margin-top:8px">'+
+          '<button onclick="_supplyRunPersonal(\''+ek+'\')" class="btn btn-sm">Personal</button>'+
+          '<button onclick="_supplyRunNoReceipt(\''+ek+'\')" class="btn btn-sm" style="border-color:var(--amber);color:#856404;background:var(--amber-lt)">No receipt</button>'+
+          '<button onclick="_supplyRunScan(\''+ek+'\')" class="btn btn-sm btn-p">Scan receipt</button>'+
+        '</div>'+
+      '</div>'
+    );
+  });
+
   // ALERTS: License expiring/expired (always first, outside sections)
   const licAlerts=getLicenseAlerts();
   if(licAlerts.length){
