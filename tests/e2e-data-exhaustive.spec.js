@@ -2049,6 +2049,16 @@ test.describe('data.js: exhaustive coverage', () => {
 
     test('concurrent calls (5x): stable', async () => {
       const r = await page.evaluate(() => {
+        // Re-assert the fixture in the SAME evaluate as the read, exactly as
+        // the golden-path test above does. beforeEach seeding is not enough on
+        // its own: a late-resolving background cloud load can reassign `income`
+        // in the await gap between beforeEach and this body (the task #22 race
+        // documented at the top of this file), and then all five calls
+        // correctly return 0 for a client whose income row no longer exists.
+        // Guarded, not unconditional, so a real duplicate would still show up.
+        if (!income.find(i => i.id === 22201)) {
+          income.push({ id: 22201, client_id: 55501, amount: 2000, date: '2026-01-01', method: 'Cash' });
+        }
         const results = [];
         for (let i = 0; i < 5; i++) { results.push(getClientIncome(55501).length); }
         return results.every(n => n === 1);
