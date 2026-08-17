@@ -28,7 +28,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         CAPPluginMethod(name: "startEvents", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "burstFix", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "motionSince", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "stats", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "stats", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)
     ]
 
     private var locationManager: CLLocationManager?
@@ -221,6 +222,25 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 d.set([String: Int](), forKey: self.wakesKey)
             }
             call.resolve(out)
+        }
+    }
+
+    // Once a permission is actually denied, iOS will never show the system
+    // prompt again from script, the only fix is Settings. This jumps
+    // straight to OUR app's Settings page (not the Settings app's home
+    // screen), the same UIApplication.openSettingsURLString every App
+    // Store app uses for this. Raw capability only, per "keep native
+    // dumb": which permission is denied and what copy to show is a JS/UI
+    // decision (js/dashboard.js), this just opens the door.
+    @objc func openSettings(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let url = URL(string: UIApplication.openSettingsURLString) else {
+                call.resolve(["opened": false])
+                return
+            }
+            UIApplication.shared.open(url, options: [:]) { ok in
+                call.resolve(["opened": ok])
+            }
         }
     }
 

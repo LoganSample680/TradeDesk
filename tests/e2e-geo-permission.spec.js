@@ -287,8 +287,36 @@ test.describe('Crew location permission', () => {
     });
     // iOS will not re-prompt from script, so the CTA must route to Settings or
     // the task becomes permanently uncompletable and the card never clears.
+    // This is the PWA/browser fallback path specifically (no _geoTdPlugin
+    // available in this offline test's window), see the next test for the
+    // native one-tap deep link.
     expect(out.alerted).toContain('Settings');
     expect(out.done).toBe(false);
+  });
+
+  // On the native shell, a denied permission must jump straight into OUR
+  // Settings page in one tap (owner ask 2026-08-17: iOS can't re-prompt
+  // after a real denial, so a text walkthrough is the fallback of last
+  // resort, not the primary experience when a real deep link is possible).
+  test('a denied user on the native shell gets a one-tap Settings deep link, not just text', async () => {
+    const out = await page.evaluate(async () => {
+      _geoPermCache = 'denied';
+      let openedSettings = false, alerted = null;
+      const realGetPlugin = window._geoTdPlugin;
+      const realAlert = zAlert;
+      window._geoTdPlugin = () => ({ openSettings: () => { openedSettings = true; return Promise.resolve({ opened: true }); } });
+      zAlert = (msg) => { alerted = msg; };
+      _setupTodoGo('location');
+      await new Promise(r => setTimeout(r, 10));
+      window._geoTdPlugin = realGetPlugin;
+      zAlert = realAlert;
+      return { openedSettings, alerted };
+    });
+    expect(out.openedSettings).toBe(true);
+    // The native deep link replaces the text walkthrough, it does not stack
+    // on top of it, a user who gets the real one-tap fix should not also
+    // see a wall of manual instructions.
+    expect(out.alerted).toBeNull();
   });
 
   test("'unsupported' counts as done so Safari users are not nagged forever", async () => {

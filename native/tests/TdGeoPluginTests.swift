@@ -240,6 +240,22 @@ final class TdGeoPluginTests: XCTestCase {
         wait(for: [exp], timeout: 5)
     }
 
+    // MARK: - openSettings: always resolves, never hangs or crashes
+
+    // Can't assert the Settings app actually opened in headless CI (no way
+    // to inspect what's on screen from XCTest here), the adversarial case
+    // that matters is the promise contract: this must always resolve, never
+    // reject and never hang, since the JS caller (dashboard.js) fires it
+    // fire-and-forget from a tap with no retry logic of its own.
+    func testOpenSettings_alwaysResolves() {
+        let exp = expectation(description: "openSettings")
+        plugin.openSettings(makeCall(method: "openSettings", onSuccess: { data in
+            XCTAssertNotNil(data?["opened"], "must report whether it opened, never silently resolve empty")
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 5)
+    }
+
     // MARK: - stats: reset actually zeroes the counters
 
     func testStats_resetTrueZeroesGpsOnMs() {

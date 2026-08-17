@@ -343,8 +343,16 @@ function _geoRefreshPermCache(){
 function _setupTodoGo(id){
   if(id==='location'){
     // Denied: the OS will not re-prompt from script, so a button that "asks
-    // again" would do nothing at all. Show the platform walkthrough instead.
+    // again" would do nothing at all. On the native shell, jump straight to
+    // OUR settings page (not the Settings app's home screen), one tap to
+    // flip it back on. Browsers can't be deep-linked into OS settings at
+    // all, so the PWA keeps the walkthrough text as its only option.
     if(_geoPermState()==='denied'){
+      const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+      if(Td&&typeof Td.openSettings==='function'){
+        Td.openSettings().catch(()=>{});
+        return;
+      }
       if(typeof zAlert==='function')zAlert(
         'Your phone is blocking location for TradeDesk, so we can\'t turn it back on from in here.\n\n'+
         'iPhone: Settings → TradeDesk → Location → While Using the App\n'+
