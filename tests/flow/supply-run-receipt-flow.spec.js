@@ -347,7 +347,11 @@ test.describe('Receipt-gated supply runs: hold, dashboard accordion, three doors
         // one). Resolve them one at a time, oldest first, exactly as a real
         // user working through the open accordion would.
         for (let guard = 0; guard < 5; guard++) {
-          await openStore(p, nameA);
+          // .count() reads current DOM state without waiting, unlike
+          // .click(). Once both visits are resolved, store A's whole card
+          // disappears from #dash-supply-hold; opening it BEFORE this check
+          // (the previous version) hung 8s waiting for a header that no
+          // longer exists.
           if (!(await doorButton(p, nameA, 'Personal').count())) break;
           n += await clickDoor(p, nameA, 'Personal');
           await p.waitForTimeout(1200);
