@@ -201,6 +201,22 @@ jobs:
           mkdir -p ~/private_keys
           printf '%s' "$APPSTORE_API_KEY" > ~/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
 
+      - name: Portal identifiers exist with the capabilities the entitlements need
+        # Cloud signing can DOWNLOAD profiles but has twice proven unable to
+        # CREATE portal records here (the share extension's bundle id, then
+        # builds 25/26: the Live extension id + the new push capability on the
+        # app id, all dying as "Authentication failed / No profiles"). This
+        # does those registrations through the ASC API with the same key the
+        # upload uses, idempotently, so a new extension or entitlement never
+        # again asks a human to click through the developer portal. If the
+        # key's role cannot manage identifiers, it fails with the exact
+        # manual steps instead of three opaque export retries.
+        env:
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: node ../scripts/asc-ensure-ids.mjs
+
       - name: Archive (ad-hoc signed; real signing happens at export)
         # Automatic signing at ARCHIVE time demands a DEVELOPMENT profile,
         # which requires a registered device on the team, and this account
