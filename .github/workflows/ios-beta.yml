@@ -153,9 +153,25 @@ jobs:
         # is regenerated every build, so the target is rebuilt every build too
         # (idempotent, safe on a retry). Runs AFTER the entitlements step
         # because it appends the App Group to the file that step writes.
+        #
+        # TEMPORARILY SKIPPED (build 30 isolation). Every build since the share
+        # extension landed (19 through 29) has died in cloud signing with a
+        # rejected bearer token, and the App Group this step adds to the
+        # entitlements is the one portal object introduced at exactly that
+        # boundary AND the one identifier type the ASC API cannot create
+        # (bundle ids and capabilities are all verified present). No shipped
+        # build has ever carried the share extension (the phones run build 18),
+        # so skipping it costs nothing while proving the diagnosis. Re-enable
+        # by flipping SKIP_SHARE_EXT once group.app.tradedesk.beta is
+        # registered and assigned in the portal.
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SKIP_SHARE_EXT: '1'
         run: |
+          if [ "$SKIP_SHARE_EXT" = "1" ]; then
+            echo "::notice::share extension SKIPPED for signing isolation (see step comment)"
+            exit 0
+          fi
           gem install xcodeproj --no-document || sudo gem install xcodeproj --no-document
           ruby ../scripts/ios-add-share-target.rb
           # Same build number as the app, stamped from the same place. An
@@ -171,6 +187,9 @@ jobs:
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          # Installs its own gem: the share step used to, but that step can be
+          # skipped (see SKIP_SHARE_EXT above) and this one must not care.
+          gem install xcodeproj --no-document || sudo gem install xcodeproj --no-document
           ruby ../scripts/ios-add-live-target.rb
           # Same build number as the app: an extension whose CFBundleVersion
           # differs from its host is rejected after the whole archive is built.
