@@ -201,6 +201,28 @@ jobs:
           mkdir -p ~/private_keys
           printf '%s' "$APPSTORE_API_KEY" > ~/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
 
+      - name: Select a known-good Xcode
+        # Build 27: exportArchive said "Authentication failed" while the SAME
+        # ASC key passed raw REST calls in the step below minutes earlier, and
+        # the runner image had rolled to Xcode 26.6 since the last good build
+        # (Aug 11). Suspect the new toolchain's cloud signing first: pin the
+        # newest OLDER Xcode present on the image. Remove this pin once a
+        # build succeeds on the default toolchain again.
+        run: |
+          ls -d /Applications/Xcode_*.app || true
+          CURRENT=$(xcode-select -p)
+          PICK=""
+          for v in 26.5 26.4 26.3 26.2; do
+            if [ -d "/Applications/Xcode_$v.app" ]; then PICK="/Applications/Xcode_$v.app"; break; fi
+          done
+          if [ -n "$PICK" ]; then
+            sudo xcode-select -s "$PICK"
+            echo "::notice::pinned $PICK (was $CURRENT)"
+          else
+            echo "::warning::no older Xcode found on this image, staying on $CURRENT"
+          fi
+          xcodebuild -version
+
       - name: Portal identifiers exist with the capabilities the entitlements need
         # Cloud signing can DOWNLOAD profiles but has twice proven unable to
         # CREATE portal records here (the share extension's bundle id, then
@@ -271,6 +293,15 @@ jobs:
               -authenticationKeyID ${{ secrets.APPSTORE_KEY_ID }} \
               -authenticationKeyIssuerID ${{ secrets.APPSTORE_ISSUER_ID }}; then
               break
+            fi
+            # The one-line "Authentication failed" is xcodebuild's SUMMARY; the
+            # real error (which capability a profile rejected, which auth call
+            # 401ed) lives in the xcdistributionlogs bundle it prints the path
+            # of and nobody ever opens. Surface it in the job log every time.
+            DLOGS=$(ls -dt /var/folders/*/*/*/T/App_*.xcdistributionlogs 2>/dev/null | head -1)
+            if [ -n "$DLOGS" ]; then
+              echo "── distribution log tail ($DLOGS) ──"
+              tail -n 80 "$DLOGS"/*.log 2>/dev/null || true
             fi
             if [ "$attempt" = 3 ]; then
               echo "::error::export failed 3 times. If every attempt said 'Authentication failed' plus 'No profiles for app.tradedesk.beta.share', the App Store Connect key cannot register that new bundle id and it has to be created by hand in the developer portal."

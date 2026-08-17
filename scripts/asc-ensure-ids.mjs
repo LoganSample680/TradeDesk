@@ -80,9 +80,9 @@ for (const want of WANT) {
       hardFail = true; continue;
     }
     rec = c.json.data;
-    console.log(`registered ${want.id}`);
+    console.log(`::notice::asc: registered ${want.id}`);
   } else {
-    console.log(`exists ${want.id}`);
+    console.log(`::notice::asc: exists ${want.id}`);
   }
 
   const have = new Set((q.json.included || [])
@@ -90,7 +90,7 @@ for (const want of WANT) {
     .filter((i) => (rec.relationships?.bundleIdCapabilities?.data || []).some((r) => r.id === i.id))
     .map((i) => i.attributes?.capabilityType));
   for (const cap of want.caps) {
-    if (have.has(cap)) { console.log(`  ${cap} already on`); continue; }
+    if (have.has(cap)) { console.log(`::notice::asc: ${want.id} ${cap} already on`); continue; }
     const e = await api('POST', '/v1/bundleIdCapabilities', {
       data: {
         type: 'bundleIdCapabilities',
@@ -101,7 +101,7 @@ for (const want of WANT) {
     // 409 means it is already enabled (the include-matching above is best
     // effort); anything else on a capability is reported but does not kill
     // the build here, the export will say plainly if a profile cannot form.
-    if (e.status === 201 || e.status === 409) console.log(`  ${cap} ensured`);
+    if (e.status === 201 || e.status === 409) console.log(`::notice::asc: ${want.id} ${cap} ensured (${e.status})`);
     else console.warn(`::warning::${want.id}: enabling ${cap} returned ${e.status}: ${e.text.slice(0, 200)}`);
   }
 }
