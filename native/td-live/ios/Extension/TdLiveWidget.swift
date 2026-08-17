@@ -18,7 +18,7 @@ import ActivityKit
 // ActivityKit's update budget in minutes.
 
 @available(iOS 16.1, *)
-private func tint(_ hex: String) -> Color {
+private func tdTint(_ hex: String) -> Color {
     let (r, g, b) = tdLiveHexComponents(hex)
     return Color(red: r, green: g, blue: b)
 }
@@ -48,7 +48,7 @@ private struct Readout: View {
             }
         }
         .font(.system(size: size, weight: .bold, design: .rounded))
-        .foregroundStyle(tint(state.tint))
+        .foregroundStyle(tdTint(state.tint))
     }
 }
 
@@ -61,7 +61,7 @@ struct TdLiveLockScreen: View {
             // The colored rail is the whole visual identity at a glance: blue is
             // a drive, green is a running clock. JS picks the color.
             RoundedRectangle(cornerRadius: 3)
-                .fill(tint(state.tint))
+                .fill(tdTint(state.tint))
                 .frame(width: 5)
                 .frame(maxHeight: 42)
 
@@ -69,7 +69,7 @@ struct TdLiveLockScreen: View {
                 Text(state.kind)
                     .font(.system(size: 11, weight: .heavy))
                     .kerning(0.8)
-                    .foregroundStyle(tint(state.tint))
+                    .foregroundStyle(tdTint(state.tint))
                 Text(state.title)
                     .font(.system(size: 17, weight: .bold))
                     .lineLimit(1)
@@ -91,7 +91,7 @@ struct TdLiveLockScreen: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 13)
         .activityBackgroundTint(Color.black.opacity(0.42))
-        .activitySystemActionForegroundColor(tint(state.tint))
+        .activitySystemActionForegroundColor(tdTint(state.tint))
     }
 }
 
@@ -106,7 +106,7 @@ struct TdLiveWidget: Widget {
                     Text(context.state.kind)
                         .font(.system(size: 11, weight: .heavy))
                         .kerning(0.8)
-                        .foregroundStyle(tint(context.state.tint))
+                        .foregroundStyle(tdTint(context.state.tint))
                         .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -129,7 +129,7 @@ struct TdLiveWidget: Widget {
                 }
             } compactLeading: {
                 Circle()
-                    .fill(tint(context.state.tint))
+                    .fill(tdTint(context.state.tint))
                     .frame(width: 8, height: 8)
             } compactTrailing: {
                 Readout(state: context.state, size: 13)
@@ -137,10 +137,10 @@ struct TdLiveWidget: Widget {
                 // Minimal is a ~16pt circle shared with whatever else is live, so
                 // it gets the dot only. A truncated clock here reads as garbage.
                 Circle()
-                    .fill(tint(context.state.tint))
+                    .fill(tdTint(context.state.tint))
                     .frame(width: 8, height: 8)
             }
-            .keylineTint(tint(context.state.tint))
+            .keylineTint(tdTint(context.state.tint))
         }
     }
 }
