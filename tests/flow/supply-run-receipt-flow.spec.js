@@ -122,8 +122,16 @@ test.describe('Receipt-gated supply runs: hold, dashboard accordion, three doors
         // autoLogDriveTrip writes the row through the standard 2s-debounced
         // saveAll(), not an immediate push (unlike job_time_entries elsewhere
         // in the geofence pipeline). Force it now instead of hoping the
-        // debounce clears inside the poll window.
-        await p.evaluate(() => _flushSaveNow && _flushSaveNow());
+        // debounce clears inside the poll window, AND capture the flush's own
+        // outcome (window._saveLog, cloud.js:5750) so a repeat miss states
+        // whether supaSaveToCloud even ran, skipped, or threw, instead of
+        // just "not found yet".
+        const flushLog = await p.evaluate(async () => {
+          const before = (window._saveLog || []).length;
+          try { await (_flushSaveNow && _flushSaveNow()); } catch (e) { return [{ stage: 'flush-threw', info: String(e && e.message) }]; }
+          return (window._saveLog || []).slice(before);
+        });
+        p.__flushLog = flushLog;
         return 0; // automatic: a GPS ping is not an interaction
       },
       rule: async (p) => {
@@ -139,9 +147,8 @@ test.describe('Receipt-gated supply runs: hold, dashboard accordion, three doors
         }
         const ok = !!row && row.pendingReceipt === true && !!row.supplyRunKey;
         // localRow present but row (cloud) absent = a sync-timing problem, not
-        // a logic problem: pin that down instead of leaving "undefined" to
-        // guess from next time.
-        return { ok, got: `cloud=${JSON.stringify(row && { pendingReceipt: row.pendingReceipt, supplyRunKey: row.supplyRunKey })} local=${JSON.stringify(localRow)}` };
+        // a logic problem: the flush log states definitively which.
+        return { ok, got: `cloud=${JSON.stringify(row && { pendingReceipt: row.pendingReceipt, supplyRunKey: row.supplyRunKey })} local=${JSON.stringify(localRow)} flushLog=${JSON.stringify(p.__flushLog)}` };
       },
     });
 

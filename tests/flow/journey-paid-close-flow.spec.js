@@ -251,7 +251,14 @@ test.describe('Journey card + paid-in-full close-out (UI-driven, real backend)',
       ruleText: 'a fully-paid, not-yet-completed job must surface the close-out prompt on both surfaces the owner actually looks at',
       expected: 'dash-money-feed AND cd-addresses-list both contain "job never closed out" with a real markJobDone button',
       act: async (p) => {
-        await p.evaluate(() => { if (typeof goPg === 'function') goPg('pg-dash'); if (typeof renderTodayFeed === 'function') renderTodayFeed(); });
+        // The Collect section defaults COLLAPSED (CLAUDE.md §10.6): _sec()
+        // never puts its cards in the DOM unless window._mmtCol_collect is
+        // explicitly false. Expand it before reading/clicking anything inside.
+        await p.evaluate(() => {
+          window._mmtCol_collect = false;
+          if (typeof goPg === 'function') goPg('pg-dash');
+          if (typeof renderTodayFeed === 'function') renderTodayFeed();
+        });
         await p.waitForTimeout(300);
         return 0;
       },
@@ -276,7 +283,11 @@ test.describe('Journey card + paid-in-full close-out (UI-driven, real backend)',
       ruleText: 'closing from the dashboard prompt must mark the job done and stamp the bid completion date',
       expected: 'job.status=done, bid.completion_date set',
       act: async (p) => {
-        await p.evaluate(() => { if (typeof goPg === 'function') goPg('pg-dash'); if (typeof renderTodayFeed === 'function') renderTodayFeed(); });
+        await p.evaluate(() => {
+          window._mmtCol_collect = false; // §10.6: collapsed section never renders its cards
+          if (typeof goPg === 'function') goPg('pg-dash');
+          if (typeof renderTodayFeed === 'function') renderTodayFeed();
+        });
         await p.waitForTimeout(300);
         let n = await tap(p, '#dash-money-feed button:has-text("Close it out")');
         await p.waitForTimeout(400);
@@ -310,7 +321,10 @@ test.describe('Journey card + paid-in-full close-out (UI-driven, real backend)',
       ruleText: 'closing the job must clear the prompt from BOTH surfaces on the very next render, and the journey card must read Send final invoice',
       expected: 'neither surface mentions "job never closed out"; journey primary button = "Send final invoice"',
       act: async (p) => {
-        await p.evaluate(() => { if (typeof renderTodayFeed === 'function') renderTodayFeed(); });
+        await p.evaluate(() => {
+          window._mmtCol_collect = false; // stays expanded; defensive re-assert (§10.6)
+          if (typeof renderTodayFeed === 'function') renderTodayFeed();
+        });
         return 0;
       },
       rule: async (p) => {
