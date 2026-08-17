@@ -23,6 +23,7 @@ async function fakeNative(page) {
     const TdLive = {
       isSupported: () => Promise.resolve({ supported: true, enabled: true }),
       start: rec('start'), update: rec('update'), end: rec('end'), endAll: rec('endAll'),
+      addListener: (ev, cb) => { window.__td.liveListeners = window.__td.liveListeners || {}; window.__td.liveListeners[ev] = cb; return { remove() {} }; },
     };
     const TdPush = {
       permission: () => Promise.resolve({ status: 'ask' }),
@@ -179,6 +180,68 @@ test.describe('Live Activities: what reaches the lock screen', () => {
       return [...new Set(window.__td.calls.map(c => c.args.channel))].sort();
     });
     expect(r).toEqual(['clock', 'drive']);
+  });
+
+  test('the clock card asks for a push token, the drive card stays phone-driven', async () => {
+    const r = await page.evaluate(async () => {
+      window.__td.calls.length = 0;
+      _liveActClockIn({ jobId: 3, jobName: 'P', clientName: 'PushCo', scopeLabel: '', startTime: Date.now() });
+      window._geoDriving = () => true;
+      _geoDriveMiles = 9.9; _geoDriveSteps = 15; _geoLegOrigin = null;
+      _liveActDrive();
+      await new Promise(r => setTimeout(r, 80));
+      const byCh = {};
+      window.__td.calls.forEach(c => { byCh[c.args.channel] = c.args.push; });
+      return byCh;
+    });
+    // The server can end a clock (force clock-out); nothing server-side knows
+    // more about a drive than the phone in the truck, so no token is spent.
+    expect(r.clock).toBe(true);
+    expect(r.drive).toBe(false);
+  });
+
+  test('an activity token is stored keyed user+channel so rotations overwrite', async () => {
+    const r = await page.evaluate(async () => {
+      const rows = [];
+      window._supaUser = { id: 'crew-1' };
+      window._contractorUserId = 'boss-1';
+      const prev = window._supa;
+      window._supa = { from: () => ({ upsert: (row, opts) => { rows.push({ row, opts }); return Promise.resolve({ error: null }); } }) };
+      const cb = window.__td.liveListeners && window.__td.liveListeners.activityToken;
+      if (cb) { cb({ channel: 'clock', token: 'act-tok-1' }); cb({ channel: 'clock', token: 'act-tok-2' }); }
+      await new Promise(r => setTimeout(r, 40));
+      window._supa = prev;
+      return { wired: !!cb, rows };
+    });
+    expect(r.wired).toBe(true);
+    expect(r.rows.length).toBe(2);
+    expect(r.rows[0].row).toMatchObject({ user_id: 'crew-1', channel: 'clock', token: 'act-tok-1', contractor_user_id: 'boss-1' });
+    expect(r.rows[1].row.token).toBe('act-tok-2');
+    // The (user, channel) conflict target is what makes a rotation an
+    // overwrite instead of a second row the server would push to blindly.
+    expect(r.rows[0].opts.onConflict).toBe('user_id,channel');
+  });
+
+  test('force clock-out asks the server to end the crew phone card', async () => {
+    const r = await page.evaluate(async () => {
+      const invoked = [];
+      const prev = window._supa;
+      window._supa = { functions: { invoke: (name, opts) => { invoked.push({ name, body: opts && opts.body }); return Promise.resolve({ data: { ok: true } }); } } };
+      _liveActRemoteEnd('crew-uid-9', 'clock');
+      await new Promise(r => setTimeout(r, 40));
+      window._supa = prev;
+      return invoked;
+    });
+    expect(r.length).toBe(1);
+    expect(r[0].name).toBe('update-live-activity');
+    expect(r[0].body.user).toBe('crew-uid-9');
+    expect(r[0].body.channel).toBe('clock');
+    expect(r[0].body.event).toBe('end');
+    // Every ContentState field must ship or iOS silently drops the push.
+    const st = r[0].body.state;
+    for (const k of ['kind', 'title', 'detail', 'value', 'timer', 'startedAt', 'tint']) {
+      expect(st).toHaveProperty(k);
+    }
   });
 
   test('nothing throws when the app is not running in the shell', async () => {

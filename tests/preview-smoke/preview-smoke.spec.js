@@ -118,6 +118,17 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
     expect([200, 401], `/api/auth/v1/health returned ${res.status()}: the /api proxy worker is down or not reaching Supabase`).toContain(res.status());
   });
 
+  // Apple's crawler fetches this exact path before Apple Pay may appear on the
+  // hub's Payment Element, and only a live deploy can prove the Pages Function
+  // route answers on the real origin, the same reason the /api check exists.
+  test('the Apple Pay domain association answers on the deployed origin', async ({ page }) => {
+    const headers = process.env.E2E_BYPASS_SECRET ? { 'x-e2e-bypass': process.env.E2E_BYPASS_SECRET } : {};
+    const res = await page.request.get('/.well-known/apple-developer-merchantid-domain-association', { failOnStatusCode: false, headers });
+    expect(res.status(), 'the .well-known Pages Function is not serving: Apple Pay cannot validate this domain').toBe(200);
+    const body = await res.text();
+    expect(body.length, 'association file suspiciously small, upstream fetch likely failed').toBeGreaterThan(500);
+  });
+
   // 3. MapKit authorizes + initializes on the deployed hostname. The token is domain-
   //    locked (CLAUDE.md §10.1) and `_initMapKit` bails on any unauthorized origin, so
   //    `_mapkitReady` is ALWAYS false on localhost, this is the only place maps are

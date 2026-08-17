@@ -397,6 +397,11 @@ function forceClockOutEntry(entryId){
   const j=jobs.find(x=>x.id===e.job_id);
   if(j)j.actualHours=Math.round(((j.actualHours||0)+minutes/60)*10)/10;
   saveAll();
+  // The crew phone's lock-screen card is still saying CLOCKED IN and ticking,
+  // with the app closed. End it through the server (update-live-activity), or
+  // the lock screen keeps telling them they are on the meter until the next
+  // time they open the app. Fire-and-forget: the entry above is already saved.
+  if(typeof _liveActRemoteEnd==='function'&&e.logged_by_uid)_liveActRemoteEnd(e.logged_by_uid,'clock');
   showToast('Clocked out · '+_fmtMin(minutes),'⏱');
   typeof renderTimeLog==='function'&&renderTimeLog();
 }

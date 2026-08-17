@@ -13,6 +13,11 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, content-type, x-client-info, apikey',
 };
 
+// Wallet-domain registrations already confirmed by this warm instance, keyed
+// account|host, so the Apple Pay check below costs zero Stripe calls on the
+// common path.
+const _walletDomainOk = new Set<string>();
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
@@ -160,6 +165,37 @@ Deno.serve(async (req) => {
 
     // Embedded: PaymentIntent + Payment Element (accordion layout, all payment methods)
     if (embedded) {
+      // Apple Pay / Google Pay in the Payment Element only appear when the
+      // PAGE'S domain is registered as a Stripe payment method domain on the
+      // account the PaymentIntent lives on, which for a direct charge is the
+      // CONTRACTOR'S connected account, so one global registration cannot cover
+      // it: it has to be ensured per connected account. Without this, every
+      // client on an iPhone was typing a 16-digit card number the whole time
+      // (owner report 2026-08-17: no Apple Pay button on the hub).
+      // Cached per warm instance so the common case costs zero extra calls;
+      // never blocks a payment: a registration failure just means no wallet
+      // button, exactly what happens today.
+      const originHost = (() => {
+        try { return new URL(req.headers.get('origin') || successUrl || '').hostname; } catch { return ''; }
+      })();
+      if (originHost && !originHost.endsWith('localhost') && !_walletDomainOk.has(stripeAccountId + '|' + originHost)) {
+        try {
+          const reqOpts: Stripe.RequestOptions | undefined = stripeAccountId ? { stripeAccount: stripeAccountId } : undefined;
+          const list = await stripe.paymentMethodDomains.list({ domain_name: originHost, limit: 1 }, reqOpts);
+          const dom = list.data[0];
+          if (!dom) {
+            await stripe.paymentMethodDomains.create({ domain_name: originHost }, reqOpts);
+          } else if (dom.apple_pay?.status !== 'active') {
+            // The domain exists but Apple's check failed earlier (the
+            // association file was not being served before this change).
+            // Re-validate now that /.well-known answers.
+            await stripe.paymentMethodDomains.validate(dom.id, reqOpts);
+          }
+          _walletDomainOk.add(stripeAccountId + '|' + originHost);
+        } catch (e) {
+          console.warn('wallet domain registration skipped:', (e as Error).message);
+        }
+      }
       const totalAmt = amount + (surchargeAmount || 0);
       const piParams: Stripe.PaymentIntentCreateParams = {
         amount: totalAmt,

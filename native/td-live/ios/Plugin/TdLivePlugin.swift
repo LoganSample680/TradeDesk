@@ -35,6 +35,37 @@ public class TdLivePlugin: CAPPlugin, CAPBridgedPlugin {
 
     // channel -> the live activity's id, so update/end can find it again.
     private var live: [String: String] = [:]
+    // Activity ids whose APNs token stream is already being watched, so a
+    // re-learned activity is never double-subscribed (each subscription would
+    // re-emit every rotation to JS).
+    private var watched: Set<String> = []
+
+    // SERVER-DRIVEN UPDATES (owner 2026-08-17): an activity started with
+    // push:true gets its own APNs token from ActivityKit. Every token (and
+    // every rotation, iOS reissues them) is handed straight to JS, which
+    // stores it server-side; the update-live-activity Edge Function then
+    // changes or ends the card with the app closed. Capability only: WHAT
+    // gets pushed and WHO may target it live in JS and the function.
+    #if canImport(ActivityKit)
+    @available(iOS 16.1, *)
+    private func watchPushToken(_ activity: Activity<TdLiveAttributes>, channel: String) {
+        guard !watched.contains(activity.id) else { return }
+        watched.insert(activity.id)
+        // Whatever token already exists arrives immediately; the stream then
+        // delivers rotations for as long as the activity lives.
+        if let t = activity.pushToken {
+            let hex = t.map { String(format: "%02x", $0) }.joined()
+            notifyListeners("activityToken", data: ["channel": channel, "token": hex])
+        }
+        Task { [weak self] in
+            for await data in activity.pushTokenUpdates {
+                let hex = data.map { String(format: "%02x", $0) }.joined()
+                self?.notifyListeners("activityToken", data: ["channel": channel, "token": hex])
+            }
+            self?.watched.remove(activity.id)
+        }
+    }
+    #endif
 
     @objc func isSupported(_ call: CAPPluginCall) {
         #if canImport(ActivityKit)
@@ -91,12 +122,14 @@ public class TdLivePlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             do {
+                let wantPush = call.getBool("push") ?? false
                 let activity = try Activity.request(
                     attributes: TdLiveAttributes(channel: channel),
                     contentState: state,
-                    pushType: nil
+                    pushType: wantPush ? .token : nil
                 )
                 live[channel] = activity.id
+                if wantPush { watchPushToken(activity, channel: channel) }
                 call.resolve(["ok": true, "id": activity.id, "reused": false])
             } catch {
                 call.resolve(["ok": false, "reason": error.localizedDescription])
@@ -120,6 +153,10 @@ public class TdLivePlugin: CAPPlugin, CAPBridgedPlugin {
                     // re-instantiated) while an activity from the previous run is
                     // still on the lock screen, and the in-memory map is empty.
                     self.live[channel] = a.id
+                    // Re-learned across a relaunch: its token stream needs
+                    // watching again too, or a rotation after relaunch would
+                    // leave the server pushing at a dead token.
+                    if a.pushToken != nil { self.watchPushToken(a, channel: channel) }
                     found = true
                 }
                 call.resolve(["ok": found])

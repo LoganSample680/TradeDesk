@@ -59,10 +59,19 @@ const _LIVE_TINT={drive:'#2D5DA8',clock:'#0E6B39'};
 // card actually changes (every fix, versus every tenth of a mile).
 const _liveLast={};
 
+// Which channels ask ActivityKit for an APNs push token, so the SERVER can
+// change or end the card with the app closed (update-live-activity). The clock
+// card earns it first: a manager force-closing a forgotten clock from Time Log
+// must end the crew phone's CLOCKED IN card, or the lock screen keeps telling
+// them they are on the meter. The drive card stays phone-driven, nothing
+// server-side knows more about a drive than the phone in the truck does.
+const _LIVE_PUSH_CHANNELS={clock:true};
+
 async function _liveActSet(channel,state){
   if(!(await _liveActReady()))return false;
   const P=_liveActPlugin();
   if(!P)return false;
+  _liveActWireTokens();
   const payload={
     channel,
     kind:state.kind||'',
@@ -71,7 +80,8 @@ async function _liveActSet(channel,state){
     value:String(state.value||''),
     timer:!!state.timer,
     startedAt:Number(state.startedAt)||Math.floor(Date.now()/1000),
-    tint:state.tint||_LIVE_TINT[channel]||'#2D5DA8'
+    tint:state.tint||_LIVE_TINT[channel]||'#2D5DA8',
+    push:!!_LIVE_PUSH_CHANNELS[channel]
   };
   // A timer card renders itself; only its LABELS can change, so the tick is
   // excluded from the signature and a running clock spends nothing.
@@ -93,9 +103,61 @@ async function _liveActSet(channel,state){
 
 async function _liveActEnd(channel){
   delete _liveLast[channel];
+  _liveActDropToken(channel);
   const P=_liveActPlugin();
   if(!P||typeof P.end!=='function')return;
   try{await P.end({channel});}catch(_e){}
+}
+
+// ── Server-driven updates (owner 2026-08-17) ─────────────────────────────────
+// ActivityKit hands a push-enabled card its own APNs token (and rotates it at
+// will). Each one is stored server-side keyed (user, channel) so the
+// update-live-activity Edge Function can change or end THIS card with the app
+// closed. Fire-and-forget everywhere: a failed store just means the card is
+// phone-driven, exactly what it was before this feature.
+let _liveTokWired=false;
+function _liveActWireTokens(){
+  if(_liveTokWired)return;
+  const P=_liveActPlugin();
+  if(!P||typeof P.addListener!=='function')return;
+  _liveTokWired=true;
+  try{
+    P.addListener('activityToken',e=>{_liveActSaveToken(e&&e.channel,e&&e.token);});
+  }catch(_e){}
+}
+async function _liveActSaveToken(channel,token){
+  if(!channel||!token)return;
+  try{
+    if(typeof _supa==='undefined'||!_supa||!_supaUser)return;
+    await _supa.from('live_activity_tokens').upsert({
+      user_id:_supaUser.id,
+      channel:String(channel),
+      token:String(token),
+      contractor_user_id:(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id,
+      updated_at:new Date().toISOString()
+    },{onConflict:'user_id,channel'});
+  }catch(_e){}
+}
+function _liveActDropToken(channel){
+  try{
+    if(typeof _supa==='undefined'||!_supa||!_supaUser)return;
+    const q=_supa.from('live_activity_tokens').delete().eq('user_id',_supaUser.id);
+    (channel?q.eq('channel',String(channel)):q).then(()=>{},()=>{});
+  }catch(_e){}
+}
+// End someone ELSE's card through the server: the force-clock-out path. The
+// function checks the target belongs to the caller's account; this just asks.
+function _liveActRemoteEnd(targetUid,channel){
+  try{
+    if(typeof _supa==='undefined'||!_supa||!_supa.functions||!targetUid)return;
+    _supa.functions.invoke('update-live-activity',{body:{
+      user:String(targetUid),
+      channel:channel||'clock',
+      event:'end',
+      state:{kind:'CLOCKED IN',title:'Clocked out by the office',detail:'',value:'',timer:false,
+        startedAt:Math.floor(Date.now()/1000),tint:_LIVE_TINT.clock}
+    }}).then(()=>{},()=>{});
+  }catch(_e){}
 }
 
 // Sign-out, account switch, or a boot that finds cards from a previous session.
@@ -104,6 +166,7 @@ async function _liveActEnd(channel){
 // lock exists to prevent.
 async function _liveActEndAll(){
   Object.keys(_liveLast).forEach(k=>delete _liveLast[k]);
+  _liveActDropToken(null);   // all channels: the session is over
   const P=_liveActPlugin();
   if(!P||typeof P.endAll!=='function')return;
   try{await P.endAll();}catch(_e){}
