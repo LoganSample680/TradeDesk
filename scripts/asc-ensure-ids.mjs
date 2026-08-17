@@ -29,7 +29,7 @@ if (!KEY || !KID || !ISS) {
 // only what their own entitlement files use.
 const WANT = [
   { id: 'app.tradedesk.beta', name: 'TradeDesk Beta',
-    caps: ['PUSH_NOTIFICATIONS', 'APPLE_ID_AUTH', 'APP_GROUPS'] },
+    caps: ['PUSH_NOTIFICATIONS', 'APPLE_ID_AUTH', 'APP_GROUPS', 'ASSOCIATED_DOMAINS'] },
   { id: 'app.tradedesk.beta.share', name: 'TradeDesk Beta Share',
     caps: ['APP_GROUPS'] },
   { id: 'app.tradedesk.beta.live', name: 'TradeDesk Beta Live',

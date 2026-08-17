@@ -69,12 +69,22 @@ serve(async (req) => {
     if (qerr) return json({ ok: false, error: qerr.message }, 500);
     if (!rows?.length) return json({ ok: true, sent: 0, note: "no registered devices" });
 
+    // Time Sensitive (owner ask 2026-08-17): caller opt-in only, never the
+    // default. This is the "breaks through Focus/DND" tier, reserved for the
+    // handful of things that are genuinely urgent (crew running late, a
+    // balance crossing the lien window), not every push. Requires the
+    // com.apple.developer.usernotifications.time-sensitive entitlement on
+    // the device's build; without it iOS just treats this as a normal alert,
+    // so shipping the payload field is safe ahead of that entitlement
+    // landing (§ App ID capability, not yet confirmed automatable via ASC
+    // API, see asc-ensure-ids.mjs).
     const jwt = await apnsJwt();
     const payload = JSON.stringify({
       aps: {
         alert: { title, body: message },
         sound: "default",
         ...(body.badge != null ? { badge: Number(body.badge) } : {}),
+        ...(body.timeSensitive ? { "interruption-level": "time-sensitive" } : {}),
       },
       // The routing the app reads on tap (js/push.js _pushRoute). Kept OUTSIDE
       // `aps` because Apple owns that namespace.

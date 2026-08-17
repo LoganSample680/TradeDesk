@@ -129,6 +129,24 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
     expect(body.length, 'association file suspiciously small, upstream fetch likely failed').toBeGreaterThan(500);
   });
 
+  // Universal Links (owner 2026-08-17): iOS fetches this exact path before it
+  // will honor com.apple.developer.associated-domains for this host. Only a
+  // live deploy proves the Pages Function route answers. Not asserted: the
+  // exact appID string, since it carries a placeholder Team ID until the
+  // owner fills in the real one (functions/.well-known/apple-app-site-
+  // association.js) — the file serving correctly is what this proves, not
+  // that Universal Links are fully wired up yet.
+  test('the apple-app-site-association file answers on the deployed origin', async ({ page }) => {
+    const headers = process.env.E2E_BYPASS_SECRET ? { 'x-e2e-bypass': process.env.E2E_BYPASS_SECRET } : {};
+    const res = await page.request.get('/.well-known/apple-app-site-association', { failOnStatusCode: false, headers });
+    expect(res.status(), 'the AASA Pages Function is not serving: Universal Links cannot validate this domain').toBe(200);
+    expect(res.headers()['content-type'] || '', 'AASA must be served as JSON, not text/plain or octet-stream').toContain('application/json');
+    const body = await res.json();
+    const paths = (body.applinks?.details?.[0]?.components || []).map(c => c['/']);
+    expect(paths).toContain('/sign.html*');
+    expect(paths).toContain('/client.html*');
+  });
+
   // 3. MapKit authorizes + initializes on the deployed hostname. The token is domain-
   //    locked (CLAUDE.md §10.1) and `_initMapKit` bails on any unauthorized origin, so
   //    `_mapkitReady` is ALWAYS false on localhost, this is the only place maps are

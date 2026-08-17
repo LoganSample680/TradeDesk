@@ -141,6 +141,48 @@ jobs:
                  together when the App Store build ships. -->
             <key>aps-environment</key>
             <string>development</string>
+            <!-- Universal Links (owner 2026-08-17): a contractor who already
+                 has the app taps a sign/client-hub link (from a text, email,
+                 or their own share) and it opens IN the app instead of
+                 Safari. ASSOCIATED_DOMAINS is a confirmed App Store Connect
+                 API capability, asc-ensure-ids.mjs enables it on the App ID
+                 automatically (unlike the three below). Both the UAT domain
+                 the TestFlight shell actually loads (§3.2) and the eventual
+                 production domain are listed; an entry with no live
+                 apple-app-site-association file yet just never activates,
+                 it can't break anything. -->
+            <key>com.apple.developer.associated-domains</key>
+            <array>
+              <string>applinks:uat.tradedesk-cyp.pages.dev</string>
+              <string>applinks:tradedeskpro.app</string>
+            </array>
+            <!-- Scanner mesh quality + urgent alerts (owner ask 2026-08-17).
+                 ALL FOUR below need a MANUAL one-time portal step before the
+                 next build: developer.apple.com -> Certificates, Identifiers
+                 & Profiles -> Identifiers -> app.tradedesk.beta -> enable
+                 "Increased Memory Limit", "Extended Virtual Addressing",
+                 "Background GPU Access", and "Time Sensitive Notifications".
+                 None of the four are confirmed present in the documented App
+                 Store Connect API capabilityType enum (Increased Memory
+                 Limit and Extended Virtual Addressing confirmed absent;
+                 Time Sensitive Notifications confirmed a SEPARATE portal
+                 capability from Push Notifications; Background GPU Access is
+                 brand new as of iOS 26 and likely isn't in the API at all),
+                 so asc-ensure-ids.mjs cannot be trusted to turn them on the
+                 way it does Push/Sign-in/App Groups/Associated Domains.
+                 Adding an entitlement WITHOUT the matching App ID capability
+                 is exactly what broke cloud signing for 5 days over the App
+                 Group ("Authentication failed / No profiles", builds 19-29):
+                 do the portal step FIRST, or comment these four back out
+                 before firing a build. -->
+            <key>com.apple.developer.kernel.increased-memory-limit</key>
+            <true/>
+            <key>com.apple.developer.kernel.extended-virtual-addressing</key>
+            <true/>
+            <key>com.apple.developer.background-tasks.continued-processing.gpu</key>
+            <true/>
+            <key>com.apple.developer.usernotifications.time-sensitive</key>
+            <true/>
           </dict>
           </plist>
           EOF
@@ -194,6 +236,16 @@ jobs:
           # Same build number as the app: an extension whose CFBundleVersion
           # differs from its host is rejected after the whole archive is built.
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" ios/App/LiveExt/Info.plist
+
+      - name: Siri / Shortcuts App Intents
+        # Unlike the share/Live-Activity extensions, App Intents are only
+        # discovered by Siri/Shortcuts/Spotlight when declared IN the host
+        # app, so this adds a file to the EXISTING App target rather than a
+        # new one (scripts/ios-add-app-intents.rb). No entitlement, no
+        # capability, no new bundle id: this needs nothing from the portal.
+        run: |
+          gem install xcodeproj --no-document || sudo gem install xcodeproj --no-document
+          ruby ../scripts/ios-add-app-intents.rb
 
       - name: App icon from the repo's PWA icon
         # The generated project ships Capacitor's placeholder icon (owner:

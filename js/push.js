@@ -72,6 +72,12 @@ function _pushRoute(payload){
     if(route==='client'&&id!=null&&typeof openClientDetail==='function'){openClientDetail(Number(id));return;}
     if(route==='job'&&typeof goPg==='function'){goPg('pg-jobs');return;}
     if(route==='money'&&typeof goPg==='function'){goPg('pg-dash');return;}
+    // Siri/Shortcuts intents (owner ask 2026-08-17): the SAME dispatcher a
+    // push tap already uses, not a parallel one (§7.3). td-intents drains
+    // these on boot exactly like a push tap, see _pushWire below.
+    if(route==='clockin'&&typeof goPg==='function'){goPg('pg-timelog');return;}
+    if(route==='expense'&&typeof showQuickExpenseModal==='function'){showQuickExpenseModal(null,null);return;}
+    if(route==='lead'&&typeof openNewClient==='function'){openNewClient();return;}
     if(typeof goPg==='function')goPg('pg-dash');
   }catch(e){console.error('[push] route: '+(e&&e.message||e));}
 }
@@ -133,3 +139,24 @@ async function _pushForget(){
   }catch(_e){}
   try{localStorage.removeItem('zp3_push_token');}catch(_e){}
 }
+
+// ── Siri / Shortcuts drain (owner ask 2026-08-17) ────────────────────────────
+// Self-wiring at script load, not tied to push permission or the geo boot
+// chain: an App Intent (native/td-intents/ios/AppIntents/TdAppIntents.swift)
+// can launch the app cold, before any sign-in-triggered init has run, and it
+// stashes its route regardless of whether push notifications were ever
+// enabled. Routes through the SAME dispatcher a push tap uses (_pushRoute,
+// §7.3), never a parallel one.
+function _intentsPlugin(){
+  try{
+    const cap=window.Capacitor;
+    if(!cap||typeof cap.isNativePlatform!=='function'||!cap.isNativePlatform())return null;
+    if(typeof cap.registerPlugin==='function')return cap.registerPlugin('TdIntents');
+    return (cap.Plugins&&cap.Plugins.TdIntents)||null;
+  }catch(_e){return null;}
+}
+(function(){
+  const P=_intentsPlugin();
+  if(!P||typeof P.drain!=='function')return;
+  P.drain().then(r=>{if(r&&r.route)_pushRoute({route:r.route});}).catch(()=>{});
+})();

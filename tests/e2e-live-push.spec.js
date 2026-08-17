@@ -302,6 +302,41 @@ test.describe('Remote push: token handling and tap routing', () => {
     expect(r.length).toBe(5);   // a null payload is ignored entirely
   });
 
+  // Siri/Shortcuts intents (owner ask 2026-08-17) route through the SAME
+  // dispatcher a push tap uses (§7.3), never a parallel one: TdIntents.drain()
+  // hands _pushRoute a plain {route} exactly like a push payload does.
+  test('a Siri/Shortcuts intent routes through the same dispatcher a push tap uses', async () => {
+    const r = await page.evaluate(async () => {
+      const seen = [];
+      const oGo = window.goPg, oExp = window.showQuickExpenseModal, oLead = window.openNewClient;
+      window.goPg = (p) => seen.push('pg:' + p);
+      window.showQuickExpenseModal = (...a) => seen.push('expense:' + JSON.stringify(a));
+      window.openNewClient = () => seen.push('lead');
+      try {
+        _pushRoute({ route: 'clockin' });
+        _pushRoute({ route: 'expense' });
+        _pushRoute({ route: 'lead' });
+      } finally {
+        window.goPg = oGo; window.showQuickExpenseModal = oExp; window.openNewClient = oLead;
+      }
+      return seen;
+    });
+    expect(r[0]).toBe('pg:pg-timelog');
+    expect(r[1]).toBe('expense:[null,null]');
+    expect(r[2]).toBe('lead');
+  });
+
+  test('the intents plugin getter is native-only, exactly like the push plugin getter', async () => {
+    const off = await page.evaluate(() => {
+      const cap = window.Capacitor;
+      try {
+        window.Capacitor = undefined;
+        return typeof _intentsPlugin === 'function' ? _intentsPlugin() : 'missing';
+      } finally { window.Capacitor = cap; }
+    });
+    expect(off).toBe(null);
+  });
+
   test('the token is stored against the account whose events this phone should hear', async () => {
     const r = await page.evaluate(async () => {
       const rows = [];

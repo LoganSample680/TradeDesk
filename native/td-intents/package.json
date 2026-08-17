@@ -1,0 +1,9 @@
+{
+  "name": "td-intents",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TradeDesk Siri Shortcuts / App Intents bridge. The App Intents themselves (native/td-intents/ios/AppIntents/TdAppIntents.swift) run IN the App target, not this plugin's pod, since Shortcuts/Spotlight only discover intents declared in the host app. This plugin is just the drain: an intent's perform() stashes a route in UserDefaults.standard (shared in-process with the app, no App Group needed), and JS reads it once on boot exactly like a cold-launch push tap (js/push.js lastTap).",
+  "main": "index.js",
+  "capacitor": { "ios": { "src": "ios" } },
+  "files": ["index.js", "ios/", "TdIntents.podspec"]
+}
