@@ -68,6 +68,24 @@ jobs:
           done
           exit $MISSING
 
+      # TdGeoPlugin.mgr() unconditionally sets allowsBackgroundLocationUpdates
+      # = true, which is a hard CoreLocation crash (NSInternalInconsistency-
+      # Exception, "Invalid parameter... CLClientIsBackgroundable") unless the
+      # host app's Info.plist declares the 'location' background mode.
+      # ios-beta.yml's real build always sets this; this workflow generates
+      # its own minimal project and never did, so the very first test that
+      # touched TdGeo crashed the whole test process, not a plugin bug, a
+      # gap in this harness's own setup. Only the keys CoreLocation actually
+      # asserts on are needed here, not ios-beta.yml's full plist (camera,
+      # mic, Face ID, etc.), those plugins don't get exercised by XCTest.
+      - name: Configure Info.plist (background location, required or TdGeo crashes)
+        run: |
+          PLIST=ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :NSLocationWhenInUseUsageDescription string 'Test run: background location'" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSLocationAlwaysAndWhenInUseUsageDescription string 'Test run: background location'" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$PLIST" || true
+
       - name: Add the TdNativeTests target
         run: |
           gem install xcodeproj --no-document || sudo gem install xcodeproj --no-document
