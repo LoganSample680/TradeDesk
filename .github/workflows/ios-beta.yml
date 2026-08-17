@@ -403,6 +403,71 @@ jobs:
           codesign -d --entitlements :- "$APP" | tee /tmp/ents.plist
           grep -q 'com.apple.developer.applesignin' /tmp/ents.plist
 
+      - name: Verify every other entitlement survived signing (and App Intents compiled in)
+        # This is the general form of the check directly above, extended
+        # 2026-08-17 to cover every key the "Sign in with Apple entitlement"
+        # step now writes into App.entitlements. It exists specifically
+        # because of the four capabilities added tonight (increased-memory-
+        # limit, extended-virtual-addressing, background-tasks.continued-
+        # processing.gpu, usernotifications.time-sensitive): none of the four
+        # are confirmed present in the App Store Connect API's capabilityType
+        # enum, so asc-ensure-ids.mjs cannot be trusted to enable them on the
+        # app.tradedesk.beta App ID the way it does Push/Sign-in/App
+        # Groups/Associated Domains. An entitlement asked for in source but
+        # NOT enabled as a capability on the App ID is exactly what broke
+        # cloud signing for 5 days over the App Group (builds 19-29,
+        # "Authentication failed / No profiles"), except that failure mode is
+        # slow and cryptic: three retried "Authentication failed" export
+        # attempts before anyone even suspects the portal. Checking the
+        # SIGNED binary right here is instant and unambiguous: codesign
+        # either shows the key or it doesn't.
+        #
+        # /tmp/ents.plist is a FILE written by the step above, so it survives
+        # onto this step (files on the runner's disk persist across steps in
+        # the same job). $APP does NOT: shell variables set inside one step's
+        # `run:` block do not carry into the next step's `run:` block (each
+        # is its own shell), so this step recomputes it the same way the step
+        # above does, from the same already-unzipped build/ipa/unpacked dir.
+        run: |
+          APP=$(ls -d build/ipa/unpacked/Payload/*.app | head -1)
+          MISSING=0
+          for key in \
+            com.apple.developer.applesignin \
+            aps-environment \
+            com.apple.developer.associated-domains \
+            com.apple.developer.kernel.increased-memory-limit \
+            com.apple.developer.kernel.extended-virtual-addressing \
+            com.apple.developer.background-tasks.continued-processing.gpu \
+            com.apple.developer.usernotifications.time-sensitive; do
+            if grep -q "$key" /tmp/ents.plist; then
+              echo "ok: $key present in the signed binary"
+            else
+              echo "::error::$key is written into App.entitlements but is MISSING from the SIGNED binary. This means the app.tradedesk.beta App ID does not have the matching capability enabled: go to developer.apple.com -> Certificates, Identifiers & Profiles -> Identifiers -> app.tradedesk.beta and turn it on (see CLAUDE.md and the 'Sign in with Apple entitlement' step's comment for which portal toggle maps to this key), then rerun the build. Do not ignore this, it is the exact failure that cost 5 days on the App Group incident."
+              MISSING=1
+            fi
+          done
+
+          # App Intents (Siri/Shortcuts/Spotlight) only work if
+          # ios-add-app-intents.rb actually got TdAppIntents.swift compiled
+          # into the App target. Xcode's build system proves that happened by
+          # running an App Intents metadata-extraction build phase that
+          # writes a Metadata.appintents bundle at the TOP LEVEL of the .app
+          # (same level as Info.plist, not nested), containing
+          # extract.actionsdata + version.json. This is documented Xcode
+          # behavior for any target declaring App Intents on iOS 16+, but has
+          # not yet been directly confirmed against a TradeDesk build archive,
+          # so treat a failure here as a strong signal to go read the "Siri /
+          # Shortcuts App Intents" step's log, not necessarily proof the
+          # script itself is broken.
+          if [ -d "$APP/Metadata.appintents" ]; then
+            echo "ok: Metadata.appintents present, App Intents compiled into the App target"
+          else
+            echo "::error::Metadata.appintents is missing from the exported .app ($APP). TdAppIntents.swift likely did not make it into the App target's compile sources (ios-add-app-intents.rb ran but the file wasn't built), or Xcode's App Intents metadata extraction did not run. Check the 'Siri / Shortcuts App Intents' step's log for the actual cause before assuming this check is wrong."
+            MISSING=1
+          fi
+
+          exit $MISSING
+
       - name: Upload to TestFlight
         env:
           APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}

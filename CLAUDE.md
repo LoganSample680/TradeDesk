@@ -1171,6 +1171,21 @@ Skip this only for changes with genuinely no runtime user-flow surface (pure doc
 comments, a test-only edit). Everything a real user can touch gets a local-runner
 flow test architected with the owner and run green first.
 
+**CI-enforced visibility (added 2026-08-17):** this rule used to rely entirely on
+Claude remembering it, and features have shipped without a flow test as a result.
+`.github/workflows/test.yml` now runs a `flow-test-advisory` job on every PR: it
+diffs the branch against its base and, if any of the feature-surface files
+(`js/dashboard.js`, `js/mileage.js`, `js/clients.js`, `js/jobs.js`, `js/bids.js`,
+`js/finance.js`, `js/geo-track.js`, `js/proposals.js`, `js/generic-estimate.js`)
+changed with no matching `tests/flow/*.spec.js` change anywhere since the branch
+diverged from main, it emits a `::warning::` annotation naming the files and
+pointing back at this section. **It is advisory only, it never fails the check
+or blocks a merge**, a hard gate here would false-positive on small bug fixes
+already covered by existing tests and teach Claude to route around it. Seeing the
+warning on a PR is the trigger to ask: does this change actually need the flow
+test this section describes, or is it already covered? If it needs one, build it
+per steps 1-4 above before calling the work done.
+
 ---
 
 ## 13. Agentic Self-Heal Loop (Slack → Claude → Regression Test → PR)

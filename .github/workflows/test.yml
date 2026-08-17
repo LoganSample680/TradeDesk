@@ -51,6 +51,77 @@ jobs:
           done
           echo "✅ All migrations applied cleanly"
 
+  # ── §12.8 flow-test coverage advisory ───────────────────────────────────────
+  # CLAUDE.md §12.8 requires a live flow test (tests/flow/*.spec.js) for every
+  # feature/change that touches a real user flow, but until now that rule
+  # lived only in memory: nothing in the pipeline flagged a PR that shipped
+  # without one, and features have shipped that way. This job makes the gap
+  # VISIBLE on the PR instead of silently forgotten.
+  #
+  # Deliberately non-blocking: it only ever emits a ::warning:: annotation,
+  # never a non-zero exit. A hard-failing check here would false-positive on
+  # small bug fixes already covered by existing tests (not every touch of
+  # dashboard.js is a new feature), and a gate that cries wolf trains Claude
+  # to route around it, which defeats the entire point of making this
+  # visible. This is an FYI for the owner and Claude to glance at, not a
+  # merge blocker.
+  flow-test-advisory:
+    name: "§12.8 flow-test advisory"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # PR-only: the "did this branch add a flow test" question only makes
+    # sense relative to where it diverged from its base branch. A direct push
+    # to main (post-merge) has already been through this check on its PR.
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Check feature-surface changes for a matching flow test
+        # Belt-and-suspenders on top of the "advisory only" design above: if
+        # git itself trips (fetch hiccup, unexpected merge-base shape) this
+        # must still never fail the job, so continue-on-error backstops any
+        # exit code this script could theoretically produce.
+        continue-on-error: true
+        run: |
+          # actions/checkout only guarantees the PR head's own history is
+          # local; fetch the base branch explicitly so `git merge-base`
+          # below has something to diff against regardless of how deep the
+          # PR branch is.
+          git fetch origin "${{ github.event.pull_request.base.ref }}"
+          BASE=$(git merge-base "origin/${{ github.event.pull_request.base.ref }}" HEAD)
+          CHANGED=$(git diff --name-only "$BASE" HEAD)
+
+          # Scoped to files that carry real feature/business-logic surface a
+          # live flow test would actually exercise: not every js/*.js file.
+          # Shared helpers (utils.js, data.js, constants.js, icons.js, lib/,
+          # vendor/, cloud.js's low-level sync plumbing, etc.) have no
+          # user-facing flow of their own and would just be noise here.
+          FEATURE_FILES="js/dashboard.js js/mileage.js js/clients.js js/jobs.js js/bids.js js/finance.js js/geo-track.js js/proposals.js js/generic-estimate.js"
+
+          TOUCHED=""
+          for f in $FEATURE_FILES; do
+            if echo "$CHANGED" | grep -qx "$f"; then
+              TOUCHED="$TOUCHED $f"
+            fi
+          done
+
+          if [ -z "$TOUCHED" ]; then
+            echo "no feature-surface files changed on this branch, nothing to flag"
+            exit 0
+          fi
+
+          if echo "$CHANGED" | grep -qE '^tests/flow/.*\.spec\.js$'; then
+            echo "flow-test change found alongside the feature-surface change(s), ok:$TOUCHED"
+            exit 0
+          fi
+
+          echo "::warning::CLAUDE.md §12.8 advisory: this branch changed$TOUCHED with no tests/flow/*.spec.js change anywhere since it diverged from ${{ github.event.pull_request.base.ref }}. §12.8 asks every user-facing feature or flow change to get a live flow test architected with the owner before it's called done. Advisory only, not a blocking check: if existing test coverage already handles this change, there is nothing to do."
+
   # ── E2E browser tests ───────────────────────────────────────────────────────
   test:
     runs-on: ubuntu-latest
