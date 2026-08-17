@@ -196,14 +196,24 @@ jobs:
         # (idempotent, safe on a retry). Runs AFTER the entitlements step
         # because it appends the App Group to the file that step writes.
         #
-        # RE-ENABLED 2026-08-17: was skipped for build-30 isolation (builds
-        # 19-29 all died in cloud signing, "Authentication failed / No
-        # profiles", traced to group.app.tradedesk.beta, the one identifier
-        # type the ASC API cannot create). Owner registered the App Group by
-        # hand in the developer portal; flipping this back on to prove it.
+        # RE-SKIPPED 2026-08-17 (attempt 2): owner registered the App Group
+        # (group.app.tradedesk.beta) in the portal by hand, but re-enabling
+        # this still hit the exact same historical failure, 3 export
+        # retries, every one "Authentication failed" / "No profiles for
+        # 'app.tradedesk.beta.share' were found". The App Group and the
+        # share extension's own App ID (app.tradedesk.beta.share) are TWO
+        # separate portal objects: registering the App Group alone doesn't
+        # create the App ID it attaches to. Next attempt needs, in
+        # developer.apple.com -> Certificates, Identifiers & Profiles ->
+        # Identifiers: confirm app.tradedesk.beta.share EXISTS as its own
+        # App ID (not just referenced by the group), with App Groups
+        # capability checked and group.app.tradedesk.beta assigned to it.
+        # Skipping again so the rest of tonight's changes (Associated
+        # Domains, the 4 manual-portal entitlements, App Intents) ship on a
+        # clean build instead of blocking behind this.
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          SKIP_SHARE_EXT: '0'
+          SKIP_SHARE_EXT: '1'
         run: |
           if [ "$SKIP_SHARE_EXT" = "1" ]; then
             echo "::notice::share extension SKIPPED for signing isolation (see step comment)"
