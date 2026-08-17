@@ -2078,51 +2078,96 @@ function renderCDBids(){
         payHTML+='<div style="font-size:10px;color:'+(days>=30?'#A32D2D':days>=14?'var(--amber)':'var(--text3)')+';margin-top:4px">Job completed '+b.completion_date+' · '+days+' day'+(days!==1?'s':'')+' since completion'+(days>=7?' · follow up on balance':'')+(csInfo.label?' &nbsp;·&nbsp; <strong style="color:'+csInfo.color+'">'+csInfo.label+'</strong>':'')+' </div>';
       }
     }
-    const actBtns=[];
+    // ── The journey card (owner pick 2026-08-17: variant 3 + variant 1's More) ─
+    // The old card was nine buttons in seven styles with no hierarchy (owner:
+    // "ugly as fuck"). Now the card IS the lifecycle: Signed → Schedule → Work
+    // → Collect, the current step is the one loud button, three quiet quick
+    // actions, and everything else lives in the More sheet (_bidMoreSheet).
+    // The collections ladder and lien controls keep their exact trigger
+    // conditions: they are time-critical money machinery, so when their moment
+    // comes they surface ON the card as a contextual amber/red bar, never
+    // buried in More.
     const isDiag=b.kind==='diagnostic';
-    if(isWon){
-      // Close job button, when won but not yet marked complete
-      if(!b.completion_date){const linkedJob=jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id);const jid=linkedJob?.id;if(jid)actBtns.push('<button class="btn btn-sm" onclick="markJobDone('+jid+')" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid)">'+svgIcon('✓')+' Close job</button>');}
-      if(balance>0.01)actBtns.push('<button class="btn btn-sm btn-g" onclick="openPayPanel('+b.id+')">+ Log payment</button>');
-      if(balance>0.01&&_stripeConnectStatus?.charges_enabled)actBtns.push('<button class="btn btn-sm" onclick="sendPaymentLink('+b.id+')" style="background:#635BFF;color:#fff;border-color:#635BFF;font-size:11px">'+svgIcon('💳')+' Send pay link</button>');
-      if(balance>0.01&&b.completion_date){const _c=getClientById(b.client_id);if(_c&&_c.phone){const _msg=encodeURIComponent('Hi '+(_c.name||'').split(' ')[0]+', this is '+(S.bname||'your contractor')+'. Just a friendly reminder that a balance of '+fmt(balance)+' is outstanding for your job at '+(b.addr||_c.addr||'your property')+'. Please let us know when you can take care of this. Thank you!');actBtns.push('<a href="sms:'+_c.phone.replace(/\D/g,'')+'&body='+_msg+'" onclick="autoLogContact('+b.client_id+',\'payment_request\')" class="btn btn-sm" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);text-decoration:none">'+svgIcon('📲')+' Request pay</a>');}}
-      if(getBidPaid(b.id)>(b.amount||0)+0.01)actBtns.push('<button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="background:#FFF0F0;color:#A32D2D;border-color:#A32D2D">'+svgIcon('↩')+' Issue refund</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="toggleBidSummary('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128196; View proposal</button>');
-      // "Final invoice" only for real jobs, a diagnostic charge is already a
-      // one-line receipt (Print invoice below covers it fine, no reconciliation
-      // to do: no change orders, nothing that could be pending).
-      if(!isDiag)actBtns.push('<button class="btn btn-sm" onclick="openFinalInvoice('+b.id+')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('🧾')+' Final invoice</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="printInvoice('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128438; Print invoice</button>');
-      // Schedule/Revise/Supply list don't apply to a diagnostic charge, it's
-      // already done, it's a fee not a scope of work, nothing to build a
-      // supply list for.
-      if(!isDiag){
-        if(!scheduledIds.has(b.id))actBtns.push('<button class="btn btn-sm btn-p" onclick="schedFromBid('+b.id+')">Schedule →</button>');
-      }
-      if(!lien&&balance>0.01&&days>=14)actBtns.push('<button class="btn btn-sm btn-r" onclick="showFileLienDirect('+b.id+')">'+svgIcon('⚖️')+' File lien</button>');
-      else if(lien&&lien.status!=='resolved')actBtns.push('<button class="btn btn-sm btn-r" onclick="openLienPanel('+b.id+')">Lien status</button>');
-      // SMS escalation buttons based on days overdue
-      if(balance>0.01&&days>=7&&days<14)actBtns.push('<button class="btn btn-sm" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'reminder\')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">'+svgIcon('💬')+' Remind</button>');
-      if(balance>0.01&&days>=14&&days<21)actBtns.push('<button class="btn btn-sm" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'second\')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">'+svgIcon('💬')+' 2nd notice</button>');
-      if(balance>0.01&&days>=21)actBtns.push('<button class="btn btn-sm btn-r" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'intent\')">'+svgIcon('💬')+' Intent to lien</button>');
-      if(lien&&lien.status!=='resolved'&&getBidBalance(b)<=0.01)actBtns.push('<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">'+svgIcon('✓')+' Release lien</button>');
-      // Recordable release doc, reachable any time after release (re-file, lost copy).
-      if(lien&&lien.status==='resolved')actBtns.push('<button class="btn btn-sm" onclick="printKansasLienRelease('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">'+svgIcon('📄')+' Release doc</button>');
-      if(!isDiag){
-        actBtns.push('<button class="btn btn-sm" onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise proposal</button>');
-        actBtns.push('<button class="btn btn-sm" onclick="showSupplyList('+b.id+')" style="background:#FFF0E8;color:#854F0B;border-color:#E89B50">'+svgIcon('📦')+' Supply list</button>');
-      }
-      actBtns.push('');
+    const _linkedJob=jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id);
+    const _jid=_linkedJob?_linkedJob.id:null;
+    const _done=!!b.completion_date;
+    const _paidUp=balance<=0.01;
+    const _overpaid=getBidPaid(b.id)>(b.amount||0)+0.01;
+    const _sched=scheduledIds.has(b.id);
+    // Stage: 1 sign, 2 schedule, 3 work, 4 collect, 5 complete. A diagnostic
+    // is a fee, not a scope of work: it skips straight to collect/complete.
+    let _stage;
+    if(!isWon)_stage=1;
+    else if(isDiag)_stage=_paidUp?5:4;
+    else if(!_done&&!_sched)_stage=2;
+    else if(!_done)_stage=3;
+    else if(!_paidUp)_stage=4;
+    else _stage=5;
+    // The strip: done steps green, the current one lit. Skipped for
+    // diagnostics, a four-step journey on a one-line fee reads as parody.
+    let journeyHtml='';
+    if(!isDiag){
+      const _labels=[isWon?'Signed':'Sign','Schedule','Work','Collect'];
+      journeyHtml='<div style="display:flex;margin:10px 0 2px">'+_labels.map((L,i)=>{
+        const n=i+1;
+        const st=_stage>=5?'done':(n<_stage?'done':(n===_stage?'now':'todo'));
+        const dot=st==='done'
+          ?'<span style="width:18px;height:18px;border-radius:50%;background:var(--green-mid);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0">✓</span>'
+          :st==='now'
+          ?'<span style="width:18px;height:18px;border-radius:50%;background:var(--blue-dk);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0;box-shadow:0 0 0 4px rgba(29,78,216,.14)">'+n+'</span>'
+          :'<span style="width:18px;height:18px;border-radius:50%;background:#D8DADF;color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0">'+n+'</span>';
+        const lnOn='var(--green-mid)',lnOff='#E3E5E9';
+        const lnL=i===0?'<span style="flex:1"></span>':'<span style="flex:1;height:2px;background:'+((n<=_stage||_stage>=5)?lnOn:lnOff)+'"></span>';
+        const lnR=i===_labels.length-1?'<span style="flex:1"></span>':'<span style="flex:1;height:2px;background:'+((n<_stage||_stage>=5)?lnOn:lnOff)+'"></span>';
+        return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><div style="display:flex;align-items:center;width:100%">'+lnL+dot+lnR+'</div><span style="font-size:9px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:'+(st==='now'?'var(--blue-dk)':'var(--text3)')+'">'+L+'</span></div>';
+      }).join('')+'</div>';
     }
+    // One uniform look each for the primary, the quick row, the contextual
+    // money bar, and the More rows. Never a per-button color again.
+    const _pbtn=(fn,label)=>'<button onclick="'+fn+'" style="display:block;width:100%;margin-top:10px;padding:12px;border-radius:11px;border:none;background:var(--blue-dk);color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">'+label+'</button>';
+    const _qbtn=(fn,label,flex)=>'<button onclick="'+fn+'" style="flex:'+(flex||1)+';padding:9px 4px;border-radius:10px;border:1px solid var(--border2);background:var(--bg2);font-size:11.5px;font-weight:700;color:var(--text2);cursor:pointer;font-family:inherit;white-space:nowrap">'+label+'</button>';
+    const _wbtn=(fn,label,danger)=>'<button onclick="'+fn+'" style="display:block;width:100%;margin-top:8px;padding:11px;border-radius:10px;border:1px solid '+(danger?'#A32D2D':'var(--amber)')+';background:'+(danger?'#FFF0F0':'#FFF8E8')+';color:'+(danger?'#A32D2D':'#856404')+';font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">'+label+'</button>';
+    const _mrow=(fn,label)=>'<button onclick="document.getElementById(\'_bid-more-ov\')?.remove();'+fn+'" style="display:flex;align-items:center;gap:10px;width:100%;padding:12px 8px;border:none;background:none;font-size:13.5px;font-weight:700;color:var(--text2);cursor:pointer;font-family:inherit;border-bottom:1px solid var(--border);text-align:left">'+label+'</button>';
+    const _reviseFn='openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
+    let primaryHtml='',ctxHtml='';const quick=[],more=[];
     if(!isWon){
-      actBtns.push('<button class="btn btn-sm" onclick="sendBidEmail('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#9993; Send email</button>');
-      const _reviseFn='openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
-      actBtns.push('<button class="btn btn-sm" onclick="'+_reviseFn+'" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise proposal</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="openBidNotes('+b.id+')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">'+svgIcon('📝')+' Notes</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="markBidHandshake('+b.id+')" style="background:#FFF8E8;color:#856404;border-color:var(--amber);font-size:11px">'+svgIcon('🤝')+' Handshake</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="markBidAbandoned('+b.id+')" style="background:#FFF8F0;color:#A32D2D;border-color:#A32D2D">No response</button>');
-      actBtns.push('');
+      primaryHtml=_pbtn('sendBidEmail('+b.id+')',b.status==='Pending'?'Resend to client →':'Send to client →');
+      quick.push(_qbtn(_reviseFn,'Revise'));
+      quick.push(_qbtn('openBidNotes('+b.id+')','Notes'));
+      more.push(_mrow('markBidHandshake('+b.id+')',svgIcon('🤝')+' Handshake deal'));
+      more.push(_mrow('markBidAbandoned('+b.id+')','No response, close it'));
+    }else{
+      if(_stage===2)primaryHtml=_pbtn('schedFromBid('+b.id+')','Put it on the calendar →');
+      else if(_stage===3)primaryHtml=_jid?_pbtn('markJobDone('+_jid+')','Mark job complete'):(balance>0.01?_pbtn('openPayPanel('+b.id+')','Collect '+fmt(balance)):'');
+      else if(_stage===4)primaryHtml=_pbtn('openPayPanel('+b.id+')','Collect '+fmt(balance));
+      else if(_stage===5)primaryHtml=isDiag?_pbtn('printInvoice('+b.id+')','Print receipt'):_pbtn('openFinalInvoice('+b.id+')','Send final invoice');
+      // The collections ladder, exact original windows: 7-14 remind, 14-21
+      // second notice, 21+ intent. Plus the lien controls at their thresholds.
+      if(balance>0.01&&days>=7&&days<14)ctxHtml+=_wbtn('collSendSMS(bids.find(b=>b.id=='+b.id+'),\'reminder\')',svgIcon('💬')+' Send a payment reminder',false);
+      if(balance>0.01&&days>=14&&days<21)ctxHtml+=_wbtn('collSendSMS(bids.find(b=>b.id=='+b.id+'),\'second\')',svgIcon('💬')+' Send second notice',false);
+      if(balance>0.01&&days>=21)ctxHtml+=_wbtn('collSendSMS(bids.find(b=>b.id=='+b.id+'),\'intent\')',svgIcon('💬')+' Send intent to lien',true);
+      if(!lien&&balance>0.01&&days>=14)ctxHtml+=_wbtn('showFileLienDirect('+b.id+')',svgIcon('⚖️')+' File lien',true);
+      else if(lien&&lien.status!=='resolved')ctxHtml+=_wbtn('openLienPanel('+b.id+')','Lien status',true);
+      // Stage 4's primary IS the pay panel, a Log payment quick there would
+      // be the same door twice.
+      if(balance>0.01&&_stage!==4)quick.push(_qbtn('openPayPanel('+b.id+')','Log payment'));
+      if(balance>0.01&&_stripeConnectStatus?.charges_enabled)quick.push(_qbtn('sendPaymentLink('+b.id+')','Pay link'));
+      quick.push(_qbtn('toggleBidSummary('+b.id+')','Proposal'));
+      // Everything else, in one calm list. Conditions preserved verbatim.
+      if(_jid&&!_done&&_stage!==3)more.push(_mrow('markJobDone('+_jid+')',svgIcon('✓')+' Close job'));
+      if(balance>0.01&&_done){const _c=getClientById(b.client_id);if(_c&&_c.phone){const _msg=encodeURIComponent('Hi '+(_c.name||'').split(' ')[0]+', this is '+(S.bname||'your contractor')+'. Just a friendly reminder that a balance of '+fmt(balance)+' is outstanding for your job at '+(b.addr||_c.addr||'your property')+'. Please let us know when you can take care of this. Thank you!');more.push('<a href="sms:'+_c.phone.replace(/\D/g,'')+'&body='+_msg+'" onclick="document.getElementById(\'_bid-more-ov\')?.remove();autoLogContact('+b.client_id+',\'payment_request\')" style="display:flex;align-items:center;gap:10px;width:100%;padding:12px 8px;font-size:13.5px;font-weight:700;color:var(--text2);text-decoration:none;border-bottom:1px solid var(--border);box-sizing:border-box">'+svgIcon('📲')+' Text a payment request</a>');}}
+      if(_overpaid)more.push(_mrow('openPayPanel('+b.id+')',svgIcon('↩')+' Issue refund'));
+      if(!isDiag&&_stage!==5)more.push(_mrow('openFinalInvoice('+b.id+')',svgIcon('🧾')+' Final invoice'));
+      more.push(_mrow('printInvoice('+b.id+')','&#128438; Print invoice'));
+      if(!isDiag){
+        more.push(_mrow(_reviseFn,svgIcon('✎')+' Revise proposal'));
+        more.push(_mrow('showSupplyList('+b.id+')',svgIcon('📦')+' Supply list'));
+      }
+      if(lien&&lien.status!=='resolved'&&getBidBalance(b)<=0.01)more.push(_mrow('releaseLien('+b.id+')',svgIcon('✓')+' Release lien'));
+      if(lien&&lien.status==='resolved')more.push(_mrow('printKansasLienRelease('+b.id+')',svgIcon('📄')+' Lien release doc'));
     }
+    const quickRow='<div style="display:flex;gap:8px;margin-top:8px">'+quick.slice(0,3).join('')+(more.length?_qbtn('_bidMoreSheet('+b.id+')','•••','.55'):'')+'</div>';
+    const moreTpl=more.length?'<div id="bid-more-tpl-'+b.id+'" style="display:none">'+more.join('')+'</div>':'';
     return '<div class="card" style="margin-bottom:8px" id="bid-card-'+b.id+'" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml((b.type||'Proposal')+(b.amount?' · '+fmt(b.amount):''))+'">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
         '<div>'+(b.id===latestBidId&&cbids.length>1?'<span style="font-size:10px;font-weight:800;background:var(--blue);color:#fff;padding:1px 6px;border-radius:8px;margin-bottom:4px;display:inline-block">Latest</span><br>':'')+'<div style="font-size:14px;font-weight:700">'+escHtml(b.type||'Painting job')+'</div>'+
@@ -2184,11 +2229,30 @@ function renderCDBids(){
           (b.handshake?'<br><span style="font-size:10px;font-weight:700;background:#FFF8E8;color:#856404;border:1px solid var(--amber);border-radius:4px;padding:1px 6px;white-space:nowrap;display:inline-block;margin-top:3px">'+svgIcon('🤝')+' Handshake</span>':'')+
         '</div>'+
       '</div>'+
+      journeyHtml+
       payHTML+
-      (actBtns.length?'<div class="brow" style="margin-top:8px">'+actBtns.join('')+'</div>':'')+
-      (scheduledIds.has(b.id)?'<div style="margin-top:4px"><span class="conn-tag">Scheduled on calendar</span></div>':'')+
+      primaryHtml+
+      ctxHtml+
+      quickRow+
+      moreTpl+
+      (scheduledIds.has(b.id)?'<div style="margin-top:6px"><span class="conn-tag">Scheduled on calendar</span></div>':'')+
       '</div>';
   }).join('');
+}
+
+// Variant 1's More sheet under the journey card: the actions that are real
+// but not the moment's work, in one calm list. Rows are rendered into a
+// hidden template at card build time (same conditions, no duplication) and
+// lifted into a centered .zmodal here (§7.3, never a bottom sheet).
+function _bidMoreSheet(bidId){
+  const tpl=document.getElementById('bid-more-tpl-'+bidId);if(!tpl)return;
+  document.getElementById('_bid-more-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_bid-more-ov';ov.className='zmodal-overlay';
+  const m=document.createElement('div');m.className='zmodal';
+  m.innerHTML='<div class="zmodal-title">More actions</div><div style="margin-top:4px">'+tpl.innerHTML+'</div>'+
+    '<button onclick="document.getElementById(\'_bid-more-ov\')?.remove()" class="btn" style="width:100%;margin-top:12px;padding:11px">Close</button>';
+  ov.appendChild(m);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 
 // ── Client Proposals Popup ────────────────────────────────────────────
