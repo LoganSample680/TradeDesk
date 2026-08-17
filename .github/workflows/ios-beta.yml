@@ -297,11 +297,19 @@ jobs:
             # The one-line "Authentication failed" is xcodebuild's SUMMARY; the
             # real error (which capability a profile rejected, which auth call
             # 401ed) lives in the xcdistributionlogs bundle it prints the path
-            # of and nobody ever opens. Surface it in the job log every time.
-            DLOGS=$(ls -dt /var/folders/*/*/*/T/App_*.xcdistributionlogs 2>/dev/null | head -1)
+            # of and nobody ever opens. Surface it every time: the meaningful
+            # lines into the job log, and the first few as ANNOTATIONS, which
+            # survive log truncation and are readable from the run page.
+            DLOGS=$(find /private/var/folders /var/folders -type d -name 'App_*.xcdistributionlogs' 2>/dev/null | head -1)
             if [ -n "$DLOGS" ]; then
-              echo "── distribution log tail ($DLOGS) ──"
-              tail -n 80 "$DLOGS"/*.log 2>/dev/null || true
+              echo "── distribution log: $DLOGS ──"
+              ls -la "$DLOGS" || true
+              grep -rhiE 'error|fail|denied|unauthorized|forbidden|missing|not permitted|401|403|status code' "$DLOGS" 2>/dev/null | sort -u | head -50 || true
+              grep -rhiE 'error|denied|unauthorized|forbidden|not permitted|status code' "$DLOGS" 2>/dev/null | sort -u | head -8 | while IFS= read -r line; do
+                echo "::warning::sign: $(echo "$line" | cut -c1-220)"
+              done
+            else
+              echo "::warning::sign: no xcdistributionlogs bundle found to dump"
             fi
             if [ "$attempt" = 3 ]; then
               echo "::error::export failed 3 times. If every attempt said 'Authentication failed' plus 'No profiles for app.tradedesk.beta.share', the App Store Connect key cannot register that new bundle id and it has to be created by hand in the developer portal."
