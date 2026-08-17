@@ -364,7 +364,13 @@ function _motionPermDone(){const s=_motionPermState();return s==='granted'||s===
 function _motionRefreshPermCache(){
   const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
   if(!Td||typeof Td.motionPermStatus!=='function'){
-    if(_motionPermCache!=='unsupported'){_motionPermCache='unsupported';_renderDashSetupTodo();}
+    // Deferred (not a synchronous stomp) so this matches _geoRefreshPermCache's
+    // always-async shape: a caller that pins _motionPermCache then renders in
+    // the same tick (a test, or _renderDashSetupTodo's own top-of-function call)
+    // sees its value honored for that render, not immediately overwritten.
+    Promise.resolve().then(()=>{
+      if(_motionPermCache!=='unsupported'){_motionPermCache='unsupported';_renderDashSetupTodo();}
+    });
     return;
   }
   try{
