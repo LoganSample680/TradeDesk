@@ -3723,6 +3723,12 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/day-map.js"></script>
 <script src="js/drive.js"></script>
 <script src="js/notify.js"></script>
+<!-- push.js is the server-driven sibling of notify.js: local notifications can
+     only announce what the phone already knew, this one carries what happened
+     on the server. live-activity.js reads the clock and drive state that
+     jobs.js and geo-track.js own, so it loads after both. -->
+<script src="js/push.js"></script>
+<script src="js/live-activity.js"></script>
 <script src="js/handoff.js"></script>
 <script src="js/voice.js"></script>
 <script src="js/equipment.js"></script>

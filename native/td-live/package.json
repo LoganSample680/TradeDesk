@@ -1,0 +1,9 @@
+{
+  "name": "td-live",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TradeDesk Live Activities. Puts the running job clock or the active drive on the lock screen and in the Dynamic Island while the app is closed. Raw capability only: JS sends finished strings and owns every decision (js/live-activity.js); Swift only lays them out and ticks the on-device clock.",
+  "main": "index.js",
+  "capacitor": { "ios": { "src": "ios" } },
+  "files": ["index.js", "ios/", "TdLive.podspec"]
+}

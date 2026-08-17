@@ -568,7 +568,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.16.26.10';
+const APP_VERSION='08.16.26.11';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -5329,6 +5329,11 @@ function _wipeLocalAccountData(){
 }
 async function supaSignOut(){
   _deliberateSignOut=true;
+  // Kill every lock-screen / Dynamic Island card before the session goes. A
+  // drive or clock card carries a client's name, and one outliving its session
+  // would leave that name readable on a locked phone after it changes hands,
+  // the same exposure the handoff lock exists to prevent.
+  if(typeof _liveActEndAll==='function'){try{await _liveActEndAll();}catch(_e){}}
   // scope:'local' clears this device only, refresh token stays valid server-side.
   // scope:'global' (the default) revokes the token on the server, so the backup key
   // can't be used to silently re-auth when the user comes back online.

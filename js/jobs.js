@@ -309,6 +309,10 @@ function clockIn(jobId,scopeId,scopeLabel){
   _activeTimer={jobId,jobName:j.name,clientName:c?c.name:j.name,scopeId:scopeId||null,scopeLabel:scopeLabel||null,startTime:Date.now(),timerInterval:null,entryId};
   _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
   showClockBanner();
+  // Same clock on the lock screen and in the Dynamic Island. Started once;
+  // iOS ticks it on-device with the app closed, so nothing updates it per
+  // second (js/live-activity.js).
+  if(typeof _liveActClockIn==='function')_liveActClockIn(_activeTimer);
   renderJobsPage&&renderJobsPage();
   showToast('Clocked in · '+(scopeLabel||j.name),'⏱');
 }
@@ -317,6 +321,10 @@ function clockOut(saveEntry,silent){
   if(!_activeTimer)return;
   _tdHaptic('thud');   // day's work banked, same weight as clocking in
   clearInterval(_activeTimer.timerInterval);
+  // Clear the lock-screen card FIRST, before any of the save paths below can
+  // return early: a clock card outliving the clock is worse than never having
+  // shown one, it tells the contractor they are still on the meter.
+  if(typeof _liveActClockOut==='function')_liveActClockOut();
   const minutes=Math.max(1,Math.round((Date.now()-_activeTimer.startTime)/60000));
   const jobId=_activeTimer.jobId;
   const jobName=_activeTimer.jobName;
@@ -369,6 +377,10 @@ function _rehydrateActiveTimer(){
   _activeTimer={jobId:j.id,jobName:j.name,clientName:c?c.name:j.name,scopeId:mine.scope_id||null,scopeLabel:mine.scope_label||null,startTime:new Date(mine.start_time).getTime(),timerInterval:null,entryId:mine.id};
   _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
   showClockBanner();
+  // A reload mid-shift restores the lock-screen card too, or the contractor
+  // reopens the app to find the clock running in-app and gone from the lock
+  // screen, which reads as the tracking having stopped.
+  if(typeof _liveActClockIn==='function')_liveActClockIn(_activeTimer);
 }
 
 // Owner request 2026-07-11 ("bulletproof", matches Jobber's #1 timesheet

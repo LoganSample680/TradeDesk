@@ -12,9 +12,11 @@
     "td-doc": "file:./td-doc",
     "td-geo": "file:./td-geo",
     "td-haptic": "file:./td-haptic",
+    "td-live": "file:./td-live",
     "td-lock": "file:./td-lock",
     "td-nav": "file:./td-nav",
     "td-notify": "file:./td-notify",
+    "td-push": "file:./td-push",
     "td-scan": "file:./td-scan",
     "td-share": "file:./td-share",
     "td-voice": "file:./td-voice"

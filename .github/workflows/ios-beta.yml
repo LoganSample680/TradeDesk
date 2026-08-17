@@ -106,6 +106,13 @@ jobs:
             /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryAddUsageDescription 'Save job photos and shared before/after cards back to your library.'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$PLIST" || true
+          # TdPush: without the remote-notification mode iOS delivers alerts but
+          # never wakes the app for a silent/data push.
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:1 string remote-notification" "$PLIST" || true
+          # TdLive: ActivityKit refuses to start an activity without this key,
+          # and it fails silently, so the lock screen just never shows anything.
+          /usr/libexec/PlistBuddy -c "Add :NSSupportsLiveActivities bool true" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSSupportsLiveActivities true" "$PLIST"
           # Standard HTTPS only: answers TestFlight's export-compliance question
           # permanently so builds never sit in "Missing Compliance".
           /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" || true
@@ -127,6 +134,13 @@ jobs:
           <dict>
             <key>com.apple.developer.applesignin</key>
             <array><string>Default</string></array>
+            <!-- TdPush. "development" is correct for TestFlight: those builds
+                 talk to the APNs SANDBOX gateway. The send-push function's
+                 APNS_ENV must agree, or every device returns BadDeviceToken
+                 and it looks exactly like a broken token list. Flip both
+                 together when the App Store build ships. -->
+            <key>aps-environment</key>
+            <string>development</string>
           </dict>
           </plist>
           EOF
@@ -149,6 +163,18 @@ jobs:
           # by App Store Connect after the whole archive has been built.
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" ios/App/ShareExt/Info.plist
           /usr/libexec/PlistBuddy -c "Print" ios/App/App/App.entitlements
+
+      - name: Live Activity widget target
+        # A Live Activity's UI MUST live in a widget extension; ActivityKit will
+        # not render one from the app target. Same regenerate-every-build
+        # reasoning as the share target above, so it is rebuilt here each run.
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          ruby ../scripts/ios-add-live-target.rb
+          # Same build number as the app: an extension whose CFBundleVersion
+          # differs from its host is rejected after the whole archive is built.
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" ios/App/LiveExt/Info.plist
 
       - name: App icon from the repo's PWA icon
         # The generated project ships Capacitor's placeholder icon (owner:

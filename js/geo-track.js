@@ -907,6 +907,12 @@ async function _geoOnPing(pos){
   // down with it. Ten seconds bounds the loss to one fix, and the write is a
   // few kilobytes of localStorage, so the cost is nothing.
   if(nowMs-_geoPersistPingMs>=10000){_geoPersistPingMs=nowMs;_geoPersistOpen();}
+  // The lock screen / Dynamic Island card mirrors this same state, and it is
+  // updated OUTSIDE the dashboard-visible check below on purpose: the whole
+  // point of a Live Activity is that it keeps working while the app is closed
+  // and no page is rendered. Safe to call every ping, it drops unchanged ones
+  // itself rather than spending an ActivityKit update (js/live-activity.js).
+  if(typeof _liveActDrive==='function')_liveActDrive();
   // ── Drive banner upkeep ───────────────────────────────────────────────────
   // Visibility can change WITHOUT a fence transition (speed crossing the
   // threshold a ping after leaving, or fading after parking somewhere
