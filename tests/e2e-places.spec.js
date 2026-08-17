@@ -324,6 +324,45 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.onlyExpenses).toEqual(['expense']);
   });
 
+  // ── A job-linked expense plots at the job site, not where it was logged ────
+
+  test('geoFeed uses the linked job\'s address coords for a job expense, not its own GPS fix', async () => {
+    const out = await page.evaluate(() => {
+      const today = todayKey();
+      jobs.push({ id: 60, client_name: 'Site Job', start: today, lat: 40.0, lon: -80.0 });
+      // Logged from the office, nowhere near the job, on purpose.
+      expenses.push({ id: 61, date: today, vendor: 'Lowes', amount: 5, job_id: 60, lat: 39.0, lon: -79.0, geoAcc: 10 });
+      const feed = geoFeed({ types: ['expense'] });
+      jobs.length = 0;
+      return feed[0];
+    });
+    expect(out.lat).toBe(40.0);
+    expect(out.lon).toBe(-80.0);
+  });
+
+  test('geoFeed falls back to the expense\'s own GPS fix when the linked job has no coords yet', async () => {
+    const out = await page.evaluate(() => {
+      const today = todayKey();
+      jobs.push({ id: 62, client_name: 'Ungeocoded Job', start: today });
+      expenses.push({ id: 63, date: today, vendor: 'Lowes', amount: 5, job_id: 62, lat: 39.0, lon: -79.0, geoAcc: 10 });
+      const feed = geoFeed({ types: ['expense'] });
+      jobs.length = 0;
+      return feed[0];
+    });
+    expect(out.lat).toBe(39.0);
+    expect(out.lon).toBe(-79.0);
+  });
+
+  test('geoFeed uses a standalone (no job_id) expense\'s own GPS fix as before', async () => {
+    const out = await page.evaluate(() => {
+      const today = todayKey();
+      expenses.push({ id: 64, date: today, vendor: 'Home Depot', amount: 5, lat: 39.5, lon: -79.5, geoAcc: 10 });
+      return geoFeed({ types: ['expense'] })[0];
+    });
+    expect(out.lat).toBe(39.5);
+    expect(out.lon).toBe(-79.5);
+  });
+
   // ── The map renders ───────────────────────────────────────────────────────
 
   test('the map renders a dot per point and an empty state with none', async () => {
@@ -613,23 +652,77 @@ test.describe('Places, drive attribution and the map', () => {
   });
 
   // ── Proposals are stamped (the map layer used to be permanently empty) ─────
+  //
+  // Was: _commitProposalSent called _stampGeo(bid) directly, live GPS at the
+  // moment "Send" was tapped. A follow-up sent from the truck, the office, or
+  // home that night put the pin there instead of at the job, which is the bug
+  // the owner reported (2026-08-17): the Proposals layer showed where the
+  // proposal was CREATED, not the client's address. Now: _stampBidAddrGeo
+  // geocodes the client's address instead, same non-empty goal, right pin.
 
-  test('_commitProposalSent stamps the bid, so the Proposals layer is not always empty', async () => {
+  test('_commitProposalSent geocodes the client address, not a live GPS fix', async () => {
     const out = await page.evaluate(() => {
       const src = String(_commitProposalSent);
       return {
         // The stamp must live in the same function that sets sentAt, or a
         // proposal sent from the driveway records no location and the map's
         // Proposals layer reads zero forever.
-        stampsGeo: /_stampGeo/.test(src),
+        stampsAddr: /_stampBidAddrGeo/.test(src),
+        stampsLiveGeo: /(?<!_stampBidAddr)_stampGeo\(/.test(src),
         setsSentAt: /sentAt/.test(src),
-        // Fire-and-forget, never awaited: a slow GPS lock must not delay a send.
-        notAwaited: !/await\s+_stampGeo/.test(src),
+        // Fire-and-forget, never awaited: a slow geocode must not delay a send.
+        notAwaited: !/await\s+_stampBidAddrGeo/.test(src),
       };
     });
     expect(out.setsSentAt).toBe(true);
-    expect(out.stampsGeo).toBe(true);
+    expect(out.stampsAddr).toBe(true);
+    expect(out.stampsLiveGeo).toBe(false);
     expect(out.notAwaited).toBe(true);
+  });
+
+  test('_stampBidAddrGeo resolves the client address onto bid.lat/lon', async () => {
+    const out = await page.evaluate(async () => {
+      const realResolve = window._resolveCoords;
+      window._resolveCoords = async (addr) => (addr === '123 Main St' ? { lat: 41.0, lng: -96.0 } : null);
+      clients.push({ id: 'geo-c1', name: 'Geo Client', addr: '123 Main St' });
+      const bid = { id: 'geo-b1', client_id: 'geo-c1' };
+      bids.push(bid);
+      _stampBidAddrGeo(bid);
+      await new Promise(r => setTimeout(r, 30));
+      window._resolveCoords = realResolve;
+      return { lat: bid.lat, lon: bid.lon };
+    });
+    expect(out.lat).toBe(41.0);
+    expect(out.lon).toBe(-96.0);
+  });
+
+  test('_stampBidAddrGeo never overwrites a bid already geocoded', async () => {
+    const out = await page.evaluate(async () => {
+      const realResolve = window._resolveCoords;
+      let called = false;
+      window._resolveCoords = async () => { called = true; return { lat: 99, lng: 99 }; };
+      const bid = { id: 'geo-b2', client_id: 'geo-c1', lat: 41.0, lon: -96.0 };
+      _stampBidAddrGeo(bid);
+      await new Promise(r => setTimeout(r, 30));
+      window._resolveCoords = realResolve;
+      return { lat: bid.lat, lon: bid.lon, called };
+    });
+    expect(out.called).toBe(false);
+    expect(out.lat).toBe(41.0);
+    expect(out.lon).toBe(-96.0);
+  });
+
+  test('_stampBidAddrGeo is a no-op with no resolvable address, never throws', async () => {
+    const out = await page.evaluate(async () => {
+      clients.push({ id: 'geo-c2', name: 'No Addr Client' });
+      const bid = { id: 'geo-b3', client_id: 'geo-c2' };
+      let threw = false;
+      try { _stampBidAddrGeo(bid); } catch (e) { threw = true; }
+      await new Promise(r => setTimeout(r, 30));
+      return { threw, lat: bid.lat };
+    });
+    expect(out.threw).toBe(false);
+    expect(out.lat).toBeUndefined();
   });
 
   // ── The Places screen ─────────────────────────────────────────────────────

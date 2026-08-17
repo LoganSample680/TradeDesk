@@ -240,10 +240,12 @@ function _markJobComplete(jobId){
       try{if(typeof logLifecycle==='function')logLifecycle('job_completed',{jobId:j.id,bidId:j.bid_id,clientId:j.client_id});}catch(_e){}
       // mirror onto the bid so the client timeline can stamp the exact completion time
       if(j.bid_id){const _b=bids.find(x=>x.id===j.bid_id);if(_b)_b.completedAt=j.completedAt;}
-      // Where the job was actually finished. Corroborates the client address
-      // rather than duplicating it: the address is where the client lives, this
-      // is where the crew stood. Fire-and-forget, never blocks the save.
-      if(typeof _stampGeo==='function')_stampGeo(j);
+      // Where the job was actually finished, kept SEPARATE from j.lat/j.lon
+      // (the address geocode day-map.js/geo-track.js cache and every map/
+      // geofence lookup reads). Stamping the live-GPS completion fix onto the
+      // same fields used to clobber the address cache with wherever the crew
+      // happened to be standing, corrupting it for the rest of the job's life.
+      if(typeof _stampGeo==='function')_stampGeo(j,null,'completed');
       saveAll();}
     document.getElementById('_cks-ov')?.remove();
     showToast('Job marked complete 🏁','✅');

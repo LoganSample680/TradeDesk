@@ -636,6 +636,20 @@ function _proposalShareData(){
   const d=_pendingShareData;
   return d?{url:d.url||'',cname:d.cname||'Client',bname:d.bname||defBname,cphone:d.cphone||'',cemail:d.cemail||''}:{url:'',cname:'Client',bname:defBname,cphone:'',cemail:''};
 }
+// Geocodes the bid's client address onto bid.lat/bid.lon, same pattern as
+// day-map.js's _dayMapGeocode for jobs. Skips a bid already geocoded (an
+// address doesn't move) and any bid with no resolvable address.
+function _stampBidAddrGeo(bid){
+  if(!bid||bid.lat!=null||typeof _resolveCoords!=='function')return;
+  const c=(typeof clients!=='undefined'&&bid.client_id)?clients.find(x=>x.id===bid.client_id):null;
+  const addr=bid.addr||(c&&c.addr)||'';
+  if(!addr)return;
+  _resolveCoords(addr).then(r=>{
+    if(!r||r.lat==null)return;
+    bid.lat=r.lat;bid.lon=r.lng;
+    if(typeof saveAll==='function')saveAll();
+  }).catch(()=>{});
+}
 // Called when user actually taps SMS or Email, THIS is when the bid moves to "Sent proposals"
 function _commitProposalSent(){
   if(!_pendingSignToken)return;
@@ -650,11 +664,13 @@ function _commitProposalSent(){
     // which drives follow-up scheduling; the audit timeline and the exported
     // report need the time the client was actually sent the proposal.
     bid.sentAt=new Date().toISOString();
-    // Where the proposal was sent from. A contractor sends most of these standing
-    // in the driveway right after the walkthrough, so this is the site visit, and
-    // it is what makes 'where do I win vs lose' answerable by area. Without it the
-    // map's Proposals layer would always be empty. Fire-and-forget, never blocks.
-    if(typeof _stampGeo==='function')_stampGeo(bid);
+    // Where the job actually is, not wherever the phone was when the button
+    // was tapped (a follow-up sent from the truck, the office, home that
+    // night, all land the pin somewhere that isn't the job). The map's
+    // Proposals layer answers 'where do I win vs lose' by area, so it needs
+    // the client's address geocoded, the same pattern jobs use (day-map.js
+    // _dayMapGeocode), not a live GPS fix. Fire-and-forget, never blocks.
+    if(typeof _stampBidAddrGeo==='function')_stampBidAddrGeo(bid);
     try{if(typeof logLifecycle==='function')logLifecycle('proposal_sent',{bidId:bid.id,clientId:bid.client_id});}catch(_e){}
     if(!bid.followupStage)bid.followupStage=1;
     bid.followup=addDays(todayKey(),3);

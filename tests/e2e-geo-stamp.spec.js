@@ -95,6 +95,28 @@ test.describe('Record geo-stamping', () => {
     expect(out.geoAt.slice(0, 10)).not.toBe('2026-07-20');
   });
 
+  // ── fieldPrefix: stamp WITHOUT clobbering an existing address geocode ──────
+
+  test('a fieldPrefix stamps completedLat/completedLon, never lat/lon', async () => {
+    await withGeo((() => ({
+      getCurrentPosition: (ok) => ok({ coords: { latitude: 10, longitude: 20, accuracy: 8 } }),
+    })), 'granted');
+    const out = await page.evaluate(async () => {
+      // job.lat/lon already hold an address geocode from day-map.js; a job
+      // marked complete must not overwrite it with the crew's live position.
+      const rec = { id: 'j1', lat: 37.5, lon: -97.5 };
+      _stampGeo(rec, null, 'completed');
+      await new Promise(r => setTimeout(r, 120));
+      return rec;
+    });
+    expect(out.lat).toBe(37.5);
+    expect(out.lon).toBe(-97.5);
+    expect(out.completedLat).toBe(10);
+    expect(out.completedLon).toBe(20);
+    expect(out.completedGeoAcc).toBe(8);
+    expect(String(out.completedGeoAt)).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
   // ── Rule 1: never blocks, never breaks ─────────────────────────────────────
 
   test('a DENIED fix leaves the record untouched and never throws', async () => {

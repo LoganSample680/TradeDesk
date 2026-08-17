@@ -307,7 +307,19 @@ function geoFeed(opts){
                 label:(typeof label==='function'?label(r):label)||type,amount:r.amount});
     });
   };
-  push(expenses,'expense',r=>r.vendor||'Expense','date');
+  // Expenses keep their own lat/lon as a live GPS fix (supply-house detection
+  // in places.js expenseAt() and mileage.js's detour-receipt matching both
+  // depend on it staying that way). But a receipt logged for a JOB should
+  // plot on this map at the job site, not wherever the paperwork got done,
+  // so prefer the linked job's address-geocoded coords when one exists.
+  (expenses||[]).forEach(r=>{
+    const linkedJob=r.job_id&&typeof jobs!=='undefined'?jobs.find(j=>j.id===r.job_id):null;
+    const atJob=linkedJob&&linkedJob.lat!=null&&linkedJob.lon!=null;
+    const lat=atJob?linkedJob.lat:r.lat,lon=atJob?linkedJob.lon:r.lon;
+    if(lat==null||lon==null)return;
+    if(!atJob&&r.geoAcc!=null&&r.geoAcc>PLACE_MAX_ACC_M)return;
+    out.push({type:'expense',id:r.id,lat,lon,date:r.date,label:r.vendor||'Expense',amount:r.amount});
+  });
   push(jobs,'job',r=>r.client_name||r.name||'Job','start');
   push(bids,'estimate',r=>r.client_name||'Estimate','date');
   push(payments,'payment',r=>r.client_name||'Payment','date');

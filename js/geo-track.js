@@ -1593,18 +1593,26 @@ async function _geoCanStamp(){
   if(st==='unsupported'){try{return localStorage.getItem(_GEO_GRANTED_KEY)==='1';}catch(_e){return false;}}
   return false;
 }
-function _stampGeo(rec,done){
+function _stampGeo(rec,done,fieldPrefix){
   if(!rec)return;
+  // fieldPrefix lets a caller record a live GPS fix WITHOUT overwriting the
+  // record's own lat/lon, e.g. 'completed' writes completedLat/completedLon
+  // instead of lat/lon. Used where lat/lon is already an address geocode
+  // (jobs) that other lookups (day-map, geofencing) depend on staying put.
+  const latK=fieldPrefix?fieldPrefix+'Lat':'lat';
+  const lonK=fieldPrefix?fieldPrefix+'Lon':'lon';
+  const accK=fieldPrefix?fieldPrefix+'GeoAcc':'geoAcc';
+  const atK=fieldPrefix?fieldPrefix+'GeoAt':'geoAt';
   _geoCanStamp().then(ok=>{
     if(!ok)return;
     try{
       navigator.geolocation.getCurrentPosition(
         (pos)=>{
           try{
-            rec.lat=+pos.coords.latitude.toFixed(6);   // ~11cm, far more than enough
-            rec.lon=+pos.coords.longitude.toFixed(6);
-            rec.geoAcc=Math.round(pos.coords.accuracy||0);
-            rec.geoAt=new Date().toISOString();
+            rec[latK]=+pos.coords.latitude.toFixed(6);   // ~11cm, far more than enough
+            rec[lonK]=+pos.coords.longitude.toFixed(6);
+            rec[accK]=Math.round(pos.coords.accuracy||0);
+            rec[atK]=new Date().toISOString();
             if(typeof saveAll==='function')saveAll();
             if(typeof done==='function')done(rec);
           }catch(_e){}
