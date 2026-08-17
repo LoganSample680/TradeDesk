@@ -159,9 +159,18 @@ test.describe('Receipt-gated supply runs: hold, dashboard accordion, three doors
           if (!row) await p.waitForTimeout(1500);
         }
         const ok = !!row && row.pendingReceipt === true && !!row.supplyRunKey;
-        // localRow present but row (cloud) absent = a sync-timing problem, not
-        // a logic problem: the flush log states definitively which.
-        return { ok, got: `cloud=${JSON.stringify(row && { pendingReceipt: row.pendingReceipt, supplyRunKey: row.supplyRunKey })} local=${JSON.stringify(localRow)} flushLog=${JSON.stringify(p.__flushLog)}` };
+        // The last run proved the upsert genuinely succeeded (mileageRowLogged
+        // true, upsertsDelta 1) yet cloudRows() still came back empty: an
+        // account-identity mismatch (employee writes land under
+        // _contractorUserId, cloudRows only ever queried _supaUser.id), now
+        // fixed in live-helpers.js. Keep this identity snapshot as a safety
+        // net in case that wasn't the whole story.
+        const idInfo = !row ? await p.evaluate(() => ({
+          isEmployee: typeof _isEmployee !== 'undefined' ? _isEmployee : null,
+          contractorUserId: typeof _contractorUserId !== 'undefined' ? _contractorUserId : null,
+          supaUserId: (typeof _supaUser !== 'undefined' && _supaUser) ? _supaUser.id : null,
+        })) : null;
+        return { ok, got: `cloud=${JSON.stringify(row && { pendingReceipt: row.pendingReceipt, supplyRunKey: row.supplyRunKey })} local=${JSON.stringify(localRow)} id=${JSON.stringify(idInfo)} flushLog=${JSON.stringify(p.__flushLog)}` };
       },
     });
 

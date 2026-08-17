@@ -568,7 +568,13 @@ async function scrollBy(page, dy) {
 // ─────────────────────────────────────────────────────────────────────────────
 async function cloudRows(page, table) {
   return await page.evaluate(async ({ table }) => {
-    const uid = (typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id) || null;
+    // Match supaSaveToCloud's own uid resolution (cloud.js ~5889-5891): an
+    // employee account's writes land under the CONTRACTOR's user_id, not its
+    // own auth id. Querying by _supaUser.id alone silently misses every row
+    // an employee-linked test account ever writes, a save that genuinely
+    // succeeds reads back as "never landed."
+    const uid = (typeof _isEmployee !== 'undefined' && _isEmployee && typeof _contractorUserId !== 'undefined' && _contractorUserId)
+      || (typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id) || null;
     if (!uid || typeof _supa === 'undefined' || !_supa) return [];
     const { data, error } = await _supa.from(table).select('id,data').eq('user_id', uid).is('deleted_at', null);
     if (error) return [];
