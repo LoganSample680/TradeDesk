@@ -243,59 +243,81 @@ function _renderDashSetupTodo(){
 // store is not business until somebody stands behind it. Pinned to the very
 // top of the dashboard, above the money tiles, exactly like the setup
 // checklist: first thing seen on login, and once every run is answered the
-// card is gone (owner: "clear this out and it's gone"). The three doors, in
-// the owner's order: Personal on the left (kept, off the books), No receipt
+// card is gone (owner: "clear this out and it's gone"). Repeat visits to the
+// SAME store nest under one accordion (owner: "stack... nesting under that
+// store with an accordion dropdown"), oldest visit first, instead of piling
+// up as separate top-level cards. The three doors, in the owner's order:
+// Personal on the left (clears the trip from the log entirely), No receipt
 // in the middle (business, flagged, after the honest IRS line), Scan receipt
-// as the blue primary (expense + mileage settled in one save). The sweep
-// quietly retires week-old runs to personal first, so stale cards never
-// pile up.
+// as the blue primary (expense + mileage settled in one save). Ignore a run
+// long enough and the 7-day sweep answers Personal for you, so it disappears
+// on its own.
 function _renderDashSupplyHold(){
   const el=document.getElementById('dash-supply-hold');
   if(!el)return;
-  if(typeof pendingSupplyRuns!=='function'){el.style.display='none';el.innerHTML='';return;}
+  if(typeof pendingSupplyStores!=='function'){el.style.display='none';el.innerHTML='';return;}
   if(typeof _supplyRunSweep==='function')_supplyRunSweep();
-  const runs=pendingSupplyRuns();
-  if(!runs.length){el.style.display='none';el.innerHTML='';return;}
+  const stores=pendingSupplyStores();
+  const totalRuns=stores.reduce((s,st)=>s+st.count,0);
+  if(!stores.length){el.style.display='none';el.innerHTML='';return;}
   el.style.display='block';
+  const when=(run)=>{
+    let w=run.date;
+    try{
+      const _d=new Date(run.date+'T12:00:00');
+      if(isFinite(_d))w=_d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    }catch(_e){}
+    if(run.at){
+      try{
+        const _t=new Date(run.at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p');
+        if(_t)w+=' · '+_t;
+      }catch(_e){}
+    }
+    return w;
+  };
   el.innerHTML=
     '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden;border:1px solid var(--amber);box-shadow:0 2px 12px rgba(180,130,20,.14)">'+
       '<div style="padding:12px 16px 10px;background:linear-gradient(135deg,rgba(180,130,20,.10),rgba(180,130,20,.02));border-bottom:1px solid var(--border)">'+
         '<div style="display:flex;align-items:center;gap:8px">'+
           '<span style="font-size:15px">'+svgIcon('🧾',{size:15})+'</span>'+
           '<span style="font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.01em">Store runs need an answer</span>'+
-          '<span style="margin-left:auto;font-size:12px;font-weight:800;color:var(--amber)">'+runs.length+' held</span>'+
+          '<span style="margin-left:auto;font-size:12px;font-weight:800;color:var(--amber)">'+totalRuns+' held</span>'+
         '</div>'+
         '<div style="font-size:11px;color:var(--text3);margin-top:6px">Mileage stays out of your deduction until you answer. Scan the receipt and the miles and the expense are both done in one shot.</div>'+
       '</div>'+
-      runs.map(run=>{
-        const ek=encodeURIComponent(run.key);
-        // Date and time only (owner 2026-08-17): "Aug 17 · 2:41p". No miles,
-        // no leg count; the log page has the numbers, this card just asks
-        // the question. Compact clock matches the ON SITE card's _fmtClk.
-        let when=run.date;
-        try{
-          const _d=new Date(run.date+'T12:00:00');
-          if(isFinite(_d))when=_d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
-        }catch(_e){}
-        if(run.at){
-          try{
-            const _t=new Date(run.at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p');
-            if(_t)when+=' · '+_t;
-          }catch(_e){}
-        }
-        return '<div class="td-supply-row" style="padding:12px 16px;border-bottom:1px solid var(--border)">'+
-          '<div style="font-size:14px;font-weight:700;color:var(--text)">'+escHtml(run.name)+' run</div>'+
-          '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+when+'</div>'+
-          '<div style="display:flex;gap:8px;margin-top:10px">'+
-            '<button onclick="_supplyRunPersonal(\''+ek+'\')" class="btn btn-sm" style="flex:1">Personal</button>'+
-            '<button onclick="_supplyRunNoReceipt(\''+ek+'\')" class="btn btn-sm" style="flex:1;border-color:var(--amber);color:#856404;background:var(--amber-lt)">No receipt</button>'+
-            '<button onclick="_supplyRunScan(\''+ek+'\')" class="btn btn-sm btn-p" style="flex:1">Scan receipt</button>'+
+      stores.map((store,idx)=>{
+        const openClass=idx===0?' open':'';
+        return '<div class="td-supply-store'+openClass+'">'+
+          '<button class="td-supply-store-hd" onclick="_supplyStoreTog(this)">'+
+            '<span class="name">'+escHtml(store.name)+'</span>'+
+            (store.count>1?'<span class="td-supply-store-badge">'+store.count+'</span>':'')+
+            '<span class="td-supply-chev">▸</span>'+
+          '</button>'+
+          '<div class="td-supply-store-body">'+
+            store.visits.map(run=>{
+              const ek=encodeURIComponent(run.key);
+              return '<div class="td-supply-visit">'+
+                '<div style="font-size:11px;color:var(--text3)">'+when(run)+'</div>'+
+                '<div style="display:flex;gap:8px;margin-top:8px">'+
+                  '<button onclick="_supplyRunPersonal(\''+ek+'\')" class="btn btn-sm" style="flex:1">Personal</button>'+
+                  '<button onclick="_supplyRunNoReceipt(\''+ek+'\')" class="btn btn-sm" style="flex:1;border-color:var(--amber);color:#856404;background:var(--amber-lt)">No receipt</button>'+
+                  '<button onclick="_supplyRunScan(\''+ek+'\')" class="btn btn-sm btn-p" style="flex:1">Scan receipt</button>'+
+                '</div>'+
+              '</div>';
+            }).join('')+
           '</div>'+
         '</div>';
       }).join('')+
     '</div>';
-  const rows=el.querySelectorAll('.td-supply-row');
-  if(rows.length)rows[rows.length-1].style.borderBottom='none';
+}
+// Store accordion toggle. Takes the clicked header, not an id: a store's
+// name can contain characters that would need escaping into an id/selector,
+// and the element itself is all the toggle needs (mirrors the day/month
+// accordions' intent without inheriting their id-lookup plumbing).
+function _supplyStoreTog(btn){
+  const card=btn&&btn.closest('.td-supply-store');
+  if(!card)return;
+  card.classList.toggle('open');
 }
 // Setup-to-do actions. Kept out of inline onclick so the quoting stays sane and
 // the nav targets are guarded (a missing settings detail can never throw).

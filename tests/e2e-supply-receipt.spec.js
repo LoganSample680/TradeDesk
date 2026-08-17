@@ -7,12 +7,15 @@
 // place is written HELD (pendingReceipt) and excluded from every deduction
 // total until the dashboard card's three doors answer for it:
 //
-//   Personal      -> rows kept (unbroken odometer story) but off the books
+//   Personal      -> the held rows are deleted, never belonged in the log
 //   No receipt    -> business, flagged noReceipt, after the IRS disclaimer
 //   Scan receipt  -> the quick-expense save settles mileage + expense together
 //
-// Unanswered runs go personal after 7 days (_supplyRunSweep): the business log
-// can never carry a store run nobody stood behind.
+// Repeat visits to the SAME store nest under one accordion card instead of
+// piling up as separate top-level cards (owner: "stack... nesting under that
+// store with an accordion dropdown"). Ignore a run long enough and the 7-day
+// sweep answers Personal for you: it disappears the same way a manual
+// Personal tap would.
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
 test.describe('Receipt-gated supply runs', () => {
@@ -75,7 +78,7 @@ test.describe('Receipt-gated supply runs', () => {
       expect(ded).toBe(1);
     });
 
-    test('pendingSupplyRuns groups both legs of one visit into one card', async () => {
+    test('pendingSupplyRuns groups both legs of one visit into one run', async () => {
       await logLeg(JOB, SUPPLY, 'sr-grp-1');
       await logLeg(SUPPLY, JOB, 'sr-grp-2');
       const runs = await page.evaluate(() => pendingSupplyRuns());
@@ -83,6 +86,25 @@ test.describe('Receipt-gated supply runs', () => {
       expect(runs[0].name).toBe('Home Depot');
       expect(runs[0].count).toBe(2);
       expect(runs[0].miles).toBeCloseTo(11.0, 1);   // 5.5 + 5.5 from the stub
+    });
+
+    test('pendingSupplyStores nests multiple visits to the SAME store, oldest first', async () => {
+      const out = await page.evaluate(() => {
+        mileage.length = 0;
+        const day = (n) => { const d = new Date(Date.now() - n * 86400000); return dateKey(d); };
+        // Three days at Home Depot, seeded out of order, plus one at Ace.
+        mileage.push({ id: _newId(), date: day(0), miles: 4, pendingReceipt: true, supplyRunKey: day(0) + '|Home Depot', created_at: new Date(Date.now() - 0).toISOString() });
+        mileage.push({ id: _newId(), date: day(3), miles: 4, pendingReceipt: true, supplyRunKey: day(3) + '|Home Depot', created_at: new Date(Date.now() - 3 * 86400000).toISOString() });
+        mileage.push({ id: _newId(), date: day(1), miles: 4, pendingReceipt: true, supplyRunKey: day(1) + '|Home Depot', created_at: new Date(Date.now() - 1 * 86400000).toISOString() });
+        mileage.push({ id: _newId(), date: day(0), miles: 2, pendingReceipt: true, supplyRunKey: day(0) + '|Ace', created_at: new Date().toISOString() });
+        return pendingSupplyStores();
+      });
+      expect(out.length).toBe(2);
+      const hd = out.find(s => s.name === 'Home Depot');
+      expect(hd.count).toBe(3);
+      // Oldest to newest inside the store.
+      const dates = hd.visits.map(v => v.date);
+      expect(dates).toEqual([...dates].sort());
     });
   });
 
@@ -95,27 +117,46 @@ test.describe('Receipt-gated supply runs', () => {
       return key;
     });
 
-    test('Personal: rows KEPT in the log (unbroken odometer story) but off the books', async () => {
+    test('Personal: clears the held rows from the log ENTIRELY, not just marked', async () => {
       const key = await seedHeld();
       const out = await page.evaluate((k) => {
+        const before = mileage.length;
         const n = resolveSupplyRun(k, 'personal');
-        return { n, rows: mileage.length, ded: deductibleTrips(mileage).length,
-                 personal: mileage.every(m => m.personal === true && m.purpose === 'Personal' && !m.pendingReceipt) };
+        return { n, before, after: mileage.length, gone: mileage.every(m => m.supplyRunKey !== k) };
       }, key);
       expect(out.n).toBe(2);
-      expect(out.rows, 'personal rows are marked, never deleted').toBe(2);
-      expect(out.personal).toBe(true);
-      expect(out.ded).toBe(0);
+      expect(out.before).toBe(2);
+      expect(out.after, 'Personal deletes, it does not mark').toBe(0);
+      expect(out.gone).toBe(true);
+    });
+
+    test('Personal deletion is recorded as an explicit delete for cross-device sync', async () => {
+      // Routed through _userDelete (cloud.js), which diffs every synced
+      // array's ids before/after and records whatever disappeared into
+      // _locallyDeletedIds.td_mileage. That set is what stops the sync
+      // sweep from resurrecting the rows on another device: without it,
+      // Personal would look identical to a row nobody ever deleted.
+      const key = await seedHeld();
+      const out = await page.evaluate((k) => {
+        const ids = mileage.filter(m => m.supplyRunKey === k).map(m => String(m.id));
+        resolveSupplyRun(k, 'personal');
+        const tracked = typeof _locallyDeletedIds !== 'undefined' && _locallyDeletedIds.td_mileage
+          ? ids.every(id => _locallyDeletedIds.td_mileage.has(id)) : null;
+        return { tracked, stillThere: mileage.some(m => m.supplyRunKey === k) };
+      }, key);
+      expect(out.stillThere).toBe(false);
+      if (out.tracked !== null) expect(out.tracked, 'both deleted ids land in the explicit-delete set').toBe(true);
     });
 
     test('No receipt: commits as business carrying the noReceipt flag', async () => {
       const key = await seedHeld();
       const out = await page.evaluate((k) => {
         resolveSupplyRun(k, 'noreceipt');
-        return { ded: deductibleTrips(mileage).length,
-                 flagged: mileage.every(m => m.noReceipt === true && !m.pendingReceipt && !m.personal) };
+        return { ded: deductibleTrips(mileage).length, rows: mileage.length,
+                 flagged: mileage.every(m => m.noReceipt === true && !m.pendingReceipt) };
       }, key);
       expect(out.ded, 'the disclaimer door still deducts').toBe(2);
+      expect(out.rows, 'no receipt keeps the rows, unlike Personal').toBe(2);
       expect(out.flagged).toBe(true);
     });
 
@@ -134,10 +175,11 @@ test.describe('Receipt-gated supply runs', () => {
       await seedHeld();
       const out = await page.evaluate(() => {
         const n = resolveSupplyRun('2020-01-01|Nowhere', 'personal');
-        return { n, stillHeld: mileage.every(m => m.pendingReceipt === true) };
+        return { n, stillHeld: mileage.every(m => m.pendingReceipt === true), stillTwo: mileage.length === 2 };
       });
       expect(out.n).toBe(0);
       expect(out.stillHeld).toBe(true);
+      expect(out.stillTwo).toBe(true);
     });
 
     test('the No receipt door shows the IRS disclaimer FIRST, and Yes commits', async () => {
@@ -165,21 +207,18 @@ test.describe('Receipt-gated supply runs', () => {
   });
 
   test.describe('the 7-day sweep', () => {
-    test('week-old unanswered runs go personal; fresh ones stay held', async () => {
+    test('a week-old unanswered run disappears; a fresh one stays held', async () => {
       const out = await page.evaluate(() => {
         mileage.length = 0;
         const day = (n) => { const d = new Date(Date.now() - n * 86400000); return dateKey(d); };
         mileage.push({ id: _newId(), date: day(8), miles: 3, pendingReceipt: true, supplyRunKey: day(8) + '|Ace', created_at: new Date().toISOString() });
-        mileage.push({ id: _newId(), date: day(2), miles: 3, pendingReceipt: true, supplyRunKey: day(2) + '|Ace', created_at: new Date().toISOString() });
+        mileage.push({ id: _newId(), date: day(2), miles: 3, pendingReceipt: true, supplyRunKey: day(2) + '|Ace2', created_at: new Date().toISOString() });
         const n = _supplyRunSweep();
-        return { n, old: mileage[0], fresh: mileage[1] };
+        return { n, rows: mileage.length, freshStillHeld: mileage[0] && mileage[0].pendingReceipt === true };
       });
-      expect(out.n).toBe(1);
-      expect(out.old.personal).toBe(true);
-      expect(out.old.purpose).toBe('Personal');
-      expect(out.old.pendingReceipt).toBeUndefined();
-      expect(out.fresh.pendingReceipt).toBe(true);
-      expect(out.fresh.personal).toBeUndefined();
+      expect(out.n, 'the sweep removed the stale row').toBe(1);
+      expect(out.rows, 'it disappears, it is not left behind marked').toBe(1);
+      expect(out.freshStillHeld).toBe(true);
     });
 
     test('a corrupt date cannot crash the sweep or be swept', async () => {
@@ -259,34 +298,85 @@ test.describe('Receipt-gated supply runs', () => {
   });
 
   test.describe('the surfaces', () => {
-    test('the held card is pinned at the TOP of the dashboard, above the money tiles, with all three doors in order', async () => {
+    test('the held card is pinned at the TOP of the dashboard, above the money tiles', async () => {
       const out = await page.evaluate(() => {
         mileage.length = 0;
         const key = todayKey() + '|Home Depot';
         mileage.push({ id: _newId(), date: todayKey(), miles: 4.2, pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', created_at: new Date().toISOString() });
-        mileage.push({ id: _newId(), date: todayKey(), miles: 4.2, pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', created_at: new Date().toISOString() });
         _renderDashSupplyHold();
         const el = document.getElementById('dash-supply-hold');
-        const btns = [...el.querySelectorAll('.td-supply-row button')].map(b => b.textContent.trim());
-        const scanBtn = el.querySelector('.td-supply-row button.btn-p');
-        // The slot itself sits above the widget root (the money tiles), the
-        // same pinned position the setup checklist owns.
         const widgets = document.getElementById('dash-widget-root');
         const above = !!(widgets && (el.compareDocumentPosition(widgets) & Node.DOCUMENT_POSITION_FOLLOWING));
-        return { html: el.innerHTML, shown: el.style.display !== 'none', btns, scanIsBlue: scanBtn && scanBtn.textContent.trim() === 'Scan receipt', above };
+        return { shown: el.style.display !== 'none', above };
       });
       expect(out.shown).toBe(true);
       expect(out.above, 'the card renders above the money tiles').toBe(true);
-      expect(out.html).toContain('Home Depot run');
-      // Date and time only (owner 2026-08-17): the row must NOT carry miles
-      // or a leg count, and must show when the visit happened.
+    });
+
+    test('one store, one visit: a plain card with date/time and the three doors in order, no miles, no leg count', async () => {
+      const out = await page.evaluate(() => {
+        mileage.length = 0;
+        const key = todayKey() + '|Home Depot';
+        mileage.push({ id: _newId(), date: todayKey(), miles: 4.2, pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', created_at: new Date().toISOString() });
+        _renderDashSupplyHold();
+        const el = document.getElementById('dash-supply-hold');
+        const store = el.querySelector('.td-supply-store');
+        const btns = [...store.querySelectorAll('.td-supply-visit button')].map(b => b.textContent.trim());
+        const scanBtn = store.querySelector('.td-supply-visit button.btn-p');
+        return {
+          html: el.innerHTML,
+          storeName: store.querySelector('.td-supply-store-hd .name').textContent.trim(),
+          hasBadge: !!store.querySelector('.td-supply-store-badge'),
+          btns, scanIsBlue: scanBtn && scanBtn.textContent.trim() === 'Scan receipt',
+        };
+      });
+      expect(out.storeName).toBe('Home Depot');
+      expect(out.hasBadge, 'a single visit gets no count badge').toBe(false);
       expect(out.html).not.toContain(' mi<');
       expect(out.html).not.toContain('legs');
       expect(out.html).toMatch(/\d{1,2}:\d{2}[ap]/);
-      // The owner's order: Personal on the left, No receipt in the middle,
-      // Scan receipt as the blue primary on the right.
       expect(out.btns).toEqual(['Personal', 'No receipt', 'Scan receipt']);
       expect(out.scanIsBlue).toBe(true);
+    });
+
+    test('multiple visits to the same store nest under ONE accordion, oldest first, with a count badge', async () => {
+      const out = await page.evaluate(() => {
+        mileage.length = 0;
+        const day = (n) => { const d = new Date(Date.now() - n * 86400000); return dateKey(d); };
+        mileage.push({ id: _newId(), date: day(2), miles: 3, pendingReceipt: true, supplyRunKey: day(2) + '|Home Depot', created_at: new Date(Date.now() - 2 * 86400000).toISOString() });
+        mileage.push({ id: _newId(), date: day(0), miles: 3, pendingReceipt: true, supplyRunKey: day(0) + '|Home Depot', created_at: new Date().toISOString() });
+        _renderDashSupplyHold();
+        const el = document.getElementById('dash-supply-hold');
+        const stores = el.querySelectorAll('.td-supply-store');
+        const visits = el.querySelectorAll('.td-supply-visit');
+        const badge = el.querySelector('.td-supply-store-badge');
+        const visitDates = [...visits].map(v => v.querySelector('div').textContent.trim());
+        return { storeCount: stores.length, visitCount: visits.length, badge: badge ? badge.textContent.trim() : '', visitDates };
+      });
+      expect(out.storeCount, 'one top-level card for the store, not two').toBe(1);
+      expect(out.visitCount).toBe(2);
+      expect(out.badge).toBe('2');
+      // Oldest visit text sorts before the newest visit text (both "Mon D" format).
+      const parsed = out.visitDates.map(t => new Date(t.split(' · ')[0] + ' ' + new Date().getFullYear()));
+      expect(parsed[0].getTime()).toBeLessThanOrEqual(parsed[1].getTime());
+    });
+
+    test('the store accordion defaults open (it is a live prompt, not an archive) and tapping closes it', async () => {
+      const out = await page.evaluate(() => {
+        mileage.length = 0;
+        const key = todayKey() + '|Home Depot';
+        mileage.push({ id: _newId(), date: todayKey(), miles: 4, pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', created_at: new Date().toISOString() });
+        _renderDashSupplyHold();
+        const store = document.querySelector('#dash-supply-hold .td-supply-store');
+        const openBefore = store.classList.contains('open');
+        store.querySelector('.td-supply-store-hd').click();
+        const openAfter = store.classList.contains('open');
+        return { openBefore, openAfter };
+      });
+      // The single/most-recent store defaults open (an actionable prompt, not
+      // an archive), and the toggle flips it.
+      expect(out.openBefore).toBe(true);
+      expect(out.openAfter).toBe(false);
     });
 
     test('answered runs clear the card completely, gone like the setup checklist', async () => {
@@ -318,35 +408,32 @@ test.describe('Receipt-gated supply runs', () => {
       expect(feed).not.toContain('_supplyRunPersonal');
     });
 
-    test('the day header deduction preview skips held and personal rows', async () => {
+    test('the day header deduction preview skips held rows', async () => {
       const out = await page.evaluate(() => {
         mileage.length = 0;
         mileage.push({ id: _newId(), date: todayKey(), miles: 10, purpose: 'Job site', from_name: 'Shop', to_name: 'Job', created_at: new Date().toISOString() });
         mileage.push({ id: _newId(), date: todayKey(), miles: 10, pendingReceipt: true, supplyRunKey: todayKey() + '|Ace', purpose: 'Supply run', from_name: 'Job', to_name: 'Ace', created_at: new Date().toISOString() });
-        mileage.push({ id: _newId(), date: todayKey(), miles: 10, personal: true, purpose: 'Personal', from_name: 'Ace', to_name: 'Home', created_at: new Date().toISOString() });
         _milRenderTripList(mileage, new Date().getFullYear());
         const ded = document.querySelector('#mil-table .mil-day-ded');
         const mi = document.querySelector('#mil-table .mil-day-miles');
         return { ded: ded ? ded.textContent : '', mi: mi ? mi.textContent : '', rate: IRS(new Date().getFullYear()) };
       });
-      // Distance really driven is all 30 miles; the money preview is only the
+      // Distance really driven is all 20 miles; the money preview is only the
       // 10 deductible ones.
-      expect(out.mi).toContain('30.0');
+      expect(out.mi).toContain('20.0');
       expect(out.ded).toContain((10 * out.rate).toFixed(2));
-      expect(out.ded).not.toContain((30 * out.rate).toFixed(2));
+      expect(out.ded).not.toContain((20 * out.rate).toFixed(2));
     });
 
-    test('the mileage log badges held, personal and no-receipt rows', async () => {
+    test('the mileage log badges held and no-receipt rows; Personal never appears there (it deletes)', async () => {
       const html = await page.evaluate(() => {
         mileage.length = 0;
         mileage.push({ id: _newId(), date: todayKey(), miles: 4, pendingReceipt: true, supplyRunKey: todayKey() + '|Ace', purpose: 'Supply run', from_name: 'Job', to_name: 'Ace', created_at: new Date().toISOString() });
-        mileage.push({ id: _newId(), date: todayKey(), miles: 4, personal: true, purpose: 'Personal', from_name: 'Home', to_name: 'Ace', created_at: new Date().toISOString() });
         mileage.push({ id: _newId(), date: todayKey(), miles: 4, noReceipt: true, purpose: 'Supply run', from_name: 'Job', to_name: 'Ace', created_at: new Date().toISOString() });
         _milRenderTripList(mileage, new Date().getFullYear());
         return document.getElementById('mil-table').innerHTML;
       });
       expect(html).toContain('Held · receipt?');
-      expect(html).toContain('>Personal<');
       expect(html).toContain('>No receipt<');
     });
   });

@@ -1346,37 +1346,75 @@ function pendingSupplyRuns(){
       miles:rows.reduce((s,m)=>s+(m.miles||0),0),count:rows.length,rows};
   }).sort((a,b)=>b.date.localeCompare(a.date));
 }
-// The three doors. 'personal' keeps the rows, marked off the books.
-// 'noreceipt' commits as business carrying a noReceipt flag (the disclaimer
-// was shown before calling this). 'receipt' commits and links the expense
-// that proved it.
+// One accordion per STORE (owner 2026-08-17): if a store has more than one
+// unanswered visit, they nest under a single card instead of piling up as
+// separate top-level cards. Visits inside sort oldest to newest; stores sort
+// by their most recent activity.
+function pendingSupplyStores(){
+  const by={};
+  pendingSupplyRuns().forEach(run=>{(by[run.name]=by[run.name]||[]).push(run);});
+  return Object.keys(by).map(name=>{
+    const visits=by[name].slice().sort((a,b)=>(a.at||a.date).localeCompare(b.at||b.date));
+    const latestAt=visits[visits.length-1].at||visits[visits.length-1].date;
+    return {name,visits,count:visits.length,latestAt};
+  }).sort((a,b)=>(b.latestAt||'').localeCompare(a.latestAt||''));
+}
+// The shared delete path for held rows (owner 2026-08-17: Personal clears
+// the trip from the log entirely, it never really belonged in the business
+// account, so unlike No receipt/Scan receipt it is not kept-but-marked).
+// Routed through _userDelete so every removed id is recorded as an EXPLICIT
+// delete (js/cloud.js), which is what lets the sweep remove it on every
+// other device instead of the sync engine resurrecting it.
+function _supplyRunDeleteByKeys(keys){
+  let n=0;
+  const del=()=>{
+    mileage=mileage.filter(m=>{
+      if(m&&m.pendingReceipt&&m.supplyRunKey&&keys.has(m.supplyRunKey)){n++;return false;}
+      return true;
+    });
+  };
+  if(typeof _userDelete==='function')_userDelete(del);else del();
+  return n;
+}
+// The three doors. 'personal' deletes the held rows outright. 'noreceipt'
+// commits as business carrying a noReceipt flag (the disclaimer was shown
+// before calling this). 'receipt' commits and links the expense that
+// proved it.
 function resolveSupplyRun(key,mode,expenseId){
+  if(mode==='personal'){
+    const n=_supplyRunDeleteByKeys(new Set([key]));
+    if(n){saveAll();typeof renderDash==='function'&&renderDash();}
+    return n;
+  }
   let n=0;
   (mileage||[]).forEach(m=>{
     if(!m||m.supplyRunKey!==key||!m.pendingReceipt)return;
     delete m.pendingReceipt;n++;
-    if(mode==='personal'){m.personal=true;m.purpose='Personal';}
-    else if(mode==='noreceipt'){m.noReceipt=true;}
+    if(mode==='noreceipt'){m.noReceipt=true;}
     else if(mode==='receipt'&&expenseId!=null){m.receiptExpenseId=expenseId;}
   });
   if(n){saveAll();typeof renderDash==='function'&&renderDash();}
   return n;
 }
-// Unanswered for a week goes personal, quietly. Conservative on purpose: the
-// business log can then never contain a store run nobody stood behind.
+// Unanswered for a week: it disappears (owner 2026-08-17), same delete path
+// as tapping Personal by hand. No renderDash here on purpose, the sweep runs
+// INSIDE the dashboard's own render pass (_renderDashSupplyHold), and calling
+// back into renderDash from there would re-enter it mid-paint.
 function _supplyRunSweep(){
-  const cutoff=Date.now()-7*86400000;let n=0;
+  const cutoff=Date.now()-7*86400000;
+  const keys=new Set();
   (mileage||[]).forEach(m=>{
-    if(!m||!m.pendingReceipt)return;
+    if(!m||!m.pendingReceipt||!m.supplyRunKey)return;
     const t=Date.parse((m.date||'')+'T12:00:00');
-    if(isFinite(t)&&t<cutoff){delete m.pendingReceipt;m.personal=true;m.purpose='Personal';n++;}
+    if(isFinite(t)&&t<cutoff)keys.add(m.supplyRunKey);
   });
+  const n=_supplyRunDeleteByKeys(keys);
   if(n)saveAll();
   return n;
 }
 function _supplyRunPersonal(k){
   resolveSupplyRun(decodeURIComponent(k),'personal');
-  if(typeof showToast==='function')showToast('Marked personal, kept off the books','🚗');
+  if(typeof showToast==='function')showToast('Cleared, kept off the books','🚗');
 }
 function _supplyRunNoReceipt(k){
   // Owner copy (2026-08-17): one plain line, not a tax lecture.
@@ -2747,11 +2785,12 @@ function _milRenderTripList(shown,yr){
       const durTxt=r.mins>0?(typeof _dispatchDur==='function'?_dispatchDur(r.mins):r.mins+'m'):'';
       const metaTxt=[durTxt,clockLine].filter(Boolean).join(' · ');
       // Supply-run state, one small line under the numbers: held rows are
-      // waiting on the dashboard receipt card, personal/no-receipt rows show
-      // how they resolved so the log reads honestly at a glance.
+      // waiting on the dashboard receipt card; a no-receipt row shows how it
+      // resolved so the log reads honestly at a glance. Personal has no badge
+      // here because Personal deletes the row (owner 2026-08-17): it never
+      // reaches this list.
       const stateBadge=r.pendingReceipt?'<div style="font-size:10px;font-weight:800;color:#F59E0B">Held · receipt?</div>'
-        :(r.personal?'<div style="font-size:10px;font-weight:700;color:var(--text3)">Personal</div>'
-        :(r.noReceipt?'<div style="font-size:10px;font-weight:700;color:var(--text3)">No receipt</div>':''));
+        :(r.noReceipt?'<div style="font-size:10px;font-weight:700;color:var(--text3)">No receipt</div>':'');
       return '<div class="mil-day-trip'+needsClass+'" data-lp-id="'+r.id+'" data-lp-type="mileage" data-lp-label="'+escHtml((r.from_name||r.from||'Start')+' → '+(r.to_name||r.to||'End')+' · '+(r.miles||0).toFixed(1)+' mi')+'">'+
         '<div class="mil-day-trip-route">'+
           '<div class="mil-route-spine"><div class="mil-route-pin-s"></div><div class="mil-route-spine-line"></div><div class="mil-route-pin-e"></div></div>'+
