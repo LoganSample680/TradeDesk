@@ -91,6 +91,19 @@ jobs:
             /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription 'TradeDesk turns what you say into job notes, so you can record details without stopping work.'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :NSSpeechRecognitionUsageDescription string 'Your voice notes are transcribed on this iPhone. The audio never leaves your device.'" "$PLIST" || \
             /usr/libexec/PlistBuddy -c "Set :NSSpeechRecognitionUsageDescription 'Your voice notes are transcribed on this iPhone. The audio never leaves your device.'" "$PLIST"
+          # TdLock (handoff lock): LocalAuthentication with Face ID CRASHES the
+          # app without this string, and it fires at the worst possible moment,
+          # the phone already in the client's hands to sign. Touch ID and
+          # passcode devices never needed it, which is why it went unnoticed.
+          /usr/libexec/PlistBuddy -c "Add :NSFaceIDUsageDescription string 'Face ID locks TradeDesk to the signing screen while a client holds your phone, so the rest of your business stays private.'" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSFaceIDUsageDescription 'Face ID locks TradeDesk to the signing screen while a client holds your phone, so the rest of your business stays private.'" "$PLIST"
+          # Photo pickers that are not camera-only (logo upload, gallery upload,
+          # job-note photo). Modern PHPicker does not demand these, but an older
+          # path or a future direct-library read would crash without them.
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string 'Pick job photos and your business logo from your library.'" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryUsageDescription 'Pick job photos and your business logo from your library.'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryAddUsageDescription string 'Save job photos and shared before/after cards back to your library.'" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryAddUsageDescription 'Save job photos and shared before/after cards back to your library.'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$PLIST" || true
           # Standard HTTPS only: answers TestFlight's export-compliance question
