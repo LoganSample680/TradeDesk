@@ -144,8 +144,7 @@ test.describe('Receipt-gated supply runs', () => {
       const key = await seedHeld();
       await page.evaluate((k) => { _supplyRunNoReceipt(encodeURIComponent(k)); }, key);
       const msg = await page.locator('.zmodal-overlay .zmodal-msg').innerText();
-      expect(msg).toContain('IRS requires receipts');
-      expect(msg).toContain('can disallow undocumented claims');
+      expect(msg).toContain('IRS may disallow the mileage and the expense');
       // Still held while the disclaimer is on screen: showing it is not consent.
       expect(await page.evaluate(() => mileage.every(m => m.pendingReceipt === true))).toBe(true);
       await page.click('#zmodal-yes');
@@ -261,33 +260,59 @@ test.describe('Receipt-gated supply runs', () => {
   });
 
   test.describe('the surfaces', () => {
-    test('the dashboard card shows the run with all three doors', async () => {
-      await page.evaluate(() => {
+    test('the held card is pinned at the TOP of the dashboard, above the money tiles, with all three doors in order', async () => {
+      const out = await page.evaluate(() => {
         mileage.length = 0;
         const key = todayKey() + '|Home Depot';
         mileage.push({ id: _newId(), date: todayKey(), miles: 4.2, pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', created_at: new Date().toISOString() });
         mileage.push({ id: _newId(), date: todayKey(), miles: 4.2, pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', created_at: new Date().toISOString() });
-        renderTodayFeed();
+        _renderDashSupplyHold();
+        const el = document.getElementById('dash-supply-hold');
+        const btns = [...el.querySelectorAll('.td-supply-row button')].map(b => b.textContent.trim());
+        const scanBtn = el.querySelector('.td-supply-row button.btn-p');
+        // The slot itself sits above the widget root (the money tiles), the
+        // same pinned position the setup checklist owns.
+        const widgets = document.getElementById('dash-widget-root');
+        const above = !!(widgets && (el.compareDocumentPosition(widgets) & Node.DOCUMENT_POSITION_FOLLOWING));
+        return { html: el.innerHTML, shown: el.style.display !== 'none', btns, scanIsBlue: scanBtn && scanBtn.textContent.trim() === 'Scan receipt', above };
       });
-      const feed = await page.evaluate(() => document.getElementById('dash-money-feed').innerHTML);
-      expect(feed).toContain('Home Depot run');
-      expect(feed).toContain('mileage held until you answer');
-      expect(feed).toContain('8.4 mi');
-      expect(feed).toContain('_supplyRunPersonal');
-      expect(feed).toContain('_supplyRunNoReceipt');
-      expect(feed).toContain('_supplyRunScan');
+      expect(out.shown).toBe(true);
+      expect(out.above, 'the card renders above the money tiles').toBe(true);
+      expect(out.html).toContain('Home Depot run');
+      expect(out.html).toContain('8.4 mi');
+      // The owner's order: Personal on the left, No receipt in the middle,
+      // Scan receipt as the blue primary on the right.
+      expect(out.btns).toEqual(['Personal', 'No receipt', 'Scan receipt']);
+      expect(out.scanIsBlue).toBe(true);
     });
 
-    test('answered runs leave the dashboard', async () => {
+    test('answered runs clear the card completely, gone like the setup checklist', async () => {
+      const out = await page.evaluate(() => {
+        mileage.length = 0;
+        const key = todayKey() + '|Home Depot';
+        mileage.push({ id: _newId(), date: todayKey(), miles: 4, pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', created_at: new Date().toISOString() });
+        _renderDashSupplyHold();
+        const shownBefore = document.getElementById('dash-supply-hold').style.display !== 'none';
+        resolveSupplyRun(key, 'noreceipt');
+        _renderDashSupplyHold();
+        const el = document.getElementById('dash-supply-hold');
+        return { shownBefore, shownAfter: el.style.display !== 'none', empty: el.innerHTML === '' };
+      });
+      expect(out.shownBefore).toBe(true);
+      expect(out.shownAfter).toBe(false);
+      expect(out.empty).toBe(true);
+    });
+
+    test('the old money-feed card is GONE: held runs no longer render there', async () => {
       const feed = await page.evaluate(() => {
         mileage.length = 0;
         const key = todayKey() + '|Home Depot';
         mileage.push({ id: _newId(), date: todayKey(), miles: 4, pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', created_at: new Date().toISOString() });
-        resolveSupplyRun(key, 'noreceipt');
         renderTodayFeed();
         return document.getElementById('dash-money-feed').innerHTML;
       });
       expect(feed).not.toContain('mileage held until you answer');
+      expect(feed).not.toContain('_supplyRunPersonal');
     });
 
     test('the day header deduction preview skips held and personal rows', async () => {

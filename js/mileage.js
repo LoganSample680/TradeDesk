@@ -1376,7 +1376,8 @@ function _supplyRunPersonal(k){
   if(typeof showToast==='function')showToast('Marked personal, kept off the books','🚗');
 }
 function _supplyRunNoReceipt(k){
-  zConfirm('Save this run as business without a receipt?\n\nYour mileage log itself substantiates the miles, but the IRS requires receipts for expenses of $75 or more and can disallow undocumented claims if audited.',
+  // Owner copy (2026-08-17): one plain line, not a tax lecture.
+  zConfirm('Save this run as business without a receipt?\n\nThe IRS may disallow the mileage and the expense if no receipt is provided.',
     ()=>{resolveSupplyRun(decodeURIComponent(k),'noreceipt');if(typeof showToast==='function')showToast('Logged as business, no receipt on file','⚠️');},
     {title:'No receipt',yes:'Save as business'});
 }

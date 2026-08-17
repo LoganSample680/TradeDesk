@@ -239,6 +239,50 @@ function _renderDashSetupTodo(){
   const rows=el.querySelectorAll('.td-setup-row');
   if(rows.length)rows[rows.length-1].style.borderBottom='none';
 }
+// HELD SUPPLY RUNS (owner design 2026-08-17): a drive that touched a supply
+// store is not business until somebody stands behind it. Pinned to the very
+// top of the dashboard, above the money tiles, exactly like the setup
+// checklist: first thing seen on login, and once every run is answered the
+// card is gone (owner: "clear this out and it's gone"). The three doors, in
+// the owner's order: Personal on the left (kept, off the books), No receipt
+// in the middle (business, flagged, after the honest IRS line), Scan receipt
+// as the blue primary (expense + mileage settled in one save). The sweep
+// quietly retires week-old runs to personal first, so stale cards never
+// pile up.
+function _renderDashSupplyHold(){
+  const el=document.getElementById('dash-supply-hold');
+  if(!el)return;
+  if(typeof pendingSupplyRuns!=='function'){el.style.display='none';el.innerHTML='';return;}
+  if(typeof _supplyRunSweep==='function')_supplyRunSweep();
+  const runs=pendingSupplyRuns();
+  if(!runs.length){el.style.display='none';el.innerHTML='';return;}
+  el.style.display='block';
+  el.innerHTML=
+    '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden;border:1px solid var(--amber);box-shadow:0 2px 12px rgba(180,130,20,.14)">'+
+      '<div style="padding:12px 16px 10px;background:linear-gradient(135deg,rgba(180,130,20,.10),rgba(180,130,20,.02));border-bottom:1px solid var(--border)">'+
+        '<div style="display:flex;align-items:center;gap:8px">'+
+          '<span style="font-size:15px">'+svgIcon('🧾',{size:15})+'</span>'+
+          '<span style="font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.01em">Store runs need an answer</span>'+
+          '<span style="margin-left:auto;font-size:12px;font-weight:800;color:var(--amber)">'+runs.length+' held</span>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:6px">Mileage stays out of your deduction until you answer. Scan the receipt and the miles and the expense are both done in one shot.</div>'+
+      '</div>'+
+      runs.map(run=>{
+        const ek=encodeURIComponent(run.key);
+        return '<div class="td-supply-row" style="padding:12px 16px;border-bottom:1px solid var(--border)">'+
+          '<div style="font-size:14px;font-weight:700;color:var(--text)">'+escHtml(run.name)+' run</div>'+
+          '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+run.date+(run.miles>0?' · '+run.miles.toFixed(1)+' mi':'')+(run.count>1?' · '+run.count+' legs':'')+'</div>'+
+          '<div style="display:flex;gap:8px;margin-top:10px">'+
+            '<button onclick="_supplyRunPersonal(\''+ek+'\')" class="btn btn-sm" style="flex:1">Personal</button>'+
+            '<button onclick="_supplyRunNoReceipt(\''+ek+'\')" class="btn btn-sm" style="flex:1;border-color:var(--amber);color:#856404;background:var(--amber-lt)">No receipt</button>'+
+            '<button onclick="_supplyRunScan(\''+ek+'\')" class="btn btn-sm btn-p" style="flex:1">Scan receipt</button>'+
+          '</div>'+
+        '</div>';
+      }).join('')+
+    '</div>';
+  const rows=el.querySelectorAll('.td-supply-row');
+  if(rows.length)rows[rows.length-1].style.borderBottom='none';
+}
 // Setup-to-do actions. Kept out of inline onclick so the quoting stays sane and
 // the nav targets are guarded (a missing settings detail can never throw).
 // Permission state for the checklist. Read synchronously from a cache that
@@ -590,6 +634,7 @@ function renderDash(){
   renderDashCollect();
   renderTodayFeed();
   _renderDashSetupTodo();
+  _renderDashSupplyHold();
   const _nearbyEl=document.getElementById('dash-nearby');
   if(_nearbyEl){
     // The on-site card spans the WHOLE moment (owner: persist card + time-on-site):
@@ -1914,35 +1959,6 @@ function renderTodayFeed(){
   // Header amount: drop the ".00" on whole-dollar figures so the card reads clean
   // ($9,500 not $9,500.00); amounts with real cents keep them.
   const _mmtAmt=v=>fmt(v).replace(/\.00$/,'');
-
-  // HELD SUPPLY RUNS (owner design 2026-08-17): a drive that touched a supply
-  // store is not business until somebody stands behind it. The three doors:
-  // Personal (kept, off the books), No receipt (business, flagged, after the
-  // honest IRS disclaimer), Scan receipt (expense + mileage settled in one
-  // save). Rendered with the alerts, above the sections: an unanswered run is
-  // blocking real money truth. The sweep quietly retires week-old ones to
-  // personal first, so stale cards never pile up.
-  if(typeof _supplyRunSweep==='function')_supplyRunSweep();
-  if(typeof pendingSupplyRuns==='function')pendingSupplyRuns().forEach(run=>{
-    const ek=encodeURIComponent(run.key);
-    alertItems.push(
-      // The doors sit on their OWN full-width row under the text: three
-      // buttons beside the body overflow a 390px card and clip the primary
-      // action, which is the one that matters most (§15.1, nothing bleeds).
-      '<div class="tf-card" style="border-left:3px solid var(--amber);flex-wrap:wrap">'+
-        '<div class="tf-icon">'+svgIcon('🧾',{size:18})+'</div>'+
-        '<div class="tf-body" style="min-width:0">'+
-          '<div class="tf-name">'+escHtml(run.name)+' run</div>'+
-          '<div class="tf-sub" style="color:var(--amber)">'+run.date+(run.miles>0?' · '+run.miles.toFixed(1)+' mi':'')+' · mileage held until you answer</div>'+
-        '</div>'+
-        '<div class="tf-acts" style="display:flex;gap:6px;flex-wrap:wrap;width:100%;margin-top:8px">'+
-          '<button onclick="_supplyRunPersonal(\''+ek+'\')" class="btn btn-sm">Personal</button>'+
-          '<button onclick="_supplyRunNoReceipt(\''+ek+'\')" class="btn btn-sm" style="border-color:var(--amber);color:#856404;background:var(--amber-lt)">No receipt</button>'+
-          '<button onclick="_supplyRunScan(\''+ek+'\')" class="btn btn-sm btn-p">Scan receipt</button>'+
-        '</div>'+
-      '</div>'
-    );
-  });
 
   // ALERTS: License expiring/expired (always first, outside sections)
   const licAlerts=getLicenseAlerts();
