@@ -196,19 +196,14 @@ jobs:
         # (idempotent, safe on a retry). Runs AFTER the entitlements step
         # because it appends the App Group to the file that step writes.
         #
-        # TEMPORARILY SKIPPED (build 30 isolation). Every build since the share
-        # extension landed (19 through 29) has died in cloud signing with a
-        # rejected bearer token, and the App Group this step adds to the
-        # entitlements is the one portal object introduced at exactly that
-        # boundary AND the one identifier type the ASC API cannot create
-        # (bundle ids and capabilities are all verified present). No shipped
-        # build has ever carried the share extension (the phones run build 18),
-        # so skipping it costs nothing while proving the diagnosis. Re-enable
-        # by flipping SKIP_SHARE_EXT once group.app.tradedesk.beta is
-        # registered and assigned in the portal.
+        # RE-ENABLED 2026-08-17: was skipped for build-30 isolation (builds
+        # 19-29 all died in cloud signing, "Authentication failed / No
+        # profiles", traced to group.app.tradedesk.beta, the one identifier
+        # type the ASC API cannot create). Owner registered the App Group by
+        # hand in the developer portal; flipping this back on to prove it.
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          SKIP_SHARE_EXT: '1'
+          SKIP_SHARE_EXT: '0'
         run: |
           if [ "$SKIP_SHARE_EXT" = "1" ]; then
             echo "::notice::share extension SKIPPED for signing isolation (see step comment)"
