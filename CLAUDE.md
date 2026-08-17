@@ -331,6 +331,56 @@ the monthly keep-alive cron (`ios-beta.yml` schedule) already covers that.
 Batch pending native changes into the next needed build rather than firing
 one per change.
 
+### 3.3 Native Plugin Test Coverage (owner mandate, 2026-08-17)
+
+A native change couldn't be tested without firing an actual signed TestFlight
+build and poking at it by hand, and §3.2 makes that build itself rare and
+gated on explicit approval, so it could never be the feedback loop for every
+native change. Every `td-*` plugin now gets the same "tests ship in the same
+commit" treatment §5.1 already mandates for the web app, via a dedicated
+XCTest target, `TdNativeTests`.
+
+**Scope, deliberately: plugin-level XCTest, not XCUITest.** No WKWebView
+automation, no simulator UI driving. "Keep native dumb" (§3.2) means the
+Swift layer is capability-only, arm a region, buffer an event, report a fix,
+so stressing each plugin's methods directly IS stressing the native surface
+that can actually break. The app's on-screen behavior is already covered by
+the Playwright flow-test harness. This is also what keeps it cheap: no full
+app launch, no signing, no App Store Connect, seconds not minutes, and it
+never counts as "firing a build" under §3.2, it can run on every PR that
+touches `native/` without anyone's approval.
+
+**Every new or changed Swift plugin method ships adversarial XCTest coverage
+in the SAME commit.** Test source lives permanently at `native/tests/`, one
+file per plugin (`TdGeoPluginTests.swift` is the reference implementation,
+mirroring how `tests/flow/estimate-build.spec.js` anchors the web flow-test
+shape). Coverage follows the same input-class table §11.1 already mandates
+for the web app, translated to native:
+
+| Class | Native equivalent |
+|---|---|
+| null/invalid input | `@objc` methods called with malformed/missing `CAPPluginCall` args |
+| concurrent calls | rapid repeated start/stop/register calls, same guard-variable race pattern as §11.2 |
+| permission-denied path | simulated denied location/camera/mic/notification authorization, confirm graceful no-op, never a crash |
+| post-error / interrupted state | simulated backgrounding or app-suspend mid-operation |
+| boundary | zero pending events, buffer overflow, double-start/double-end |
+| device-capability gaps | `isSupported`-style checks under simulated "unavailable" conditions |
+
+**CI enforcement, same two-layer pattern as §12.8:**
+- `.github/workflows/ios-native-tests.yml` is a hard-blocking check on every
+  PR that touches `native/`: it injects the `TdNativeTests` target
+  (`scripts/ios-add-native-tests.rb`, the same regenerate-the-project-fresh
+  pattern as every other `ios-add-*.rb` script) and runs it against the iOS
+  Simulator. This workflow is structurally independent from `ios-beta.yml`,
+  no archive, no export, no signing, no `APPSTORE_*` secrets, so it can
+  never accidentally fire a real build.
+- `native-test-advisory` (in `.github/workflows/test.yml`, alongside
+  `flow-test-advisory`) is a non-blocking `::warning::` when a plugin's
+  Swift file changes with no matching `native/tests/*Tests.swift` change
+  anywhere in the diff. Advisory only, for the same reason §12.8's job is:
+  a hard gate here would false-positive on a drive-by plugin tweak and
+  teach Claude to route around it.
+
 ---
 
 ## 4. Branch Protection (One-Time Setup by Repo Owner)

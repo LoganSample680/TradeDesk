@@ -122,6 +122,52 @@ jobs:
 
           echo "::warning::CLAUDE.md §12.8 advisory: this branch changed$TOUCHED with no tests/flow/*.spec.js change anywhere since it diverged from ${{ github.event.pull_request.base.ref }}. §12.8 asks every user-facing feature or flow change to get a live flow test architected with the owner before it's called done. Advisory only, not a blocking check: if existing test coverage already handles this change, there is nothing to do."
 
+  # ── §3.3 native plugin test coverage advisory ───────────────────────────────
+  # Mirrors flow-test-advisory exactly, same non-blocking philosophy, for the
+  # native side: every changed td-* plugin Swift file should ship adversarial
+  # XCTest coverage (native/tests/*Tests.swift) in the same commit (§3.3).
+  # ios-native-tests.yml already hard-gates that the suite COMPILES AND
+  # PASSES; this job only flags when a plugin changed with no matching test
+  # file touched anywhere in the diff, so a drive-by tweak doesn't get
+  # silently unstressed. Advisory only for the same reason as §12.8's job: a
+  # hard gate here would false-positive on small fixes already covered, and
+  # teach Claude to route around it.
+  native-test-advisory:
+    name: "§3.3 native test advisory"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Check plugin changes for a matching adversarial test
+        continue-on-error: true
+        run: |
+          git fetch origin "${{ github.event.pull_request.base.ref }}"
+          BASE=$(git merge-base "origin/${{ github.event.pull_request.base.ref }}" HEAD)
+          CHANGED=$(git diff --name-only "$BASE" HEAD)
+
+          PLUGIN_CHANGES=$(echo "$CHANGED" | grep -E '^native/td-[^/]+/ios/Plugin/.*\.swift$' || true)
+
+          if [ -z "$PLUGIN_CHANGES" ]; then
+            echo "no native plugin Swift files changed on this branch, nothing to flag"
+            exit 0
+          fi
+
+          if echo "$CHANGED" | grep -qE '^native/tests/.*Tests\.swift$'; then
+            echo "native test change found alongside the plugin change(s), ok:"
+            echo "$PLUGIN_CHANGES"
+            exit 0
+          fi
+
+          FLAT=$(echo "$PLUGIN_CHANGES" | tr '\n' ' ')
+          echo "::warning::CLAUDE.md §3.3 advisory: this branch changed $FLAT with no native/tests/*Tests.swift change anywhere since it diverged from ${{ github.event.pull_request.base.ref }}. §3.3 asks every new or changed plugin method to get adversarial XCTest coverage in the same commit. Advisory only, not a blocking check: if existing coverage already handles this change, there is nothing to do."
+
   # ── E2E browser tests ───────────────────────────────────────────────────────
   test:
     runs-on: ubuntu-latest

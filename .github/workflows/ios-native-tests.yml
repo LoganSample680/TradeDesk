@@ -1,0 +1,100 @@
+# Native plugin adversarial test harness (TdNativeTests)
+#
+# Runs the plugin-level XCTest suite (native/tests/*Tests.swift) against the
+# iOS Simulator. This is DELIBERATELY separate from ios-beta.yml and never
+# touches it: no archive, no export, no code signing, no App Store Connect
+# key, no fastlane upload. It never produces or uploads a TestFlight build,
+# so it is NOT "firing a build" under CLAUDE.md §3.2 and needs no owner
+# approval, it can run on every PR that touches native code.
+#
+# Scope, on purpose: plugin-level XCTest only, not XCUITest/simulator UI
+# automation of the WKWebView shell. "Keep native dumb" (§3.2) means the
+# Swift layer is capability-only (arm a region, buffer an event, report a
+# fix); that IS the surface worth stressing adversarially, and it's cheap
+# to test directly. The app's on-screen behavior is already covered by the
+# Playwright flow-test harness (tests/flow/*.spec.js).
+name: iOS Native Plugin Tests
+
+on:
+  pull_request:
+    paths:
+      - 'native/**'
+      - 'scripts/ios-add-native-tests.rb'
+      - '.github/workflows/ios-native-tests.yml'
+
+jobs:
+  native-tests:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Capacitor
+        run: npm install
+
+      - name: Generate the iOS project (fresh every run, nothing checked in)
+        run: npx cap add ios
+
+      - name: Sync config and plugins into the iOS project
+        run: npx cap sync ios
+
+      # Same gate ios-beta.yml runs before it will build anything: a plugin
+      # missing from the Podfile means its Swift never made it into the
+      # project at all, and the test target would silently test nothing.
+      - name: Every native plugin must have reached the Podfile
+        run: |
+          MISSING=0
+          for d in td-*/; do
+            d="${d%/}"
+            if [ ! -f "$d/package.json" ]; then
+              echo "::error::$d has no package.json (check .gitignore, it blanket-ignores package.json)"
+              MISSING=1; continue
+            fi
+            if ! grep -q "\"$d\"" package.json; then
+              echo "::error::$d is not a dependency in native/package.json"
+              MISSING=1; continue
+            fi
+            if ! grep -q "$d" ios/App/Podfile; then
+              echo "::error::$d never reached the Podfile: Capacitor did not see it as a plugin"
+              MISSING=1; continue
+            fi
+            echo "ok: $d"
+          done
+          exit $MISSING
+
+      - name: Add the TdNativeTests target
+        run: |
+          gem install xcodeproj --no-document || sudo gem install xcodeproj --no-document
+          ruby ../scripts/ios-add-native-tests.rb
+
+      - name: Pick a simulator that exists on this runner image
+        id: sim
+        run: |
+          NAME=$(xcrun simctl list devices available -j \
+            | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8'));let pick='';for(const rt in d.devices){const found=(d.devices[rt]||[]).find(x=>/^iPhone/.test(x.name));if(found){pick=found.name;break;}}console.log(pick);")
+          if [ -z "$NAME" ]; then echo "::error::no iPhone simulator found on this runner image"; exit 1; fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "picked simulator: $NAME"
+
+      - name: Run the adversarial plugin test suite
+        run: |
+          xcodebuild test \
+            -workspace ios/App/App.xcworkspace \
+            -scheme TdNativeTests \
+            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
+            -resultBundlePath build/TdNativeTests.xcresult
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: td-native-tests-results
+          path: native/build/TdNativeTests.xcresult
+          retention-days: 14
+          if-no-files-found: ignore
