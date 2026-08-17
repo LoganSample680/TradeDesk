@@ -126,12 +126,25 @@ test.describe('Receipt-gated supply runs: hold, dashboard accordion, three doors
         // outcome (window._saveLog, cloud.js:5750) so a repeat miss states
         // whether supaSaveToCloud even ran, skipped, or threw, instead of
         // just "not found yet".
-        const flushLog = await p.evaluate(async () => {
+        const flushDiag = await p.evaluate(async () => {
+          const localRow = (typeof mileage !== 'undefined' ? mileage : [])[0];
           const before = (window._saveLog || []).length;
-          try { await (_flushSaveNow && _flushSaveNow()); } catch (e) { return [{ stage: 'flush-threw', info: String(e && e.message) }]; }
-          return (window._saveLog || []).slice(before);
+          const upsertsBefore = window._deltaStats ? window._deltaStats.upserts : null;
+          const skipsBefore = window._deltaStats ? window._deltaStats.skips : null;
+          try { await (_flushSaveNow && _flushSaveNow()); } catch (e) { return { log: [{ stage: 'flush-threw', info: String(e && e.message) }] }; }
+          return {
+            log: (window._saveLog || []).slice(before),
+            // Precise per-row proof: was OUR id in the batch this save actually
+            // upserted (cloud.js:5964, window._deltaStats.rows, 'tbl:id' pairs),
+            // or did the delta-hash short-circuit skip it as "unchanged"
+            // (cloud.js:5920)?
+            mileageRowLogged: localRow ? (window._deltaStats && window._deltaStats.rows || []).includes('td_mileage:' + localRow.id) : null,
+            upsertsDelta: window._deltaStats ? window._deltaStats.upserts - upsertsBefore : null,
+            skipsDelta: window._deltaStats ? window._deltaStats.skips - skipsBefore : null,
+            localId: localRow ? localRow.id : null,
+          };
         });
-        p.__flushLog = flushLog;
+        p.__flushLog = flushDiag;
         return 0; // automatic: a GPS ping is not an interaction
       },
       rule: async (p) => {

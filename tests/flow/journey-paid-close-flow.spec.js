@@ -328,19 +328,25 @@ test.describe('Journey card + paid-in-full close-out (UI-driven, real backend)',
         return 0;
       },
       rule: async (p) => {
-        const out = await p.evaluate(({ clientId, bidId }) => {
+        const out = await p.evaluate(({ clientId, bidId, jobId }) => {
+          // Scoped to THIS job id, not a bare phrase match: this dev account
+          // never cleans up (§12.7), so earlier runs/attempts can leave OTHER
+          // "paid in full, never closed out" cards on the same page. Absence
+          // of ours is what proves the close-out worked, not absence of the
+          // phrase entirely.
           const feed = (document.getElementById('dash-money-feed') || {}).innerHTML || '';
           if (typeof openClientDetail === 'function') openClientDetail(clientId);
           if (typeof renderCDAddresses === 'function') renderCDAddresses();
           if (typeof renderCDBids === 'function') renderCDBids();
           const prop = (document.getElementById('cd-addresses-list') || {}).innerHTML || '';
           const btn = document.querySelector(`#cd-bids-list button[onclick="openFinalInvoice(${bidId})"]`);
+          const marker = 'markJobDone(' + jobId + ')';
           return {
-            dashClear: !feed.includes('job never closed out'),
-            propClear: !prop.includes('job never closed out'),
+            dashClear: !feed.includes(marker),
+            propClear: !prop.includes(marker),
             finalInvoiceLabel: btn ? btn.textContent.trim() : null,
           };
-        }, { clientId, bidId });
+        }, { clientId, bidId, jobId: ctx.jobId });
         const ok = out.dashClear && out.propClear && out.finalInvoiceLabel === 'Send final invoice';
         return { ok, got: JSON.stringify(out) };
       },
