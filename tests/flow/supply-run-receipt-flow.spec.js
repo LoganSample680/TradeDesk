@@ -88,6 +88,13 @@ test.describe('Receipt-gated supply runs: hold, dashboard accordion, three doors
           localStorage.setItem('zp3_schedule_alerts', '[]');
           document.getElementById('_sched-alert-overlay')?.remove();
           S.officeLat = SHOP.lat; S.officeLon = SHOP.lon;
+          // The promoted DEV2 account is employee-linked with team tracking on
+          // (confirmed by _geoNeedsAck in geo-track.js): it shows a one-time
+          // "logs your job time with location" sheet until acknowledged. Real
+          // employees dismiss it once; do the same here instead of leaving it
+          // to intercept a click on some later render.
+          if (typeof _geoRecordAck === 'function') _geoRecordAck();
+          document.getElementById('_geo-notice-ov')?.remove();
           savePlace({ name: nameA, kind: 'supply', lat: A.lat, lon: A.lon, confirmedBy: 'manual' });
           savePlace({ name: nameB, kind: 'supply', lat: B.lat, lon: B.lon, confirmedBy: 'manual' });
           savePlace({ name: nameC, kind: 'supply', lat: C.lat, lon: C.lon, confirmedBy: 'manual' });
@@ -262,7 +269,11 @@ test.describe('Receipt-gated supply runs: hold, dashboard accordion, three doors
       ruleText: 'the held-run card must be pinned above the money tiles and list all three stores',
       expected: `#dash-supply-hold above #dash-widget-root, contains ${nameA}, ${nameB}, ${nameC}`,
       act: async (p) => {
-        await p.evaluate(() => { if (typeof goPg === 'function') goPg('pg-dash'); if (typeof renderDash === 'function') renderDash(); });
+        await p.evaluate(() => {
+          document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove()); // any stray notice/alert
+          if (typeof goPg === 'function') goPg('pg-dash');
+          if (typeof renderDash === 'function') renderDash();
+        });
         await p.waitForTimeout(400);
         return 0;
       },
@@ -282,6 +293,10 @@ test.describe('Receipt-gated supply runs: hold, dashboard accordion, three doors
     // Open a store's accordion if it isn't already (only the most-recently-
     // active store defaults open), returning the honest tap cost.
     const openStore = async (p, storeName) => {
+      // Belt-and-suspenders: a stray overlay (geo notice, schedule alert) can
+      // only ever be contamination on this page, never remove anything the
+      // steps below still need to read.
+      await p.evaluate(() => { document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove()); });
       const alreadyOpen = await p.evaluate((name) => {
         const stores = [...document.querySelectorAll('#dash-supply-hold .td-supply-store')];
         const s = stores.find(el => (el.querySelector('.td-supply-store-hd .name') || {}).textContent === name);
