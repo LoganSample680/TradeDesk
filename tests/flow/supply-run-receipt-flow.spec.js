@@ -119,17 +119,29 @@ test.describe('Receipt-gated supply runs: hold, dashboard accordion, three doors
         await pullAway(p);
         await ping(p, A.lat, A.lon);
         await p.waitForTimeout(1500);
+        // autoLogDriveTrip writes the row through the standard 2s-debounced
+        // saveAll(), not an immediate push (unlike job_time_entries elsewhere
+        // in the geofence pipeline). Force it now instead of hoping the
+        // debounce clears inside the poll window.
+        await p.evaluate(() => _flushSaveNow && _flushSaveNow());
         return 0; // automatic: a GPS ping is not an interaction
       },
       rule: async (p) => {
-        let row = null;
-        for (let i = 0; i < 6 && !row; i++) {
+        let row = null, localRow = null;
+        for (let i = 0; i < 8 && !row; i++) {
+          localRow = await p.evaluate((nameA) => {
+            const m = (typeof mileage !== 'undefined' ? mileage : []).find(x => x && x.to_name === nameA);
+            return m ? { pendingReceipt: m.pendingReceipt, supplyRunKey: m.supplyRunKey, id: m.id } : null;
+          }, nameA);
           const rows = await cloudRows(p, 'td_mileage');
           row = (rows || []).find(r => r.to_name === nameA || (r.supplyRunKey || '').includes(nameA));
           if (!row) await p.waitForTimeout(1500);
         }
         const ok = !!row && row.pendingReceipt === true && !!row.supplyRunKey;
-        return { ok, got: JSON.stringify(row && { pendingReceipt: row.pendingReceipt, supplyRunKey: row.supplyRunKey, to_name: row.to_name }) };
+        // localRow present but row (cloud) absent = a sync-timing problem, not
+        // a logic problem: pin that down instead of leaving "undefined" to
+        // guess from next time.
+        return { ok, got: `cloud=${JSON.stringify(row && { pendingReceipt: row.pendingReceipt, supplyRunKey: row.supplyRunKey })} local=${JSON.stringify(localRow)}` };
       },
     });
 
@@ -194,18 +206,23 @@ test.describe('Receipt-gated supply runs: hold, dashboard accordion, three doors
         await pullAway(p);
         await ping(p, C.lat, C.lon);
         await p.waitForTimeout(1500);
+        await p.evaluate(() => _flushSaveNow && _flushSaveNow());
         return 0;
       },
       rule: async (p) => {
         let rowB = null, rowC = null;
-        for (let i = 0; i < 6 && !(rowB && rowC); i++) {
+        for (let i = 0; i < 8 && !(rowB && rowC); i++) {
           const rows = await cloudRows(p, 'td_mileage');
           rowB = rowB || (rows || []).find(r => r.to_name === nameB);
           rowC = rowC || (rows || []).find(r => r.to_name === nameC);
           if (!(rowB && rowC)) await p.waitForTimeout(1500);
         }
+        const local = await p.evaluate(({ nameB, nameC }) => ({
+          b: (typeof mileage !== 'undefined' ? mileage : []).some(m => m && m.to_name === nameB),
+          c: (typeof mileage !== 'undefined' ? mileage : []).some(m => m && m.to_name === nameC),
+        }), { nameB, nameC });
         const ok = !!rowB && rowB.pendingReceipt === true && !!rowC && rowC.pendingReceipt === true;
-        return { ok, got: `B=${JSON.stringify(rowB && rowB.pendingReceipt)} C=${JSON.stringify(rowC && rowC.pendingReceipt)}` };
+        return { ok, got: `cloud B=${JSON.stringify(rowB && rowB.pendingReceipt)} C=${JSON.stringify(rowC && rowC.pendingReceipt)} · local B=${local.b} C=${local.c}` };
       },
     });
 

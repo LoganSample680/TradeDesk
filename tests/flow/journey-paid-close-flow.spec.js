@@ -90,6 +90,12 @@ test.describe('Journey card + paid-in-full close-out (UI-driven, real backend)',
         await cp.waitForSelector('#approve-btn', { state: 'visible', timeout: 20000 });
         let n = 0;
         n += await tap(cp, '#approve-btn');
+        // seedProposal() always attaches surfaces data, and sign.html routes a
+        // proposal carrying surfaces through a color-pick screen before the
+        // signature pad (same reason cash-check-sign-flow / sign-funnel-flow
+        // handle it): Continue to sign -> reveals #sig-name.
+        const onColorPick = await cp.waitForSelector('#pg-color-pick', { state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
+        if (onColorPick) n += await tap(cp, '#pg-color-pick button.btn');
         await cp.waitForSelector('#sig-name', { state: 'visible', timeout: 10000 });
         n += await type(cp, '#sig-name', 'Jordan E Client');
         await cp.waitForTimeout(300);
