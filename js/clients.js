@@ -2804,42 +2804,75 @@ function _cdPropCardHtml(c,a,idx,total){
     const pastBidIds={};pastBids.forEach(b=>pastBidIds[b.id]=1);
     const pastJobs=hist.jobs.filter(j=>!j.bid_id&&_jobDone(j));
     const pastJobIds={};pastJobs.forEach(j=>pastJobIds[j.id]=1);
-    const items=[
-      ...hist.proposals.filter(b=>!pastBidIds[b.id]).map(b=>{
-        const _won=b.status==='Closed Won';
-        const _unsched=_won&&!_jobForBid(b);
-        return {kind:'Proposal',accent:'var(--blue)',name:b.type||b.name||'Proposal',
-          date:b.bid_date||(b.created?String(b.created).slice(0,10):''),amount:b.amount||0,
-          meta:b.status||'',flag:_unsched?'Not scheduled':''};
-      }),
-      // A job created from a proposal carries no value of its own, so showing its
-      // own 0 next to a signed contract reads as free work. Fall back to the bid.
-      // Jobs whose contract is already in Past work ride that row, not this list.
-      ...hist.jobs.filter(j=>!pastJobIds[j.id]&&!(j.bid_id&&pastBidIds[j.bid_id])).map(j=>{
-        const _b=j.bid_id?hist.proposals.find(b=>b.id===j.bid_id):null;
-        return {kind:'Job',accent:'#1f9d57',name:j.name||'Job',date:j.start||'',
-          amount:Number(j.value||0)||(_b?Number(_b.amount||0):0),
-          meta:(j.status==='completed'||j.status==='done')&&j.end?('Done '+_cdDShort(j.end)):(j.status||'')};
-      }),
-    ].sort((x,y)=>String(y.date).localeCompare(String(x.date)));
-    const rows=items.map(it=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border)">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.name)}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:1px"><span style="color:${it.accent};font-weight:700">${it.kind}</span>${it.date?'  ·  '+_cdDShort(it.date):''}${it.meta?'  ·  '+escHtml(it.meta):''}${it.flag?'  ·  <span style="color:#8A4E00;font-weight:800">'+escHtml(it.flag)+'</span>':''}</div>
+    // ── Open work, variant C (owner-approved direction 2026-08-17) ──────────
+    // The card answers "what needs me" before it archives anything: a won job
+    // with nothing on the calendar is THE fact that sent the owner on a wasted
+    // drive, so it gets an amber card with the schedule button right on it.
+    // Then what's booked, then the pipeline. Finished work lives in Past work.
+    const needsAttention=hist.proposals.filter(b=>!pastBidIds[b.id]&&b.status==='Closed Won'&&!_jobForBid(b));
+    const openJobs=hist.jobs.filter(j=>!pastJobIds[j.id]&&!(j.bid_id&&pastBidIds[j.bid_id])&&j.status!=='canceled'&&!_jobDone(j))
+      .sort((x,y)=>String(x.start||'').localeCompare(String(y.start||'')));
+    const pipeline=hist.proposals.filter(b=>!pastBidIds[b.id]&&b.status!=='Closed Won'&&!needsAttention.includes(b))
+      .sort((x,y)=>String(y.bid_date||'').localeCompare(String(x.bid_date||'')));
+    const canceledJobs=hist.jobs.filter(j=>!pastJobIds[j.id]&&!(j.bid_id&&pastBidIds[j.bid_id])&&j.status==='canceled');
+    const _secHdr=t=>`<div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin:12px 0 4px">${t}</div>`;
+    const attnRows=needsAttention.map(b=>`<div style="border:1px solid #E8C9A0;background:#FFFBF6;border-radius:10px;padding:11px 12px;margin-bottom:8px">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:800;color:var(--text)">${escHtml(b.type||b.name||'Job')}</div>
+          <div style="font-size:11.5px;color:#8A4E00;font-weight:700;margin-top:2px">Won ${_cdDShort(b.signedAt||b.bid_date)} · Not scheduled</div>
+        </div>
+        ${money?`<div style="font-size:14px;font-weight:800;color:var(--text);flex-shrink:0">${fmt(b.amount||0)}</div>`:''}
       </div>
-      ${money?`<div style="font-size:13px;font-weight:700;color:var(--text);flex-shrink:0">${fmt(it.amount)}</div>`:''}
+      <button onclick="event.stopPropagation();schedFromBid(${b.id})" class="btn btn-p" style="margin-top:9px;padding:9px 14px;font-size:12.5px;font-weight:800">Put it on the calendar</button>
     </div>`).join('');
+    const jobRow=j=>{
+      // A job created from a proposal carries no value of its own, so showing
+      // its own 0 next to a signed contract reads as free work: fall back.
+      const _b=j.bid_id?hist.proposals.find(b=>b.id===j.bid_id):null;
+      const amt=Number(j.value||0)||(_b?Number(_b.amount||0):0);
+      return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border)">
+        <span style="width:7px;height:7px;border-radius:50%;background:#185FA5;flex-shrink:0"></span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml((_b&&(_b.type||_b.name))||j.name||'Job')}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:1px">${j.start?_cdDShort(j.start)+' · ':''}${escHtml(j.status||'scheduled')}</div>
+        </div>
+        ${money&&amt?`<div style="font-size:13px;font-weight:700;color:var(--text);flex-shrink:0">${fmt(amt)}</div>`:''}
+      </div>`;
+    };
+    const pipeRow=b=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border)">
+      <span style="width:7px;height:7px;border-radius:50%;background:var(--text3);flex-shrink:0"></span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(b.type||b.name||'Proposal')}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px">${b.bid_date?_cdDShort(b.bid_date)+' · ':''}${escHtml(b.status||'')}</div>
+      </div>
+      ${money?`<div style="font-size:13px;font-weight:700;color:var(--text);flex-shrink:0">${fmt(b.amount||0)}</div>`:''}
+    </div>`;
     const totalSpan=money?`<span style="font-size:12px;color:var(--text2)"><strong style="color:var(--text)">${fmt(hist.paid)}</strong> <span style="color:var(--text3)">of ${fmt(hist.billed)} paid</span></span>`:'';
+    const openHtml=
+      (attnRows?_secHdr('Needs attention')+attnRows:'')+
+      (openJobs.length?_secHdr('On the calendar')+openJobs.map(jobRow).join(''):'')+
+      (pipeline.length?_secHdr('In the pipeline')+pipeline.map(pipeRow).join(''):'');
+    const items={length:needsAttention.length+openJobs.length+pipeline.length}; // section count for the layout decisions below
     const workBlock=items.length?`<div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
         <span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Work at this address</span>
         ${totalSpan}
       </div>
-      ${rows}
+      ${openHtml}
     </div>`:(workCount?'':`<div style="font-size:12px;color:var(--text3);padding:2px 0">No proposals or jobs at this address yet.</div>`);
     const pastRows=[
       ...pastBids.map(b=>({fin:b.completion_date,html:_cdPastBidRow(b,hist,money)})),
       ...pastJobs.map(j=>({fin:j.end||j.start||'',html:_cdPastJobRow(j,money)})),
+      // Canceled work is history too (variant C), but muted and money-less:
+      // it neither earned nor owes anything, it just explains a date.
+      ...canceledJobs.map(j=>({fin:j.start||'',html:`<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border);opacity:.55">
+        <span style="width:7px;height:7px;border-radius:50%;background:#C9C6C0;flex-shrink:0"></span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700;color:var(--text3)">${escHtml(j.name||'Job')}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:1px">${j.start?_cdDShort(j.start)+' · ':''}canceled</div>
+        </div>
+      </div>`})),
     ].sort((x,y)=>String(y.fin).localeCompare(String(x.fin))).map(r=>r.html).join('');
     const pastBlock=pastRows?`<div style="margin-top:${items.length?14:0}px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
