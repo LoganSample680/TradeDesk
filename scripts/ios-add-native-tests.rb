@@ -85,4 +85,30 @@ scheme.add_test_target(test_target)
 scheme.save_as(project.path, TEST_TARGET, true)
 
 project.save
+
+# TEST_HOST/BUNDLE_LOADER above only cover RUNTIME loading (the test bundle
+# executes inside the already-running App process). They do nothing for
+# COMPILE-TIME `import Capacitor` / `import TdGeo`: those modules are built
+# by CocoaPods' own Pods.xcodeproj, a separate project the App target links
+# through Podfile-generated .xcconfig files that TdNativeTests has none of.
+# The correct fix is CocoaPods' own answer to this exact scenario: give the
+# test target a Podfile block that installs the SAME pods the App target
+# does (never hand-rolled framework search paths, which is what silently
+# broke the first run: "unable to resolve module dependency: Capacitor").
+# `inherit! :search_paths` is the standard flag for a target hosted inside
+# another target's process. The App target's own pod list is duplicated
+# rather than hardcoded here, so a newly added td-* plugin is automatically
+# testable without editing this script again.
+podfile_path = File.join(IOS_APP_DIR, 'Podfile')
+podfile = File.read(podfile_path)
+unless podfile.include?("target 'TdNativeTests'") || podfile.include?('target "TdNativeTests"')
+  app_block = podfile[/target\s+['"]App['"]\s+do\n(.*?)\nend/m, 1]
+  abort("[native-tests] could not find target 'App' block in Podfile to mirror") unless app_block
+  test_block = "\ntarget 'TdNativeTests' do\n  inherit! :search_paths\n#{app_block}\nend\n"
+  File.write(podfile_path, podfile + test_block)
+  puts '[native-tests] added a TdNativeTests target block to the Podfile, run `pod install` again before building'
+else
+  puts '[native-tests] Podfile already has a TdNativeTests target block'
+end
+
 puts "[native-tests] added #{TEST_TARGET} (#{test_files.length} file(s): #{test_files.map { |f| File.basename(f) }.join(', ')})"

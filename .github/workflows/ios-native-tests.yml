@@ -73,6 +73,16 @@ jobs:
           gem install xcodeproj --no-document || sudo gem install xcodeproj --no-document
           ruby ../scripts/ios-add-native-tests.rb
 
+      # TEST_HOST/BUNDLE_LOADER (set inside ios-add-native-tests.rb) only
+      # cover RUNTIME loading into the App process. The test target's
+      # `import Capacitor` / `import TdGeo` need those modules linked at
+      # COMPILE time, which only CocoaPods' own integration can wire
+      # correctly, hence the script also appends a `target 'TdNativeTests'`
+      # block to the Podfile, and this second install is what actually
+      # generates its Pods-TdNativeTests.xcconfig and link phase.
+      - name: Re-run pod install for the test target's own pod linkage
+        run: cd ios/App && pod install
+
       - name: Pick a simulator that exists on this runner image
         id: sim
         run: |
