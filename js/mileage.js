@@ -1339,7 +1339,10 @@ function pendingSupplyRuns(){
   });
   return Object.keys(by).map(k=>{
     const rows=by[k];
-    return {key:k,date:k.split('|')[0]||'',name:k.split('|').slice(1).join('|')||'Store',
+    // When the visit happened: the earliest clock any of its legs carries.
+    // The card shows date and time only (owner 2026-08-17: no miles, no legs).
+    const at=rows.map(m=>m.startedIso||m.created_at).filter(Boolean).sort()[0]||'';
+    return {key:k,date:k.split('|')[0]||'',name:k.split('|').slice(1).join('|')||'Store',at,
       miles:rows.reduce((s,m)=>s+(m.miles||0),0),count:rows.length,rows};
   }).sort((a,b)=>b.date.localeCompare(a.date));
 }

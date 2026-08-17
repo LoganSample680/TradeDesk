@@ -269,9 +269,23 @@ function _renderDashSupplyHold(){
       '</div>'+
       runs.map(run=>{
         const ek=encodeURIComponent(run.key);
+        // Date and time only (owner 2026-08-17): "Aug 17 · 2:41p". No miles,
+        // no leg count; the log page has the numbers, this card just asks
+        // the question. Compact clock matches the ON SITE card's _fmtClk.
+        let when=run.date;
+        try{
+          const _d=new Date(run.date+'T12:00:00');
+          if(isFinite(_d))when=_d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+        }catch(_e){}
+        if(run.at){
+          try{
+            const _t=new Date(run.at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p');
+            if(_t)when+=' · '+_t;
+          }catch(_e){}
+        }
         return '<div class="td-supply-row" style="padding:12px 16px;border-bottom:1px solid var(--border)">'+
           '<div style="font-size:14px;font-weight:700;color:var(--text)">'+escHtml(run.name)+' run</div>'+
-          '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+run.date+(run.miles>0?' · '+run.miles.toFixed(1)+' mi':'')+(run.count>1?' · '+run.count+' legs':'')+'</div>'+
+          '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+when+'</div>'+
           '<div style="display:flex;gap:8px;margin-top:10px">'+
             '<button onclick="_supplyRunPersonal(\''+ek+'\')" class="btn btn-sm" style="flex:1">Personal</button>'+
             '<button onclick="_supplyRunNoReceipt(\''+ek+'\')" class="btn btn-sm" style="flex:1;border-color:var(--amber);color:#856404;background:var(--amber-lt)">No receipt</button>'+

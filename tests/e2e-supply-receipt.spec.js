@@ -278,7 +278,11 @@ test.describe('Receipt-gated supply runs', () => {
       expect(out.shown).toBe(true);
       expect(out.above, 'the card renders above the money tiles').toBe(true);
       expect(out.html).toContain('Home Depot run');
-      expect(out.html).toContain('8.4 mi');
+      // Date and time only (owner 2026-08-17): the row must NOT carry miles
+      // or a leg count, and must show when the visit happened.
+      expect(out.html).not.toContain(' mi<');
+      expect(out.html).not.toContain('legs');
+      expect(out.html).toMatch(/\d{1,2}:\d{2}[ap]/);
       // The owner's order: Personal on the left, No receipt in the middle,
       // Scan receipt as the blue primary on the right.
       expect(out.btns).toEqual(['Personal', 'No receipt', 'Scan receipt']);
