@@ -435,17 +435,23 @@ test.describe('Receipt-gated supply runs: hold, dashboard accordion, three doors
 
     // ── 8. Card is gone: every store answered ──────────────────────────────
     await step(page, {
-      label: 'the held card is gone once every store is answered', page: 'pg-dash', role: 'contractor',
+      label: 'our three stores are gone once every door is answered', page: 'pg-dash', role: 'contractor',
       suspect: 'dashboard.js _renderDashSupplyHold',
-      ruleText: 'once all three stores are resolved the pinned card must disappear entirely, like the setup checklist',
-      expected: '#dash-supply-hold hidden and empty',
+      ruleText: 'once all three of OUR stores are resolved they must disappear from the card',
+      expected: `#dash-supply-hold no longer mentions ${nameA}, ${nameB}, or ${nameC}`,
       act: async (p) => { await p.evaluate(() => { if (typeof renderDash === 'function') renderDash(); }); return 0; },
       rule: async (p) => {
-        const out = await p.evaluate(() => {
+        // Not a blanket "card is gone" check: this dev account never cleans
+        // up (§12.7), and earlier attempts of this SAME test can leave OTHER
+        // stores still pending. Scoped to our own three names, like the
+        // journey-paid-close-flow fix for the identical class of bug.
+        const out = await p.evaluate(({ nameA, nameB, nameC }) => {
           const el = document.getElementById('dash-supply-hold');
-          return { hidden: !el || el.style.display === 'none', empty: !el || el.innerHTML === '' };
-        });
-        return { ok: out.hidden && out.empty, got: JSON.stringify(out) };
+          const html = el ? el.innerHTML : '';
+          return { hasA: html.includes(nameA), hasB: html.includes(nameB), hasC: html.includes(nameC) };
+        }, { nameA, nameB, nameC });
+        const ok = !out.hasA && !out.hasB && !out.hasC;
+        return { ok, got: JSON.stringify(out) };
       },
     });
 
