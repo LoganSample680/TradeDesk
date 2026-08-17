@@ -197,18 +197,19 @@ test.describe('Receipt-gated supply runs', () => {
 
   test.describe('the scan door settles both books in one save', () => {
     test('the quick-expense modal carries the run key INSIDE the modal and prefills the vendor', async () => {
-      await page.evaluate(() => {
+      // No waits anywhere: the injection is synchronous by design (a 120ms
+      // timer version of _supplyRunScan lost this exact race on WebKit CI).
+      const out = await page.evaluate(() => {
         mileage.length = 0;
         mileage.push({ id: _newId(), date: todayKey(), miles: 4, pendingReceipt: true, supplyRunKey: todayKey() + '|Home Depot', purpose: 'Supply run', created_at: new Date().toISOString() });
         document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
         _supplyRunScan(encodeURIComponent(todayKey() + '|Home Depot'));
+        return {
+          key: (document.getElementById('qe-supply-run') || {}).value || '',
+          insideModal: !!document.querySelector('.zmodal-overlay .zmodal #qe-supply-run'),
+          vendor: (document.getElementById('qe-vendor') || {}).value || '',
+        };
       });
-      await page.waitForTimeout(200);
-      const out = await page.evaluate(() => ({
-        key: (document.getElementById('qe-supply-run') || {}).value || '',
-        insideModal: !!document.querySelector('.zmodal-overlay .zmodal #qe-supply-run'),
-        vendor: (document.getElementById('qe-vendor') || {}).value || '',
-      }));
       expect(out.key).toBe(await page.evaluate(() => todayKey() + '|Home Depot'));
       expect(out.insideModal, 'the key rides in the modal, never a global').toBe(true);
       expect(out.vendor).toBe('Home Depot');
@@ -222,7 +223,6 @@ test.describe('Receipt-gated supply runs', () => {
         mileage.push({ id: _newId(), date: todayKey(), miles: 4, pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', created_at: new Date().toISOString() });
         document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
         _supplyRunScan(encodeURIComponent(key));
-        await new Promise(r => setTimeout(r, 200));
         document.getElementById('qe-amount').value = '84.12';
         const before = expenses.length;
         saveQuickExpense(null);
@@ -245,7 +245,6 @@ test.describe('Receipt-gated supply runs', () => {
         mileage.push({ id: _newId(), date: todayKey(), miles: 4, pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', created_at: new Date().toISOString() });
         document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
         _supplyRunScan(encodeURIComponent(key));
-        await new Promise(r => setTimeout(r, 200));
         // Back out, then log a completely unrelated expense the plain way.
         document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
         showQuickExpenseModal(null, null);

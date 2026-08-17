@@ -1389,16 +1389,20 @@ function _supplyRunScan(k){
   const key=decodeURIComponent(k);
   if(typeof showQuickExpenseModal!=='function')return;
   showQuickExpenseModal(null,null);
-  setTimeout(()=>{
-    const m=document.querySelector('.zmodal-overlay .zmodal');
-    if(!m)return;
-    const h=document.createElement('input');
-    h.type='hidden';h.id='qe-supply-run';h.value=key;
-    m.appendChild(h);
-    const v=document.getElementById('qe-vendor');
-    const store=key.split('|').slice(1).join('|');
-    if(v&&!v.value&&store)v.value=store;
-  },120);
+  // The modal is built synchronously (finance.js appends it before returning),
+  // so the key rides in immediately. This used to wait on a 120ms timer, which
+  // was pure guesswork: a slow WebKit CI runner fired the check before the
+  // timer and found nothing. Newest overlay, not the first: an older stray
+  // modal must never receive the key.
+  const _ovs=document.querySelectorAll('.zmodal-overlay');
+  const m=_ovs.length?_ovs[_ovs.length-1].querySelector('.zmodal'):null;
+  if(!m)return;
+  const h=document.createElement('input');
+  h.type='hidden';h.id='qe-supply-run';h.value=key;
+  m.appendChild(h);
+  const v=m.querySelector('#qe-vendor');
+  const store=key.split('|').slice(1).join('|');
+  if(v&&!v.value&&store)v.value=store;
 }
 // The one tap that settles an unattributed drive. 'truck' moves it into the
 // deduction, 'own' into what the business owes them, 'rider' means they were a
