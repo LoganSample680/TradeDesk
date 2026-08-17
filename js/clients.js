@@ -2874,6 +2874,13 @@ function _cdPropCardHtml(c,a,idx,total){
     // drive, so it gets an amber card with the schedule button right on it.
     // Then what's booked, then the pipeline. Finished work lives in Past work.
     const needsAttention=hist.proposals.filter(b=>!pastBidIds[b.id]&&b.status==='Closed Won'&&!_jobForBid(b));
+    // Fully paid but never closed out (owner report 2026-08-17: "$10,457.50 of
+    // $10,457.50 paid" with the job still upcoming and no way to finish it from
+    // here). The last step of a job is closing it: completion date, warranty
+    // clock, paid invoice to the hub. Green card, it is good news with one tap
+    // left, next to the amber not-scheduled card.
+    const wrapUp=hist.proposals.filter(b=>!pastBidIds[b.id]&&b.status==='Closed Won'&&!b.completion_date&&(b.amount||0)>0
+      &&(typeof getBidPaid==='function'?getBidPaid(b.id):0)>=(b.amount||0)-0.01&&_jobForBid(b));
     const openJobs=hist.jobs.filter(j=>!pastJobIds[j.id]&&!(j.bid_id&&pastBidIds[j.bid_id])&&j.status!=='canceled'&&!_jobDone(j))
       .sort((x,y)=>String(x.start||'').localeCompare(String(y.start||'')));
     const pipeline=hist.proposals.filter(b=>!pastBidIds[b.id]&&b.status!=='Closed Won'&&!needsAttention.includes(b))
@@ -2889,7 +2896,19 @@ function _cdPropCardHtml(c,a,idx,total){
         ${money?`<div style="font-size:14px;font-weight:800;color:var(--text);flex-shrink:0">${fmt(b.amount||0)}</div>`:''}
       </div>
       <button onclick="event.stopPropagation();schedFromBid(${b.id})" class="btn btn-p" style="margin-top:9px;padding:9px 14px;font-size:12.5px;font-weight:800">Put it on the calendar</button>
-    </div>`).join('');
+    </div>`).join('')
+    +wrapUp.map(b=>{
+      const _wj=hist.jobs.find(j=>j.bid_id===b.id)||hist.jobs.find(j=>!j.bid_id&&j.client_id===b.client_id&&(j.name||'')===(b.name||''));
+      return `<div style="border:1px solid #BFDCC9;background:#F4FBF7;border-radius:10px;padding:11px 12px;margin-bottom:8px">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:800;color:var(--text)">${escHtml(b.type||b.name||'Job')}</div>
+          <div style="font-size:11.5px;color:var(--green-mid);font-weight:700;margin-top:2px">Paid in full · job never closed out</div>
+        </div>
+        ${money?`<div style="font-size:14px;font-weight:800;color:var(--text);flex-shrink:0">${fmt(b.amount||0)}</div>`:''}
+      </div>
+      ${_wj?`<button onclick="event.stopPropagation();markJobDone(${_wj.id})" class="btn btn-p" style="margin-top:9px;padding:9px 14px;font-size:12.5px;font-weight:800;background:var(--green-mid);border-color:var(--green-mid)">Close it out</button>`:''}
+    </div>`;}).join('');
     const jobRow=j=>{
       // A job created from a proposal carries no value of its own, so showing
       // its own 0 next to a signed contract reads as free work: fall back.

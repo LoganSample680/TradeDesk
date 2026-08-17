@@ -1988,6 +1988,31 @@ function renderTodayFeed(){
     const depositRequired=(b.deposit||0)>0;
     const depositPaid=!depositRequired||getBidPaid(b.id)>0;
     const hasJob=jobs.some(j=>(j.bid_id===b.id||(j.client_id===b.client_id&&!j.bid_id))&&j.eventType!=='estimate');
+    // PAID IN FULL but never closed out (owner report 2026-08-17: a job fully
+    // paid, still "upcoming" on the calendar, and NOTHING anywhere said "wrap
+    // it up"; the close lived only on the proposal card). Closing is the last
+    // money step: it stamps the completion date, starts the warranty clock,
+    // and files the paid invoice to the client hub, so it belongs in the feed.
+    if(hasJob&&getBidBalance(b)<=0.01&&(b.amount||0)>0){
+      const _wj=jobs.find(j=>j.bid_id===b.id&&j.eventType!=='estimate')||jobs.find(j=>j.client_id===b.client_id&&!j.bid_id&&j.eventType!=='estimate');
+      if(_wj){
+        const _wc=getClientById(b.client_id);
+        finalPayItems.push(
+          '<div class="tf-card">'+
+            '<div class="tf-icon">'+svgIcon('🏁',{size:18})+'</div>'+
+            '<div class="tf-body">'+
+              '<div class="tf-name">'+escHtml(_wc?_wc.name:b.client_name||'Client')+'</div>'+
+              _mmtAddrLine(b,_wc)+
+              '<div class="tf-sub" style="color:var(--green-mid)">'+_mmtAmt(b.amount)+' paid in full · job never closed out</div>'+
+            '</div>'+
+            '<div class="tf-acts">'+
+              '<button onclick="markJobDone('+_wj.id+')" class="btn btn-sm btn-g" style="font-size:11px">Close it out →</button>'+
+            '</div>'+
+          '</div>'
+        );
+      }
+      return;
+    }
     if(hasJob&&depositPaid)return;
     const c=getClientById(b.client_id);
     const cDisp=c?c.name:b.client_name||b.name||'Client';

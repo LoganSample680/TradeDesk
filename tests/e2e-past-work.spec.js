@@ -224,6 +224,80 @@ test.describe('Past work rows + what-we-used capture', () => {
     expect(r.after).toBe(0);
   });
 
+  // Owner report 2026-08-17: a job fully paid, still "upcoming", and nothing
+  // anywhere said "close it out". Both surfaces must say it now.
+  test('paid in full but never closed: the property card says so with the button', async () => {
+    const r = await page.evaluate((cid) => {
+      const c = { id: cid + 10, name: 'Wrap Co', addr: '20 Wrap St, Topeka, KS 66604' };
+      clients = clients.filter(x => x.id !== cid + 10).concat([c]);
+      bids = bids.filter(b => b.client_id !== cid + 10).concat([
+        { id: 981260, client_id: c.id, name: 'Big', type: 'Whole house', addr: c.addr, amount: 10457.50, status: 'Closed Won', bid_date: '2026-08-01' },
+      ]);
+      jobs = jobs.filter(j => j.client_id !== cid + 10).concat([
+        { id: 981360, client_id: c.id, bid_id: 981260, name: 'Big', addr: c.addr, value: 0, status: 'upcoming', start: '2026-08-09' },
+      ]);
+      payments = payments.filter(p => p.client_id !== cid + 10).concat([
+        { id: 981460, client_id: c.id, bid_id: 981260, amount: 10457.50, date: '2026-08-10' },
+      ]);
+      currentClientId = c.id;
+      openClientDetail(c.id);
+      const html = document.getElementById('cd-addresses-list')?.innerHTML || '';
+      return { card: /job never closed out/.test(html), btn: /markJobDone\(981360\)/.test(html) };
+    }, CID);
+    expect(r.card).toBe(true);
+    expect(r.btn).toBe(true);
+  });
+
+  test('paid in full but never closed: the dashboard Collect section carries it', async () => {
+    const r = await page.evaluate((cid) => {
+      // Fixtures from the previous test may have been re-seeded; ensure them.
+      const c = { id: cid + 10, name: 'Wrap Co', addr: '20 Wrap St, Topeka, KS 66604' };
+      clients = clients.filter(x => x.id !== cid + 10).concat([c]);
+      bids = bids.filter(b => b.client_id !== cid + 10).concat([
+        { id: 981260, client_id: c.id, name: 'Big', type: 'Whole house', addr: c.addr, amount: 10457.50, status: 'Closed Won', bid_date: '2026-08-01' },
+      ]);
+      jobs = jobs.filter(j => j.client_id !== cid + 10).concat([
+        { id: 981360, client_id: c.id, bid_id: 981260, name: 'Big', addr: c.addr, value: 0, status: 'upcoming', start: '2026-08-09' },
+      ]);
+      payments = payments.filter(p => p.client_id !== cid + 10).concat([
+        { id: 981460, client_id: c.id, bid_id: 981260, amount: 10457.50, date: '2026-08-10' },
+      ]);
+      // Sections render collapsed by default (§10.6): expand Collect or the
+      // card is not in the innerHTML at all.
+      window._mmtCol_collect = false;
+      renderTodayFeed();
+      const html = document.getElementById('dash-money-feed')?.innerHTML || '';
+      return { card: /never closed out/.test(html), btn: /markJobDone\(981360\)/.test(html) };
+    }, CID);
+    expect(r.card).toBe(true);
+    expect(r.btn).toBe(true);
+  });
+
+  test('a balance still owed never shows the close-out card', async () => {
+    const r = await page.evaluate((cid) => {
+      const c = { id: cid + 11, name: 'Owe2 Co', addr: '22 Owe St, Topeka, KS 66604' };
+      clients = clients.filter(x => x.id !== cid + 11).concat([c]);
+      bids = bids.filter(b => b.client_id !== cid + 11).concat([
+        { id: 981270, client_id: c.id, name: 'B', type: 'Deck', addr: c.addr, amount: 5000, status: 'Closed Won', bid_date: '2026-08-01' },
+      ]);
+      jobs = jobs.filter(j => j.client_id !== cid + 11).concat([
+        { id: 981370, client_id: c.id, bid_id: 981270, name: 'B', addr: c.addr, value: 0, status: 'upcoming', start: '2026-08-09' },
+      ]);
+      payments = payments.filter(p => p.client_id !== cid + 11).concat([
+        { id: 981470, client_id: c.id, bid_id: 981270, amount: 1000, date: '2026-08-10' },
+      ]);
+      currentClientId = c.id;
+      openClientDetail(c.id);
+      const prop = document.getElementById('cd-addresses-list')?.innerHTML || '';
+      window._mmtCol_collect = false;
+      renderTodayFeed();
+      const dash = document.getElementById('dash-money-feed')?.innerHTML || '';
+      return { prop: /job never closed out/.test(prop), dash: /markJobDone\(981370\)/.test(dash) };
+    }, CID);
+    expect(r.prop).toBe(false);
+    expect(r.dash).toBe(false);
+  });
+
   test('empty add is rejected and corrupt specUsed never crashes the card', async () => {
     const r = await page.evaluate((cid) => {
       const c = { id: cid + 5, name: 'Edge Co', addr: '6 Edge St, Topeka, KS 66604' };
