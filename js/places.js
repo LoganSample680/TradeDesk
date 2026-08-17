@@ -132,6 +132,33 @@ function _expenseVendorMatches(vendor,name){
   if(a.length<3||b.length<3)return false;
   return a===b||a.indexOf(b)>=0||b.indexOf(a)>=0;
 }
+// The map's Expenses layer used to fall back to the live GPS fix (where the
+// receipt was LOGGED) for anything not tied to a job, which put a lot of
+// contractors' own houses on their own map (receipts get done in the truck
+// at 5pm, or Sunday at the kitchen table, same reason expenseForStop above
+// can't trust geo for a late receipt). Resolve the vendor's real location
+// instead, in order: an already-confirmed supply house (places, no network
+// call, a contractor already vetted it), else an Apple Maps business-name
+// search (_resolveCoords, the same one address geocoding already uses)
+// biased to the business's home area. Written to vendorLat/vendorLon, kept
+// separate from lat/lon on purpose: lat/lon stays the live fix expenseAt()
+// and mileage.js's detour matching depend on.
+async function _expenseVendorGeocode(){
+  if(typeof expenses==='undefined')return false;
+  let filled=false;
+  for(const e of expenses){
+    if(!e||e.job_id||e.vendorLat!=null||!e.vendor)continue;
+    const known=(places||[]).find(pl=>pl.lat!=null&&pl.lon!=null&&_expenseVendorMatches(e.vendor,pl.name));
+    if(known){e.vendorLat=known.lat;e.vendorLon=known.lon;filled=true;continue;}
+    if(typeof _resolveCoords!=='function')continue;
+    try{
+      const r=await _resolveCoords(e.vendor);
+      if(r&&r.lat!=null){e.vendorLat=r.lat;e.vendorLon=r.lng;filled=true;}
+    }catch(_e){}
+  }
+  if(filled&&typeof saveAll==='function')saveAll();
+  return filled;
+}
 // Did the contractor buy something for the business at this stop? Two signals,
 // and it takes only one, because they answer at different times:
 //
@@ -309,15 +336,21 @@ function geoFeed(opts){
   };
   // Expenses keep their own lat/lon as a live GPS fix (supply-house detection
   // in places.js expenseAt() and mileage.js's detour-receipt matching both
-  // depend on it staying that way). But a receipt logged for a JOB should
-  // plot on this map at the job site, not wherever the paperwork got done,
-  // so prefer the linked job's address-geocoded coords when one exists.
+  // depend on it staying that way). But a receipt shouldn't plot at wherever
+  // the paperwork got done (often home, on the couch that night, owner
+  // 2026-08-17), so prefer, in order: the linked job's address-geocoded
+  // coords, then the vendor's own geocoded coords (_expenseVendorGeocode),
+  // and only fall back to the live GPS fix when neither is known.
   (expenses||[]).forEach(r=>{
     const linkedJob=r.job_id&&typeof jobs!=='undefined'?jobs.find(j=>j.id===r.job_id):null;
     const atJob=linkedJob&&linkedJob.lat!=null&&linkedJob.lon!=null;
-    const lat=atJob?linkedJob.lat:r.lat,lon=atJob?linkedJob.lon:r.lon;
+    const atVendor=!atJob&&r.vendorLat!=null&&r.vendorLon!=null;
+    let lat,lon;
+    if(atJob){lat=linkedJob.lat;lon=linkedJob.lon;}
+    else if(atVendor){lat=r.vendorLat;lon=r.vendorLon;}
+    else{lat=r.lat;lon=r.lon;}
     if(lat==null||lon==null)return;
-    if(!atJob&&r.geoAcc!=null&&r.geoAcc>PLACE_MAX_ACC_M)return;
+    if(!atJob&&!atVendor&&r.geoAcc!=null&&r.geoAcc>PLACE_MAX_ACC_M)return;
     out.push({type:'expense',id:r.id,lat,lon,date:r.date,label:r.vendor||'Expense',amount:r.amount});
   });
   push(jobs,'job',r=>r.client_name||r.name||'Job','start');
@@ -364,6 +397,19 @@ const _GEO_MAP_STYLE={
 function toggleGeoMapType(t){
   _geoMapTypes=_geoMapTypes.includes(t)?_geoMapTypes.filter(x=>x!==t):_geoMapTypes.concat(t);
   renderGeoMap();
+}
+// Entry point when the tracker's Map tab is opened. Paints immediately with
+// whatever is already known, then resolves any un-geocoded receipt vendors
+// and repaints once, never a spinner in front of a map (CLAUDE.md 8.3).
+let _geoMapVendorLoading=false;
+function openGeoMap(){
+  renderGeoMap();
+  if(_geoMapVendorLoading||typeof _expenseVendorGeocode!=='function')return;
+  _geoMapVendorLoading=true;
+  _expenseVendorGeocode().catch(()=>false).then(()=>{
+    _geoMapVendorLoading=false;
+    renderGeoMap();
+  });
 }
 function _geoMapKitReady(){
   return typeof mapkit!=='undefined'&&typeof _mapkitReady!=='undefined'&&_mapkitReady;

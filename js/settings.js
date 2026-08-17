@@ -958,8 +958,7 @@ function clearLogoSetting(){
 // Crew "today"/contractor labor isn't a local store, it's cloud time-tracking
 // (job_time_entries + shop_time_entries) and raw GPS (location_pings), keyed by
 // contractor_user_id. "Clear all data" hard-deletes those so the Crew Today tile
-// empties too. team_members (the crew roster / invited accounts) is deliberately
-// left intact, that's identity, not tracking, and wiping it would break invites.
+// empties too.
 async function _clearCrewTrackingCloud(){
   if(typeof supaEnabled!=='function'||!supaEnabled()||typeof _supa==='undefined'||!_supa||!_supaUser)return;
   const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
@@ -967,8 +966,22 @@ async function _clearCrewTrackingCloud(){
     try{await _supa.from(t).delete().eq('contractor_user_id',cid);}catch(_e){}
   }
 }
+// team_members (the crew roster) used to be left intact on purpose ("that's
+// identity, not tracking"), but "start fresh" reads as start fresh: a
+// contractor who clears everything does not expect their invited crew to
+// silently survive it (owner, 2026-08-17, after a stale link outlived a
+// clear and kept routing test writes to their real account). Scoped to rows
+// THIS account owns as contractor (RLS only allows a contractor to delete
+// their own roster, never someone else's), so this is a no-op for an
+// employee clearing their own local data, they cannot unlink themselves from
+// an employer's roster, only the employer can, same as removing them by hand
+// in Team settings. crew_invites cascade-delete with their team_members row.
+async function _clearTeamLinksCloud(){
+  if(typeof supaEnabled!=='function'||!supaEnabled()||typeof _supa==='undefined'||!_supa||!_supaUser)return;
+  try{await _supa.from('team_members').delete().eq('contractor_user_id',_supaUser.id);}catch(_e){}
+}
 function clearAllData(){
-  zConfirm('This will permanently delete ALL clients, proposals, jobs, income, expenses, and mileage. This cannot be undone.',()=>{
+  zConfirm('This will permanently delete ALL clients, proposals, jobs, income, expenses, mileage, and your invited team. This cannot be undone.',()=>{
     zConfirm('Last chance, are you absolutely sure you want to delete everything?',async()=>{
       // Deliberate wipe, bypass supaSaveToCloud's accidental-wipe sanity guard so the
       // soft-delete actually reaches the cloud (otherwise the cleared rows, e.g. the
@@ -999,6 +1012,7 @@ function clearAllData(){
       try{ if(typeof _flushSaveNow==='function') await _flushSaveNow(); }catch(_e){}
       if(typeof _setDeliberateWipe==='function')_setDeliberateWipe(false);
       await _clearCrewTrackingCloud();
+      await _clearTeamLinksCloud();
       // Inbound QR/intake leads live in their own cloud table (inbound_leads),
       // outside the sync fabric, so the wipe above never touched them: they
       // re-surfaced in the review queue on the next 30s poll.

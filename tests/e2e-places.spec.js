@@ -363,6 +363,68 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.lon).toBe(-79.5);
   });
 
+  test('geoFeed prefers a resolved vendor location over the expense\'s own GPS fix', async () => {
+    const out = await page.evaluate(() => {
+      const today = todayKey();
+      // Loose fix (would fail the geoAcc floor on its own) logged nowhere near
+      // the store, e.g. receipt done from the truck that night.
+      expenses.push({ id: 65, date: today, vendor: 'Ferguson', amount: 5, lat: 30.0, lon: -70.0, geoAcc: 5000, vendorLat: 41.2, vendorLon: -96.2 });
+      return geoFeed({ types: ['expense'] })[0];
+    });
+    expect(out.lat).toBe(41.2);
+    expect(out.lon).toBe(-96.2);
+  });
+
+  // ── _expenseVendorGeocode: resolve a receipt to the real business, not home ─
+
+  test('_expenseVendorGeocode matches an already-known place first, no network call', async () => {
+    const out = await page.evaluate(async () => {
+      const realResolve = window._resolveCoords;
+      let called = false;
+      window._resolveCoords = async () => { called = true; return { lat: 1, lng: 1 }; };
+      savePlace({ name: 'Ferguson Plumbing Supply', kind: 'supply', lat: 41.5, lon: -96.5 });
+      expenses.push({ id: 70, date: todayKey(), vendor: 'Ferguson', amount: 5, lat: 39.0, lon: -79.0 });
+      await _expenseVendorGeocode();
+      window._resolveCoords = realResolve;
+      const e = expenses.find(x => x.id === 70);
+      return { called, vendorLat: e.vendorLat, vendorLon: e.vendorLon };
+    });
+    expect(out.called).toBe(false);
+    expect(out.vendorLat).toBe(41.5);
+    expect(out.vendorLon).toBe(-96.5);
+  });
+
+  test('_expenseVendorGeocode falls back to a business-name search when no place matches', async () => {
+    const out = await page.evaluate(async () => {
+      const realResolve = window._resolveCoords;
+      window._resolveCoords = async (q) => (q === 'Lowes' ? { lat: 42.0, lng: -95.0 } : null);
+      expenses.push({ id: 71, date: todayKey(), vendor: 'Lowes', amount: 5, lat: 39.0, lon: -79.0 });
+      await _expenseVendorGeocode();
+      window._resolveCoords = realResolve;
+      const e = expenses.find(x => x.id === 71);
+      return { vendorLat: e.vendorLat, vendorLon: e.vendorLon };
+    });
+    expect(out.vendorLat).toBe(42.0);
+    expect(out.vendorLon).toBe(-95.0);
+  });
+
+  test('_expenseVendorGeocode skips job-linked and already-resolved expenses', async () => {
+    const out = await page.evaluate(async () => {
+      const realResolve = window._resolveCoords;
+      let calls = 0;
+      window._resolveCoords = async () => { calls++; return { lat: 9, lng: 9 }; };
+      expenses.push({ id: 72, date: todayKey(), vendor: 'Skip Job', amount: 5, job_id: 999 });
+      expenses.push({ id: 73, date: todayKey(), vendor: 'Skip Resolved', amount: 5, vendorLat: 5, vendorLon: 5 });
+      expenses.push({ id: 74, date: todayKey(), vendor: '', amount: 5 });
+      await _expenseVendorGeocode();
+      window._resolveCoords = realResolve;
+      return { calls, e72: expenses.find(x => x.id === 72).vendorLat, e73: expenses.find(x => x.id === 73).vendorLat };
+    });
+    expect(out.calls).toBe(0);
+    expect(out.e72).toBeUndefined();
+    expect(out.e73).toBe(5);
+  });
+
   // ── The map renders ───────────────────────────────────────────────────────
 
   test('the map renders a dot per point and an empty state with none', async () => {
@@ -396,6 +458,25 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.hasDot).toBe(true);
     // A zero-span bounding box is the obvious crash here.
     expect(out.hasNaN).toBe(false);
+  });
+
+  test('openGeoMap paints immediately, then repaints once vendor resolution lands', async () => {
+    const out = await page.evaluate(async () => {
+      const realResolve = window._resolveCoords;
+      window._resolveCoords = async () => { await new Promise(r => setTimeout(r, 20)); return { lat: 44.0, lng: -93.0 }; };
+      expenses.push({ id: 80, date: todayKey(), vendor: 'Late Night Receipt', amount: 5, lat: 39.0, lon: -79.0, geoAcc: 10 });
+      openGeoMap();
+      const immediateHtml = document.getElementById('tr-map-body').innerHTML;
+      await new Promise(r => setTimeout(r, 80));
+      window._resolveCoords = realResolve;
+      const e = expenses.find(x => x.id === 80);
+      return {
+        paintedImmediately: /maps\?q=/.test(immediateHtml),
+        vendorResolved: e.vendorLat === 44.0,
+      };
+    });
+    expect(out.paintedImmediately).toBe(true);
+    expect(out.vendorResolved).toBe(true);
   });
 
   test('the type filter toggles points off and back on', async () => {

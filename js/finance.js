@@ -1879,7 +1879,7 @@ function setTrTab(tab,btn){
   if(tab==='jobs')renderJobsHistory();
   if(tab==='summary'){renderSummary();renderJobSummary();renderMonthlyPL();}
   if(tab==='hiring')renderHiringCalc();
-  if(tab==='map'&&typeof renderGeoMap==='function')renderGeoMap();
+  if(tab==='map'&&typeof openGeoMap==='function')openGeoMap();
 }
 function getTrackerYears(){
   const allDates=[
