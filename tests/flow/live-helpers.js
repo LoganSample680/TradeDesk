@@ -19,7 +19,28 @@
 //   E2E_DEV_USER_ID    the auth user id (contractor_user_id) cleanup is locked to
 // ─────────────────────────────────────────────────────────────────────────────
 
-const DEV_EMAIL = process.env.E2E_DEV_EMAIL || '';
+const RAW_DEV_EMAIL = process.env.E2E_DEV_EMAIL || '';
+const RAW_DEV_PASSWORD = process.env.E2E_DEV_PASSWORD || '';
+const RAW_DEV_USER_ID = process.env.E2E_DEV_USER_ID || '';
+const RAW_DEV2_EMAIL = process.env.E2E_DEV2_EMAIL || '';
+const RAW_DEV2_PASSWORD = process.env.E2E_DEV2_PASSWORD || '';
+const RAW_DEV2_USER_ID = process.env.E2E_DEV2_USER_ID || '';
+// ── DEV2 promotes to PRIMARY the moment DEV1 is unset (owner 2026-08-17: the
+// E2E_DEV_* secret was deleted after it turned out to point at the owner's
+// personal login; E2E_DEV2_* is now THE dedicated test account, not a second
+// one). Every consumer below reads DEV_EMAIL/DEV_PASSWORD/DEV_USER_ID, so this
+// is the one place that decides which secret triplet is primary.
+const _dev1Present = !!(RAW_DEV_EMAIL && RAW_DEV_PASSWORD && RAW_DEV_USER_ID);
+const _dev2Raw = !!(RAW_DEV2_EMAIL && RAW_DEV2_PASSWORD && RAW_DEV2_USER_ID);
+const DEV_EMAIL = _dev1Present ? RAW_DEV_EMAIL : RAW_DEV2_EMAIL;
+const DEV_PASSWORD = _dev1Present ? RAW_DEV_PASSWORD : RAW_DEV2_PASSWORD;
+const DEV_USER_ID = _dev1Present ? RAW_DEV_USER_ID : RAW_DEV2_USER_ID;
+// True only when DEV2 is a genuinely SEPARATE identity from primary (DEV1
+// also present). Once DEV2 has been promoted to fill the primary role (DEV1
+// absent), treating it as ALSO "the second account" would pair an identity
+// with itself everywhere two-account logic assumes two DISTINCT users (the
+// account-per-browser split, the worker pool, accountPair()).
+const _dev2IsDistinct = _dev1Present && _dev2Raw;
 // ── Owner mandate (2026-08-07): the owner's personal login is OFF LIMITS ────
 // logansample97@gmail.com is reserved for the owner's real-life manual
 // testing. Flow tests must NEVER authenticate as it again, whatever the E2E_*
@@ -38,26 +59,26 @@ function assertAllowedTestAccount(email) {
 }
 // ── ACCOUNT-PER-BROWSER SPLIT (cloud mode) ──────────────────────────────────
 // The full suite runs chromium + webkit in parallel; with BOTH browsers cold-
-// signing into the same shared Dev A account, they contend for the same rows
-// and the same account-wide save/load serialization, the 20-minute wall time
-// and the sign-in-under-load timeouts. Split the load: webkit keeps Dev A
-// (E2E_DEV_*), chromium uses Dev B (E2E_DEV2_*) when those creds exist.
-// Graceful: without DEV2 creds every browser falls back to Dev A (unchanged).
+// signing into the same shared primary account, they contend for the same
+// rows and the same account-wide save/load serialization, the 20-minute wall
+// time and the sign-in-under-load timeouts. Split the load: webkit keeps the
+// primary, chromium uses the second account when one is genuinely distinct
+// from primary (_dev2IsDistinct — false now that DEV2 IS primary, so both
+// browsers correctly share the one dedicated test account instead of one of
+// them silently double-booking it under a different name).
 // Two-account specs (accountPair) are unaffected, they resolve A+B explicitly.
-// Note: env-dependent specs self-skip where Dev B lacks prerequisites (Stripe
-// connect, intake profile); webkit/Dev A retains that coverage.
+// Note: env-dependent specs self-skip where the second account lacks
+// prerequisites (Stripe connect, intake profile); webkit/primary retains that
+// coverage.
 function cloudAccountFor(browserName) {
-  const e2 = process.env.E2E_DEV2_EMAIL, p2 = process.env.E2E_DEV2_PASSWORD, u2 = process.env.E2E_DEV2_USER_ID;
-  if (browserName === 'chromium' && e2 && p2) {
-    return { email: e2, password: p2, uid: u2 || '' };
+  if (browserName === 'chromium' && _dev2IsDistinct) {
+    return { email: RAW_DEV2_EMAIL, password: RAW_DEV2_PASSWORD, uid: RAW_DEV2_USER_ID };
   }
-  return { email: DEV_EMAIL, password: process.env.E2E_DEV_PASSWORD || '', uid: process.env.E2E_DEV_USER_ID || '' };
+  return { email: DEV_EMAIL, password: DEV_PASSWORD, uid: DEV_USER_ID };
 }
 function pageBrowserName(page) {
   try { return page.context().browser().browserType().name(); } catch (_e) { return ''; }
 }
-const DEV_PASSWORD = process.env.E2E_DEV_PASSWORD || '';
-const DEV_USER_ID = process.env.E2E_DEV_USER_ID || '';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LOCAL-STACK per-worker account isolation (GATED on E2E_LOCAL_STACK==='1').
@@ -133,8 +154,10 @@ function crewPool() {
 const CLOUD_POOL = (() => {
   const p = [];
   if (DEV_EMAIL && DEV_PASSWORD && DEV_USER_ID) p.push({ email: DEV_EMAIL, password: DEV_PASSWORD, uid: DEV_USER_ID });
-  const e2 = process.env.E2E_DEV2_EMAIL, p2 = process.env.E2E_DEV2_PASSWORD, u2 = process.env.E2E_DEV2_USER_ID;
-  if (e2 && p2 && u2) p.push({ email: e2, password: p2, uid: u2 });
+  // Only a genuinely distinct DEV2 extends the pool. Once DEV2 has been
+  // promoted to primary (DEV1 absent), it's already the one entry above —
+  // pushing it again would list the same account twice.
+  if (_dev2IsDistinct) p.push({ email: RAW_DEV2_EMAIL, password: RAW_DEV2_PASSWORD, uid: RAW_DEV2_USER_ID });
   return p;
 })();
 
@@ -159,8 +182,10 @@ function accountPair() {
   if (local.length >= 2) return [local[0], local[1]];
   const cloud = [];
   if (DEV_EMAIL && DEV_PASSWORD && DEV_USER_ID) cloud.push({ email: DEV_EMAIL, password: DEV_PASSWORD, uid: DEV_USER_ID });
-  const e2 = process.env.E2E_DEV2_EMAIL, p2 = process.env.E2E_DEV2_PASSWORD, u2 = process.env.E2E_DEV2_USER_ID;
-  if (e2 && p2 && u2) cloud.push({ email: e2, password: p2, uid: u2 });
+  // Same rule as CLOUD_POOL: DEV2 only extends this to a real pair when it's
+  // genuinely distinct from primary. Promoted-to-primary DEV2 is already the
+  // one entry above, not a second identity to pair against itself.
+  if (_dev2IsDistinct) cloud.push({ email: RAW_DEV2_EMAIL, password: RAW_DEV2_PASSWORD, uid: RAW_DEV2_USER_ID });
   return cloud.length >= 2 ? [cloud[0], cloud[1]] : null;
 }
 // Whether the Cloudflare-bypass header secret is configured in this CI run.
