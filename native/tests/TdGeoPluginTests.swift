@@ -41,20 +41,33 @@ final class TdGeoPluginTests: XCTestCase {
     /// resolves from (main, per every method's DispatchQueue.main.async), so
     /// callers always synchronize through an XCTestExpectation, never a bare
     /// assertion racing the async resolve.
+    ///
+    /// successHandler is (CAPPluginCallResult, CAPPluginCall) -> Void and
+    /// errorHandler is (CAPPluginCallError) -> Void (CAPPluginCall.h), not
+    /// the raw dictionary/string closures older Capacitor docs show.
     func makeCall(
+        method: String = "test",
         options: [String: Any] = [:],
         onSuccess: @escaping ([String: Any]?) -> Void = { _ in },
         onError: @escaping (String) -> Void = { msg in XCTFail("unexpected reject: \(msg)") }
     ) -> CAPPluginCall {
         CAPPluginCall(
             callbackId: "test-\(UUID().uuidString)",
+            methodName: method,
             options: options,
-            success: { data, _ in onSuccess(data) },
-            error: { message, _ in onError(message) }
+            success: { result, _ in onSuccess(result?.data) },
+            error: { error in onError(error?.message ?? "(no error message)") }
         )
     }
 
-    func region(_ id: String, lat: Double = 37.6889, lng: Double = -97.3361, radius: Double = 200) -> [String: Any] {
+    // Must return JSObject ([String: JSValue]), not a plain [String: Any].
+    // getArray("regions") -> JSArray requires each element to actually
+    // satisfy Dictionary's `JSValue where Value == JSValue` conformance, a
+    // [String: Any] element fails that cast silently at runtime (armed
+    // comes back 0, no compiler error), the exact false-negative this test
+    // suite exists to catch elsewhere, so the helper itself has to get it
+    // right first.
+    func region(_ id: String, lat: Double = 37.6889, lng: Double = -97.3361, radius: Double = 200) -> JSObject {
         ["id": id, "lat": lat, "lng": lng, "radius": radius]
     }
 
@@ -62,7 +75,11 @@ final class TdGeoPluginTests: XCTestCase {
 
     func testStartParked_missingFieldsAreSkippedNotCrashed() {
         let exp = expectation(description: "startParked")
-        let regions: [[String: Any]] = [
+        // [JSObject], not [[String: Any]]: see the comment on region() above,
+        // an [String: Any] element silently fails the plugin's own getArray
+        // cast, which would make this test pass for the wrong reason (0
+        // armed, "only 1 should arm" trivially true because none did).
+        let regions: [JSObject] = [
             region("valid-1"),
             ["id": "no-lat", "lng": -97.0, "radius": 200],       // missing lat
             ["lat": 37.0, "lng": -97.0, "radius": 200],          // missing id
