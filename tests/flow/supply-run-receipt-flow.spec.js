@@ -312,6 +312,29 @@ test.describe('Receipt-gated supply runs: hold, dashboard accordion, three doors
       p.locator('#dash-supply-hold .td-supply-store').filter({ has: p.locator('.name', { hasText: storeName }) })
         .locator('.td-supply-visit button', { hasText: label }).first();
 
+    // _renderDashSupplyHold() always computes which store is "open" fresh off
+    // array index (dashboard.js: idx===0?' open':''), it never remembers a
+    // manual toggle. This account carries 40+ mileage rows with live realtime
+    // sync, and renderDash() fires from a dozen call sites in mileage.js on
+    // every save/echo, so a background re-render between opening a store and
+    // clicking inside it can rebuild the accordion CLOSED again, stranding
+    // Playwright's click on stale coordinates (the header intercepts it).
+    // Re-open and retry instead of assuming the DOM holds still.
+    const clickDoor = async (p, storeName, label) => {
+      let n = 0;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        n += await openStore(p, storeName);
+        try {
+          await doorButton(p, storeName, label).click({ timeout: 4000 });
+          return n + 1;
+        } catch (e) {
+          if (attempt === 3) throw e;
+          await p.waitForTimeout(400);
+        }
+      }
+      return n;
+    };
+
     // ── 5. Door 1, Personal: the held rows are gone from Postgres entirely ─
     await step(page, {
       label: 'tap Personal on EACH visit nested under supply house A', page: 'pg-dash', role: 'contractor',
@@ -319,15 +342,14 @@ test.describe('Receipt-gated supply runs: hold, dashboard accordion, three doors
       ruleText: 'Personal must delete the held rows from td_mileage entirely (both nested visits), and the deletion must survive a real round-trip',
       expected: `no td_mileage row to "${nameA}" remains`,
       act: async (p) => {
-        let n = await openStore(p, nameA);
+        let n = 0;
         // A carries TWO nested visits (today's real leg + the seeded day-2
         // one). Resolve them one at a time, oldest first, exactly as a real
         // user working through the open accordion would.
         for (let guard = 0; guard < 5; guard++) {
-          const btn = doorButton(p, nameA, 'Personal');
-          if (!(await btn.count())) break;
-          await btn.first().click({ timeout: 8000 });
-          n += 1;
+          await openStore(p, nameA);
+          if (!(await doorButton(p, nameA, 'Personal').count())) break;
+          n += await clickDoor(p, nameA, 'Personal');
           await p.waitForTimeout(1200);
         }
         return n;
@@ -350,9 +372,7 @@ test.describe('Receipt-gated supply runs: hold, dashboard accordion, three doors
       ruleText: 'No receipt must commit the row as business (noReceipt flag) and it must still be present, not deleted',
       expected: `td_mileage row to "${nameB}" has noReceipt=true, pendingReceipt cleared`,
       act: async (p) => {
-        let n = await openStore(p, nameB);
-        await doorButton(p, nameB, 'No receipt').click({ timeout: 8000 });
-        n += 1;
+        let n = await clickDoor(p, nameB, 'No receipt');
         await p.waitForSelector('.zmodal-overlay .zmodal-msg', { state: 'visible', timeout: 6000 });
         const msg = await p.locator('.zmodal-overlay .zmodal-msg').innerText();
         if (!/IRS may disallow/.test(msg)) throw new Error('No receipt did not show the IRS disclaimer: ' + msg);
@@ -382,9 +402,7 @@ test.describe('Receipt-gated supply runs: hold, dashboard accordion, three doors
       expected: `td_mileage row to "${nameC}" has receiptExpenseId set, matching a real td_expenses row`,
       act: async (p) => {
         await p.evaluate(() => { document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove()); });
-        let n = await openStore(p, nameC);
-        await doorButton(p, nameC, 'Scan receipt').click({ timeout: 8000 });
-        n += 1;
+        let n = await clickDoor(p, nameC, 'Scan receipt');
         await p.waitForSelector('#qe-vendor', { state: 'visible', timeout: 8000 });
         const vendorPrefilled = await p.locator('#qe-vendor').inputValue();
         if (vendorPrefilled !== nameC) throw new Error(`vendor not prefilled from the store: got "${vendorPrefilled}"`);
