@@ -152,4 +152,46 @@ test.describe('Clear all data, every store wiped', () => {
     });
     expect(out).toBe(false);
   });
+
+  // ── "Start fresh" also disarms the fence (owner, 2026-08-17) ────────────────
+  //
+  // BUG: stopGeoTracking() is the ONLY function that tears down an armed fence,
+  // native region monitoring included (CoreLocation regions persist across app
+  // kills, per its own sign-out comment), and clearAllData() never called it.
+  // A contractor who clears everything while staying signed in kept an old
+  // client's fence live, "the John Doe geo fence" outliving John Doe himself.
+  // The repeated-stop detector (zp3_place_stops/zp3_place_day_anchor) is also
+  // local-only bookkeeping the synced-array wipe never reaches.
+  test('clearAllData disarms tracking and clears local stop-detection state', async () => {
+    const out = await page.evaluate(async () => {
+      const origConfirm = window.zConfirm, origAlert = window.zAlert;
+      window.zConfirm = (_msg, onYes) => { try { onYes && onYes(); } catch (e) {} };
+      window.zAlert = () => {};
+
+      localStorage.setItem('zp3_place_stops', JSON.stringify([{ lat: 1, lon: 2, n: 3 }]));
+      localStorage.setItem('zp3_place_day_anchor', JSON.stringify({ lat: 1, lon: 2, day: '2026-08-17' }));
+
+      let stopCalled = false, initCalled = false;
+      const origStop = window.stopGeoTracking, origInit = window._geoTrackInit;
+      window.stopGeoTracking = () => { stopCalled = true; };
+      window._geoTrackInit = () => { initCalled = true; };
+
+      clearAllData();
+      await new Promise(r => setTimeout(r, 50));
+
+      window.zConfirm = origConfirm; window.zAlert = origAlert;
+      window.stopGeoTracking = origStop; window._geoTrackInit = origInit;
+      const res = {
+        stopCalled, initCalled,
+        stopsCleared: localStorage.getItem('zp3_place_stops') === null,
+        anchorCleared: localStorage.getItem('zp3_place_day_anchor') === null,
+      };
+      try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
+      return res;
+    });
+    expect(out.stopCalled).toBe(true);
+    expect(out.initCalled).toBe(true);
+    expect(out.stopsCleared).toBe(true);
+    expect(out.anchorCleared).toBe(true);
+  });
 });

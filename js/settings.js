@@ -1005,7 +1005,21 @@ function clearAllData(){
         estLinkedClientId=null;editingBidId=null;
         gps={active:false,startCoords:null,startTime:null,clientId:null,clientName:'',timerInt:null,vehicle:'',purpose:''};
         if(_activeTimer){clearInterval(_activeTimer.timerInterval);_activeTimer=null;hideClockBanner();}
-        hideDriveBanner();saveAll();
+        hideDriveBanner();
+        // Every deleted job/client that had a fence armed (native region
+        // monitoring included) needs that fence disarmed, or it keeps firing
+        // for a client that no longer exists. stopGeoTracking() is the ONLY
+        // function that tears this down (previously sign-out only), so a
+        // "Clear all data" while staying signed in left it fully armed. Restart
+        // cleanly afterward if tracking is still enabled, same as a fresh
+        // sign-in would. _geoJobCoords, _geoCurrentClient etc. are internal to
+        // stopGeoTracking's own reset, not duplicated here.
+        if(typeof stopGeoTracking==='function')stopGeoTracking();
+        // Repeated-stop detection (supply-house learning) is local-only
+        // bookkeeping, never synced, so the array wipe above never touches it.
+        try{localStorage.removeItem('zp3_place_stops');localStorage.removeItem('zp3_place_day_anchor');}catch(_e){}
+        if(typeof _geoTrackInit==='function')_geoTrackInit();
+        saveAll();
       });
       // AWAIT the flush so the soft-delete lands in the cloud BEFORE we re-render or any
       // realtime reload fires, this is what stops the cleared rows from re-hydrating.
