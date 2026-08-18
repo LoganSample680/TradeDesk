@@ -80,6 +80,25 @@ function pageBrowserName(page) {
   try { return page.context().browser().browserType().name(); } catch (_e) { return ''; }
 }
 
+// ── TEST FLEET (owner ask 2026-08-18): 25 linked personas on ONE inbox ───────
+// Gmail plus-aliasing: user+tag@gmail.com is one INBOX to Google but a distinct
+// auth user to Supabase. fleetAcct(8) → <dev2-user>+t08@<domain> with the shared
+// fleet password (DEV2's own password, so no new secret to provision). The
+// personas and their links are declared and seeded by tests/flow/fleet-seed.spec.js
+// (idempotent, run on demand); feature specs then just signIn(page, fleetAcct(n)).
+// uid is null here on purpose: fleet uids are discovered live after sign-in
+// (_supaUser.id), never hardcoded, so re-creating the fleet on a fresh backend
+// needs zero manifest maintenance.
+function fleetAcct(n) {
+  const base = RAW_DEV2_EMAIL || DEV_EMAIL || '';
+  const pw = RAW_DEV2_PASSWORD || DEV_PASSWORD || '';
+  if (!base || !pw || !base.includes('@')) return null;
+  const [user, domain] = base.split('@');
+  const email = user.split('+')[0] + '+t' + String(n).padStart(2, '0') + '@' + domain;
+  assertAllowedTestAccount(email);
+  return { email, password: pw, uid: null, fleet: true, tag: 't' + String(n).padStart(2, '0') };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // LOCAL-STACK per-worker account isolation (GATED on E2E_LOCAL_STACK==='1').
 //
@@ -700,4 +719,5 @@ module.exports = {
   crewPool,
   workerAccount,
   accountPair,
+  fleetAcct,
 };
