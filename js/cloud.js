@@ -568,7 +568,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.17.26.35';
+const APP_VERSION='08.17.26.36';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -5717,9 +5717,26 @@ async function _probeAndSync(){
     // _mergeOnSignIn is only true after involuntary SIGNED_OUT; after deliberate sign-out
     // the flag stays false, but we still want to re-auth when the backup token is present.
     if(_supa&&!_supaUser&&!_sessionRestoreInProgress){
+      _sessionRestoreInProgress=true;
+      // Try the SDK's own session store FIRST, the same source of truth the boot
+      // retry (initSupa) uses. This tick used to go STRAIGHT to the hand-maintained
+      // zp3_session_backup below and, when that was missing, did nothing at all,
+      // silently, every 5s, forever, a stuck offline boot never had any other way
+      // out (owner report: "had to sign out and back in to fix the loop, shouldn't
+      // have to"). Retrying the real session here means a connectivity blip that
+      // outlasted the boot's own 1.2s retry still gets a second chance every tick.
+      let _gsSession=null;
+      try{_gsSession=(await _supa.auth.getSession()).data.session;}catch(_e){}
+      if(_gsSession){
+        _sessionRestoreInProgress=false;
+        _supaUser=_gsSession.user;
+        _saveSessionBackup(_gsSession);
+        _mergeOnSignIn=false;
+        _onReconnect();
+        return;
+      }
       const _bk=(()=>{try{return JSON.parse(localStorage.getItem('zp3_session_backup')||'null');}catch(_e){return null;}})();
       if(_bk?.access_token&&_bk?.refresh_token){
-        _sessionRestoreInProgress=true;
         _supa.auth.setSession(_bk).then(({data:{session}})=>{
           _sessionRestoreInProgress=false;
           if(!session){
@@ -5741,9 +5758,14 @@ async function _probeAndSync(){
           // Network error during token exchange, don't show login, retry on next probe
           _sessionRestoreInProgress=false;
         });
+        return;
       }
-      // No backup, stay on current screen; don't call supaShowLogin() repeatedly from tick
-      return;
+      // Nothing left to retry: no live session, no backup. Silently ticking here
+      // forever IS the stuck loop, surface the real fix instead of a mute no-op.
+      // supaShowLogin already no-ops if the overlay is already up, so this is safe
+      // to call on every tick, not a repeated interruption.
+      _sessionRestoreInProgress=false;
+      supaShowLogin({force:true});
     }
     _onReconnect();
   }catch(e){if(_isOfflineState())_showOfflineBanner(false);}

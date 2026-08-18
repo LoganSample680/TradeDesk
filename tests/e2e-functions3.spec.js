@@ -3811,6 +3811,73 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // ── Regression: a stuck offline boot with NO recoverable session (no live
+  // getSession() result, no zp3_session_backup) used to make _probeAndSync's 5s
+  // tick a silent, permanent no-op, connectivity was confirmed fine every 5s
+  // forever, but nothing ever told the user their session was actually dead. The
+  // only way out was a manual sign-out/back-in (owner report: "had to sign out
+  // and back in to fix the loop, shouldn't have to"). It must now surface the
+  // real fix (the login prompt) instead of ticking silently.
+  test('_probeAndSync surfaces the login prompt when there is truly nothing left to retry', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _probeAndSync !== 'function') return { skip: true };
+      const saved = { supa: _supa, user: window._supaUser, restoring: window._sessionRestoreInProgress };
+      const origShowLogin = window.supaShowLogin;
+      let shown = 0;
+      window.supaShowLogin = (opts) => { shown++; };
+      try {
+        localStorage.removeItem('zp3_session_backup');
+        _supa = { auth: { getSession: () => Promise.resolve({ data: { session: null } }) } };
+        window._supaUser = null;
+        window._sessionRestoreInProgress = false;
+        await _probeAndSync();
+        return { skip: false, shown };
+      } finally {
+        window.supaShowLogin = origShowLogin;
+        _supa = saved.supa; window._supaUser = saved.user; window._sessionRestoreInProgress = saved.restoring;
+      }
+    });
+    if (r.skip) return;
+    expect(r.shown, 'must surface the login prompt instead of a silent no-op').toBeGreaterThanOrEqual(1);
+  });
+
+  // ── Regression: the tick must try the SDK's own getSession() BEFORE falling
+  // back to the hand-maintained zp3_session_backup, a transient blip that outlasted
+  // the boot's own retry still deserves another shot at the real session, not an
+  // immediate drop to the shadow copy (or worse, straight to "show login").
+  test('_probeAndSync recovers via getSession() directly, without ever touching the session backup', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _probeAndSync !== 'function' || typeof _onReconnect !== 'function') return { skip: true };
+      const saved = {
+        supa: _supa, user: window._supaUser, restoring: window._sessionRestoreInProgress,
+        onReconnect: window._onReconnect,
+      };
+      let reconnected = false, setSessionCalled = false;
+      window._onReconnect = () => { reconnected = true; };
+      try {
+        localStorage.setItem('zp3_session_backup', JSON.stringify({ access_token: 'stale-at', refresh_token: 'stale-rt' }));
+        _supa = {
+          auth: {
+            getSession: () => Promise.resolve({ data: { session: { user: { id: 'recovered-u' } } } }),
+            setSession: () => { setSessionCalled = true; return Promise.resolve({ data: { session: null } }); },
+          },
+        };
+        window._supaUser = null;
+        window._sessionRestoreInProgress = false;
+        await _probeAndSync();
+        return { skip: false, reconnected, setSessionCalled, recoveredUser: window._supaUser?.id };
+      } finally {
+        window._onReconnect = saved.onReconnect;
+        _supa = saved.supa; window._supaUser = saved.user; window._sessionRestoreInProgress = saved.restoring;
+        localStorage.removeItem('zp3_session_backup');
+      }
+    });
+    if (r.skip) return;
+    expect(r.recoveredUser, 'getSession() result must be adopted as the live user').toBe('recovered-u');
+    expect(r.reconnected, 'a recovered session must drive reconnect').toBe(true);
+    expect(r.setSessionCalled, 'the backup path must never be tried once getSession() itself recovers').toBe(false);
+  });
+
   test('supaSaveToCloud: calls without throwing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof supaSaveToCloud !== 'function') return { skip: true };
