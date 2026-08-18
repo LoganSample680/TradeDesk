@@ -603,7 +603,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.17.26.46';
+const APP_VERSION='08.17.26.47';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -6973,11 +6973,17 @@ async function supaLoadFromCloud({silent=false}={}){
   }else{
     if(_syncTimer){try{await _flushSaveNow();}catch(e){}}
     else if(_pendingSavePromise){try{await _pendingSavePromise;}catch(e){}}
-  }  try{
-    const uid=_devSupportMode
-      ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
-      :(_isEmployee?_contractorUserId:_supaUser.id);
-
+  }
+  // Effective account for this load. HOISTED OUT of the try below (it used to be
+  // a const inside it): the catch's cache-owner guard compares against uid, and
+  // block-scoped inside the try it was invisible there, so the guard threw
+  // ReferenceError and the load-failure cache fallback silently painted NOTHING
+  // for every signed-in user (caught by the dual-hat regression test's warn
+  // trace: "Cache load failed: uid is not defined").
+  const uid=_devSupportMode
+    ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
+    :(_isEmployee?_contractorUserId:_supaUser.id);
+  try{
     // ── CURSOR READ-FIRST, the other half of the read-skew fix ──
     // The save writes tables FIRST, cursor LAST ("cursor moved ⇒ all data committed").
     // The load must therefore sample the cursor BEFORE the table snapshot: a stored
