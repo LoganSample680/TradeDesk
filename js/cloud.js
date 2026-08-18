@@ -568,7 +568,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.17.26.34';
+const APP_VERSION='08.17.26.35';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1920,7 +1920,27 @@ async function supaInit(){
     // Surface an OAuth failure to the user once boot settles (after the overlay lifts),
     // so a failed social sign-in reads as an error, not a mysterious not-synced screen.
     if(window._oauthFailMsg){setTimeout(()=>{try{if(typeof showToast==='function')showToast(window._oauthFailMsg,'⚠️',7000);}catch(_e){}window._oauthFailMsg=null;},1200);}
-    const{data:{session}}=await _supa.auth.getSession();
+    let{data:{session}}=await _supa.auth.getSession();
+    // A stored auth token exists but getSession() came back with no session: if the
+    // access token had expired, getSession() just attempted a refresh over the
+    // network, and that attempt itself failed. On a native cold launch right after
+    // the app resumes from a suspended background state, iOS can report the radio
+    // "connected" (full bars) a beat before the network path is actually usable
+    // (DNS/TLS not yet warmed up), so a genuinely valid session can fail this FIRST
+    // check even though the device is really online (owner report: full wifi/cell
+    // bars, offline banner + stale cache anyway, specifically on the TestFlight
+    // shell, exactly the resume-from-background lifecycle event this hits). One
+    // bounded retry after a short beat catches that transient window without
+    // meaningfully slowing down a boot that's genuinely offline (the no-token case
+    // never reaches this branch at all, and a real offline device just fails again).
+    if(!session){
+      let _hadToken=false;
+      try{for(let _i=0;_i<localStorage.length;_i++){const _k=localStorage.key(_i);if(_k&&_k.indexOf('sb-')===0&&_k.indexOf('auth-token')>-1){_hadToken=true;break;}}}catch(_e){}
+      if(_hadToken){
+        await new Promise(r=>setTimeout(r,1200));
+        try{session=(await _supa.auth.getSession()).data.session;}catch(_e){}
+      }
+    }
     if(session){
       _supaUser=session.user;
       _hlcInit(); // PHASE 0 oplog: load this owner's persisted HLC so it can't go backwards across reloads

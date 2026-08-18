@@ -8401,6 +8401,25 @@ test.describe('Version consistency', () => {
       .toContain('_restoreIdentityFromCache');
   });
 
+  // ── Regression: a stored auth token whose access token has expired makes
+  // getSession() attempt a network refresh, and a native cold launch right after
+  // the app resumes from a suspended background state can lose that first race
+  // even on a genuinely online device (iOS reports the radio connected a beat
+  // before the network path is actually usable). Before this fix, getSession()
+  // returning null was a single-shot decision straight into offline/cache mode.
+  // Now a stored-token boot gets one bounded retry first.
+  test('a stored-token boot retries getSession() once before falling back to offline/cache mode', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const cloud = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+    const gs = cloud.indexOf('let{data:{session}}=await _supa.auth.getSession();');
+    expect(gs, 'the boot session check exists').toBeGreaterThan(0);
+    const window_ = cloud.slice(gs, gs + 1500);
+    expect(window_, 'retries getSession() when the first check found nothing').toContain('await _supa.auth.getSession()');
+    expect(window_, 'only retries when a stored token actually exists (never delays a genuine sign-out)').toContain('_hadToken');
+    expect(window_, 'waits a beat before retrying, not an immediate re-check').toMatch(/setTimeout\(r,\s*\d+\)/);
+  });
+
   test('the SDK-less state is never permanent: a retry loop re-injects the SDK and boots live in place', () => {
     // Owner report 2026-08-12, from the truck: the dead boot stayed dead for
     // a whole drive, auto mileage lost. A cached CURRENT version gives the
