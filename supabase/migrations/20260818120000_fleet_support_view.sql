@@ -19,9 +19,11 @@
 
 create or replace function public._fleet_support_caller() returns boolean
 language sql stable security definer set search_path = public, auth as $$
+  -- ::text casts per the hard-learned repo rule (see 20260701): a bare
+  -- uuid-vs-text comparison silently rejects every row on drifted schemas.
   select exists(
     select 1 from auth.users
-    where id = auth.uid() and email = 'tradedeskprosupport@gmail.com'
+    where id::text = auth.uid()::text and email = 'tradedeskprosupport@gmail.com'
   );
 $$;
 
