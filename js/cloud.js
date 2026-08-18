@@ -291,9 +291,44 @@ function _restoreIdentityFromCache(){
 }
 async function loadAccountData(){
   if(!_supa||!_supaUser)return false;
+  // Reset per-login switcher state so a previous account's hats can't leak into
+  // this session's UI (same shared-global reasoning as _isEmployee below).
+  window._hatOwnsBusiness=false;window._hatCrewLinks=[];
   try{
     const{data:u}=await _supa.from('users').select('*').eq('id',_supaUser.id).maybeSingle();
-    if(u&&u.account_id){
+    // ── DUAL-HAT (§9.10 slice 1): crew by day, owner by night, ONE login ──────
+    // The owner row used to win unconditionally, which made an owner login's crew
+    // memberships unreachable (plumber on dad's crew who runs his own landscaping
+    // business at night). Surface the links, and honor a persisted hat choice
+    // (zp3_hat_<uid> = 'owner' | 'crew:<contractor_user_id>', written by
+    // window.switchHat). When the crew hat is chosen, this block only STEERS:
+    // it aims path (1)'s deterministic multi-crew pick at the chosen boss and
+    // falls through to the standard crew-linking flow below, so a dual-hat crew
+    // session takes the exact same code path (permissions, redaction, acct
+    // cache) as a crew-only login and the two can never diverge.
+    const _hatPickCrew=await(async()=>{
+      if(!(u&&u.account_id))return false;
+      window._hatOwnsBusiness=true;
+      let _links=[];
+      try{
+        const{data:_hr}=await _supa.from('team_members').select('contractor_user_id,name,role').eq('employee_user_id',_supaUser.id).eq('active',true);
+        _links=_hr||[];
+      }catch(_e){}
+      window._hatCrewLinks=_links.map(r=>({contractor_user_id:r.contractor_user_id,name:r.name,role:r.role}));
+      let _hat=null;try{_hat=localStorage.getItem('zp3_hat_'+_supaUser.id);}catch(_e){}
+      if(!_hat||_hat.indexOf('crew:')!==0)return false;
+      const _cid=_hat.slice(5);
+      if(!_links.some(r=>String(r.contractor_user_id)===String(_cid))){
+        // The boss deactivated or removed the link: silently land in their own
+        // business (never an error, their own account is always valid) and drop
+        // the stale hat so every future boot stops re-checking it.
+        try{localStorage.removeItem('zp3_hat_'+_supaUser.id);}catch(_e){}
+        return false;
+      }
+      try{localStorage.setItem('zp3_crew_choice_'+_supaUser.id,String(_cid));}catch(_e){}
+      return true;
+    })();
+    if(u&&u.account_id&&!_hatPickCrew){
       // This account has its own accounts row, it's a real owner/co-owner account, never
       // a linked crew member. Reset explicitly: _isEmployee/_employeeRecord/_contractorUserId
       // are shared globals that stay true/set from a PREVIOUS account's sign-in earlier in
@@ -568,7 +603,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.17.26.36';
+const APP_VERSION='08.17.26.37';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1330,6 +1365,28 @@ function _isMissingTableErr(err){
 // it. window._crewChoices (set at link time when >1 active crew) lists the options.
 window.switchCrew=function(cid){
   try{if(_supaUser&&cid)localStorage.setItem('zp3_crew_choice_'+_supaUser.id,String(cid));}catch(_e){}
+  location.reload();
+};
+// Dual-hat (§9.10 slice 1): flip between "my own business" and a crew membership
+// under ONE login. Same shape as switchCrew above: persist the choice, then a hard
+// reload lets the normal boot rebuild everything for the incoming hat. The reload
+// IS the data wall, arrays, realtime channels, geo state, and offline queues all
+// reset through the exact same boot path every sign-in already exercises.
+// hat: 'owner' for their own business, or a contractor_user_id for a crew link.
+window.switchHat=async function(hat){
+  if(!_supaUser)return;
+  try{
+    // Best-effort: land any pending edits in THIS hat's business before leaving it.
+    if(_syncTimer&&typeof _flushSaveNow==='function'){try{await _flushSaveNow();}catch(_e){}}
+    localStorage.setItem('zp3_hat_'+_supaUser.id,hat==='owner'?'owner':('crew:'+hat));
+    // Hard wall: the outgoing hat's snapshot and delta cursor must be gone before
+    // the next boot resolves the incoming hat (same clearing the cross-account
+    // SIGNED_IN reset does). zp3_offline_pending is deliberately LEFT ALONE: it is
+    // _dataOwner-tagged and hat-scoped at read time (_readOwnedOfflinePending), so
+    // deleting it here could drop unsaved records the other hat still owns.
+    localStorage.removeItem('zp3_cloud_cache');
+    localStorage.removeItem('zp3_delta_meta');
+  }catch(_e){}
   location.reload();
 };
 
@@ -5541,7 +5598,12 @@ window.addEventListener('online',()=>{try{const k=_userLayoutCacheKey();if(k&&lo
 function _offlinePendingBlob(){
   // Owner falls back to _loadedDataOwner so a blob written while offline (no _supaUser)
   // is still tagged with the account it came from, the next sign-in checks this.
-  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,places,scans,equipment,ts:Date.now()});
+  // _dataOwner: same login/business split as _writeLocalCache, a dual-hat login
+  // (§9.10) shares _owner across both hats, so _owner alone would let one hat's
+  // unsaved records merge-and-push into the OTHER hat's business on reconnect.
+  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,
+    _dataOwner:(typeof _effectiveUid==='function'&&_effectiveUid())||(_supaUser&&_supaUser.id)||_loadedDataOwner||null,
+    clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,places,scans,equipment,ts:Date.now()});
 }
 // Read offline-pending, discarding (and clearing) any blob owned by a different
 // account than the one now signed in. Returns null when nothing usable remains.
@@ -5552,6 +5614,12 @@ function _readOwnedOfflinePending(){
     localStorage.removeItem('zp3_offline_pending');
     return null; // belongs to a previous account, never merge it in
   }
+  // Same-login, different HAT (§9.10): a blob written under the crew hat holds the
+  // boss's records and must never merge into this login's own business (or the
+  // reverse). Don't delete it, the other hat may still legitimately drain it on
+  // its next session; just refuse to merge it into THIS one.
+  const _euid=(typeof _effectiveUid==='function'&&_effectiveUid())||null;
+  if(op._dataOwner&&_euid&&op._dataOwner!==_euid)return null;
   return op;
 }
 function supaSaveDebounced(){
@@ -5847,6 +5915,9 @@ function _paintCacheForDelta(uid){
   try{
     const cc=JSON.parse(localStorage.getItem('zp3_cloud_cache')||'null');
     if(!cc||cc._owner!==uid)return false;
+    // Dual-hat (§9.10): both hats share _owner (the login), but the cache holds
+    // ONE business's rows. Never paint the other hat's snapshot as this hat's base.
+    if(cc._dataOwner&&cc._dataOwner!==uid)return false;
     const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos,td_maintenance:cc.maintenance,td_vehicles:cc.vehicles,td_places:cc.places,td_equipment:cc.equipment};
     const _ptTs=Date.now();
     for(const{t,set}of _TD_TABLES){
@@ -5874,7 +5945,16 @@ function _paintCacheForDelta(uid){
 }
 function _writeLocalCache(){
   try{
-    const _snap={_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,payments,income,
+    // _owner = the LOGIN this cache belongs to (identity comparisons at boot).
+    // _dataOwner = the BUSINESS whose rows it holds: the contractor's uid for a
+    // crew session, the login's own uid for an owner session. Two different
+    // things for crew and dual-hat (§9.10) sessions, and the data guards must
+    // compare against _dataOwner: guarding on _owner alone either rejects a
+    // crew session's own legitimate cache (load uid is the boss's) or accepts
+    // the OTHER hat's cache under the same login (both hats share _owner).
+    const _snap={_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,
+      _dataOwner:(typeof _effectiveUid==='function'&&_effectiveUid())||(_supaUser&&_supaUser.id)||_loadedDataOwner||null,
+      clients,bids,jobs,payments,income,
       expenses:expenses.map(({receipt_img,...r})=>r),
       mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,vehicles,places,scans,equipment,checksState,
       settings:S,cached_at:new Date().toISOString()};
@@ -7580,7 +7660,14 @@ async function supaLoadFromCloud({silent=false}={}){
         // if it were this account's real data, that's a silent cross-account bleed,
         // not an offline fallback. _paintCacheForDelta already enforces this on the
         // normal delta path; this is the same check on the load-FAILED fallback.
-        if(_cd._owner&&_cd._owner!==uid)throw new Error('cache owner mismatch');
+        // Compare _dataOwner (the business whose rows the cache holds), falling back
+        // to _owner only for caches written before the tag existed: for a crew
+        // session uid is the BOSS's id while _owner is the crew login's, so the
+        // bare _owner comparison wrongly rejected a crew session's own cache, and
+        // under one dual-hat login (§9.10) both hats share _owner, so it wrongly
+        // ACCEPTED the other hat's cache. _dataOwner is right in both directions.
+        const _cacheDataOwner=_cd._dataOwner||_cd._owner;
+        if(_cacheDataOwner&&_cacheDataOwner!==uid)throw new Error('cache owner mismatch');
         clients=_cd.clients||[];bids=_cd.bids||[];jobs=_cd.jobs||[];
         payments=_cd.payments||[];income=_cd.income||[];expenses=_cd.expenses||[];
         mileage=_cd.mileage||[];liens=_cd.liens||[];timeEntries=_cd.timeEntries||[];

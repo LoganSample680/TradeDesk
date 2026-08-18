@@ -819,12 +819,24 @@ wizard, which is our edge.
 - Files: `js/settings.js` (`_ob`, `renderObStep`, `obStep*`, `obSubmit`), `index.html`
   (dashboard setup-checklist card), new live flow test `tests/flow/onboarding-signup-flow.spec.js`.
 
-### 9.10 Dual-Hat Accounts: Crew by Day, Owner on the Side (owner back-burnered 2026-08-09)
+### 9.10 Dual-Hat Accounts: Crew by Day, Owner on the Side (slice 1 SHIPPED 2026-08-18)
 
 **One login, two hats: a person who is crew on an employer's account AND owner of
-their own side business.** Today they need two emails and a sign-out/sign-in; the
-design is an in-app account switcher on one login. Owner call: park it until the
-scanned estimate is solid.
+their own side business.** Un-parked by the owner 2026-08-18 (first real beta user
+is exactly this: plumber on his dad's crew by day, landscaping owner by night).
+
+**Slice 1 (switcher + data wall) is built:** `loadAccountData` surfaces an owner
+login's active crew links (`window._hatCrewLinks` / `_hatOwnsBusiness`) and honors
+a persisted `zp3_hat_<uid>` choice; a crew hat is steered through the standard
+crew-linking path (never a parallel one, §7.3). `window.switchHat` persists the
+choice, clears `zp3_cloud_cache`/`zp3_delta_meta` (the hard wall), and hard-reloads;
+the clean boot IS the reset machinery. Snapshots carry `_dataOwner` (the business
+whose rows they hold) alongside `_owner` (the login): both hats share `_owner`, so
+every data guard compares `_dataOwner`, which also fixed crew sessions' own offline
+cache being wrongly rejected. UI: "Switch business" in the Settings header (owner
+hat) and in the employee sign-out menu (crew hat). Tests: `tests/e2e-dual-hat.spec.js`.
+
+**Still open (slices 2-3):**
 
 - **Switcher**: profile menu flips between "Crew · {employer}" and "My business,"
   riding the existing account-switch reset machinery (arrays, caches, offline queues).

@@ -129,6 +129,11 @@ function _applyEmployeeNavGating(){
   if(_mmiSignout)_mmiSignout.style.display=_isEmployee?'':'none';
   const nr=document.getElementById('nav-user-role');
   if(nr&&_isEmployee)nr.textContent=(_employeeRecord?.role||'employee').charAt(0).toUpperCase()+(_employeeRecord?.role||'employee').slice(1);
+  // Dual-hat switcher entry (§9.10 slice 1): an owner who is ALSO on someone's
+  // crew gets a switch button in the Settings header. The crew hat's entry lives
+  // in _employeeSignOutMenu below (employees can't reach Settings at all).
+  const _hatBtn=document.getElementById('set-hat-btn');
+  if(_hatBtn)_hatBtn.style.display=(!_isEmployee&&(window._hatCrewLinks||[]).length)?'':'none';
 }
 function _employeeSignOutMenu(){
   closeMobileMore();
@@ -140,10 +145,46 @@ function _employeeSignOutMenu(){
   box.innerHTML=
     '<div style="font-size:16px;font-weight:800;margin-bottom:2px">'+escHtml(name)+'</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:18px">'+escHtml(role.charAt(0).toUpperCase()+role.slice(1))+'</div>'+
+    // Dual-hat (§9.10 slice 1): a crew session whose login ALSO owns a business
+    // gets the flip back to it right here, employees can't reach Settings, so
+    // this menu is their only account surface.
+    (window._hatOwnsBusiness?'<button onclick="this.closest(\'.zmodal-overlay\').remove();switchHat(\'owner\')" style="width:100%;padding:12px;margin-bottom:10px;border-radius:var(--r);border:1.5px solid var(--blue);background:rgba(45,93,168,.08);color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Switch to my business</button>':'')+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove();if(supaEnabled())supaSignOut();" style="flex:1;padding:12px;border-radius:var(--r);border:none;background:#A32D2D;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Sign out</button>'+
     '</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+
+// Dual-hat switcher (§9.10 slice 1): lists every hat this login can wear, their
+// own business plus each active crew membership. Tapping another hat calls
+// switchHat (cloud.js): persist the choice, hard-reload, clean boot into it.
+// Same .zmodal shell as _employeeSignOutMenu above (§7.3: reuse the pattern).
+function _hatSwitcherMenu(){
+  if(typeof closeMobileMore==='function')closeMobileMore();
+  document.getElementById('_hat-switch-ov')?.remove();
+  const links=window._hatCrewLinks||[];
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_hat-switch-ov';
+  const box=document.createElement('div');box.className='zmodal';
+  const row=(label,sub,current,click)=>
+    '<button '+(current?'disabled':'onclick="'+click+'"')+' style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:13px 14px;margin-bottom:8px;border-radius:var(--r);border:1.5px solid '+(current?'var(--blue)':'var(--border2)')+';background:'+(current?'rgba(45,93,168,.08)':'var(--bg2)')+';cursor:'+(current?'default':'pointer')+';font-family:inherit">'+
+      '<span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+label+'</span>'+
+      '<span style="display:block;font-size:11px;color:var(--text3)">'+sub+'</span></span>'+
+      (current?'<span style="flex-shrink:0;font-size:10px;font-weight:800;letter-spacing:.05em;color:var(--blue)">CURRENT</span>':'')+
+    '</button>';
+  // Under the crew hat, S holds crew-visible state, not this login's own business
+  // settings, so the own-business label only trusts S.bname on the owner hat.
+  const ownLabel=escHtml(((!_isEmployee&&S.bname)||'My business').trim()||'My business');
+  let html='<div style="font-size:16px;font-weight:800;margin-bottom:2px">Switch business</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">One login, separate businesses. Each keeps its own clients, money, and tracking.</div>'+
+    row(ownLabel,'Owner',!_isEmployee,'switchHat(\'owner\')');
+  links.forEach(l=>{
+    const cur=!!(_isEmployee&&typeof _contractorUserId!=='undefined'&&String(_contractorUserId)===String(l.contractor_user_id));
+    html+=row('Crew','Signed on as '+escHtml(l.role||'crew'),cur,'switchHat(\''+String(l.contractor_user_id).replace(/[^\w-]/g,'')+'\')');
+  });
+  html+='<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>';
+  box.innerHTML=html;
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
