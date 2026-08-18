@@ -120,6 +120,11 @@ jobs:
 
       - name: Upload test results
         if: always()
+        # Diagnostics only, never the gate: the xcresult bundle helps debug a red
+        # run, but the check's verdict is xcodebuild's exit code above. Observed
+        # live 2026-08-18: all 16 tests PASSED and the job still went red because
+        # GitHub's artifact service timed out on this upload.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: td-native-tests-results
