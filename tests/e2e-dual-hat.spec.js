@@ -225,7 +225,14 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
         supa: _supa, user: window._supaUser, loaded: _supaCloudLoaded, owner: _loadedDataOwner,
         cursor: _deltaCursor, emp: _isEmployee, cid: _contractorUserId,
         clients: clients.slice(), bids: bids.slice(),
+        wlc: _writeLocalCache,
       };
+      // Diagnosed from CI (diag: hit:false, err:null, len:0 both directions): the
+      // app's background save path calls _writeLocalCache mid-test and OVERWRITES
+      // the seeded zp3_cloud_cache with the mock session's own snapshot, whose
+      // _dataOwner matches neither hat, so the guard (correctly) rejects it and
+      // the test reads as a guard failure. Silence the writer for the duration.
+      _writeLocalCache = () => {};
       const run = async (cacheDataOwner, marker) => {
         localStorage.setItem('zp3_cloud_cache', JSON.stringify({
           _owner: 'dual-u1',            // the crew LOGIN, same for both hats
@@ -257,6 +264,7 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
       } finally {
         _supa = saved.supa; window._supaUser = saved.user; _supaCloudLoaded = saved.loaded;
         _loadedDataOwner = saved.owner; _deltaCursor = saved.cursor; _isEmployee = saved.emp; _contractorUserId = saved.cid;
+        _writeLocalCache = saved.wlc;
         clients.length = 0; saved.clients.forEach(c => clients.push(c));
         bids.length = 0; saved.bids.forEach(b => bids.push(b));
         localStorage.removeItem('zp3_cloud_cache');

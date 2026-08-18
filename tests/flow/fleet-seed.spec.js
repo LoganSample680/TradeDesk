@@ -63,7 +63,7 @@ test.describe('Fleet seed: 25 linked personas on one inbox', () => {
   test.skip(!fleetAcct(1), 'fleet base account (DEV2 creds) not configured');
 
   test('every persona exists, owns what it should, and is linked where it should be', async ({ page }) => {
-    test.setTimeout(600000); // first run creates 25 accounts; later runs are quick verifies
+    test.setTimeout(1800000); // paced auth calls + 429 backoffs; steady-state re-runs finish in a few minutes
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForFunction(() => typeof supabase !== 'undefined' && typeof SUPA_URL !== 'undefined' && typeof SUPA_KEY !== 'undefined', { timeout: 30000 });
 
@@ -77,10 +77,20 @@ test.describe('Fleet seed: 25 linked personas on one inbox', () => {
       const report = { created: [], existed: [], businessMade: [], linked: [], alreadyLinked: [], blockedConfirm: [], badPassword: [], errors: [] };
       const uidOf = {};
 
+      // Supabase's auth /token endpoint rate-limits per IP (learned live on the
+      // first run: everything past persona ~18 got 429s). Two defenses: pace
+      // every token call (~4s apart stays far under the bucket), and on a 429
+      // back off a full minute and retry, the bucket is time-windowed, so
+      // patience always wins on an on-demand seeder.
+      const pace = (ms) => new Promise((r) => setTimeout(r, ms));
       const signIn = async (p) => {
-        const { data, error } = await sb.auth.signInWithPassword({ email: p.email, password: p.password });
-        if (!error && data?.user) { uidOf[p.tag] = data.user.id; return { ok: true, user: data.user }; }
-        return { ok: false, error: error?.message || 'unknown' };
+        for (let attempt = 0; attempt < 4; attempt++) {
+          await pace(attempt === 0 ? 4000 : 65000);
+          const { data, error } = await sb.auth.signInWithPassword({ email: p.email, password: p.password });
+          if (!error && data?.user) { uidOf[p.tag] = data.user.id; return { ok: true, user: data.user }; }
+          if (!/rate limit/i.test(error?.message || '')) return { ok: false, error: error?.message || 'unknown' };
+        }
+        return { ok: false, error: 'rate limited after 4 paced attempts' };
       };
 
       // ── Pass 1: every persona has an auth user + (owners) a real business ──
@@ -129,49 +139,60 @@ test.describe('Fleet seed: 25 linked personas on one inbox', () => {
         } catch (e) { report.errors.push(p.tag + ': ' + (e?.message || String(e))); try { await sb.auth.signOut(); } catch (_e) {} }
       }
 
-      // ── Pass 2: crew links. Boss upserts the roster row (the invite modal's
-      // exact upsert), then the member claims by email (the same SECURITY
-      // DEFINER RPC loadAccountData's email-match path uses). ──
+      // ── Pass 2: crew links, grouped to spend the fewest token calls. One
+      // boss session upserts ALL its members' roster rows (the invite modal's
+      // exact upsert), then one member session claims ALL its links (the same
+      // SECURITY DEFINER claim_crew_by_email RPC loadAccountData's email-match
+      // path uses). 7 boss sessions + ~14 member sessions instead of two
+      // sign-ins per (member, boss) pair. ──
+      const byBoss = {};
       for (const p of Object.values(ROSTER)) {
-        if (!p.crewOf || !p.crewOf.length || !uidOf[p.tag]) continue;
-        for (const bossTag of p.crewOf) {
-          const boss = ROSTER[bossTag];
-          if (!boss || !uidOf[bossTag]) { report.errors.push(p.tag + ': boss ' + bossTag + ' unavailable'); continue; }
-          try {
-            const bs = await signIn(boss);
-            if (!bs.ok) { report.errors.push(p.tag + ': boss ' + bossTag + ' sign-in: ' + bs.error); continue; }
-            const bossUid = uidOf[bossTag];
+        if (!p.crewOf || !uidOf[p.tag]) continue;
+        for (const bossTag of p.crewOf) (byBoss[bossTag] = byBoss[bossTag] || []).push(p);
+      }
+      const needsClaim = new Set();
+      for (const [bossTag, members] of Object.entries(byBoss)) {
+        const boss = ROSTER[bossTag];
+        if (!boss || !uidOf[bossTag]) { report.errors.push('boss ' + bossTag + ' unavailable for links'); continue; }
+        try {
+          const bs = await signIn(boss);
+          if (!bs.ok) { report.errors.push('boss ' + bossTag + ' sign-in: ' + bs.error); continue; }
+          const bossUid = uidOf[bossTag];
+          for (const p of members) {
             const { data: existing } = await sb.from('team_members').select('id,employee_user_id,active').eq('contractor_user_id', bossUid).eq('email', p.email).maybeSingle();
-            if (existing && existing.employee_user_id && existing.active) {
-              report.alreadyLinked.push(p.tag + '→' + bossTag);
-              await sb.auth.signOut(); continue;
-            }
+            if (existing && existing.employee_user_id && existing.active) { report.alreadyLinked.push(p.tag + '→' + bossTag); continue; }
             if (!existing) {
               const { error: tmErr } = await sb.from('team_members').upsert({
                 contractor_user_id: bossUid, email: p.email, name: 'Fleet ' + p.tag.toUpperCase(), role: 'tech',
                 permissions: {}, active: false, invited_at: new Date().toISOString(),
               }, { onConflict: 'contractor_user_id,email' });
-              if (tmErr) { report.errors.push(p.tag + '→' + bossTag + ': team_members upsert: ' + tmErr.message); await sb.auth.signOut(); continue; }
+              if (tmErr) { report.errors.push(p.tag + '→' + bossTag + ': team_members upsert: ' + tmErr.message); continue; }
             }
-            await sb.auth.signOut();
-            // Member claims. One RPC call links one unlinked row; loop caps at
-            // the persona's own link count.
-            const ms = await signIn(p);
-            if (!ms.ok) { report.errors.push(p.tag + ': member sign-in for claim: ' + ms.error); continue; }
-            let claimed = false;
-            for (let i = 0; i < (p.crewOf.length + 1) && !claimed; i++) {
-              const { data: cl, error: clErr } = await sb.rpc('claim_crew_by_email');
-              if (clErr) { report.errors.push(p.tag + '→' + bossTag + ': claim RPC: ' + clErr.message); break; }
-              if (!cl || !cl.ok) break; // nothing left to claim
-              if (String(cl.contractor_user_id) === String(uidOf[bossTag])) claimed = true;
-            }
-            // Verify the link landed, whichever claim call got it.
+            needsClaim.add(p.tag);
+          }
+          await sb.auth.signOut();
+        } catch (e) { report.errors.push('boss ' + bossTag + ': ' + (e?.message || String(e))); try { await sb.auth.signOut(); } catch (_e) {} }
+      }
+      for (const tag of needsClaim) {
+        const p = ROSTER[tag];
+        try {
+          const ms = await signIn(p);
+          if (!ms.ok) { report.errors.push(p.tag + ': member sign-in for claim: ' + ms.error); continue; }
+          // Each RPC call links one unlinked row; loop caps at this persona's
+          // own link count.
+          for (let i = 0; i < p.crewOf.length + 1; i++) {
+            const { data: cl, error: clErr } = await sb.rpc('claim_crew_by_email');
+            if (clErr) { report.errors.push(p.tag + ': claim RPC: ' + clErr.message); break; }
+            if (!cl || !cl.ok) break; // nothing left to claim
+          }
+          for (const bossTag of p.crewOf) {
+            if (!uidOf[bossTag]) continue;
             const { data: verify } = await sb.from('team_members').select('id').eq('contractor_user_id', uidOf[bossTag]).eq('employee_user_id', uidOf[p.tag]).eq('active', true).maybeSingle();
             if (verify) report.linked.push(p.tag + '→' + bossTag);
             else report.errors.push(p.tag + '→' + bossTag + ': link did not verify after claim');
-            await sb.auth.signOut();
-          } catch (e) { report.errors.push(p.tag + '→' + bossTag + ': ' + (e?.message || String(e))); try { await sb.auth.signOut(); } catch (_e) {} }
-        }
+          }
+          await sb.auth.signOut();
+        } catch (e) { report.errors.push(p.tag + ': claim pass: ' + (e?.message || String(e))); try { await sb.auth.signOut(); } catch (_e) {} }
       }
       return report;
     }, roster);
