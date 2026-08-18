@@ -489,8 +489,39 @@ let _devSupportMode=false,_devSupportName='',_devSavedState=null;
 const _DEV_SUPPORT_USERS={
   zach:{name:'Zach',userId:'6201cb8c-c4de-4bf2-bdf7-0376f0577cc4'},
 };
+// ── Fleet support switcher (owner ask 2026-08-18) ────────────────────────────
+// The 25 seeded fleet personas (tests/flow/fleet-seed.spec.js) become viewable
+// from the support account through the SAME support-view machinery as Zach:
+// the fleet_support_roster RPC (20260818 migration) returns tag/uid/business
+// ONLY when the caller is the support account, and matching read-only RLS
+// policies let _devLoadUserAccount pull each persona's rows. The roster call
+// doubles as the authorization probe: rows back means the server said yes, so
+// the Developer settings row unlocks even without config.is_dev. Read-only by
+// design, there are no fleet write policies, so a stray save from support
+// view can never alter a persona's data.
+let _fleetRoster=null;
+async function _fleetLoadRoster(){
+  if(_fleetRoster!==null)return _fleetRoster;
+  _fleetRoster=[];
+  try{
+    if(!_supa||!_supaUser)return _fleetRoster;
+    const{data,error}=await _supa.rpc('fleet_support_roster');
+    if(!error&&Array.isArray(data)&&data.length){
+      _fleetRoster=data;
+      data.forEach(r=>{
+        if(r&&r.tag&&r.user_id)_DEV_SUPPORT_USERS[r.tag]={name:r.tag.toUpperCase()+(r.business_name?' · '+r.business_name:''),userId:r.user_id,fleet:true};
+      });
+      const devRow=document.getElementById('set-idx-row-dev');
+      if(devRow)devRow.style.display='flex';
+      if(typeof _renderDevTradeCard==='function')_renderDevTradeCard();
+    }
+  }catch(_e){}
+  return _fleetRoster;
+}
 async function _devLoadUserAccount(key){
-  if(!_config?.is_dev)return;
+  // Fleet personas don't need config.is_dev: the roster RPC already proved the
+  // caller is the support account (and RLS enforces it again on every read).
+  if(!_config?.is_dev&&!_DEV_SUPPORT_USERS[key]?.fleet)return;
   clearTimeout(_syncTimer);
   await _flushSaveNow();
   const u=_DEV_SUPPORT_USERS[key];
@@ -603,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.17.26.48';
+const APP_VERSION='08.18.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard

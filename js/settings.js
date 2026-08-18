@@ -91,9 +91,12 @@ function _renderSetIndex() {
   if (verEl && typeof APP_VERSION !== 'undefined') verEl.textContent = APP_VERSION;
   const verSub = document.getElementById('set-about-version-sub');
   if (verSub && typeof APP_VERSION !== 'undefined') verSub.textContent = 'v' + APP_VERSION;
-  // Dev row visibility
+  // Dev row visibility: is_dev accounts, plus the support account once the
+  // fleet roster RPC has authorized it (the RPC returns rows only for the
+  // support login; _fleetLoadRoster re-shows the row when they land).
   const devRow = document.getElementById('set-idx-row-dev');
-  if (devRow) devRow.style.display = _config?.is_dev ? 'flex' : 'none';
+  if (devRow) devRow.style.display = (_config?.is_dev || (typeof _fleetRoster !== 'undefined' && _fleetRoster && _fleetRoster.length)) ? 'flex' : 'none';
+  if (typeof _fleetLoadRoster === 'function' && typeof _fleetRoster !== 'undefined' && _fleetRoster === null) _fleetLoadRoster();
 }
 
 const _BRAND_SWATCHES = ['#2D5DA8','#166534','#92400e','#991b1b','#6d28d9','#18181b'];
@@ -1512,7 +1515,8 @@ function _renderSettingsTradeSections(){
   if(lgTitle){const meta=TRADE_META[trade]||{icon:'🔧',label:'Trade'};lgTitle.innerHTML=(svgIcon(meta.icon)+' '+meta.label+' Labor Rates').trim();}
 }
 function _renderDevTradeCard(){
-  if(!_config?.is_dev)return;
+  const _hasFleet=typeof _fleetRoster!=='undefined'&&_fleetRoster&&_fleetRoster.length;
+  if(!_config?.is_dev&&!_hasFleet)return;
   const current=_config?.business_type||'painting';
   const trades=[
     {id:'painting',icon:'🎨',label:'Painting'},
@@ -1527,14 +1531,28 @@ function _renderDevTradeCard(){
   const grid=document.getElementById('dev-trade-grid');
   if(!grid)return;
   grid.innerHTML=trades.map(t=>`<button onclick="devSwitchTrade('${t.id}')" style="padding:10px 6px;border-radius:var(--r);border:2px solid ${t.id===current?'var(--blue)':'var(--border2)'};background:${t.id===current?'var(--blue-lt)':'var(--bg2)'};cursor:pointer;font-family:inherit;text-align:center;font-size:12px;font-weight:${t.id===current?'700':'400'}"><div style="font-size:18px">${svgIcon(t.icon,{size:18})}</div>${t.label}</button>`).join('');
+  // Fleet switcher (owner ask 2026-08-18): every seeded persona, tap to view
+  // its live data through the same support-view machinery Zach's button uses.
+  // Owners (with a business name) listed before crew-only logins.
+  const _fleetGrid=_hasFleet?`
+  <div style="margin-top:12px">
+    <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:8px">Test fleet · ${_fleetRoster.length} accounts (read-only)</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+      ${_fleetRoster.slice().sort((a,b)=>((b.business_name?1:0)-(a.business_name?1:0))||String(a.tag).localeCompare(String(b.tag))).map(r=>`
+      <button onclick="_devLoadUserAccount('${escHtml(String(r.tag).replace(/[^\w-]/g,''))}')" style="padding:8px 6px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;min-width:0">
+        <div style="font-size:11px;font-weight:800">${escHtml(String(r.tag).toUpperCase())}</div>
+        <div style="font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(r.business_name||'crew only')}</div>
+      </button>`).join('')}
+    </div>
+  </div>`:'';
   const sup=document.getElementById('dev-support-section');
   if(sup)sup.innerHTML=`
 <div style="padding-top:12px;border-top:1px solid var(--border2)">
   <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:8px">Support View</div>
-  <button onclick="_devLoadUserAccount('zach')" style="width:100%;padding:9px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">${svgIcon('👁',{size:13})} View Zach's account</button>
-
+  ${_config?.is_dev?`<button onclick="_devLoadUserAccount('zach')" style="width:100%;padding:9px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">${svgIcon('👁',{size:13})} View Zach's account</button>`:''}
   ${_devSupportMode?`<div style="margin-top:8px;padding:8px 10px;background:var(--amber-lt);border-radius:var(--r);font-size:11px;color:#856404;display:flex;justify-content:space-between;align-items:center"><span>${svgIcon('👁',{size:11})} Viewing: ${escHtml(_devSupportName)}</span><button onclick="_devExitSupportMode()" style="font-size:10px;padding:3px 8px;border:1px solid #856404;border-radius:4px;background:none;color:#856404;cursor:pointer;font-family:inherit">Exit</button></div>`:''}
-  ${_devRenderSnapshots('zach')}
+  ${_fleetGrid}
+  ${_config?.is_dev?_devRenderSnapshots('zach'):''}
 </div>`;
   // Init legal inspector with current state and today's date
   const _lsEl=document.getElementById('dev-legal-state');

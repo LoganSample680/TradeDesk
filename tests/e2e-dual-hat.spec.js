@@ -441,6 +441,81 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
     expect(r.bubbleAfterToast, 'using the switcher means the bubble is never needed').toBe(false);
   });
 
+  // ── Fleet support switcher (owner ask 2026-08-18) ───────────────────────────
+
+  test('_fleetLoadRoster populates the support-user map and unlocks the Developer row', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _fleetLoadRoster !== 'function') return { skip: true };
+      const saved = { supa: _supa, user: window._supaUser, roster: _fleetRoster };
+      const devRow = document.getElementById('set-idx-row-dev');
+      const savedDisplay = devRow ? devRow.style.display : null;
+      try {
+        _fleetRoster = null; // force a fresh fetch
+        _supa = { rpc: (fn) => Promise.resolve(fn === 'fleet_support_roster'
+          ? { data: [
+              { tag: 't08', user_id: 'uid-t08', email: 'x+t08@y.com', business_name: 'Nightshift Lawns' },
+              { tag: 't09', user_id: 'uid-t09', email: 'x+t09@y.com', business_name: null },
+            ], error: null }
+          : { data: null, error: null }) };
+        window._supaUser = window._supaUser || { id: 'support-u' };
+        if (devRow) devRow.style.display = 'none';
+        const roster = await _fleetLoadRoster();
+        return {
+          skip: false,
+          count: roster.length,
+          mapped: !!(_DEV_SUPPORT_USERS.t08 && _DEV_SUPPORT_USERS.t08.userId === 'uid-t08' && _DEV_SUPPORT_USERS.t08.fleet),
+          crewMapped: !!(_DEV_SUPPORT_USERS.t09 && _DEV_SUPPORT_USERS.t09.fleet),
+          rowShown: devRow ? devRow.style.display === 'flex' : true,
+          cached: (await _fleetLoadRoster()).length === roster.length, // second call reuses, no re-fetch
+        };
+      } finally {
+        _supa = saved.supa; window._supaUser = saved.user; _fleetRoster = saved.roster;
+        delete _DEV_SUPPORT_USERS.t08; delete _DEV_SUPPORT_USERS.t09;
+        if (devRow && savedDisplay !== null) devRow.style.display = savedDisplay;
+      }
+    });
+    if (r.skip) return;
+    expect(r.count).toBe(2);
+    expect(r.mapped, 'fleet personas land in _DEV_SUPPORT_USERS with their uid').toBe(true);
+    expect(r.crewMapped, 'crew-only personas (no business) map too').toBe(true);
+    expect(r.rowShown, 'the Developer settings row unlocks once the server authorizes').toBe(true);
+    expect(r.cached).toBe(true);
+  });
+
+  test('a non-support login gets an empty roster and NO Developer unlock', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _fleetLoadRoster !== 'function') return { skip: true };
+      const saved = { supa: _supa, user: window._supaUser, roster: _fleetRoster };
+      const devRow = document.getElementById('set-idx-row-dev');
+      const savedDisplay = devRow ? devRow.style.display : null;
+      try {
+        _fleetRoster = null;
+        _supa = { rpc: () => Promise.resolve({ data: [], error: null }) }; // server says: not you
+        window._supaUser = window._supaUser || { id: 'someone-else' };
+        if (devRow) devRow.style.display = 'none';
+        const roster = await _fleetLoadRoster();
+        return { skip: false, count: roster.length, rowHidden: devRow ? devRow.style.display === 'none' : true };
+      } finally {
+        _supa = saved.supa; window._supaUser = saved.user; _fleetRoster = saved.roster;
+        if (devRow && savedDisplay !== null) devRow.style.display = savedDisplay;
+      }
+    });
+    if (r.skip) return;
+    expect(r.count).toBe(0);
+    expect(r.rowHidden, 'no roster means nothing unlocks').toBe(true);
+  });
+
+  test('_devLoadUserAccount gate: fleet tags pass without is_dev, unknown keys still blocked', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const cloud = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+    const gate = cloud.indexOf('async function _devLoadUserAccount');
+    expect(gate).toBeGreaterThan(0);
+    const head = cloud.slice(gate, gate + 400);
+    expect(head, 'gate admits fleet entries without is_dev').toContain("_DEV_SUPPORT_USERS[key]?.fleet");
+    expect(head, 'is_dev path still guarded').toContain('_config?.is_dev');
+  });
+
   test('zero console errors across the dual-hat suite', async () => {
     assertNoErrors(page, 'dual-hat accounts');
   });
