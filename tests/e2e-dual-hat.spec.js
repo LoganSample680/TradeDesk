@@ -237,14 +237,23 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
         window._supaUser = { id: 'dual-u1' };
         _supaCloudLoaded = false; _isEmployee = true; _contractorUserId = 'boss-1'; // load uid = boss-1
         _loadedDataOwner = null; _deltaCursor = null;
+        // Hermetic entry state: any of these left over from the app's own mocked
+        // boot (an in-flight load, a scheduled debounce, dev-support mode) makes
+        // supaLoadFromCloud bail or detour before it ever reaches the fallback
+        // under test, which reads as a guard failure when it's a fixture leak.
+        _loadInProgress = false; _activeLoadPromise = null;
+        if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+        _pendingSavePromise = null; _devSupportMode = false;
+        localStorage.removeItem('zp3_offline_pending');
         clients.length = 0; bids.length = 0;
-        await window.__realSupaLoad({ silent: false });
-        return clients.some(c => c.id === marker);
+        let err = null;
+        try { await window.__realSupaLoad({ silent: false }); } catch (e) { err = e?.message || String(e); }
+        return { hit: clients.some(c => c.id === marker), err, len: clients.length };
       };
       try {
-        const ownAccepted = await run('boss-1', 'crew-own-cache');     // written by THIS crew session
-        const otherRejected = !(await run('dual-u1', 'owner-hat-cache')); // written by the OWNER hat
-        return { ownAccepted, otherRejected };
+        const own = await run('boss-1', 'crew-own-cache');       // written by THIS crew session
+        const other = await run('dual-u1', 'owner-hat-cache');   // written by the OWNER hat
+        return { ownAccepted: own.hit, otherRejected: !other.hit, diag: JSON.stringify({ own, other }) };
       } finally {
         _supa = saved.supa; window._supaUser = saved.user; _supaCloudLoaded = saved.loaded;
         _loadedDataOwner = saved.owner; _deltaCursor = saved.cursor; _isEmployee = saved.emp; _contractorUserId = saved.cid;
@@ -255,8 +264,8 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
         applyPermissions();
       }
     });
-    expect(r.ownAccepted, 'a crew session\'s own cache is legitimate offline fallback (was wrongly rejected by the bare _owner guard)').toBe(true);
-    expect(r.otherRejected, 'the owner hat\'s cache must never paint into a crew session').toBe(true);
+    expect(r.ownAccepted, 'a crew session\'s own cache is legitimate offline fallback (was wrongly rejected by the bare _owner guard). diag: ' + r.diag).toBe(true);
+    expect(r.otherRejected, 'the owner hat\'s cache must never paint into a crew session. diag: ' + r.diag).toBe(true);
   });
 
   // ── 4. The switcher UI ──────────────────────────────────────────────────────
@@ -322,6 +331,11 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
         document.getElementById('mobile-topbar-brand')?.click();
         const menuOpen = !!document.getElementById('_hat-switch-ov');
         document.getElementById('_hat-switch-ov')?.remove();
+        // Gating with 2+ hats also fires the one-time coach bubble as a real side
+        // effect; leaving it in the DOM makes the coach test's own "no bubble yet"
+        // precondition false and it early-returns without setting its flag (the
+        // exact CI failure this line exists to prevent).
+        document.getElementById('_hat-coach')?.remove();
         return { chevShown: !!(chev && chev.style.display !== 'none'), menuOpen };
       };
       try {
@@ -362,6 +376,10 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
         _isEmployee = false; window._hatOwnsBusiness = true;
         window._hatCrewLinks = [{ contractor_user_id: 'boss-1', name: 'BIL', role: 'plumber' }];
         document.getElementById('supa-boot-overlay')?.remove();
+        // A bubble left over from ANY earlier test (other suites' loadAccountData
+        // calls fire the real coach too) trips _hatTeachOnce's already-shown
+        // early-return before it ever sets this uid's flag.
+        document.getElementById('_hat-coach')?.remove();
         // First multi-hat render: bubble appears, flag set.
         _applyEmployeeNavGating();
         await new Promise(res => setTimeout(res, 50));
