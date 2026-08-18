@@ -702,9 +702,9 @@ function _getSmsDefaults(){
   return {
     hub:`Hi {name}, here's your project hub from {business}: {url}`,
     followup:`Hey {name}!\n\nJust following up, your proposal is still ready to go. Tap the link below to review and sign:\n\n{url}\n\nAny questions, just reply!\n\n- {business}`,
-    reminder:`Hi {name}, this is {business}. Just a friendly reminder that a balance of {amount} is outstanding for the work at {address}. Please let us know when you're ready to take care of this. Thank you!`,
-    second:`Hi {name}, this is a second notice from {business}. A balance of {amount} remains outstanding for work completed at {address}. Please respond within 5 business days to arrange payment and avoid further collection steps.`,
-    intent:`{name}, this is formal written notice from {business} of our intent to file a Mechanic's Lien against the property at {address} for unpaid services totaling {amount}. You have 7 days to remit full payment before we proceed with filing. Please contact us immediately.`,
+    reminder:`Hi {name}, this is {business}. Just a friendly reminder that a balance of {amount} is outstanding for the work at {address}. You can pay securely here: {url}\n\nThank you!`,
+    second:`Hi {name}, this is a second notice from {business}. A balance of {amount} remains outstanding for work completed at {address}. Please respond within 5 business days to arrange payment and avoid further collection steps. Pay securely here: {url}`,
+    intent:`{name}, this is formal written notice from {business} of our intent to file a Mechanic's Lien against the property at {address} for unpaid services totaling {amount}. You have 7 days to remit full payment before we proceed with filing. Pay now: {url}\n\nPlease contact us immediately.`,
   };
 }
 function _smsApply(template,vars){

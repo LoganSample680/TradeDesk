@@ -346,10 +346,15 @@ const COLL_STAGES={
   resolved:   {label:'✓ Resolved',      color:'var(--green)'},
 };
 
+// payUrl (the client-hub link, card/Apple Pay checkout lives there) rides every
+// stage when the client has a hub token: a collection text that names a balance
+// but hands no way to PAY it makes the client do homework, and homework is where
+// collection dies. "the work" not "the painting work": COLL_SMS serves every
+// trade (multi-trade since 2026; the painting wording predated that).
 const COLL_SMS={
-  reminder: (name,bal,addr,biz)=>`Hi ${name}, this is ${biz}. Just a friendly reminder that a balance of ${fmt(bal)} is outstanding for the painting work at ${addr}. Please let us know when you're ready to take care of this. Thank you!`,
-  second:   (name,bal,addr,biz)=>`Hi ${name}, this is a second notice from ${biz}. A balance of ${fmt(bal)} remains outstanding for work completed at ${addr}. Please respond within 5 business days to arrange payment and avoid further collection steps.`,
-  intent:   (name,bal,addr,biz,statute)=>`${name}, this is formal written notice from ${biz} of our intent to file a Mechanic's Lien against the property at ${addr} for unpaid services totaling ${fmt(bal)}. Under ${statute||'applicable state law'}, you have 7 days to remit full payment before we proceed with filing. Please contact us immediately.`,
+  reminder: (name,bal,addr,biz,_statute,payUrl)=>`Hi ${name}, this is ${biz}. Just a friendly reminder that a balance of ${fmt(bal)} is outstanding for the work at ${addr}. ${payUrl?`You can pay securely here: ${payUrl}`:`Please let us know when you're ready to take care of this.`} Thank you!`,
+  second:   (name,bal,addr,biz,_statute,payUrl)=>`Hi ${name}, this is a second notice from ${biz}. A balance of ${fmt(bal)} remains outstanding for work completed at ${addr}. Please respond within 5 business days to arrange payment and avoid further collection steps.${payUrl?` Pay securely here: ${payUrl}`:''}`,
+  intent:   (name,bal,addr,biz,statute,payUrl)=>`${name}, this is formal written notice from ${biz} of our intent to file a Mechanic's Lien against the property at ${addr} for unpaid services totaling ${fmt(bal)}. Under ${statute||'applicable state law'}, you have 7 days to remit full payment before we proceed with filing.${payUrl?` Pay now: ${payUrl}`:''} Please contact us immediately.`,
 };
 
 // Collection, risk, lien, and county helpers moved to bids.js (load-order fix)

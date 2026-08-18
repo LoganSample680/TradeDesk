@@ -547,6 +547,69 @@ test.describe('Collection and lifecycle flow functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // ── Pay link in every collection text (owner ask 2026-08-18) ────────────────
+  // A collection text that names a balance but hands no way to PAY it makes the
+  // client do homework. Every stage now carries the client-hub link (card/Apple
+  // Pay checkout lives there) when the client has a hub token, and degrades to
+  // link-free wording (no dangling "Pay securely here:") when they don't.
+  test('collSendSMS: the preview carries the client-hub pay link when the client has one', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof collSendSMS !== 'function' || typeof getClientById !== 'function') return { skip: true };
+      const bid = bids.find(b => b.id === 40001);
+      const c = getClientById ? (clients.find(x => x.id === bid?.client_id) || clients.find(x => x.id === 'c-coll-001')) : null;
+      if (!bid || !c) return { skip: true };
+      const savedTok = c.clientToken; const savedUser = window._supaUser;
+      const savedGetClient = window.getClientById;
+      try {
+        // collSendSMS resolves the client via getClientById(bid.client_id); the
+        // seed bids use clientId, so pin the lookup at our seeded client.
+        window.getClientById = () => c;
+        c.clientToken = 'hub-tok-123';
+        window._supaUser = window._supaUser || { id: 'coll-uid-1' };
+        collSendSMS(bid, 'reminder');
+        const ov = [...document.querySelectorAll('.zmodal-overlay')].pop();
+        const txt = ov ? ov.textContent : '';
+        ov?.remove();
+        return { skip: false, hasLink: txt.includes('client.html?t=hub-tok-123'), hasPayWord: /[Pp]ay/.test(txt) };
+      } finally {
+        c.clientToken = savedTok; window._supaUser = savedUser; window.getClientById = savedGetClient;
+        document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+      }
+    });
+    if (r.skip) return;
+    expect(r.hasLink, 'the hub pay link rides the reminder text').toBe(true);
+    expect(r.hasPayWord).toBe(true);
+  });
+
+  test('collSendSMS: no hub token degrades to link-free wording, never a dangling "pay here:"', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof collSendSMS !== 'function') return { skip: true };
+      const bid = bids.find(b => b.id === 40001);
+      const c = clients.find(x => x.id === 'c-coll-001');
+      if (!bid || !c) return { skip: true };
+      const savedTok = c.clientToken; const savedGetClient = window.getClientById;
+      try {
+        window.getClientById = () => c;
+        delete c.clientToken;
+        collSendSMS(bid, 'reminder');
+        const ov = [...document.querySelectorAll('.zmodal-overlay')].pop();
+        const txt = ov ? ov.textContent : '';
+        ov?.remove();
+        return {
+          skip: false,
+          noDangling: !/here:\s*(Thank|$)/.test(txt.replace(/\s+/g, ' ')) || !txt.includes('client.html'),
+          noHubUrl: !txt.includes('client.html'),
+        };
+      } finally {
+        if (savedTok !== undefined) c.clientToken = savedTok;
+        window.getClientById = savedGetClient;
+        document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+      }
+    });
+    if (r.skip) return;
+    expect(r.noHubUrl, 'no token means no link in the text').toBe(true);
+  });
+
   test('markFUWon: marks bid as Closed Won without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof markFUWon !== 'function') return { skip: true };

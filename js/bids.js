@@ -1695,12 +1695,21 @@ function collSendSMS(bid,stageKey){
   const biz=S.bname||'TradeDesk';
   const bal=getBidBalance(bid);
   const addr=bid.addr||c.addr||'the property';
+  // The client-hub link IS the collection tool (owner ask 2026-08-18): the hub's
+  // checkout takes card/Apple Pay, so every stage's text hands the client the way
+  // to pay, not just the news that they owe. Null (no hub token yet) degrades to
+  // the old link-free wording; the dangling-line cleanup below covers custom
+  // templates that reference {url} on a client with no link.
+  const payUrl=(typeof _clientHubUrl==='function'?_clientHubUrl(c):null)||'';
   const tplKey={reminder:'smsReminder',second:'smsSecond',intent:'smsIntent'}[stageKey];
   const defaults=_getSmsDefaults();
   const defKey={reminder:'reminder',second:'second',intent:'intent'}[stageKey];
-  const msg=tplKey&&S[tplKey]
-    ?_smsApply(S[tplKey],{name:c.name,business:biz,amount:fmt(bal),address:addr})
-    :(COLL_SMS[stageKey]?COLL_SMS[stageKey](c.name,bal,addr,biz,(typeof detectStateFromAddr==='function'&&typeof STATE_LIEN!=='undefined'&&STATE_LIEN[detectStateFromAddr(bid.addr||c.addr||'')||S?.state])?STATE_LIEN[detectStateFromAddr(bid.addr||c.addr||'')||S.state].statute:'applicable state law'):_smsApply(defaults[defKey]||'',{name:c.name,business:biz,amount:fmt(bal),address:addr}));
+  let msg=tplKey&&S[tplKey]
+    ?_smsApply(S[tplKey],{name:c.name,business:biz,amount:fmt(bal),address:addr,url:payUrl})
+    :(COLL_SMS[stageKey]?COLL_SMS[stageKey](c.name,bal,addr,biz,(typeof detectStateFromAddr==='function'&&typeof STATE_LIEN!=='undefined'&&STATE_LIEN[detectStateFromAddr(bid.addr||c.addr||'')||S?.state])?STATE_LIEN[detectStateFromAddr(bid.addr||c.addr||'')||S.state].statute:'applicable state law',payUrl):_smsApply(defaults[defKey]||'',{name:c.name,business:biz,amount:fmt(bal),address:addr,url:payUrl}));
+  // A template's pay-link sentence left hanging with no link reads broken
+  // ("Pay securely here: "), drop the empty offer rather than send it.
+  if(!payUrl)msg=msg.replace(/[^.\n]*(?:pay|Pay)[^.\n]*here:\s*(\n|$)/g,'$1').replace(/Pay now:\s*(\n|$)/g,'$1').replace(/\n{3,}/g,'\n\n').trim();
   const phone=c.phone.replace(/\D/g,'');
   const newStage=stageKey==='reminder'?'reminder':stageKey==='second'?'second':'intent';
   const stageLabel={reminder:'Reminder',second:'2nd Notice',intent:'Intent to Lien'}[stageKey]||stageKey;
