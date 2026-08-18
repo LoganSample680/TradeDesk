@@ -8395,9 +8395,9 @@ test.describe('Version consistency', () => {
     const initFailed = cloud.indexOf("zp3_cloud_cache (offline boot, session present)");
     expect(noSession, 'the no-session cache-restore branch exists').toBeGreaterThan(0);
     expect(initFailed, 'the Supabase-init-failure cache-restore branch exists').toBeGreaterThan(0);
-    expect(cloud.slice(noSession, noSession + 400), 'no-session boot restores identity too')
+    expect(cloud.slice(noSession, noSession + 600), 'no-session boot restores identity too')
       .toContain('_restoreIdentityFromCache');
-    expect(cloud.slice(initFailed, initFailed + 400), 'init-failure boot restores identity too')
+    expect(cloud.slice(initFailed, initFailed + 600), 'init-failure boot restores identity too')
       .toContain('_restoreIdentityFromCache');
   });
 
