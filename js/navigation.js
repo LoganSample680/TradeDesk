@@ -147,6 +147,48 @@ function _applyEmployeeNavGating(){
     ?()=>{if(typeof _hatSwitcherMenu==='function')_hatSwitcherMenu();}
     :()=>{if(typeof _eggLogoTap==='function')_eggLogoTap();};
   if(_chev)_chev.style.display=_multiHat?'':'none';
+  if(_multiHat)_hatTeachOnce();
+}
+
+// Discoverability for the brand-tap switcher (owner ask 2026-08-18): a chevron
+// alone doesn't announce itself. Two one-time teachers, never a recurring nag:
+//  • The boot right after a switch shows a toast confirming it AND naming the
+//    surface, the exact teachable moment (sessionStorage flag set by switchHat).
+//  • The FIRST time a login ever renders with two hats, a small coach bubble
+//    points at the business name. Shown once per login (localStorage flag),
+//    dismissed by any tap or on its own after 8s.
+function _hatTeachOnce(){
+  try{
+    const uid=(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||'';
+    if(!uid)return;
+    if(sessionStorage.getItem('_hatJustSwitched')){
+      sessionStorage.removeItem('_hatJustSwitched');
+      // They just used the switcher (any surface), no coach bubble needed ever.
+      localStorage.setItem('zp3_hat_coach_'+uid,'1');
+      if(typeof showToast==='function'){
+        const where=_isEmployee?'crew view':'your business';
+        showToast('Switched to '+where+'. Tap the business name up top to switch back anytime.','🔁',6000);
+      }
+      return;
+    }
+    if(localStorage.getItem('zp3_hat_coach_'+uid))return;
+    if(document.getElementById('_hat-coach'))return;
+    // Never fight the boot overlay for attention; retry after it lifts.
+    if(document.getElementById('supa-boot-overlay')){setTimeout(_hatTeachOnce,1200);return;}
+    localStorage.setItem('zp3_hat_coach_'+uid,'1');
+    const brand=document.getElementById('mobile-topbar-brand');
+    if(!brand)return;
+    const r=brand.getBoundingClientRect();
+    const tip=document.createElement('div');
+    tip.id='_hat-coach';
+    tip.style.cssText='position:fixed;left:'+Math.max(8,Math.round(r.left))+'px;top:'+Math.round(r.bottom+8)+'px;z-index:9500;background:var(--blue);color:#fff;font-size:12.5px;font-weight:600;line-height:1.45;padding:10px 13px;border-radius:10px;max-width:250px;box-shadow:0 6px 20px rgba(0,0,0,.25);animation:td-pg-enter .25s cubic-bezier(.22,1,.36,1) both';
+    tip.innerHTML='<div style="position:absolute;top:-5px;left:22px;width:10px;height:10px;background:var(--blue);transform:rotate(45deg)"></div>'+
+      'Two businesses, one login. Tap your business name here to switch.';
+    document.body.appendChild(tip);
+    const dismiss=()=>{tip.remove();document.removeEventListener('pointerdown',dismiss,true);};
+    setTimeout(()=>document.addEventListener('pointerdown',dismiss,true),400);
+    setTimeout(dismiss,8000);
+  }catch(_e){}
 }
 function _employeeSignOutMenu(){
   closeMobileMore();

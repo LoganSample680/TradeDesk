@@ -603,7 +603,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.17.26.40';
+const APP_VERSION='08.17.26.41';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1386,6 +1386,12 @@ window.switchHat=async function(hat){
     // deleting it here could drop unsaved records the other hat still owns.
     localStorage.removeItem('zp3_cloud_cache');
     localStorage.removeItem('zp3_delta_meta');
+    // Teachable moment: the boot after the switch confirms it worked AND names
+    // the surface ("tap the business name"), so the switcher teaches itself the
+    // first time it's used (owner ask 2026-08-18: "how do we make it so they
+    // know that's where you switch"). sessionStorage: same tab only, gone if
+    // they close the app, never a stale toast days later.
+    sessionStorage.setItem('_hatJustSwitched','1');
   }catch(_e){}
   location.reload();
 };

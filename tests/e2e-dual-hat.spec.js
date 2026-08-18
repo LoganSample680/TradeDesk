@@ -349,6 +349,56 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
     expect(r.crewSide.menuOpen, 'crew hat with an owned business gets the switcher from the same spot').toBe(true);
   });
 
+  test('the switcher teaches itself: one-time coach bubble, post-switch toast, never a recurring nag', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { links: window._hatCrewLinks, owns: window._hatOwnsBusiness, isEmp: _isEmployee, user: window._supaUser };
+      const origToast = window.showToast;
+      let toasts = [];
+      window.showToast = (msg) => { toasts.push(String(msg)); };
+      try {
+        window._supaUser = { id: 'coach-u1' };
+        localStorage.removeItem('zp3_hat_coach_coach-u1');
+        sessionStorage.removeItem('_hatJustSwitched');
+        _isEmployee = false; window._hatOwnsBusiness = true;
+        window._hatCrewLinks = [{ contractor_user_id: 'boss-1', name: 'BIL', role: 'plumber' }];
+        document.getElementById('supa-boot-overlay')?.remove();
+        // First multi-hat render: bubble appears, flag set.
+        _applyEmployeeNavGating();
+        await new Promise(res => setTimeout(res, 50));
+        const bubbleFirst = !!document.getElementById('_hat-coach');
+        const flagSet = localStorage.getItem('zp3_hat_coach_coach-u1') === '1';
+        document.getElementById('_hat-coach')?.remove();
+        // Second render: never again.
+        _applyEmployeeNavGating();
+        await new Promise(res => setTimeout(res, 50));
+        const bubbleSecond = !!document.getElementById('_hat-coach');
+        // Post-switch boot: toast names the surface, flag cleared, no bubble.
+        localStorage.removeItem('zp3_hat_coach_coach-u1');
+        sessionStorage.setItem('_hatJustSwitched', '1');
+        _applyEmployeeNavGating();
+        await new Promise(res => setTimeout(res, 50));
+        const toastFired = toasts.some(t => t.includes('business name'));
+        const sessionCleared = sessionStorage.getItem('_hatJustSwitched') === null;
+        const bubbleAfterToast = !!document.getElementById('_hat-coach');
+        return { bubbleFirst, flagSet, bubbleSecond, toastFired, sessionCleared, bubbleAfterToast };
+      } finally {
+        window.showToast = origToast;
+        window._hatCrewLinks = saved.links; window._hatOwnsBusiness = saved.owns;
+        _isEmployee = saved.isEmp; window._supaUser = saved.user;
+        localStorage.removeItem('zp3_hat_coach_coach-u1');
+        sessionStorage.removeItem('_hatJustSwitched');
+        document.getElementById('_hat-coach')?.remove();
+        _applyEmployeeNavGating();
+      }
+    });
+    expect(r.bubbleFirst, 'first multi-hat render shows the coach bubble').toBe(true);
+    expect(r.flagSet, 'shown once means flagged immediately').toBe(true);
+    expect(r.bubbleSecond, 'never a second bubble').toBe(false);
+    expect(r.toastFired, 'the boot after a switch names the surface in a toast').toBe(true);
+    expect(r.sessionCleared, 'the just-switched flag is consumed, no repeat toast').toBe(true);
+    expect(r.bubbleAfterToast, 'using the switcher means the bubble is never needed').toBe(false);
+  });
+
   test('zero console errors across the dual-hat suite', async () => {
     assertNoErrors(page, 'dual-hat accounts');
   });
