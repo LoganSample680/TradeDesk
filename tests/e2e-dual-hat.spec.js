@@ -253,9 +253,25 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
         _pendingSavePromise = null; _devSupportMode = false;
         localStorage.removeItem('zp3_offline_pending');
         clients.length = 0; bids.length = 0;
+        // Decisive tracing: supaLoadFromCloud narrates its catch paths via
+        // console.warn ("Cloud load failed", "Cache load failed: <reason>"), so
+        // capturing warns during the call distinguishes every way this can paint
+        // nothing: no warns = early return before the try; "Cloud load failed"
+        // alone = catch entered but cache missing; both = the guard's reason is
+        // in the second warn's text.
+        const warns = [];
+        const origWarn = console.warn;
+        console.warn = (...a) => { warns.push(a.map(x => (x && x.message) || String(x)).join(' ')); };
         let err = null;
         try { await window.__realSupaLoad({ silent: false }); } catch (e) { err = e?.message || String(e); }
-        return { hit: clients.some(c => c.id === marker), err, len: clients.length };
+        console.warn = origWarn;
+        return {
+          hit: clients.some(c => c.id === marker), err, len: clients.length,
+          warns: warns.filter(w => /load failed/i.test(w)).slice(0, 4),
+          uidProbe: (_isEmployee ? _contractorUserId : (window._supaUser && window._supaUser.id)) || null,
+          cacheAfter: !!localStorage.getItem('zp3_cloud_cache'),
+          realFnType: typeof window.__realSupaLoad,
+        };
       };
       try {
         const own = await run('boss-1', 'crew-own-cache');       // written by THIS crew session
