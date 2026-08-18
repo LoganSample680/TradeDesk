@@ -134,6 +134,19 @@ function _applyEmployeeNavGating(){
   // in _employeeSignOutMenu below (employees can't reach Settings at all).
   const _hatBtn=document.getElementById('set-hat-btn');
   if(_hatBtn)_hatBtn.style.display=(!_isEmployee&&(window._hatCrewLinks||[]).length)?'':'none';
+  // The PRIMARY switcher surface (owner ask 2026-08-18): tapping the business
+  // name in the top-left opens the switcher, the Slack-workspace pattern, always
+  // in reach instead of buried in Settings. Only when this login actually has
+  // 2+ hats; a single-hat login keeps the logo easter egg the brand tap fires
+  // today, and the chevron only renders when the tap actually switches, so the
+  // affordance never lies.
+  const _brand=document.getElementById('mobile-topbar-brand');
+  const _chev=document.getElementById('topbar-hat-chev');
+  const _multiHat=(!_isEmployee&&(window._hatCrewLinks||[]).length>0)||(!!_isEmployee&&!!window._hatOwnsBusiness);
+  if(_brand)_brand.onclick=_multiHat
+    ?()=>{if(typeof _hatSwitcherMenu==='function')_hatSwitcherMenu();}
+    :()=>{if(typeof _eggLogoTap==='function')_eggLogoTap();};
+  if(_chev)_chev.style.display=_multiHat?'':'none';
 }
 function _employeeSignOutMenu(){
   closeMobileMore();

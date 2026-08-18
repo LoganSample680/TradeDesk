@@ -313,6 +313,42 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
     expect(r.withoutHat, 'a crew-only login never sees a business it does not have').toBe(false);
   });
 
+  test('the top-left brand becomes the switcher for dual-hat logins, stays the egg otherwise', async () => {
+    const r = await page.evaluate(() => {
+      const saved = { links: window._hatCrewLinks, owns: window._hatOwnsBusiness, isEmp: _isEmployee };
+      const probe = () => {
+        _applyEmployeeNavGating();
+        const chev = document.getElementById('topbar-hat-chev');
+        document.getElementById('mobile-topbar-brand')?.click();
+        const menuOpen = !!document.getElementById('_hat-switch-ov');
+        document.getElementById('_hat-switch-ov')?.remove();
+        return { chevShown: !!(chev && chev.style.display !== 'none'), menuOpen };
+      };
+      try {
+        // Owner hat with a crew link: brand switches, chevron shows.
+        _isEmployee = false; window._hatOwnsBusiness = true;
+        window._hatCrewLinks = [{ contractor_user_id: 'boss-1', name: 'BIL', role: 'plumber' }];
+        const multi = probe();
+        // Single-hat owner: brand goes back to the egg, chevron hides.
+        window._hatCrewLinks = []; window._hatOwnsBusiness = true;
+        const single = probe();
+        // Crew hat whose login owns a business: brand switches there too.
+        _isEmployee = true; window._hatOwnsBusiness = true; window._hatCrewLinks = [];
+        const crewSide = probe();
+        return { multi, single, crewSide };
+      } finally {
+        window._hatCrewLinks = saved.links; window._hatOwnsBusiness = saved.owns; _isEmployee = saved.isEmp;
+        _applyEmployeeNavGating();
+        document.getElementById('_hat-switch-ov')?.remove();
+      }
+    });
+    expect(r.multi.chevShown, 'chevron renders when the tap actually switches').toBe(true);
+    expect(r.multi.menuOpen, 'brand tap opens the switcher for a dual-hat owner').toBe(true);
+    expect(r.single.chevShown, 'no second hat, no chevron, the affordance never lies').toBe(false);
+    expect(r.single.menuOpen, 'single-hat brand tap never opens the switcher').toBe(false);
+    expect(r.crewSide.menuOpen, 'crew hat with an owned business gets the switcher from the same spot').toBe(true);
+  });
+
   test('zero console errors across the dual-hat suite', async () => {
     assertNoErrors(page, 'dual-hat accounts');
   });
