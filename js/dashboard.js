@@ -736,6 +736,7 @@ function renderDash(){
   renderLeadSources();
   renderDashToday();
   renderDashCollect();
+  renderReadyQueue();
   renderTodayFeed();
   _renderDashSetupTodo();
   _renderDashSupplyHold();
@@ -2048,6 +2049,128 @@ function _markDepositCash(bidId){
   });
 }
 
+// ── Ready to schedule: signed work waiting for a day (owner 2026-08-18) ──────
+// A won bid with no job record yet is real, waiting work, and today it only
+// surfaces on the client's own detail page (js/clients.js needsAttention,
+// owner-approved 2026-08-17). This is the same fact, app-wide, so a job never
+// has to survive a trip to a specific client's page to get worked. Default
+// order is signed date (oldest first, first-signed-first-served); dragging
+// overrides that with an explicit queueOrder on the bid, same relationship
+// the dispatch board's dispatchOrder has to its own default order.
+function _readyQueueBids(){
+  if(typeof bids==='undefined'||typeof jobs==='undefined')return [];
+  const hasJob=b=>jobs.some(j=>j.bid_id===b.id||(!j.bid_id&&j.client_id===b.client_id&&(j.name||'')===(b.name||'')));
+  return bids.filter(b=>b.status==='Closed Won'&&!b.completion_date&&!hasJob(b));
+}
+function _sortReadyQueue(list){
+  return list.slice().sort((a,b)=>{
+    if(a.queueOrder!=null||b.queueOrder!=null){
+      const ao=a.queueOrder!=null?a.queueOrder:Infinity;
+      const bo=b.queueOrder!=null?b.queueOrder:Infinity;
+      if(ao!==bo)return ao-bo;
+    }
+    return String(a.signedAt||a.bid_date||'').localeCompare(String(b.signedAt||b.bid_date||''));
+  });
+}
+function renderReadyQueue(){
+  const el=document.getElementById('dash-ready-queue');
+  if(!el)return;
+  const list=_sortReadyQueue(_readyQueueBids());
+  if(!list.length){el.innerHTML='';return;}
+  const rows=list.map(b=>{
+    const c=(typeof getClientById==='function')?getClientById(b.client_id):null;
+    const addr=(c&&c.addr)||'';
+    return '<div class="rq-card" data-bid="'+b.id+'" style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
+      '<div style="display:flex;align-items:flex-start;gap:8px">'+
+        '<div class="rq-grip" data-bid="'+b.id+'" title="Drag to reorder the queue" style="touch-action:none;cursor:grab;padding:6px 8px;margin:-6px -4px -6px -8px;color:var(--text3);flex-shrink:0;line-height:0">'+
+          '<svg width="14" height="18" viewBox="0 0 14 18" fill="currentColor" aria-hidden="true"><circle cx="4" cy="4" r="1.6"/><circle cx="10" cy="4" r="1.6"/><circle cx="4" cy="9" r="1.6"/><circle cx="10" cy="9" r="1.6"/><circle cx="4" cy="14" r="1.6"/><circle cx="10" cy="14" r="1.6"/></svg></div>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:13px;font-weight:700;margin-bottom:3px">'+escHtml((c&&c.name)||b.name||'Job')+'</div>'+
+          (addr?'<div style="font-size:11px;color:var(--text3);margin-bottom:4px">'+escHtml(addr)+'</div>':'')+
+          '<div style="font-size:11px;font-weight:700;color:var(--text3)">Won '+_cdDShort(b.signedAt||b.bid_date)+'</div>'+
+        '</div>'+
+        '<button onclick="event.stopPropagation();schedFromBid('+b.id+')" class="btn btn-p" style="font-size:12px;font-weight:800;padding:8px 12px;flex-shrink:0">Schedule</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  el.innerHTML='<div class="card card-pad-0" id="dash-ready-queue-card">'+
+    '<div class="card-hd"><div>'+
+      '<div class="card-hd-title">Ready to schedule</div>'+
+      '<div class="card-hd-sub">'+list.length+' signed, sorted by when they were won, drag to reorder</div>'+
+    '</div></div>'+
+    '<div style="padding:12px" id="rq-list">'+rows+'</div>'+
+  '</div>';
+  _initReadyQueueDrag();
+}
+// Pointer events, same mechanic as the dispatch board's grip
+// (js/cloud.js _initDispatchDrag): one implementation covers finger, stylus
+// and mouse, reordered in the DOM live as the pointer crosses a neighbor's
+// midpoint, then the DOM order is read back and persisted, never tracked by
+// index during the drag itself.
+let _rqDrag=null;
+function _initReadyQueueDrag(){
+  const host=document.getElementById('dash-ready-queue');
+  if(!host||host._rqBound)return;
+  host._rqBound=true;
+  host.addEventListener('pointerdown',e=>{
+    const grip=e.target.closest&&e.target.closest('.rq-grip');
+    if(!grip)return;
+    const card=grip.closest('.rq-card');
+    const list=card&&card.parentElement;
+    if(!card||!list)return;
+    e.preventDefault();
+    _rqDrag={card,list,moved:false};
+    try{grip.setPointerCapture(e.pointerId);}catch(_e){}
+    card.style.transition='none';
+    card.style.opacity='.9';
+    card.style.boxShadow='0 6px 20px rgba(0,0,0,.18)';
+    card.style.position='relative';
+    card.style.zIndex='5';
+    if(typeof _tdHaptic==='function')_tdHaptic('thud');
+  });
+  host.addEventListener('pointermove',e=>{
+    if(!_rqDrag)return;
+    e.preventDefault();
+    _rqDrag.moved=true;
+    const {card,list}=_rqDrag;
+    const cards=[...list.querySelectorAll(':scope > .rq-card')];
+    const i=cards.indexOf(card);
+    const y=e.clientY;
+    const prev=cards[i-1],next=cards[i+1];
+    if(prev){
+      const pr=prev.getBoundingClientRect();
+      if(y<pr.top+pr.height/2){list.insertBefore(card,prev);return;}
+    }
+    if(next){
+      const nr=next.getBoundingClientRect();
+      if(y>nr.top+nr.height/2){list.insertBefore(next,card);return;}
+    }
+  });
+  const end=()=>{
+    if(!_rqDrag)return;
+    const {card,list,moved}=_rqDrag;
+    _rqDrag=null;
+    card.style.opacity='';card.style.boxShadow='';card.style.zIndex='';
+    card.style.position='';card.style.transition='';
+    if(!moved)return;
+    const ids=[...list.querySelectorAll(':scope > .rq-card')].map(c=>c.getAttribute('data-bid'));
+    _readyQueueSetOrder(ids);
+  };
+  host.addEventListener('pointerup',end);
+  host.addEventListener('pointercancel',end);
+}
+function _readyQueueSetOrder(bidIds){
+  if(!Array.isArray(bidIds))return;
+  let n=0;
+  bidIds.forEach((id,i)=>{
+    const b=bids.find(x=>String(x.id)===String(id));
+    if(!b)return;
+    b.queueOrder=i;n++;
+  });
+  if(!n)return;
+  saveAll();
+}
+
 function renderTodayFeed(){
   const el=document.getElementById('dash-money-feed');if(!el)return;
   const tk=todayKey();
@@ -3257,7 +3380,7 @@ function renderEstimatesPage(){
 // contracts/goal were split out of the old kpi+pipeline mega-widgets.
 // 'crew' was deleted 2026-07-14 ("simplify before we scale"): a saved order
 // containing it is harmless: _applyDashOrder skips ids with no matching element.
-const _DASH_DEFAULT_ORDER = ['kpi','alerts','contracts','goal','pipeline','feed','quick','calendar','sources'];
+const _DASH_DEFAULT_ORDER = ['kpi','alerts','contracts','readyQueue','goal','pipeline','feed','quick','calendar','sources'];
 
 // FLIP slide: run a DOM mutation (placeholder move) and animate every shifted
 // sibling from its old position to its new one, so cards GLIDE aside instead of

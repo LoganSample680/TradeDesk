@@ -669,7 +669,13 @@ async function _geoOnPing(pos){
     :cur.k==='job'?_geoLocOfJob(insideJob)
     :cur.k==='shop'?{lat:shopC.lat,lng:shopC.lng,name:'Shop',kind:'shop',addr:_geoShopAddr()}
     :cur.k==='place'?{lat:atPlace.lat,lng:atPlace.lon,name:atPlace.name||'Place',kind:atPlace.kind||'other',placeId:atPlaceId,addr:atPlace.addr||''}
-    :{lat:atClient.lat,lng:atClient.lng,name:atClient.name||'Client',kind:'client',clientId:atClient.id,addr:atClient.addr||''};
+    :{lat:atClient.lat,lng:atClient.lng,name:atClient.name||'Client',kind:'client',clientId:atClient.id,addr:atClient.addr||'',
+      // A won bid nobody has put on the calendar yet is real work, not a
+      // consult (owner 2026-08-18: "forgot to add it to the calendar" should
+      // never cost a correctly-labeled trip). This only ever fires when NO
+      // job fenced above (job wins the strongest tier, unconditionally), so
+      // it can never relabel a trip that already has a real scheduled job.
+      queuedJob:_geoHasQueuedBid(atClientId)};
   const prev=_geoCurrentJob?{k:'job',id:String(_geoCurrentJob)}
             :_geoLegAtShop?{k:'shop',id:'shop'}
             :_geoCurrentPlace?{k:'place',id:String(_geoCurrentPlace)}
@@ -1081,6 +1087,16 @@ function _geoClientAt(here){
     }
   }
   return best;
+}
+// Same "won, no job record yet" definition as the client-card's own
+// needs-attention flag (js/clients.js _jobForBid, owner-approved 2026-08-17)
+// and the dashboard queue built on it (js/dashboard.js _readyQueueBids), just
+// asked for one client instead of listed for all of them. Kept in sync with
+// both by construction: same three fields, same "any job at all" check.
+function _geoHasQueuedBid(clientId){
+  if(!clientId||typeof bids==='undefined'||typeof jobs==='undefined')return false;
+  const hasJob=b=>jobs.some(j=>j.bid_id===b.id||(!j.bid_id&&j.client_id===b.client_id&&(j.name||'')===(b.name||'')));
+  return bids.some(b=>String(b.client_id)===String(clientId)&&b.status==='Closed Won'&&!b.completion_date&&!hasJob(b));
 }
 // The visit itself, closed on departure: same shape as a place visit (the
 // client's name is the destination), so it lands in the day's story and the

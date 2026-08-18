@@ -169,6 +169,8 @@ test.describe('Drag-to-reorder: dashboard widgets', () => {
 
   // 10 widgets since the 2026-07-04 split (owner: every card movable): crew,
   // alerts, contracts, goal were carved out of the old kpi+pipeline mega-widgets.
+  // 'crew' was deleted 2026-07-14 (down to 9), 'readyQueue' added 2026-08-18
+  // (the Ready to schedule card), back to 10.
   test('dash-widget-root exists with all 10 .td-dw card widgets', async () => {
     const rootExists = await page.locator('#dash-widget-root').count();
     expect(rootExists).toBe(1);
@@ -176,11 +178,11 @@ test.describe('Drag-to-reorder: dashboard widgets', () => {
     const widgets = await page.evaluate(() =>
       [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.dataset.dw)
     );
-    // 'crew' widget deleted 2026-07-14 (owner: "simplify before we scale").
-    expect(widgets).toHaveLength(9);
-    for (const id of ['kpi', 'alerts', 'contracts', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']) {
+    expect(widgets).toHaveLength(10);
+    for (const id of ['kpi', 'alerts', 'contracts', 'readyQueue', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']) {
       expect(widgets).toContain(id);
     }
+    // 'crew' widget deleted 2026-07-14 (owner: "simplify before we scale").
     expect(widgets, 'the crew widget must be deleted, not hidden').not.toContain('crew');
   });
 
@@ -203,14 +205,14 @@ test.describe('Drag-to-reorder: dashboard widgets', () => {
       S.dashWidgetOrder = saved;
       return result;
     });
-    expect(order).toEqual(['kpi', 'alerts', 'contracts', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
+    expect(order).toEqual(['kpi', 'alerts', 'contracts', 'readyQueue', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
   });
 
-  test('_applyDashOrder reorders widgets in DOM (full 9-widget order; stale "crew" id skipped)', async () => {
+  test('_applyDashOrder reorders widgets in DOM (full 10-widget order; stale "crew" id skipped)', async () => {
     // 'crew' stays in the input deliberately, real users have it in their
     // SAVED order from before the 2026-07-14 deletion; it must be skipped
     // harmlessly, never crash or orphan.
-    const full = ['sources', 'calendar', 'quick', 'feed', 'pipeline', 'goal', 'contracts', 'alerts', 'crew', 'kpi'];
+    const full = ['sources', 'calendar', 'quick', 'feed', 'pipeline', 'readyQueue', 'goal', 'contracts', 'alerts', 'crew', 'kpi'];
     await page.evaluate((o) => _applyDashOrder(o), full);
 
     const order = await page.evaluate(() =>
@@ -223,7 +225,7 @@ test.describe('Drag-to-reorder: dashboard widgets', () => {
     const restored = await page.evaluate(() =>
       [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.dataset.dw)
     );
-    expect(restored).toEqual(['kpi', 'alerts', 'contracts', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
+    expect(restored).toEqual(['kpi', 'alerts', 'contracts', 'readyQueue', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
   });
 
   // §11.4 companion: a PRE-SPLIT saved order (6 ids) must not dump the new cards
@@ -233,15 +235,16 @@ test.describe('Drag-to-reorder: dashboard widgets', () => {
       _mergeDashOrder(['sources', 'kpi', 'pipeline', 'feed', 'quick', 'calendar'])
     );
     // alerts/contracts/goal follow kpi (their default predecessor), in default order.
-    expect(merged).toEqual(['sources', 'kpi', 'alerts', 'contracts', 'goal', 'pipeline', 'feed', 'quick', 'calendar']);
-    // And applying the old order yields all 9 in the DOM, nothing orphaned.
+    // readyQueue's default predecessor is contracts, so it lands right after it.
+    expect(merged).toEqual(['sources', 'kpi', 'alerts', 'contracts', 'readyQueue', 'goal', 'pipeline', 'feed', 'quick', 'calendar']);
+    // And applying the old order yields all 10 in the DOM, nothing orphaned.
     const applied = await page.evaluate(() => {
       _applyDashOrder(['sources', 'kpi', 'pipeline', 'feed', 'quick', 'calendar']);
       const out = [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.dataset.dw);
       _applyDashOrder(_DASH_DEFAULT_ORDER.slice());
       return out;
     });
-    expect(applied).toHaveLength(9);
+    expect(applied).toHaveLength(10);
   });
 
   test('_dashSortActive flag prevents duplicate listener registration', async () => {

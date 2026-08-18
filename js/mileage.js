@@ -1537,7 +1537,11 @@ function _autoTripPurpose(to){
   if(k==='job')return 'Job site';
   // A spontaneous visit to a client with nothing scheduled: an estimate look,
   // a drop-in. The trip binds to the client record via to.clientId.
-  if(k==='client')return 'Client Consult';
+  // A won bid sitting unscheduled at this client is real work, not a
+  // consult, whether or not anyone ever put it on a calendar (owner
+  // 2026-08-18). geo-track.js only sets this when no job fenced first, so a
+  // client with an actual scheduled job today is unaffected.
+  if(k==='client')return (to&&to.queuedJob)?'Job site':'Client Consult';
   return _PLACE_KIND_TO_PURPOSE[k]||'Other';
 }
 // Whoever is driving, today's answer wins over the standing one.
