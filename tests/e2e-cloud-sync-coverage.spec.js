@@ -1203,6 +1203,102 @@ test.describe('Cloud sync core, uncovered function coverage', () => {
     expect(r.zjIdx).toBeGreaterThanOrEqual(0);      // the cursor row was read…
     expect(r.firstTdIdx).toBeGreaterThan(r.zjIdx);  // …strictly BEFORE any table snapshot
   });
+
+  // ── Cross-account bleed guard: the load-FAILED fallback (a real cloud load throws,
+  // e.g. a network blip) must never paint a DIFFERENT account's stale zp3_cloud_cache
+  // as if it were the currently signed-in account's own real data. _paintCacheForDelta
+  // already enforces the owner match on the normal path; this is the same guard on the
+  // catch-block fallback, which had none (a same-tab account switch whose first load
+  // for the new account throws before ever overwriting the cache used to fall straight
+  // into painting the OLD account's numbers as the new account's "synced" state).
+  test('a load-failure fallback to zp3_cloud_cache never paints a different accounts stale data as the current accounts own', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = {
+        supa: _supa, user: window._supaUser, loaded: _supaCloudLoaded, owner: _loadedDataOwner,
+        cursor: _deltaCursor, emp: _isEmployee, hash: _syncedHash, known: _lastKnownIds,
+        clients: clients.slice(), bids: bids.slice(),
+      };
+      try {
+        // Cache belongs to a DIFFERENT account than the one this load is fetching for.
+        localStorage.setItem('zp3_cloud_cache', JSON.stringify({
+          _owner: 'account-A-stale',
+          clients: [{ id: 'a-client-1', name: 'Account A Client' }],
+          bids: [{ id: 'a-bid-1', amount: 99999 }],
+          jobs: [], payments: [], income: [], expenses: [], mileage: [],
+        }));
+        _supa = { from: () => { throw new Error('simulated network failure'); } };
+        window._supaUser = { id: 'account-B-real' };
+        _supaCloudLoaded = false; _isEmployee = false;
+        _loadedDataOwner = null; _deltaCursor = null;
+        clients.length = 0; bids.length = 0;
+        await supaLoadFromCloud({ silent: false });
+        return {
+          gotStrangerClient: clients.some(c => c.id === 'a-client-1'),
+          gotStrangerBid: bids.some(b => b.id === 'a-bid-1'),
+        };
+      } finally {
+        _supa = saved.supa; window._supaUser = saved.user; _supaCloudLoaded = saved.loaded;
+        _loadedDataOwner = saved.owner; _deltaCursor = saved.cursor; _isEmployee = saved.emp;
+        _syncedHash = saved.hash; _lastKnownIds = saved.known;
+        clients.length = 0; saved.clients.forEach(c => clients.push(c));
+        bids.length = 0; saved.bids.forEach(b => bids.push(b));
+        localStorage.removeItem('zp3_cloud_cache');
+        _loadInProgress = false; _activeLoadPromise = null;
+      }
+    });
+    expect(r.gotStrangerClient, 'a different account\'s cached client must never paint into the signed-in account\'s arrays').toBe(false);
+    expect(r.gotStrangerBid, 'a different account\'s cached bid must never paint into the signed-in account\'s arrays').toBe(false);
+  });
+
+  // ── A table key MISSING from get_account_delta's response (partial RPC bug, deploy
+  // skew) must never be read as "zero rows changed for that table". That's
+  // indistinguishable from a real empty delta and would leave a stale
+  // _paintCacheForDelta value for that table unmerged while the load still reports
+  // success. The whole RPC result must be rejected so the caller falls back to the
+  // per-table delta query instead.
+  test('a malformed get_account_delta response missing a table key falls back to per-table delta, never accepted as "nothing changed"', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = {
+        supa: _supa, user: window._supaUser, loaded: _supaCloudLoaded, owner: _loadedDataOwner,
+        cursor: _deltaCursor, emp: _isEmployee, hash: _syncedHash, known: _lastKnownIds,
+      };
+      const gtCalls = [];
+      const makeChain = (table) => {
+        const chain = {
+          select() { return chain; }, eq() { return chain; },
+          gt(col, val) { if (/^td_/.test(table)) gtCalls.push(table); return chain; },
+          in() { return chain; }, is() { return chain; }, order() { return chain; }, limit() { return chain; },
+          maybeSingle() { return Promise.resolve({ data: { settings: null, checks_state: null, receipt_images: null, updated_at: 'CUR' }, error: null }); },
+          single() { return Promise.resolve({ data: null, error: null }); },
+          upsert() { return chain; }, update() { return chain; },
+          then(res, rej) { return Promise.resolve({ data: [], error: null }).then(res, rej); },
+        };
+        return chain;
+      };
+      try {
+        _supa = {
+          from: (t) => makeChain(t),
+          // td_bids present, every other table's key entirely absent (not an empty
+          // array, MISSING) — simulates a partial/buggy RPC response.
+          rpc: (fn) => {
+            if (fn !== 'get_account_delta') return Promise.resolve({ data: null, error: null });
+            return Promise.resolve({ data: { tables: { td_bids: [] } }, error: null });
+          },
+        };
+        window._supaUser = { id: 'malformed-rpc-u' };
+        _supaCloudLoaded = true; _isEmployee = false;
+        _loadedDataOwner = 'malformed-rpc-u'; _deltaCursor = new Date().toISOString();
+        await supaLoadFromCloud({ silent: true });
+        return { deltaQueried: gtCalls.length >= 10 }; // fell through to the per-table fallback
+      } finally {
+        _supa = saved.supa; window._supaUser = saved.user; _supaCloudLoaded = saved.loaded;
+        _loadedDataOwner = saved.owner; _deltaCursor = saved.cursor; _isEmployee = saved.emp;
+        _syncedHash = saved.hash; _lastKnownIds = saved.known;
+        _loadInProgress = false; _activeLoadPromise = null;
+      }
+    });
+    expect(r.deltaQueried, 'a partial RPC response must be rejected wholesale, not partially accepted').toBe(true);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

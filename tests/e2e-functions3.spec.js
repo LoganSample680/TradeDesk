@@ -1251,6 +1251,72 @@ test.describe('Cloud Supabase and account functions', () => {
     await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 6000 });
   });
 
+  // ── Regression: dash-setup-todo/dash-supply-hold/dash-geo-perm are siblings of
+  // #dash-widget-root, not .td-dw children, so the boot skeleton's original selector
+  // never covered them. A stale Stripe/QR cache could paint a wrong checklist count
+  // as final, bare content while every other widget was still shimmering (owner
+  // report: "9 of 10 done" reading wrong with no shimmer to explain it).
+  test('boot skeletons also cover the setup checklist card, not just .td-dw widgets', async () => {
+    const r = await page.evaluate(async () => {
+      const savedTimer = window._bootSkelTimer;
+      const setupEl = document.getElementById('dash-setup-todo');
+      const savedSetupHtml = setupEl.innerHTML, savedSetupDisplay = setupEl.style.display;
+      try {
+        window._bootSyncPending = true; window._bootSkelDone = false; window._bootSkelTimer = null;
+        document.getElementById('supa-boot-overlay')?.remove();
+        document.getElementById('pg-dash').classList.add('active');
+        // Simulate the checklist's first paint: real height, real (possibly wrong)
+        // content, exactly as _renderDashSetupTodo leaves it before Stripe/QR resolve.
+        setupEl.style.display = 'block';
+        setupEl.innerHTML = '<div class="card" style="padding:16px">9 of 10 done</div>';
+        _dashApplySkeletons();
+        const covered = setupEl.classList.contains('td-boot-skel-on') && !!setupEl.querySelector(':scope>.td-boot-skel');
+        const realHidden = getComputedStyle(setupEl.querySelector('.card')).display === 'none';
+        return { covered, realHidden };
+      } finally {
+        setupEl.innerHTML = savedSetupHtml; setupEl.style.display = savedSetupDisplay;
+        setupEl.classList.remove('td-boot-skel-on');
+        setupEl.querySelectorAll(':scope>.td-boot-skel').forEach(s => s.remove());
+        window._bootSyncPending = false; window._bootSkelDone = true;
+        try { clearTimeout(window._bootSkelTimer); } catch (e) {}
+        window._bootSkelTimer = savedTimer;
+      }
+    });
+    expect(r.covered, 'the checklist card must get the same shimmer overlay as every other boot widget').toBe(true);
+    expect(r.realHidden, 'the real (possibly wrong) checklist content must be hidden while it shimmers').toBe(true);
+  });
+
+  // ── Regression: _bootSyncSettled must not declare "settled" while the checklist's
+  // own Stripe/QR self-correction (500-650ms setTimeout calls in supaLoadFromCloud)
+  // is still in flight, else that correction lands as a bare, un-shimmered re-render
+  // after the skeleton already cleared.
+  test('_bootSyncSettled holds the skeleton open while a checklist self-correction is still pending', async () => {
+    const r = await page.evaluate(async () => {
+      const savedTimer = window._bootSkelTimer;
+      try {
+        window._bootSyncPending = true; window._bootSkelDone = false; window._bootSkelTimer = null;
+        window._bootChecklistHoldUntil = null; window._bootChecklistPending = 1; // Stripe/QR check "still in flight"
+        document.getElementById('supa-boot-overlay')?.remove();
+        document.getElementById('pg-dash').classList.add('active');
+        _bootSyncSettled();
+        await new Promise(res => setTimeout(res, 300));
+        const stillWaiting = !window._bootSkelDone;
+        window._bootChecklistPending = 0; // the fetch's own .finally() clears it and re-calls settle
+        _bootSyncSettled();
+        let waited = 0;
+        while (!window._bootSkelDone && waited < 3000) { await new Promise(res => setTimeout(res, 100)); waited += 100; }
+        return { stillWaiting, settledAfter: window._bootSkelDone };
+      } finally {
+        window._bootSyncPending = false; window._bootSkelDone = true; window._bootShimmerT0 = null;
+        window._bootChecklistPending = 0; window._bootChecklistHoldUntil = null;
+        try { clearTimeout(window._bootSkelTimer); } catch (e) {}
+        window._bootSkelTimer = savedTimer;
+      }
+    });
+    expect(r.stillWaiting, 'must not settle while a checklist self-correction is still in flight').toBe(true);
+    expect(r.settledAfter, 'must settle once the pending count clears').toBe(true);
+  });
+
   // While skeletons are up the overlay lift must NOT pour the cascade over
   // shimmer bars, and the settle must not pour INSTANTLY either: the shimmer
   // gets a visible beat first (owner video 2026-08-11: a fast sync used to
@@ -8311,6 +8377,27 @@ test.describe('Version consistency', () => {
     const fb = html.indexOf('const _sdkFallback=');
     expect(fb, 'the SDK fallback exists').toBeGreaterThan(0);
     expect(html.slice(fb, fb + 400), 'fallback restores identity from the device cache')
+      .toContain('_restoreIdentityFromCache');
+  });
+
+  // ── Regression: the two "no live session, restore from zp3_cloud_cache" boot
+  // fallbacks in cloud.js (offline blip on a fresh boot, and Supabase init itself
+  // throwing) restore clients/bids/settings from the cache but never set _user, so
+  // getUserName() returns '' and the greeting renders with no name (owner report:
+  // "got offline banner and no name on the greeting at the top" is the fingerprint
+  // that a boot fell into one of these paths). Same fix as the SDK fallback above,
+  // reusing _restoreIdentityFromCache rather than duplicating its restore logic.
+  test('both zp3_cloud_cache boot fallbacks also restore identity, not just data', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const cloud = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+    const noSession = cloud.indexOf("zp3_cloud_cache (no-session boot)");
+    const initFailed = cloud.indexOf("zp3_cloud_cache (offline boot, session present)");
+    expect(noSession, 'the no-session cache-restore branch exists').toBeGreaterThan(0);
+    expect(initFailed, 'the Supabase-init-failure cache-restore branch exists').toBeGreaterThan(0);
+    expect(cloud.slice(noSession, noSession + 400), 'no-session boot restores identity too')
+      .toContain('_restoreIdentityFromCache');
+    expect(cloud.slice(initFailed, initFailed + 400), 'init-failure boot restores identity too')
       .toContain('_restoreIdentityFromCache');
   });
 

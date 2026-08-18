@@ -1071,7 +1071,12 @@ function _dashApplySkeletons(){
   // removable .td-boot-skel card appended and a class that hides its real
   // children (CSS rule next to .td-skel in index.html). The greeting bar is
   // included: EVERYTHING shimmers until the sync settles (owner 2026-08-10).
-  const targets=[...document.querySelectorAll('#pg-dash>.tbar'),...document.querySelectorAll('#dash-widget-root>.td-dw')];
+  // dash-setup-todo/dash-supply-hold/dash-geo-perm are siblings of #dash-widget-root
+  // (their own display:none/block toggle controls whether they exist at all, unlike
+  // the always-present .td-dw widgets), so without them here they get zero shimmer
+  // coverage: whatever they compute on their first paint (Stripe/QR caches included)
+  // renders as final, bare content even while the rest of the dashboard is shimmering.
+  const targets=[...document.querySelectorAll('#pg-dash>.tbar'),...document.querySelectorAll('#dash-widget-root>.td-dw'),...document.querySelectorAll('#dash-setup-todo,#dash-supply-hold,#dash-geo-perm')];
   targets.forEach(el=>{
     if(el.querySelector(':scope>.td-boot-skel'))return;
     const tbar=el.classList.contains('tbar');

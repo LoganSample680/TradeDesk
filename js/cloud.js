@@ -568,7 +568,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.17.26.32';
+const APP_VERSION='08.17.26.33';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1640,6 +1640,15 @@ function _bootSyncSettled(){
       if(Date.now()<window._bootGeoHoldUntil){setTimeout(_bootSyncSettled,150);return;}
     }
   }catch(_e){}
+  // Hold for the setup checklist's own Stripe/QR self-corrections (set above, near
+  // the Stripe/QR setTimeout calls): they're lightweight status fetches (~500-650ms),
+  // 2s is generous headroom. Capped the same way as the geo hold, a slow/failed
+  // fetch clears its own pending count via .finally() regardless, so this can never
+  // wait past the cap even if a network call never resolves.
+  if((window._bootChecklistPending||0)>0){
+    if(!window._bootChecklistHoldUntil)window._bootChecklistHoldUntil=Date.now()+2000;
+    if(Date.now()<window._bootChecklistHoldUntil){setTimeout(_bootSyncSettled,150);return;}
+  }
   window._bootSkelDone=true;
   try{clearTimeout(window._bootSkelTimer);}catch(_e){}
   window._bootSkelTimer=null; // next sign-in this session must arm a fresh failsafe
@@ -1986,6 +1995,11 @@ async function supaInit(){
           if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
           if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (no-session boot)');applySettings();_refillSettingsFormUnlessEditing();}
           _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
+          // zp3_cloud_cache never carries _user (see loadAccountData), so without this
+          // the greeting/permissions render as a nobody until a real session lands
+          // (owner report: "offline banner and no name on the greeting"). Same cache
+          // _restoreIdentityFromCache already reads for the no-SDK boot path.
+          if(typeof _restoreIdentityFromCache==='function')_restoreIdentityFromCache();
           _loadedFromCacheOnly=true;
           _mergeOnSignIn=true;
           _removeBootOverlay();renderDash();
@@ -2048,6 +2062,15 @@ async function supaInit(){
           _pendingInbound=[];_processedInboundIds.clear();
           _updateInboundBadge();
           localStorage.removeItem('zp3_offline_pending');
+          // The outgoing account's full snapshot otherwise sits in localStorage under
+          // the OLD owner until the incoming account's own load succeeds and overwrites
+          // it. Any load-failure fallback in between (this session, or a future cold
+          // boot before the incoming account ever gets a clean save) would otherwise
+          // have nothing to reject it with, painting a stranger's data as this
+          // account's own. _wipeLocalAccountData does the same on deliberate sign-out;
+          // this is the same guarantee for an in-tab account switch.
+          localStorage.removeItem('zp3_cloud_cache');
+          localStorage.removeItem('zp3_delta_meta');
           _loadedDataOwner=null;
           // Account switch: drop the outgoing account's delta cursor so it can't be
           // written into the incoming account's delta_meta (owner guards the read, but
@@ -2079,7 +2102,7 @@ async function supaInit(){
         // dashboard render holds the FULL shimmer (every widget + greeting),
         // one swap + one waterfall when the load below fully settles, exactly
         // like a fresh boot. _bootCascadeRan resets so this load gets its pour.
-        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;window._mileMotionHealRan=false;window._milePersonalSweepRan=false;
+        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;window._mileMotionHealRan=false;window._milePersonalSweepRan=false;window._bootChecklistHoldUntil=null;window._bootChecklistPending=0;
         goPg('pg-dash');
         try{
         const hasAccount=await loadAccountData();
@@ -2232,6 +2255,8 @@ async function supaInit(){
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (offline boot, session present)');applySettings();_refillSettingsFormUnlessEditing();}
         _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
+        // Same gap as the no-session branch above: zp3_cloud_cache carries no _user.
+        if(typeof _restoreIdentityFromCache==='function')_restoreIdentityFromCache();
         _supaCloudLoaded=true;
         _loadedFromCacheOnly=true;
         _removeBootOverlay();renderDash();
@@ -6899,8 +6924,15 @@ async function supaLoadFromCloud({silent=false}={}){
         const _oSince=(window._opLogShadow&&!_isEmployee&&!_devSupportMode)?(_opsPullSince(since)||null):null;
         const{data,error}=await _supa.rpc('get_account_delta',{since:_deltaSince(since),ops_since:_oSince});
         if(error||!data||typeof data!=='object'||!data.tables)return null;
+        // A table key MISSING from the response (partial RPC bug, deploy skew) must
+        // never be read as "zero rows changed" — that's indistinguishable from a real
+        // empty delta and lets a stale _paintCacheForDelta value for that table go
+        // unmerged while the load still reports success. Only a genuinely present
+        // (possibly empty) array counts as a real answer for that table; anything
+        // else rejects the whole RPC result so the caller falls back to _deltaQuery.
+        if(!_TD_TABLES.every(({t})=>Array.isArray(data.tables[t])))return null;
         if(Array.isArray(data.ops)&&data.ops.length)_rpcOps=data.ops;
-        return _TD_TABLES.map(({t})=>({data:Array.isArray(data.tables[t])?data.tables[t]:[],error:null}));
+        return _TD_TABLES.map(({t})=>({data:data.tables[t],error:null}));
       }catch(_e){return null;}
     };
     const _deltaFetch=async(since)=>{
@@ -7213,12 +7245,28 @@ async function supaLoadFromCloud({silent=false}={}){
       // Re-render the setup checklist once the Stripe status resolves: the card
       // treats unknown-Stripe as handled (no flash), so a contractor who actually
       // needs to connect only sees "Turn on card payments" appear here, cleanly.
-      setTimeout(()=>{if(_stripeConnectStatus===null)_fetchStripeConnectStatus().then(()=>{if(typeof _renderDashSetupTodo==='function')_renderDashSetupTodo();}).catch(()=>{});},500);
+      // Both checks below hold window._bootChecklistPending open (_bootSyncSettled
+      // waits on it) so the checklist's correction lands BEHIND the boot skeleton
+      // instead of as a bare, visible re-render after the card already looked settled
+      // (owner report: "9 of 10 done" reading wrong with no shimmer to explain it).
+      const _stripePending=_stripeConnectStatus===null;
+      const _qrPending=typeof _qrHasSourceCached==='function'&&_qrHasSourceCached()===null;
+      if(_stripePending)window._bootChecklistPending=(window._bootChecklistPending||0)+1;
+      if(_qrPending)window._bootChecklistPending=(window._bootChecklistPending||0)+1;
+      setTimeout(()=>{
+        if(!_stripePending)return;
+        _fetchStripeConnectStatus().then(()=>{if(typeof _renderDashSetupTodo==='function')_renderDashSetupTodo();}).catch(()=>{})
+          .finally(()=>{window._bootChecklistPending=Math.max(0,(window._bootChecklistPending||0)-1);if(typeof _bootSyncSettled==='function')_bootSyncSettled();});
+      },500);
       // Same self-heal for the QR-code checklist item: an account that already had
       // sources before this item shipped has no local cache yet, so pull the real
       // count once per boot and correct the card (covers new accounts too, since
       // _qrLoadSources writes the cache the first time it ever runs for them).
-      setTimeout(()=>{if(typeof _qrHasSourceCached==='function'&&_qrHasSourceCached()===null&&typeof _qrLoadSources==='function')_qrLoadSources().catch(()=>{});},650);
+      setTimeout(()=>{
+        if(!_qrPending)return;
+        _qrLoadSources().catch(()=>{})
+          .finally(()=>{window._bootChecklistPending=Math.max(0,(window._bootChecklistPending||0)-1);if(typeof _bootSyncSettled==='function')_bootSyncSettled();});
+      },650);
       _removeBootOverlay();goPg('pg-dash');
     }
 
@@ -7484,6 +7532,13 @@ async function supaLoadFromCloud({silent=false}={}){
     if(_cc){
       try{
         const _cd=JSON.parse(_cc);
+        // Cross-account guard: uid is the account THIS load was fetching for. A cache
+        // written by a different owner (a same-tab account switch whose first live
+        // load throws before it ever overwrites the cache) must never be painted as
+        // if it were this account's real data, that's a silent cross-account bleed,
+        // not an offline fallback. _paintCacheForDelta already enforces this on the
+        // normal delta path; this is the same check on the load-FAILED fallback.
+        if(_cd._owner&&_cd._owner!==uid)throw new Error('cache owner mismatch');
         clients=_cd.clients||[];bids=_cd.bids||[];jobs=_cd.jobs||[];
         payments=_cd.payments||[];income=_cd.income||[];expenses=_cd.expenses||[];
         mileage=_cd.mileage||[];liens=_cd.liens||[];timeEntries=_cd.timeEntries||[];
