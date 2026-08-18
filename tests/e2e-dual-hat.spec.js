@@ -36,8 +36,6 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
     await page.evaluate(() => { window.__realSupaLoad = supaLoadFromCloud; window.supaLoadFromCloud = async () => {}; });
   });
 
-  assertNoErrors();
-
   // ── 1. Hat resolution in loadAccountData ────────────────────────────────────
 
   function fakeSupaFor(usersRow, teamRows) {
@@ -313,5 +311,9 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
     });
     expect(r.withHat, 'dual-hat crew session gets the flip back to their own business').toBe(true);
     expect(r.withoutHat, 'a crew-only login never sees a business it does not have').toBe(false);
+  });
+
+  test('zero console errors across the dual-hat suite', async () => {
+    assertNoErrors(page, 'dual-hat accounts');
   });
 });
