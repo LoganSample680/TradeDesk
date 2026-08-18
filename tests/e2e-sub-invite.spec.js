@@ -22,6 +22,11 @@ test.describe('sub referral invite, exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The 5s reconnect tick (_probeAndSync → _onReconnect) can fire a silent
+    // cloud load mid-test and replace the seeded in-memory arrays out from under
+    // an assertion (the same wipe that made the fleet specs flake, observed here
+    // live: the hostile-GC test's freshly stamped client card gone by read time).
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
   });
 
   test.afterAll(async () => { await page.close(); });
