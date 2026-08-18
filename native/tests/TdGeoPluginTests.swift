@@ -29,10 +29,17 @@ final class TdGeoPluginTests: XCTestCase {
         // CoreLocation state, not per-instance.
         let done = expectation(description: "stopAll teardown")
         plugin.stopAll(makeCall(onSuccess: { _ in done.fulfill() }))
-        wait(for: [done], timeout: 5)
+        wait(for: [done], timeout: 30)
         plugin = nil
         super.tearDown()
     }
+
+    // NOTE on the 30s waits: every expectation here resolves in milliseconds on
+    // a healthy machine, the generous timeout exists ONLY for the shared CI
+    // simulator, which stalls for many seconds at a time under load (observed
+    // live 2026-08-18: a passing call flagged as "timed out" at 5s while the
+    // sim logged 24s of wall clock around it). wait() returns the moment the
+    // expectation fulfills, so passing runs pay nothing for the headroom.
 
     // MARK: - test helper
 
@@ -90,7 +97,7 @@ final class TdGeoPluginTests: XCTestCase {
             XCTAssertEqual(data?["armed"] as? Int, 1, "only the one fully-valid region should arm")
             exp.fulfill()
         }))
-        wait(for: [exp], timeout: 5)
+        wait(for: [exp], timeout: 30)
     }
 
     func testStartParked_emptyRegionsArmsZero() {
@@ -99,7 +106,7 @@ final class TdGeoPluginTests: XCTestCase {
             XCTAssertEqual(data?["armed"] as? Int, 0)
             exp.fulfill()
         }))
-        wait(for: [exp], timeout: 5)
+        wait(for: [exp], timeout: 30)
     }
 
     func testStartParked_noRegionsKeyAtAllDoesNotCrash() {
@@ -110,7 +117,7 @@ final class TdGeoPluginTests: XCTestCase {
             XCTAssertEqual(data?["armed"] as? Int, 0)
             exp.fulfill()
         }))
-        wait(for: [exp], timeout: 5)
+        wait(for: [exp], timeout: 30)
     }
 
     func testStartParked_malformedRegionsTypeDoesNotCrash() {
@@ -121,7 +128,7 @@ final class TdGeoPluginTests: XCTestCase {
             XCTAssertEqual(data?["armed"] as? Int, 0)
             exp.fulfill()
         }))
-        wait(for: [exp], timeout: 5)
+        wait(for: [exp], timeout: 30)
     }
 
     // MARK: - the 18-region cap
@@ -133,7 +140,7 @@ final class TdGeoPluginTests: XCTestCase {
             XCTAssertEqual(data?["armed"] as? Int, 18, "iOS only supports ~20 concurrent monitored regions, the plugin caps below that on purpose")
             exp.fulfill()
         }))
-        wait(for: [exp], timeout: 5)
+        wait(for: [exp], timeout: 30)
     }
 
     // MARK: - concurrent / rapid re-entry (CLAUDE.md §11.2 shape, translated to native)
@@ -157,7 +164,7 @@ final class TdGeoPluginTests: XCTestCase {
             XCTAssertFalse(results.contains(-1), "no call should resolve without its expected 'armed' key")
             exp.fulfill()
         }
-        wait(for: [exp], timeout: 10)
+        wait(for: [exp], timeout: 30)
     }
 
     // MARK: - stopAll / drainBuffer as no-ops when nothing is armed
@@ -165,7 +172,7 @@ final class TdGeoPluginTests: XCTestCase {
     func testStopAll_whenNothingWasEverStartedResolvesCleanly() {
         let exp = expectation(description: "stopAll idle")
         plugin.stopAll(makeCall(onSuccess: { _ in exp.fulfill() }))
-        wait(for: [exp], timeout: 5)
+        wait(for: [exp], timeout: 30)
     }
 
     func testDrainBuffer_withNothingBufferedReturnsEmptyArrayNotNil() {
@@ -179,7 +186,7 @@ final class TdGeoPluginTests: XCTestCase {
                 exp.fulfill()
             }))
         }))
-        wait(for: [exp], timeout: 5)
+        wait(for: [exp], timeout: 30)
     }
 
     // MARK: - burstFix: seconds clamp (3...60) and double-start doesn't double-count
@@ -190,18 +197,18 @@ final class TdGeoPluginTests: XCTestCase {
             XCTAssertEqual(data?["seconds"] as? Double, 3, "below the floor must clamp up to 3, never go negative")
             low.fulfill()
         }))
-        wait(for: [low], timeout: 5)
+        wait(for: [low], timeout: 30)
 
         let done = expectation(description: "burstFix low teardown")
         plugin.stopAll(makeCall(onSuccess: { _ in done.fulfill() }))
-        wait(for: [done], timeout: 5)
+        wait(for: [done], timeout: 30)
 
         let high = expectation(description: "burstFix high")
         plugin.burstFix(makeCall(options: ["seconds": 99999], onSuccess: { data in
             XCTAssertEqual(data?["seconds"] as? Double, 60, "above the ceiling must clamp down to 60, never run indefinitely")
             high.fulfill()
         }))
-        wait(for: [high], timeout: 5)
+        wait(for: [high], timeout: 30)
     }
 
     func testBurstFix_missingSecondsUsesDefaultTwelve() {
@@ -210,13 +217,13 @@ final class TdGeoPluginTests: XCTestCase {
             XCTAssertEqual(data?["seconds"] as? Double, 12)
             exp.fulfill()
         }))
-        wait(for: [exp], timeout: 5)
+        wait(for: [exp], timeout: 30)
     }
 
     func testBurstFix_calledTwiceRapidlyDoesNotDoubleCountRadioTime() {
         let first = expectation(description: "burstFix first")
         plugin.burstFix(makeCall(options: ["seconds": 30], onSuccess: { _ in first.fulfill() }))
-        wait(for: [first], timeout: 5)
+        wait(for: [first], timeout: 30)
 
         // A second burst request while the first is still running must reset
         // the timer, not stack a second one, radio-time accounting assumes
@@ -226,7 +233,7 @@ final class TdGeoPluginTests: XCTestCase {
             XCTAssertEqual(data?["seconds"] as? Double, 5)
             second.fulfill()
         }))
-        wait(for: [second], timeout: 5)
+        wait(for: [second], timeout: 30)
     }
 
     // MARK: - motionSince: graceful with no input
@@ -237,7 +244,7 @@ final class TdGeoPluginTests: XCTestCase {
             XCTAssertNotNil(data?["available"], "must always report availability, even on a simulator with no motion coprocessor")
             exp.fulfill()
         }))
-        wait(for: [exp], timeout: 5)
+        wait(for: [exp], timeout: 30)
     }
 
     // MARK: - openSettings: always resolves, never hangs or crashes
@@ -253,7 +260,7 @@ final class TdGeoPluginTests: XCTestCase {
             XCTAssertNotNil(data?["opened"], "must report whether it opened, never silently resolve empty")
             exp.fulfill()
         }))
-        wait(for: [exp], timeout: 5)
+        wait(for: [exp], timeout: 30)
     }
 
     // MARK: - motionPermStatus: read-only, never crashes, no arguments needed
@@ -268,7 +275,7 @@ final class TdGeoPluginTests: XCTestCase {
             XCTAssertNotNil(data?["available"], "must report device capability independent of authorization")
             exp.fulfill()
         }))
-        wait(for: [exp], timeout: 5)
+        wait(for: [exp], timeout: 30)
     }
 
     func testMotionPermStatus_ignoresExtraneousOptions() {
@@ -278,7 +285,7 @@ final class TdGeoPluginTests: XCTestCase {
             XCTAssertNotNil(data?["status"])
             exp.fulfill()
         }))
-        wait(for: [exp], timeout: 5)
+        wait(for: [exp], timeout: 30)
     }
 
     // MARK: - stats: reset actually zeroes the counters
@@ -287,21 +294,21 @@ final class TdGeoPluginTests: XCTestCase {
         // Rack up some measurable radio time first.
         let burst = expectation(description: "stats setup burst")
         plugin.burstFix(makeCall(options: ["seconds": 3], onSuccess: { _ in burst.fulfill() }))
-        wait(for: [burst], timeout: 5)
+        wait(for: [burst], timeout: 30)
 
         let stop = expectation(description: "stats setup stop")
         plugin.stopAll(makeCall(onSuccess: { _ in stop.fulfill() }))
-        wait(for: [stop], timeout: 5)
+        wait(for: [stop], timeout: 30)
 
         let reset = expectation(description: "stats reset")
         plugin.stats(makeCall(options: ["reset": true], onSuccess: { _ in reset.fulfill() }))
-        wait(for: [reset], timeout: 5)
+        wait(for: [reset], timeout: 30)
 
         let after = expectation(description: "stats after reset")
         plugin.stats(makeCall(options: [:], onSuccess: { data in
             XCTAssertEqual(data?["gpsOnMs"] as? Double, 0, "reset:true must actually zero the persisted counter, not just report it once")
             after.fulfill()
         }))
-        wait(for: [after], timeout: 5)
+        wait(for: [after], timeout: 30)
     }
 }
