@@ -576,9 +576,16 @@ function _applyScopeRates(rates) {
 
 function _fetchScopeRates() {
   if (typeof _supa === 'undefined' || !_supa) return;
-  _supa.from('td_scope_rates').select('*').then(({ data }) => {
-    if (data && data.length) _applyScopeRates(data);
-  }).catch(() => {});
+  // Best-effort background poll, never a critical path: try/catch the whole
+  // call, not just the promise chain. _supa.from(...) itself can throw
+  // SYNCHRONOUSLY (a truthy but incomplete client, e.g. a narrow test double
+  // missing .from), which a chained .catch() never sees since the promise
+  // chain never gets constructed.
+  try {
+    _supa.from('td_scope_rates').select('*').then(({ data }) => {
+      if (data && data.length) _applyScopeRates(data);
+    }).catch(() => {});
+  } catch (_e) {}
 }
 
 // Upload debrief data for one job and trigger re-aggregation.

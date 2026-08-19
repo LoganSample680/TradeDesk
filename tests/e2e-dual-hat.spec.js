@@ -240,7 +240,13 @@ test.describe('Dual-hat accounts: switcher + data wall', () => {
           clients: [{ id: marker, name: marker }],
           bids: [], jobs: [], payments: [], income: [], expenses: [], mileage: [],
         }));
-        _supa = { from: () => { throw new Error('simulated network failure'); }, rpc: () => Promise.resolve({ data: null, error: null }) };
+        // code:'offline' is the sanctioned way to simulate connectivity loss
+        // (js/cloud.js _classifyCloudError trusts it explicitly, no probe
+        // needed): a bare Error here would classify as a real app bug and
+        // log via console.error, tripping this file's own "zero console
+        // errors across the dual-hat suite" check over a deliberately-
+        // triggered test scenario.
+        _supa = { from: () => { const e = new Error('simulated network failure'); e.code = 'offline'; throw e; }, rpc: () => Promise.resolve({ data: null, error: null }) };
         window._supaUser = { id: 'dual-u1' };
         _supaCloudLoaded = false; _isEmployee = true; _contractorUserId = 'boss-1'; // load uid = boss-1
         _loadedDataOwner = null; _deltaCursor = null;

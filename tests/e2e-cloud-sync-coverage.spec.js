@@ -1226,7 +1226,12 @@ test.describe('Cloud sync core, uncovered function coverage', () => {
           bids: [{ id: 'a-bid-1', amount: 99999 }],
           jobs: [], payments: [], income: [], expenses: [], mileage: [],
         }));
-        _supa = { from: () => { throw new Error('simulated network failure'); } };
+        // code:'offline' is the sanctioned way to simulate connectivity loss
+        // (js/cloud.js _classifyCloudError trusts it explicitly, no probe
+        // needed): a bare Error here would classify as a real app bug and
+        // log via console.error, tripping this file's own assertNoErrors()
+        // over a deliberately-triggered test scenario.
+        _supa = { from: () => { const e = new Error('simulated network failure'); e.code = 'offline'; throw e; } };
         window._supaUser = { id: 'account-B-real' };
         _supaCloudLoaded = false; _isEmployee = false;
         _loadedDataOwner = null; _deltaCursor = null;
