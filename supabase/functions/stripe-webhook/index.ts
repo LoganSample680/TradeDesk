@@ -79,11 +79,12 @@ async function recordRefund(stripe: Stripe, charge: Stripe.Charge, connectedAcco
   }
 }
 
-async function recordCompletedPayment(stripe: Stripe, session: Stripe.Checkout.Session, connectedAccountId?: string) {
-  const meta = session.metadata!;
-  const amountPaid = (session.amount_total || 0) / 100;
-  const paymentMethod = meta.paymentMethod || session.payment_method_types?.[0] || 'card';
-  const piRef = String(session.payment_intent);
+// The one place that decides what "a payment completed" means. Both entry
+// points below (a hosted Checkout Session, or a raw PaymentIntent from the
+// embedded/Payment Element flow) extract the same shape from their own Stripe
+// object and hand it here, so there is only ever one write path to keep
+// correct, not two that can quietly drift apart from each other.
+async function recordPayment(stripe: Stripe, meta: Stripe.Metadata, amountPaid: number, paymentMethod: string, piRef: string, connectedAccountId?: string) {
   const ts = new Date().toISOString();
 
   const stripeFee = await getActualFee(stripe, piRef, amountPaid, paymentMethod, connectedAccountId);
@@ -142,6 +143,30 @@ async function recordCompletedPayment(stripe: Stripe, session: Stripe.Checkout.S
   }
 }
 
+// Hosted Checkout Session path (non-embedded: sign.html's "pay by link" style flow).
+async function recordCompletedPaymentFromSession(stripe: Stripe, session: Stripe.Checkout.Session, connectedAccountId?: string) {
+  const meta = session.metadata!;
+  const amountPaid = (session.amount_total || 0) / 100;
+  const paymentMethod = meta.paymentMethod || session.payment_method_types?.[0] || 'card';
+  const piRef = String(session.payment_intent);
+  await recordPayment(stripe, meta, amountPaid, paymentMethod, piRef, connectedAccountId);
+}
+
+// Embedded/Payment Element path (create-checkout's embedded:true branch creates a raw
+// PaymentIntent, never a Checkout Session, so it never fires checkout.session.completed.
+// This is the ONLY path that records an embedded payment; without it, a card charge taken
+// through the embedded screen succeeds on Stripe's side but never reaches signed_proposals
+// or the payments ledger. Guarded on metadata.bidId being present so an unrelated
+// PaymentIntent on this Stripe account, if one is ever created outside create-checkout,
+// is silently skipped rather than writing a garbage ledger row.
+async function recordCompletedPaymentFromIntent(stripe: Stripe, pi: Stripe.PaymentIntent, connectedAccountId?: string) {
+  const meta = pi.metadata;
+  if (!meta?.bidId) return;
+  const amountPaid = (pi.amount_received || pi.amount || 0) / 100;
+  const paymentMethod = meta.paymentMethod || pi.payment_method_types?.[0] || 'card';
+  await recordPayment(stripe, meta, amountPaid, paymentMethod, pi.id, connectedAccountId);
+}
+
 Deno.serve(async (req) => {
   const signature = req.headers.get('stripe-signature')!;
   const body = await req.text();
@@ -167,7 +192,7 @@ Deno.serve(async (req) => {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
     if (session.payment_status === 'paid') {
-      await recordCompletedPayment(stripe, session, event.account || undefined);
+      await recordCompletedPaymentFromSession(stripe, session, event.account || undefined);
     }
     // payment_status === 'unpaid' means ACH — wait for async_payment_succeeded
   }
@@ -175,7 +200,14 @@ Deno.serve(async (req) => {
   // ── ACH settles days later — record when money actually clears ────────────
   if (event.type === 'checkout.session.async_payment_succeeded') {
     const session = event.data.object as Stripe.Checkout.Session;
-    await recordCompletedPayment(stripe, session, event.account || undefined);
+    await recordCompletedPaymentFromSession(stripe, session, event.account || undefined);
+  }
+
+  // ── Embedded/Payment Element checkout (sign.html's in-page card form, and the
+  //    in-person collect screen): this flow never creates a Checkout Session, so
+  //    it never fires the two events above. This is its only completion event. ──
+  if (event.type === 'payment_intent.succeeded') {
+    await recordCompletedPaymentFromIntent(stripe, event.data.object as Stripe.PaymentIntent, event.account || undefined);
   }
 
   // ── Refund issued (collect-screen overage, client cancel, or contractor's own
