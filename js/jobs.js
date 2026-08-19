@@ -702,6 +702,72 @@ function _geocodeAddr(addr){
 const _NEARBY_GEOCODE_BUDGET=8;
 function _nearbyGeoCache(){try{return JSON.parse(localStorage.getItem('zp3_nearby_geo')||'{}');}catch(_e){return{};}}
 function _saveNearbyGeoCache(cache){try{localStorage.setItem('zp3_nearby_geo',JSON.stringify(cache));}catch(_e){}}
+// Eager geocode: fires the moment a client's address is created or changed
+// (called from saveClient, js/clients.js), instead of waiting for the passive
+// checkNearbyJob trickle to reach this client in its per-heartbeat budget.
+// This is the actual fix for "brand-new client's first visit can be missed"
+// (see the comment above checkNearbyJob and _geoClientAt in geo-track.js):
+// a client added same-day, then visited same-day, no longer depends on the
+// dashboard having rendered enough times first to warm the cache.
+async function _eagerGeocodeClient(clientId,addr){
+  if(!addr)return;
+  const cache=_nearbyGeoCache();
+  if(cache[clientId]&&cache[clientId].addr===addr)return; // already warm for this exact address
+  const coords=await _geocodeAddr(addr);
+  if(!coords)return;
+  const fresh=_nearbyGeoCache(); // re-read: a concurrent sweep may have written meanwhile
+  fresh[clientId]={lat:coords.lat,lon:coords.lon,addr};
+  _saveNearbyGeoCache(fresh);
+}
+// Shared by every throttled geocode loop that touches zp3_nearby_geo
+// (checkNearbyJob's own uncached-client sweep below, and the backfill sweep
+// after it): only one may run its Nominatim throttle at a time, or two
+// interleaved ~1.1s loops together breach Nominatim's ~1 req/sec policy AND
+// each holds its own now-stale full-cache snapshot, so whichever finishes
+// last silently overwrites whatever the other just wrote.
+let _nearbyGeoSweepRunning=false;
+// Background backfill: warms every EXISTING client's cache entry that predates
+// this fix (or whose address changed offline/via import, bypassing saveClient's
+// eager hook). Fire-and-forget from boot, resumable: each call only geocodes
+// whatever is still uncached, so an interrupted sweep just finishes on the next
+// boot instead of losing progress. A larger budget than checkNearbyJob's is
+// safe here because this runs once per boot in the background, not on every
+// dashboard render.
+const _NEARBY_BACKFILL_BUDGET=40;
+async function _backfillNearbyGeoCache(){
+  if(typeof clients==='undefined')return;
+  // checkNearbyJob's own throttled sweep (below) may already be mid-flight from
+  // this same boot; wait for it to clear rather than run two Nominatim loops at
+  // once. Gives up after 30s and just skips this boot's backfill, the next
+  // boot's run resumes wherever the cache actually ended up (nothing is lost,
+  // this is a cache warm, not a write of record).
+  for(let waited=0;_nearbyGeoSweepRunning&&waited<30000;waited+=1000)await new Promise(r=>setTimeout(r,1000));
+  if(_nearbyGeoSweepRunning)return;
+  _nearbyGeoSweepRunning=true;
+  try{
+    const _startCache=_nearbyGeoCache();
+    const uncached=clients.filter(c=>c.addr&&(!_startCache[c.id]||_startCache[c.id].addr!==c.addr));
+    let budget=_NEARBY_BACKFILL_BUDGET;
+    for(const c of uncached){
+      if(budget<=0)break;
+      budget--;
+      const coords=await _geocodeAddr(c.addr);
+      if(coords){
+        // Re-read and write ONE entry per client, never a whole-cache snapshot
+        // held across the loop: _eagerGeocodeClient (a client saved mid-sweep)
+        // or checkNearbyJob could otherwise write in between and get clobbered
+        // when this loop's stale copy saves at the end (the exact John Doe
+        // shape this whole PR exists to close).
+        const fresh=_nearbyGeoCache();
+        fresh[c.id]={lat:coords.lat,lon:coords.lon,addr:c.addr};
+        _saveNearbyGeoCache(fresh);
+      }
+      if(budget>0)await new Promise(r=>setTimeout(r,1100)); // stay under Nominatim's ~1 req/sec
+    }
+  }finally{
+    _nearbyGeoSweepRunning=false;
+  }
+}
 function _nearbyResolveClient(c,myLat,myLon,tk){
   const addrShort=c.addr.split(',')[0];
   const bid=bids.filter(b=>b.client_id===c.id&&b.status==='Closed Won').sort((a,b2)=>(b2.bid_date||'').localeCompare(a.bid_date||''))[0];
@@ -753,22 +819,30 @@ async function checkNearbyJob(){
     // Still respects Nominatim's ~1 req/sec limit, but this path only runs (and
     // only costs real seconds) the first time a client's address is seen, not
     // on every dashboard load once the cache is warm.
+    // _nearbyGeoSweepRunning: shared with _backfillNearbyGeoCache so the two
+    // throttled loops never run at once (double Nominatim traffic, and two
+    // stale snapshots racing to clobber each other's writes).
+    _nearbyGeoSweepRunning=true;
     let geocodeBudget=_NEARBY_GEOCODE_BUDGET,cacheDirty=false;
-    for(const c of uncached){
-      if(geocodeBudget<=0)break;
-      geocodeBudget--;
-      const coords=await _geocodeAddr(c.addr);
-      if(coords){geoCache[c.id]={lat:coords.lat,lon:coords.lon,addr:c.addr};cacheDirty=true;}
-      if(coords&&_haversineKm(myLat,myLon,coords.lat,coords.lon)<0.5){
-        if(cacheDirty)_saveNearbyGeoCache(geoCache);
-        _nearbyJob=_nearbyResolveClient(c,myLat,myLon,tk);
-        renderDash&&renderDash();
-        return;
+    try{
+      for(const c of uncached){
+        if(geocodeBudget<=0)break;
+        geocodeBudget--;
+        const coords=await _geocodeAddr(c.addr);
+        if(coords){geoCache[c.id]={lat:coords.lat,lon:coords.lon,addr:c.addr};cacheDirty=true;}
+        if(coords&&_haversineKm(myLat,myLon,coords.lat,coords.lon)<0.5){
+          if(cacheDirty)_saveNearbyGeoCache(geoCache);
+          _nearbyJob=_nearbyResolveClient(c,myLat,myLon,tk);
+          renderDash&&renderDash();
+          return;
+        }
+        if(geocodeBudget>0)await new Promise(r=>setTimeout(r,1100)); // stay under Nominatim's ~1 req/sec
       }
-      if(geocodeBudget>0)await new Promise(r=>setTimeout(r,1100)); // stay under Nominatim's ~1 req/sec
+      if(cacheDirty)_saveNearbyGeoCache(geoCache);
+      if(_nearbyJob){_nearbyJob=null;renderDash&&renderDash();}
+    }finally{
+      _nearbyGeoSweepRunning=false;
     }
-    if(cacheDirty)_saveNearbyGeoCache(geoCache);
-    if(_nearbyJob){_nearbyJob=null;renderDash&&renderDash();}
   },()=>{},{maximumAge:60000,timeout:8000});
 }
 

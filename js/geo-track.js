@@ -210,7 +210,14 @@ function _geoEnqueue(tbl,row){
   try{
     row.client_key=row.client_key||_geoClientKey();
     const q=_geoQueueRead();q.push({tbl,row});
-    if(q.length>500)q.splice(0,q.length-500); // hard cap, the queue can never grow unbounded
+    if(q.length>500){
+      const dropped=q.length-500;
+      q.splice(0,dropped); // hard cap, the queue can never grow unbounded
+      // A real device offline long enough to overflow this is real mileage/time
+      // data loss, not a benign trim: must reach console.error so it feeds the
+      // observability pipeline (§13), never a silent console.warn.
+      console.error('geo queue overflow: dropped',dropped,'oldest pending row(s), oldest write ever wins the cap');
+    }
     _geoQueueWrite(q);
   }catch(_e){}
   _geoDrainQueue();
@@ -320,6 +327,24 @@ function _geoRestoreOpen(){
       // (the last verified on-site moment) so the hours aren't silently lost.
       if(s.job&&s.arrivedAt){_geoCurrentJob=s.job;_geoArrivedAt=s.arrivedAt;_geoCloseEntry(s.job,s.hiddenAt,true);_geoCurrentJob=null;}
       if(s.wasInShop&&s.shopArrivedAt)_geoCloseShopEntry(s.shopArrivedAt,s.hiddenAt);
+      // Same salvage for a drive that was still IN PROGRESS (not at a job or the
+      // shop) when the app died across midnight: previously this branch just
+      // called _geoClearOpen() and the whole leg vanished, no time entry, no
+      // trace. The destination is genuinely unknown (they never arrived before
+      // the state was lost), so this claims no mileage/distance, only the
+      // payroll-relevant TIME, dated to hiddenAt (the last moment they were
+      // actually observed driving), same as the job/shop salvage above.
+      if(s.driveStartedAt&&!s.job&&!s.wasInShop&&s.hiddenAt){
+        const mins=Math.max(0,Math.round((Date.parse(s.hiddenAt)-Date.parse(s.driveStartedAt))/60000));
+        if(mins>=2){
+          _geoEnqueue('job_time_entries',{
+            contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+            job_id:null,arrived_at:s.driveStartedAt,departed_at:s.hiddenAt,minutes:mins,
+            dest_place:null,client_key:_geoLegKey(s.driveStartedAt),
+            source:'drive-unassigned-salvaged'
+          });
+        }
+      }
       _geoClearOpen();return;
     }
     if(_geoCurrentJob||_geoArrivedAt)return; // live state wins, never clobber a running session

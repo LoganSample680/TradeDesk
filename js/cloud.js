@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.19.26.7';
+const APP_VERSION='08.19.26.10';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1381,6 +1381,58 @@ _assertLocallyDeletedIdsComplete();
 // trap every device in an offline loop. Real errors (auth, network) are not matched.
 function _isMissingTableErr(err){
   return !!err&&(err.code==='42P01'||err.code==='PGRST205'||/does not exist|could not find the table|schema cache/i.test(err.message||''));
+}
+
+// Tells a genuine connectivity loss apart from our own code throwing (auth
+// mismatch, a stale-build/backend shape mismatch, a real server error) so
+// the offline banner stops lying (owner report 2026-08-19: "getting another
+// stale cache version... seeing the offline banner every time I load").
+// supaSaveToCloud/supaLoadFromCloud wrap their WHOLE body in one catch, so
+// anything that throws in there, not just a dead network, used to land here
+// and get mislabeled "Offline: changes saved locally."
+//
+// A fetch TypeError ("Failed to fetch") is the one genuinely ambiguous case:
+// browsers give CORS failures and real network loss the EXACT SAME shape, no
+// way to tell them apart from the error object alone. Rather than guess,
+// confirm with the same active probe _probeAndSync already uses (a plain
+// same-origin fetch): if that gets through, the network is fine and
+// whatever threw wasn't connectivity, classify it as an app error instead.
+//
+// The `error` our own `if(error)throw error` sites actually receive is NOT a
+// raw fetch exception: js/vendor/supabase-js-2.112.3.min.js's PostgrestBuilder
+// catches the real fetch rejection and returns a PLAIN OBJECT instead,
+// {message:`${e.name}: ${e.message}`, details, hint, code}, with no `.name`
+// of its own and no Error prototype at all. So `err instanceof TypeError`
+// and `err.name==='AbortError'` are BOTH always false for this path, even on
+// a genuine dead network or our own request timeout, verified by reading
+// that catch handler directly. The only surviving signal is the message
+// TEXT, which always starts with the original error's name ("TypeError:
+// Failed to fetch" on Chrome, "TypeError: Load failed" on Safari,
+// "AbortError: ..." for a timeout). Matched loosely on purpose: this gate
+// only decides whether to run the confirmation probe below, so over-matching
+// costs one extra fetch, under-matching mislabels a real outage as an app
+// bug (console.error, no banner) and is the actual danger.
+//
+// err.code==='offline' is trusted as an explicit signal, no probe needed:
+// it is never a real Postgres/PostgREST error code (those are either empty
+// or a genuine SQLSTATE like '42P01'), so a caller setting it is deliberately
+// telling us "treat this as offline" rather than describing a real backend
+// error. The test suite's shared offline-simulation fixture
+// (tests/helpers.js maybeOffline/offlineResult, __offlineMode) does exactly
+// this, and production code is free to use the same convention.
+async function _classifyCloudError(err){
+  if(!err)return 'network'; // no error object at all: nothing to classify, assume the historical default
+  if(_isMissingTableErr(err))return 'app'; // schema drift, not the network, never banner for this
+  if(err.code==='offline')return 'network';
+  const msg=String(err.message||err.hint||'');
+  const looksNetwork=/typeerror|aborterror|failed to fetch|load failed|networkerror|network request failed|operation was aborted/i.test(msg);
+  if(!looksNetwork)return 'app'; // a real thrown exception in our own code, not a network shape at all
+  try{
+    await fetch('/version.json?_='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(4000)});
+    return 'app'; // network reachable: the original error wasn't actually connectivity
+  }catch(_e){
+    return 'network'; // confirmed: even a plain same-origin fetch can't get through
+  }
 }
 
 // Tables whose money fields are redacted for the CURRENT employee session, derived
@@ -6284,10 +6336,18 @@ async function supaSaveToCloud(){
     if(_syncBroadcastChannel){try{const _bc=_syncBroadcastChannel.send({type:'broadcast',event:'data_saved',payload:{deviceId:_deviceId}});if(_bc&&typeof _bc.catch==='function')_bc.catch(()=>{});}catch(_e){}}
   }catch(e){
     _logSave('throw',{id:_attemptId,name:e?.name,code:e?.code,msg:e?.message||String(e)});
-    console.warn('Cloud save failed:',e);
     localStorage.setItem('zp3_pending_sync','1');
     try{localStorage.setItem('zp3_offline_pending',_offlinePendingBlob());}catch(_e){}
-    _showOfflineBanner();
+    // Fall back to cache/pending-sync unconditionally either way, only the
+    // BANNER (and which console channel this reaches) depends on classification,
+    // an app bug must never tell the contractor their internet is down.
+    const _kind=await _classifyCloudError(e);
+    if(_kind==='network'){
+      console.warn('Cloud save failed:',e);
+      _showOfflineBanner();
+    }else{
+      console.error('Cloud save failed (app error, not network):',e);
+    }
     supaSetStatus('error');
   }
 }
@@ -7662,6 +7722,12 @@ async function supaLoadFromCloud({silent=false}={}){
       // near-instantly, so this only needs to trail the location-permission
       // request above, not pad extra wait time on top of it.
       setTimeout(()=>checkNearbyJob(),1500);
+      // Warms the nearby-job/geofence cache for every EXISTING client that
+      // predates the eager-geocode hook in saveClient (js/clients.js), so the
+      // whole book gets covered without waiting on the dashboard's slower
+      // 8-per-heartbeat trickle. Delayed behind checkNearbyJob so today's
+      // actual nearby-job resolution never waits on it.
+      setTimeout(()=>{if(typeof _backfillNearbyGeoCache==='function')_backfillNearbyGeoCache();},4000);
       // Reconnects the clock banner/interval to an open (still-clocked-in) entry
       // this person owns, if this device reloaded mid-timer, see
       // _rehydrateActiveTimer (js/jobs.js) for why this is safe/necessary now
@@ -7692,7 +7758,13 @@ async function supaLoadFromCloud({silent=false}={}){
 
     if(!_realtimeSubscribed){_realtimeSubscribed=true;_initRealtimeSubscriptions(uid);}
   }catch(e){
-    console.warn('Cloud load failed:',e);
+    // Fired now, awaited later: classification needs a real network round trip
+    // (up to 4s, see _classifyCloudError), and an offline boot must still paint
+    // whatever cache it has INSTANTLY, not sit behind that probe first. Started
+    // here so it's racing in the background while the cache-restore work below
+    // runs; by the time either exit path below awaits it, it has usually
+    // already settled.
+    const _kindPromise=_classifyCloudError(e);
     const _cc=localStorage.getItem('zp3_cloud_cache');
     if(_cc){
       try{
@@ -7741,11 +7813,27 @@ async function supaLoadFromCloud({silent=false}={}){
         // answer now, so this render must be the real one.
         _dashAwaitingCloud=false;
         if(!silent){_removeBootOverlay();renderDash();}
-        _showOfflineBanner();supaSetStatus('error');return;
+        // Classify AFTER the render above: an app bug thrown mid-load must
+        // reach console.error (so it feeds the observability/self-heal
+        // pipeline, §13) and must never tell the contractor their internet
+        // is down when it's actually fine, but neither check may delay the
+        // cache already painting on screen.
+        {
+          const _kind=await _kindPromise;
+          if(_kind==='network'){console.warn('Cloud load failed:',e);_showOfflineBanner();}
+          else console.error('Cloud load failed (app error, not network):',e);
+        }
+        supaSetStatus('error');return;
       }catch(_ce){console.warn('Cache load failed:',_ce);}
     }
     _dashAwaitingCloud=false; // nothing more is coming, zeros are now the truth
-    _removeBootOverlay();renderDash();supaSetStatus('error');
+    _removeBootOverlay();renderDash();
+    {
+      const _kind=await _kindPromise;
+      if(_kind==='network')console.warn('Cloud load failed:',e);
+      else console.error('Cloud load failed (app error, not network):',e);
+    }
+    supaSetStatus('error');
   }finally{
     _loadInProgress=false;
     _dashAwaitingCloud=false; // load settled either way, whatever we have is what shows

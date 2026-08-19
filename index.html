@@ -858,6 +858,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 .toast{position:fixed;bottom:24px;right:24px;background:var(--ink);color:var(--text-cream);border-radius:12px;padding:14px 18px;font-size:13px;font-weight:600;box-shadow:var(--shadow-modal);z-index:9997;display:flex;align-items:center;gap:10px;max-width:320px;animation:toast-in .25s ease;transform-origin:bottom right}
 .toast-icon{font-size:18px;flex-shrink:0}
 .toast-close{background:none;border:none;color:var(--text-cream-2);cursor:pointer;font-size:16px;margin-left:8px;padding:0;line-height:1}
+/* Update-available toast: has a real tap target instead of a keyboard-shortcut
+   instruction, so it's actionable on a phone with no keyboard (owner report,
+   2026-08-19: the old text-only "press Ctrl+Shift+R" toast is a dead end on mobile). */
+.toast-update-btn{background:var(--green,#0E6B39);color:#fff;border:none;border-radius:9px;padding:9px 14px;font-size:13px;font-weight:700;flex-shrink:0;-webkit-tap-highlight-color:transparent}
 /* Boot exit: the overlay LIFTS AWAY, gentle zoom + blur dissolve, not a flat fade.
    Paired with the card waterfall underneath, the whole reveal reads as one motion. */
 #supa-boot-overlay.td-fadeout{opacity:0;transform:scale(1.05);filter:blur(10px);transition:opacity .75s cubic-bezier(.4,0,.2,1),transform .75s cubic-bezier(.4,0,.2,1),filter .75s cubic-bezier(.4,0,.2,1)}
@@ -3829,6 +3833,24 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/e2e.js"></script>
 <script src="js/pwa.js"></script>
 <script>
+// Persistent, actionable replacement for the old "press Ctrl+Shift+R" toast:
+// that instruction is a dead end on a phone with no keyboard, so this gives
+// every device (mobile included) a real tap target that does the same
+// cache-wipe-and-reload _autoSaveAndReload() already does automatically.
+// Deduped by id so repeat 15s poll firings don't stack copies.
+function _showUpdateToast(){
+  if(document.getElementById('update-toast'))return;
+  const t=document.createElement('div');
+  t.id='update-toast';
+  t.className='toast';
+  t.style.cssText='max-width:none;right:16px;left:16px;bottom:24px';
+  // A close button (§15.1: fixed elements never cover content with no way
+  // out), not a permanent overlay: dismissing removes it, and the 15s poll
+  // above recreates it on its next firing since the update is still true,
+  // so declining now just means "ask me again shortly," never "never."
+  t.innerHTML='<span class="toast-icon">🔄</span><span style="flex:1">New version available</span><button class="toast-update-btn" onclick="_autoSaveAndReload()">Update</button><button class="toast-close" onclick="this.parentElement.remove()">×</button>';
+  document.body.appendChild(t);
+}
 // ── Service Worker, always-current version enforcement ───────────────────
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('/sw.js').catch(()=>{});
@@ -3853,7 +3875,7 @@ if('serviceWorker' in navigator){
         const raw=localStorage.getItem('_rv');
         const rec=raw?JSON.parse(raw):{n:0,t:Date.now()};
         if(Date.now()-rec.t>300000){rec.n=0;rec.t=Date.now();} // reset after 5 min
-        if(rec.n>=3){showToast('New version available, press Ctrl+Shift+R to update','🔄');return;}
+        if(rec.n>=3){_showUpdateToast();return;}
         rec.n++;
         localStorage.setItem('_rv',JSON.stringify(rec));
         _autoSaveAndReload();

@@ -4976,6 +4976,60 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.rows[0].miles).toBe(7.7);
     });
 
+    // A drive still in progress (not at a job, not at the shop) when the app died
+    // AND the calendar rolled to a new day before it ever restarted: previously
+    // _geoRestoreOpen's day-mismatch branch salvaged an open job/shop dwell but
+    // just discarded an open DRIVE outright, silently losing the hours. The
+    // destination is genuinely unknown (they never arrived), so this claims no
+    // mileage, only the payroll-relevant time entry.
+    test('a drive still open across a day rollover is salvaged as time, not silently dropped', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realEnq = window._geoEnqueue;
+        const entries = [];
+        _supaUser = { id: 'u-rollover' };
+        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+        try {
+          __seedGeo();
+          const t0 = Date.now();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoLegAtShop = false;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoStopAnchor = null;
+          const driveStart = new Date(t0 - 40 * 60000).toISOString();
+          const hiddenAt = new Date(t0 - 5 * 60000).toISOString();
+          _geoDriveStartedAt = driveStart;
+          _geoLegOrigin = { lat: a.job.lat, lng: a.job.lon, name: 'Miller Residence', kind: 'job' };
+          _geoLastFenceLoc = _geoLegOrigin;
+          _geoLastFenceAt = driveStart;
+          _geoPersistOpen(hiddenAt);
+          // Back-date the persisted blob's day so restore sees yesterday, the
+          // same shape a real overnight app-kill produces.
+          const raw = JSON.parse(localStorage.getItem('zp3_geo_open'));
+          raw.day = 'not-today';
+          localStorage.setItem('zp3_geo_open', JSON.stringify(raw));
+          // ── app dies here, relaunches tomorrow ──
+          _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null;
+          _geoLastFenceAt = null; _geoGapHiddenAt = null; _geoStopAnchor = null;
+          _geoRestoreOpen();
+          const salvaged = entries.filter(e => e.tbl === 'job_time_entries' && e.row.source === 'drive-unassigned-salvaged');
+          return {
+            restoredDrive: !!_geoDriveStartedAt, // must NOT come back live, the day already rolled
+            salvagedCount: salvaged.length,
+            salvaged: salvaged[0] && salvaged[0].row,
+          };
+        } finally {
+          _supaUser = realUser; window._geoEnqueue = realEnq;
+          _geoDriveStartedAt = null; _geoDriveReset(); _geoLegOrigin = null;
+          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoGapHiddenAt = null;
+          _geoClearOpen();
+        }
+      }, { job: JOB });
+      expect(r.restoredDrive, 'a rolled-over day never resumes as a live drive').toBe(false);
+      expect(r.salvagedCount, 'the in-progress drive logs its time instead of vanishing').toBe(1);
+      expect(r.salvaged.job_id, 'destination was never known, so no job is claimed').toBe(null);
+      expect(r.salvaged.dest_place, 'and no place is claimed either').toBe(null);
+      expect(r.salvaged.minutes).toBe(35);
+    });
+
     test('a bounce restored after a kill is still refused, because the origin came back with it', async () => {
       const r = await page.evaluate(async (a) => {
         const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue;

@@ -1091,6 +1091,9 @@ function saveClient(){
   const _prevAddr=_existingClient?.addr||'';
   const _noPropData=!_existingClient?.propDataFetchedAt;
   if(street&&city&&(addr!==_prevAddr||_noPropData))_lookupPropertyData(c.id,{street,city,state,zip});
+  // Warm the nearby-job/geofence cache the moment the address is entered, not
+  // on the next passive checkNearbyJob heartbeat (§ eager geocode, js/jobs.js).
+  if(addr&&addr!==_prevAddr&&typeof _eagerGeocodeClient==='function')_eagerGeocodeClient(c.id,addr).catch(()=>{});
   if(isNew){
     closeClientForm();
     currentClientId=c.id;

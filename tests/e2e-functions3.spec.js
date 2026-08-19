@@ -1743,6 +1743,78 @@ test.describe('Cloud Supabase and account functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // _classifyCloudError: the shape our own `if(error)throw error` sites
+  // actually receive is NOT a raw fetch exception, supabase-js wraps a real
+  // network failure into a PLAIN OBJECT with no .name and no Error prototype
+  // (js/vendor/supabase-js-2.112.3.min.js's PostgrestBuilder catch handler),
+  // so an earlier version of this classifier that checked `instanceof
+  // TypeError` / `.name==='AbortError'` silently misclassified every real
+  // outage as an app bug. These fixtures use the library's ACTUAL wrapped
+  // shape, not a guessed one.
+  test.describe('_classifyCloudError: input classes', () => {
+    test('missing-table error classifies as app, no probe needed', async () => {
+      const r = await page.evaluate(async () => {
+        if (typeof _classifyCloudError !== 'function') return { skip: true };
+        return { kind: await _classifyCloudError({ code: 'PGRST205', message: 'schema cache' }) };
+      });
+      if (!r.skip) expect(r.kind).toBe('app');
+    });
+    test('no error object at all classifies as network (historical default)', async () => {
+      const r = await page.evaluate(async () => {
+        if (typeof _classifyCloudError !== 'function') return { skip: true };
+        return { kind: await _classifyCloudError(null) };
+      });
+      if (!r.skip) expect(r.kind).toBe('network');
+    });
+    test('a genuine app-thrown Error (not network-shaped) classifies as app', async () => {
+      const r = await page.evaluate(async () => {
+        if (typeof _classifyCloudError !== 'function') return { skip: true };
+        return { kind: await _classifyCloudError(new Error('cannot read property of undefined')) };
+      });
+      if (!r.skip) expect(r.kind).toBe('app');
+    });
+    test('supabase-js network-shaped error, network actually reachable, reclassifies as app', async () => {
+      // No route override: the real /version.json on this test server answers,
+      // so the confirmation probe succeeds and this must NOT banner.
+      const r = await page.evaluate(async () => {
+        if (typeof _classifyCloudError !== 'function') return { skip: true };
+        return { kind: await _classifyCloudError({ message: 'TypeError: Failed to fetch', details: '', hint: '', code: '' }) };
+      });
+      if (!r.skip) expect(r.kind).toBe('app');
+    });
+    test('code:"offline" is trusted as an explicit signal (the shared test-fixture shape, tests/helpers.js maybeOffline)', async () => {
+      // Regression: this exact shape (helpers.js offlineResult()) briefly
+      // misclassified as 'app' when the classifier only recognized real
+      // browser/supabase-js message text, tripping assertNoErrors() on every
+      // __offlineMode-driven test across the suite.
+      const r = await page.evaluate(async () => {
+        if (typeof _classifyCloudError !== 'function') return { skip: true };
+        return { kind: await _classifyCloudError({ message: 'Simulated offline', code: 'offline' }) };
+      });
+      if (!r.skip) expect(r.kind).toBe('network');
+    });
+    test('supabase-js network-shaped error, network genuinely down, classifies as network', async () => {
+      await page.route('**/version.json*', route => route.abort('failed'));
+      try {
+        const r = await page.evaluate(async () => {
+          if (typeof _classifyCloudError !== 'function') return { skip: true };
+          return {
+            chrome: await _classifyCloudError({ message: 'TypeError: Failed to fetch', details: '', hint: '', code: '' }),
+            safari: await _classifyCloudError({ message: 'TypeError: Load failed', details: '', hint: '', code: '' }),
+            ourTimeout: await _classifyCloudError({ message: 'AbortError: signal timed out', hint: 'Request was aborted (timeout or manual cancellation)' }),
+          };
+        });
+        if (!r.skip) {
+          expect(r.chrome, 'Chrome-shaped fetch failure while genuinely offline').toBe('network');
+          expect(r.safari, 'Safari-shaped fetch failure while genuinely offline').toBe('network');
+          expect(r.ourTimeout, 'our own 30s request timeout while genuinely offline').toBe('network');
+        }
+      } finally {
+        await page.unroute('**/version.json*');
+      }
+    });
+  });
+
   test('_showOfflineBanner: calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _showOfflineBanner !== 'function') return { skip: true };
