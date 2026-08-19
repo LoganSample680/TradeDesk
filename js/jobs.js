@@ -87,6 +87,45 @@ function _locPromptClockIn(jobId){
   clockIn(jobId,null,null);
   renderDash&&renderDash();
 }
+
+// Always-on Home clock bar's picker (owner ask 2026-08-19: "ability for
+// somebody to clock in at all times, nothing dependent on anything"): General
+// time pinned first so the button never dead-ends on an empty account, then
+// the same job list/row markup the geofence prompt already uses (§7.3 reuse,
+// mirrors the jobRows block in js/dashboard.js's _showLocPrompt branch)
+// so picking a real job looks and behaves identically either way.
+function _openAlwaysClockSheet(){
+  document.getElementById('_acs-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.id='_acs-ov';ov.className='zmodal-overlay';
+  const list=_locPromptJobs();
+  const jobRows=list.map(j=>{
+    const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+    const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
+    const sub=[c&&c.name&&c.name!==j.name?c.name:'',_fmtJobStartHint(j)].filter(Boolean).join(' · ');
+    return '<button onclick="_openAlwaysClockPick('+j.id+')" style="display:flex;align-items:center;gap:11px;width:100%;padding:11px 14px;border:none;background:none;border-bottom:1px solid var(--border);text-align:left;font-family:inherit;cursor:pointer">'+
+      '<span style="width:30px;height:30px;border-radius:50%;background:linear-gradient(160deg,#22c55e,#12894a);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 3px 8px -3px rgba(14,107,57,.6)"><svg viewBox="0 0 24 24" width="12" height="12" fill="#fff"><path d="M7 5v14l11-7z"/></svg></span>'+
+      '<span style="min-width:0;flex:1"><span style="display:block;font-size:13.5px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(j.name||(c&&c.name)||'Job')+'</span>'+
+      (sub?'<span style="display:block;font-size:11.5px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(sub)+'</span>':'')+'</span>'+
+    '</button>';
+  }).join('');
+  ov.innerHTML='<div style="background:var(--bg);border-radius:16px;width:100%;max-width:440px;max-height:78vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.35)">'+
+    '<div style="padding:16px 16px 8px;font-size:15px;font-weight:800">Clock in</div>'+
+    '<button onclick="_openAlwaysClockPick(null)" style="display:flex;align-items:center;gap:11px;width:100%;padding:11px 14px;border:none;background:none;border-bottom:1px solid var(--border);text-align:left;font-family:inherit;cursor:pointer">'+
+      '<span style="width:30px;height:30px;border-radius:50%;background:var(--ink);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>'+
+      '<span style="min-width:0;flex:1"><span style="display:block;font-size:13.5px;font-weight:700;color:var(--text)">General time</span>'+
+      '<span style="display:block;font-size:11.5px;color:var(--text3)">Just start the clock, no job needed</span></span>'+
+    '</button>'+
+    jobRows+
+    '<button onclick="document.getElementById(\'_acs-ov\').remove()" style="width:100%;padding:14px;border:none;background:none;text-align:center;font-family:inherit;font-size:13px;font-weight:700;color:var(--text3);cursor:pointer">Cancel</button>'+
+  '</div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function _openAlwaysClockPick(jobId){
+  document.getElementById('_acs-ov')?.remove();
+  clockIn(jobId,null,null);
+}
 // Which jobs to offer when standing somewhere that isn't a job site.
 //
 // NOT _geoMyJobs(): that is today's ACTIVE jobs, which is exactly right for
@@ -374,8 +413,21 @@ function _isMyTimeEntry(e){
   return(e.logged_by_uid||null)===loggedByUid;
 }
 
+// jobId===null (not undefined/an unmatched id, an explicit null) means
+// "General time": no client, no job, nothing set up yet. This is the
+// always-on Home clock bar's fallback so it truly works with an empty
+// account. Deliberately NOT the _nearbyClockIn pattern of auto-creating a
+// walk-up job (js/jobs.js:55-62): that pattern fits a REAL client with no
+// job record yet, a job genuinely belongs in their history. General time
+// has no one to belong to, inventing a fake job for it would just leak a
+// phantom entry into the Jobs tab, calendar, and dispatch board for no
+// reason. timeEntries already tolerates an unmatched job_id gracefully
+// (crew-cost falls back to "Other"), so this rides that same tolerance
+// instead of a new data shape.
 function clockIn(jobId,scopeId,scopeLabel){
-  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const general=jobId===null;
+  const j=general?null:jobs.find(x=>x.id===jobId);
+  if(!general&&!j)return;
   // The clock is the most physical moment in the app: the crew is standing on
   // the site with the phone in a glove. It gets its own tap regardless of
   // which toast (if any) follows.
@@ -383,7 +435,7 @@ function clockIn(jobId,scopeId,scopeLabel){
   // Defense in depth: openClockInSheet() already refuses to open on a
   // closed job, but clockIn() is reachable directly too, never let a
   // completed/cancelled job accept a new time entry either way.
-  if(_jobClosedToClockIn(j)){showToast('This job is already marked complete, nothing left to clock into.','✅');return;}
+  if(j&&_jobClosedToClockIn(j)){showToast('This job is already marked complete, nothing left to clock into.','✅');return;}
   if(_activeTimer){
     if(_activeTimer.jobId===jobId&&_activeTimer.scopeId===(scopeId||null)){
       showToast('Already tracking '+(scopeLabel||'this task'),'⏱');return;
@@ -399,8 +451,8 @@ function clockIn(jobId,scopeId,scopeLabel){
       return;
     }
   }
-  const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
-  const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
+  const bid=j&&j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  const c=bid?getClientById(bid.client_id):(j?getClientById(j.client_id):null);
   // Owner request 2026-07-11 ("bulletproof"): persist the entry the INSTANT the
   // clock starts, not only when it stops. Before this, clockOut() was the only
   // place a timeEntries row was ever created, a crashed tab, a dead phone, or
@@ -410,11 +462,12 @@ function clockIn(jobId,scopeId,scopeLabel){
   // creating a new one. This open row is also what makes force-clock-out and
   // reload-survival possible, it's the one source of truth for "is anyone
   // still clocked in," visible to every device, not just the one that's running.
+  const jobName=general?'General time':j.name;
   const{loggedByUid,loggedByName}=_tlLoggedByInfo();
   const entryId=Date.now();
   timeEntries.push({id:entryId,job_id:jobId,date:todayKey(),start_time:new Date().toISOString(),end_time:null,minutes:null,scope_id:scopeId||null,scope_label:scopeLabel||null,logged_by_uid:loggedByUid,logged_by_name:loggedByName,open:true});
   saveAll();
-  _activeTimer={jobId,jobName:j.name,clientName:c?c.name:j.name,scopeId:scopeId||null,scopeLabel:scopeLabel||null,startTime:Date.now(),timerInterval:null,entryId};
+  _activeTimer={jobId,jobName,clientName:c?c.name:jobName,scopeId:scopeId||null,scopeLabel:scopeLabel||null,startTime:Date.now(),timerInterval:null,entryId};
   _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
   showClockBanner();
   // Same clock on the lock screen and in the Dynamic Island. Started once;
@@ -422,7 +475,8 @@ function clockIn(jobId,scopeId,scopeLabel){
   // second (js/live-activity.js).
   if(typeof _liveActClockIn==='function')_liveActClockIn(_activeTimer);
   renderJobsPage&&renderJobsPage();
-  showToast('Clocked in · '+(scopeLabel||j.name),'⏱');
+  renderDash&&renderDash();
+  showToast('Clocked in · '+(scopeLabel||jobName),'⏱');
 }
 
 function clockOut(saveEntry,silent){
@@ -588,6 +642,9 @@ function updateClockTimer(){
   // Live time-on-site counter on the dashboard on-site card (minute granularity).
   const os=document.getElementById('dash-onsite-time');
   if(os){const hh=Math.floor(elapsed/3600),mm=Math.floor((elapsed%3600)/60);os.textContent=(hh?hh+'h ':'')+mm+'m';}
+  // Same minute-granularity tick for the always-on Home clock bar.
+  const cb=document.getElementById('dash-clockbar-time');
+  if(cb)cb.textContent=_fmtMin(Math.max(1,Math.floor(elapsed/60)));
 }
 
 function showClockBanner(){

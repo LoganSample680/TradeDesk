@@ -480,6 +480,37 @@ function _skipSetupTodo(id){
   if(!S.setupSkipped.includes(id)){S.setupSkipped.push(id);if(typeof saveAll==='function')saveAll();}
   _renderDashSetupTodo();
 }
+// Always-on Home clock bar (owner ask 2026-08-19: "ability for somebody to
+// clock in at all times, nothing dependent on anything"). Unlike #dash-nearby
+// below, this element is NEVER hidden and never depends on a geofence signal,
+// a scheduled job, or any client existing, tap Clock in and it starts
+// counting. It coexists with the geofence-driven card rather than replacing
+// it: that card still shows automatically-detected arrivals/driving; this
+// bar is only the mirror of whatever's actually on the clock right now, plus
+// the one manual entry point that can never dead-end.
+function _renderClockBar(){
+  const el=document.getElementById('dash-clockbar');if(!el)return;
+  if(_activeTimer){
+    const label=_activeTimer.scopeLabel?_activeTimer.scopeLabel+', '+_activeTimer.jobName:_activeTimer.jobName;
+    el.innerHTML='<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:linear-gradient(180deg,#ffffff 0%,#f6fbf7 100%);border:1px solid rgba(22,163,74,.25);border-radius:12px">'+
+      '<div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(160deg,#22c55e,#0E6B39);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(label)+'</div>'+
+        '<div style="font-size:11px;color:#0E6B39;font-weight:700">On the clock <span id="dash-clockbar-time">'+_fmtMin(Math.max(1,Math.round((Date.now()-_activeTimer.startTime)/60000)))+'</span></div>'+
+      '</div>'+
+      '<button onclick="clockOut()" style="flex-shrink:0;padding:9px 16px;border-radius:999px;background:#1B1612;color:#fff;font-size:12.5px;font-weight:800;font-family:inherit;border:none;cursor:pointer">Clock out</button>'+
+    '</div>';
+  }else{
+    el.innerHTML='<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:12px">'+
+      '<div style="width:34px;height:34px;border-radius:50%;background:var(--ink);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13.5px;font-weight:800">Not clocked in</div>'+
+        '<div style="font-size:11px;color:var(--text3)">Tap to pick a job and start the clock</div>'+
+      '</div>'+
+      '<button onclick="_openAlwaysClockSheet()" style="flex-shrink:0;padding:9px 16px;border-radius:999px;background:var(--text);color:#fff;font-size:12.5px;font-weight:800;font-family:inherit;border:none;cursor:pointer">Clock in</button>'+
+    '</div>';
+  }
+}
 function renderDash(){
   if(_renderDashRunning)return; // prevent cascade
   _renderDashRunning=true;
@@ -740,6 +771,7 @@ function renderDash(){
   renderTodayFeed();
   _renderDashSetupTodo();
   _renderDashSupplyHold();
+  _renderClockBar();
   const _nearbyEl=document.getElementById('dash-nearby');
   if(_nearbyEl){
     // The on-site card spans the WHOLE moment (owner: persist card + time-on-site):
