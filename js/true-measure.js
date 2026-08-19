@@ -212,6 +212,12 @@ async function openTrueMeasure(c){
         <button onclick="_tmRepeatStep(1)" style="background:rgba(255,255,255,.25);color:#fff;border:none;width:20px;height:20px;border-radius:999px;font-weight:900;cursor:pointer;font-family:inherit">+</button>
       </div>
       <button id="tm-undo" onclick="_tmUndo()" style="display:none;position:absolute;bottom:14px;left:12px;background:rgba(255,255,255,.92);color:var(--text2);font-size:11px;font-weight:700;padding:7px 12px;border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:none;cursor:pointer;font-family:inherit">↺ Undo last point</button>
+      <div id="tm-precision-hint" style="position:absolute;top:12px;left:12px;background:rgba(0,0,0,.55);color:#fff;font-size:10.5px;font-weight:700;padding:6px 10px;border-radius:999px;pointer-events:none">Hold &amp; drag to place precisely</div>
+      <div id="tm-crosshair" style="display:none;position:absolute;width:46px;height:46px;transform:translate(-50%,-50%);pointer-events:none;z-index:5">
+        <div style="position:absolute;inset:0;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.35),0 2px 10px rgba(0,0,0,.3)"></div>
+        <div style="position:absolute;left:50%;top:50%;width:2px;height:14px;background:#fff;transform:translate(-50%,-50%);box-shadow:0 0 2px rgba(0,0,0,.6)"></div>
+        <div style="position:absolute;left:50%;top:50%;width:14px;height:2px;background:#fff;transform:translate(-50%,-50%);box-shadow:0 0 2px rgba(0,0,0,.6)"></div>
+      </div>
     </div>
     <div style="background:var(--bg);border-top:1px solid var(--border);padding:16px 18px calc(20px + env(safe-area-inset-bottom,0px));flex-shrink:0" id="tm-sheet">
       <div id="tm-readout" style="font-family:var(--font-display);font-size:32px;font-weight:900;letter-spacing:-1px;color:var(--text)">Tap the map to start</div>
@@ -286,10 +292,88 @@ async function _tmInitMap(){
       const c=map.convertPointOnPageToCoordinate(e.pointOnPage);
       _tmAddPoint(c.latitude,c.longitude);
     });
+    _tmInitPrecisionGesture(map,wrap);
     _tmState.map=map;
   }catch(_e){
     if(fallback)fallback.style.display='flex';
   }
+}
+
+// Press-and-hold-and-drag precision point placement, the iOS-loupe pattern:
+// a normal tap still drops a point immediately (single-tap above, untouched).
+// Holding zooms the real map in around the touch point and shows a fixed
+// crosshair offset above the finger (never obscured by the thumb) that
+// tracks further dragging; lifting drops the point under the crosshair, then
+// the camera eases back out. This is a real camera zoom, not a canvas/DOM
+// screenshot loupe, MapKit's tiles aren't guaranteed CORS-readable for
+// drawImage/getImageData, so a true magnifying-glass duplicate isn't safe.
+function _tmInitPrecisionGesture(map,wrap){
+  const THRESH=8,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70;
+  let downX=0,downY=0,moved=false,active=false,timer=null,origDistance=null;
+  const cross=document.getElementById('tm-crosshair');
+  function cancelTimer(){ if(timer){clearTimeout(timer);timer=null;} }
+  function relPoint(e){
+    const r=wrap.getBoundingClientRect();
+    return {x:e.clientX-r.left,y:e.clientY-r.top};
+  }
+  function placeCrosshair(x,y){
+    if(!cross)return;
+    cross.style.left=x+'px';
+    cross.style.top=Math.max(20,y-OFFSET_Y)+'px';
+  }
+  function exitPrecision(){
+    active=false;
+    if(cross)cross.style.display='none';
+    if(origDistance!=null){
+      try{map.setCameraDistanceAnimated(origDistance,true);}catch(_e){}
+    }
+    origDistance=null;
+  }
+  wrap.addEventListener('pointerdown',e=>{
+    if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;
+    const p=relPoint(e);
+    downX=p.x;downY=p.y;moved=false;
+    cancelTimer();
+    const pageX=e.pageX,pageY=e.pageY;
+    timer=setTimeout(()=>{
+      if(moved)return;
+      active=true;
+      try{
+        const coord=map.convertPointOnPageToCoordinate(new DOMPoint(pageX,pageY));
+        origDistance=map.cameraDistance;
+        map.setCenterAnimated(coord,true);
+        map.setCameraDistanceAnimated(Math.max(12,origDistance*ZOOM_FACTOR),true);
+      }catch(_e){}
+      if(cross)cross.style.display='block';
+      placeCrosshair(downX,downY);
+      if(typeof _tdHaptic==='function')_tdHaptic('tick');
+    },HOLD_MS);
+  });
+  wrap.addEventListener('pointermove',e=>{
+    if(!e.isPrimary)return;
+    const p=relPoint(e);
+    if(!active){
+      if(Math.abs(p.x-downX)>THRESH||Math.abs(p.y-downY)>THRESH){moved=true;cancelTimer();}
+      return;
+    }
+    e.preventDefault();
+    placeCrosshair(p.x,p.y);
+  },{passive:false});
+  wrap.addEventListener('pointerup',e=>{
+    if(!e.isPrimary)return;
+    cancelTimer();
+    if(active){
+      const p=relPoint(e);
+      const crossY=Math.max(20,p.y-OFFSET_Y);
+      try{
+        const r=wrap.getBoundingClientRect();
+        const coord=map.convertPointOnPageToCoordinate(new DOMPoint(r.left+p.x,r.top+crossY));
+        _tmAddPoint(coord.latitude,coord.longitude);
+      }catch(_e){}
+      exitPrecision();
+    }
+  });
+  wrap.addEventListener('pointercancel',()=>{cancelTimer();if(active)exitPrecision();});
 }
 
 // Cached client coords first (the same nearby-geocode cache clients.js/
@@ -312,6 +396,7 @@ async function _tmClientCoord(c){
 function _tmAddPoint(lat,lng){
   if(!_tmState)return;
   _tmState.points.push({lat,lng});
+  document.getElementById('tm-precision-hint')?.remove();
   _tmRedraw();
 }
 
