@@ -740,7 +740,6 @@ function renderDash(){
   renderTodayFeed();
   _renderDashSetupTodo();
   _renderDashSupplyHold();
-  _renderClockBar();
   const _nearbyEl=document.getElementById('dash-nearby');
   if(_nearbyEl){
     // The on-site card spans the WHOLE moment (owner: persist card + time-on-site):

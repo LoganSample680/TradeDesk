@@ -615,9 +615,6 @@ function updateClockTimer(){
   // Live time-on-site counter on the dashboard on-site card (minute granularity).
   const os=document.getElementById('dash-onsite-time');
   if(os){const hh=Math.floor(elapsed/3600),mm=Math.floor((elapsed%3600)/60);os.textContent=(hh?hh+'h ':'')+mm+'m';}
-  // Same minute-granularity tick for the always-on Home clock bar.
-  const cb=document.getElementById('dash-clockbar-time');
-  if(cb)cb.textContent=_fmtMin(Math.max(1,Math.floor(elapsed/60)));
 }
 
 function showClockBanner(){
