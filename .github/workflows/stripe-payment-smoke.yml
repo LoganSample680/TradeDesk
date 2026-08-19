@@ -1,0 +1,70 @@
+name: Stripe Payment Pipeline Smoke Test
+
+# Owner ask (2026-08-19): "I want tests to fire to make sure Stripe works
+# correctly." Fires REAL Stripe TEST-mode payments (success, decline, refund)
+# through the app's REAL edge functions against the REAL Dev Supabase account,
+# and confirms each one actually lands in the app's own ledger — not just that
+# Stripe's API said it succeeded. See scripts/stripe-payment-smoke.js for the
+# full scope note (embedded/PaymentIntent path only — the hosted Checkout
+# Session path has no headless "complete it" API, see that file's header).
+#
+# Runs on ubuntu-latest (a normal hosted runner — this is plain HTTPS calls to
+# Stripe + Supabase, nothing that needs the self-hosted Proxmox runner).
+on:
+  push:
+    paths:
+      - 'supabase/functions/create-checkout/**'
+      - 'supabase/functions/stripe-webhook/**'
+      - 'supabase/functions/refund-payment/**'
+      - 'scripts/sync-stripe-webhooks.js'
+      - 'scripts/stripe-payment-smoke.js'
+      - 'js/generic-estimate.js'
+  pull_request:
+    paths:
+      - 'supabase/functions/create-checkout/**'
+      - 'supabase/functions/stripe-webhook/**'
+      - 'supabase/functions/refund-payment/**'
+      - 'scripts/sync-stripe-webhooks.js'
+      - 'scripts/stripe-payment-smoke.js'
+      - 'js/generic-estimate.js'
+  workflow_dispatch: {}
+
+concurrency:
+  group: stripe-payment-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install Stripe SDK
+        run: npm install --no-save stripe@14
+
+      - name: Run payment pipeline smoke test
+        # Soft-skips (exit 0) when the live creds aren't configured, same
+        # convention as tests/flow/live-helpers.js's needsLiveCreds(). Hard-fails
+        # (exit 1) on anything actually broken: a decline that gets recorded as
+        # paid, a payment that Stripe confirms but never reaches signed_proposals
+        # or zj_data.payments, a refund that doesn't land, or a missing Stripe
+        # Connect prerequisite on the Dev account (see the job's own log for the
+        # exact diagnostic — scripts/stripe-payment-smoke.js prints a clear
+        # actionable message for each failure mode).
+        run: node scripts/stripe-payment-smoke.js
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          STRIPE_TEST_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          E2E_DEV_EMAIL: ${{ secrets.E2E_DEV_EMAIL }}
+          E2E_DEV_PASSWORD: ${{ secrets.E2E_DEV_PASSWORD }}
+          E2E_DEV_USER_ID: ${{ secrets.E2E_DEV_USER_ID }}
+          # DEV2 stands in as primary when E2E_DEV_* isn't set (same fallback
+          # tests/flow/live-helpers.js uses) — see the script header comment.
+          E2E_DEV2_EMAIL: ${{ secrets.E2E_DEV2_EMAIL }}
+          E2E_DEV2_PASSWORD: ${{ secrets.E2E_DEV2_PASSWORD }}
+          E2E_DEV2_USER_ID: ${{ secrets.E2E_DEV2_USER_ID }}
