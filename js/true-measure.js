@@ -275,6 +275,13 @@ async function _tmInitMap(){
       showsUserLocationControl:false,
     });
     map.region=new mapkit.CoordinateRegion(coord,new mapkit.CoordinateSpan(0.0015,0.0015));
+    // No cameraZoomRange set defaults to MapKit's own floor, which isn't
+    // close enough to trace a single roof edge or a foundation line by hand
+    // (owner report 2026-08-19, live device). 12m keeps individual shingles
+    // resolvable at max zoom on satellite imagery; 3000m caps how far a
+    // contractor can zoom OUT, past "the whole property" there's nothing
+    // useful left to trace.
+    map.cameraZoomRange=new mapkit.CameraZoomRange(12,3000);
     map.addEventListener('single-tap',e=>{
       const c=map.convertPointOnPageToCoordinate(e.pointOnPage);
       _tmAddPoint(c.latitude,c.longitude);
