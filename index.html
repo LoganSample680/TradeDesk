@@ -2692,6 +2692,15 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-meta" id="set-meta-notifications"></div>
           <div class="set-idx-chev">›</div>
         </div>
+        <div class="set-idx-row" data-search="truemeasure truescan rate library lidar measure scan area roof square distance wall ceiling trim door window outlet switch gfci" onclick="_openSetDetail('truerates')">
+          <div class="set-idx-icon"><span data-ico="📐" data-ico-size="18"></span></div>
+          <div class="set-idx-body">
+            <div class="set-idx-title">TrueSuite rate library</div>
+            <div class="set-idx-sub">Preset $ rates for TrueMeasure &amp; TrueScan</div>
+          </div>
+          <div class="set-idx-meta" id="set-meta-truerates"></div>
+          <div class="set-idx-chev">›</div>
+        </div>
       </div>
     </div>
 
@@ -3001,6 +3010,45 @@ body.dark .cal-cell.other{background:var(--cream)}
         <textarea id="set-sms-intent" rows="4" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
       </div>
       <button class="btn btn-p" onclick="saveSettings()" style="width:100%;margin-top:4px;padding:13px">Save</button>
+    </div>
+  </div>
+
+  <!-- TrueSuite rate library detail -->
+  <div class="set-detail" id="setd-truerates">
+    <div class="set-detail-hd">
+      <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="📐" data-ico-size="18"></span></div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">TrueSuite rate library</div><div style="font-size:11px;color:var(--text3)">Set your $ rates once, they auto-fill on every measured line</div></div>
+    </div>
+    <div style="padding:16px">
+      <div class="tip" style="margin-bottom:14px">Fill these in now and TrueMeasure (map tracing) and TrueScan (LiDAR room scan) both pre-fill the rate the next time you confirm a measured line, instead of asking you to type it live on-site.</div>
+      <div id="set-rates-tm" style="margin-bottom:14px">
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">TrueMeasure rates</div>
+        <div class="fg fg2">
+          <div class="f"><label>Area ($/sq ft)</label><input type="number" id="tr-tm-area" min="0" step="0.01" placeholder="0"></div>
+          <div class="f"><label>Roofing ($/square)</label><input type="number" id="tr-tm-roof" min="0" step="1" placeholder="0"></div>
+          <div class="f"><label>Distance / run ($/ln ft)</label><input type="number" id="tr-tm-dist" min="0" step="0.01" placeholder="0"></div>
+        </div>
+      </div>
+      <div id="set-rates-scan" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">TrueScan rates &middot; surfaces</div>
+        <div class="fg fg2">
+          <div class="f"><label>Walls ($/sq ft)</label><input type="number" id="tr-scan-wall" min="0" step="0.01" placeholder="0"></div>
+          <div class="f"><label>Ceiling ($/sq ft)</label><input type="number" id="tr-scan-ceiling" min="0" step="0.01" placeholder="0"></div>
+          <div class="f"><label>Trim ($/ln ft)</label><input type="number" id="tr-scan-trim" min="0" step="0.01" placeholder="0"></div>
+          <div class="f"><label>Doors ($/door)</label><input type="number" id="tr-scan-door" min="0" step="1" placeholder="0"></div>
+          <div class="f"><label>Windows ($/window)</label><input type="number" id="tr-scan-window" min="0" step="1" placeholder="0"></div>
+        </div>
+      </div>
+      <div id="set-rates-scan-elec" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">TrueScan rates &middot; electrical</div>
+        <div class="fg fg2">
+          <div class="f"><label>Outlets ($/outlet)</label><input type="number" id="tr-scan-outlet" min="0" step="1" placeholder="0"></div>
+          <div class="f"><label>Switches ($/switch)</label><input type="number" id="tr-scan-sw" min="0" step="1" placeholder="0"></div>
+          <div class="f"><label>GFCI protection ($/lot)</label><input type="number" id="tr-scan-gfci" min="0" step="1" placeholder="0"></div>
+        </div>
+      </div>
+      <button class="btn btn-p" onclick="saveTrueRates()" style="width:100%;margin-top:16px;padding:13px">Save</button>
     </div>
   </div>
 

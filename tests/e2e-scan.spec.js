@@ -646,40 +646,119 @@ test.describe('TdScan web half', () => {
       expect(r.order, 'selling the plan is the side hustle, not the point').toBe(true);
     });
 
-    test('a room takes a name the contractor types, not one off a list', async () => {
+    // The old OS prompt() is gone: rename now opens the app's own centered
+    // .zmodal-overlay/.zmodal picker (§7.3), never a hand-rolled sheet.
+    test('the rename picker is the app\'s real centered-modal convention, with an alphabetized common-name list', async () => {
       await seed();
       const r = await page.evaluate(() => {
-        const real = window.prompt;
-        window.prompt = () => "Zach's office";
-        try { _scanRenameRoom('s-name', 1); } finally { window.prompt = real; }
+        _scanRenameRoom('s-name', 1);
+        const ov = document.getElementById('_scan-rename-ov');
+        // Not a document-wide singleton check: seed() already leaves the scan
+        // viewer's own .zmodal-overlay (#_scan-view-ov) open in the DOM, so
+        // asserting this is literally document.querySelector('.zmodal-overlay')
+        // would just match whichever one happens to come first, not prove
+        // anything about the rename picker itself.
+        const isRealZmodal = ov.classList.contains('zmodal-overlay') &&
+                              !!ov.querySelector('.zmodal');
+        const names = Array.from(document.querySelectorAll('#_scan-rename-list ._scan-rename-row'))
+          .map(r => r.textContent);
+        const hasInput = !!document.getElementById('_scan-rename-inp');
+        ov.remove();
+        return { isRealZmodal, names, hasInput };
+      });
+      expect(r.isRealZmodal, 'built on .zmodal-overlay/.zmodal, not a new shell').toBe(true);
+      expect(r.hasInput, 'a custom-name fallback input is always present').toBe(true);
+      ['Kitchen', 'Primary Bedroom', 'Bedroom', 'Primary Bathroom', 'Bathroom', 'Living Room', 'Garage']
+        .forEach(name => expect(r.names, `list offers ${name}`).toContain(name));
+      expect(r.names.length, 'a real list of common names, not one or two').toBeGreaterThanOrEqual(10);
+      const sorted = [...r.names].sort((a, b) => a.localeCompare(b));
+      expect(r.names, 'alphabetized, not an arbitrary order').toEqual(sorted);
+    });
+
+    test('tapping a row renames the room immediately and closes the picker', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        _scanRenameRoom('s-name', 1);
+        const row = Array.from(document.querySelectorAll('#_scan-rename-list ._scan-rename-row'))
+          .find(el => el.textContent === 'Garage');
+        row.click();
+        return { label: scans[0].rooms[1].label, gone: !document.getElementById('_scan-rename-ov') };
+      });
+      expect(r.label).toBe('Garage');
+      expect(r.gone, 'a row tap applies and closes in one action, same effect as the old prompt').toBe(true);
+    });
+
+    test('the custom-name input still takes any name the contractor types', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        _scanRenameRoom('s-name', 1);
+        const inp = document.getElementById('_scan-rename-inp');
+        inp.value = "Zach's office";
+        document.getElementById('_scan-rename-ok').click();
         _scanToEstimate('s-name');
         return { label: scans[0].rooms[1].label,
+                 gone: !document.getElementById('_scan-rename-ov'),
                  seed: (window._scanEstimateSeed?.rooms || []).map(x => x.name) };
       });
       expect(r.label).toBe("Zach's office");
+      expect(r.gone, 'saving closes the picker').toBe(true);
       // The label feeds the plan drawing, the takeoff and the line items, so a
       // rename has to survive all the way into the estimate.
       expect(r.seed, 'the name the contractor chose is the one on the estimate')
         .toContain("Zach's office");
     });
 
-    test('cancelling or clearing the prompt never wipes a name', async () => {
+    test('cancel, a blank save, and a backdrop tap never wipe a name', async () => {
       await seed();
       const r = await page.evaluate(() => {
-        const real = window.prompt;
-        window.prompt = () => 'Kitchen';
-        try { _scanRenameRoom('s-name', 0); } finally { window.prompt = real; }
+        _scanRenameRoom('s-name', 0);
+        document.getElementById('_scan-rename-inp').value = 'Kitchen';
+        document.getElementById('_scan-rename-ok').click();
         const named = scans[0].rooms[0].label;
-        window.prompt = () => null;
-        try { _scanRenameRoom('s-name', 0); } finally { window.prompt = real; }
+
+        _scanRenameRoom('s-name', 0);
+        document.querySelector('#_scan-rename-ov .zmodal-cancel').click();
         const afterCancel = scans[0].rooms[0].label;
-        window.prompt = () => '   ';
-        try { _scanRenameRoom('s-name', 0); } finally { window.prompt = real; }
-        return { named, afterCancel, afterBlank: scans[0].rooms[0].label };
+        const goneAfterCancel = !document.getElementById('_scan-rename-ov');
+
+        _scanRenameRoom('s-name', 0);
+        document.getElementById('_scan-rename-inp').value = '   ';
+        document.getElementById('_scan-rename-ok').click();
+        const afterBlank = scans[0].rooms[0].label;
+
+        _scanRenameRoom('s-name', 0);
+        document.getElementById('_scan-rename-ov').click(); // tap the backdrop itself
+        const afterBackdrop = scans[0].rooms[0].label;
+        const goneAfterBackdrop = !document.getElementById('_scan-rename-ov');
+
+        return { named, afterCancel, goneAfterCancel, afterBlank, afterBackdrop, goneAfterBackdrop };
       });
       expect(r.named).toBe('Kitchen');
-      expect(r.afterCancel, 'a cancel is not an edit').toBe('Kitchen');
+      expect(r.afterCancel, 'Cancel is not an edit').toBe('Kitchen');
+      expect(r.goneAfterCancel, 'Cancel closes the picker').toBe(true);
       expect(r.afterBlank, 'blank is not a name').toBe('Kitchen');
+      expect(r.afterBackdrop, 'tapping outside the modal is not an edit').toBe('Kitchen');
+      expect(r.goneAfterBackdrop, 'a backdrop tap closes it, same as every other zmodal').toBe(true);
+    });
+
+    test('an invalid or missing scan id / room index never throws and opens nothing', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        const before = scans[0].rooms[0].label;
+        let threw = false;
+        try {
+          _scanRenameRoom();                 // no args at all
+          _scanRenameRoom(null, 0);
+          _scanRenameRoom(undefined, undefined);
+          _scanRenameRoom('does-not-exist', 0);
+          _scanRenameRoom('s-name', 99);     // room index out of range
+          _scanRenameRoom('s-name', -1);
+        } catch (e) { threw = true; }
+        return { threw, before, after: scans[0].rooms[0].label, opened: !!document.getElementById('_scan-rename-ov') };
+      });
+      expect(r.threw, 'an invalid id/idx must never throw').toBe(false);
+      expect(r.after, 'nothing else in the scan is touched').toBe(r.before);
+      expect(r.opened, 'no picker opens for a target that does not exist').toBe(false);
     });
 
     // The Floor tabs sit directly above this list and the plan below draws one

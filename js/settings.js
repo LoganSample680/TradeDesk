@@ -12,6 +12,7 @@ function _openSetDetail(key) {
   _renderSetIndex();
   if (key === 'integrations') _renderIntegrations();
   if (key === 'branding') _renderBrandSwatches(S.brandColor||'#2D5DA8');
+  if (key === 'truerates') loadTrueRatesForm();
 }
 
 function _closeSetDetail() {
@@ -53,6 +54,16 @@ function _renderSetIndex() {
   // Legal & terms meta
   const legalMeta = document.getElementById('set-meta-legal');
   if (legalMeta) legalMeta.innerHTML = '';
+  // TrueSuite rate library meta: how many of the 11 rate fields are set
+  const trueRatesMeta = document.getElementById('set-meta-truerates');
+  if (trueRatesMeta) {
+    const tm = (typeof _tmRates === 'function') ? _tmRates() : (S.trueMeasureRates || {});
+    const sr = (typeof _scanRates === 'function') ? _scanRates() : (S.scanRates || {});
+    const er = (typeof _scanElecRates === 'function') ? _scanElecRates() : (S.scanElecRates || {});
+    const vals = [tm.areaSqFt, tm.roofSquare, tm.distanceLf, sr.wall, sr.ceiling, sr.trimLf, sr.door, sr.window, er.outlet, er.sw, er.gfci];
+    const setCount = vals.filter(n => +n > 0).length;
+    trueRatesMeta.innerHTML = setCount ? `<strong>${setCount} of ${vals.length}</strong><br>set` : '';
+  }
   // Taxes meta
   const taxMeta = document.getElementById('set-meta-taxes');
   if (taxMeta) {
@@ -879,6 +890,35 @@ function saveSettings(){
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
   // Propagate branding/settings to all live client hubs in the background
   if(supaEnabled()&&_supaUser)clients.filter(c=>c.clientToken).forEach(c=>{_uploadClientHub(c.id).catch(()=>{});});
+}
+// ── TrueSuite rate library ───────────────────────────────────────────────
+// Fills the "Save your $ rates once" screen from whatever TrueMeasure/
+// TrueScan already read, S.trueMeasureRates / S.scanRates / S.scanElecRates
+// (js/true-measure.js _tmRates, js/scan-estimate.js _scanRates/_scanElecRates).
+// Calling those readers here (rather than reading S.* directly) means this
+// screen always agrees with the confirm screens on field names AND on the
+// zero default, one source of truth, no parallel shape (§7.3).
+function loadTrueRatesForm(){
+  const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=(+val||0)||'';};
+  const tm=(typeof _tmRates==='function')?_tmRates():(S.trueMeasureRates||{});
+  sf('tr-tm-area',tm.areaSqFt);sf('tr-tm-roof',tm.roofSquare);sf('tr-tm-dist',tm.distanceLf);
+  const sr=(typeof _scanRates==='function')?_scanRates():(S.scanRates||{});
+  sf('tr-scan-wall',sr.wall);sf('tr-scan-ceiling',sr.ceiling);sf('tr-scan-trim',sr.trimLf);sf('tr-scan-door',sr.door);sf('tr-scan-window',sr.window);
+  const er=(typeof _scanElecRates==='function')?_scanElecRates():(S.scanElecRates||{});
+  sf('tr-scan-outlet',er.outlet);sf('tr-scan-sw',er.sw);sf('tr-scan-gfci',er.gfci);
+}
+// Writes the SAME S.* keys _tmRates()/_scanRates()/_scanElecRates() already
+// read, a blank field saves as 0 (never NaN/undefined), matching the
+// Math.max(0,...) guard those readers already apply to every field.
+function saveTrueRates(){
+  const gf=id=>{const el=document.getElementById(id);return Math.max(0,parseFloat(el&&el.value)||0);};
+  S.trueMeasureRates={areaSqFt:gf('tr-tm-area'),roofSquare:gf('tr-tm-roof'),distanceLf:gf('tr-tm-dist')};
+  S.scanRates={wall:gf('tr-scan-wall'),ceiling:gf('tr-scan-ceiling'),trimLf:gf('tr-scan-trim'),door:gf('tr-scan-door'),window:gf('tr-scan-window')};
+  S.scanElecRates={outlet:gf('tr-scan-outlet'),sw:gf('tr-scan-sw'),gfci:gf('tr-scan-gfci')};
+  saveAll();
+  if(typeof supaSaveToCloud==='function')supaSaveToCloud();
+  _renderSetIndex();
+  const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
 }
 function _renderLogoPreview(){
   const el=document.getElementById('set-logo-preview');if(!el)return;
