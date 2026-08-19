@@ -62,6 +62,36 @@ function _tmAreaFt2(points){
   }
   return Math.abs(sum)/2;
 }
+// Area-weighted polygon centroid (not a plain average of vertices, which
+// drifts off-center on an L-shaped or otherwise irregular trace) over the
+// same local feet-projection _tmAreaFt2 already uses, projected back to
+// lat/lng so the total-sqft label lands genuinely in the middle of the shape.
+function _tmCentroidCoord(points){
+  if(!Array.isArray(points)||points.length<3)return null;
+  const lat0=points[0].lat*Math.PI/180;
+  const ftPerDegLat=364000,ftPerDegLng=364000*Math.cos(lat0);
+  const xy=points.map(p=>({x:(p.lng-points[0].lng)*ftPerDegLng,y:(p.lat-points[0].lat)*ftPerDegLat}));
+  let a6=0,cx=0,cy=0;
+  for(let i=0;i<xy.length;i++){
+    const p0=xy[i],p1=xy[(i+1)%xy.length];
+    const cross=p0.x*p1.y-p1.x*p0.y;
+    a6+=cross;
+    cx+=(p0.x+p1.x)*cross;
+    cy+=(p0.y+p1.y)*cross;
+  }
+  if(Math.abs(a6)<1e-9){
+    // Degenerate (near-zero-area/collinear) trace: fall back to a plain
+    // vertex average rather than divide by ~0.
+    const n=xy.length;
+    cx=xy.reduce((s,p)=>s+p.x,0)/n;
+    cy=xy.reduce((s,p)=>s+p.y,0)/n;
+  }else{
+    const a=a6/2;
+    cx=cx/(6*a);
+    cy=cy/(6*a);
+  }
+  return {lat:points[0].lat+cy/ftPerDegLat,lng:points[0].lng+cx/ftPerDegLng};
+}
 // Roofers price by the square (100 sq ft), everyone else by raw sq ft.
 function _tmAreaUnit(){
   return ((typeof getActiveTrade==='function'&&getActiveTrade())==='roofing')?'sq':'ft²';
@@ -321,6 +351,15 @@ function _tmInitPrecisionGesture(map,wrap){
     cross.style.left=x+'px';
     cross.style.top=Math.max(20,y-OFFSET_Y)+'px';
   }
+  // The crosshair's own screen position (finger offset up by OFFSET_Y,
+  // clamped), converted to a map coordinate, same math pointerup uses to
+  // drop the real point, so the live preview never disagrees with where it
+  // actually lands.
+  function crosshairCoord(x,y){
+    const r=wrap.getBoundingClientRect();
+    const crossY=Math.max(20,y-OFFSET_Y);
+    return map.convertPointOnPageToCoordinate(new DOMPoint(r.left+x,r.top+crossY));
+  }
   function exitPrecision(){
     active=false;
     if(cross)cross.style.display='none';
@@ -328,6 +367,7 @@ function _tmInitPrecisionGesture(map,wrap){
       try{map.setCameraDistanceAnimated(origDistance,true);}catch(_e){}
     }
     origDistance=null;
+    _tmClearPreview();
   }
   wrap.addEventListener('pointerdown',e=>{
     if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;
@@ -346,6 +386,7 @@ function _tmInitPrecisionGesture(map,wrap){
       }catch(_e){}
       if(cross)cross.style.display='block';
       placeCrosshair(downX,downY);
+      try{_tmUpdatePreview(crosshairCoord(downX,downY));}catch(_e){}
       if(typeof _tdHaptic==='function')_tdHaptic('tick');
     },HOLD_MS);
   });
@@ -358,6 +399,7 @@ function _tmInitPrecisionGesture(map,wrap){
     }
     e.preventDefault();
     placeCrosshair(p.x,p.y);
+    try{_tmUpdatePreview(crosshairCoord(p.x,p.y));}catch(_e){}
   },{passive:false});
   wrap.addEventListener('pointerup',e=>{
     if(!e.isPrimary)return;
@@ -419,9 +461,90 @@ function _tmRedraw(){
         :new mapkit.PolylineOverlay(coords,{style});
       map.addOverlay(overlay);
     }
+    _tmUpdateAreaLabel();
   }
   document.getElementById('tm-undo').style.display=points.length?'block':'none';
   _tmUpdateReadout();
+}
+
+// Total-sqft label smack in the middle of a completed shape (owner ask
+// 2026-08-19): lives as a MapKit Annotation, not an overlay, so it survives
+// the wipe-and-rebuild above and is managed here explicitly instead. Moves/
+// updates in place once traced, removed the moment it stops being a real
+// polygon (mode switch, undo below 3 points).
+function _tmUpdateAreaLabel(){
+  const map=_tmState&&_tmState.map;
+  if(!map)return;
+  const show=_tmState.mode==='area'&&_tmState.points.length>=3;
+  if(!show){
+    if(_tmState.areaLabelAnn){try{map.removeAnnotation(_tmState.areaLabelAnn);}catch(_e){}}
+    _tmState.areaLabelAnn=null;
+    _tmState.areaLabelEl=null;
+    return;
+  }
+  const centroid=_tmCentroidCoord(_tmState.points);
+  if(!centroid)return;
+  const m=_tmMeasure();
+  const text=m.value.toLocaleString()+' '+m.unit;
+  if(_tmState.areaLabelAnn&&_tmState.areaLabelEl){
+    _tmState.areaLabelAnn.coordinate=new mapkit.Coordinate(centroid.lat,centroid.lng);
+    _tmState.areaLabelEl.textContent=text;
+    return;
+  }
+  const el=document.createElement('div');
+  el.className='tm-area-label';
+  el.style.cssText='background:var(--ink,#15161a);color:#fff;font-weight:900;padding:8px 14px;border-radius:999px;white-space:nowrap;font-family:var(--font-display,sans-serif);font-size:15px;letter-spacing:-.2px;box-shadow:0 3px 10px rgba(0,0,0,.3);pointer-events:none';
+  el.textContent=text;
+  const ann=new mapkit.Annotation(new mapkit.Coordinate(centroid.lat,centroid.lng),()=>el,{anchorOffset:new DOMPoint(0,0)});
+  map.addAnnotation(ann);
+  _tmState.areaLabelAnn=ann;
+  _tmState.areaLabelEl=el;
+}
+
+// Live preview while precision-holding to place the NEXT point (owner ask
+// 2026-08-19): a dashed run from the last confirmed point to wherever the
+// crosshair currently sits, with a distance label at its midpoint whose
+// font size scales with the run's length, so the marker visibly grows and
+// shrinks as the line does. Purely transient, cleared on release/cancel;
+// the real, permanent segment is drawn by the normal _tmRedraw() once the
+// point actually commits.
+function _tmUpdatePreview(coord){
+  const map=_tmState&&_tmState.map;
+  if(!map||!_tmState.points.length||!coord)return;
+  const last=_tmState.points[_tmState.points.length-1];
+  const distFt=(typeof _geoDistFt==='function')?_geoDistFt(last,{lat:coord.latitude,lng:coord.longitude}):0;
+  if(_tmState.previewOverlay){try{map.removeOverlay(_tmState.previewOverlay);}catch(_e){}}
+  const style=new mapkit.Style({strokeColor:'#2D5DA8',lineWidth:3,lineDash:[8,6],strokeOpacity:0.85});
+  const line=new mapkit.PolylineOverlay([new mapkit.Coordinate(last.lat,last.lng),coord],{style});
+  map.addOverlay(line);
+  _tmState.previewOverlay=line;
+  const midLat=(last.lat+coord.latitude)/2,midLng=(last.lng+coord.longitude)/2;
+  const fontPx=Math.max(11,Math.min(26,11+distFt*0.09));
+  const text=Math.round(distFt)+' ft';
+  if(_tmState.previewLabelAnn&&_tmState.previewLabelEl){
+    _tmState.previewLabelAnn.coordinate=new mapkit.Coordinate(midLat,midLng);
+    _tmState.previewLabelEl.textContent=text;
+    _tmState.previewLabelEl.style.fontSize=fontPx+'px';
+    return;
+  }
+  const el=document.createElement('div');
+  el.className='tm-live-label';
+  el.style.cssText='background:rgba(21,22,26,.82);color:#fff;font-weight:800;padding:3px 8px;border-radius:999px;white-space:nowrap;font-family:var(--font-display,sans-serif);box-shadow:0 2px 6px rgba(0,0,0,.25);pointer-events:none';
+  el.style.fontSize=fontPx+'px';
+  el.textContent=text;
+  const ann=new mapkit.Annotation(new mapkit.Coordinate(midLat,midLng),()=>el,{anchorOffset:new DOMPoint(0,0)});
+  map.addAnnotation(ann);
+  _tmState.previewLabelAnn=ann;
+  _tmState.previewLabelEl=el;
+}
+function _tmClearPreview(){
+  const map=_tmState&&_tmState.map;
+  if(!map)return;
+  if(_tmState.previewOverlay){try{map.removeOverlay(_tmState.previewOverlay);}catch(_e){}}
+  if(_tmState.previewLabelAnn){try{map.removeAnnotation(_tmState.previewLabelAnn);}catch(_e){}}
+  _tmState.previewOverlay=null;
+  _tmState.previewLabelAnn=null;
+  _tmState.previewLabelEl=null;
 }
 
 function _tmMeasure(){
