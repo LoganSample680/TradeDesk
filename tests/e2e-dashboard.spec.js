@@ -1591,7 +1591,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
           if (typeof _nearbyHideTimer !== 'undefined' && _nearbyHideTimer) { clearTimeout(_nearbyHideTimer); _nearbyHideTimer = null; }
           renderDash();
           const el = document.getElementById('dash-nearby');
-          return { ok: true, display: el ? el.style.display : '' };
+          return { ok: true, display: el ? el.style.display : '', html: el ? el.innerHTML : '' };
         } catch (e) { return { ok: false, err: e.message }; }
         finally {
           _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
@@ -1599,7 +1599,14 @@ test.describe('dashboard.js: exhaustive coverage', () => {
         }
       });
       expect(r.ok, r.err).toBe(true);
-      expect(r.display).not.toBe('block');
+      // Old contract: under the dwell floor meant the whole card stayed
+      // hidden. New contract (owner 2026-08-19, "nothing dependent on
+      // anything"): this card never hides anymore, it falls back to the
+      // plain manual clock control. The actual thing this test guards, a
+      // drive-through must not nag with a location PROMPT, still holds.
+      expect(r.display).toBe('block');
+      expect(r.html).not.toContain('At the shop');
+      expect(r.html).toContain('Not clocked in');
     });
 
     test('a re-stamped arrival never blinks an already-open card off', async () => {
@@ -1683,7 +1690,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       expect(r.html).not.toContain('At the shop');
     });
 
-    test('no eligible jobs, the whole card stays hidden rather than an empty shell', async () => {
+    test('no eligible jobs, the location prompt does not show (falls back to the manual clock card, not an empty shell)', async () => {
       const r = await page.evaluate(() => {
         const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, jobs: jobs.slice() };
         _nearbyJob = null; _activeTimer = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
@@ -1699,7 +1706,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
           if (typeof _nearbyHideTimer !== 'undefined' && _nearbyHideTimer) { clearTimeout(_nearbyHideTimer); _nearbyHideTimer = null; }
           renderDash();
           const el = document.getElementById('dash-nearby');
-          return { ok: true, display: el ? el.style.display : '' };
+          return { ok: true, display: el ? el.style.display : '', html: el ? el.innerHTML : '' };
         } catch (e) { return { ok: false, err: e.message }; }
         finally {
           _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
@@ -1707,7 +1714,9 @@ test.describe('dashboard.js: exhaustive coverage', () => {
         }
       });
       expect(r.ok, r.err).toBe(true);
-      expect(r.display).not.toBe('block');
+      expect(r.display).toBe('block');
+      expect(r.html).not.toContain('At the shop');
+      expect(r.html).toContain('Not clocked in');
     });
   });
 

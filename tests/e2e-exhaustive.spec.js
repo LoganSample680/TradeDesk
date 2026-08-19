@@ -14667,14 +14667,25 @@ test.describe('jobs.js: exhaustive coverage', () => {
       await page.evaluate(() => { _activeTimer = null; });
     });
 
-    test('null jobId, returns early without throw', async () => {
+    // Old contract: null was just another invalid id, jobs.find() found
+    // nothing, clockIn() bailed. New contract (owner 2026-08-19, "ability
+    // for somebody to clock in at all times, nothing dependent on anything"):
+    // null is now the deliberate General-time path, no job, no client, the
+    // Home dashboard's always-available manual clock. It must actually start
+    // the timer, not bail, that's the whole point of the feature.
+    test('null jobId, starts General time (no job/client required)', async () => {
       const r = await page.evaluate(() => {
         _activeTimer = null;
-        try { clockIn(null, 'sand', 'Sanding'); return { ok: true, timerNull: _activeTimer === null }; }
+        try {
+          clockIn(null, 'sand', 'Sanding');
+          return { ok: true, timerSet: _activeTimer !== null, jobIdNull: _activeTimer && _activeTimer.jobId === null, jobName: _activeTimer && _activeTimer.jobName };
+        }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.timerNull).toBe(true);
+      expect(r.timerSet).toBe(true);
+      expect(r.jobIdNull).toBe(true);
+      expect(r.jobName).toBe('General time');
     });
 
     test('undefined jobId, returns early without throw', async () => {

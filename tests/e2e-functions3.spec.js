@@ -1369,11 +1369,9 @@ test.describe('Cloud Supabase and account functions', () => {
         await new Promise(res => setTimeout(res, 500));
         const settled = { maxH: el.style.maxHeight, overflow: el.style.overflow, visible: el.style.display === 'block' };
         _activeTimer = null;
-        renderDash();          // state gone: card animates away and collapses
-        const hiding = { trans: el.style.transition, anim: el.style.animation };
-        await new Promise(res => setTimeout(res, 400));
-        const hidden = { disp: el.style.display, maxH: el.style.maxHeight };
-        return { during, settled, hiding, hidden };
+        renderDash();          // state gone (owner 2026-08-19: never hides anymore, resolves to the manual clock card in place instead)
+        const resolved = { disp: el.style.display, html: el.innerHTML };
+        return { during, settled, resolved };
       } finally { _activeTimer = saved; renderDash(); }
     });
     expect(r.during.disp).toBe('block');
@@ -1381,9 +1379,8 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(r.during.trans).toContain('max-height');  // transitioning open from the flushed 0
     expect(r.settled.maxH).toBe('');                 // cleanup: no residual cap
     expect(r.settled.visible).toBe(true);
-    expect(r.hiding.trans).toContain('max-height');  // exit collapses the space
-    expect(r.hidden.disp).toBe('none');              // fully hidden after
-    expect(r.hidden.maxH).toBe('');                  // and cleaned up
+    expect(r.resolved.disp).toBe('block');           // never hidden, this card always shows something
+    expect(r.resolved.html).toContain('Not clocked in'); // the manual fallback, not a blank/collapsed card
   });
 
   // One waterfall, no stutters (owner spec 2026-08-11): a geo fix landing
@@ -1543,8 +1540,15 @@ test.describe('Cloud Supabase and account functions', () => {
         window._geoFixSeen = true; // GPS truth arrives and finds no live state
         renderDash();
         await new Promise(res => setTimeout(res, 350));
-        const hidden = el.style.display === 'none';
-        const cleared = !localStorage.getItem('zp3_nearby_snap');
+        // Old contract: no live state -> the card faded to display:none and
+        // the stored snapshot was cleared. New contract (owner 2026-08-19,
+        // "nothing dependent on anything"): the card never goes blank, GPS
+        // truth confirming "nothing rich" resolves to the plain manual clock
+        // card instead, and THAT becomes the freshly-persisted snapshot
+        // (overwritten with real content, not cleared to nothing).
+        const resolvedToManual = el.style.display === 'block' && el.innerHTML.includes('Not clocked in');
+        const stored = JSON.parse(localStorage.getItem('zp3_nearby_snap') || 'null');
+        const snapshotReplaced = !!stored && stored.html.includes('Not clocked in');
         window._geoFixSeen = false;
         window._nearbyLiveRendered = false;
         // Past the 45-minute freshness window (was 10 min; owner's 26-minute
@@ -1558,7 +1562,7 @@ test.describe('Cloud Supabase and account functions', () => {
         localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div id="snap-probe3">x</div>', ts: Date.now(), uid }));
         renderDash();
         const postLiveShown = !!document.getElementById('snap-probe3');
-        return { shown, hidden, cleared, staleShown, postLiveShown };
+        return { shown, resolvedToManual, snapshotReplaced, staleShown, postLiveShown };
       } finally {
         window._geoFixSeen = savedFix;
         window._nearbyLiveRendered = savedLive;
@@ -1568,8 +1572,8 @@ test.describe('Cloud Supabase and account functions', () => {
       }
     });
     expect(r.shown, 'fresh same-user snapshot renders before any fix').toBe(true);
-    expect(r.hidden, 'the first no-state fix animates it away').toBe(true);
-    expect(r.cleared, 'and clears the stored copy').toBe(true);
+    expect(r.resolvedToManual, 'the first no-state fix resolves to the manual clock card, never hidden').toBe(true);
+    expect(r.snapshotReplaced, 'the stored copy is overwritten with the manual card, not cleared').toBe(true);
     expect(r.staleShown, 'a stale snapshot never shows').toBe(false);
     expect(r.postLiveShown, 'after a live render this page load, no resurrection').toBe(false);
   });

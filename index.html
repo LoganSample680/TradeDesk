@@ -1399,12 +1399,6 @@ body.dark .cal-cell.other{background:var(--cream)}
            so a separate top margin doubled up into a bigger gap above the card than
            below it (2026-07-11 fix, margin-bottom here matches .card's 14px so the
            gap below is the same weight as everywhere else on the dashboard). -->
-      <!-- Always-on clock bar (owner ask 2026-08-19): unlike dash-nearby above,
-           this one is NEVER display:none. It doesn't depend on a geofence, a
-           scheduled job, or any client existing at all, it's the safety net
-           that always works. Rendered by _renderClockBar() (js/dashboard.js),
-           called from renderDash() every pass. -->
-      <div id="dash-clockbar" style="margin-bottom:14px"></div>
       <div id="dash-nearby" style="display:none;margin-bottom:14px"></div>
     </div>
     <div class="td-dw" data-dw="alerts">

@@ -480,37 +480,6 @@ function _skipSetupTodo(id){
   if(!S.setupSkipped.includes(id)){S.setupSkipped.push(id);if(typeof saveAll==='function')saveAll();}
   _renderDashSetupTodo();
 }
-// Always-on Home clock bar (owner ask 2026-08-19: "ability for somebody to
-// clock in at all times, nothing dependent on anything"). Unlike #dash-nearby
-// below, this element is NEVER hidden and never depends on a geofence signal,
-// a scheduled job, or any client existing, tap Clock in and it starts
-// counting. It coexists with the geofence-driven card rather than replacing
-// it: that card still shows automatically-detected arrivals/driving; this
-// bar is only the mirror of whatever's actually on the clock right now, plus
-// the one manual entry point that can never dead-end.
-function _renderClockBar(){
-  const el=document.getElementById('dash-clockbar');if(!el)return;
-  if(_activeTimer){
-    const label=_activeTimer.scopeLabel?_activeTimer.scopeLabel+', '+_activeTimer.jobName:_activeTimer.jobName;
-    el.innerHTML='<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:linear-gradient(180deg,#ffffff 0%,#f6fbf7 100%);border:1px solid rgba(22,163,74,.25);border-radius:12px">'+
-      '<div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(160deg,#22c55e,#0E6B39);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></div>'+
-      '<div style="flex:1;min-width:0">'+
-        '<div style="font-size:13.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(label)+'</div>'+
-        '<div style="font-size:11px;color:#0E6B39;font-weight:700">On the clock <span id="dash-clockbar-time">'+_fmtMin(Math.max(1,Math.round((Date.now()-_activeTimer.startTime)/60000)))+'</span></div>'+
-      '</div>'+
-      '<button onclick="clockOut()" style="flex-shrink:0;padding:9px 16px;border-radius:999px;background:#1B1612;color:#fff;font-size:12.5px;font-weight:800;font-family:inherit;border:none;cursor:pointer">Clock out</button>'+
-    '</div>';
-  }else{
-    el.innerHTML='<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:12px">'+
-      '<div style="width:34px;height:34px;border-radius:50%;background:var(--ink);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>'+
-      '<div style="flex:1;min-width:0">'+
-        '<div style="font-size:13.5px;font-weight:800">Not clocked in</div>'+
-        '<div style="font-size:11px;color:var(--text3)">Tap to pick a job and start the clock</div>'+
-      '</div>'+
-      '<button onclick="_openAlwaysClockSheet()" style="flex-shrink:0;padding:9px 16px;border-radius:999px;background:var(--text);color:#fff;font-size:12.5px;font-weight:800;font-family:inherit;border:none;cursor:pointer">Clock in</button>'+
-    '</div>';
-  }
-}
 function renderDash(){
   if(_renderDashRunning)return; // prevent cascade
   _renderDashRunning=true;
@@ -833,11 +802,18 @@ function renderDash(){
         '@keyframes tdDriveMove{0%{transform:translateX(-3px)}50%{transform:translateX(3px)}100%{transform:translateX(-3px)}}';
       document.head.appendChild(_s);
     }
-    if(_onClock||_driving||_nearbyJob||_showLocPrompt){
+    // Always renders SOMETHING now (owner 2026-08-19: "ability for somebody
+    // to clock in at all times, nothing dependent on anything"). The plain
+    // manual-clock fallback (final else below) needs no GPS fix to paint, so
+    // the old snapshot-restore-while-waiting-for-a-fix and fade-to-hidden
+    // tail this replaced no longer apply, there is no "nothing to show" state
+    // for this card to fade into anymore.
+    {
       const _svgPin=(c,sz)=>'<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+'" fill="none" stroke="'+c+'" stroke-width="2"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
       const _fmtClk=(t)=>{try{return new Date(t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
       const _fmtDur=(ms)=>{const s=Math.max(0,Math.floor((Date.now()-ms)/1000));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return (h?h+'h ':'')+m+'m';};
       const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
+      let _usedSnap=false; // set true only by the no-rich-state branch below, when it painted a boot snapshot instead of the manual card
       // NEVER reveal mid-waterfall. A geo fix landing during the boot cascade
       // used to slide this card open while the cards below were still pouring
       // in: two animations fighting over the same layout, which is exactly the
@@ -957,7 +933,7 @@ function renderDash(){
         const _extra='<div style="font-size:12px;color:var(--text3);margin-top:3px">Working on a job? Tap to clock in.</div>';
         _nearbyEl.innerHTML=_cardShell(_cardHead(_locPrompt.title,'',_extra)+
           '<div style="max-height:250px;overflow-y:auto">'+jobRows+'</div>');
-      } else {
+      } else if(_nearbyJob){
         // PRE-CLOCK-IN geofence prompt. Clock in (primary) + Estimate + conditional Collect.
         const nb=_nearbyJob;
         const clockTarget=nb.jobId||nb.fallbackJobId;
@@ -972,55 +948,64 @@ function renderDash(){
         if(hasBalance)nbBtns.push('<button onclick="openPayPanel('+nb.bidId+',\'final\')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#0E6B39;color:#fff;display:flex;align-items:center;justify-content:center;gap:6px">'+svgIcon('💰',{size:13,color:'#fff'})+'Collect</button>');
         const _extra=hasBalance?'<div style="font-size:12px;color:#B45309;font-weight:700;margin-top:3px">'+fmt(nb.balance)+' owed</div>':'';
         _nearbyEl.innerHTML=_cardShell(_cardHead(nb.clientName,nb.addr,_extra)+_nbNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+nbBtns.join('')+'</div>');
-      }
-      // Snapshot the rendered card: the next page load shows it INSTANTLY at
-      // the settle pour instead of waiting seconds for the first GPS fix
-      // (owner 2026-08-10: "comes in 3 seconds late"). Live truth replaces it
-      // the moment a fix arrives (_geoFixSeen, js/geo-track.js).
-      delete _nearbyEl.dataset.snap;
-      window._nearbyLiveRendered=true; // real state has painted: the optimistic boot restore is over for this page load
-      try{localStorage.setItem('zp3_nearby_snap',JSON.stringify({html:_nearbyEl.innerHTML,ts:Date.now(),uid:(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null}));}catch(_e){}
-    }else if(!window._geoFixSeen&&!window._nearbyLiveRendered&&(_nearbyEl.style.display==='none'||!_nearbyEl.style.display)&&!_nearbyEl.dataset.snap){
-      // No live geo state YET (no fix this session): show the last session's
-      // card optimistically if it is fresh, so the boot pour includes it.
-      // A version-watchdog reload mid-workday is seconds old, exactly the
-      // case that felt broken. Stale (>10 min) or another user's card never
-      // shows, and the first real fix either confirms or animates it away.
-      try{
-        const _sn=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
-        // 45 min, up from 10 (owner's 6:54p boot, video 3: a 26-minute gap
-        // made the snapshot stale, so the ON SITE card missed the waterfall
-        // and slid in 2s late). A fence-state card is durable on that scale,
-        // parked stays parked, and the live fix corrects it in place within
-        // seconds anyway; only a card from another USER is ever dangerous.
-        if(_sn&&_sn.html&&_sn.uid===((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null)&&(Date.now()-_sn.ts)<2700000){
-          _nearbyEl.dataset.snap='1';
-          _nearbyEl.style.animation='';
-          _nearbyEl.innerHTML=_sn.html;
-          _nearbyEl.style.display='block';
+      } else {
+        // No rich state (not on the clock, not driving, no nearby/known-place
+        // prompt). Before falling back to the plain manual card, give an
+        // already-fresh same-session-boot snapshot one chance to paint
+        // instead, exactly the pre-existing "shows instantly pre-fix"
+        // optimization (owner 2026-08-10: "comes in 3 seconds late"): a real
+        // ON SITE/DRIVING card from seconds ago must not flash to "Not
+        // clocked in" and back while the first GPS fix of this session is
+        // still in flight. Once a fix HAS been seen (or this session already
+        // painted live truth once), that truth wins outright, manual card,
+        // no snapshot.
+        if(!window._geoFixSeen&&!window._nearbyLiveRendered&&!_nearbyEl.dataset.snap){
+          try{
+            const _sn=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
+            if(_sn&&_sn.html&&_sn.uid===((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null)&&(Date.now()-_sn.ts)<2700000){
+              _nearbyEl.dataset.snap='1';
+              _nearbyEl.innerHTML=_sn.html;
+              _usedSnap=true;
+            }
+          }catch(_e){}
         }
-      }catch(_e){}
-    }else if(_nearbyEl.style.display!=='none'&&_nearbyEl.innerHTML.trim()&&(!_nearbyEl.dataset.snap||window._geoFixSeen)){
-      // Slide/fade out instead of an abrupt display:none (CLAUDE.md §8): the
-      // card keeps its content and animates itself away, hard-hidden only
-      // once that's actually finished. Mirrors the .22s entrance (tdNearbyIn).
-      _nearbyEl.style.animation='tdNearbyOut .18s ease both';
-      // Collapse the space too: without this the fade ends and everything
-      // below jumps UP one frame, the mirror of the entrance yank.
-      _nearbyEl.style.overflow='hidden';
-      _nearbyEl.style.maxHeight=_nearbyEl.offsetHeight+'px';
-      _nearbyEl.style.transition='max-height .24s ease';
-      void _nearbyEl.offsetHeight; // flush, then collapse (no rAF: throttles unfocused)
-      _nearbyEl.style.maxHeight='0px';
-      // Real truth says no card: the stored snapshot is obsolete too.
-      delete _nearbyEl.dataset.snap;
-      try{localStorage.removeItem('zp3_nearby_snap');}catch(_e){}
-      _nearbyHideTimer=setTimeout(()=>{
-        _nearbyHideTimer=null;
-        _nearbyEl.style.display='none';
-        _nearbyEl.style.animation='';
-        _nearbyEl.style.maxHeight='';_nearbyEl.style.transition='';_nearbyEl.style.overflow='';
-      },250);
+        if(!_usedSnap){
+          delete _nearbyEl.dataset.snap;
+          const _btn='<button onclick="_dashManualClockIn()" style="flex-shrink:0;padding:11px 18px;border-radius:12px;background:#1B1612;color:#fff;font-size:13px;font-weight:800;font-family:inherit;border:none;cursor:pointer">Clock in</button>';
+          _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--border);background:var(--bg);box-shadow:0 2px 10px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+
+            '<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 15px">'+
+              '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
+                '<span style="width:34px;height:34px;border-radius:50%;background:var(--bg3,#ECEEF2);display:flex;align-items:center;justify-content:center">'+
+                  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'+
+                '</span>'+
+              '</div>'+
+              '<div style="flex:1;min-width:0">'+
+                '<div style="font-size:16px;font-weight:800;letter-spacing:-.02em;color:#1B1612">Not clocked in</div>'+
+                '<div style="font-size:12.5px;color:var(--text3);margin-top:2px">Tap Clock in when you start</div>'+
+              '</div>'+
+              _btn+
+            '</div>'+
+          '</div>';
+        }
+      }
+      // Never hidden anymore (display='block' already handled up top,
+      // _holdReveal and all), so the old collapse/fade-out machinery has
+      // nothing left to do; a stray in-flight one from before this render
+      // must not finish and hide a card that just painted real content.
+      if(_nearbyHideTimer){clearTimeout(_nearbyHideTimer);_nearbyHideTimer=null;}
+      _nearbyEl.style.maxHeight='';_nearbyEl.style.transition='';_nearbyEl.style.overflow='';
+      if(!_usedSnap){
+        // Snapshot the rendered card: the next page load shows it INSTANTLY at
+        // the settle pour instead of waiting seconds for the first GPS fix
+        // (owner 2026-08-10: "comes in 3 seconds late"). Live truth replaces
+        // it the moment a fix arrives (_geoFixSeen, js/geo-track.js). Skipped
+        // when THIS render itself painted from a snapshot, re-persisting that
+        // same stale copy under a fresh timestamp would just make it look
+        // newer than it is.
+        delete _nearbyEl.dataset.snap;
+        window._nearbyLiveRendered=true; // real state has painted (even if that real state is "nothing"): the optimistic boot restore is over for this page load
+        try{localStorage.setItem('zp3_nearby_snap',JSON.stringify({html:_nearbyEl.innerHTML,ts:Date.now(),uid:(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null}));}catch(_e){}
+      }
     }
   }
   // Update new nav badges

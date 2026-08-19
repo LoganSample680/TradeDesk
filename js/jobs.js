@@ -88,44 +88,17 @@ function _locPromptClockIn(jobId){
   renderDash&&renderDash();
 }
 
-// Always-on Home clock bar's picker (owner ask 2026-08-19: "ability for
-// somebody to clock in at all times, nothing dependent on anything"): General
-// time pinned first so the button never dead-ends on an empty account, then
-// the same job list/row markup the geofence prompt already uses (§7.3 reuse,
-// mirrors the jobRows block in js/dashboard.js's _showLocPrompt branch)
-// so picking a real job looks and behaves identically either way.
-function _openAlwaysClockSheet(){
-  document.getElementById('_acs-ov')?.remove();
-  const ov=document.createElement('div');
-  ov.id='_acs-ov';ov.className='zmodal-overlay';
-  const list=_locPromptJobs();
-  const jobRows=list.map(j=>{
-    const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
-    const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
-    const sub=[c&&c.name&&c.name!==j.name?c.name:'',_fmtJobStartHint(j)].filter(Boolean).join(' · ');
-    return '<button onclick="_openAlwaysClockPick('+j.id+')" style="display:flex;align-items:center;gap:11px;width:100%;padding:11px 14px;border:none;background:none;border-bottom:1px solid var(--border);text-align:left;font-family:inherit;cursor:pointer">'+
-      '<span style="width:30px;height:30px;border-radius:50%;background:linear-gradient(160deg,#22c55e,#12894a);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 3px 8px -3px rgba(14,107,57,.6)"><svg viewBox="0 0 24 24" width="12" height="12" fill="#fff"><path d="M7 5v14l11-7z"/></svg></span>'+
-      '<span style="min-width:0;flex:1"><span style="display:block;font-size:13.5px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(j.name||(c&&c.name)||'Job')+'</span>'+
-      (sub?'<span style="display:block;font-size:11.5px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(sub)+'</span>':'')+'</span>'+
-    '</button>';
-  }).join('');
-  ov.innerHTML='<div style="background:var(--bg);border-radius:16px;width:100%;max-width:440px;max-height:78vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.35)">'+
-    '<div style="padding:16px 16px 8px;font-size:15px;font-weight:800">Clock in</div>'+
-    '<button onclick="_openAlwaysClockPick(null)" style="display:flex;align-items:center;gap:11px;width:100%;padding:11px 14px;border:none;background:none;border-bottom:1px solid var(--border);text-align:left;font-family:inherit;cursor:pointer">'+
-      '<span style="width:30px;height:30px;border-radius:50%;background:var(--ink);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>'+
-      '<span style="min-width:0;flex:1"><span style="display:block;font-size:13.5px;font-weight:700;color:var(--text)">General time</span>'+
-      '<span style="display:block;font-size:11.5px;color:var(--text3)">Just start the clock, no job needed</span></span>'+
-    '</button>'+
-    jobRows+
-    '<button onclick="document.getElementById(\'_acs-ov\').remove()" style="width:100%;padding:14px;border:none;background:none;text-align:center;font-family:inherit;font-size:13px;font-weight:700;color:var(--text3);cursor:pointer">Cancel</button>'+
-  '</div>';
-  document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+// Home dashboard's always-there manual fallback (owner 2026-08-19: "one that
+// allows manual with gps geofence override... nothing dependent on
+// anything"). No job picker, deliberately: General time (jobId===null) is
+// the only thing this button does. If the geofence later confirms a real
+// job or place, the SAME open entry gets relabeled in place (js/geo-track.js
+// fence transition), it never spawns a second, competing clock.
+function _dashManualClockIn(){
+  clockIn(null,null,null);
+  renderDash&&renderDash();
 }
-function _openAlwaysClockPick(jobId){
-  document.getElementById('_acs-ov')?.remove();
-  clockIn(jobId,null,null);
-}
+
 // Which jobs to offer when standing somewhere that isn't a job site.
 //
 // NOT _geoMyJobs(): that is today's ACTIVE jobs, which is exactly right for

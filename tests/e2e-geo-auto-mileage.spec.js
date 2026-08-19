@@ -5179,17 +5179,24 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.afterTick.renders, 'same-road pings update text in place, never re-render the dashboard').toBe(r.onRoad.renders);
     });
 
-    test('arriving at the job clears the banner, and the LOGGED trip still comes from the geocodes', async () => {
+    // Old contract: nothing detected -> the card faded to display:none. New
+    // contract (owner 2026-08-19, "ability for somebody to clock in at all
+    // times, nothing dependent on anything"): this card never goes blank
+    // anymore, the DRIVING banner clearing reveals the always-there manual
+    // clock control instead of hiding the element entirely.
+    test('arriving at the job clears the DRIVING banner into the manual clock card, and the LOGGED trip still comes from the geocodes', async () => {
       const r = await bannerDrive({ shop: SHOP, road: ROAD, road2: ROAD2, job: JOB, tick: true, arrive: true });
-      expect(r.afterArrive.display).toBe('none');      // faded out, matching the ON SITE card's exit
+      expect(r.afterArrive.display).toBe('block');
+      expect(r.afterArrive.html).toContain('Not clocked in');
       expect(r.rows.length).toBe(1);
       expect(r.rows[0].miles, 'route measurement rounded to a tenth, never the banner\'s straight-line tally').toBe(12.3);
     });
 
-    test('parked somewhere unknown, the banner fades once driving speed stops', async () => {
+    test('parked somewhere unknown, the DRIVING banner clears into the manual clock card once driving speed stops', async () => {
       const r = await bannerDrive({ shop: SHOP, road: ROAD, road2: ROAD2, job: JOB, park: true });
       expect(r.onRoad.display).toBe('block');
-      expect(r.afterPark.display).toBe('none');
+      expect(r.afterPark.display).toBe('block');
+      expect(r.afterPark.html).toContain('Not clocked in');
     });
   });
 
