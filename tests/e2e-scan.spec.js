@@ -1836,57 +1836,66 @@ test.describe('TdScan web half', () => {
   // it, so the card greys out and explains itself instead of failing on tap.
   // Capability comes from RoomPlan's own probe, cached; there is deliberately
   // no hardcoded model list anywhere in the logic.
-  test('the estimate-type chooser leads with Scan Estimate on a phone that can scan', async () => {
+  // TrueBid is the flagship proposal type (owner 2026-08-18), powered by the
+  // TrueSuite: scanning and aerial tracing are two tools under it, not two
+  // competing cards. A phone that can scan sees a method picker (TrueScan /
+  // TrueMeasure) once it opens TrueBid; a phone that can't skips straight
+  // to the only real option, since there's nothing to choose between.
+  test('the chooser offers TrueBid, which offers TrueScan, on a phone that can scan', async () => {
     const r = await page.evaluate(() => {
       const real = window._scanCapable;
       window._scanCapable = () => true;
+      const c = { id: 901, name: 'Chooser Client' };
       try {
-        _showEstimateStylePicker({ id: 901, name: 'Chooser Client' });
-        const ov = document.getElementById('_style-pick-ov');
-        const html = ov ? ov.innerHTML : '';
+        _showEstimateStylePicker(c);
+        const html = document.getElementById('_style-pick-ov')?.innerHTML || '';
+        _stylePickState = { c };
+        _pickEstStyle('truebid');
+        const methodHtml = document.getElementById('_tm-method-ov')?.innerHTML || '';
         return {
-          hasScanCard: /Scan Estimate/.test(html) && /Measured by LiDAR/.test(html),
-          scanFirst: html.indexOf('Scan Estimate') < html.indexOf('Build Your Own'),
-          notGreyed: !/grayscale/.test(html),
+          pickerHasTrueBid: /TrueBid/.test(html),
+          noStandaloneScanCard: !/Scan Estimate/.test(html),
+          offersScan: /TrueScan/.test(methodHtml),
+          offersAerial: /TrueMeasure/.test(methodHtml),
         };
       } finally {
         window._scanCapable = real;
+        document.getElementById('_tm-method-ov')?.remove(); window._tmMethodState = null;
         document.getElementById('_style-pick-ov')?.remove(); window._stylePickState = null;
       }
     });
-    expect(r.hasScanCard).toBe(true);
-    expect(r.scanFirst, 'the flagship type leads the chooser').toBe(true);
-    expect(r.notGreyed).toBe(true);
+    expect(r.pickerHasTrueBid).toBe(true);
+    expect(r.noStandaloneScanCard, 'Scan Estimate is folded into TrueBid, one door not two').toBe(true);
+    expect(r.offersScan).toBe(true);
+    expect(r.offersAerial).toBe(true);
   });
 
-  test('no LiDAR: the scan card greys out, explains itself, and never opens the builder', async () => {
+  test('no LiDAR: TrueBid skips straight to TrueMeasure, no scan option offered, the builder never opens', async () => {
     const r = await page.evaluate(() => {
       const realOpen = window.openScanEstimate;
       let opened = 0;
       window.openScanEstimate = () => { opened++; };
+      const c = { id: 902, name: 'No LiDAR Client' };
       try {
         // A plain browser has no scanner plugin, so _scanCapable() is already false.
-        _showEstimateStylePicker({ id: 902, name: 'No LiDAR Client' });
+        _showEstimateStylePicker(c);
         const html = document.getElementById('_style-pick-ov')?.innerHTML || '';
-        const greyed = /grayscale/.test(html) && /Needs a Pro iPhone/.test(html);
-        const routesToWhy = /_scanWhyNoLidar\(\)/.test(html) && !/_pickEstStyle\('scan'\)/.test(html);
-        // The one entry point refuses too, even if something calls it directly.
-        _pickEstStyle('scan');
-        const why = document.getElementById('_scan-why-ov');
-        const explains = !!why && /12 Pro/.test(why.textContent) && /Pro Max/.test(why.textContent);
+        _stylePickState = { c };
+        _pickEstStyle('truebid');
+        const skippedMethodPicker = !document.getElementById('_tm-method-ov');
+        const wentToAerial = !!document.getElementById('_tm-ov');
         // The other two types are untouched.
         const othersLive = /_pickEstStyle\('freeform'\)/.test(html) && /_pickEstStyle\('tm'\)/.test(html);
-        return { greyed, routesToWhy, opened, explains, othersLive };
+        return { skippedMethodPicker, wentToAerial, opened, othersLive };
       } finally {
         window.openScanEstimate = realOpen;
-        document.getElementById('_scan-why-ov')?.remove();
+        document.getElementById('_tm-ov')?.remove(); window._tmState = null;
         document.getElementById('_style-pick-ov')?.remove(); window._stylePickState = null;
       }
     });
-    expect(r.greyed, 'the card is visibly disabled, not silently broken').toBe(true);
-    expect(r.routesToWhy, 'tapping it explains rather than starting a scan').toBe(true);
-    expect(r.opened, 'the builder never opens without a scanner').toBe(0);
-    expect(r.explains, 'the explainer names the phones that work').toBe(true);
+    expect(r.skippedMethodPicker, 'nothing to choose between with no LiDAR, so no fork is shown').toBe(true);
+    expect(r.wentToAerial, 'goes straight to TrueMeasure instead').toBe(true);
+    expect(r.opened, 'the scan builder never opens without a scanner').toBe(0);
     expect(r.othersLive, 'Build Your Own and T&M stay fully available').toBe(true);
   });
 

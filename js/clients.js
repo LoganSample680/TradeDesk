@@ -457,11 +457,6 @@ function _showEstimateStylePicker(c,overrideAddr){
   const ov=document.createElement('div');
   ov.id='_style-pick-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:9000;background:var(--bg2);overflow-y:auto;opacity:0;transform:translateY(22px);transition:opacity .38s ease,transform .42s cubic-bezier(.22,.8,.2,1)';
-  // Scanning is hardware, not a setting: a phone without LiDAR can never do it,
-  // so the card is greyed rather than failing on tap, and it explains itself
-  // (owner 2026-08-09). _scanCapable() answers synchronously off a cached
-  // RoomPlan capability probe, never a hardcoded model list.
-  const scanLocked=(typeof _scanCapable!=='function')||!_scanCapable();
   const card=(id,tone,icon,eyebrow,title,sub,bullets,locked)=>{
     const bul=bullets.map(b=>'<li><span>'+svgIcon('✓')+'</span>'+b+'</li>').join('');
     const act=locked?'_scanWhyNoLidar()':`_pickEstStyle('${id}')`;
@@ -484,8 +479,8 @@ function _showEstimateStylePicker(c,overrideAddr){
         '<button class="btn btn-ghost" onclick="_closeStylePicker()">Cancel</button>'+
       '</div>'+
       '<div class="chooser-grid">'+
-        card('scan','blue',svgIcon('📐',{size:36}),'Measured by LiDAR','Scan Estimate','Built from the rooms you scanned, nothing typed',
-          ['Every quantity measured, not guessed','Per-surface rates price rooms instantly','High ceilings auto-flagged from the scan','The proposal shows their floor plan'],scanLocked)+
+        card('truebid','blue',svgIcon('🛰️',{size:36}),'The flagship','TrueBid','Powered by the TrueSuite, minimal typing, nothing guessed',
+          ['TrueScan measures every room by LiDAR','TrueMeasure traces any property from above','The right tool opens automatically for your trade'])+
         card('freeform','green',svgIcon('🧩',{size:36}),'A la carte','Build Your Own','List every service with its own price',
           ['Price each service individually','Mix labor, materials &amp; add-ons','Deposit collected upfront','Easy to upsell extras'])+
         card('tm','amber',svgIcon('⏱️',{size:36}),'Unknown scope','Time &amp; Materials','Flexible billing when you can\'t lock in a price',
@@ -504,15 +499,13 @@ function _pickEstStyle(style){
   // instead of flashing to the dashboard behind it.
   if(style==='tm'){openTMEstimate(c);}
   else if(style==='freeform'){openFreeFormEstimate(c);}
-  else if(style==='scan'){
-    // Belt and braces: the card is greyed out on a phone that cannot scan, but
-    // this is the one entry point, so it refuses there too rather than opening
-    // a builder with nothing to build from.
-    if(typeof _scanCapable==='function'&&!_scanCapable()){
-      if(typeof _scanWhyNoLidar==='function')_scanWhyNoLidar();
-      return;
-    }
-    if(typeof openScanEstimate==='function')openScanEstimate(c);
+  else if(style==='truebid'){
+    // TrueBid is the flagship, powered by the TrueSuite (js/true-measure.js):
+    // every measuring tool applicable to this trade and this device lives
+    // under this one door. _tmOpenTrueSuite picks the tool picker or skips
+    // straight to the only real option, so a single-trade, no-LiDAR phone
+    // never sees a choice with nothing to choose between.
+    if(typeof _tmOpenTrueSuite==='function')_tmOpenTrueSuite(c);
   }
 }
 

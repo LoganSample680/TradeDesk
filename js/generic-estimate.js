@@ -499,6 +499,13 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   _geiClientTaxRate=null;
   _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;_geiJobScope='repair';_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];
   _geiScanId=null;
+  // Seeded lines (scan / TrueMeasure) are computed here but NOT applied to
+  // _geiLines yet: the resume-an-existing-draft lookup below this block can
+  // still overwrite _geiLines wholesale from an old unsent draft, and a seed
+  // applied before that point would just get discarded, the exact bug this
+  // structure exists to prevent. Applied once, after the resume/new-draft
+  // logic has settled (see "Seeded lines land now" below).
+  let _geiPendingSeedLines=null;
   // Scanned rooms waiting for an estimate (js/scan.js or the Scan Estimate
   // builder parked them): a fresh estimate for the SAME client opens
   // pre-lined. Two seed shapes: `lines` arrives PRE-PRICED from the Scan
@@ -510,21 +517,31 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
     const seed=window._scanEstimateSeed;window._scanEstimateSeed=null;
     _geiScanId=seed.scanId||null;
     if(Array.isArray(seed.lines)&&seed.lines.length){
-      _geiLines=seed.lines.map(l=>({desc:l.desc||'',qty:l.qty||1,unit:l.unit||'ea',rate:l.rate||0,total:l.total!=null?l.total:Math.round((l.qty||1)*(l.rate||0)*100)/100,notes:l.notes||'',_byoSection:l._byoSection||'Interior'}));
-      if(typeof showToast==='function')showToast(_geiLines.length+' measured line'+(_geiLines.length>1?'s':'')+' loaded from the scan','📐');
+      _geiPendingSeedLines=seed.lines.map(l=>({desc:l.desc||'',qty:l.qty||1,unit:l.unit||'ea',rate:l.rate||0,total:l.total!=null?l.total:Math.round((l.qty||1)*(l.rate||0)*100)/100,notes:l.notes||'',_byoSection:l._byoSection||'Interior'}));
+      if(typeof showToast==='function')showToast(_geiPendingSeedLines.length+' measured line'+(_geiPendingSeedLines.length>1?'s':'')+' loaded from the scan','📐');
     }else{
     // Billing: room total = measured wall footage x the contractor's per-sq-ft
     // rate (Settings). Rate unset = rooms load with the quantity measured and
     // the price theirs to type, exactly like any hand-entered line.
     const _scanRate=Math.max(0,+(S.scanRateSqFt||0));
-    _geiLines=(seed.rooms||[]).map(r=>({
+    _geiPendingSeedLines=(seed.rooms||[]).map(r=>({
       desc:(r.name||'Room')+' · '+(r.wallSqFt||0)+' wall sq ft, '+(r.ceilHt||'')+' ceilings'+(r.doors||r.windows?' ('+(r.doors||0)+' doors, '+(r.windows||0)+' windows)':''),
       qty:r.wallSqFt||1,unit:'sq ft',rate:_scanRate,total:Math.round((r.wallSqFt||1)*_scanRate*100)/100,notes:'Measured by LiDAR scan',_byoSection:'Interior'
     }));
-    if(_geiLines.length&&typeof showToast==='function'){
+    if(_geiPendingSeedLines.length&&typeof showToast==='function'){
       const priced=_scanRate>0;
-      showToast(_geiLines.length+' scanned room'+(_geiLines.length>1?'s':'')+(priced?' priced at $'+_scanRate+'/sq ft':' loaded, set your rate per room'),'📐');
+      showToast(_geiPendingSeedLines.length+' scanned room'+(_geiPendingSeedLines.length>1?'s':'')+(priced?' priced at $'+_scanRate+'/sq ft':' loaded, set your rate per room'),'📐');
     }
+    }
+  }
+  // TrueMeasure (js/true-measure.js), one of the TrueSuite's tools: a traced
+  // area or run, already confirmed by the contractor, same one-shot
+  // consume-and-clear shape as the scan seed above.
+  if(window._trueMeasureSeed&&!bidId&&c&&String(window._trueMeasureSeed.clientId)===String(c.id)){
+    const seed=window._trueMeasureSeed;window._trueMeasureSeed=null;
+    if(Array.isArray(seed.lines)&&seed.lines.length){
+      _geiPendingSeedLines=(_geiPendingSeedLines||[]).concat(seed.lines.map(l=>({desc:l.desc||'',qty:l.qty||1,unit:l.unit||'ea',rate:l.rate||0,total:l.total!=null?l.total:Math.round((l.qty||1)*(l.rate||0)*100)/100,notes:l.notes||'',_byoSection:l._byoSection||'Exterior'})));
+      if(typeof showToast==='function')showToast('Measured line loaded from TrueMeasure','🛰️');
     }
   }
   _tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
@@ -655,6 +672,27 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       addr:opts?.forceAddr||c?.addr||'', // the property this estimate is for, so drafts stay same-property-scoped
       ...(_geiIsTM?{isTM:true}:{}),...(_geiIsFreeForm?{isFreeForm:true}:{})};
     bids.unshift(draftBid);_geiEditBidId=draftBid.id;saveAll();
+  }
+  // Seeded lines land now, after both the resume-existing-draft lookup AND
+  // the fresh-draft creation above, so _geiEditBidId is always valid here.
+  // Appended, not replacing, so a scan/TrueMeasure seed is never silently
+  // discarded just because this client already had an old unsent draft.
+  if(_geiPendingSeedLines&&_geiPendingSeedLines.length){
+    _geiLines=_geiLines.concat(_geiPendingSeedLines);
+    // BYO mode's actual line-item page (_byoShowPage) reads byoItems off the
+    // BID RECORD, never _geiLines, whether that page renders now (a resumed
+    // draft jumps straight to step 2) or later (a fresh draft only gets
+    // there once the contractor clicks through the wizard). Either way
+    // _geiLines alone is invisible in BYO mode, so the seed is ALSO
+    // converted and persisted as byoItems, the same shape the old-draft
+    // migration above already uses.
+    if(_geiIsFreeForm){
+      let _nid=(_byoItems||[]).reduce((m,x)=>Math.max(m,x.id||0),0)+1;
+      const _seedByo=_geiPendingSeedLines.map(l=>({id:_nid++,section:l._byoSection||'Other',label:l.desc||'',price:(l.qty||1)*(l.rate||0),on:true,required:false,notes:l.notes||''}));
+      _byoItems=(_byoItems||[]).concat(_seedByo);
+      const _seedBid=bids.find(x=>x.id===_geiEditBidId);
+      if(_seedBid){_seedBid.byoItems=(_seedBid.byoItems||[]).concat(JSON.parse(JSON.stringify(_seedByo)));saveAll();}
+    }
   }
   // Auto-migrate old step-based estimates to BYO freeform when resumed
   if(_resumingExisting&&!_geiIsTM&&!_geiIsFreeForm){
