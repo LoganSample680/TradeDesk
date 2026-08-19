@@ -86,6 +86,23 @@ serve(async (req) => {
       siteStartedAt: Number(st.siteStartedAt) || startedAt,
       dualTimer: !!st.dualTimer,
       tint: String(st.tint ?? "#2D5DA8"),
+      // Lock-screen "Next"/"Clock out" button fields, added for the same
+      // reason siteStartedAt/dualTimer were: TdLiveAttributes.ContentState
+      // (native/td-live/ios/Plugin/TdLiveAttributes.swift) gained these
+      // fields, so EVERY push through this function must carry them too, or
+      // iOS silently drops the whole push on decode failure. The only caller
+      // today is force-clock-out, which is ending the card, not switching a
+      // scope, so empty/terminal defaults are correct here, not a stand-in
+      // for real values this function doesn't have.
+      jobId: String(st.jobId ?? ""),
+      contractorUserId: String(st.contractorUserId ?? ""),
+      loggedByUid: String(st.loggedByUid ?? ""),
+      currentScopeId: String(st.currentScopeId ?? ""),
+      nextScopeId: String(st.nextScopeId ?? ""),
+      nextScopeLabel: String(st.nextScopeLabel ?? ""),
+      isLastScope: st.isLastScope !== undefined ? !!st.isLastScope : true,
+      scopeQueue: String(st.scopeQueue ?? "[]"),
+      supaBaseUrl: String(st.supaBaseUrl ?? ""),
     };
 
     const payload: Record<string, unknown> = {

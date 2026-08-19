@@ -17,6 +17,20 @@ function getJobScopes(jobId){
       else if(es?.id&&!baseIds.has(es.id)){base.push(es);baseIds.add(es.id);}
     });
   }
+  // Owner request: scope order must be reorderable per job, not fixed to the
+  // estimate's order (drag-to-reorder in the clock-in sheet, _initScopeDrag
+  // below). Absent field = untouched, the default order above stands exactly
+  // as it always has, so every job created before this shipped keeps working
+  // with zero migration. Present field wins, and anything not IN it (a scope
+  // added after the order was set) is appended at the end in its natural
+  // default-order position rather than getting silently dropped.
+  if(j?.scopeOrder?.length){
+    const byId=new Map(base.map(s=>[s.id,s]));
+    const ordered=[];
+    j.scopeOrder.forEach(id=>{const s=byId.get(id);if(s){ordered.push(s);byId.delete(id);}});
+    byId.forEach(s=>ordered.push(s));
+    base=ordered;
+  }
   return base;
 }
 
@@ -141,6 +155,12 @@ function openClockInSheet(jobId){
   window._cksRebuild=function(){
     const scopes=getJobScopes(jobId);
     const bd=getJobScopeBreakdown(jobId);
+    // A grip per row, same interaction as the dispatch board's day-reorder
+    // (js/cloud.js _initDispatchDrag, CLAUDE.md §7.3: reuse the existing
+    // pattern, don't hand-roll a parallel one): pointer events on a handle,
+    // reordered in the DOM as the pointer crosses each neighbour's midpoint.
+    // Only worth showing once there's more than one thing to put in order.
+    const canReorder=scopes.length>1;
     let rows='';
     for(const s of scopes){
       const logged=bd[s.id]||0;
@@ -154,13 +174,22 @@ function openClockInSheet(jobId){
         :'<span style="width:8px;height:8px;border-radius:50%;background:var(--border2);flex-shrink:0;display:inline-block"></span>';
       const sid=s.id.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       const slabel=s.label.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      rows+='<button onclick="clockIn('+jobId+',\''+sid+'\',\''+slabel+'\');setTimeout(()=>window._cksRebuild&&window._cksRebuild(),80)" '+
-        'style="display:flex;align-items:center;gap:10px;width:100%;padding:12px 16px;border:none;border-bottom:1px solid var(--border);'+bg+bl+' text-align:left;font-family:inherit;cursor:pointer;font-size:14px;color:var(--text)">'+
-        dot+
-        '<span style="font-size:18px;flex-shrink:0">'+svgIcon(s.icon,{size:18})+'</span>'+
-        '<span style="font-weight:600;flex:1">'+escHtml(s.label)+'</span>'+
-        (logged>0?'<span style="font-size:11px;color:var(--text3)">'+_fmtMin(logged)+'</span>':'')+
-      '</button>';
+      // touch-action:none on the grip ONLY, same reasoning as the dispatch
+      // board: the sheet must still scroll normally everywhere else.
+      const grip=canReorder
+        ?'<div class="scope-grip" data-scope="'+escHtml(s.id)+'" title="Drag to reorder" style="touch-action:none;cursor:grab;padding:12px 4px 12px 12px;color:var(--text3);flex-shrink:0;line-height:0">'+
+           '<svg width="12" height="18" viewBox="0 0 14 18" fill="currentColor" aria-hidden="true"><circle cx="4" cy="4" r="1.6"/><circle cx="10" cy="4" r="1.6"/><circle cx="4" cy="9" r="1.6"/><circle cx="10" cy="9" r="1.6"/><circle cx="4" cy="14" r="1.6"/><circle cx="10" cy="14" r="1.6"/></svg></div>'
+        :'';
+      rows+='<div class="scope-row" data-scope="'+escHtml(s.id)+'" style="display:flex;align-items:stretch;border-bottom:1px solid var(--border);'+bg+bl+'">'+
+        grip+
+        '<button onclick="clockIn('+jobId+',\''+sid+'\',\''+slabel+'\');setTimeout(()=>window._cksRebuild&&window._cksRebuild(),80)" '+
+          'style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;padding:12px 16px 12px '+(canReorder?'8px':'16px')+';border:none;background:none;text-align:left;font-family:inherit;cursor:pointer;font-size:14px;color:var(--text)">'+
+          dot+
+          '<span style="font-size:18px;flex-shrink:0">'+svgIcon(s.icon,{size:18})+'</span>'+
+          '<span style="font-weight:600;flex:1;min-width:0">'+escHtml(s.label)+'</span>'+
+          (logged>0?'<span style="font-size:11px;color:var(--text3);flex-shrink:0">'+_fmtMin(logged)+'</span>':'')+
+        '</button>'+
+      '</div>';
     }
     rows+='<button onclick="_clockAddTask('+jobId+')" '+
       'style="display:flex;align-items:center;gap:10px;width:100%;padding:11px 16px;border:none;background:none;border-bottom:1px solid var(--border);text-align:left;font-family:inherit;cursor:pointer;font-size:13px;color:var(--text3)">'+
@@ -171,19 +200,96 @@ function openClockInSheet(jobId){
       '<div style="display:flex;justify-content:space-between;align-items:center;padding:16px 16px 12px;border-bottom:1px solid var(--border)">'+
         '<div>'+
           '<div style="font-size:16px;font-weight:800">Select task</div>'+
-          '<div style="font-size:12px;color:var(--text3);margin-top:1px">'+escHtml(clientName)+' · '+escHtml(j.name)+'</div>'+
+          '<div style="font-size:12px;color:var(--text3);margin-top:1px">'+escHtml(clientName)+' · '+escHtml(j.name)+
+            (canReorder?' · <span style="color:var(--text3)">drag '+svgIcon('⠿',{size:10})+' to reorder</span>':'')+
+          '</div>'+
         '</div>'+
         '<button onclick="document.getElementById(\'_cks-ov\')?.remove()" style="background:var(--bg2);border:none;color:var(--text2);font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-family:inherit">✕</button>'+
       '</div>'+
-      rows+
+      '<div id="_cks-list">'+rows+'</div>'+
       '<div style="padding:12px 16px;display:flex;flex-direction:column;gap:8px">'+
         (bid&&getBidBalance(bid)>0.01
           ?'<button onclick="openPayPanel('+bid.id+')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('💰')+' Collect '+fmt(getBidBalance(bid))+'</button>'
           :'')+
         '<button onclick="_markJobComplete('+jobId+')" style="width:100%;padding:13px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">'+svgIcon('🏁')+' Mark job complete</button>'+
       '</div>';
+    if(typeof _initScopeDrag==='function')_initScopeDrag(jobId);
   };
   window._cksRebuild();
+}
+
+// ── Drag a scope to reorder a job's task list (owner request: order must be
+// per-job, not fixed to the estimate) ───────────────────────────────────────
+// Pointer events on the sheet, delegated (like _initDispatchDrag, js/cloud.js):
+// one implementation covers finger, stylus and mouse, and it survives the
+// sheet's full innerHTML rebuild on every clock-in because it's bound to the
+// sheet element itself, not to the rows, and re-guarded so a rebuild never
+// double-binds it.
+let _scopeDrag=null;
+function _initScopeDrag(jobId){
+  const sheet=document.getElementById('_cks-sheet');
+  if(!sheet||sheet._scopeDragBound)return;
+  sheet._scopeDragBound=true;
+
+  sheet.addEventListener('pointerdown',e=>{
+    const grip=e.target.closest&&e.target.closest('.scope-grip');
+    if(!grip)return;
+    const row=grip.closest('.scope-row');
+    const list=row&&row.parentElement;
+    if(!row||!list)return;
+    e.preventDefault();
+    _scopeDrag={row,list,moved:false};
+    try{grip.setPointerCapture(e.pointerId);}catch(_e){}
+    row.style.transition='none';
+    row.style.opacity='.9';
+    row.style.boxShadow='0 6px 20px rgba(0,0,0,.18)';
+    row.style.position='relative';
+    row.style.zIndex='5';
+    row.style.background='var(--bg2)';
+    _tdHaptic('thud');
+  });
+
+  sheet.addEventListener('pointermove',e=>{
+    if(!_scopeDrag)return;
+    e.preventDefault();
+    _scopeDrag.moved=true;
+    const{row,list}=_scopeDrag;
+    const rows=[...list.querySelectorAll(':scope > .scope-row')];
+    const i=rows.indexOf(row);
+    const y=e.clientY;
+    const prev=rows[i-1],next=rows[i+1];
+    if(prev){
+      const pr=prev.getBoundingClientRect();
+      if(y<pr.top+pr.height/2){list.insertBefore(row,prev);return;}
+    }
+    if(next){
+      const nr=next.getBoundingClientRect();
+      if(y>nr.top+nr.height/2){list.insertBefore(next,row);return;}
+    }
+  });
+
+  const end=()=>{
+    if(!_scopeDrag)return;
+    const{row,list,moved}=_scopeDrag;
+    _scopeDrag=null;
+    row.style.opacity='';row.style.boxShadow='';row.style.zIndex='';
+    row.style.position='';row.style.transition='';row.style.background='';
+    if(!moved)return;
+    // The DOM is the order now, so read it back rather than tracking indices.
+    const ids=[...list.querySelectorAll(':scope > .scope-row')].map(r=>r.getAttribute('data-scope'));
+    _setJobScopeOrder(jobId,ids);
+  };
+  sheet.addEventListener('pointerup',end);
+  sheet.addEventListener('pointercancel',end);
+}
+// Writes the order the sheet is showing. Any scope not dragged over (there
+// shouldn't be one, every row in the sheet has a grip) is simply absent from
+// the array, and getJobScopes appends anything scopeOrder doesn't mention.
+function _setJobScopeOrder(jobId,scopeIds){
+  if(!Array.isArray(scopeIds)||!scopeIds.length)return;
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  j.scopeOrder=scopeIds;
+  saveAll();
 }
 
 function _clockAddTask(jobId){

@@ -1,6 +1,7 @@
 import SwiftUI
 import WidgetKit
 import ActivityKit
+import AppIntents
 
 // The drawing half of TradeDesk's Live Activities: the lock-screen card and the
 // Dynamic Island. Runs in its own extension process, which is why the shared
@@ -35,6 +36,25 @@ import ActivityKit
 // on-site time detail. Both native/js sides changed together, see
 // js/live-activity.js `_liveActClockIn` for the new `siteStartedAt`/
 // `dualTimer` fields.
+//
+// INTERACTIVE BUTTON (2026-08-19, same day): a "Next" / "Clock out" button on
+// the clock card, so a contractor advances to the next scope item on a job
+// without opening the app. This needs Apple's LiveActivityIntent, iOS 17+,
+// NEWER than the rest of this file's 16.1 floor, so ONLY the button (the
+// TdScopeActionButton view and its call site in TdLiveLockScreen.body below)
+// is gated `if #available(iOS 17.0, *)`. A 16.1–16.4 device renders every-
+// thing else in this file exactly as it did before this change and simply
+// never sees the button, it is not a hard requirement bump for the widget.
+// The intent runs IN THIS EXTENSION PROCESS (that is what LiveActivityIntent
+// buys over a plain AppIntent: no app launch), reads the tapped card's OWN
+// ContentState (jobId/contractorUserId/next*/scopeQueue, all embedded by
+// js/live-activity.js on every update so nothing here fetches anything
+// first), POSTs the switch to the live-activity-next-scope Edge Function
+// (no-JWT service-role write, same shape as log-proposal-view/log-qr-event,
+// CLAUDE.md §7.3: reuse the existing no-auth pattern), then updates the
+// activity's OWN displayed content locally the moment that POST succeeds:
+// optimistic, so the lock screen feels instant regardless of network
+// latency, never waiting on a push round trip through update-live-activity.
 
 @available(iOS 16.1, *)
 private func tdTint(_ hex: String) -> Color {
@@ -195,9 +215,152 @@ private struct KindChip: View {
     }
 }
 
+// The Supabase base URL to fall back to if a ContentState was ever built
+// without supaBaseUrl (an older JS build). Mirrors js/cloud.js's own
+// `_SUPA_DIRECT_URL` constant; state.supaBaseUrl (whatever THIS device was
+// actually using, direct or the /api proxy, §14.3) is always preferred, this
+// is only the safety net so the button still does something.
+private let tdLiveFallbackSupaUrl = "https://mwtsmctajhrrybblgorf.supabase.co"
+
+// scopeQueue travels as a flat JSON string, not a nested Codable array (see
+// the field's doc comment in TdLiveAttributes.swift for why): parse/encode
+// live here rather than in the attributes file, since only this button ever
+// needs to walk it. A malformed string just parses to an empty array, same
+// "fail soft, never fail the whole card" discipline as everything else in
+// this button.
+private func tdParseScopeQueue(_ json: String) -> [[String: String]] {
+    guard let data = json.data(using: .utf8),
+          let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: String]] else { return [] }
+    return arr
+}
+private func tdEncodeScopeQueue(_ items: [[String: String]]) -> String {
+    guard let data = try? JSONSerialization.data(withJSONObject: items) else { return "[]" }
+    return String(data: data, encoding: .utf8) ?? "[]"
+}
+
+// Fires the Next/Clock-out write and, on success, advances the activity's own
+// state locally. LiveActivityIntent (not plain AppIntent) is what lets this
+// run without launching the app: Apple documents this exact protocol for
+// buttons attached to a Live Activity's own content.
+@available(iOS 17.0, *)
+struct TdLiveNextScopeIntent: LiveActivityIntent {
+    static var title: LocalizedStringResource = "Advance job scope"
+
+    // Which activity this button belongs to: several channels (drive + clock)
+    // can be live at once, so the intent has to be told which one fired it
+    // rather than assuming "the only one." Threaded in at Button(intent:)
+    // construction time (TdScopeActionButton below), AppIntents preserves
+    // parameter values across the app-closed invocation.
+    @Parameter(title: "Activity ID")
+    var activityId: String
+
+    init() { self.activityId = "" }
+    init(activityId: String) { self.activityId = activityId }
+
+    func perform() async throws -> some IntentResult {
+        guard !activityId.isEmpty,
+              let activity = Activity<TdLiveAttributes>.activities.first(where: { $0.id == activityId }) else {
+            return .result()
+        }
+        let s = activity.content.state
+        // No job resolved onto this card (a drive card, or a clock card from
+        // before this feature shipped): nothing to advance.
+        guard !s.jobId.isEmpty else { return .result() }
+
+        // Same request shape live-activity-next-scope expects, built entirely
+        // from what's already embedded in this card's own state, no fetch
+        // needed first.
+        let body: [String: Any] = [
+            "contractorUserId": s.contractorUserId,
+            "jobId": s.jobId,
+            "currentScopeId": s.currentScopeId,
+            "nextScopeId": s.nextScopeId,
+            "nextScopeLabel": s.nextScopeLabel,
+            "loggedByUid": s.loggedByUid,
+        ]
+        let base = s.supaBaseUrl.isEmpty ? tdLiveFallbackSupaUrl : s.supaBaseUrl
+        guard let url = URL(string: base + "/functions/v1/live-activity-next-scope") else {
+            return .result()
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        var ok = false
+        if let (_, response) = try? await URLSession.shared.data(for: req) {
+            ok = (response as? HTTPURLResponse).map { (200...299).contains($0.statusCode) } ?? false
+        }
+        // A failed write leaves the card exactly as it was: no optimistic
+        // update to walk back, and the button can just be tapped again.
+        guard ok else { return .result() }
+
+        if s.nextScopeId.isEmpty {
+            // The tap that just fired WAS "Clock out": end the card the same
+            // way _liveActClockOut() does, immediately, not left to linger.
+            await activity.end(ActivityContent(state: s, staleDate: nil), dismissalPolicy: .immediate)
+        } else {
+            // Optimistic local update: the lock screen advances instantly,
+            // it does not wait on a push round trip through
+            // update-live-activity. Shift the queue by one so a second tap,
+            // with the app still closed, has somewhere to go without another
+            // round trip just to learn what's next.
+            var newState = s
+            newState.currentScopeId = s.nextScopeId
+            newState.detail = s.nextScopeLabel
+            // "This step" clock resets; "on site" (siteStartedAt) is left
+            // untouched on purpose, it survives a scope switch same as an
+            // in-app one (js/live-activity.js _liveActClockIn's own note).
+            newState.startedAt = Date().timeIntervalSince1970
+            let queue = tdParseScopeQueue(s.scopeQueue)
+            if let head = queue.first {
+                newState.nextScopeId = head["id"] ?? ""
+                newState.nextScopeLabel = head["label"] ?? ""
+                newState.scopeQueue = tdEncodeScopeQueue(Array(queue.dropFirst()))
+                newState.isLastScope = false
+            } else {
+                newState.nextScopeId = ""
+                newState.nextScopeLabel = ""
+                newState.scopeQueue = "[]"
+                newState.isLastScope = true
+            }
+            await activity.update(ActivityContent(state: newState, staleDate: nil))
+        }
+        return .result()
+    }
+}
+
+// The button itself: "Next" while there's somewhere to go, "Clock out" once
+// the card's own queue runs dry (isLastScope, set by
+// js/live-activity.js _liveActNextScopeInfo). Full-width beneath the card's
+// existing content, its own tap target, never layered over the readout or
+// the title the way a corner button would risk on a 2-line-wrapped card.
+@available(iOS 17.0, *)
+private struct TdScopeActionButton: View {
+    let state: TdLiveAttributes.ContentState
+    let activityID: String
+    @ScaledMetric var fontSize: CGFloat = 14
+
+    var body: some View {
+        Button(intent: TdLiveNextScopeIntent(activityId: activityID)) {
+            Text(state.isLastScope ? "Clock out" : "Next")
+                .font(.system(size: fontSize, weight: .bold))
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(tdTint(state.tint))
+        .foregroundStyle(.white)
+    }
+}
+
 @available(iOS 16.1, *)
 struct TdLiveLockScreen: View {
     let state: TdLiveAttributes.ContentState
+    // Which running activity this card IS: threaded in from the
+    // ActivityConfiguration closure (context.activityID, TdLiveWidget.body
+    // below) so the iOS 17 button knows which card to act on when several
+    // (a drive and a clock) can be live at once.
+    let activityID: String
     @ScaledMetric private var titleSize: CGFloat = 17
     @ScaledMetric private var detailSize: CGFloat = 12.5
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -229,7 +392,13 @@ struct TdLiveLockScreen: View {
         }
     }
 
-    var body: some View {
+    // The card exactly as it existed before the interactive button: pulled
+    // out into its own property (rather than inlined in `body`) so the
+    // button row below can sit BENEATH it in a VStack without touching a
+    // single line of this layout. Padding stays on this piece specifically,
+    // not the outer container, so the button gets its own bottom padding
+    // instead of doubling up.
+    private var cardContent: some View {
         Group {
             // At an accessibility text size (the phone's own Larger Text
             // setting past the standard range, "so visuals aren't fucked" per
@@ -283,7 +452,30 @@ struct TdLiveLockScreen: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.top, 14)
+        .padding(.bottom, shouldShowScopeButton ? 10 : 14)
+    }
+
+    // The button only makes sense on a clocked-in card that actually
+    // resolved a job (jobId non-empty): a drive card, or a clock card from
+    // before this feature shipped and never got the new fields, renders
+    // exactly as before with no button at all.
+    private var shouldShowScopeButton: Bool {
+        if #available(iOS 17.0, *) {
+            return state.dualTimer && !state.jobId.isEmpty
+        }
+        return false
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            cardContent
+            if #available(iOS 17.0, *), shouldShowScopeButton {
+                TdScopeActionButton(state: state, activityID: activityID)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+            }
+        }
         // Every size above is @ScaledMetric, so it grows with the phone's Text
         // Size / Larger Accessibility Sizes setting. Uncapped, an AX5 setting
         // (up to ~310% of the base point size) would make this card taller than
@@ -372,7 +564,7 @@ private struct DITitleDetail: View {
 struct TdLiveWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: TdLiveAttributes.self) { context in
-            TdLiveLockScreen(state: context.state)
+            TdLiveLockScreen(state: context.state, activityID: context.activityID)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -469,3 +661,18 @@ struct TdLiveBundle: WidgetBundle {
 // region intentionally still shows one clock (the DI's compact state has no
 // room for a caption'd pair); that is a deliberate scope call, not an
 // oversight, confirm it reads fine on a real Dynamic Island before shipping.
+//
+// ALSO UNVERIFIED (2026-08-19, same day): the interactive Next/Clock-out
+// button (TdLiveNextScopeIntent, TdScopeActionButton). Written against
+// Apple's documented LiveActivityIntent/Button(intent:) API, but none of the
+// following has been exercised on a real device or simulator: that a
+// LiveActivityIntent actually fires from a LOCK-SCREEN button tap (not just
+// the Dynamic Island, where Apple's own sample code lives), that
+// Activity<TdLiveAttributes>.activities is populated inside this extension
+// process at the moment perform() runs, that a URLSession request from
+// inside a widget-extension App Intent completes before the intent's own
+// execution window times out, and that .buttonStyle(.borderedProminent) at
+// full width reads right on a lock screen alongside the existing glass card
+// rather than looking like a foreign element bolted onto it. Confirm all of
+// this before trusting the button beyond "compiles and matches the
+// documented shape."

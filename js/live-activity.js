@@ -89,11 +89,45 @@ async function _liveActSet(channel,state){
     siteStartedAt:Number(state.siteStartedAt)||Number(state.startedAt)||Math.floor(Date.now()/1000),
     dualTimer:!!state.dualTimer,
     tint:state.tint||_LIVE_TINT[channel]||'#2D5DA8',
-    push:!!_LIVE_PUSH_CHANNELS[channel]
+    push:!!_LIVE_PUSH_CHANNELS[channel],
+    // ── Lock-screen "Next" / "Clock out" button (owner 2026-08-19) ──────────
+    // Everything the iOS 17 LiveActivityIntent needs to act with the app
+    // closed, embedded on every update so the button never fetches anything
+    // first. Only the clock channel sets these to real values; the drive
+    // channel (and any older caller) ships the same shape with empty
+    // defaults, this file's own documented gotcha applies to EVERY field,
+    // ActivityKit's Codable decode fails silently if one is missing on ANY
+    // update, so every channel ships every field, always.
+    jobId:String(state.jobId||''),
+    contractorUserId:String(state.contractorUserId||''),
+    // The actual person clocked in, not the account. '' means the owner
+    // (matches jobs.js _tlLoggedByInfo's null-means-owner convention) so the
+    // server write can find and close the ONE open entry that's theirs, not
+    // just any open entry on the job (several crew can share a job).
+    loggedByUid:String(state.loggedByUid||''),
+    currentScopeId:String(state.currentScopeId||''),
+    nextScopeId:String(state.nextScopeId||''),
+    nextScopeLabel:String(state.nextScopeLabel||'').slice(0,60),
+    isLastScope:!!state.isLastScope,
+    // Everything AFTER nextScopeId, so a device can tap Next repeatedly with
+    // the app closed the whole time: each tap's optimistic local update pops
+    // the queue by one instead of needing a round trip just to learn what's
+    // next. A flat JSON string, not a nested array-of-struct ContentState
+    // field, on purpose: a malformed string just decodes to an empty queue
+    // (button falls back to "last scope"), where a strict Codable array
+    // would risk the whole content-state decode failing silently. Capped so
+    // a job with a very long scope list can never approach ActivityKit's
+    // content-state size ceiling.
+    scopeQueue:JSON.stringify(Array.isArray(state.scopeQueue)?state.scopeQueue.slice(0,8).map(s=>({id:String((s&&s.id)||''),label:String((s&&s.label)||'').slice(0,60)})):[]),
+    // Whichever Supabase base URL THIS device is currently using (direct or
+    // the /api proxy fallback, js/cloud.js SUPA_URL, §14.3), so the widget's
+    // request follows the same self-healing routing the app itself uses
+    // instead of a hardcoded URL that could drift from cloud.js's.
+    supaBaseUrl:(typeof SUPA_URL!=='undefined'&&SUPA_URL)?String(SUPA_URL):''
   };
   // A timer card renders itself; only its LABELS can change, so the tick is
   // excluded from the signature and a running clock spends nothing.
-  const sig=[payload.kind,payload.title,payload.detail,payload.timer?'T':payload.value,payload.tint,payload.dualTimer?'D':''].join('|');
+  const sig=[payload.kind,payload.title,payload.detail,payload.timer?'T':payload.value,payload.tint,payload.dualTimer?'D':'',payload.nextScopeId,payload.isLastScope?'L':''].join('|');
   if(_liveLast[channel]===sig)return true;
   try{
     const started=_liveLast[channel]!=null;
@@ -230,12 +264,44 @@ function _liveActSiteStart(jobId){
 // is what the single clock already showed before this change). `detail`
 // already carries the step's own name, that part was never missing, it was
 // just getting truncated on the native side (see TdLiveWidget.swift).
+// What the lock-screen Next button should advance to: the scope right after
+// the one just clocked into, plus everything beyond that (§ scopeQueue on
+// _liveActSet), computed from the SAME ordered list the in-app clock-in sheet
+// shows (getJobScopes, js/jobs.js, which already honors a job's custom
+// scopeOrder when one is set). One source of truth for "what's next" whether
+// the tap happens in the app or on the lock screen.
+function _liveActNextScopeInfo(jobId,currentScopeId){
+  const empty={nextScopeId:'',nextScopeLabel:'',isLastScope:true,scopeQueue:[]};
+  try{
+    if(!jobId||typeof getJobScopes!=='function')return empty;
+    const scopes=getJobScopes(jobId)||[];
+    if(!scopes.length)return empty;
+    // currentScopeId not found (an ad-hoc clock-in with no scope chosen, or a
+    // scope that isn't part of this job's list): treat everything as ahead,
+    // so the button has somewhere useful to go rather than defaulting to
+    // "last" for a shift that hasn't actually picked a task yet.
+    const idx=currentScopeId?scopes.findIndex(s=>s.id===currentScopeId):-1;
+    const rest=idx===-1?scopes.slice():scopes.slice(idx+1);
+    if(!rest.length)return empty;
+    const[next,...queue]=rest;
+    return{
+      nextScopeId:next.id,
+      nextScopeLabel:next.label,
+      isLastScope:false,
+      scopeQueue:queue.map(s=>({id:s.id,label:s.label}))
+    };
+  }catch(_e){return empty;}
+}
+
 function _liveActClockIn(t){
   if(!t)return;
   const who=t.clientName||t.jobName||'Job';
   const what=t.scopeLabel||t.jobName||'';
   const stepStart=Math.floor((t.startTime||Date.now())/1000);
   const siteStart=Math.floor((_liveActSiteStart(t.jobId)||t.startTime||Date.now())/1000);
+  const{loggedByUid}=(typeof _tlLoggedByInfo==='function')?_tlLoggedByInfo():{loggedByUid:null};
+  const contractorUserId=(typeof _effectiveUid==='function'&&_effectiveUid())||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||'';
+  const nextInfo=_liveActNextScopeInfo(t.jobId,t.scopeId);
   _liveActSet('clock',{
     kind:'CLOCKED IN',
     title:who,
@@ -246,7 +312,15 @@ function _liveActClockIn(t){
     startedAt:stepStart,
     siteStartedAt:siteStart,
     dualTimer:true,
-    tint:_LIVE_TINT.clock
+    tint:_LIVE_TINT.clock,
+    jobId:t.jobId,
+    contractorUserId,
+    loggedByUid:loggedByUid||'',
+    currentScopeId:t.scopeId||'',
+    nextScopeId:nextInfo.nextScopeId,
+    nextScopeLabel:nextInfo.nextScopeLabel,
+    isLastScope:nextInfo.isLastScope,
+    scopeQueue:nextInfo.scopeQueue
   });
 }
 function _liveActClockOut(){_liveActEnd('clock');}

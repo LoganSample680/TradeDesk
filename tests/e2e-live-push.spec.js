@@ -76,6 +76,99 @@ test.describe('Live Activities: what reaches the lock screen', () => {
     expect(r[0].a.siteStartedAt).toBe(1755000000);
   });
 
+  // ── Lock-screen "Next"/"Clock out" button payload (owner 2026-08-19) ──────
+  // Mocks the plugin call (same style as the rest of this file) and asserts
+  // the SHAPE the widget's LiveActivityIntent depends on: jobId,
+  // contractorUserId, and the next-scope chain, all embedded so the button
+  // never has to fetch anything before it can act.
+  test.describe('lock-screen scope-switch payload', () => {
+    test.afterEach(async () => {
+      await page.evaluate(() => {
+        jobs = (jobs || []).filter(j => j.id !== 88801);
+        bids = (bids || []).filter(b => b.id !== 88901);
+      });
+    });
+
+    test('carries job/account identity even for a job outside the local fixtures', async () => {
+      const r = await page.evaluate(async () => {
+        window.__td.calls.length = 0;
+        _liveActClockIn({ jobId: 5, jobName: 'X', clientName: 'Y', scopeLabel: '', startTime: Date.now() });
+        await new Promise(res => setTimeout(res, 60));
+        return window.__td.calls[0].args;
+      });
+      expect(r.jobId).toBe('5');
+      expect(typeof r.contractorUserId).toBe('string');
+      expect(typeof r.loggedByUid).toBe('string');
+      expect(typeof r.supaBaseUrl).toBe('string');
+      // No scopeId was passed: currentScopeId is empty, and the fallback
+      // default scope list still gives the button somewhere to go.
+      expect(r.currentScopeId).toBe('');
+      expect(r.nextScopeId).not.toBe('');
+      expect(r.isLastScope).toBe(false);
+      expect(() => JSON.parse(r.scopeQueue)).not.toThrow();
+      expect(Array.isArray(JSON.parse(r.scopeQueue))).toBe(true);
+    });
+
+    test('the next scope is whatever comes after the current one in getJobScopes order', async () => {
+      const r = await page.evaluate(async () => {
+        jobs = (jobs || []).filter(j => j.id !== 88801);
+        bids = (bids || []).filter(b => b.id !== 88901);
+        bids.push({
+          id: 88901, client_id: 1, amount: 100, status: 'Closed Won',
+          roomScopeMap: { Room: { sand: { active: true }, prime: { active: true }, cleanup: { active: true } } },
+        });
+        jobs.push({ id: 88801, client_id: 1, bid_id: 88901, name: 'Live push fixture job', eventType: 'job', status: 'scheduled' });
+        window.__td.calls.length = 0;
+        // Clocked into the FIRST of three scopes: Next should point at the second.
+        _liveActClockIn({ jobId: 88801, jobName: 'Live push fixture job', clientName: 'Live push fixture job', scopeId: 'sand', scopeLabel: 'Sanding', startTime: Date.now() });
+        await new Promise(res => setTimeout(res, 60));
+        return window.__td.calls[0].args;
+      });
+      expect(r.currentScopeId).toBe('sand');
+      expect(r.nextScopeId).toBe('prime');
+      expect(r.nextScopeLabel).toBeTruthy();
+      expect(r.isLastScope).toBe(false);
+      const queue = JSON.parse(r.scopeQueue);
+      expect(queue.map(s => s.id)).toEqual(['cleanup']);
+    });
+
+    test('clocked into the LAST scope: isLastScope true, empty next, empty queue (button reads "Clock out")', async () => {
+      const r = await page.evaluate(async () => {
+        jobs = (jobs || []).filter(j => j.id !== 88801);
+        bids = (bids || []).filter(b => b.id !== 88901);
+        bids.push({
+          id: 88901, client_id: 1, amount: 100, status: 'Closed Won',
+          roomScopeMap: { Room: { sand: { active: true }, prime: { active: true } } },
+        });
+        jobs.push({ id: 88801, client_id: 1, bid_id: 88901, name: 'Live push fixture job', eventType: 'job', status: 'scheduled' });
+        window.__td.calls.length = 0;
+        _liveActClockIn({ jobId: 88801, jobName: 'Live push fixture job', clientName: 'Live push fixture job', scopeId: 'prime', scopeLabel: 'Primer coat', startTime: Date.now() });
+        await new Promise(res => setTimeout(res, 60));
+        return window.__td.calls[0].args;
+      });
+      expect(r.isLastScope).toBe(true);
+      expect(r.nextScopeId).toBe('');
+      expect(r.nextScopeLabel).toBe('');
+      expect(JSON.parse(r.scopeQueue)).toEqual([]);
+    });
+
+    test('null/undefined jobId, does not throw and yields a terminal (no-button) shape', async () => {
+      const r = await page.evaluate(async () => {
+        window.__td.calls.length = 0;
+        let threw = false;
+        try {
+          _liveActClockIn({ jobId: null, jobName: 'No job', clientName: 'No job', startTime: Date.now() });
+          _liveActClockIn({ jobId: undefined, jobName: 'No job', clientName: 'No job', startTime: Date.now() });
+        } catch (e) { threw = true; }
+        await new Promise(res => setTimeout(res, 60));
+        return { threw, last: window.__td.calls.length ? window.__td.calls[window.__td.calls.length - 1].args : null };
+      });
+      expect(r.threw).toBe(false);
+      expect(r.last).not.toBeNull();
+      expect(r.last.jobId).toBe('');
+    });
+  });
+
   test('the title is never repeated underneath itself', async () => {
     const r = await page.evaluate(async () => {
       // No scope label and no separate client: detail would duplicate the title.

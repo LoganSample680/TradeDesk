@@ -10,6 +10,13 @@ verify_jwt = false
 [functions.log-qr-event]
 verify_jwt = false
 
+# Called from the Live Activity lock-screen button (native/td-live), an iOS 17
+# LiveActivityIntent running in the widget extension with the app closed and
+# nobody signed in on that request. Same anonymous-caller shape as
+# log-proposal-view/log-qr-event above.
+[functions.live-activity-next-scope]
+verify_jwt = false
+
 [functions.send-proposal-email]
 verify_jwt = true
 

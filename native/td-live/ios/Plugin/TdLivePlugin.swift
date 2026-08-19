@@ -101,7 +101,22 @@ public class TdLivePlugin: CAPPlugin, CAPBridgedPlugin {
             // renders one correct clock instead of a bogus 1970 second timer.
             siteStartedAt: call.getDouble("siteStartedAt") ?? 0,
             dualTimer: call.getBool("dualTimer") ?? false,
-            tint: call.getString("tint") ?? "#2D5DA8"
+            tint: call.getString("tint") ?? "#2D5DA8",
+            // Lock-screen "Next"/"Clock out" button fields (owner 2026-08-19,
+            // js/live-activity.js _liveActSet sends every one of these on
+            // every update, same "every field must ship" discipline as the
+            // fields above). Missing here only matters for a caller that
+            // predates this change; ContentState.init's own defaults (empty
+            // strings, isLastScope true) make that case just "no button."
+            jobId: call.getString("jobId") ?? "",
+            contractorUserId: call.getString("contractorUserId") ?? "",
+            loggedByUid: call.getString("loggedByUid") ?? "",
+            currentScopeId: call.getString("currentScopeId") ?? "",
+            nextScopeId: call.getString("nextScopeId") ?? "",
+            nextScopeLabel: call.getString("nextScopeLabel") ?? "",
+            isLastScope: call.getBool("isLastScope") ?? true,
+            scopeQueue: call.getString("scopeQueue") ?? "[]",
+            supaBaseUrl: call.getString("supaBaseUrl") ?? ""
         )
     }
     #endif

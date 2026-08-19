@@ -49,9 +49,62 @@ public struct TdLiveAttributes: ActivityAttributes {
         /// Accent color as a hex string ("#2D5DA8"). JS owns the palette.
         public var tint: String
 
+        // ── Lock-screen "Next" / "Clock out" button fields (owner 2026-08-19) ──
+        // Everything TdLiveNextScopeIntent (TdLiveWidget.swift) needs to act
+        // with the app closed: which job, which account, who's clocked in,
+        // and what's next, all embedded here so the button never fetches
+        // anything before it can act. The `init` defaults below (empty
+        // strings, isLastScope true = no button to show) only cover Swift
+        // code that constructs a ContentState directly (stateFrom(call) in
+        // TdLivePlugin.swift for a caller that omits one); they do NOT excuse
+        // js/live-activity.js from sending every field on every update, this
+        // struct's plain Codable synthesis still fails the WHOLE decode if
+        // ActivityKit itself deserializes a payload missing a key, same
+        // gotcha this file's header comment already documents for every
+        // field above.
+        /// The job this clock card is for.
+        public var jobId: String
+        /// The account (js/data.js _effectiveUid()), scopes the server write.
+        public var contractorUserId: String
+        /// The actual person clocked in. "" means the owner (matches
+        /// js/jobs.js _tlLoggedByInfo's null-means-owner convention).
+        public var loggedByUid: String
+        /// The scope id currently active (mirrors ContentState.detail's label).
+        public var currentScopeId: String
+        /// The scope id "Next" advances to. "" means there is none: the
+        /// button should read "Clock out" instead (see isLastScope).
+        public var nextScopeId: String
+        public var nextScopeLabel: String
+        /// True once nextScopeId is empty: the button's label/action switch
+        /// from "Next" to "Clock out". Sent explicitly rather than derived
+        /// from nextScopeId.isEmpty in the view, so a future field never has
+        /// to remember this exact derivation in two places.
+        public var isLastScope: Bool
+        /// Every scope AFTER nextScopeId, JSON-encoded ("[{"id":"...",
+        /// "label":"..."}, ...]"), so a device can tap Next repeatedly with
+        /// the app closed the whole time: each tap's local optimistic update
+        /// pops this queue by one instead of needing a round trip just to
+        /// learn what's next. A flat String, not a nested Codable array, on
+        /// purpose: a malformed string just parses to an empty queue (falls
+        /// back to "last scope"), where a strict array field failing to
+        /// decode risks the WHOLE ContentState decode failing silently
+        /// (this file's own documented ActivityKit gotcha).
+        public var scopeQueue: String
+        /// Whichever Supabase base URL the phone was using when this update
+        /// was sent (direct or the /api proxy fallback, js/cloud.js
+        /// SUPA_URL), so the button's request follows the same self-healing
+        /// routing the app itself uses instead of a hardcoded URL that could
+        /// drift out of sync with cloud.js's.
+        public var supaBaseUrl: String
+
         public init(kind: String, title: String, detail: String, value: String,
                     timer: Bool, startedAt: Double, siteStartedAt: Double = 0,
-                    dualTimer: Bool = false, tint: String) {
+                    dualTimer: Bool = false, tint: String,
+                    jobId: String = "", contractorUserId: String = "",
+                    loggedByUid: String = "", currentScopeId: String = "",
+                    nextScopeId: String = "", nextScopeLabel: String = "",
+                    isLastScope: Bool = true, scopeQueue: String = "[]",
+                    supaBaseUrl: String = "") {
             self.kind = kind
             self.title = title
             self.detail = detail
@@ -61,6 +114,15 @@ public struct TdLiveAttributes: ActivityAttributes {
             self.siteStartedAt = siteStartedAt > 0 ? siteStartedAt : startedAt
             self.dualTimer = dualTimer
             self.tint = tint
+            self.jobId = jobId
+            self.contractorUserId = contractorUserId
+            self.loggedByUid = loggedByUid
+            self.currentScopeId = currentScopeId
+            self.nextScopeId = nextScopeId
+            self.nextScopeLabel = nextScopeLabel
+            self.isLastScope = isLastScope
+            self.scopeQueue = scopeQueue
+            self.supaBaseUrl = supaBaseUrl
         }
     }
 
