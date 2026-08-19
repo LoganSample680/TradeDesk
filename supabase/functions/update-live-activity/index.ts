@@ -72,13 +72,19 @@ serve(async (req) => {
     // Fill every ContentState field: a missing key makes iOS decode-fail and
     // drop the push with no visible error anywhere.
     const st = (body.state && typeof body.state === "object" ? body.state : {}) as Record<string, unknown>;
+    const startedAt = Number(st.startedAt) || Math.floor(Date.now() / 1000);
     const contentState = {
       kind: String(st.kind ?? ""),
       title: String(st.title ?? "").slice(0, 60),
       detail: String(st.detail ?? "").slice(0, 60),
       value: String(st.value ?? ""),
       timer: !!st.timer,
-      startedAt: Number(st.startedAt) || Math.floor(Date.now() / 1000),
+      startedAt,
+      // Added 2026-08-19 for the two-clock CLOCKED IN card. A caller that
+      // never sends these (every caller today, force-clock-out just ends the
+      // card) still fills both, same "every field must ship" rule as above.
+      siteStartedAt: Number(st.siteStartedAt) || startedAt,
+      dualTimer: !!st.dualTimer,
       tint: String(st.tint ?? "#2D5DA8"),
     };
 

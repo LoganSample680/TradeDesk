@@ -31,19 +31,35 @@ public struct TdLiveAttributes: ActivityAttributes {
         public var value: String
         /// True = render a live counting clock from `startedAt` instead of `value`.
         public var timer: Bool
-        /// Epoch seconds the clock counts up from. Only read when `timer` is true.
+        /// Epoch seconds the clock counts up from. While `dualTimer` is true this
+        /// is the CURRENT STEP's clock (resets on every scope switch); otherwise
+        /// it's the one and only clock (the drive card, or clock cards before
+        /// dual-timer existed). Only read when `timer` is true.
         public var startedAt: Double
+        /// Epoch seconds the crew arrived on THIS SITE (the earliest clock-in for
+        /// this job today), stable across scope switches within the same visit.
+        /// Only read when `dualTimer` is true; defaults to `startedAt` so an
+        /// older JS payload that never sends it still renders one sane clock.
+        public var siteStartedAt: Double
+        /// True = render TWO ticking clocks ("on site" total + "this step"),
+        /// false = the single clock (or static `value`) exactly as before. Only
+        /// ever true for the CLOCKED IN card; JS decides, Swift just obeys, same
+        /// as `timer` (CLAUDE.md 3.2, nothing here interprets `kind`).
+        public var dualTimer: Bool
         /// Accent color as a hex string ("#2D5DA8"). JS owns the palette.
         public var tint: String
 
         public init(kind: String, title: String, detail: String, value: String,
-                    timer: Bool, startedAt: Double, tint: String) {
+                    timer: Bool, startedAt: Double, siteStartedAt: Double = 0,
+                    dualTimer: Bool = false, tint: String) {
             self.kind = kind
             self.title = title
             self.detail = detail
             self.value = value
             self.timer = timer
             self.startedAt = startedAt
+            self.siteStartedAt = siteStartedAt > 0 ? siteStartedAt : startedAt
+            self.dualTimer = dualTimer
             self.tint = tint
         }
     }

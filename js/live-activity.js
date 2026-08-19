@@ -80,12 +80,20 @@ async function _liveActSet(channel,state){
     value:String(state.value||''),
     timer:!!state.timer,
     startedAt:Number(state.startedAt)||Math.floor(Date.now()/1000),
+    // Time-on-SITE vs time-on-THIS-STEP (owner feedback 2026-08-19): two
+    // different clocks with two different starts. siteStartedAt survives a
+    // scope switch (arrival time), startedAt above resets on one (last
+    // clock-in). Falls back to startedAt so a card that never sets it (the
+    // drive card, or a channel written before this existed) still renders one
+    // sane number instead of a stray zero.
+    siteStartedAt:Number(state.siteStartedAt)||Number(state.startedAt)||Math.floor(Date.now()/1000),
+    dualTimer:!!state.dualTimer,
     tint:state.tint||_LIVE_TINT[channel]||'#2D5DA8',
     push:!!_LIVE_PUSH_CHANNELS[channel]
   };
   // A timer card renders itself; only its LABELS can change, so the tick is
   // excluded from the signature and a running clock spends nothing.
-  const sig=[payload.kind,payload.title,payload.detail,payload.timer?'T':payload.value,payload.tint].join('|');
+  const sig=[payload.kind,payload.title,payload.detail,payload.timer?'T':payload.value,payload.tint,payload.dualTimer?'D':''].join('|');
   if(_liveLast[channel]===sig)return true;
   try{
     const started=_liveLast[channel]!=null;
@@ -155,7 +163,8 @@ function _liveActRemoteEnd(targetUid,channel){
       channel:channel||'clock',
       event:'end',
       state:{kind:'CLOCKED IN',title:'Clocked out by the office',detail:'',value:'',timer:false,
-        startedAt:Math.floor(Date.now()/1000),tint:_LIVE_TINT.clock}
+        startedAt:Math.floor(Date.now()/1000),siteStartedAt:Math.floor(Date.now()/1000),dualTimer:false,
+        tint:_LIVE_TINT.clock}
     }}).then(()=>{},()=>{});
   }catch(_e){}
 }
@@ -172,13 +181,61 @@ async function _liveActEndAll(){
   try{await P.endAll();}catch(_e){}
 }
 
+// The moment they arrived on THIS site. Two sources, best one wins:
+//
+// 1. geo-track.js's own geofence arrival (`_geoArrivedAt`/`_geoCurrentJob`,
+//    js/geo-track.js): the actual fence-entry timestamp for whoever has geo
+//    tracking on, ground truth, and can predate the clock-in itself (a crew
+//    member can walk the fence line before tapping Clock In). Used only when
+//    it's currently tracking THIS job, never a stale value from a job they've
+//    since left.
+// 2. Falls back to the earliest clock-in TODAY for this job, by this same
+//    person, when geo tracking is off (not every phone opts in, §9.5) or
+//    hasn't caught up yet. jobs.js never tracks "arrival" as its own field
+//    outside geo-track, it only tracks each scope's own start_time in
+//    `timeEntries`, so this derives arrival from data that already exists
+//    instead of adding a new persisted field. Naturally stable across a
+//    same-day scope switch, since earlier entries for the job stay in
+//    `timeEntries` regardless of which scope is active now.
+function _liveActSiteStart(jobId){
+  try{
+    if(!jobId)return null;
+    if(typeof _geoCurrentJob!=='undefined'&&_geoCurrentJob===jobId&&
+       typeof _geoArrivedAt!=='undefined'&&_geoArrivedAt){
+      const geoMs=Date.parse(_geoArrivedAt);
+      if(!isNaN(geoMs))return geoMs;
+    }
+    if(typeof timeEntries==='undefined'||!Array.isArray(timeEntries))return null;
+    const{loggedByUid}=(typeof _tlLoggedByInfo==='function')?_tlLoggedByInfo():{loggedByUid:null};
+    const today=(typeof todayKey==='function')?todayKey():null;
+    let earliest=null;
+    for(const e of timeEntries){
+      if(!e||e.job_id!==jobId)continue;
+      if(today&&e.date!==today)continue;
+      if((e.logged_by_uid||null)!==loggedByUid)continue;
+      const ms=e.start_time?new Date(e.start_time).getTime():NaN;
+      if(!isNaN(ms)&&(earliest===null||ms<earliest))earliest=ms;
+    }
+    return earliest;
+  }catch(_e){return null;}
+}
+
 // ── The clock card ───────────────────────────────────────────────────────────
 // Started once when the clock starts and left alone: iOS ticks it. Called by
 // clockIn/clockOut in js/jobs.js.
+//
+// Two live clocks now (owner feedback 2026-08-19, "on-site time detail"):
+// total time on THIS SITE (since arrival, keeps running across a scope
+// switch) and time on the CURRENT STEP (since the last clock-in call, which
+// is what the single clock already showed before this change). `detail`
+// already carries the step's own name, that part was never missing, it was
+// just getting truncated on the native side (see TdLiveWidget.swift).
 function _liveActClockIn(t){
   if(!t)return;
   const who=t.clientName||t.jobName||'Job';
   const what=t.scopeLabel||t.jobName||'';
+  const stepStart=Math.floor((t.startTime||Date.now())/1000);
+  const siteStart=Math.floor((_liveActSiteStart(t.jobId)||t.startTime||Date.now())/1000);
   _liveActSet('clock',{
     kind:'CLOCKED IN',
     title:who,
@@ -186,7 +243,9 @@ function _liveActClockIn(t){
     // rendering bug rather than emphasis.
     detail:(what&&what!==who)?what:'',
     timer:true,
-    startedAt:Math.floor((t.startTime||Date.now())/1000),
+    startedAt:stepStart,
+    siteStartedAt:siteStart,
+    dualTimer:true,
     tint:_LIVE_TINT.clock
   });
 }

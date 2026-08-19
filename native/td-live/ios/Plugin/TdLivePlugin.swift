@@ -96,6 +96,11 @@ public class TdLivePlugin: CAPPlugin, CAPBridgedPlugin {
             // JS sends epoch SECONDS. Missing or nonsense falls back to now, so a
             // bad payload shows a clock from zero instead of one from 1970.
             startedAt: call.getDouble("startedAt") ?? Date().timeIntervalSince1970,
+            // Missing falls back to startedAt inside ContentState.init, so an
+            // older JS build (or the drive card, which never sends this) still
+            // renders one correct clock instead of a bogus 1970 second timer.
+            siteStartedAt: call.getDouble("siteStartedAt") ?? 0,
+            dualTimer: call.getBool("dualTimer") ?? false,
             tint: call.getString("tint") ?? "#2D5DA8"
         )
     }

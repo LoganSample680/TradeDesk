@@ -70,6 +70,10 @@ test.describe('Live Activities: what reaches the lock screen', () => {
     // The clock must be rendered on-device from a start time, never pushed.
     expect(r[0].a.timer).toBe(true);
     expect(r[0].a.startedAt).toBe(1755000000);
+    // Two-clock card (owner feedback 2026-08-19): site arrival and step start
+    // are the same instant for a fresh job, so both clocks match here.
+    expect(r[0].a.dualTimer).toBe(true);
+    expect(r[0].a.siteStartedAt).toBe(1755000000);
   });
 
   test('the title is never repeated underneath itself', async () => {
@@ -238,8 +242,11 @@ test.describe('Live Activities: what reaches the lock screen', () => {
     expect(r[0].body.channel).toBe('clock');
     expect(r[0].body.event).toBe('end');
     // Every ContentState field must ship or iOS silently drops the push.
+    // siteStartedAt/dualTimer added 2026-08-19 for the two-clock CLOCKED IN
+    // card; the edge function backfills both even though this call site never
+    // sets them, same as it already did for startedAt/tint.
     const st = r[0].body.state;
-    for (const k of ['kind', 'title', 'detail', 'value', 'timer', 'startedAt', 'tint']) {
+    for (const k of ['kind', 'title', 'detail', 'value', 'timer', 'startedAt', 'siteStartedAt', 'dualTimer', 'tint']) {
       expect(st).toHaveProperty(k);
     }
   });
