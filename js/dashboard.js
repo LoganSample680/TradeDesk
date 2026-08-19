@@ -991,8 +991,12 @@ function renderDash(){
       // _holdReveal and all), so the old collapse/fade-out machinery has
       // nothing left to do; a stray in-flight one from before this render
       // must not finish and hide a card that just painted real content.
+      // NOT touching maxHeight/transition/overflow here: the slide-open
+      // block above (_wasHidden) may have just synchronously set maxHeight
+      // to the expand target with its own setTimeout to release it after
+      // the CSS transition finishes, clearing it here would undo that
+      // reveal animation before it ever gets to run.
       if(_nearbyHideTimer){clearTimeout(_nearbyHideTimer);_nearbyHideTimer=null;}
-      _nearbyEl.style.maxHeight='';_nearbyEl.style.transition='';_nearbyEl.style.overflow='';
       if(!_usedSnap){
         // Snapshot the rendered card: the next page load shows it INSTANTLY at
         // the settle pour instead of waiting seconds for the first GPS fix

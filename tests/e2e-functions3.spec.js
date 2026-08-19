@@ -1361,7 +1361,15 @@ test.describe('Cloud Supabase and account functions', () => {
     const r = await page.evaluate(async () => {
       const saved = (typeof _activeTimer !== 'undefined') ? _activeTimer : null;
       const el = document.getElementById('dash-nearby');
-      el.style.display = 'none'; el.innerHTML = '';
+      el.style.display = 'none'; el.innerHTML = ''; el.style.maxHeight = ''; el.style.transition = ''; delete el.dataset.snap;
+      // A neighboring boot-cascade test earlier in this file can leave
+      // #pg-dash mid-pour or a pour-wait interval armed if it didn't settle
+      // before this one started; either makes _holdReveal true and the slide
+      // -open assertion below spuriously fails. This test isn't exercising
+      // that mechanic, so start from a guaranteed-settled state instead of
+      // assuming whatever a sibling test left behind.
+      document.getElementById('pg-dash')?.classList.remove('boot-cascade');
+      if (window._nearbyPourWait) { clearInterval(window._nearbyPourWait); window._nearbyPourWait = null; }
       try {
         _activeTimer = { startTime: Date.now() - 60000, clientName: 'Geo Test', jobId: null };
         renderDash();
