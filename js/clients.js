@@ -2345,7 +2345,7 @@ function openClientProposals(clientId){
   ov.style.cssText='position:fixed;inset:0;background:var(--bg);z-index:10001;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column';
   ov.innerHTML=
     '<div id="cp-list" style="flex:1">'+
-      '<div style="position:sticky;top:0;background:#1a365d;color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;z-index:2">'+
+      '<div style="position:sticky;top:0;background:#1a365d;color:#fff;padding:14px 16px;padding-top:max(14px,env(safe-area-inset-top));display:flex;justify-content:space-between;align-items:center;z-index:2">'+
         '<div>'+
           '<div style="font-size:16px;font-weight:800">Proposals</div>'+
           '<div style="font-size:12px;opacity:.7;margin-top:1px">'+escHtml(c.name)+'</div>'+
@@ -2355,7 +2355,7 @@ function openClientProposals(clientId){
       '<div id="cp-accordion">'+_accordionHTML()+'</div>'+
     '</div>'+
     '<div id="cp-detail" style="display:none;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">'+
-      '<div style="position:sticky;top:0;background:var(--bg);border-bottom:2px solid var(--border);padding:10px 14px;display:flex;align-items:center;gap:10px;z-index:2">'+
+      '<div style="position:sticky;top:0;background:var(--bg);border-bottom:2px solid var(--border);padding:10px 14px;padding-top:max(10px,env(safe-area-inset-top));display:flex;align-items:center;gap:10px;z-index:2">'+
         '<button onclick="_cpBack()" style="padding:7px 12px;border-radius:8px;border:1.5px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text);white-space:nowrap">← Back</button>'+
         '<div id="cp-tabs" style="display:flex;gap:6px;flex:1;justify-content:center"></div>'+
         '<div style="width:70px"></div>'+

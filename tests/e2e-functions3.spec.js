@@ -2806,6 +2806,42 @@ test.describe('Client detail tab and notes functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // Owner report 2026-08-20: on iOS the sticky headers in this full-screen
+  // proposal viewer (the "Proposals" list header and the detail view's
+  // Back/tabs header) rendered flush with the top of the fixed overlay, no
+  // top inset, so they collided with the status bar/Dynamic Island. Both
+  // now reserve env(safe-area-inset-top), matching the rest of the app's
+  // full-screen overlays (js/finance.js viewSavedProposal, js/dashboard.js
+  // openBidDetail).
+  test('openClientProposals + _cpOpen: both sticky headers reserve the iOS safe-area top inset (Dynamic Island regression)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof openClientProposals !== 'function' || typeof _cpOpen !== 'function') return { skip: true };
+      document.querySelector('[data-cpov]')?.remove();
+      const fakeClient = { id: 890091, name: 'Safe Area Client' };
+      const fakeBid = { id: 890091, status: 'Closed Won', client_id: 890091, amount: 900, proposalHtml: '<p>x</p>', signedAt: new Date().toISOString() };
+      clients.unshift(fakeClient);
+      bids.unshift(fakeBid);
+      try {
+        openClientProposals(890091);
+        const ov = document.querySelector('[data-cpov]');
+        const listHeader = document.querySelector('#cp-list > div');
+        const listInset = !!listHeader && listHeader.getAttribute('style').includes('env(safe-area-inset-top)');
+        _cpOpen(890091, 'bid');
+        const detailHeader = document.querySelector('#cp-detail > div');
+        const detailInset = !!detailHeader && detailHeader.getAttribute('style').includes('env(safe-area-inset-top)');
+        return { skip: false, exists: !!ov, listInset, detailInset };
+      } finally {
+        clients.shift();
+        bids.shift();
+        document.querySelector('[data-cpov]')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.exists).toBe(true);
+    expect(result.listInset).toBe(true);
+    expect(result.detailInset).toBe(true);
+  });
+
   test('_cpView: calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _cpView !== 'function') return { skip: true };
@@ -5411,6 +5447,32 @@ test.describe('Finance money and books page functions', () => {
       catch (e) { return { ok: true, note: e.message }; }
     });
     if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  // Owner report 2026-08-20 (Dynamic Island regression, see js/dashboard.js
+  // openBidDetail and js/clients.js openClientProposals for the sibling
+  // fixes): this full-screen overlay's sticky header must reserve
+  // env(safe-area-inset-top) or its "Signed Proposal / Close" bar collides
+  // with the iOS status bar.
+  test('viewSavedProposal: sticky header reserves the iOS safe-area top inset', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof viewSavedProposal !== 'function') return { skip: true };
+      document.querySelector('[data-pov]')?.remove();
+      const fakeBid = { id: 890092, proposalHtml: '<p>x</p>', signedAt: new Date().toISOString() };
+      bids.unshift(fakeBid);
+      try {
+        viewSavedProposal(890092);
+        const ov = document.querySelector('[data-pov]');
+        const header = ov?.firstElementChild;
+        return { skip: false, exists: !!ov, hasInset: !!header && header.getAttribute('style').includes('env(safe-area-inset-top)') };
+      } finally {
+        bids.shift();
+        document.querySelector('[data-pov]')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.exists).toBe(true);
+    expect(result.hasInset).toBe(true);
   });
 
   test('openBidHistoryDetail: calls without throwing', async () => {

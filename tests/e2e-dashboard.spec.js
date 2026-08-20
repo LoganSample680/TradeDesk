@@ -3428,6 +3428,32 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     expect(r.hasBidPane).toBe(true);
   });
 
+  // Owner report 2026-08-20: on iOS the sticky "Close / Our proposal / Client
+  // view" header rendered at the very top of the fixed-position overlay with
+  // no top inset, so it collided with the status bar/Dynamic Island. Fixed
+  // with the same env(safe-area-inset-top) treatment every other full-screen
+  // overlay in this app already uses (see js/clients.js's proposal viewer).
+  test('openBidDetail: sticky header reserves the iOS safe-area top inset (Dynamic Island regression)', async () => {
+    const r = await page.evaluate(() => {
+      document.querySelector('[data-bdov]')?.remove();
+      const fakeBid = { id: 80009, status: 'Closed Won', client_id: 80009, amount: 1200, proposalHtml: '<p>x</p>' };
+      const fakeClient = { id: 80009, name: 'Safe Area Client' };
+      bids.unshift(fakeBid);
+      clients.unshift(fakeClient);
+      try {
+        openBidDetail(80009, 'bid');
+        const ov = document.querySelector('[data-bdov]');
+        const header = ov?.firstElementChild;
+        return { hasInset: !!header && header.getAttribute('style').includes('env(safe-area-inset-top)') };
+      } finally {
+        bids.shift();
+        clients.shift();
+        document.querySelector('[data-bdov]')?.remove();
+      }
+    });
+    expect(r.hasInset).toBe(true);
+  });
+
   test('openBidDetail: view defaults to bid tab', async () => {
     const r = await page.evaluate(() => {
       document.querySelector('[data-bdov]')?.remove();
