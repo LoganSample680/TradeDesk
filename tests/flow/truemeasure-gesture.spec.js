@@ -33,7 +33,20 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     await page.waitForFunction(() => typeof _mapkitReady !== 'undefined' && _mapkitReady === true, null, { timeout: 30000 });
 
     await page.evaluate(() => openTrueMeasure({ id: 991234, name: 'Gesture Probe', addr: '' }));
-    await page.waitForFunction(() => window._tmState && _tmState.map, null, { timeout: 20000 });
+    // _tmState is a script-scoped `let` (like _mapkitReady, see
+    // topeka-day-flow.spec.js) — it is NOT a window property, so it must be
+    // read as a bare identifier, never window._tmState.
+    await page.waitForFunction(
+      () => typeof _tmState !== 'undefined' && _tmState && !!_tmState.map,
+      null, { timeout: 20000 },
+    ).catch(async (e) => {
+      const diag = await page.evaluate(() => ({
+        overlay: !!document.getElementById('_tm-ov'),
+        fallbackShown: (document.getElementById('tm-unavailable') || {}).style?.display,
+        state: typeof _tmState !== 'undefined' && !!_tmState,
+      }));
+      throw new Error('TrueMeasure map never initialized: ' + JSON.stringify(diag) + ' :: ' + e.message);
+    });
     await sleep(2500); // tiles + region settle
 
     const mapInfo = () => page.evaluate(() => ({
