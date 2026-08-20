@@ -194,6 +194,75 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     console.log(`[probe] console.errors during run: ${relevant.length}`, relevant.slice(0, 3));
   });
 
+  // ── Adversarial: ordinary finger jitter during a plain quick tap ─────────
+  // Owner screenshot 2026-08-20: a two-point trace landed a whole house-width
+  // off the actual tap locations, in a straight line across the roof — no
+  // hold involved, plain quick taps. Every prior probe's "tap" sent
+  // touchStart then touchEnd with ZERO touchmove events in between, which a
+  // real finger can never do (a few pixels of hand tremor between touchdown
+  // and liftoff is unavoidable). The app's own tap-vs-hold logic only
+  // classifies a touch as a "drag" once it crosses THRESH (8px in
+  // js/true-measure.js), but MapKit's own native pan-gesture recognizer has
+  // no obligation to share that threshold — a touchmove comfortably under
+  // OUR 8px could still be enough to trip MapKit's, silently panning the
+  // camera under the finger before the tap's coordinate conversion runs.
+  // This fires a real touchMove (well under THRESH) between touchStart and
+  // touchEnd on every tap, the one thing every prior probe never did.
+  test('quick tap survives ordinary finger jitter (sub-threshold touchmove)', async ({ page, context }) => {
+    test.setTimeout(60000);
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await signIn(page);
+    await page.waitForFunction(() => typeof openTrueMeasure === 'function', null, { timeout: 30000 });
+    await page.waitForFunction(() => typeof _mapkitReady !== 'undefined' && _mapkitReady === true, null, { timeout: 30000 });
+    await page.evaluate(() => openTrueMeasure({ id: 991236, name: 'Jitter Probe', addr: '' }));
+    await page.waitForFunction(() => typeof _tmState !== 'undefined' && _tmState && !!_tmState.map, null, { timeout: 20000 });
+    await sleep(2000);
+
+    const wrapBox = await page.evaluate(() => {
+      const r = document.getElementById('tm-map').getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const cdp = await context.newCDPSession(page);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', {
+      type, touchPoints: points.map((p) => ({ x: p.x, y: p.y, radiusX: 8, radiusY: 8, force: 1, id: 1 })),
+    });
+
+    // Two taps, roofline-corner-ish, each with a small jittery touchmove
+    // (3-4px, well under THRESH's 8px) before lifting.
+    const targets = [
+      { x: Math.round(wrapBox.x + wrapBox.w * 0.35), y: Math.round(wrapBox.y + wrapBox.h * 0.35) },
+      { x: Math.round(wrapBox.x + wrapBox.w * 0.55), y: Math.round(wrapBox.y + wrapBox.h * 0.55) },
+    ];
+    const results = [];
+    for (const t of targets) {
+      await touch('touchStart', [{ x: t.x, y: t.y }]);
+      await touch('touchMove', [{ x: t.x + 3, y: t.y - 2 }]);
+      await sleep(30);
+      await touch('touchMove', [{ x: t.x - 2, y: t.y + 3 }]);
+      await sleep(40);
+      await touch('touchEnd', []);
+      await sleep(400);
+      const p = await page.evaluate(() => {
+        const pt = _tmState.points[_tmState.points.length - 1];
+        if (!pt) return null;
+        const screen = _tmState.map.convertCoordinateToPointOnPage(new mapkit.Coordinate(pt.lat, pt.lng));
+        return { x: screen.x, y: screen.y };
+      });
+      results.push({ target: t, landed: p, errPx: p ? Math.hypot(p.x - t.x, p.y - t.y) : null });
+    }
+
+    console.log('[probe] JITTER-TAP results:', JSON.stringify(results.map((r) => ({ errPx: r.errPx && +r.errPx.toFixed(1) }))));
+    for (const r of results) {
+      expect(r.landed, 'a jittery tap must still place a point').toBeTruthy();
+      expect(r.errPx, 'a jittery tap must still land under the finger, not wherever MapKit panned to (px)').toBeLessThan(12);
+    }
+
+    const relevant = errors.filter(realError);
+    expect(relevant.length, 'zero console errors during the jitter probe: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
+  });
+
   // ── Adversarial: a real user tracing several corners FAST ────────────────
   // The single-gesture test above passed clean while the owner's live
   // multi-corner trace still put a point a whole property away. The

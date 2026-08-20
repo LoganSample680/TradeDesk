@@ -580,6 +580,12 @@ function _tmInitPrecisionGesture(map,wrap){
     if(!active){
       const p=relPoint(e);
       if(Math.abs(p.x-downX)>THRESH||Math.abs(p.y-downY)>THRESH){moved=true;cancelTimer();}
+      // Still ambiguous (could yet become a tap): swallow it here too. See the
+      // touchmove listener below for why this matters even though pointermove
+      // alone was already proven insufficient to stop MapKit's own panning —
+      // this is belt-and-suspenders for an engine that drives its recognizers
+      // off pointer events (same reasoning as the pinch branch above).
+      else{e.stopImmediatePropagation();e.preventDefault();}
       return;
     }
     e.stopImmediatePropagation();
@@ -681,7 +687,35 @@ function _tmInitPrecisionGesture(map,wrap){
       }
       return;
     }
-    if(!active)return;
+    if(!active){
+      // THE BUG (owner screenshot 2026-08-20: a two-point trace landed a
+      // whole house-width off the actual tap locations, a straight-line
+      // shift far past any zoom/drift math error, on a plain quick tap with
+      // no hold involved). Every quick tap "returned" here unconditionally
+      // and let MapKit see its touchmove events, because active only
+      // becomes true after the 420ms hold timer fires, and a tap by
+      // definition releases long before that. But a real finger can never
+      // land with EXACTLY zero pixels of movement between touchdown and
+      // liftoff, and MapKit's own pan recognizer's movement threshold isn't
+      // ours to know or control, only OUR threshold (THRESH, 8px) decides
+      // `moved`. So a few pixels of ordinary hand tremor, comfortably under
+      // OUR threshold (still reads as "just a tap" to us) could be enough to
+      // cross MapKit's, and it would pan the camera underneath the finger
+      // before the tap's own coordinate conversion ran at touchend — the
+      // point then lands wherever the map ended up, not where the satellite
+      // image was when the finger first touched down. The CI probe's CDP-
+      // injected touches never caught this: synthetic touches move with
+      // pixel-perfect precision and never carry that jitter.
+      //
+      // Fix: swallow every touchmove here too, for exactly as long as `moved`
+      // is still false (still could become a tap). The instant real movement
+      // crosses OUR OWN threshold (see the pointermove listener above, the
+      // only place `moved` is set), stop swallowing and hand the stream back
+      // to MapKit uninterrupted, so a genuine drag-to-pan the user actually
+      // intends still works exactly as before.
+      if(!moved){e.stopImmediatePropagation();e.preventDefault();}
+      return;
+    }
     e.stopImmediatePropagation();
     e.preventDefault();
   },{capture:true,passive:false});
