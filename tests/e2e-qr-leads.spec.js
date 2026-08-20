@@ -47,15 +47,19 @@ test.describe('QR lead tracking: js/qr-leads.js', () => {
             // which trips assertNoErrors() on this file's own unrelated
             // test. Proxy so any method this mock doesn't know about
             // resolves harmlessly instead, while order()/then() above keep
-            // their real, asserted-on behavior untouched.
-            return new Proxy(base, {
+            // their real, asserted-on behavior untouched. Chainable calls
+            // must return the PROXY, not the bare base — CI caught cloud.js
+            // chaining .is(...).is(...) where the second call landed on the
+            // unproxied base object and threw the very TypeError this
+            // exists to prevent.
+            const proxy = new Proxy(base, {
               get(target, prop) {
                 if (prop in target) return target[prop];
                 if (prop === 'maybeSingle' || prop === 'single') return () => Promise.resolve({ data: data[0] || null, error: null });
-                if (prop === 'catch') return () => target;
-                return () => target;
+                return () => proxy;
               },
             });
+            return proxy;
           },
           in: (col, ids) => Promise.resolve({ data: tbl === 'qr_events' ? window.__qrEventsData.filter(e => ids.includes(e.qr_source_id)) : [] }),
         }),

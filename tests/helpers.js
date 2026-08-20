@@ -343,6 +343,18 @@ function _supabaseShim() {
           stopAutoRefresh:  () => {},
         },
         from: (table) => queryBuilder(),
+        // No offline test mocks the account-load RPCs (load_account_data /
+        // get_account_delta), but any test that leaves _supaUser set can have
+        // the app's background reconnect-pull fire loadAccountData mid-test.
+        // With no rpc at all that throws a real TypeError, which
+        // _classifyCloudError reports as an APP error (console.error) and
+        // trips an unrelated test's assertNoErrors — CI caught exactly this
+        // in e2e-timelog. code:'offline' is the classifier's documented
+        // explicit test-suite signal (js/cloud.js _classifyCloudError): the
+        // load aborts as a network failure — warn, not error, and crucially
+        // WITHOUT clobbering test-seeded in-memory arrays the way an
+        // empty-success response would.
+        rpc: (fn, args) => Promise.resolve({ data: null, error: { code: 'offline', message: 'offline shim: rpc(' + fn + ') not mocked' } }),
         storage: {
           from: (bucket) => ({
             upload:   (path, data, opts) => noopResult({ path }),
