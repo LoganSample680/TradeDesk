@@ -313,11 +313,15 @@ async function _tmInitMap(){
     map.region=new mapkit.CoordinateRegion(coord,new mapkit.CoordinateSpan(0.0015,0.0015));
     // No cameraZoomRange set defaults to MapKit's own floor, which isn't
     // close enough to trace a single roof edge or a foundation line by hand
-    // (owner report 2026-08-19, live device). Tightened again to 3m
-    // (owner report 2026-08-20: 12m still wasn't close enough) — 3000m caps
-    // how far a contractor can zoom OUT, past "the whole property" there's
-    // nothing useful left to trace.
-    map.cameraZoomRange=new mapkit.CameraZoomRange(3,3000);
+    // (owner report 2026-08-19, live device: 12m). Tightened to 3m
+    // (2026-08-20: still not close enough), then to 1m (2026-08-20, same
+    // day: owner explicitly doesn't care if the upscaled satellite tile
+    // gets blurry at this range, just wants to physically get closer). Pass
+    // 1 all the way down to MapKit and let IT clamp to its own true floor
+    // if 1m is tighter than tiles can usefully resolve — 3000m caps how far
+    // a contractor can zoom OUT, past "the whole property" there's nothing
+    // useful left to trace.
+    map.cameraZoomRange=new mapkit.CameraZoomRange(1,3000);
     map.addEventListener('single-tap',e=>{
       // e.pointOnPage is page-relative (includes document scroll), but this
       // overlay is position:fixed — its container sits at a fixed spot on
@@ -351,8 +355,8 @@ async function _tmInitMap(){
 // screenshot loupe, MapKit's tiles aren't guaranteed CORS-readable for
 // drawImage/getImageData, so a true magnifying-glass duplicate isn't safe.
 function _tmInitPrecisionGesture(map,wrap){
-  const THRESH=8,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70;
-  let downX=0,downY=0,moved=false,active=false,timer=null,origDistance=null;
+  const THRESH=8,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70,ZOOM_ANIM_MS=400;
+  let downX=0,downY=0,moved=false,active=false,timer=null,origDistance=null,zoomLockTimer=null;
   const cross=document.getElementById('tm-crosshair');
   function cancelTimer(){ if(timer){clearTimeout(timer);timer=null;} }
   function relPoint(e){
@@ -376,6 +380,11 @@ function _tmInitPrecisionGesture(map,wrap){
   function exitPrecision(){
     active=false;
     if(cross)cross.style.display='none';
+    if(zoomLockTimer){clearTimeout(zoomLockTimer);zoomLockTimer=null;}
+    // isZoomEnabled may currently be locked off (see the delayed lock
+    // below) — re-enable it BEFORE the ease-back-out animation, or this
+    // call gets silently cancelled the same way the entrance zoom did.
+    try{map.isZoomEnabled=true;}catch(_e){}
     if(origDistance!=null){
       try{map.setCameraDistanceAnimated(origDistance,true);}catch(_e){}
     }
@@ -403,24 +412,33 @@ function _tmInitPrecisionGesture(map,wrap){
         const coord=map.convertPointOnPageToCoordinate(new DOMPoint(r.left+downX,r.top+downY));
         origDistance=map.cameraDistance;
         map.setCenterAnimated(coord,true);
-        map.setCameraDistanceAnimated(Math.max(3,origDistance*ZOOM_FACTOR),true);
+        map.setCameraDistanceAnimated(Math.max(1,origDistance*ZOOM_FACTOR),true);
       }catch(_e){}
-      // MapKit's own pan/rotate gesture recognizers are still listening on
-      // this same wrap element and were reacting to the very drag that's
-      // supposed to only move the crosshair overlay below, so the map
-      // itself visibly panned around during what's meant to be a "camera
-      // holds still, only the crosshair tracks your finger" precision
-      // placement (owner report 2026-08-20, live device). Locking scroll/
-      // rotation for the duration of the hold, restored in exitPrecision,
-      // is what actually keeps it fixed. isZoomEnabled is deliberately left
-      // alone: disabling it here also blocked our OWN setCameraDistance
-      // Animated call just above (owner retest 2026-08-20: the hold no
-      // longer zoomed in at all once this was added) — MapKit treats it as
-      // a blanket switch, not gesture-only, so it has to stay enabled for
-      // the precision zoom-in itself to work. A one-finger drag can't
-      // trigger MapKit's own pinch/double-tap zoom gestures anyway, so
-      // nothing was actually gained by locking it.
+      // MapKit's own gesture recognizers are still listening on this same
+      // wrap element and were reacting to the very drag that's supposed to
+      // only move the crosshair overlay below, so the map itself visibly
+      // panned/zoomed during what's meant to be a "camera holds still, only
+      // the crosshair tracks your finger" precision placement (owner
+      // reports 2026-08-20, live device, two rounds). isScrollEnabled is
+      // the fix for plain panning, locked immediately below. But a
+      // STATIONARY press-then-drag is also exactly MapKit's own native
+      // one-finger hold-and-drag-to-zoom gesture, which reads isZoomEnabled
+      // specifically, not isScrollEnabled — confirmed by the live preview's
+      // distance label holding a constant value while the crosshair visibly
+      // slid across most of the screen, meaning the CAMERA was moving in
+      // lockstep with it, not staying put. isZoomEnabled can't just be
+      // locked off immediately though: it also gates our OWN
+      // setCameraDistanceAnimated call just above (confirmed by the
+      // previous retest: locking it immediately silently cancelled the
+      // entrance zoom entirely). So scroll/rotation lock NOW, zoom locks
+      // AFTER a short delay long enough for our own entrance animation to
+      // actually finish easing in — exitPrecision cancels this timer and
+      // re-enables zoom itself if the gesture ends first.
       try{map.isScrollEnabled=false;map.isRotationEnabled=false;}catch(_e){}
+      zoomLockTimer=setTimeout(()=>{
+        zoomLockTimer=null;
+        if(active){try{map.isZoomEnabled=false;}catch(_e){}}
+      },ZOOM_ANIM_MS);
       if(cross)cross.style.display='block';
       placeCrosshair(downX,downY);
       try{_tmUpdatePreview(crosshairCoord(downX,downY));}catch(_e){}
