@@ -450,6 +450,17 @@ function _tmInitPrecisionGesture(map,wrap){
   const THRESH=8,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70;
   let downX=0,downY=0,moved=false,active=false,timer=null,suppressTouchEnd=false;
   let holdStartDigi=1,pinchOwn=false,pinchD0=0,pinchDigi0=1,pinchCam0=null;
+  // The deliberate, SETTLED resting digi level, distinct from _tmCurrentDigi()
+  // (the live/frozen visual scale). A hold's exitPrecision() commits its
+  // target synchronously but the CSS takes 280ms to visually catch up; a
+  // back-to-back hold fired into that window must start from where the
+  // animation is HEADED, not wherever _tmFreezeDigi() happened to freeze the
+  // still-easing visual mid-flight, or every rapid hold compounds onto an
+  // already-elevated base (owner report 2026-08-20: zoom escalating on
+  // repeated corners, probe-caught: 3.33 -> 4.66 -> 6.51). Pinch has no such
+  // lag (it tracks the fingers live, un-animated), so it updates this in
+  // step with every change.
+  let restDigi=1;
   const cross=document.getElementById('tm-crosshair');
   // All finger/crosshair math is relative to the UNSCALED canvas frame, not
   // `wrap` (tm-map): wrap now lives inside the #tm-scale digital-zoom layer,
@@ -480,6 +491,7 @@ function _tmInitPrecisionGesture(map,wrap){
     active=false;
     if(cross)cross.style.display='none';
     _tmDigiSet(holdStartDigi,true); // release the hold's digital close-up
+    restDigi=holdStartDigi; // the ease's committed target, not its mid-flight visual
     _tmClearPreview();
     // Mirror of the lock below: give the map's own gestures back once the
     // hold-drag ends, whether it ended by dropping a pin or by cancelling.
@@ -501,14 +513,17 @@ function _tmInitPrecisionGesture(map,wrap){
         // moment this fixed-position overlay sits over a scrolled page.
         const r=frameEl.getBoundingClientRect();
         const coord=_tmPageToCoord(r.left+downX,r.top+downY);
-        // True current value, NOT _tmState.digiZoom: a hold fired again
-        // before the previous one's 280ms ease-back-out finished would
-        // otherwise read the stale (already-reset) target instead of
-        // wherever the animation actually still was, and could compound
-        // toward the 8x digital cap on repeated fast holds (owner report
-        // 2026-08-20: "the zoom in moves very fast" while tracing several
-        // corners back-to-back).
-        holdStartDigi=_tmCurrentDigi();
+        // The committed RESTING target (see restDigi above), not
+        // _tmCurrentDigi()'s live visual value: a hold fired again before the
+        // previous one's 280ms ease-back-out finished must still start from
+        // 1x (or wherever it's truly settled), not from whatever elevated
+        // point the ease was mid-flight through when this touch landed —
+        // that's what compounded rapid holds toward the 8x digital cap
+        // (owner report 2026-08-20: "the zoom in moves very fast" while
+        // tracing several corners back-to-back; probe-caught escalation
+        // 3.33 -> 4.66 -> 6.51 once _tmFreezeDigi() started freezing the
+        // mid-exit visual on the very next touch).
+        holdStartDigi=restDigi;
         // Recenter on the pressed point (the digital scale magnifies around
         // the frame CENTER, so without this an off-center press would zoom
         // toward the middle of the screen instead of the finger).
@@ -657,9 +672,11 @@ function _tmInitPrecisionGesture(map,wrap){
       const eff=pinchDigi0*(d/pinchD0);
       if(eff>=1){
         _tmDigiSet(eff);
+        restDigi=eff; // pinch has no ease lag, live value IS the new resting baseline
       }else{
         // Unwound past digital 1x: give the remainder to the real camera.
         _tmDigiSet(1);
+        restDigi=1;
         try{map.cameraDistance=Math.min(3000,(pinchCam0||_TM_CAM_FLOOR)/eff);}catch(_e){}
       }
       return;

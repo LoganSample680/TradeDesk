@@ -172,7 +172,11 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     console.log(`[probe] RELEASE: dist=${released.dist.toFixed(0)}m (preHold=${preHold.dist.toFixed(0)}m)`);
     expect(released.dist, 'camera must ease back out after release').toBeGreaterThan(preHold.dist * 0.5);
 
-    const relevant = errors.filter((t) => !/favicon|manifest|analytics|beacon/i.test(t));
+    // cloudflareinsights.com/cdn-cgi/rum: Cloudflare's own RUM beacon, CORS-
+    // blocked on the uat.* preview domain, not something this codebase adds
+    // or can fix — same known-noise exclusion preview-smoke.spec.js already
+    // uses for it.
+    const relevant = errors.filter((t) => !/favicon|manifest|analytics|beacon|cloudflareinsights/i.test(t));
     console.log(`[probe] console.errors during run: ${relevant.length}`, relevant.slice(0, 3));
   });
 
@@ -266,7 +270,11 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     expect(missing.length, 'every rapid tap must place a point').toBe(0);
     expect(bad.length, 'every rapid tap must land within 3m of its true target, no isolated flung points').toBe(0);
 
-    const relevant = errors.filter((t) => !/favicon|manifest|analytics|beacon/i.test(t));
+    // cloudflareinsights.com/cdn-cgi/rum: Cloudflare's own RUM beacon, CORS-
+    // blocked on the uat.* preview domain, not something this codebase adds
+    // or can fix — same known-noise exclusion preview-smoke.spec.js already
+    // uses for it.
+    const relevant = errors.filter((t) => !/favicon|manifest|analytics|beacon|cloudflareinsights/i.test(t));
     expect(relevant.length, 'zero console errors during the rapid trace: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
   });
 

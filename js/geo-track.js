@@ -145,7 +145,7 @@ const _GEO_DRIVEBY_SPEED_MPS=3.6; // ~8mph
 // latest speed. Display state only, nothing here touches what gets logged.
 let _geoDriveMiles=0;     // straight-line miles accumulated across pings this leg
 let _geoDriveSteps=0;     // how many accumulation hops built that tally: a tally from 2 hops is a guess, from 20 it is a road trace
-let _geoDriveLastFix=null;// {lat,lng,atMs} last fix used for that accumulation
+let _geoDriveLastFix=null;// {lat,lng,atMs,acc} last fix used for that accumulation
 let _geoDriveMph=0;       // latest speed reading, mph (device speed, else derived)
 let _geoDriveMovingAt=0;  // ms of the last ping at driving speed, banner visibility
 let _geoMphZeroRun=0;     // consecutive near-zero device speed readings
@@ -540,25 +540,45 @@ async function _geoOnPing(pos){
   // Runs BEFORE the fence machine so the fix that closes the leg still counts
   // its last stretch of road. Straight-line ping to ping: display only, the
   // logged trip is still measured geocode to geocode on arrival.
+  //
+  // Accuracy-gated (owner report 2026-08-20, live device: "the speed is not
+  // accurate"). Before this, `acc` was read (above) but never actually
+  // checked anywhere in this block: a fix with a 300m error radius (pulling
+  // out of a garage, under trees, downtown between buildings) was trusted
+  // exactly as much as a rock-solid 5m highway fix, for BOTH the derived
+  // straight-line speed (two noisy positions can imply almost any distance
+  // over a short interval) and the device's own coords.speed (on-device
+  // speed derivation inherits the same position noise on plenty of chips).
+  // Reuses _GEO_GAP_EXIT_MAX_ACC_M, the app's existing "trustworthy enough to
+  // act on" threshold (already used for gap-exit resolution below), rather
+  // than inventing a second accuracy bar.
+  const _driveAccOk=acc>0&&acc<=_GEO_GAP_EXIT_MAX_ACC_M;
   if(_geoDriveStartedAt){
     if(_geoDriveLastFix){
       const stepFt=_geoDistFt(here,_geoDriveLastFix);
       const dtMs=nowMs-_geoDriveLastFix.atMs;
-      if(stepFt>_GEO_DRIVE_ACCUM_FT){
+      // A bad-accuracy CURRENT fix can't extend the baseline either way: hold
+      // _geoDriveLastFix at the last known-good position/time and wait for a
+      // better fix, rather than measuring the next step from a position that
+      // was never trustworthy. The previous fix's own accuracy was already
+      // checked when IT was accepted, so only the current one needs gating.
+      if(!_driveAccOk){
+        // no-op: fall through with mph/miles/lastFix all untouched
+      }else if(stepFt>_GEO_DRIVE_ACCUM_FT){
         _geoDriveMiles+=stepFt/5280;_geoDriveSteps++;
         // Derived speed as the fallback: plenty of devices ping without a
         // speed reading, and distance over time is honest for a 20-30s gap.
         if(dtMs>3000)_geoDriveMph=(stepFt/5280)/(dtMs/3600000);
-        _geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs};
+        _geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs,acc};
       }else if(dtMs>45000){
         // No real movement across a long gap IS a speed reading. Without it a
         // device that never reports coords.speed kept the banner alive on the
         // stale mph it had out on the road.
         _geoDriveMph=(stepFt/5280)/(dtMs/3600000);
-        _geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs};
+        _geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs,acc};
       }
-    }else{
-      _geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs};
+    }else if(_driveAccOk){
+      _geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs,acc};
     }
   }
   // The device's own reading wins when present, it is current rather than a
@@ -568,7 +588,7 @@ async function _geoOnPing(pos){
   // lands on the second one; the held ping also never counts as motion for
   // the banner clock, so a fade is never postponed by a hiccup.
   _geoMphHeldZero=false;
-  if(typeof pos.coords.speed==='number'&&pos.coords.speed>=0){
+  if(_driveAccOk&&typeof pos.coords.speed==='number'&&pos.coords.speed>=0){
     const _mphNow=pos.coords.speed*2.23694;
     if(_mphNow<1&&_geoDriveMph>=8&&_geoMphZeroRun===0){
       _geoMphZeroRun=1;_geoMphHeldZero=true;
@@ -809,7 +829,7 @@ async function _geoOnPing(pos){
       // conservative start.
       if(!_geoDriveStartedAt){
         _geoDriveStartedAt=nowIso;_geoLegOrigin=_geoLastFenceLoc;
-        _geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs};
+        _geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs,acc};
         _geoDriveHadPause=false;
       }
       _geoStopAnchor={lat:here.lat,lng:here.lng,at:nowIso,lastAt:nowIso};
