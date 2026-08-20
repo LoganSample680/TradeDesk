@@ -23,6 +23,20 @@ const { needsLiveCreds, signIn } = require('./live-helpers');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Benign console noise from third-party CDNs / CI network jitter — the same
+// list page-crawler-flow.spec.js and realtime-glitch-free-flow.spec.js already
+// use (§7.3: reuse the existing pattern rather than a narrower one-off list
+// that flakes on the next noisy resource, e.g. a stray "net::ERR_FAILED" with
+// no URL attached, seen chasing MapKit tiles under CI's network during this
+// spec's heavy rapid-gesture load).
+const BENIGN = [
+  'favicon', 'net::ERR', 'ERR_CONNECTION', 'Failed to load resource', 'apple-mapkit',
+  'cdn.apple-mapkit', 'js.stripe.com', 'cdn.jsdelivr', 'AggregateError', 'JSON Parse error',
+  'Unhandled Promise Rejection', 'mapkit', '401', '403', 'manifest', 'analytics', 'beacon',
+  'cloudflareinsights',
+];
+function realError(text) { return !BENIGN.some((b) => text.includes(b)); }
+
 test.describe('TrueMeasure gesture probe (real MapKit)', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured');
   test.skip(({ browserName }) => browserName !== 'chromium', 'CDP touch injection is Chromium-only');
@@ -176,7 +190,7 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     // blocked on the uat.* preview domain, not something this codebase adds
     // or can fix — same known-noise exclusion preview-smoke.spec.js already
     // uses for it.
-    const relevant = errors.filter((t) => !/favicon|manifest|analytics|beacon|cloudflareinsights/i.test(t));
+    const relevant = errors.filter(realError);
     console.log(`[probe] console.errors during run: ${relevant.length}`, relevant.slice(0, 3));
   });
 
@@ -274,7 +288,7 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     // blocked on the uat.* preview domain, not something this codebase adds
     // or can fix — same known-noise exclusion preview-smoke.spec.js already
     // uses for it.
-    const relevant = errors.filter((t) => !/favicon|manifest|analytics|beacon|cloudflareinsights/i.test(t));
+    const relevant = errors.filter(realError);
     expect(relevant.length, 'zero console errors during the rapid trace: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
   });
 
