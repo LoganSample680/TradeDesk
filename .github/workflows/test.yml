@@ -9,6 +9,14 @@ on:
   # Also run on direct pushes to main (post-merge validation).
   push:
     branches: [main]
+  # Full-suite backstop, ~11pm US Central nightly (owner ask 2026-08-20: CI
+  # was taking too long on every push). GitHub Actions cron is UTC-only and
+  # can't express "US Central" directly, 04:00 UTC matches 11pm CDT (the
+  # ~8 months/year DST covers); during CST (~Nov-Mar) this drifts to ~10pm
+  # Central. Accepted rather than running two cron entries for a 1-hour
+  # seasonal drift nobody will notice on a nightly job.
+  schedule:
+    - cron: '0 4 * * *'
 
 # Cancel any in-progress run for the same branch/PR when a new commit is
 # pushed. Prevents stale jobs stacking up while you iterate.
@@ -168,8 +176,101 @@ jobs:
           FLAT=$(echo "$PLUGIN_CHANGES" | tr '\n' ' ')
           echo "::warning::CLAUDE.md §3.3 advisory: this branch changed $FLAT with no native/tests/*Tests.swift change anywhere since it diverged from ${{ github.event.pull_request.base.ref }}. §3.3 asks every new or changed plugin method to get adversarial XCTest coverage in the same commit. Advisory only, not a blocking check: if existing coverage already handles this change, there is nothing to do."
 
+  # ── Test scope planner (owner ask 2026-08-20: CI was too slow on every push) ─
+  # Decides, once, up front, what the `test` job below actually runs:
+  #   - push to main / nightly schedule: ALWAYS the full 6-shard suite. main
+  #     is the source of truth and the nightly run is the whole point of this
+  #     change, both stay exactly as thorough as before.
+  #   - a PR touching a "high-impact" shared file (tests/helpers.js, the kind
+  #     of file §10.3 already calls "high-voltage infrastructure", plus
+  #     js/cloud.js, js/utils.js, js/data.js, index.html, playwright.config.js):
+  #     ALSO the full suite, immediately, not just at 11pm. A change here can
+  #     break a spec file with no obvious name/file relationship to what
+  #     changed (see tonight's two CI failures, both caused by a classifier
+  #     change in js/cloud.js surfacing pre-existing gaps in unrelated spec
+  #     files' mocks) — waiting for the nightly run to find that out, with
+  #     more work possibly landing on top in the meantime, is exactly the
+  #     house-of-cards scenario §10's Patch-Chain Prohibition exists to avoid.
+  #   - any other PR: only the offline spec files that changed directly, plus
+  #     any spec file whose name correlates with a changed js/*.js or *.html
+  #     file (e2e-timelog.spec.js for js/timelog.js, etc, this repo's own
+  #     naming convention, followed closely but not 100% of the time). This
+  #     is a HEURISTIC, not exact blast-radius analysis, it's a fast lane
+  #     backstopped by the high-impact-file rule above and the nightly full
+  #     run, not a replacement for either.
+  plan:
+    name: Determine test scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run_full: ${{ steps.decide.outputs.run_full }}
+      skip: ${{ steps.decide.outputs.skip }}
+      extra_args: ${{ steps.decide.outputs.extra_args }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: decide
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "push to main or the nightly backstop, running the full suite"
+            echo "run_full=true" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "extra_args=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git fetch origin "${{ github.event.pull_request.base.ref }}"
+          BASE=$(git merge-base "origin/${{ github.event.pull_request.base.ref }}" HEAD)
+          CHANGED=$(git diff --name-only "$BASE" HEAD)
+          echo "Changed files since $BASE:"
+          echo "$CHANGED"
+
+          HIGH_IMPACT='^(tests/helpers\.js|js/cloud\.js|js/utils\.js|js/data\.js|index\.html|playwright\.config\.js)$'
+          if echo "$CHANGED" | grep -qE "$HIGH_IMPACT"; then
+            echo "high-impact shared file changed, running the full suite now instead of waiting for the nightly run"
+            echo "run_full=true" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "extra_args=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Directly-changed/added spec files (excluding the live-Supabase
+          # flow suite and the preview-smoke suite, neither of which the
+          # offline `test` job below is configured to run).
+          DIRECT=$(echo "$CHANGED" | grep -E '^tests/.*\.spec\.js$' | grep -vE '^tests/(flow|preview-smoke)/' || true)
+
+          # Filename-correlated spec files: for every changed js/*.js or
+          # *.html file, match any tests/*<basename>*.spec.js.
+          CORRELATED=""
+          for f in $(echo "$CHANGED" | grep -E '^(js/.*\.js|.*\.html)$' || true); do
+            base=$(basename "$f" | sed -E 's/\.(js|html)$//')
+            hits=$(ls tests/*"$base"*.spec.js 2>/dev/null || true)
+            CORRELATED="$CORRELATED
+          $hits"
+          done
+
+          ALL=$(printf '%s\n%s' "$DIRECT" "$CORRELATED" | grep -v '^[[:space:]]*$' | sed 's/^[[:space:]]*//' | sort -u)
+          if [ -z "$ALL" ]; then
+            echo "no relevant offline spec files for this diff, skipping the offline suite (nightly run still covers it)"
+            echo "run_full=false" >> "$GITHUB_OUTPUT"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "extra_args=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          FLAT=$(echo "$ALL" | tr '\n' ' ')
+          echo "Fast-path spec files: $FLAT"
+          echo "run_full=false" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "extra_args=$FLAT" >> "$GITHUB_OUTPUT"
+
   # ── E2E browser tests ───────────────────────────────────────────────────────
   test:
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -215,8 +316,14 @@ jobs:
       - name: Install Playwright browsers (WebKit + Chromium)
         run: npx playwright install --with-deps webkit chromium
 
+      # extra_args is empty on a full run (push/schedule/high-impact PR),
+      # unchanged from before this change; on a normal PR it's the fast-path
+      # spec file list from the plan job above, so --shard still divides
+      # exactly what's actually running 6 ways (some shards may see zero
+      # matching tests when the list is short — a clean, fast, valid pass,
+      # not a hang).
       - name: Run Playwright tests (shard ${{ matrix.shard }}/6)
-        run: npx playwright test --shard=${{ matrix.shard }}/6
+        run: npx playwright test --shard=${{ matrix.shard }}/6 ${{ needs.plan.outputs.extra_args }}
         env:
           CI: true
 
