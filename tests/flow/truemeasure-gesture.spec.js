@@ -12,23 +12,27 @@
 // dispatchEvent() JS events would not exercise MapKit's own gesture
 // recognizers, which are the exact thing under test.
 //
-// Chromium-only: CDP touch injection is a Chromium capability. No sign-in:
-// the map surface needs no account (openTrueMeasure with no client addr falls
-// back to the default US-center coordinate), and the probe never saves
-// anything, so it leaves zero rows behind (§12.7 moot).
+// Chromium-only: CDP touch injection is a Chromium capability. Signs in with
+// the dedicated flow-test account — NOT because the probe touches account
+// data (it never saves anything, zero rows left behind, §12.7 moot), but
+// because the live app stacks its sign-in overlay above everything when
+// unauthenticated, and the first probe rounds' CDP touches all landed on that
+// login wall instead of the map.
 const { test, expect } = require('./flow-test');
+const { needsLiveCreds, signIn } = require('./live-helpers');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 test.describe('TrueMeasure gesture probe (real MapKit)', () => {
+  test.skip(!needsLiveCreds(), 'live Supabase creds not configured');
   test.skip(({ browserName }) => browserName !== 'chromium', 'CDP touch injection is Chromium-only');
 
   test('tap placement, hold-zoom engagement, camera hold during drag, drop accuracy', async ({ page, context }) => {
-    test.setTimeout(120000);
+    test.setTimeout(150000);
     const errors = [];
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await signIn(page);
     await page.waitForFunction(() => typeof openTrueMeasure === 'function', null, { timeout: 30000 });
     await page.waitForFunction(() => typeof _mapkitReady !== 'undefined' && _mapkitReady === true, null, { timeout: 30000 });
 

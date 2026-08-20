@@ -4,6 +4,7 @@
 // log as base64 so the operator can pick house-corner/lawn pixel coordinates
 // for the scripted trace run. Chromium-only, no sign-in, writes no rows.
 const { test } = require('./flow-test');
+const { needsLiveCreds, signIn } = require('./live-helpers');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -13,11 +14,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const SPAN = 0.0008;
 
 test.describe('TrueMeasure recon (real address framing)', () => {
+  test.skip(!needsLiveCreds(), 'live Supabase creds not configured');
   test.skip(({ browserName }) => browserName !== 'chromium', 'companion to the chromium CDP trace');
 
   test('frame 2015 SW Randolph and emit the scene', async ({ page }) => {
-    test.setTimeout(120000);
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    test.setTimeout(150000);
+    // Signed in so the login overlay doesn't cover the map (first recon run
+    // screenshotted the sign-in wall, not the satellite scene).
+    await signIn(page);
     await page.waitForFunction(() => typeof openTrueMeasure === 'function', null, { timeout: 30000 });
     await page.waitForFunction(() => typeof _mapkitReady !== 'undefined' && _mapkitReady === true, null, { timeout: 30000 });
 
