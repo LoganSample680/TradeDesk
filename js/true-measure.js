@@ -447,7 +447,22 @@ function _tmCoordToPagePt(lat,lng){
 // screenshot loupe, MapKit's tiles aren't guaranteed CORS-readable for
 // drawImage/getImageData, so a true magnifying-glass duplicate isn't safe.
 function _tmInitPrecisionGesture(map,wrap){
-  const THRESH=8,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70;
+  // THRESH decides hold-vs-pan ONCE, permanently, for the whole touch: the
+  // instant raw drift crosses it, moved=true and cancelTimer() fire (see the
+  // pointermove listener below), the hold timer can never fire again for
+  // this touch, and every remaining touchmove for it is handed to MapKit's
+  // native pan uninterrupted (this file's own touchmove listener only
+  // swallows events while !active && !moved). 8px has no allowance for
+  // ordinary hand tremor over the FULL 420ms HOLD_MS a genuine hold-and-drop
+  // has to survive without tripping it — a thumb pressed down and held for
+  // nearly half a second while aiming at a specific point routinely drifts
+  // more than a couple millimeters even when the user's intent is "hold
+  // still," not "pan" (owner report 2026-08-20: attempting to hold-and-drop
+  // a point panned the map instead of zooming in). Raised to a standard
+  // touch-slop range (~20px) so normal tremor during the hold's own window
+  // survives; an intentional pan is still unmistakably past this in the
+  // first couple frames of a real drag.
+  const THRESH=20,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70;
   let downX=0,downY=0,moved=false,active=false,timer=null,suppressTouchEnd=false;
   let holdStartDigi=1,pinchOwn=false,pinchD0=0,pinchDigi0=1,pinchCam0=null;
   // The deliberate, SETTLED resting digi level, distinct from _tmCurrentDigi()

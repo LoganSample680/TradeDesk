@@ -201,13 +201,13 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
   // touchStart then touchEnd with ZERO touchmove events in between, which a
   // real finger can never do (a few pixels of hand tremor between touchdown
   // and liftoff is unavoidable). The app's own tap-vs-hold logic only
-  // classifies a touch as a "drag" once it crosses THRESH (8px in
-  // js/true-measure.js), but MapKit's own native pan-gesture recognizer has
-  // no obligation to share that threshold — a touchmove comfortably under
-  // OUR 8px could still be enough to trip MapKit's, silently panning the
-  // camera under the finger before the tap's coordinate conversion runs.
-  // This fires a real touchMove (well under THRESH) between touchStart and
-  // touchEnd on every tap, the one thing every prior probe never did.
+  // classifies a touch as a "drag" once it crosses THRESH (js/true-measure.js),
+  // but MapKit's own native pan-gesture recognizer has no obligation to share
+  // that threshold — a touchmove comfortably under OUR threshold could still
+  // be enough to trip MapKit's, silently panning the camera under the finger
+  // before the tap's coordinate conversion runs. This fires a real touchMove
+  // (well under THRESH) between touchStart and touchEnd on every tap, the one
+  // thing every prior probe never did.
   test('quick tap survives ordinary finger jitter (sub-threshold touchmove)', async ({ page, context }) => {
     test.setTimeout(60000);
     const errors = [];
@@ -230,7 +230,7 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     });
 
     // Two taps, roofline-corner-ish, each with a small jittery touchmove
-    // (3-4px, well under THRESH's 8px) before lifting.
+    // (3-4px, well under THRESH) before lifting.
     const targets = [
       { x: Math.round(wrapBox.x + wrapBox.w * 0.35), y: Math.round(wrapBox.y + wrapBox.h * 0.35) },
       { x: Math.round(wrapBox.x + wrapBox.w * 0.55), y: Math.round(wrapBox.y + wrapBox.h * 0.55) },
@@ -261,6 +261,68 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
 
     const relevant = errors.filter(realError);
     expect(relevant.length, 'zero console errors during the jitter probe: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
+  });
+
+  // ── Adversarial: ordinary tremor while PRESSING must not cancel the hold ─
+  // Owner report 2026-08-20, live device, right after the jitter-tap fix
+  // above: attempting to hold-and-drop a point panned the map instead of
+  // zooming in. Root cause: THRESH decides hold-vs-pan ONCE, permanently,
+  // for the whole touch — the instant raw drift crosses it, moved=true and
+  // cancelTimer() fire, the hold timer can never fire again for that touch,
+  // and it is handed to MapKit's pan for good. The old THRESH (8px) had no
+  // allowance for the ordinary hand tremor of holding a thumb down for the
+  // FULL 420ms HOLD_MS a genuine hold has to survive — a real thumb pressed
+  // down and held for nearly half a second while aiming routinely drifts
+  // more than that, even when the user's intent is "hold still," not "pan."
+  // This fires small jitter (12-15px: over the OLD 8px threshold, under the
+  // new one) during the press window and asserts the hold still engages.
+  test('holding still (with ordinary tremor) still engages the zoom, does not pan', async ({ page, context }) => {
+    test.setTimeout(60000);
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await signIn(page);
+    await page.waitForFunction(() => typeof openTrueMeasure === 'function', null, { timeout: 30000 });
+    await page.waitForFunction(() => typeof _mapkitReady !== 'undefined' && _mapkitReady === true, null, { timeout: 30000 });
+    await page.evaluate(() => openTrueMeasure({ id: 991237, name: 'Tremor Probe', addr: '' }));
+    await page.waitForFunction(() => typeof _tmState !== 'undefined' && _tmState && !!_tmState.map, null, { timeout: 20000 });
+    await sleep(2000);
+
+    const wrapBox = await page.evaluate(() => {
+      const r = document.getElementById('tm-map').getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const cdp = await context.newCDPSession(page);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', {
+      type, touchPoints: points.map((p) => ({ x: p.x, y: p.y, radiusX: 8, radiusY: 8, force: 1, id: 1 })),
+    });
+
+    const holdX = Math.round(wrapBox.x + wrapBox.w * 0.45);
+    const holdY = Math.round(wrapBox.y + wrapBox.h * 0.45);
+    const preDigi = await page.evaluate(() => (_tmState.digiZoom || 1));
+
+    await touch('touchStart', [{ x: holdX, y: holdY }]);
+    // Ordinary hand tremor spread across the press window: small back-and-
+    // forth drift, never exceeding ~15px from the down point, well past the
+    // old 8px threshold but comfortably under the new one.
+    const jitter = [[5, -4], [-6, 3], [4, 6], [-3, -5], [6, -2], [-4, 4]];
+    for (const [dx, dy] of jitter) {
+      await touch('touchMove', [{ x: holdX + dx, y: holdY + dy }]);
+      await sleep(55); // ~330ms of tremor total, still under HOLD_MS(420)
+    }
+    await sleep(700); // let the hold timer fire and the entrance zoom settle
+    const crossVisible = await page.evaluate(() => document.getElementById('tm-crosshair').style.display === 'block');
+    const digi = await page.evaluate(() => (_tmState.digiZoom || 1));
+    console.log(`[probe] TREMOR-HOLD: crosshair=${crossVisible} preDigi=${preDigi} digi=${digi}`);
+    expect(crossVisible, 'ordinary tremor while pressing must not cancel the hold').toBe(true);
+    expect(digi, 'the hold must still zoom in despite tremor during the press').toBeGreaterThan(preDigi);
+
+    // Release cleanly so this test doesn't leave the gesture engaged.
+    await touch('touchEnd', []);
+    await sleep(400);
+
+    const relevant = errors.filter(realError);
+    expect(relevant.length, 'zero console errors during the tremor-hold probe: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
   });
 
   // ── Adversarial: a real user tracing several corners FAST ────────────────
