@@ -189,6 +189,31 @@ function _geoNotePause(a){
   const ms=Date.parse(a.lastAt)-Date.parse(a.at);
   if(ms>=_GEO_PAUSE_MS&&ms<_GEO_STOP_MS)_geoDriveHadPause=true;
 }
+// ── Park detection: a stationary drive resolves to a job arrival ─────────────
+// Owner design (2026-08-20). The job fence is deliberately tight (600ft,
+// _geoFenceFt) and GPS wander means a truck parked AT the job can read outside
+// it fix after fix: the visit never opens and the drive leg stays open all
+// day. The rule: when a drive is open and the fixes go STATIONARY (below
+// driving speed, clustered within _GEO_PARK_STEP_FT of each other) for a few
+// minutes, that drive is dead, kill it and stamp its end at the moment motion
+// stopped. The cluster's running-mean CENTROID averages the wander out (the
+// "micro point"); if it lands within the fence plus a wander margin of a job,
+// that is an ARRIVAL at that job, backdated to when they parked. Departure
+// then follows the existing rule: the visit persists until driving is
+// detected, exactly the way _geoExitPending already trusts a driving-speed
+// fix immediately ("kill the drive and capture the end time", owner).
+let _geoParkCluster=null;   // {lat,lng,n,sinceMs} running-mean centroid of stationary fixes
+let _geoSoftJob=null;       // {id,lat,lng} centroid lock holding a visit open OUTSIDE the strict fence
+let _geoSoftJobSpeedRun=0;  // consecutive driving-speed fixes seen against the soft lock
+let _geoParkBackdate=null;  // one-shot ISO: the moment motion stopped, consumed by the transition
+// DELIBERATELY under _GEO_STOP_MS (5 min): the park has to resolve BEFORE the
+// same parked dwell matures into an anonymous 'stop' row (_geoSettleStopLeg /
+// _geoCloseStop both trigger at _GEO_STOP_MS), or the minutes at the kerb
+// would be claimed twice, once as an off-job stop and once as backdated job
+// time. Anyone changing either constant must keep this ordering.
+const _GEO_PARK_MS=4*60000;
+const _GEO_PARK_STEP_FT=150;      // fixes within this of the centroid still count as parked
+const _GEO_PARK_JOB_EXTRA_FT=350; // the centroid may sit this far beyond the strict fence
 
 // ── Offline-durable time-entry queue ──────────────────────────────────────────
 // Every arrival→departure record is written to the DEVICE first and drained to
@@ -707,6 +732,83 @@ async function _geoOnPing(pos){
     _geoDrivebyRun++;
     if(!_estab||_geoDrivebyRun>=2){insideId=null;inShop=false;atPlaceId=null;atClientId=null;}
   }else _geoDrivebyRun=0;
+  // ── Soft-lock membership: a parked-outside-the-fence visit stays open ─────
+  // A park-resolved arrival (below) locks the visit to the CENTROID, not the
+  // strict fence: the truck never physically entered the 600ft circle, so
+  // every subsequent wandering fix would read as a departure and the exit
+  // machinery would close the visit they are still on. While the lock holds,
+  // membership is forced back to the job; it releases on TWO consecutive
+  // driving-speed fixes (they pulled out; the same one-phantom-fix debounce
+  // the driveby guard gives an established occupant, and the machine's normal
+  // job-to-null transition plus _geoExitPending's immediate trust of a
+  // driving-speed reading then closes the visit at this very moment), or when
+  // the fixes wander beyond the centroid's own margin, or when the job drops
+  // off today's list.
+  if(!insideId&&_geoSoftJob){
+    if(typeof pos.coords.speed==='number'&&pos.coords.speed>=_GEO_DRIVEBY_SPEED_MPS){
+      _geoSoftJobSpeedRun++;
+      if(_geoSoftJobSpeedRun>=2)_geoSoftJob=null;
+    }else _geoSoftJobSpeedRun=0;
+    if(_geoSoftJob){
+      const _sj=_geoMyJobs().find(j=>String(j.id)===String(_geoSoftJob.id));
+      if(_sj&&_geoDistFt(here,_geoSoftJob)<=_geoFenceFt()+_GEO_PARK_JOB_EXTRA_FT){insideJob=_sj;insideId=_sj.id;}
+      else _geoSoftJob=null;
+    }
+  }
+  // ── Park cluster: an open drive that stopped moving is a dead drive ───────
+  // Only while a drive is open, outside EVERY fence, with a fix trustworthy
+  // enough to act on (_driveAccOk, the same bar the exit machinery uses). A
+  // bad-accuracy fix neither starts, grows, nor clears the cluster: one
+  // coarse indoor fix must not restart the four-minute clock on a real park.
+  if(_geoDriveStartedAt&&!_geoSoftJob&&!insideId&&!inShop&&!atPlaceId&&!atClientId){
+    if(typeof pos.coords.speed==='number'&&pos.coords.speed>=_GEO_DRIVEBY_SPEED_MPS){
+      _geoParkCluster=null;   // still rolling, whatever the positions say
+    }else if(_driveAccOk){
+      if(!_geoParkCluster||_geoDistFt(here,_geoParkCluster)>_GEO_PARK_STEP_FT){
+        _geoParkCluster={lat:here.lat,lng:here.lng,n:1,sinceMs:nowMs};
+      }else{
+        const c=_geoParkCluster;
+        c.lat=(c.lat*c.n+here.lat)/(c.n+1);c.lng=(c.lng*c.n+here.lng)/(c.n+1);c.n++;
+        if(nowMs-c.sinceMs>=_GEO_PARK_MS){
+          // Stationary long enough. Does the centroid sit at a job? Nearest
+          // one inside fence + wander margin wins, same shape as the strict
+          // membership loop above (which already geocoded every job this
+          // ping, so these lookups are cache hits).
+          let pj=null,pjFt=Infinity;
+          for(const j of _geoMyJobs()){
+            const jc=await _geoJobLatLng(j);
+            if(!jc)continue;
+            const ft=_geoDistFt(c,jc);
+            if(ft<=_geoFenceFt()+_GEO_PARK_JOB_EXTRA_FT&&ft<pjFt){pj=j;pjFt=ft;}
+          }
+          if(pj){
+            _geoSoftJob={id:String(pj.id),lat:c.lat,lng:c.lng};
+            _geoSoftJobSpeedRun=0;
+            // The drive died when the truck stopped moving, not when this
+            // resolver noticed four minutes later: the transition below
+            // consumes this to stamp the leg's end AND the arrival there.
+            //
+            // UNLESS the stop machinery already owns the parked minutes: a
+            // late resolve (a job whose geocode only warmed up after
+            // _GEO_STOP_MS, so _geoSettleStopLeg/_geoCloseStop have already
+            // split the leg and will write the 'stop' row) must not claim
+            // the same span again as backdated job time. Then the honest
+            // arrival is simply now.
+            const _anchMs=_geoStopAnchor?Math.max(0,(Date.parse(_geoStopAnchor.lastAt||'')||0)-(Date.parse(_geoStopAnchor.at||'')||0)):0;
+            _geoParkBackdate=(_anchMs>=_GEO_STOP_MS)?null:new Date(c.sinceMs).toISOString();
+            insideJob=pj;insideId=pj.id;   // enter the fence machine NOW
+            _geoParkCluster=null;
+            _geoParkNote('park-resolve',(pj.name||pj.id)+' @'+Math.round(pjFt)+'ft');
+          }
+          // No job in reach: leave everything alone. The existing stop
+          // machinery owns non-job parking, and later pings just keep
+          // folding in and re-checking, which costs nothing extra.
+        }
+      }
+    }
+  }else if(insideId||inShop||atPlaceId||atClientId){
+    _geoParkCluster=null;   // inside a real fence, nothing is anonymous-parked
+  }
   const nowIsoEarly=new Date(nowMs).toISOString();
   // ── Shop dwell, tracked on its own ────────────────────────────────────────
   // Being at the yard logs SHOP TIME, full stop (owner call 2026-08-01). It is
@@ -770,6 +872,10 @@ async function _geoOnPing(pos){
     // reading from a moment ago was wrong, drop it rather than let it confirm
     // a later, unrelated exit against a stale timestamp.
     _geoExitPending=null;
+    // A park backdate is one-shot and belongs to the transition that consumes
+    // it. Reaching this branch means no transition happened, so an unconsumed
+    // backdate is stale and must never stamp a later, unrelated arrival.
+    _geoParkBackdate=null;
     if(cur&&cur.k==='job')_geoWakeAcquire();   // hidden-gap STAY: the unseen time counts
     if(!cur){
       // Still outside everything: accumulate the dwell that makes this a STOP.
@@ -861,14 +967,24 @@ async function _geoOnPing(pos){
       _geoLegOrigin=_geoLastFenceLoc;
     }
     // ── 3. Enter the new one ────────────────────────────────────────────────
+    // PARK BACKDATE (owner design 2026-08-20): when the park resolver forced
+    // this membership, the drive must END at the moment the truck stopped
+    // moving (the stationary cluster's birth), not four minutes later when
+    // the resolver noticed, and the arrival must START there too: "kill the
+    // drive and capture the end time." One-shot: consumed here and nulled
+    // unconditionally, so it can never leak onto a later transition. On
+    // every ordinary entry arriveIso IS nowIso, nothing else changes.
+    const arriveIso=(cur&&_geoParkBackdate)?_geoParkBackdate:nowIso;
+    _geoParkBackdate=null;
     if(cur){
       _geoCollapseDetours();   // unreceipted anonymous stops between here and the last real endpoint are detours
       if(legStart){
-        // nowIso, not null: live it IS now, and a replayed TdGeo buffer fix
-        // carries the moment the arrival actually happened, so the leg's
-        // duration stays honest instead of stretching to the replay moment.
-        if(cur.k==='job')_geoDriveEntry(cur.id,legStart,null,nowIso,legGap,curLoc,legStale);
-        else _geoDriveEntry(null,legStart,cur.name,nowIso,legGap,curLoc,legStale);
+        // arriveIso, not null: live it IS now, a replayed TdGeo buffer fix
+        // carries the moment the arrival actually happened, and a park
+        // resolution carries the moment the truck stopped, so the leg's
+        // duration stays honest instead of stretching to the noticing moment.
+        if(cur.k==='job')_geoDriveEntry(cur.id,legStart,null,arriveIso,legGap,curLoc,legStale);
+        else _geoDriveEntry(null,legStart,cur.name,arriveIso,legGap,curLoc,legStale);
       }
       _geoDriveStartedAt=null;
       _geoDriveReset();
@@ -887,7 +1003,10 @@ async function _geoOnPing(pos){
     }
     // ── 4. Commit the new state ─────────────────────────────────────────────
     _geoCurrentJob=(cur&&cur.k==='job')?insideId:null;
-    _geoArrivedAt=(cur&&cur.k==='job')?nowIso:null;
+    // arriveIso: nowIso everywhere except a park-resolved job arrival, which
+    // starts when the truck stopped. Place/client stamps stay on nowIso, the
+    // park resolver only ever forces JOB membership.
+    _geoArrivedAt=(cur&&cur.k==='job')?arriveIso:null;
     _geoLegAtShop=!!(cur&&cur.k==='shop');
     _geoCurrentPlace=(cur&&cur.k==='place')?cur.id:null;
     _geoPlaceArrivedAt=(cur&&cur.k==='place')?nowIso:null;
@@ -1001,6 +1120,10 @@ async function _geoOnPing(pos){
   // Whatever branch ran, THIS completed ping resolved any hidden gap, a stale
   // marker must never truncate a later, fully-visible close.
   _geoGapHiddenAt=null;
+  // Slow-burn reconciliation rides the ping stream (~10 min cadence). The
+  // scheduling itself is gated on a live watcher inside _geoReconcileSoon,
+  // so fixture worlds driving this handler directly start no timers.
+  if(nowMs-_geoReconLastMs>=_GEO_RECON_EVERY_MS){_geoReconLastMs=nowMs;_geoReconcileSoon();}
   // Stamped AFTER the state machine, so the very ping that opens the drive
   // (already at road speed) lights the banner rather than the one after it.
   if(_geoDriveStartedAt&&!_geoMphHeldZero&&_geoDriveMph*0.44704>=_GEO_DRIVEBY_SPEED_MPS)_geoDriveMovingAt=nowMs;
@@ -1524,6 +1647,9 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // The arrival stamp rides along so the row can show WHEN the trip ran, not
   // just how long: a stale leg passes nothing, its clock times are fiction.
   _geoAutoMileage(_geoLegOrigin,destLoc,legKey,stale?arrived:driveStartedAt,companyVeh,driveMins,stale?null:arrived,obsMiles);
+  // A leg just closed, which is exactly the evidence reconciliation reads:
+  // schedule a debounced pass (no-op unless a live watcher is running).
+  _geoReconcileSoon();
 }
 
 // ── Automatic mileage: the leg we just timed, measured ───────────────────────
@@ -2278,6 +2404,11 @@ function stopGeoTracking(){
   if(_geoCurrentClient&&_geoClientArrivedAt)_geoCloseClientEntry(_geoCurrentClient,_geoClientArrivedAt);
   _geoCurrentJob=null;_geoArrivedAt=null;
   _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;_geoGapHiddenAt=null;_geoExitPending=null;
+  // Park-detection state dies with tracking too: a lock or a half-grown
+  // cluster from this session must never resolve an arrival for the next one
+  // (same reason the job-coordinate cache below is cleared).
+  _geoParkCluster=null;_geoSoftJob=null;_geoSoftJobSpeedRun=0;_geoParkBackdate=null;
+  if(_geoReconTimer){clearTimeout(_geoReconTimer);_geoReconTimer=null;}
   _geoDriveReset();_geoDriveShown=false;
   _geoCurrentClient=null;_geoClientArrivedAt=null;_geoClientCacheMemo=null;
   _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;_geoLegAtShop=false;_geoHomeDwell=null;_geoWasAtHome=false;
@@ -2289,6 +2420,143 @@ function stopGeoTracking(){
   // crew at the old account's site.
   _geoJobCoords={};
   _geoClearOpen();_geoWakeRelease();
+}
+
+// ── Time-log reconciliation off mileage leg timestamps ───────────────────────
+// Owner design (2026-08-20). When live fence detection missed an arrival or a
+// departure, the time log ends up with a missing or absurdly short on-site
+// entry (owner screenshot: a 9-minute row for a multi-hour visit) even though
+// the MILEAGE legs on either side pin the truth: leg N ended AT the job at
+// endedIso, leg N+1 started FROM the same spot at startedIso, so the span
+// between them IS on-site time. This sweeps recent auto legs, finds those
+// job-anchored gaps, and repairs the log: extending a truncated geofence row
+// when one exists, inserting a 'geofence-reconciled' row when nothing does.
+// Never destructive, never claims unobserved overnight hours, and a human's
+// manual clock record always wins.
+const _GEO_RECON_MIN_GAP_MS=5*60000;   // under this the fence machine already told the story
+const _GEO_RECON_EVERY_MS=10*60000;    // slow-burn cadence off the ping stream
+let _geoReconBusy=false;
+let _geoReconTimer=null;
+let _geoReconLastMs=0;
+function _geoReconcileSoon(){
+  // Only from a LIVE tracking session (the same watcher check _geoDriving
+  // makes). Fixture worlds drive _geoOnPing/_geoDriveEntry directly with no
+  // watcher and rewound clocks, and a background timer writing repair rows
+  // mid-test is pure nondeterminism; a real session without a watcher has no
+  // fresh legs to repair anyway. Tests call _geoReconcileFromMileage()
+  // directly. Debounced so a burst of leg closes runs one pass.
+  if(_geoWatchId==null&&_geoNativeWatcherId==null)return;
+  if(_geoReconTimer)return;
+  _geoReconTimer=setTimeout(()=>{_geoReconTimer=null;_geoReconcileFromMileage();},8000);
+}
+async function _geoReconcileFromMileage(){
+  if(_geoReconBusy)return;
+  if(!_supa||!_supaUser)return;
+  if(typeof mileage==='undefined'||!Array.isArray(mileage))return;
+  _geoReconBusy=true;
+  try{
+    // Auto legs by THIS person. logged_by_id is only stamped on employee rows
+    // (autoLogDriveTrip), so the owner matches null, same convention as the
+    // gap-echo guard in _geoDriveEntry. Last 7 days only: repairing the
+    // recent log is the use case, and the deterministic client_key below
+    // keeps re-runs idempotent regardless of how far back this ever looks.
+    const _me=_isEmployee?_supaUser.id:null;
+    const _cutoff=Date.now()-7*86400000;
+    const legs=mileage.filter(m=>m&&m.gps&&m.legKey&&m.startedIso&&m.endedIso&&
+      (m.logged_by_id||null)===_me&&
+      (Date.parse(m.startedIso)||0)>=_cutoff)
+      .slice().sort((a,b)=>String(a.startedIso).localeCompare(String(b.startedIso)));
+    const margin=_geoFenceFt()+_GEO_PARK_JOB_EXTRA_FT;
+    const wins=[];
+    for(let i=0;i<legs.length-1;i++){
+      const A=legs[i],B=legs[i+1];
+      const t1=Date.parse(A.endedIso),t2=Date.parse(B.startedIso);
+      if(!(t1>0&&t2>t1))continue;
+      if(t2-t1<_GEO_RECON_MIN_GAP_MS)continue;
+      // Unobserved hours are never claimed: the same overnight honesty rule
+      // the fence machine applies to inferred legs (_GEO_MAX_INFERRED_LEG_MS,
+      // "keep the miles, drop the hours"). A gap this long is a phone that
+      // was asleep, not a shift.
+      if(t2-t1>_GEO_MAX_INFERRED_LEG_MS)continue;
+      if(!A.toCoord||!B.fromCoord||A.toCoord.lat==null||B.fromCoord.lat==null)continue;
+      // The next leg has to LEAVE from the same spot the last one arrived at,
+      // or the window is not anchored to one place at all.
+      if(_geoDistFt({lat:A.toCoord.lat,lng:A.toCoord.lng},{lat:B.fromCoord.lat,lng:B.fromCoord.lng})>margin)continue;
+      // Which job were they at: nearest one within the fence plus the park
+      // wander margin of where leg A actually ended.
+      let jb=null,jbFt=Infinity;
+      for(const j of _geoMyJobs()){
+        const c=await _geoJobLatLng(j);
+        if(!c)continue;
+        const ft=_geoDistFt({lat:A.toCoord.lat,lng:A.toCoord.lng},c);
+        if(ft<=margin&&ft<jbFt){jb=j;jbFt=ft;}
+      }
+      if(!jb)continue;
+      // A human's clock record always wins: any manual timeEntries row by the
+      // same person overlapping the window means somebody already answered
+      // this question on purpose, skip the whole window. logged_by_uid null
+      // means the owner (js/jobs.js clockIn), same null convention as above.
+      if(typeof timeEntries!=='undefined'&&Array.isArray(timeEntries)&&
+         timeEntries.some(e=>e&&(e.logged_by_uid||null)===_me&&e.start_time&&
+           Date.parse(e.start_time)<t2&&(!e.end_time||Date.parse(e.end_time)>t1)))continue;
+      wins.push({A,B,t1,t2,jobId:String(jb.id)});
+    }
+    if(!wins.length)return;
+    // ONE coverage query for every window: what does the server already hold
+    // for this person across the whole span. On any error, return silently,
+    // offline is normal here and the next trigger retries.
+    let rows=[];
+    try{
+      const loIso=new Date(Math.min.apply(null,wins.map(w=>w.t1))).toISOString();
+      const hiIso=new Date(Math.max.apply(null,wins.map(w=>w.t2))).toISOString();
+      const {data,error}=await _supa.from('job_time_entries')
+        .select('id,client_key,job_id,arrived_at,departed_at,minutes,source')
+        .eq('contractor_user_id',_geoCid()).eq('employee_user_id',_supaUser.id)
+        .lt('arrived_at',hiIso).gt('departed_at',loIso);
+      if(error||!Array.isArray(data))return;
+      rows=data;
+    }catch(_e){return;}
+    for(const w of wins){
+      const span=w.t2-w.t1;
+      const overl=rows.filter(r=>r&&r.arrived_at&&r.departed_at&&
+        Date.parse(r.arrived_at)<w.t2&&Date.parse(r.departed_at)>w.t1);
+      // Coverage counts ON-SITE evidence only: geofence visits (gap-resolved
+      // and reconciled included) and stops. Drive rows are wheel time, a
+      // drive "covering" the window would be the very defect being repaired.
+      let covered=0;
+      for(const r of overl){
+        if(!/^(geofence|stop)/.test(String(r.source||'')))continue;
+        covered+=Math.min(w.t2,Date.parse(r.departed_at))-Math.max(w.t1,Date.parse(r.arrived_at));
+      }
+      if(covered>=span*0.8)continue;   // the log already tells this story
+      // A truncated geofence row for the SAME job: extend the largest one to
+      // the union of its own span and the window, rather than stacking a
+      // second overlapping row next to a 9-minute stub.
+      const cand=overl.filter(r=>/^geofence/.test(String(r.source||''))&&String(r.job_id)===w.jobId&&r.id!=null)
+        .sort((a,b)=>(Date.parse(b.departed_at)-Date.parse(b.arrived_at))-(Date.parse(a.departed_at)-Date.parse(a.arrived_at)))[0];
+      if(cand){
+        const uS=Math.min(w.t1,Date.parse(cand.arrived_at)),uE=Math.max(w.t2,Date.parse(cand.departed_at));
+        try{
+          await _supa.from('job_time_entries').update({
+            arrived_at:new Date(uS).toISOString(),departed_at:new Date(uE).toISOString(),
+            minutes:Math.max(0,Math.round((uE-uS)/60000)),source:'geofence-reconciled'
+          }).eq('id',cand.id);
+        }catch(_e){}
+        continue;
+      }
+      // Nothing to extend: insert the window whole. 'rec-'+A.legKey is
+      // deterministic (the leg key already is, _geoLegKey), so with the
+      // server's unique (contractor_user_id,client_key) index a re-run, or a
+      // coverage fetch racing a slow write, can never double-claim the hours.
+      _geoEnqueue('job_time_entries',{
+        contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+        job_id:w.jobId,arrived_at:w.A.endedIso,departed_at:w.B.startedIso,
+        minutes:Math.max(0,Math.round(span/60000)),dest_place:null,
+        client_key:'rec-'+w.A.legKey,source:'geofence-reconciled'
+      });
+    }
+  }catch(_e){}
+  finally{_geoReconBusy=false;}
 }
 
 // ── Init + two-layer consent ───────────────────────────────────────────────────
