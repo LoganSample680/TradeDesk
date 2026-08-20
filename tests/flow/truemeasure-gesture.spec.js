@@ -12,6 +12,18 @@
 // dispatchEvent() JS events would not exercise MapKit's own gesture
 // recognizers, which are the exact thing under test.
 //
+// GROUND TRUTH RULE (learned the hard way, 2026-08-20): placement assertions
+// must NEVER route through MapKit's converters. Feeding a tap through
+// convertPointOnPageToCoordinate and checking it back through
+// convertCoordinateToPointOnPage is self-referential: a shared frame-origin
+// error cancels out and reads 0.0px while the rendered shape sits a house
+// away (the owner's displaced-shape bug hid behind exactly that check).
+// Placement is now asserted against the app's OWN rendered SVG dot layer
+// (#tm-draw-svg .tm-dot): the dot's getBoundingClientRect is literally what
+// the user sees. Scale is asserted against a meters-ratio ground truth via
+// _tmUnproject. MapKit's converter appears below only where its DISAGREEMENT
+// with the own projection is itself the thing being measured.
+//
 // Chromium-only: CDP touch injection is a Chromium capability. Signs in with
 // the dedicated flow-test account — NOT because the probe touches account
 // data (it never saves anything, zero rows left behind, §12.7 moot), but
@@ -83,7 +95,24 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
       touchPoints: points.map((p) => ({ x: p.x, y: p.y, radiusX: 8, radiusY: 8, force: 1, id: 1 })),
     });
 
+    // §7.1: the retired MapKit-converter pipeline must be GONE, not just
+    // unused: these were global entry points (top-level function
+    // declarations, so bare-identifier typeof is the right probe, same
+    // script-scope rule as _tmState above).
+    const legacy = await page.evaluate(() => ({
+      pageToCoord: typeof _tmPageToCoord,
+      coordToPagePt: typeof _tmCoordToPagePt,
+      unscalePt: typeof _tmUnscalePt,
+      scalePt: typeof _tmScalePt,
+      updateAreaLabel: typeof _tmUpdateAreaLabel,
+    }));
+    for (const [name, t] of Object.entries(legacy)) {
+      expect(t, `retired converter-path global ${name} must be deleted`).toBe('undefined');
+    }
+
     // ── A: a quick tap places a point directly under the finger ──────────
+    // Ground truth = the rendered SVG dot's own DOM position (what the user
+    // sees), never MapKit's converter (see the header comment).
     const tapX = Math.round(wrapBox.x + wrapBox.w * 0.5);
     const tapY = Math.round(wrapBox.y + wrapBox.h * 0.4);
     await touch('touchStart', [{ x: tapX, y: tapY }]);
@@ -93,13 +122,17 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     const afterTap = await page.evaluate(() => {
       const p = _tmState.points[_tmState.points.length - 1];
       if (!p) return { placed: false };
-      const pt = _tmState.map.convertCoordinateToPointOnPage(new mapkit.Coordinate(p.lat, p.lng));
-      return { placed: true, pts: _tmState.points.length, screenX: pt.x, screenY: pt.y };
+      const dots = document.querySelectorAll('#tm-draw-svg .tm-dot');
+      const dot = dots[dots.length - 1];
+      if (!dot) return { placed: true, rendered: false };
+      const r = dot.getBoundingClientRect();
+      return { placed: true, rendered: true, pts: _tmState.points.length, screenX: r.x + r.width / 2, screenY: r.y + r.height / 2 };
     });
     expect(afterTap.placed, 'quick tap must place a point').toBe(true);
+    expect(afterTap.rendered, 'the placed point must render as a dot in the own SVG layer').toBe(true);
     const tapErr = Math.hypot(afterTap.screenX - tapX, afterTap.screenY - tapY);
     console.log(`[probe] TAP: target=(${tapX},${tapY}) landed=(${afterTap.screenX.toFixed(1)},${afterTap.screenY.toFixed(1)}) errPx=${tapErr.toFixed(1)}`);
-    expect(tapErr, 'tap point must land under the finger (px)').toBeLessThan(12);
+    expect(tapErr, 'the rendered dot must sit under the finger (px)').toBeLessThan(12);
 
     // ── B: press-and-hold engages the precision zoom-in ──────────────────
     const holdX = Math.round(wrapBox.x + wrapBox.w * 0.35);
@@ -118,17 +151,21 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     expect(crossVisible, 'crosshair must appear on hold').toBe(true);
     expect(effective, 'hold must magnify ~1/ZOOM_FACTOR overall (camera + digital)').toBeGreaterThan(2.5);
 
-    // Round-trip the conversion helpers while the digital zoom is applied:
-    // a visual point -> coordinate -> back must land on itself, or every
-    // placement at digital zoom is silently off.
+    // Round-trip the OWN projection while the digital zoom is applied. This
+    // is a consistency check by construction (_tmProject/_tmUnproject are
+    // exact inverses), not ground truth: the ground truth for placement is
+    // the SVG-dot checks and the meters-ratio scale checks in this file. It
+    // still catches a broken inverse (sign error, digi applied on one side
+    // only) instantly.
     const rt = await page.evaluate(([x, y]) => {
-      const c = _tmPageToCoord(x, y);
-      const p = _tmCoordToPagePt(c.latitude, c.longitude);
-      return { dx: p.x - x, dy: p.y - y };
+      const c = _tmUnproject(x, y);
+      const p = _tmProject(c.latitude, c.longitude);
+      const r = document.getElementById('tm-canvas-wrap').getBoundingClientRect();
+      return { dx: r.left + p.x - x, dy: r.top + p.y - y };
     }, [holdX + 30, holdY - 40]);
     const rtErr = Math.hypot(rt.dx, rt.dy);
     console.log(`[probe] ROUNDTRIP at digi=${zoomedDigi.toFixed(2)}: err=${rtErr.toFixed(1)}px`);
-    expect(rtErr, 'point<->coordinate round-trip under digital zoom (px)').toBeLessThan(3);
+    expect(rtErr, 'own-projection round-trip under digital zoom (px)').toBeLessThan(3);
 
     // ── C: dragging while held moves ONLY the crosshair, never the camera ─
     await sleep(400); // let the entrance animation fully settle
@@ -153,12 +190,12 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     const expectedDrop = await page.evaluate(([x, y]) => {
       // The crosshair lives OUTSIDE the digital-zoom layer (visual space,
       // relative to the unscaled canvas frame) — mirror the app's own math:
-      // crosshair screen position, then the digi-aware conversion helper.
+      // crosshair screen position, then the digi-aware own projection.
       const r = document.getElementById('tm-canvas-wrap').getBoundingClientRect();
       const OFFSET_Y = 70;
       const relY = y - r.y;
       const crossY = r.y + Math.max(20, relY - OFFSET_Y);
-      const c = _tmPageToCoord(x, crossY);
+      const c = _tmUnproject(x, crossY);
       return { lat: c.latitude, lng: c.longitude };
     }, [endX, endY]);
     await touch('touchEnd', []);
@@ -168,6 +205,19 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
       return p ? { placed: true, lat: p.lat, lng: p.lng, pts: _tmState.points.length } : { placed: false };
     });
     expect(dropped.placed && dropped.pts === 2, 'hold-release must drop a 2nd point').toBe(true);
+
+    // §7.1, the render half: with a 2-point trace live, MapKit must be
+    // carrying ZERO overlays and ZERO annotations: the trace (and its
+    // labels) render only in the app's own SVG layer now.
+    const mkLayers = await page.evaluate(() => ({
+      overlays: (_tmState.map.overlays || []).length,
+      annotations: (_tmState.map.annotations || []).length,
+      svgDots: document.querySelectorAll('#tm-draw-svg .tm-dot').length,
+    }));
+    console.log(`[probe] RENDER LAYERS: ${JSON.stringify(mkLayers)}`);
+    expect(mkLayers.overlays, 'trace must not render as MapKit overlays anymore').toBe(0);
+    expect(mkLayers.annotations, 'trace labels must not render as MapKit annotations anymore').toBe(0);
+    expect(mkLayers.svgDots, 'both placed points must render as SVG dots').toBe(2);
     const dropErrM = Math.hypot(
       (dropped.lat - expectedDrop.lat) * 111320,
       (dropped.lng - expectedDrop.lng) * 111320 * Math.cos(expectedDrop.lat * Math.PI / 180),
@@ -244,19 +294,24 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
       await sleep(40);
       await touch('touchEnd', []);
       await sleep(400);
+      // Ground truth = the rendered SVG dot, not MapKit's converter (see the
+      // header comment: the converter check was blind to the real bug).
       const p = await page.evaluate(() => {
         const pt = _tmState.points[_tmState.points.length - 1];
         if (!pt) return null;
-        const screen = _tmState.map.convertCoordinateToPointOnPage(new mapkit.Coordinate(pt.lat, pt.lng));
-        return { x: screen.x, y: screen.y };
+        const dots = document.querySelectorAll('#tm-draw-svg .tm-dot');
+        const dot = dots[dots.length - 1];
+        if (!dot) return null;
+        const r = dot.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
       });
       results.push({ target: t, landed: p, errPx: p ? Math.hypot(p.x - t.x, p.y - t.y) : null });
     }
 
     console.log('[probe] JITTER-TAP results:', JSON.stringify(results.map((r) => ({ errPx: r.errPx && +r.errPx.toFixed(1) }))));
     for (const r of results) {
-      expect(r.landed, 'a jittery tap must still place a point').toBeTruthy();
-      expect(r.errPx, 'a jittery tap must still land under the finger, not wherever MapKit panned to (px)').toBeLessThan(12);
+      expect(r.landed, 'a jittery tap must still place a point and render its dot').toBeTruthy();
+      expect(r.errPx, 'a jittery tap\'s rendered dot must sit under the finger, not wherever MapKit panned to (px)').toBeLessThan(12);
     }
 
     const relevant = errors.filter(realError);
@@ -385,7 +440,7 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
       // uses — sampling earlier would measure a still-moving scale the app
       // was never going to use either.
       const target = await page.evaluate(([x, y]) => {
-        const t = _tmPageToCoord(x, y);
+        const t = _tmUnproject(x, y);
         return { lat: t.latitude, lng: t.longitude };
       }, [c.x, c.y]);
       await sleep(60); // well under HOLD_MS(420) — a genuine quick tap
@@ -513,8 +568,10 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
 
     const cx = wrapBox.x + wrapBox.w * 0.5, cy = wrapBox.y + wrapBox.h * 0.5;
     const GAP = 100; // fixed screen-pixel gap, measured before AND after the pinch
+    // Through the OWN projection: this is the scale ground truth for the
+    // same math every real tap now goes through.
     const probePts = () => page.evaluate(([x0, x1, y]) => {
-      const a = _tmPageToCoord(x0, y), b = _tmPageToCoord(x1, y);
+      const a = _tmUnproject(x0, y), b = _tmUnproject(x1, y);
       return { a: { lat: a.latitude, lng: a.longitude }, b: { lat: b.latitude, lng: b.longitude } };
     }, [cx - GAP / 2, cx + GAP / 2, cy]);
 
@@ -569,15 +626,161 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     const tap = await page.evaluate(() => {
       const p = _tmState.points[_tmState.points.length - 1];
       if (!p) return { placed: false };
-      const pt = _tmState.map.convertCoordinateToPointOnPage(new mapkit.Coordinate(p.lat, p.lng));
-      return { placed: true, screenX: pt.x, screenY: pt.y };
+      const dots = document.querySelectorAll('#tm-draw-svg .tm-dot');
+      const dot = dots[dots.length - 1];
+      if (!dot) return { placed: true, rendered: false };
+      const r = dot.getBoundingClientRect();
+      return { placed: true, rendered: true, screenX: r.x + r.width / 2, screenY: r.y + r.height / 2 };
     });
     expect(tap.placed, 'a tap after pinching must still place a point').toBe(true);
+    expect(tap.rendered, 'the post-pinch point must render as an SVG dot').toBe(true);
     const tapErrPx = Math.hypot(tap.screenX - tapX, tap.screenY - tapY);
     console.log(`[probe] POST-PINCH TAP: target=(${tapX},${tapY}) errPx=${tapErrPx.toFixed(1)}`);
-    expect(tapErrPx, 'post-pinch tap must land under the finger (px)').toBeLessThan(12);
+    expect(tapErrPx, 'the post-pinch dot must sit under the finger (px)').toBeLessThan(12);
 
     const relevant = errors.filter(realError);
     expect(relevant.length, 'zero console errors during pinch+tap: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
+  });
+
+  // ── Regression: the owner's exact displaced-shape scenario ───────────────
+  // Live repro 2026-08-20: pinch-zoomed to digi=2.52, tapped his roof's
+  // corners, and the traced box came out roughly the right SIZE but across
+  // the street, while the debug panel's converter round-trip read 0.0px on
+  // every tap. This drives that same scenario end to end and asserts against
+  // the two ground truths the converter check was blind to: (a) every
+  // rendered SVG dot sits under its tap, and (b) the STORED quadrilateral's
+  // centroid, re-projected through _tmProject, sits at the taps' own pixel
+  // centroid (right size AND right place). The camera is pinned to MapKit's
+  // satellite floor first so the two-finger pinch is guaranteed to engage the
+  // app's own digital pinch path (pinchOwn), the exact path that produced
+  // digi=2.52 on the owner's phone.
+  test('digi~2.5 displacement: dots land under the taps and the shape sits where the fingers went', async ({ page, context }) => {
+    test.setTimeout(90000);
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await signIn(page);
+    await page.waitForFunction(() => typeof openTrueMeasure === 'function', null, { timeout: 30000 });
+    await page.waitForFunction(() => typeof _mapkitReady !== 'undefined' && _mapkitReady === true, null, { timeout: 30000 });
+    await page.evaluate(() => openTrueMeasure({ id: 991238, name: 'Displacement Probe', addr: '' }));
+    await page.waitForFunction(() => typeof _tmState !== 'undefined' && _tmState && !!_tmState.map, null, { timeout: 20000 });
+    await sleep(2500);
+
+    const wrapBox = await page.evaluate(() => {
+      const r = document.getElementById('tm-map').getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const cdp = await context.newCDPSession(page);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', {
+      type,
+      touchPoints: points.map((p) => ({ x: p.x, y: p.y, radiusX: 8, radiusY: 8, force: 1, id: p.id || 1 })),
+    });
+    const metersBetween = (a, b) => Math.hypot(
+      (a.lat - b.lat) * 111320,
+      (a.lng - b.lng) * 111320 * Math.cos(a.lat * Math.PI / 180),
+    );
+
+    // Pin the camera at MapKit's satellite floor (the setter clamps 50m up
+    // to ~82.5m) so the pinch below is the app's OWN digital pinch, not
+    // MapKit's camera pinch, matching the owner's phone, which showed
+    // cam=75m (its floor) + digi=2.52.
+    await page.evaluate(() => { _tmState.map.cameraDistance = 50; });
+    await sleep(800);
+
+    // Pre-pinch scale sample for the meters-ratio ground truth.
+    const cx = wrapBox.x + wrapBox.w * 0.5, cy = wrapBox.y + wrapBox.h * 0.5;
+    const GAP = 100;
+    const probePts = () => page.evaluate(([x0, x1, y]) => {
+      const a = _tmUnproject(x0, y), b = _tmUnproject(x1, y);
+      return { a: { lat: a.latitude, lng: a.longitude }, b: { lat: b.latitude, lng: b.longitude } };
+    }, [cx - GAP / 2, cx + GAP / 2, cy]);
+    const before = await probePts();
+    const D1 = metersBetween(before.a, before.b);
+
+    // Real two-finger pinch, 100px -> 250px: the digital pinch tracks the
+    // finger-distance ratio, landing digi≈2.5 (the owner's 2.52).
+    const steps = 8, d0 = 100, d1 = 250;
+    await touch('touchStart', [
+      { id: 1, x: cx - d0 / 2, y: cy },
+      { id: 2, x: cx + d0 / 2, y: cy },
+    ]);
+    for (let i = 1; i <= steps; i++) {
+      const d = d0 + (d1 - d0) * (i / steps);
+      await touch('touchMove', [
+        { id: 1, x: cx - d / 2, y: cy },
+        { id: 2, x: cx + d / 2, y: cy },
+      ]);
+      await sleep(60);
+    }
+    await touch('touchEnd', []);
+    await sleep(400);
+    const digi = await page.evaluate(() => _tmCurrentDigi());
+    const after = await probePts();
+    const D2 = metersBetween(after.a, after.b);
+    const achievedRatio = D1 / D2;
+    console.log(`[probe] DISPLACEMENT setup: digi=${digi.toFixed(2)} D1=${D1.toFixed(2)}m D2=${D2.toFixed(2)}m ratio=${achievedRatio.toFixed(2)}x`);
+    expect(digi, 'the pinch must land in the owner-reported digital-zoom regime').toBeGreaterThan(2);
+    // Camera is pinned at the floor, so the meters-ratio must track digi.
+    expect(achievedRatio).toBeGreaterThan(digi * 0.7);
+    expect(achievedRatio).toBeLessThan(digi * 1.3);
+
+    // Tap 4 corners of a ~60px square, deliberately OFF-CENTER: an origin
+    // error is invisible at the scale center and maximal away from it.
+    const bx = Math.round(wrapBox.x + wrapBox.w * 0.38);
+    const by = Math.round(wrapBox.y + wrapBox.h * 0.36);
+    const sq = [
+      { x: bx, y: by },
+      { x: bx + 60, y: by },
+      { x: bx + 60, y: by + 60 },
+      { x: bx, y: by + 60 },
+    ];
+    const dotErrs = [];
+    for (const t of sq) {
+      await touch('touchStart', [{ x: t.x, y: t.y }]);
+      await sleep(70);
+      await touch('touchEnd', []);
+      await sleep(350);
+      const dot = await page.evaluate(() => {
+        const dots = document.querySelectorAll('#tm-draw-svg .tm-dot');
+        const d = dots[dots.length - 1];
+        if (!d) return null;
+        const r = d.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      });
+      dotErrs.push(dot ? Math.hypot(dot.x - t.x, dot.y - t.y) : null);
+    }
+    console.log('[probe] DISPLACEMENT dot errors (px):', JSON.stringify(dotErrs.map((e) => e === null ? null : +e.toFixed(1))));
+    for (const e of dotErrs) {
+      expect(e, 'every tap must place a point that renders as an SVG dot').not.toBeNull();
+      expect(e, 'every rendered dot must sit under its tap (px)').toBeLessThan(12);
+    }
+
+    // (b) Right PLACE, not merely right size: the stored quadrilateral's
+    // centroid, re-projected through _tmProject, must sit at the taps' own
+    // pixel centroid.
+    const centroid = await page.evaluate(() => {
+      const pts = _tmState.points.slice(-4);
+      const lat = pts.reduce((s, p) => s + p.lat, 0) / pts.length;
+      const lng = pts.reduce((s, p) => s + p.lng, 0) / pts.length;
+      const pr = _tmProject(lat, lng);
+      const r = document.getElementById('tm-canvas-wrap').getBoundingClientRect();
+      return { x: r.left + pr.x, y: r.top + pr.y, n: _tmState.points.length };
+    });
+    const px = sq.reduce((s, p) => s + p.x, 0) / 4, py = sq.reduce((s, p) => s + p.y, 0) / 4;
+    const centErr = Math.hypot(centroid.x - px, centroid.y - py);
+    console.log(`[probe] DISPLACEMENT centroid: expected=(${px},${py}) got=(${centroid.x.toFixed(1)},${centroid.y.toFixed(1)}) errPx=${centErr.toFixed(1)}`);
+    expect(centroid.n, 'all four corners must have placed').toBeGreaterThanOrEqual(4);
+    expect(centErr, 'the traced shape must sit AT the taps, not displaced (px)').toBeLessThan(12);
+
+    // The trace never touches MapKit's render pipeline anymore (§7.1).
+    const mk = await page.evaluate(() => ({
+      overlays: (_tmState.map.overlays || []).length,
+      annotations: (_tmState.map.annotations || []).length,
+    }));
+    expect(mk.overlays, 'zero MapKit overlays: the trace lives in the own SVG layer').toBe(0);
+    expect(mk.annotations, 'zero MapKit annotations: labels live in the own layer too').toBe(0);
+
+    const relevant = errors.filter(realError);
+    expect(relevant.length, 'zero console errors during the displacement probe: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
   });
 });

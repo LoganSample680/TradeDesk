@@ -215,7 +215,7 @@ function _tmPickMethod(id){
 async function openTrueMeasure(c){
   if(!c)return;
   document.getElementById('_style-pick-ov')?.remove();
-  _tmState={c,mode:_tmDefaultMode(),points:[],repeatCount:1,map:null};
+  _tmState={c,mode:_tmDefaultMode(),points:[],repeatCount:1,map:null,previewCoord:null,projAxis:'auto',projCal:null};
 
   const ov=document.createElement('div');
   ov.id='_tm-ov';
@@ -232,6 +232,18 @@ async function openTrueMeasure(c){
     <div id="tm-canvas-wrap" style="flex:1;position:relative;overflow:hidden;background:var(--bg2)">
       <div id="tm-scale" style="position:absolute;inset:0;transform-origin:50% 50%">
         <div id="tm-map" style="position:absolute;inset:0;touch-action:none"></div>
+      </div>
+      <!-- The trace's OWN render layer (owner report 2026-08-20, displaced
+           shapes): every dot, edge, polygon, and label is drawn here via
+           _tmProject, in the SAME frame the tap conversion (_tmUnproject)
+           uses, so finger -> stored point -> rendered dot is consistent by
+           construction. Deliberately OUTSIDE #tm-scale: it is never CSS-
+           scaled, _tmProject applies the digital zoom itself. MapKit only
+           supplies imagery and camera underneath, never trace geometry. -->
+      <div id="tm-draw-layer" style="position:absolute;inset:0;pointer-events:none;z-index:4">
+        <svg id="tm-draw-svg" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible"></svg>
+        <div id="tm-area-label" class="tm-area-label" style="display:none;position:absolute;transform:translate(-50%,-50%);background:var(--ink,#15161a);color:#fff;font-weight:900;padding:8px 14px;border-radius:999px;white-space:nowrap;font-family:var(--font-display,sans-serif);font-size:15px;letter-spacing:-.2px;box-shadow:0 3px 10px rgba(0,0,0,.3);pointer-events:none"></div>
+        <div id="tm-live-label" class="tm-live-label" style="display:none;position:absolute;transform:translate(-50%,-50%);background:rgba(21,22,26,.82);color:#fff;font-weight:800;padding:3px 8px;border-radius:999px;white-space:nowrap;font-family:var(--font-display,sans-serif);box-shadow:0 2px 6px rgba(0,0,0,.25);pointer-events:none"></div>
       </div>
       <div id="tm-unavailable" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:30px;text-align:center;color:var(--text3)">
         <div style="font-size:32px">🛰️</div>
@@ -266,6 +278,7 @@ async function openTrueMeasure(c){
   document.body.appendChild(ov);
   _tmUpdateModeUI();
   await _tmInitMap();
+  _tmStartDrawLoop();
 }
 
 function _tmClose(){
@@ -318,7 +331,15 @@ async function _tmInitMap(){
       showsScale:mapkit.FeatureVisibility.Hidden,
       showsZoomControl:false,
       showsUserLocationControl:false,
+      // Rotation permanently off: _tmProject/_tmUnproject (the app's own
+      // projection, below) assume a top-down, heading-0 camera. Both the
+      // constructor option and the runtime property are set (belt and
+      // braces, MapKit versions differ on which one it honors).
+      isRotationEnabled:false,
+      isRotationAvailable:false,
     });
+    try{map.isRotationEnabled=false;}catch(_e){}
+    try{map.isRotationAvailable=false;}catch(_e){}
     map.region=new mapkit.CoordinateRegion(coord,new mapkit.CoordinateSpan(0.0015,0.0015));
     // No cameraZoomRange set defaults to MapKit's own floor, which isn't
     // close enough to trace a single roof edge or a foundation line by hand
@@ -342,6 +363,12 @@ async function _tmInitMap(){
     // coordinate path for every kind of point placement, not two.
     _tmInitPrecisionGesture(map,wrap);
     _tmState.map=map;
+    // Calibrate the own projection against MapKit's converter ONCE at init
+    // (plus one retry after tiles/layout settle), never per tap: see
+    // _tmCalibrateProjection for why per-tap converter use is exactly the
+    // bug this projection replaces.
+    _tmCalibrateProjection();
+    setTimeout(_tmCalibrateProjection,1500);
   }catch(_e){
     if(fallback)fallback.style.display='flex';
   }
@@ -354,8 +381,9 @@ async function _tmInitMap(){
 // exactly 82.53m). The owner wants to get MUCH closer to place points
 // precisely and explicitly accepts blur, so past the floor the map ELEMENT
 // scales up via CSS (#tm-scale) — upscaled tiles, real geometry. Every
-// point<->coordinate conversion funnels through the helpers below so placed
-// points stay exact at any digital zoom.
+// point<->coordinate conversion funnels through _tmProject/_tmUnproject
+// (below), which fold this digital scale in themselves, so placed points
+// stay exact at any digital zoom.
 const _TM_CAM_FLOOR=83;   // just above the measured 82.53m clamp
 const _TM_DIGI_MAX=8;
 function _tmDigiSet(z,animate){
@@ -369,11 +397,10 @@ function _tmDigiSet(z,animate){
     el.style.transition=animate?'transform .28s cubic-bezier(.22,1,.36,1)':'none';
     el.style.transform=z===1?'':'scale('+z+')';
   }
-  // MapKit's annotation labels live inside the scaled layer — counter-scale
-  // them so the ft2/distance chips stay readable size instead of ballooning.
-  const inv=z===1?'':'scale('+(1/z)+')';
-  if(_tmState.areaLabelEl)_tmState.areaLabelEl.style.transform=inv;
-  if(_tmState.previewLabelEl)_tmState.previewLabelEl.style.transform=inv;
+  // The trace labels live in the app's own draw layer (outside #tm-scale)
+  // and are positioned via _tmProject, which reads the live digi itself, so
+  // no counter-scaling is needed here anymore; the draw loop re-renders them
+  // through the whole 280ms transition.
 }
 // The TRUE current scale, read off the live rendered transform, never the
 // JS target alone. _tmDigiSet's exit/entrance reset ANIMATES over 280ms
@@ -414,53 +441,223 @@ function _tmFreezeDigi(){
   if(el)el.style.transition='none'; // cancel the transition synchronously, no re-animation
   _tmDigiSet(z,false);
 }
-// Visual (finger) page point -> the page point MapKit's converters expect.
-// The CSS scale is around the canvas-wrap center and MapKit is unaware of
-// it, so un-scale around that center first. (The math is identical whether
-// MapKit reads its element position from layout or from a fresh
-// getBoundingClientRect: the scale origin is the box center, so both frames
-// agree — verified by the probe's round-trip check.)
-function _tmUnscalePt(x,y){
+// ── The app's OWN projection: one frame for everything the user sees ───────
+// Root cause of the displaced-shape bug (owner, 2026-08-20, live retests):
+// every placed point routed through MapKit's convertPointOnPageToCoordinate,
+// and every accuracy check routed back through convertCoordinateToPointOnPage,
+// so any shared error in MapKit's cached notion of where its element sits on
+// the page CANCELED OUT (the debug panel's rtErr=0.0px was structurally
+// blind), while the trace the user actually saw was drawn by MapKit's
+// overlay RENDERER in its own internal frame, which does not share that
+// error. With #tm-map inside a CSS-scaled ancestor (the digital zoom) the
+// transform-unaware converters and the renderer disagree by a constant
+// offset: a whole traced shape comes out the right SIZE in the wrong PLACE,
+// exactly what the owner photographed.
+//
+// Fix: never route user-visible geometry through MapKit at all. _tmProject/
+// _tmUnproject below are pure Web Mercator math over map.region (read LIVE
+// on every call, so camera animation and setCenterAnimated are always
+// current), mapped onto #tm-canvas-wrap's LAYOUT box with the digital zoom
+// applied around the wrap center via _tmCurrentDigi(). The trace itself is
+// rendered by _tmRenderTrace into the app's own SVG layer using _tmProject,
+// so finger -> stored lat/lng -> rendered dot is self-consistent BY
+// CONSTRUCTION: there is no second frame left to disagree with.
+// Latitude uses true Mercator y (not linear degrees) so tall spans don't
+// bow; longitude is linear in the span, per Web Mercator.
+const _TM_MAX_MERC_LAT=85.05112878;
+function _tmMercY(latDeg){
+  const lat=Math.max(-_TM_MAX_MERC_LAT,Math.min(_TM_MAX_MERC_LAT,latDeg))*Math.PI/180;
+  return Math.log(Math.tan(Math.PI/4+lat/2));
+}
+function _tmMercLat(y){
+  return (2*Math.atan(Math.exp(y))-Math.PI/2)*180/Math.PI;
+}
+// Live projection basis: region center + per-axis scale (CSS px per Mercator
+// radian, the unit in which Web Mercator x and y are commensurate) against
+// the wrap's UNSCALED layout box. Returns null when the map/wrap aren't
+// usable (local fallback mode, zero-size layout, degenerate span).
+function _tmProjBase(){
+  const map=_tmState&&_tmState.map;
+  const wrap=document.getElementById('tm-canvas-wrap');
+  if(!map||!wrap)return null;
+  let reg=null;
+  try{reg=map.region;}catch(_e){return null;}
+  if(!reg||!reg.center||!reg.span)return null;
+  const w=wrap.clientWidth,h=wrap.clientHeight;
+  const lngRad=reg.span.longitudeDelta*Math.PI/180;
+  const mercSpan=_tmMercY(reg.center.latitude+reg.span.latitudeDelta/2)-_tmMercY(reg.center.latitude-reg.span.latitudeDelta/2);
+  if(!(w>0)||!(h>0)||!(lngRad>0)||!(mercSpan>0))return null;
+  return {
+    sx:w/lngRad,      // x axis honored: longitudeDelta spans the width
+    sy:h/mercSpan,    // y axis honored: latitudeDelta spans the height
+    cx:w/2,cy:h/2,
+    cLat:reg.center.latitude,cLng:reg.center.longitude,
+  };
+}
+// Which axis MapKit actually fits map.region to on a non-square element is
+// the one EMPIRICAL unknown here (if the region READ reflects the true
+// displayed region, sx and sy agree and it doesn't matter). Web Mercator is
+// conformal, so the real scale is one isotropic number; _tmCalibrateProjection
+// auto-detects the axis from MapKit's converter (delta-based, so immune to
+// the converter's origin error) and stores it in _tmState.projAxis. Until
+// calibration lands, 'auto' assumes fit-inside (both deltas fully visible),
+// i.e. the smaller of the two candidate scales.
+function _tmProjS(k){
+  const axis=(_tmState&&_tmState.projAxis)||'auto';
+  if(axis==='x')return k.sx;
+  if(axis==='y')return k.sy;
+  if(axis==='both')return (k.sx+k.sy)/2;
+  return Math.min(k.sx,k.sy);
+}
+// lat/lng -> wrap-local layout px, no calibration offset, no digital zoom.
+// The building block calibration itself needs; everything else uses
+// _tmProject/_tmUnproject below.
+function _tmProjectRaw(lat,lng,k){
+  k=k||_tmProjBase();
+  if(!k)return null;
+  const s=_tmProjS(k);
+  return {
+    x:k.cx+((lng-k.cLng)*Math.PI/180)*s,
+    y:k.cy-(_tmMercY(lat)-_tmMercY(k.cLat))*s,
+  };
+}
+// lat/lng -> wrap-local VISUAL px (what the user sees: calibration offset
+// applied in the unscaled frame, then the live digital zoom around the wrap
+// center, matching #tm-scale's transform-origin:50% 50%).
+function _tmProject(lat,lng){
+  const k=_tmProjBase();
+  if(!k)return null;
+  const p=_tmProjectRaw(lat,lng,k);
+  const cal=_tmState&&_tmState.projCal;
+  if(cal&&cal.applied){p.x+=cal.dx;p.y+=cal.dy;}
   const z=_tmCurrentDigi();
-  if(z===1)return {x,y};
-  const r=document.getElementById('tm-canvas-wrap').getBoundingClientRect();
-  const cx=r.left+r.width/2,cy=r.top+r.height/2;
-  return {x:cx+(x-cx)/z,y:cy+(y-cy)/z};
+  if(z!==1){
+    p.x=k.cx+(p.x-k.cx)*z;
+    p.y=k.cy+(p.y-k.cy)*z;
+  }
+  return p;
 }
-function _tmScalePt(x,y){
+// Viewport client px (e.clientX/e.clientY space, same as the retired
+// _tmPageToCoord took) -> {latitude,longitude}. Exact inverse of _tmProject:
+// wrap-local, un-digital-zoom around the center, un-calibrate, invert the
+// Mercator mapping.
+function _tmUnproject(x,y){
+  const k=_tmProjBase();
+  const wrap=document.getElementById('tm-canvas-wrap');
+  if(!k||!wrap)return null;
+  const r=wrap.getBoundingClientRect();
+  let lx=x-r.left,ly=y-r.top;
   const z=_tmCurrentDigi();
-  if(z===1)return {x,y};
-  const r=document.getElementById('tm-canvas-wrap').getBoundingClientRect();
-  const cx=r.left+r.width/2,cy=r.top+r.height/2;
-  return {x:cx+(x-cx)*z,y:cy+(y-cy)*z};
+  if(z!==1){
+    lx=k.cx+(lx-k.cx)/z;
+    ly=k.cy+(ly-k.cy)/z;
+  }
+  const cal=_tmState&&_tmState.projCal;
+  if(cal&&cal.applied){lx-=cal.dx;ly-=cal.dy;}
+  const s=_tmProjS(k);
+  return {
+    latitude:_tmMercLat(_tmMercY(k.cLat)+(k.cy-ly)/s),
+    longitude:k.cLng+((lx-k.cx)/s)*180/Math.PI,
+  };
 }
-function _tmPageToCoord(x,y){
-  const p=_tmUnscalePt(x,y);
-  return _tmState.map.convertPointOnPageToCoordinate(new DOMPoint(p.x,p.y));
-}
-function _tmCoordToPagePt(lat,lng){
-  const p=_tmState.map.convertCoordinateToPointOnPage(new mapkit.Coordinate(lat,lng));
-  return _tmScalePt(p.x,p.y);
+// One-shot calibration at map init (digi=1, frames still coincident):
+// samples MapKit's converter at two known page points and uses it two ways,
+// never per tap (per-tap converter use IS the retired bug):
+//   1. SCALE/axis detect: the converter's implied px-per-Mercator-radian is
+//      computed from the DELTA between the two samples, which any constant
+//      origin error cancels out of. Whichever region-derived axis scale
+//      (sx/sy) matches it is the axis MapKit honors.
+//   2. ORIGIN: if the two samples disagree with the own projection by the
+//      SAME pixel offset (a pure constant), that offset corrects the
+//      projection origin, turning the converter into a one-time calibration
+//      input immune to whatever per-tap frame drift it develops later.
+// Results (or the refusal to apply them) are logged to the tm-debug panel.
+function _tmCalibrateProjection(){
+  try{
+    if(!_tmState||!_tmState.map)return;
+    if(_tmCurrentDigi()!==1)return; // only calibrate on a clean, unscaled frame
+    const map=_tmState.map;
+    const wrap=document.getElementById('tm-canvas-wrap');
+    const k=_tmProjBase();
+    if(!wrap||!k)return;
+    const r=wrap.getBoundingClientRect();
+    const OX=80,OY=60;
+    const samples=[{x:k.cx,y:k.cy},{x:k.cx+OX,y:k.cy+OY}];
+    const conv=samples.map(p=>map.convertPointOnPageToCoordinate(new DOMPoint(r.left+p.x,r.top+p.y)));
+    if(!conv[0]||!conv[1])return;
+    const dLngRad=(conv[1].longitude-conv[0].longitude)*Math.PI/180; // +OX px east => positive
+    const dMerc=_tmMercY(conv[0].latitude)-_tmMercY(conv[1].latitude); // +OY px south => positive
+    if(!(dLngRad>0)||!(dMerc>0))return; // converter gave nonsense, keep 'auto'
+    const sConv=(OX/dLngRad+OY/dMerc)/2;
+    // Axis pick, in log space so 2x-off and half-off weigh the same.
+    const ratio=k.sx/k.sy;
+    let axis='both';
+    if(Math.abs(Math.log(ratio))>0.01){
+      axis=Math.abs(Math.log(k.sx/sConv))<=Math.abs(Math.log(k.sy/sConv))?'x':'y';
+    }
+    _tmState.projAxis=axis;
+    // Constant-offset check against the now-axis-corrected raw projection.
+    const deltas=samples.map((p,i)=>{
+      const pr=_tmProjectRaw(conv[i].latitude,conv[i].longitude,null);
+      return pr?{dx:p.x-pr.x,dy:p.y-pr.y}:null;
+    });
+    if(!deltas[0]||!deltas[1])return;
+    const spread=Math.hypot(deltas[0].dx-deltas[1].dx,deltas[0].dy-deltas[1].dy);
+    if(spread<2){
+      _tmState.projCal={dx:(deltas[0].dx+deltas[1].dx)/2,dy:(deltas[0].dy+deltas[1].dy)/2,applied:true,spread};
+    }else{
+      // Not a constant: applying it would smear a scale mismatch into the
+      // origin. Leave uncorrected and let the per-tap dConv logging show it.
+      _tmState.projCal={dx:0,dy:0,applied:false,spread};
+    }
+    const el=document.getElementById('tm-debug');
+    if(el){
+      const cal=_tmState.projCal;
+      el.textContent='CAL axis='+axis+' sx='+k.sx.toFixed(0)+' sy='+k.sy.toFixed(0)+' sConv='+sConv.toFixed(0)+
+        ' off=('+cal.dx.toFixed(1)+','+cal.dy.toFixed(1)+')px spread='+spread.toFixed(1)+'px applied='+cal.applied+
+        '\n'+el.textContent;
+    }
+  }catch(_e){}
 }
 // TEMPORARY diagnostic (see the tm-debug panel comment in openTrueMeasure):
-// records exactly what went into and came out of one point's coordinate
-// conversion, plus a round-trip check (coord -> page point, compared back
-// against the original tap), so a live repro shows real numbers instead of
-// a screenshot to reason about blind. Remove this and its call sites once
-// the real cause is confirmed and fixed.
+// logs, for one placed point, the OWN-projection round trip (should be ~0 by
+// construction) AND MapKit's converter answer for the same tap, plus the
+// pixel/meter delta between the two. That delta IS the measured frame
+// disagreement between MapKit's converters and reality; the next live repro
+// reads the confirmation (or refutation) straight off the screen. Remove
+// once the fix is confirmed live.
 function _tmDebugSnap(label,x,y,coord){
   try{
     const el=document.getElementById('tm-debug');
-    if(!el||!_tmState||!_tmState.map||!coord)return;
+    if(!el||!_tmState||!coord)return;
     const map=_tmState.map;
-    const rt=_tmCoordToPagePt(coord.latitude,coord.longitude);
-    const rtErr=Math.hypot(rt.x-x,rt.y-y);
-    const r=document.getElementById('tm-canvas-wrap').getBoundingClientRect();
-    const line=label+' tap=('+x.toFixed(0)+','+y.toFixed(0)+') rt=('+rt.x.toFixed(0)+','+rt.y.toFixed(0)+
-      ') rtErr='+rtErr.toFixed(1)+'px dpr='+(window.devicePixelRatio||1)+' digi='+_tmCurrentDigi().toFixed(2)+
-      ' rect=('+r.left.toFixed(0)+','+r.top.toFixed(0)+' '+r.width.toFixed(0)+'x'+r.height.toFixed(0)+')'+
-      ' cam='+Math.round(map.cameraDistance||0)+'m ctr=('+map.center.latitude.toFixed(5)+','+map.center.longitude.toFixed(5)+')'+
-      ' pt=('+coord.latitude.toFixed(6)+','+coord.longitude.toFixed(6)+')';
+    const wrap=document.getElementById('tm-canvas-wrap');
+    if(!wrap)return;
+    const r=wrap.getBoundingClientRect();
+    const own=_tmProject(coord.latitude,coord.longitude);
+    const ownErr=own?Math.hypot(r.left+own.x-x,r.top+own.y-y):-1;
+    let convTxt=' conv=n/a';
+    if(map){
+      try{
+        // Feed the converter the same unscaled point the retired pipeline
+        // would have (the old _tmUnscalePt math, inlined).
+        const z=_tmCurrentDigi();
+        const ccx=r.left+r.width/2,ccy=r.top+r.height/2;
+        const cv=map.convertPointOnPageToCoordinate(new DOMPoint(ccx+(x-ccx)/z,ccy+(y-ccy)/z));
+        const cvPx=_tmProject(cv.latitude,cv.longitude);
+        const dPx=(cvPx&&own)?Math.hypot(cvPx.x-own.x,cvPx.y-own.y):-1;
+        const dM=Math.hypot(
+          (cv.latitude-coord.latitude)*111320,
+          (cv.longitude-coord.longitude)*111320*Math.cos(coord.latitude*Math.PI/180));
+        convTxt=' conv=('+cv.latitude.toFixed(6)+','+cv.longitude.toFixed(6)+') dConv='+dPx.toFixed(1)+'px/'+dM.toFixed(2)+'m';
+      }catch(_e){}
+    }
+    const cal=_tmState.projCal||{};
+    const line=label+' tap=('+x.toFixed(0)+','+y.toFixed(0)+') pt=('+coord.latitude.toFixed(6)+','+coord.longitude.toFixed(6)+
+      ') ownErr='+ownErr.toFixed(1)+'px digi='+_tmCurrentDigi().toFixed(2)+
+      ' axis='+((_tmState.projAxis)||'auto')+' cal='+(cal.applied?('('+cal.dx.toFixed(1)+','+cal.dy.toFixed(1)+')'):'off')+
+      ' cam='+Math.round((map&&map.cameraDistance)||0)+'m rot='+(+((map&&map.rotation)||0)).toFixed(1)+
+      convTxt;
     el.textContent=line+'\n'+el.textContent;
   }catch(_e){}
 }
@@ -529,7 +726,7 @@ function _tmInitPrecisionGesture(map,wrap){
   function crosshairCoord(x,y){
     const r=frameEl.getBoundingClientRect();
     const crossY=Math.max(20,y-OFFSET_Y);
-    return _tmPageToCoord(r.left+x,r.top+crossY);
+    return _tmUnproject(r.left+x,r.top+crossY);
   }
   function exitPrecision(){
     active=false;
@@ -537,9 +734,11 @@ function _tmInitPrecisionGesture(map,wrap){
     _tmDigiSet(holdStartDigi,true); // release the hold's digital close-up
     restDigi=holdStartDigi; // the ease's committed target, not its mid-flight visual
     _tmClearPreview();
-    // Mirror of the lock below: give the map's own gestures back once the
+    // Mirror of the lock below: give the map's own pan back once the
     // hold-drag ends, whether it ended by dropping a pin or by cancelling.
-    try{map.isScrollEnabled=true;map.isRotationEnabled=true;}catch(_e){}
+    // Rotation stays off permanently (_tmInitMap): the projection assumes
+    // heading 0.
+    try{map.isScrollEnabled=true;}catch(_e){}
   }
   wrap.addEventListener('pointerdown',e=>{
     if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;
@@ -556,7 +755,7 @@ function _tmInitPrecisionGesture(map,wrap){
         // are page-relative (include document scroll) and land wrong the
         // moment this fixed-position overlay sits over a scrolled page.
         const r=frameEl.getBoundingClientRect();
-        const coord=_tmPageToCoord(r.left+downX,r.top+downY);
+        const coord=_tmUnproject(r.left+downX,r.top+downY);
         // The committed RESTING target (see restDigi above), not
         // _tmCurrentDigi()'s live visual value: a hold fired again before the
         // previous one's 280ms ease-back-out finished must still start from
@@ -570,8 +769,10 @@ function _tmInitPrecisionGesture(map,wrap){
         holdStartDigi=restDigi;
         // Recenter on the pressed point (the digital scale magnifies around
         // the frame CENTER, so without this an off-center press would zoom
-        // toward the middle of the screen instead of the finger).
-        map.setCenterAnimated(coord,true);
+        // toward the middle of the screen instead of the finger). The own
+        // projection reads map.region live, so this animation is always
+        // tracked, never raced.
+        if(coord)map.setCenterAnimated(new mapkit.Coordinate(coord.latitude,coord.longitude),true);
         // The close-up is FULLY digital, the camera distance is never
         // touched. Two probe rounds on the live app showed
         // setCameraDistanceAnimated contributing exactly nothing here
@@ -652,7 +853,7 @@ function _tmInitPrecisionGesture(map,wrap){
         // Convert while the hold's digital zoom is still applied, THEN
         // exitPrecision (which releases it) — the crosshair the user aimed
         // with was on the zoomed view.
-        coord=_tmPageToCoord(r.left+p.x,r.top+crossY);
+        coord=_tmUnproject(r.left+p.x,r.top+crossY);
         _tmDebugSnap('HOLD',r.left+p.x,r.top+crossY,coord);
       }catch(_e){}
       exitPrecision();
@@ -671,9 +872,9 @@ function _tmInitPrecisionGesture(map,wrap){
     e.preventDefault();
     suppressTouchEnd=true;
     try{
-      const coord=_tmPageToCoord(e.clientX,e.clientY);
+      const coord=_tmUnproject(e.clientX,e.clientY);
       _tmDebugSnap('TAP',e.clientX,e.clientY,coord);
-      _tmAddPoint(coord.latitude,coord.longitude);
+      if(coord)_tmAddPoint(coord.latitude,coord.longitude);
     }catch(_e){}
   },{capture:true});
   wrap.addEventListener('pointercancel',e=>{
@@ -814,101 +1015,145 @@ function _tmUndo(){
 
 function _tmRedraw(){
   if(!_tmState)return;
-  const {map,points,mode}=_tmState;
-  if(map){
-    (map.overlays||[]).slice().forEach(o=>map.removeOverlay(o));
-    if(points.length>=2){
-      const coords=points.map(p=>new mapkit.Coordinate(p.lat,p.lng));
-      const style=new mapkit.Style({strokeColor:'#2D5DA8',lineWidth:3,fillColor:mode==='area'?'#2D5DA8':undefined,fillOpacity:mode==='area'?0.28:0});
-      const overlay=(mode==='area'&&points.length>=3)
-        ?new mapkit.PolygonOverlay(coords,{style})
-        :new mapkit.PolylineOverlay(coords,{style});
-      map.addOverlay(overlay);
-    }
-    _tmUpdateAreaLabel();
-  }
-  document.getElementById('tm-undo').style.display=points.length?'block':'none';
+  _tmRenderTrace();
+  document.getElementById('tm-undo').style.display=_tmState.points.length?'block':'none';
   _tmUpdateReadout();
 }
 
-// Total-sqft label smack in the middle of a completed shape (owner ask
-// 2026-08-19): lives as a MapKit Annotation, not an overlay, so it survives
-// the wipe-and-rebuild above and is managed here explicitly instead. Moves/
-// updates in place once traced, removed the moment it stops being a real
-// polygon (mode switch, undo below 3 points).
-function _tmUpdateAreaLabel(){
-  const map=_tmState&&_tmState.map;
-  if(!map)return;
-  const show=_tmState.mode==='area'&&_tmState.points.length>=3;
-  if(!show){
-    if(_tmState.areaLabelAnn){try{map.removeAnnotation(_tmState.areaLabelAnn);}catch(_e){}}
-    _tmState.areaLabelAnn=null;
-    _tmState.areaLabelEl=null;
-    return;
+// ── The own render layer ────────────────────────────────────────────────────
+// Draws the whole trace (vertex dots, edges, the in-progress polygon, the
+// centroid total-sqft label, and the hold gesture's dashed preview run) into
+// the #tm-draw-layer SVG/labels via _tmProject, replacing the retired
+// mapkit.PolygonOverlay/PolylineOverlay/Annotation rendering. Same visual
+// style as the old overlays (#2D5DA8 stroke, width 3, 0.28 fill for area;
+// dashed 8/6 at 0.85 opacity for the preview). Called directly on every
+// state change and re-run by _tmStartDrawLoop whenever the camera, digital
+// zoom, or layout moves underneath.
+function _tmRenderTrace(){
+  if(!_tmState)return;
+  const svg=document.getElementById('tm-draw-svg');
+  if(!svg)return;
+  const {points,mode}=_tmState;
+  const proj=points.map(p=>_tmProject(p.lat,p.lng));
+  const usable=proj.every(Boolean);
+  const parts=[];
+  if(usable&&points.length>=2){
+    const d=proj.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
+    if(mode==='area'&&points.length>=3){
+      parts.push('<polygon points="'+d+'" fill="#2D5DA8" fill-opacity="0.28" stroke="#2D5DA8" stroke-width="3" stroke-linejoin="round"/>');
+    }else{
+      parts.push('<polyline points="'+d+'" fill="none" stroke="#2D5DA8" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>');
+    }
   }
-  const centroid=_tmCentroidCoord(_tmState.points);
-  if(!centroid)return;
-  const m=_tmMeasure();
-  const text=m.value.toLocaleString()+' '+m.unit;
-  if(_tmState.areaLabelAnn&&_tmState.areaLabelEl){
-    _tmState.areaLabelAnn.coordinate=new mapkit.Coordinate(centroid.lat,centroid.lng);
-    _tmState.areaLabelEl.textContent=text;
-    return;
+  // Live preview while precision-holding to place the NEXT point (owner ask
+  // 2026-08-19): a dashed run from the last confirmed point to wherever the
+  // crosshair currently sits. Transient, cleared on release/cancel.
+  const pv=_tmState.previewCoord;
+  let pvMid=null,pvFt=0;
+  if(usable&&pv&&points.length){
+    const last=points[points.length-1];
+    const a=proj[proj.length-1],b=_tmProject(pv.lat,pv.lng);
+    if(a&&b){
+      parts.push('<line x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="#2D5DA8" stroke-width="3" stroke-opacity="0.85" stroke-dasharray="8 6" stroke-linecap="round"/>');
+      pvMid=_tmProject((last.lat+pv.lat)/2,(last.lng+pv.lng)/2);
+      pvFt=(typeof _geoDistFt==='function')?_geoDistFt(last,pv):0;
+    }
   }
-  const el=document.createElement('div');
-  el.className='tm-area-label';
-  el.style.cssText='background:var(--ink,#15161a);color:#fff;font-weight:900;padding:8px 14px;border-radius:999px;white-space:nowrap;font-family:var(--font-display,sans-serif);font-size:15px;letter-spacing:-.2px;box-shadow:0 3px 10px rgba(0,0,0,.3);pointer-events:none';
-  el.textContent=text;
-  const ann=new mapkit.Annotation(new mapkit.Coordinate(centroid.lat,centroid.lng),()=>el,{anchorOffset:new DOMPoint(0,0)});
-  map.addAnnotation(ann);
-  _tmState.areaLabelAnn=ann;
-  _tmState.areaLabelEl=el;
+  // Vertex dots last so they sit on top of the edges. class="tm-dot" +
+  // data-idx is the flow tests' ground truth: the dot's own DOM position IS
+  // what the user sees, no MapKit converter anywhere in the check.
+  if(usable){
+    proj.forEach((p,i)=>{
+      parts.push('<circle class="tm-dot" data-idx="'+i+'" cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="5" fill="#2D5DA8" stroke="#fff" stroke-width="2"/>');
+    });
+  }
+  svg.innerHTML=parts.join('');
+  // Total-sqft label smack in the middle of a completed shape (owner ask
+  // 2026-08-19), at the area-weighted centroid.
+  const areaLbl=document.getElementById('tm-area-label');
+  if(areaLbl){
+    const centroid=(mode==='area'&&points.length>=3)?_tmCentroidCoord(points):null;
+    const cp=centroid?_tmProject(centroid.lat,centroid.lng):null;
+    if(cp){
+      const m=_tmMeasure();
+      areaLbl.textContent=m.value.toLocaleString()+' '+m.unit;
+      areaLbl.style.left=cp.x+'px';
+      areaLbl.style.top=cp.y+'px';
+      areaLbl.style.display='block';
+    }else{
+      areaLbl.style.display='none';
+    }
+  }
+  // The preview run's live distance label, font size scaling with length so
+  // the marker visibly grows and shrinks as the line does.
+  const liveLbl=document.getElementById('tm-live-label');
+  if(liveLbl){
+    if(pvMid){
+      liveLbl.textContent=Math.round(pvFt)+' ft';
+      liveLbl.style.fontSize=Math.max(11,Math.min(26,11+pvFt*0.09))+'px';
+      liveLbl.style.left=pvMid.x+'px';
+      liveLbl.style.top=pvMid.y+'px';
+      liveLbl.style.display='block';
+    }else{
+      liveLbl.style.display='none';
+    }
+  }
+  _tmState._drawSig=_tmDrawSig();
+}
+// Everything the rendered trace depends on, folded into one comparable
+// string: region (live camera), digital zoom (live, mid-transition values
+// included), layout size, the points, the preview, and the mode. When any
+// of it changes between frames the draw loop re-renders; when nothing moves
+// the loop costs a string compare.
+function _tmDrawSig(){
+  if(!_tmState)return '';
+  let region='';
+  if(_tmState.map){
+    try{
+      const rg=_tmState.map.region;
+      region=rg.center.latitude.toFixed(8)+','+rg.center.longitude.toFixed(8)+','+rg.span.latitudeDelta.toFixed(8)+','+rg.span.longitudeDelta.toFixed(8);
+    }catch(_e){}
+  }
+  const wrap=document.getElementById('tm-canvas-wrap');
+  const pv=_tmState.previewCoord;
+  const cal=_tmState.projCal;
+  return [
+    region,
+    _tmCurrentDigi().toFixed(4),
+    wrap?(wrap.clientWidth+'x'+wrap.clientHeight):'',
+    _tmState.points.map(p=>p.lat.toFixed(7)+','+p.lng.toFixed(7)).join(';'),
+    pv?(pv.lat.toFixed(7)+','+pv.lng.toFixed(7)):'',
+    _tmState.mode,
+    _tmState.repeatCount,
+    (_tmState.projAxis||'auto')+(cal&&cal.applied?(':'+cal.dx.toFixed(2)+','+cal.dy.toFixed(2)):''),
+  ].join('|');
+}
+// rAF loop for the lifetime of ONE TrueMeasure overlay: re-renders the trace
+// whenever its inputs move (camera animation from setCenterAnimated, the
+// 280ms digital-zoom CSS transition, a live pinch, a resize), reading the
+// LIVE digi via _tmCurrentDigi so the SVG tracks the transition frame-
+// accurately. Exits the moment _tmState is replaced or cleared, so a
+// close-and-reopen never stacks loops.
+function _tmStartDrawLoop(){
+  if(!_tmState)return;
+  const state=_tmState;
+  const tick=()=>{
+    if(_tmState!==state)return;
+    if(document.getElementById('tm-draw-svg')&&_tmDrawSig()!==state._drawSig)_tmRenderTrace();
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
 
-// Live preview while precision-holding to place the NEXT point (owner ask
-// 2026-08-19): a dashed run from the last confirmed point to wherever the
-// crosshair currently sits, with a distance label at its midpoint whose
-// font size scales with the run's length, so the marker visibly grows and
-// shrinks as the line does. Purely transient, cleared on release/cancel;
-// the real, permanent segment is drawn by the normal _tmRedraw() once the
-// point actually commits.
 function _tmUpdatePreview(coord){
-  const map=_tmState&&_tmState.map;
-  if(!map||!_tmState.points.length||!coord)return;
-  const last=_tmState.points[_tmState.points.length-1];
-  const distFt=(typeof _geoDistFt==='function')?_geoDistFt(last,{lat:coord.latitude,lng:coord.longitude}):0;
-  if(_tmState.previewOverlay){try{map.removeOverlay(_tmState.previewOverlay);}catch(_e){}}
-  const style=new mapkit.Style({strokeColor:'#2D5DA8',lineWidth:3,lineDash:[8,6],strokeOpacity:0.85});
-  const line=new mapkit.PolylineOverlay([new mapkit.Coordinate(last.lat,last.lng),coord],{style});
-  map.addOverlay(line);
-  _tmState.previewOverlay=line;
-  const midLat=(last.lat+coord.latitude)/2,midLng=(last.lng+coord.longitude)/2;
-  const fontPx=Math.max(11,Math.min(26,11+distFt*0.09));
-  const text=Math.round(distFt)+' ft';
-  if(_tmState.previewLabelAnn&&_tmState.previewLabelEl){
-    _tmState.previewLabelAnn.coordinate=new mapkit.Coordinate(midLat,midLng);
-    _tmState.previewLabelEl.textContent=text;
-    _tmState.previewLabelEl.style.fontSize=fontPx+'px';
-    return;
-  }
-  const el=document.createElement('div');
-  el.className='tm-live-label';
-  el.style.cssText='background:rgba(21,22,26,.82);color:#fff;font-weight:800;padding:3px 8px;border-radius:999px;white-space:nowrap;font-family:var(--font-display,sans-serif);box-shadow:0 2px 6px rgba(0,0,0,.25);pointer-events:none';
-  el.style.fontSize=fontPx+'px';
-  el.textContent=text;
-  const ann=new mapkit.Annotation(new mapkit.Coordinate(midLat,midLng),()=>el,{anchorOffset:new DOMPoint(0,0)});
-  map.addAnnotation(ann);
-  _tmState.previewLabelAnn=ann;
-  _tmState.previewLabelEl=el;
+  if(!_tmState||!_tmState.points.length||!coord)return;
+  _tmState.previewCoord={lat:coord.latitude,lng:coord.longitude};
+  _tmRenderTrace();
 }
 function _tmClearPreview(){
-  const map=_tmState&&_tmState.map;
-  if(!map)return;
-  if(_tmState.previewOverlay){try{map.removeOverlay(_tmState.previewOverlay);}catch(_e){}}
-  if(_tmState.previewLabelAnn){try{map.removeAnnotation(_tmState.previewLabelAnn);}catch(_e){}}
-  _tmState.previewOverlay=null;
-  _tmState.previewLabelAnn=null;
-  _tmState.previewLabelEl=null;
+  if(!_tmState)return;
+  _tmState.previewCoord=null;
+  _tmRenderTrace();
 }
 
 function _tmMeasure(){
