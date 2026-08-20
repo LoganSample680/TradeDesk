@@ -791,7 +791,7 @@ async function checkNearbyJob(){
   // production fires it and moves on, resolves only once the async callback
   // below has actually run, not the instant geoIfGranted's sync half returns.
   return geoIfGranted(async pos=>{
-    const{latitude:myLat,longitude:myLon}=pos.coords;
+    const{latitude:myLat,longitude:myLon,accuracy}=pos.coords;
     const tk=todayKey();
     const geoCache=_nearbyGeoCache();
     // Match radius: ServiceTitan's own documented "Arrive by GPS" threshold
@@ -801,7 +801,20 @@ async function checkNearbyJob(){
     // spanned a next-door neighbor's address on a normal residential block
     // (owner report 2026-08-19: matched to "2011 SW Randolph", his own
     // neighbor, while working an actual job nearby).
-    const _matchKm=0.125;
+    //
+    // Flat 125m turned out too tight the other direction (owner report
+    // 2026-08-20: standing at the actual job address, no nearby-job match at
+    // all). A flat radius can't win both ways: it either fits a good fix
+    // (accuracy well under 125m, the common case) or it doesn't, and on a
+    // fix with real uncertainty (tree cover, between buildings, a phone
+    // that hasn't settled yet) the reported position can legitimately sit
+    // outside 125m of a true on-site location. Grow the radius by exactly
+    // that fix's own reported accuracy instead of guessing a bigger flat
+    // number: still 125m on a good fix (accuracy doesn't add anything worth
+    // opening the door for), wider only when the device itself says it isn't
+    // sure, capped at 250m so a genuinely bad fix still can't reopen the
+    // 1,640ft neighbor-misattribution bug this radius exists to prevent.
+    const _matchKm=Math.min(0.25,0.125+Math.max(0,accuracy||0)/1000);
     // Root cause of the old 5s+ banner delay: a single loop interleaved cached
     // (instant) and uncached (network geocode + 1.1s throttle sleep) clients in
     // raw array order, so ANY uncached client positioned before the real match

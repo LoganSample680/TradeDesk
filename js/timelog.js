@@ -597,7 +597,13 @@ async function renderTimeLog(){
     const moRows=byMonth[mo];
     const byWeek={};
     moRows.forEach(r=>{const wk=_tlWeekKey(r.date)||'unknown';(byWeek[wk]||(byWeek[wk]=[])).push(r);});
-    const weeks=Object.keys(byWeek).sort((a,b)=>a.localeCompare(b));
+    // Newest week first within the month (owner report 2026-08-20: opening a
+    // month buried the current week under every earlier one). This is the
+    // opposite of the month-level sort just above, and deliberately so: that
+    // one is the dated owner exception (January→December); nothing pinned
+    // week order to match it, and newest-first here matches every other
+    // Books accordion's normal convention.
+    const weeks=Object.keys(byWeek).sort((a,b)=>b.localeCompare(a));
     const moOpen=/^\d{4}-\d{2}$/.test(mo)&&mo>=curMo;
     const moMin=moRows.reduce((s,r)=>s+(r.minutes||0),0);
     let moSub=weeks.length+' week'+(weeks.length!==1?'s':'');
