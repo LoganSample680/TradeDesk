@@ -1,12 +1,14 @@
 // @ts-check
 /**
  * Exhaustive E2E coverage for js/timelog.js: the Time Log page, now also the
- * unified crew hours + cost report (owner call 2026-08-20). Year selector →
- * month accordions, January (oldest) through December (newest, current month
- * open by default) → week accordions (_bkWeekAcc, the tier new to this
- * change) → the same day-by-day entries table (_bkRenderDays) this page
- * always had. Owners/managers see every employee's hours + $ per week;
- * everyone else sees only their own hours (no dollars) plus a share button.
+ * unified crew hours report (owner call 2026-08-20, hours only, no dollars,
+ * "don't need pay rate here just time"). Year selector → month accordions,
+ * January (oldest) through December (newest, current month open by default)
+ * → week accordions (_bkWeekAcc, the tier new to this change) → the same
+ * day-by-day entries table (_bkRenderDays) this page always had. Owners/
+ * managers see every employee's hours broken out per week; everyone else
+ * sees only their own hours, plus a share button. $ cost stays in Crew Cost
+ * (js/finance.js), which this page never queries.
  */
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
@@ -1001,7 +1003,13 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.anyOpen).toBe(true);
     });
 
-    test('owner sees per-employee $ cost inside a week, an employee without payroll permission sees only their own hours, no dollars', async () => {
+    // Owner call 2026-08-20 ("don't need pay rate here just time"): this is a
+    // pure time report, never dollars, for owner/manager or individual. The
+    // owner/manager view breaks hours out per employee (both fixture people
+    // should appear, each with their own hours); an employee without payroll
+    // permission sees only their own rows. Neither view ever shows a $ sign
+    // ($ cost still lives in the separate Crew Cost modal, js/finance.js).
+    test('owner sees hours broken out per employee (no $), an employee without payroll permission sees only their own hours (no $)', async () => {
       const r = await page.evaluate(async () => {
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
@@ -1014,10 +1022,15 @@ test.describe('timelog.js: exhaustive coverage', () => {
         const empHtml = document.getElementById('tl-list').innerHTML;
         window._isEmployee = origIsEmployee; window._employeeRecord = origEmpRecord; window._supaUser = origSupaUser;
         await renderTimeLog();
-        return { ownerHasWage: ownerHtml.includes('wage $'), empHasWage: empHtml.includes('wage $') };
+        return {
+          ownerHasBothPeople: ownerHtml.includes('Owner (me)') && ownerHtml.includes('Test Crew Member'),
+          ownerHasDollar: ownerHtml.includes('$'),
+          empHasDollar: empHtml.includes('$'),
+        };
       });
-      expect(r.ownerHasWage).toBe(true);
-      expect(r.empHasWage).toBe(false);
+      expect(r.ownerHasBothPeople).toBe(true);
+      expect(r.ownerHasDollar).toBe(false);
+      expect(r.empHasDollar).toBe(false);
     });
 
     test('entries table (Edit button on manual rows) still renders nested inside a week', async () => {

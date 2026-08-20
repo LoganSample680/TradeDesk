@@ -6,21 +6,22 @@
 //   2. job_time_entries (Supabase, via _fetchCrewLabor), GPS arrival/
 //      departure auto-tracking (js/geo-track.js), already carries
 //      employee_user_id.
-// Owner call 2026-08-20: this is now ALSO the unified crew hours + cost
-// report (absorbing what was going to be a separate Crew Cost redesign,
-// owner: "I don't want this under crew cost, want it under time log"). A
-// year selector, then month accordions, January (oldest) THROUGH December
+// Owner call 2026-08-20: this is now ALSO the unified crew hours report
+// (absorbing what was going to be a separate Crew Cost redesign, owner: "I
+// don't want this under crew cost, want it under time log"), and it's hours
+// only, never dollars ("don't need pay rate here just time"). A year
+// selector, then month accordions, January (oldest) THROUGH December
 // (newest), the opposite order from every other Books accordion (Income/
 // Expenses read newest-first) because this is a "how did the year build up"
 // report, not a "what happened lately" ledger. Each month opens into week
 // accordions (_bkWeekAcc, js/finance.js), the new tier between month and
-// day. Owners/managers (_canViewComp) see every employee's hours + loaded $
-// cost broken out per week; everyone else sees only their own hours, no
-// dollars, plus a "Share this week's hours" button. Either way, each week
-// still opens into the exact same day-by-day entries table (_bkRenderDays)
-// this page always had, same Edit/Delete on manual entries, just nested one
-// level deeper now. Job Profit and Crew Cost's own modal are the other $
-// views; they read the same rows so cost is never blind to manual time.
+// day. Owners/managers (_canViewComp) see every employee's hours broken out
+// per week; everyone else sees only their own hours, plus a "Share this
+// week's hours" button. Either way, each week still opens into the exact
+// same day-by-day entries table (_bkRenderDays) this page always had, same
+// Edit/Delete on manual entries, just nested one level deeper now. $ cost
+// lives entirely in Crew Cost (js/finance.js _crewCostRender), which reads
+// the same underlying rows, this page never touches wage/loaded rates.
 function _tlJobClientInfo(jobId){
   const j=jobs.find(x=>x.id===jobId);
   const bid=j&&j.bid_id?bids.find(b=>b.id===j.bid_id):null;
@@ -303,14 +304,14 @@ function _tlDayShort(dateStr){
   return d.toLocaleDateString('en-US',{weekday:'short'})+' '+p[1]+'/'+p[2];
 }
 // Per-employee aggregation over any row set (a week or a whole month): total
-// minutes plus the on-site/drive/supply-run split the owner mockup asked for.
-// Manual clock entries are always on-site (that's what a manual clock means);
-// auto (GPS) entries classify via the same _geoIsDriveSource/_geoIsPlaceSource
-// helpers Crew Cost already uses, so the two reports never disagree on what
-// counts as drive time. Off-job stops never reach here, _timeLogRows already
-// drops them. Keyed by personUid, owner-logged rows (personUid null) fold
-// under `cid` so they line up with _fetchCrewLabor's rate maps (also keyed
-// by cid for the owner).
+// minutes plus the on-site/drive/supply-run split. Manual clock entries are
+// always on-site (that's what a manual clock means); auto (GPS) entries
+// classify via the same _geoIsDriveSource/_geoIsPlaceSource helpers Crew
+// Cost already uses, so the two reports never disagree on what counts as
+// drive time. Off-job stops never reach here, _timeLogRows already drops
+// them. Keyed by personUid, owner-logged rows (personUid null) fold under
+// `cid` so every owner entry lands in one bucket instead of scattering
+// under an undefined key.
 function _tlEmpWeekAgg(rows,cid){
   const byEmp={};
   rows.forEach(r=>{
@@ -326,26 +327,22 @@ function _tlEmpWeekAgg(rows,cid){
   });
   return byEmp;
 }
-function _tlEmpLoadedTotal(byEmp,rateMap){
-  return Object.keys(byEmp).reduce((s,uid)=>s+(byEmp[uid].min/60)*(rateMap.loaded[uid]||0),0);
-}
-// Owner/manager week body: one row per employee, hours breakdown + $ cost.
-// Same wage+burden framing as Crew Cost (_crewCostRender), just bucketed by
-// week/month here instead of a rolling range.
-function _tlWeekOwnerHtml(byEmp,rateMap){
+// Owner/manager week body: one row per employee, hours only (owner call
+// 2026-08-20: "don't need pay rate here just time"). $ cost still lives in
+// Crew Cost (_crewCostRender); this is purely a time report.
+function _tlWeekOwnerHtml(byEmp){
   const uids=Object.keys(byEmp).sort((a,b)=>byEmp[b].min-byEmp[a].min);
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
   return uids.map(uid=>{
-    const e=byEmp[uid];const hrs=e.min/60;
-    const wage=hrs*(rateMap.wage[uid]||0),loaded=hrs*(rateMap.loaded[uid]||0);
-    const parts=[hrs.toFixed(1)+'h','On-site '+(e.onsiteMin/60).toFixed(1)+'h'];
-    if(e.driveMin>3)parts.push('Drive '+(e.driveMin/60).toFixed(1)+'h');
-    if(e.placeMin>3)parts.push('Supply/other '+(e.placeMin/60).toFixed(1)+'h');
+    const e=byEmp[uid];
+    const parts=['On-site '+fm(e.onsiteMin)];
+    if(e.driveMin>3)parts.push('Drive '+fm(e.driveMin));
+    if(e.placeMin>3)parts.push('Supply/other '+fm(e.placeMin));
     const otTag=e.weekOT?' <span style="color:var(--c-amber);font-weight:800">OT</span>':'';
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 2px;border-bottom:1px solid var(--line)">'+
-      '<div style="min-width:0"><div style="font-size:13px;font-weight:700">'+escHtml(rateMap.name[uid]||e.name||'Crew')+'</div>'+
+      '<div style="min-width:0"><div style="font-size:13px;font-weight:700">'+escHtml(e.name||'Crew')+'</div>'+
       '<div style="font-size:10.5px;color:var(--text3);margin-top:1px">'+parts.join(' · ')+otTag+'</div></div>'+
-      '<div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:800">'+fmt(loaded)+'</div>'+
-      '<div style="font-size:10.5px;color:var(--text3)">wage '+fmt(wage)+' + burden</div></div>'+
+      '<div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:800">'+fm(e.min)+'</div></div>'+
     '</div>';
   }).join('');
 }
@@ -422,22 +419,12 @@ async function renderTimeLog(){
   _tlComputeOT(rows);
   _tlComputeWeeklyRunning(rows);
   _tlLastRows=rows;
+  // Owner-logged rows carry personUid:null, fold them under the contractor's
+  // own id so they group into one "you" bucket instead of an undefined key.
   const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
-  // Rate maps only, entries/shopEntries from this call are unused (the rows
-  // already carry their own minutes from _timeLogRows above); owner/manager
-  // view is the only one that ever needs a $ figure, so individuals skip
-  // the query entirely.
-  const rateMap=canComp?await _fetchCrewLabor(null):null;
-  if(rateMap)rateMap.cid=cid;
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
   const totalMin=rows.reduce((s,r)=>s+(r.minutes||0),0);
-  if(totalEl){
-    if(rateMap){
-      const grand=_tlEmpLoadedTotal(_tlEmpWeekAgg(rows,cid),rateMap);
-      totalEl.textContent=fmt(grand)+' in '+yr;
-    }else{
-      totalEl.textContent=(typeof _fmtMin==='function'?_fmtMin(totalMin):totalMin+'m')+' total in '+yr;
-    }
-  }
+  if(totalEl)totalEl.textContent=fm(totalMin)+' total in '+yr;
   const byMonth={};
   rows.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';(byMonth[mo]||(byMonth[mo]=[])).push(r);});
   // January (oldest) → December (newest), owner call 2026-08-20. Every other
@@ -452,17 +439,13 @@ async function renderTimeLog(){
     moRows.forEach(r=>{const wk=_tlWeekKey(r.date)||'unknown';(byWeek[wk]||(byWeek[wk]=[])).push(r);});
     const weeks=Object.keys(byWeek).sort((a,b)=>a.localeCompare(b));
     const moOpen=/^\d{4}-\d{2}$/.test(mo)&&mo>=curMo;
-    let moSub,moTotalHtml;
-    if(rateMap){
-      const byEmpMo=_tlEmpWeekAgg(moRows,cid);
-      const empCount=Object.keys(byEmpMo).length;
-      moSub=weeks.length+' week'+(weeks.length!==1?'s':'')+' · '+empCount+' employee'+(empCount!==1?'s':'');
-      moTotalHtml='<div style="font-size:15px;font-weight:900;color:var(--c-red);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+fmt(_tlEmpLoadedTotal(byEmpMo,rateMap))+'</div>';
-    }else{
-      const moMin=moRows.reduce((s,r)=>s+(r.minutes||0),0);
-      moSub=weeks.length+' week'+(weeks.length!==1?'s':'');
-      moTotalHtml='<div style="font-size:15px;font-weight:900;color:var(--text);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+(typeof _fmtMin==='function'?_fmtMin(moMin):moMin+'m')+'</div>';
+    const moMin=moRows.reduce((s,r)=>s+(r.minutes||0),0);
+    let moSub=weeks.length+' week'+(weeks.length!==1?'s':'');
+    if(canComp){
+      const empCount=Object.keys(_tlEmpWeekAgg(moRows,cid)).length;
+      moSub+=' · '+empCount+' employee'+(empCount!==1?'s':'');
     }
+    const moTotalHtml='<div style="font-size:15px;font-weight:900;color:var(--text);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+fm(moMin)+'</div>';
     // Every week's body ends with the same day-by-day entries table this page
     // always had (Person/Job site/Clock In/Clock Out/Duration/Week total,
     // Edit on manual rows), just nested one level deeper than before. This is
@@ -470,23 +453,22 @@ async function renderTimeLog(){
     // has to survive the week tier, not just the summary rows above it.
     const _tlEntriesHtml=weekRows=>'<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)">'+
       '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:0 2px 6px">Entries</div>'+
-      _bkRenderDays('tl',mo,weekRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,typeof _fmtMin==='function'?_fmtMin:(m=>m+'m'))+
+      _bkRenderDays('tl',mo,weekRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,fm)+
     '</div>';
     const weeksHtml=weeks.map(wk=>{
       const weekRows=byWeek[wk];
       const wkId=wk.replace(/[^0-9]/g,'')||'x';
       const wkOpen=moOpen&&wk===curWk;
       const wkLabel=_tlWeekLabel(wk);
-      if(rateMap){
+      const wkMin=weekRows.reduce((s,r)=>s+(r.minutes||0),0);
+      const wkTotalHtml='<div style="font-size:12.5px;font-weight:800;color:var(--text)">'+fm(wkMin)+'</div>';
+      if(canComp){
         const byEmp=_tlEmpWeekAgg(weekRows,cid);
         const empCount=Object.keys(byEmp).length;
-        return _bkWeekAcc('tl',mo,wkId,wkLabel,empCount+' employee'+(empCount!==1?'s':''),
-          '<div style="font-size:12.5px;font-weight:800;color:var(--c-red)">'+fmt(_tlEmpLoadedTotal(byEmp,rateMap))+'</div>',
-          _tlWeekOwnerHtml(byEmp,rateMap)+_tlEntriesHtml(weekRows),wkOpen);
+        return _bkWeekAcc('tl',mo,wkId,wkLabel,empCount+' employee'+(empCount!==1?'s':''),wkTotalHtml,
+          _tlWeekOwnerHtml(byEmp)+_tlEntriesHtml(weekRows),wkOpen);
       }
-      const wkMin=weekRows.reduce((s,r)=>s+(r.minutes||0),0);
-      return _bkWeekAcc('tl',mo,wkId,wkLabel,weekRows.length+' entr'+(weekRows.length!==1?'ies':'y'),
-        '<div style="font-size:12.5px;font-weight:800;color:var(--text)">'+(typeof _fmtMin==='function'?_fmtMin(wkMin):wkMin+'m')+'</div>',
+      return _bkWeekAcc('tl',mo,wkId,wkLabel,weekRows.length+' entr'+(weekRows.length!==1?'ies':'y'),wkTotalHtml,
         _tlWeekMineHtml(weekRows)+_tlEntriesHtml(weekRows),wkOpen);
     }).join('');
     return _bkMonthAcc('tl',mo,_bkMonthLabel(mo),moSub,moTotalHtml,weeksHtml,moOpen);
