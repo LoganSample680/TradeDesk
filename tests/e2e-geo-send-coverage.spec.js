@@ -1049,9 +1049,19 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     // assertNoErrors on an entirely unrelated test. This mock only cares
     // about writes, so give it a harmless, infinitely-chainable read stub
     // instead of leaving it a landmine for an incidental background pull.
+    // A hardcoded method whitelist here is a landmine of its own (CI already
+    // caught it missing .is(), used by cloud.js's ".eq(...).is('deleted_at',
+    // null)" pattern) — a Proxy makes every PostgREST filter method, present
+    // or future, chainable without this file having to track the real
+    // client's method list.
     const _noopQuery = () => {
-      const q = { then: (resolve) => resolve({ data: null, error: null }), catch: () => q };
-      ['select', 'eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'order', 'limit', 'range', 'maybeSingle', 'single', 'not', 'or', 'filter'].forEach(m => { q[m] = () => q; });
+      const q = new Proxy({}, {
+        get(_t, prop) {
+          if (prop === 'then') return (resolve) => resolve({ data: null, error: null });
+          if (prop === 'catch') return () => q;
+          return () => q;
+        },
+      });
       return q;
     };
     window._supa = {
