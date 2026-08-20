@@ -368,6 +368,28 @@ function _tmDigiSet(z,animate){
   if(_tmState.areaLabelEl)_tmState.areaLabelEl.style.transform=inv;
   if(_tmState.previewLabelEl)_tmState.previewLabelEl.style.transform=inv;
 }
+// The TRUE current scale, read off the live rendered transform, never the
+// JS target alone. _tmDigiSet's exit/entrance reset ANIMATES over 280ms
+// (transition:transform), but sets _tmState.digiZoom to the FINAL target
+// the instant it's called — so for up to 280ms after every hold release,
+// the JS number and the actual on-screen scale disagree. A tap or the next
+// hold's press-down landing in that window computed against the wrong
+// scale, throwing the point off by the residual scale gap (owner report
+// 2026-08-20, live device: tracing corners in quick succession, one point
+// out of seven landed a full property away — exactly this signature, one
+// isolated bad point, not a systemic offset). Reading the browser's own
+// live matrix instead of a cached JS number makes this race impossible:
+// there is no "in-flight" state to be wrong about.
+function _tmCurrentDigi(){
+  const el=document.getElementById('tm-scale');
+  if(!el)return (_tmState&&_tmState.digiZoom)||1;
+  try{
+    const t=getComputedStyle(el).transform;
+    if(!t||t==='none')return 1;
+    const m=new DOMMatrix(t);
+    return m.a||1; // uniform scale() only here, no rotation/skew
+  }catch(_e){return (_tmState&&_tmState.digiZoom)||1;}
+}
 // Visual (finger) page point -> the page point MapKit's converters expect.
 // The CSS scale is around the canvas-wrap center and MapKit is unaware of
 // it, so un-scale around that center first. (The math is identical whether
@@ -375,14 +397,14 @@ function _tmDigiSet(z,animate){
 // getBoundingClientRect: the scale origin is the box center, so both frames
 // agree — verified by the probe's round-trip check.)
 function _tmUnscalePt(x,y){
-  const z=(_tmState&&_tmState.digiZoom)||1;
+  const z=_tmCurrentDigi();
   if(z===1)return {x,y};
   const r=document.getElementById('tm-canvas-wrap').getBoundingClientRect();
   const cx=r.left+r.width/2,cy=r.top+r.height/2;
   return {x:cx+(x-cx)/z,y:cy+(y-cy)/z};
 }
 function _tmScalePt(x,y){
-  const z=(_tmState&&_tmState.digiZoom)||1;
+  const z=_tmCurrentDigi();
   if(z===1)return {x,y};
   const r=document.getElementById('tm-canvas-wrap').getBoundingClientRect();
   const cx=r.left+r.width/2,cy=r.top+r.height/2;
@@ -461,7 +483,14 @@ function _tmInitPrecisionGesture(map,wrap){
         // moment this fixed-position overlay sits over a scrolled page.
         const r=frameEl.getBoundingClientRect();
         const coord=_tmPageToCoord(r.left+downX,r.top+downY);
-        holdStartDigi=(_tmState&&_tmState.digiZoom)||1;
+        // True current value, NOT _tmState.digiZoom: a hold fired again
+        // before the previous one's 280ms ease-back-out finished would
+        // otherwise read the stale (already-reset) target instead of
+        // wherever the animation actually still was, and could compound
+        // toward the 8x digital cap on repeated fast holds (owner report
+        // 2026-08-20: "the zoom in moves very fast" while tracing several
+        // corners back-to-back).
+        holdStartDigi=_tmCurrentDigi();
         // Recenter on the pressed point (the digital scale magnifies around
         // the frame CENTER, so without this an off-center press would zoom
         // toward the middle of the screen instead of the finger).
@@ -590,7 +619,7 @@ function _tmInitPrecisionGesture(map,wrap){
     // pinch runs untouched.
     if(e.touches.length===2){
       cancelTimer();moved=true; // two fingers are never a tap or a hold
-      const digi=(_tmState&&_tmState.digiZoom)||1;
+      const digi=_tmCurrentDigi();
       let cam=Infinity;try{cam=map.cameraDistance;}catch(_e){}
       pinchOwn=digi>1||cam<=_TM_CAM_FLOOR+2;
       if(pinchOwn){

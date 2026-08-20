@@ -175,4 +175,138 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     const relevant = errors.filter((t) => !/favicon|manifest|analytics|beacon/i.test(t));
     console.log(`[probe] console.errors during run: ${relevant.length}`, relevant.slice(0, 3));
   });
+
+  // ── Adversarial: a real user tracing several corners FAST ────────────────
+  // The single-gesture test above passed clean while the owner's live
+  // multi-corner trace still put a point a whole property away. The
+  // difference: this fires the NEXT gesture immediately after the previous
+  // one's touchEnd, deliberately racing _tmDigiSet's 280ms ease-back-out
+  // transition instead of waiting it out — exactly how someone tracing a
+  // roofline actually taps. Every placed point's error against its true
+  // target is measured individually so ONE bad point (the owner's actual
+  // symptom, one long spike off an otherwise-correct outline) fails loudly
+  // instead of averaging out.
+  test('rapid successive corners: no gesture waits out the previous one\'s animation', async ({ page, context }) => {
+    test.setTimeout(150000);
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await signIn(page);
+    await page.waitForFunction(() => typeof openTrueMeasure === 'function', null, { timeout: 30000 });
+    await page.waitForFunction(() => typeof _mapkitReady !== 'undefined' && _mapkitReady === true, null, { timeout: 30000 });
+    await page.evaluate(() => openTrueMeasure({ id: 991235, name: 'Stress Probe', addr: '' }));
+    await page.waitForFunction(() => typeof _tmState !== 'undefined' && _tmState && !!_tmState.map, null, { timeout: 20000 });
+    await sleep(2000);
+
+    const wrapBox = await page.evaluate(() => {
+      const r = document.getElementById('tm-map').getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const cdp = await context.newCDPSession(page);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', {
+      type, touchPoints: points.map((p) => ({ x: p.x, y: p.y, radiusX: 8, radiusY: 8, force: 1, id: 1 })),
+    });
+
+    // A small hexagon of screen points, roughly tracing "a house" — every
+    // corner placed as a QUICK TAP (no hold), fired with only a short,
+    // FIXED gap after the previous point (not the 280ms+ a patient user
+    // would leave), racing the digital-zoom reset from any PRIOR hold.
+    const corners = [0.30, 0.40, 0.50, 0.45, 0.35, 0.30].map((fx, i) => ({
+      x: Math.round(wrapBox.x + wrapBox.w * fx),
+      y: Math.round(wrapBox.y + wrapBox.h * (0.35 + i * 0.06)),
+    }));
+
+    // Prime the race: one hold-drop first (this is what leaves digiZoom
+    // mid-transition for the taps that immediately follow).
+    const holdPt = { x: Math.round(wrapBox.x + wrapBox.w * 0.5), y: Math.round(wrapBox.y + wrapBox.h * 0.5) };
+    await touch('touchStart', [holdPt]);
+    await sleep(900); // engage the hold + entrance zoom
+    await touch('touchEnd', []);
+    // Deliberately NOT waiting out the 280ms ease-back-out — the very next
+    // interaction starts 80ms later, squarely inside the old race window.
+    await sleep(80);
+
+    const results = [];
+    for (const c of corners) {
+      const target = await page.evaluate(([x, y]) => {
+        const t = _tmPageToCoord(x, y);
+        return { lat: t.latitude, lng: t.longitude };
+      }, [c.x, c.y]);
+      const before = await page.evaluate(() => _tmState.points.length);
+      await touch('touchStart', [c]);
+      await sleep(60); // well under HOLD_MS(420) — a genuine quick tap
+      await touch('touchEnd', []);
+      await sleep(70); // short, fixed — NOT waiting for any transition to settle
+      const after = await page.evaluate(() => {
+        const pts = _tmState.points;
+        return { len: pts.length, last: pts[pts.length - 1] };
+      });
+      if (after.len !== before + 1 || !after.last) {
+        results.push({ c, errM: null, placed: false });
+        continue;
+      }
+      const errM = Math.hypot(
+        (after.last.lat - target.lat) * 111320,
+        (after.last.lng - target.lng) * 111320 * Math.cos(target.lat * Math.PI / 180),
+      );
+      results.push({ c, errM, placed: true });
+    }
+
+    console.log('[probe] RAPID-TRACE per-point results:', JSON.stringify(results.map((r) => ({ errM: r.errM && +r.errM.toFixed(2), placed: r.placed }))));
+    const missing = results.filter((r) => !r.placed);
+    const bad = results.filter((r) => r.placed && r.errM > 3); // 3m — one blown corner is the whole bug
+    if (missing.length || bad.length) {
+      console.log('[probe] FAILURES:', JSON.stringify({ missing: missing.length, bad: bad.map((r) => r.errM) }));
+    }
+    expect(missing.length, 'every rapid tap must place a point').toBe(0);
+    expect(bad.length, 'every rapid tap must land within 3m of its true target, no isolated flung points').toBe(0);
+
+    const relevant = errors.filter((t) => !/favicon|manifest|analytics|beacon/i.test(t));
+    expect(relevant.length, 'zero console errors during the rapid trace: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
+  });
+
+  // ── Adversarial: back-to-back holds must not compound the zoom level ────
+  // "the zoom in moves very fast" (owner, 2026-08-20): if a hold starts
+  // before the PREVIOUS hold's reset has visually finished, reading the
+  // stale JS target instead of the true in-flight value would compound
+  // (each hold zooming from an already-elevated base instead of a clean
+  // one), racing toward the 8x cap unpredictably. Every hold in a fast
+  // back-to-back sequence should land at essentially the SAME effective
+  // magnification, not an escalating one.
+  test('back-to-back holds land at the same magnification, never compounding', async ({ page, context }) => {
+    test.setTimeout(150000);
+    await signIn(page);
+    await page.waitForFunction(() => typeof openTrueMeasure === 'function', null, { timeout: 30000 });
+    await page.waitForFunction(() => typeof _mapkitReady !== 'undefined' && _mapkitReady === true, null, { timeout: 30000 });
+    await page.evaluate(() => openTrueMeasure({ id: 991236, name: 'Compound Probe', addr: '' }));
+    await page.waitForFunction(() => typeof _tmState !== 'undefined' && _tmState && !!_tmState.map, null, { timeout: 20000 });
+    await sleep(2000);
+
+    const wrapBox = await page.evaluate(() => {
+      const r = document.getElementById('tm-map').getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const cdp = await context.newCDPSession(page);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', {
+      type, touchPoints: points.map((p) => ({ x: p.x, y: p.y, radiusX: 8, radiusY: 8, force: 1, id: 1 })),
+    });
+
+    const pts = [0.35, 0.5, 0.65].map((fx) => ({
+      x: Math.round(wrapBox.x + wrapBox.w * fx),
+      y: Math.round(wrapBox.y + wrapBox.h * 0.5),
+    }));
+    const digiReadings = [];
+    for (const p of pts) {
+      await touch('touchStart', [p]);
+      await sleep(900); // hold engages, entrance zoom completes
+      const digi = await page.evaluate(() => _tmCurrentDigi());
+      digiReadings.push(digi);
+      await touch('touchEnd', []);
+      await sleep(80); // fires the NEXT hold before the reset settles
+    }
+    console.log('[probe] COMPOUND CHECK digi per hold:', digiReadings.map((d) => d.toFixed(2)).join(', '));
+    const max = Math.max(...digiReadings), min = Math.min(...digiReadings);
+    expect(max / min, 'every back-to-back hold must reach ~the same zoom, not an escalating one').toBeLessThan(1.5);
+    expect(max, 'must never blow past the digital zoom cap even under rapid repeats').toBeLessThanOrEqual(8.01);
+  });
 });
