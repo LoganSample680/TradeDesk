@@ -386,7 +386,8 @@ function _tlWeekOwnerHtml(byEmp,selfUid){
     const e=byEmp[uid];
     const name=e.name||'Crew';
     const pal=_tlAvatarPalette(name);
-    const parts=['On-site '+fm(e.onsiteMin)];
+    const parts=[];
+    if(e.onsiteMin>3)parts.push('On-site '+fm(e.onsiteMin));
     if(e.driveMin>3)parts.push('Drive '+fm(e.driveMin));
     if(e.placeMin>3)parts.push('Supply/other '+fm(e.placeMin));
     const total=(e.onsiteMin+e.driveMin+e.placeMin)||1;
