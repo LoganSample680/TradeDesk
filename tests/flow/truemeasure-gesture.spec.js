@@ -91,13 +91,30 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     const holdX = Math.round(wrapBox.x + wrapBox.w * 0.35);
     const holdY = Math.round(wrapBox.y + wrapBox.h * 0.55);
     const preHold = await mapInfo();
+    const preDigi = await page.evaluate(() => (_tmState.digiZoom || 1));
     await touch('touchStart', [{ x: holdX, y: holdY }]);
     await sleep(1300); // HOLD_MS(420) + entrance zoom animation
     const zoomed = await mapInfo();
+    const zoomedDigi = await page.evaluate(() => (_tmState.digiZoom || 1));
     const crossVisible = await page.evaluate(() => document.getElementById('tm-crosshair').style.display === 'block');
-    console.log(`[probe] HOLD: preDist=${preHold.dist.toFixed(0)}m zoomedDist=${zoomed.dist.toFixed(0)}m crosshair=${crossVisible}`);
+    // Effective magnification = camera zoom (clamped at MapKit's ~82.5m
+    // satellite floor) x the digital scale layer that covers the remainder.
+    const effective = (preHold.dist / zoomed.dist) * (zoomedDigi / preDigi);
+    console.log(`[probe] HOLD: preDist=${preHold.dist.toFixed(0)}m zoomedDist=${zoomed.dist.toFixed(0)}m digi=${zoomedDigi.toFixed(2)} effective=${effective.toFixed(2)}x crosshair=${crossVisible}`);
     expect(crossVisible, 'crosshair must appear on hold').toBe(true);
-    expect(zoomed.dist, 'hold must zoom the camera in').toBeLessThan(preHold.dist * 0.6);
+    expect(effective, 'hold must magnify ~1/ZOOM_FACTOR overall (camera + digital)').toBeGreaterThan(2.5);
+
+    // Round-trip the conversion helpers while the digital zoom is applied:
+    // a visual point -> coordinate -> back must land on itself, or every
+    // placement at digital zoom is silently off.
+    const rt = await page.evaluate(([x, y]) => {
+      const c = _tmPageToCoord(x, y);
+      const p = _tmCoordToPagePt(c.latitude, c.longitude);
+      return { dx: p.x - x, dy: p.y - y };
+    }, [holdX + 30, holdY - 40]);
+    const rtErr = Math.hypot(rt.dx, rt.dy);
+    console.log(`[probe] ROUNDTRIP at digi=${zoomedDigi.toFixed(2)}: err=${rtErr.toFixed(1)}px`);
+    expect(rtErr, 'point<->coordinate round-trip under digital zoom (px)').toBeLessThan(3);
 
     // ── C: dragging while held moves ONLY the crosshair, never the camera ─
     await sleep(400); // let the entrance animation fully settle
@@ -120,11 +137,14 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     // Sample the expected drop position BEFORE touchEnd: the camera eases
     // back out afterwards, which moves every screen<->coord mapping.
     const expectedDrop = await page.evaluate(([x, y]) => {
-      const r = document.getElementById('tm-map').getBoundingClientRect();
+      // The crosshair lives OUTSIDE the digital-zoom layer (visual space,
+      // relative to the unscaled canvas frame) — mirror the app's own math:
+      // crosshair screen position, then the digi-aware conversion helper.
+      const r = document.getElementById('tm-canvas-wrap').getBoundingClientRect();
       const OFFSET_Y = 70;
       const relY = y - r.y;
       const crossY = r.y + Math.max(20, relY - OFFSET_Y);
-      const c = _tmState.map.convertPointOnPageToCoordinate(new DOMPoint(x, crossY));
+      const c = _tmPageToCoord(x, crossY);
       return { lat: c.latitude, lng: c.longitude };
     }, [endX, endY]);
     await touch('touchEnd', []);

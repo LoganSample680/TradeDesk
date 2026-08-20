@@ -230,7 +230,9 @@ async function openTrueMeasure(c){
       </div>
     </div>
     <div id="tm-canvas-wrap" style="flex:1;position:relative;overflow:hidden;background:var(--bg2)">
-      <div id="tm-map" style="position:absolute;inset:0;touch-action:none"></div>
+      <div id="tm-scale" style="position:absolute;inset:0;transform-origin:50% 50%">
+        <div id="tm-map" style="position:absolute;inset:0;touch-action:none"></div>
+      </div>
       <div id="tm-unavailable" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:30px;text-align:center;color:var(--text3)">
         <div style="font-size:32px">🛰️</div>
         <div style="font-size:14px;font-weight:700;color:var(--text2)">Aerial map isn't available here</div>
@@ -338,6 +340,63 @@ async function _tmInitMap(){
   }
 }
 
+// ── Digital zoom past MapKit's camera floor ─────────────────────────────────
+// Probe-measured 2026-08-20 on the deployed app: MapKit's satellite camera
+// clamps at 82.53m no matter what cameraZoomRange requests (rangeMin 0.1 was
+// accepted, the camera ignored it — requests of 1m and 50m both settled at
+// exactly 82.53m). The owner wants to get MUCH closer to place points
+// precisely and explicitly accepts blur, so past the floor the map ELEMENT
+// scales up via CSS (#tm-scale) — upscaled tiles, real geometry. Every
+// point<->coordinate conversion funnels through the helpers below so placed
+// points stay exact at any digital zoom.
+const _TM_CAM_FLOOR=83;   // just above the measured 82.53m clamp
+const _TM_DIGI_MAX=8;
+function _tmDigiSet(z,animate){
+  if(!_tmState)return;
+  z=Math.max(1,Math.min(_TM_DIGI_MAX,z||1));
+  _tmState.digiZoom=z;
+  const el=document.getElementById('tm-scale');
+  if(el){
+    // Animated for the hold gesture's zoom in/out; instant while a pinch is
+    // live-tracking the fingers (a transition there reads as rubber-band lag).
+    el.style.transition=animate?'transform .28s cubic-bezier(.22,1,.36,1)':'none';
+    el.style.transform=z===1?'':'scale('+z+')';
+  }
+  // MapKit's annotation labels live inside the scaled layer — counter-scale
+  // them so the ft2/distance chips stay readable size instead of ballooning.
+  const inv=z===1?'':'scale('+(1/z)+')';
+  if(_tmState.areaLabelEl)_tmState.areaLabelEl.style.transform=inv;
+  if(_tmState.previewLabelEl)_tmState.previewLabelEl.style.transform=inv;
+}
+// Visual (finger) page point -> the page point MapKit's converters expect.
+// The CSS scale is around the canvas-wrap center and MapKit is unaware of
+// it, so un-scale around that center first. (The math is identical whether
+// MapKit reads its element position from layout or from a fresh
+// getBoundingClientRect: the scale origin is the box center, so both frames
+// agree — verified by the probe's round-trip check.)
+function _tmUnscalePt(x,y){
+  const z=(_tmState&&_tmState.digiZoom)||1;
+  if(z===1)return {x,y};
+  const r=document.getElementById('tm-canvas-wrap').getBoundingClientRect();
+  const cx=r.left+r.width/2,cy=r.top+r.height/2;
+  return {x:cx+(x-cx)/z,y:cy+(y-cy)/z};
+}
+function _tmScalePt(x,y){
+  const z=(_tmState&&_tmState.digiZoom)||1;
+  if(z===1)return {x,y};
+  const r=document.getElementById('tm-canvas-wrap').getBoundingClientRect();
+  const cx=r.left+r.width/2,cy=r.top+r.height/2;
+  return {x:cx+(x-cx)*z,y:cy+(y-cy)*z};
+}
+function _tmPageToCoord(x,y){
+  const p=_tmUnscalePt(x,y);
+  return _tmState.map.convertPointOnPageToCoordinate(new DOMPoint(p.x,p.y));
+}
+function _tmCoordToPagePt(lat,lng){
+  const p=_tmState.map.convertCoordinateToPointOnPage(new mapkit.Coordinate(lat,lng));
+  return _tmScalePt(p.x,p.y);
+}
+
 // Press-and-hold-and-drag precision point placement, the iOS-loupe pattern:
 // a normal tap still drops a point immediately, handled in this same
 // function's pointerup (the !active/!moved branch), not a separate MapKit
@@ -351,12 +410,19 @@ async function _tmInitMap(){
 function _tmInitPrecisionGesture(map,wrap){
   const THRESH=8,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70;
   let downX=0,downY=0,moved=false,active=false,timer=null,origDistance=null,suppressTouchEnd=false;
+  let holdStartDigi=1,pinchOwn=false,pinchD0=0,pinchDigi0=1,pinchCam0=null;
   const cross=document.getElementById('tm-crosshair');
+  // All finger/crosshair math is relative to the UNSCALED canvas frame, not
+  // `wrap` (tm-map): wrap now lives inside the #tm-scale digital-zoom layer,
+  // so its own bounding rect grows/moves under CSS scale, while the frame's
+  // layout box is stable at any zoom.
+  const frameEl=document.getElementById('tm-canvas-wrap')||wrap;
   function cancelTimer(){ if(timer){clearTimeout(timer);timer=null;} }
   function relPoint(e){
-    const r=wrap.getBoundingClientRect();
+    const r=frameEl.getBoundingClientRect();
     return {x:e.clientX-r.left,y:e.clientY-r.top};
   }
+  function tDist(t){return Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY);}
   function placeCrosshair(x,y){
     if(!cross)return;
     cross.style.left=x+'px';
@@ -367,9 +433,9 @@ function _tmInitPrecisionGesture(map,wrap){
   // drop the real point, so the live preview never disagrees with where it
   // actually lands.
   function crosshairCoord(x,y){
-    const r=wrap.getBoundingClientRect();
+    const r=frameEl.getBoundingClientRect();
     const crossY=Math.max(20,y-OFFSET_Y);
-    return map.convertPointOnPageToCoordinate(new DOMPoint(r.left+x,r.top+crossY));
+    return _tmPageToCoord(r.left+x,r.top+crossY);
   }
   function exitPrecision(){
     active=false;
@@ -378,6 +444,7 @@ function _tmInitPrecisionGesture(map,wrap){
       try{map.setCameraDistanceAnimated(origDistance,true);}catch(_e){}
     }
     origDistance=null;
+    _tmDigiSet(holdStartDigi,true); // release the hold's extra digital zoom
     _tmClearPreview();
     // Mirror of the lock below: give the map's own gestures back once the
     // hold-drag ends, whether it ended by dropping a pin or by cancelling.
@@ -396,11 +463,20 @@ function _tmInitPrecisionGesture(map,wrap){
         // as crosshairCoord()/pointerup below — NOT e.pageX/e.pageY, which
         // are page-relative (include document scroll) and land wrong the
         // moment this fixed-position overlay sits over a scrolled page.
-        const r=wrap.getBoundingClientRect();
-        const coord=map.convertPointOnPageToCoordinate(new DOMPoint(r.left+downX,r.top+downY));
+        const r=frameEl.getBoundingClientRect();
+        const coord=_tmPageToCoord(r.left+downX,r.top+downY);
         origDistance=map.cameraDistance;
+        holdStartDigi=(_tmState&&_tmState.digiZoom)||1;
         map.setCenterAnimated(coord,true);
         map.setCameraDistanceAnimated(Math.max(1,origDistance*ZOOM_FACTOR),true);
+        // The camera alone can't deliver the close-up: MapKit's satellite
+        // floor is ~82.5m (measured), so from a typical ~110m view it only
+        // zooms 1.3x when the gesture wants 1/ZOOM_FACTOR (~3.3x). The
+        // digital layer supplies the remainder, so the hold ALWAYS lands
+        // at the same effective magnification no matter where the camera
+        // floor cuts it off.
+        const targetCam=Math.max(origDistance*ZOOM_FACTOR,_TM_CAM_FLOOR);
+        _tmDigiSet(holdStartDigi*targetCam/(origDistance*ZOOM_FACTOR),true);
       }catch(_e){}
       // Belt-and-suspenders: harmless, and was worth something in an
       // earlier round, but three straight owner retests (2026-08-20) show
@@ -436,6 +512,10 @@ function _tmInitPrecisionGesture(map,wrap){
   // quick tap, swallowed the pointerup that places the point (the probe
   // caught taps placing nothing at all).
   wrap.addEventListener('pointermove',e=>{
+    // While this layer owns a pinch, MapKit must not see the pointer
+    // stream either (some engines drive its recognizers off pointer
+    // events rather than touch events).
+    if(pinchOwn){e.stopImmediatePropagation();e.preventDefault();return;}
     if(!e.isPrimary)return;
     if(!active){
       const p=relPoint(e);
@@ -458,8 +538,11 @@ function _tmInitPrecisionGesture(map,wrap){
       const crossY=Math.max(20,p.y-OFFSET_Y);
       let coord=null;
       try{
-        const r=wrap.getBoundingClientRect();
-        coord=map.convertPointOnPageToCoordinate(new DOMPoint(r.left+p.x,r.top+crossY));
+        const r=frameEl.getBoundingClientRect();
+        // Convert while the hold's digital zoom is still applied, THEN
+        // exitPrecision (which releases it) — the crosshair the user aimed
+        // with was on the zoomed view.
+        coord=_tmPageToCoord(r.left+p.x,r.top+crossY);
       }catch(_e){}
       exitPrecision();
       suppressTouchEnd=true; // pointerup precedes touchend — see below
@@ -476,10 +559,8 @@ function _tmInitPrecisionGesture(map,wrap){
     e.stopImmediatePropagation();
     e.preventDefault();
     suppressTouchEnd=true;
-    const p=relPoint(e);
     try{
-      const r=wrap.getBoundingClientRect();
-      const coord=map.convertPointOnPageToCoordinate(new DOMPoint(r.left+p.x,r.top+p.y));
+      const coord=_tmPageToCoord(e.clientX,e.clientY);
       _tmAddPoint(coord.latitude,coord.longitude);
     }catch(_e){}
   },{capture:true});
@@ -500,15 +581,55 @@ function _tmInitPrecisionGesture(map,wrap){
   // placement taps toward a double-tap-to-zoom, recentering the camera
   // mid-trace (the original owner-reported bug). One-shot, cleared on the
   // next touchstart so a stale flag can never eat a real gesture's end.
-  wrap.addEventListener('touchstart',()=>{
+  wrap.addEventListener('touchstart',e=>{
     if(!active)suppressTouchEnd=false;
-  },{capture:true});
+    // Pinch-past-the-floor: once the camera is pinned at MapKit's satellite
+    // floor (or a digital zoom is already applied), this layer owns the
+    // pinch instead of MapKit — pinching IN scales the #tm-scale layer
+    // (upscaled imagery, real geometry via the unscale helpers), pinching
+    // OUT unwinds the digital zoom first and only then hands distance back
+    // to the camera. Above the floor with no digital zoom, MapKit's own
+    // pinch runs untouched.
+    if(e.touches.length===2){
+      cancelTimer();moved=true; // two fingers are never a tap or a hold
+      const digi=(_tmState&&_tmState.digiZoom)||1;
+      let cam=Infinity;try{cam=map.cameraDistance;}catch(_e){}
+      pinchOwn=digi>1||cam<=_TM_CAM_FLOOR+2;
+      if(pinchOwn){
+        pinchD0=tDist(e.touches);pinchDigi0=digi;pinchCam0=cam;
+        e.stopImmediatePropagation();e.preventDefault();
+      }
+    }else{
+      pinchOwn=false;
+    }
+  },{capture:true,passive:false});
   wrap.addEventListener('touchmove',e=>{
+    if(pinchOwn&&e.touches.length===2){
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      const d=tDist(e.touches);
+      if(!(pinchD0>0)||!(d>0))return;
+      const eff=pinchDigi0*(d/pinchD0);
+      if(eff>=1){
+        _tmDigiSet(eff);
+      }else{
+        // Unwound past digital 1x: give the remainder to the real camera.
+        _tmDigiSet(1);
+        try{map.cameraDistance=Math.min(3000,(pinchCam0||_TM_CAM_FLOOR)/eff);}catch(_e){}
+      }
+      return;
+    }
     if(!active)return;
     e.stopImmediatePropagation();
     e.preventDefault();
   },{capture:true,passive:false});
   wrap.addEventListener('touchend',e=>{
+    if(pinchOwn){
+      pinchOwn=false;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      return;
+    }
     if(!active&&!suppressTouchEnd)return;
     suppressTouchEnd=false;
     e.stopImmediatePropagation();
