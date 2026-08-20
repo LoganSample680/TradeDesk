@@ -319,7 +319,20 @@ async function _tmInitMap(){
     // nothing useful left to trace.
     map.cameraZoomRange=new mapkit.CameraZoomRange(3,3000);
     map.addEventListener('single-tap',e=>{
-      const c=map.convertPointOnPageToCoordinate(e.pointOnPage);
+      // e.pointOnPage is page-relative (includes document scroll), but this
+      // overlay is position:fixed — its container sits at a fixed spot on
+      // screen and does NOT move with page scroll. If the screen behind
+      // TrueMeasure was scrolled when it opened, every tap lands off by
+      // exactly that scroll offset: a CONSTANT error on every tap, not a
+      // timing-dependent one (owner report 2026-08-20, live device: even
+      // the very first tap of a fresh session landed nowhere near the
+      // finger, which a rapid-succession/gesture-race theory can't explain
+      // but a fixed page-vs-viewport offset does). Converting back to
+      // viewport-relative coordinates before handing off to MapKit matches
+      // how the precision-hold gesture below already computes its own
+      // coordinates via getBoundingClientRect(), never raw page coordinates.
+      const pt=new DOMPoint(e.pointOnPage.x-(window.scrollX||0),e.pointOnPage.y-(window.scrollY||0));
+      const c=map.convertPointOnPageToCoordinate(pt);
       _tmAddPoint(c.latitude,c.longitude);
     });
     _tmInitPrecisionGesture(map,wrap);
@@ -377,12 +390,16 @@ function _tmInitPrecisionGesture(map,wrap){
     const p=relPoint(e);
     downX=p.x;downY=p.y;moved=false;
     cancelTimer();
-    const pageX=e.pageX,pageY=e.pageY;
     timer=setTimeout(()=>{
       if(moved)return;
       active=true;
       try{
-        const coord=map.convertPointOnPageToCoordinate(new DOMPoint(pageX,pageY));
+        // Viewport-relative (getBoundingClientRect + relative offset), same
+        // as crosshairCoord()/pointerup below — NOT e.pageX/e.pageY, which
+        // are page-relative (include document scroll) and land wrong the
+        // moment this fixed-position overlay sits over a scrolled page.
+        const r=wrap.getBoundingClientRect();
+        const coord=map.convertPointOnPageToCoordinate(new DOMPoint(r.left+downX,r.top+downY));
         origDistance=map.cameraDistance;
         map.setCenterAnimated(coord,true);
         map.setCameraDistanceAnimated(Math.max(3,origDistance*ZOOM_FACTOR),true);
