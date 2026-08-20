@@ -467,4 +467,117 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     expect(max / min, 'every back-to-back hold must reach ~the same zoom, not an escalating one').toBeLessThan(1.5);
     expect(max, 'must never blow past the digital zoom cap even under rapid repeats').toBeLessThanOrEqual(8.01);
   });
+
+  // ── Adversarial: pinch-zoom, then plain taps at the resulting scale ──────
+  // Owner screenshot 2026-08-20 (2015 SW Randolph Ave): traced a "roof" that
+  // came out as a small 547 sq ft sliver nowhere near the visible house, with
+  // the on-screen debug panel showing digi=2.52 (not the hold gesture's fixed
+  // 1/ZOOM_FACTOR=3.33 ratio — this trace never held, it PINCHED) and every
+  // individual tap's own round-trip error at 0.0px. That round-trip check is
+  // structurally blind to a scale/origin bug: it feeds a page point through
+  // _tmPageToCoord then straight back through _tmCoordToPagePt, so a shared
+  // wrong assumption in BOTH directions cancels out and still reads 0. Never
+  // exercised until now: nothing in this file drove a real two-finger pinch
+  // (js/true-measure.js's OWN pinch path — the `pinchOwn` branch in
+  // wrap.addEventListener('touchstart'/'touchmove',...) — was previously
+  // untested end to end). This proves scale correctness against an
+  // INDEPENDENT ground truth instead: the same fixed PIXEL gap between two
+  // points must imply proportionally LESS real-world distance after zooming
+  // in, by very close to the actual achieved zoom ratio. A scale-compensation
+  // bug that a round-trip can't see would show up here as the wrong ratio.
+  test('pinch-zoom then tap: same pixel gap implies proportionally less real-world distance', async ({ page, context }) => {
+    test.setTimeout(60000);
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await signIn(page);
+    await page.waitForFunction(() => typeof openTrueMeasure === 'function', null, { timeout: 30000 });
+    await page.waitForFunction(() => typeof _mapkitReady !== 'undefined' && _mapkitReady === true, null, { timeout: 30000 });
+    await page.evaluate(() => openTrueMeasure({ id: 991237, name: 'Pinch Probe', addr: '' }));
+    await page.waitForFunction(() => typeof _tmState !== 'undefined' && _tmState && !!_tmState.map, null, { timeout: 20000 });
+    await sleep(2500);
+
+    const wrapBox = await page.evaluate(() => {
+      const r = document.getElementById('tm-map').getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const cdp = await context.newCDPSession(page);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', {
+      type,
+      touchPoints: points.map((p) => ({ x: p.x, y: p.y, radiusX: 8, radiusY: 8, force: 1, id: p.id || 1 })),
+    });
+    const metersBetween = (a, b) => Math.hypot(
+      (a.lat - b.lat) * 111320,
+      (a.lng - b.lng) * 111320 * Math.cos(a.lat * Math.PI / 180),
+    );
+
+    const cx = wrapBox.x + wrapBox.w * 0.5, cy = wrapBox.y + wrapBox.h * 0.5;
+    const GAP = 100; // fixed screen-pixel gap, measured before AND after the pinch
+    const probePts = () => page.evaluate(([x0, x1, y]) => {
+      const a = _tmPageToCoord(x0, y), b = _tmPageToCoord(x1, y);
+      return { a: { lat: a.latitude, lng: a.longitude }, b: { lat: b.latitude, lng: b.longitude } };
+    }, [cx - GAP / 2, cx + GAP / 2, cy]);
+
+    const before = await probePts();
+    const D1 = metersBetween(before.a, before.b);
+    const camBefore = await page.evaluate(() => _tmState.map.cameraDistance);
+    const digiBefore = await page.evaluate(() => _tmCurrentDigi());
+
+    // A real two-finger pinch centered on the map: start 80px apart, spread
+    // out to 400px over several steps (a deliberate, unhurried zoom-in, not a
+    // flick), then lift both fingers.
+    const steps = 10, d0 = 80, d1 = 400;
+    await touch('touchStart', [
+      { id: 1, x: cx - d0 / 2, y: cy },
+      { id: 2, x: cx + d0 / 2, y: cy },
+    ]);
+    for (let i = 1; i <= steps; i++) {
+      const d = d0 + (d1 - d0) * (i / steps);
+      await touch('touchMove', [
+        { id: 1, x: cx - d / 2, y: cy },
+        { id: 2, x: cx + d / 2, y: cy },
+      ]);
+      await sleep(60);
+    }
+    await touch('touchEnd', []);
+    await sleep(500);
+
+    const camAfter = await page.evaluate(() => _tmState.map.cameraDistance);
+    const digiAfter = await page.evaluate(() => _tmCurrentDigi());
+    const effective = (camBefore / camAfter) * (digiAfter / digiBefore);
+
+    const after = await probePts();
+    const D2 = metersBetween(after.a, after.b);
+    const achievedRatio = D1 / D2;
+    console.log(`[probe] PINCH: cam ${camBefore.toFixed(0)}m->${camAfter.toFixed(0)}m digi ${digiBefore.toFixed(2)}->${digiAfter.toFixed(2)} effective=${effective.toFixed(2)}x D1=${D1.toFixed(2)}m D2=${D2.toFixed(2)}m achievedRatio=${achievedRatio.toFixed(2)}x`);
+
+    expect(effective, 'pinch must actually zoom in').toBeGreaterThan(1.3);
+    // Generous tolerance (30%): this is a ground-truth cross-check, not a
+    // precision measurement — the point is catching a GROSS scale mismatch
+    // (2x off, or inverted, or flat), not sub-percent drift.
+    expect(achievedRatio, 'the same pixel gap must now imply ~1/effective the real-world distance').toBeGreaterThan(effective * 0.7);
+    expect(achievedRatio).toBeLessThan(effective * 1.3);
+
+    // Now place a real tap at the post-pinch scale and confirm it still lands
+    // under the finger — this is exactly what the owner did next (tap to
+    // trace corners after pinching in).
+    const tapX = Math.round(cx), tapY = Math.round(cy + 60);
+    await touch('touchStart', [{ x: tapX, y: tapY }]);
+    await sleep(70);
+    await touch('touchEnd', []);
+    await sleep(400);
+    const tap = await page.evaluate(() => {
+      const p = _tmState.points[_tmState.points.length - 1];
+      if (!p) return { placed: false };
+      const pt = _tmState.map.convertCoordinateToPointOnPage(new mapkit.Coordinate(p.lat, p.lng));
+      return { placed: true, screenX: pt.x, screenY: pt.y };
+    });
+    expect(tap.placed, 'a tap after pinching must still place a point').toBe(true);
+    const tapErrPx = Math.hypot(tap.screenX - tapX, tap.screenY - tapY);
+    console.log(`[probe] POST-PINCH TAP: target=(${tapX},${tapY}) errPx=${tapErrPx.toFixed(1)}`);
+    expect(tapErrPx, 'post-pinch tap must land under the finger (px)').toBeLessThan(12);
+
+    const relevant = errors.filter(realError);
+    expect(relevant.length, 'zero console errors during pinch+tap: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
+  });
 });
