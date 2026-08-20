@@ -764,8 +764,15 @@ async function _geoOnPing(pos){
     if(typeof pos.coords.speed==='number'&&pos.coords.speed>=_GEO_DRIVEBY_SPEED_MPS){
       _geoParkCluster=null;   // still rolling, whatever the positions say
     }else if(_driveAccOk){
+      // The cluster belongs to ONE drive leg and one forward-running clock. A
+      // cluster left over from a previous leg (leg stamp differs) or from a
+      // world whose clock moved backward under it (sinceMs in the future:
+      // a device clock change, or a fixture rewinding time) can never be
+      // trusted to age THIS park, so it restarts clean instead of maturing
+      // off stale state.
+      if(_geoParkCluster&&(_geoParkCluster.leg!==_geoDriveStartedAt||nowMs<_geoParkCluster.sinceMs))_geoParkCluster=null;
       if(!_geoParkCluster||_geoDistFt(here,_geoParkCluster)>_GEO_PARK_STEP_FT){
-        _geoParkCluster={lat:here.lat,lng:here.lng,n:1,sinceMs:nowMs};
+        _geoParkCluster={lat:here.lat,lng:here.lng,n:1,sinceMs:nowMs,leg:_geoDriveStartedAt};
       }else{
         const c=_geoParkCluster;
         c.lat=(c.lat*c.n+here.lat)/(c.n+1);c.lng=(c.lng*c.n+here.lng)/(c.n+1);c.n++;
@@ -2451,6 +2458,13 @@ function _geoReconcileSoon(){
 }
 async function _geoReconcileFromMileage(){
   if(_geoReconBusy)return;
+  // Never interleave with a ping in flight: this function awaits (geocodes,
+  // the coverage fetch) and the fence machine awaits, so running both
+  // concurrently would let their continuations land between each other's
+  // steps in an order that depends on real network pacing, not on the data.
+  // The machine's own re-entrancy rule (_geoPingBusy) exists for exactly
+  // this reason; reconciliation defers to it and the next trigger retries.
+  if(_geoPingBusy)return;
   if(!_supa||!_supaUser)return;
   if(typeof mileage==='undefined'||!Array.isArray(mileage))return;
   _geoReconBusy=true;
