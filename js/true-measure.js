@@ -409,7 +409,7 @@ function _tmCoordToPagePt(lat,lng){
 // drawImage/getImageData, so a true magnifying-glass duplicate isn't safe.
 function _tmInitPrecisionGesture(map,wrap){
   const THRESH=8,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70;
-  let downX=0,downY=0,moved=false,active=false,timer=null,origDistance=null,suppressTouchEnd=false;
+  let downX=0,downY=0,moved=false,active=false,timer=null,suppressTouchEnd=false;
   let holdStartDigi=1,pinchOwn=false,pinchD0=0,pinchDigi0=1,pinchCam0=null;
   const cross=document.getElementById('tm-crosshair');
   // All finger/crosshair math is relative to the UNSCALED canvas frame, not
@@ -440,11 +440,7 @@ function _tmInitPrecisionGesture(map,wrap){
   function exitPrecision(){
     active=false;
     if(cross)cross.style.display='none';
-    if(origDistance!=null){
-      try{map.setCameraDistanceAnimated(origDistance,true);}catch(_e){}
-    }
-    origDistance=null;
-    _tmDigiSet(holdStartDigi,true); // release the hold's extra digital zoom
+    _tmDigiSet(holdStartDigi,true); // release the hold's digital close-up
     _tmClearPreview();
     // Mirror of the lock below: give the map's own gestures back once the
     // hold-drag ends, whether it ended by dropping a pin or by cancelling.
@@ -465,18 +461,20 @@ function _tmInitPrecisionGesture(map,wrap){
         // moment this fixed-position overlay sits over a scrolled page.
         const r=frameEl.getBoundingClientRect();
         const coord=_tmPageToCoord(r.left+downX,r.top+downY);
-        origDistance=map.cameraDistance;
         holdStartDigi=(_tmState&&_tmState.digiZoom)||1;
+        // Recenter on the pressed point (the digital scale magnifies around
+        // the frame CENTER, so without this an off-center press would zoom
+        // toward the middle of the screen instead of the finger).
         map.setCenterAnimated(coord,true);
-        map.setCameraDistanceAnimated(Math.max(1,origDistance*ZOOM_FACTOR),true);
-        // The camera alone can't deliver the close-up: MapKit's satellite
-        // floor is ~82.5m (measured), so from a typical ~110m view it only
-        // zooms 1.3x when the gesture wants 1/ZOOM_FACTOR (~3.3x). The
-        // digital layer supplies the remainder, so the hold ALWAYS lands
-        // at the same effective magnification no matter where the camera
-        // floor cuts it off.
-        const targetCam=Math.max(origDistance*ZOOM_FACTOR,_TM_CAM_FLOOR);
-        _tmDigiSet(holdStartDigi*targetCam/(origDistance*ZOOM_FACTOR),true);
+        // The close-up is FULLY digital, the camera distance is never
+        // touched. Two probe rounds on the live app showed
+        // setCameraDistanceAnimated contributing exactly nothing here
+        // (111m -> 111m; the concurrent setCenterAnimated appears to
+        // cancel it), and MapKit's satellite floor (~82.5m, measured)
+        // caps it at a puny 1.3x from a typical view anyway. Digital
+        // delivers the exact same 1/ZOOM_FACTOR magnification every time,
+        // from any starting zoom, with nothing to race against.
+        _tmDigiSet(holdStartDigi/ZOOM_FACTOR,true);
       }catch(_e){}
       // Belt-and-suspenders: harmless, and was worth something in an
       // earlier round, but three straight owner retests (2026-08-20) show
