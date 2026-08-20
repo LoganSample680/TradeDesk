@@ -1412,15 +1412,25 @@ test.describe('timelog.js: exhaustive coverage', () => {
   test.describe('Me/Team scope + day picker', () => {
     test('owner defaults to Team, sees the toggle, own row tagged "(you)"', async () => {
       const r = await page.evaluate(async () => {
+        // "(you)" needs a real self-identity to tag against (cid, resolved
+        // from _contractorUserId/_supaUser.id): the offline harness's default
+        // owner session leaves _supaUser unset, which would make cid/selfUid
+        // null and silently skip the tag on every row. Give the owner a real
+        // uid here, same as every employee-persona test already does.
+        const origUser = window._supaUser;
+        window._supaUser = { id: 'owner-test-uid' };
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
         const toggle = document.getElementById('tl-scope-toggle');
-        return {
+        const result = {
           visible: toggle.style.display !== 'none',
           teamActive: !!toggle.querySelector('.tl-scope-btn.active')?.textContent.includes('Team'),
           scope: _tlScope,
           hasYouTag: document.getElementById('tl-list').innerHTML.includes('(you)'),
         };
+        window._supaUser = origUser;
+        await renderTimeLog();
+        return result;
       });
       expect(r.visible).toBe(true);
       expect(r.teamActive).toBe(true);
@@ -1477,7 +1487,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
         await renderTimeLog();
         const meShare = document.getElementById('tl-share').style.display !== 'none';
         const meHtml = document.getElementById('tl-list').innerHTML;
+        // setTimeLogScope fires renderTimeLog() without awaiting it (same
+        // fire-and-forget convention setTimeLogYear already uses), so an
+        // explicit await here is required before reading the DOM, exactly
+        // like every setTimeLogYear test already does.
         setTimeLogScope('team');
+        await renderTimeLog();
         const teamShare = document.getElementById('tl-share').style.display !== 'none';
         const teamHtml = document.getElementById('tl-list').innerHTML;
         const scopeAfterTeam = _tlScope;
@@ -1536,18 +1551,24 @@ test.describe('timelog.js: exhaustive coverage', () => {
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
         const monthEl = document.getElementById('bk-tl-mo-' + curMo);
-        const weekChip = monthEl.querySelector('.tl-chip.wk');
-        const bodyEl = weekChip.closest('[id^="tl-wkbody-"]');
-        const weekActiveBefore = weekChip.classList.contains('active');
+        const bodyEl = monthEl.querySelector('.tl-chip.wk').closest('[id^="tl-wkbody-"]');
+        // setTimeLogDayPick replaces bodyEl's innerHTML wholesale on every
+        // click (a fresh _tlRenderWeekBody render), so any chip reference
+        // captured before a click is a detached node afterward, checking
+        // .classList on it would silently check the OLD, discarded button.
+        // bodyEl itself keeps its id and stays attached, only its children
+        // are swapped, so re-query fresh chips from it after every click.
+        const weekChip = () => bodyEl.querySelector('.tl-chip.wk');
+        const weekActiveBefore = weekChip().classList.contains('active');
         const scopeTtlBefore = bodyEl.querySelector('.tl-scope-ttl').textContent;
-        const dotChip = [...bodyEl.querySelectorAll('.tl-chip')].find(c => c !== weekChip && c.querySelector('.tl-dot'));
+        const dotChip = [...bodyEl.querySelectorAll('.tl-chip')].find(c => !c.classList.contains('wk') && c.querySelector('.tl-dot'));
         dotChip.click();
         const scopeTtlAfter = bodyEl.querySelector('.tl-scope-ttl').textContent;
-        const dotChipActive = dotChip.classList.contains('active');
-        const weekChipStillActive = weekChip.classList.contains('active');
-        weekChip.click();
+        const dotChipActive = [...bodyEl.querySelectorAll('.tl-chip')].some(c => !c.classList.contains('wk') && c.classList.contains('active'));
+        const weekChipStillActive = weekChip().classList.contains('active');
+        weekChip().click();
         const scopeTtlBack = bodyEl.querySelector('.tl-scope-ttl').textContent;
-        const weekActiveAgain = weekChip.classList.contains('active');
+        const weekActiveAgain = weekChip().classList.contains('active');
         return { weekActiveBefore, scopeTtlBefore, scopeTtlAfter, dotChipActive, weekChipStillActive, scopeTtlBack, weekActiveAgain };
       }, curMonthPrefix);
       expect(r.weekActiveBefore).toBe(true);
