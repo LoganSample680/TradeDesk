@@ -313,11 +313,11 @@ async function _tmInitMap(){
     map.region=new mapkit.CoordinateRegion(coord,new mapkit.CoordinateSpan(0.0015,0.0015));
     // No cameraZoomRange set defaults to MapKit's own floor, which isn't
     // close enough to trace a single roof edge or a foundation line by hand
-    // (owner report 2026-08-19, live device). 12m keeps individual shingles
-    // resolvable at max zoom on satellite imagery; 3000m caps how far a
-    // contractor can zoom OUT, past "the whole property" there's nothing
-    // useful left to trace.
-    map.cameraZoomRange=new mapkit.CameraZoomRange(12,3000);
+    // (owner report 2026-08-19, live device). Tightened again to 3m
+    // (owner report 2026-08-20: 12m still wasn't close enough) — 3000m caps
+    // how far a contractor can zoom OUT, past "the whole property" there's
+    // nothing useful left to trace.
+    map.cameraZoomRange=new mapkit.CameraZoomRange(3,3000);
     map.addEventListener('single-tap',e=>{
       const c=map.convertPointOnPageToCoordinate(e.pointOnPage);
       _tmAddPoint(c.latitude,c.longitude);
@@ -368,6 +368,9 @@ function _tmInitPrecisionGesture(map,wrap){
     }
     origDistance=null;
     _tmClearPreview();
+    // Mirror of the lock below: give the map's own gestures back once the
+    // hold-drag ends, whether it ended by dropping a pin or by cancelling.
+    try{map.isScrollEnabled=true;map.isZoomEnabled=true;map.isRotationEnabled=true;}catch(_e){}
   }
   wrap.addEventListener('pointerdown',e=>{
     if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;
@@ -382,8 +385,17 @@ function _tmInitPrecisionGesture(map,wrap){
         const coord=map.convertPointOnPageToCoordinate(new DOMPoint(pageX,pageY));
         origDistance=map.cameraDistance;
         map.setCenterAnimated(coord,true);
-        map.setCameraDistanceAnimated(Math.max(12,origDistance*ZOOM_FACTOR),true);
+        map.setCameraDistanceAnimated(Math.max(3,origDistance*ZOOM_FACTOR),true);
       }catch(_e){}
+      // MapKit's own pan/zoom gesture recognizers are still listening on
+      // this same wrap element and were reacting to the very drag that's
+      // supposed to only move the crosshair overlay below, so the map
+      // itself visibly panned around during what's meant to be a "camera
+      // holds still, only the crosshair tracks your finger" precision
+      // placement (owner report 2026-08-20, live device). Locking the
+      // map's gestures for the duration of the hold, restored in
+      // exitPrecision, is what actually keeps it fixed.
+      try{map.isScrollEnabled=false;map.isZoomEnabled=false;map.isRotationEnabled=false;}catch(_e){}
       if(cross)cross.style.display='block';
       placeCrosshair(downX,downY);
       try{_tmUpdatePreview(crosshairCoord(downX,downY));}catch(_e){}
@@ -407,12 +419,18 @@ function _tmInitPrecisionGesture(map,wrap){
     if(active){
       const p=relPoint(e);
       const crossY=Math.max(20,p.y-OFFSET_Y);
+      let coord=null;
       try{
         const r=wrap.getBoundingClientRect();
-        const coord=map.convertPointOnPageToCoordinate(new DOMPoint(r.left+p.x,r.top+crossY));
-        _tmAddPoint(coord.latitude,coord.longitude);
+        coord=map.convertPointOnPageToCoordinate(new DOMPoint(r.left+p.x,r.top+crossY));
       }catch(_e){}
+      // Read the coordinate off the still-zoomed-in camera first, THEN
+      // release the gesture lock: exitPrecision hands the map's own zoom
+      // gesture back, and _tmAddPoint's own brief re-suppression (below)
+      // needs to be the thing that wins, not get immediately undone by
+      // exitPrecision restoring it right after.
       exitPrecision();
+      if(coord)_tmAddPoint(coord.latitude,coord.longitude);
     }
   });
   wrap.addEventListener('pointercancel',()=>{cancelTimer();if(active)exitPrecision();});
@@ -439,7 +457,33 @@ function _tmAddPoint(lat,lng){
   if(!_tmState)return;
   _tmState.points.push({lat,lng});
   document.getElementById('tm-precision-hint')?.remove();
+  _tmSuppressDoubleTapZoom();
   _tmRedraw();
+}
+
+// Placing points quickly one after another along an edge reads to MapKit's
+// own gesture recognizer exactly like the start of a double-tap-to-zoom:
+// two taps, close together in time and screen position. MapKit then
+// recenters/zooms the camera BETWEEN the two taps instead of firing two
+// ordinary single-taps, so the second point lands wherever that shifted
+// camera now maps the same screen spot, nowhere near where the user
+// actually tapped (owner report 2026-08-20, live device: a nonsensical
+// triangle spanning three separate houses from what should've been three
+// points traced along one roofline). Briefly disabling zoom right after
+// every placed point closes that window: a tap that lands inside it can
+// only ever register as a second point, never get reinterpreted as a zoom
+// gesture. Normal pinch-zoom navigation between points is unaffected once
+// the cooldown clears a moment later.
+function _tmSuppressDoubleTapZoom(){
+  const map=_tmState&&_tmState.map;
+  if(!map)return;
+  try{map.isZoomEnabled=false;}catch(_e){}
+  if(_tmState._zoomCooldownTimer)clearTimeout(_tmState._zoomCooldownTimer);
+  _tmState._zoomCooldownTimer=setTimeout(()=>{
+    if(!_tmState||_tmState.map!==map)return;
+    try{map.isZoomEnabled=true;}catch(_e){}
+    _tmState._zoomCooldownTimer=null;
+  },400);
 }
 
 function _tmUndo(){
