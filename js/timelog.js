@@ -6,14 +6,21 @@
 //   2. job_time_entries (Supabase, via _fetchCrewLabor), GPS arrival/
 //      departure auto-tracking (js/geo-track.js), already carries
 //      employee_user_id.
-// Owner call 2026-07-11: structure follows Books exactly, a year selector,
-// then month accordions (newest month first, current/future open by
-// default), then day accordions within each month (newest day first), the
-// same _bkTogMonth/_bkTogDay/_bkRenderDays machinery Income and Expenses
-// already use (js/finance.js), just summing minutes instead of dollars. This
-// is an activity log, not a cost report, no permission gate to see your OWN
-// entries. Job Profit and Crew Cost are the $ views; they read the same rows
-// so cost isn't blind to manually-clocked time.
+// Owner call 2026-08-20: this is now ALSO the unified crew hours + cost
+// report (absorbing what was going to be a separate Crew Cost redesign,
+// owner: "I don't want this under crew cost, want it under time log"). A
+// year selector, then month accordions, January (oldest) THROUGH December
+// (newest), the opposite order from every other Books accordion (Income/
+// Expenses read newest-first) because this is a "how did the year build up"
+// report, not a "what happened lately" ledger. Each month opens into week
+// accordions (_bkWeekAcc, js/finance.js), the new tier between month and
+// day. Owners/managers (_canViewComp) see every employee's hours + loaded $
+// cost broken out per week; everyone else sees only their own hours, no
+// dollars, plus a "Share this week's hours" button. Either way, each week
+// still opens into the exact same day-by-day entries table (_bkRenderDays)
+// this page always had, same Edit/Delete on manual entries, just nested one
+// level deeper now. Job Profit and Crew Cost's own modal are the other $
+// views; they read the same rows so cost is never blind to manual time.
 function _tlJobClientInfo(jobId){
   const j=jobs.find(x=>x.id===jobId);
   const bid=j&&j.bid_id?bids.find(b=>b.id===j.bid_id):null;
@@ -276,16 +283,120 @@ function _tlStartOpenRefresh(){
     _tlRenderOpenBanner();
   },30000);
 }
+// Sunday–Saturday label for a week key ('YYYY-MM-DD' Sunday date), e.g.
+// "Week of Mar 9 – 15" (or "Mar 30 – Apr 5" when the week crosses a month).
+function _tlWeekLabel(wkStart){
+  const s=new Date(wkStart+'T00:00:00');
+  if(isNaN(s.getTime()))return 'Week';
+  const e=new Date(s);e.setDate(e.getDate()+6);
+  const sameMonth=s.getMonth()===e.getMonth();
+  const sLabel=s.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const eLabel=sameMonth?String(e.getDate()):e.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  return 'Week of '+sLabel+' – '+eLabel;
+}
+// "Mon 3/9" for a day row inside an individual's week body.
+function _tlDayShort(dateStr){
+  const p=(dateStr||'').split('-').map(Number);
+  if(p.length<3||!p[0]||!p[1]||!p[2])return dateStr||'-';
+  const d=new Date(p[0],p[1]-1,p[2]);
+  if(isNaN(d.getTime()))return dateStr;
+  return d.toLocaleDateString('en-US',{weekday:'short'})+' '+p[1]+'/'+p[2];
+}
+// Per-employee aggregation over any row set (a week or a whole month): total
+// minutes plus the on-site/drive/supply-run split the owner mockup asked for.
+// Manual clock entries are always on-site (that's what a manual clock means);
+// auto (GPS) entries classify via the same _geoIsDriveSource/_geoIsPlaceSource
+// helpers Crew Cost already uses, so the two reports never disagree on what
+// counts as drive time. Off-job stops never reach here, _timeLogRows already
+// drops them. Keyed by personUid, owner-logged rows (personUid null) fold
+// under `cid` so they line up with _fetchCrewLabor's rate maps (also keyed
+// by cid for the owner).
+function _tlEmpWeekAgg(rows,cid){
+  const byEmp={};
+  rows.forEach(r=>{
+    const uid=r.personUid||cid;
+    const e=byEmp[uid]||(byEmp[uid]={min:0,onsiteMin:0,driveMin:0,placeMin:0,weekOT:false,name:r.personName});
+    e.min+=r.minutes||0;
+    if(r.weekOT)e.weekOT=true;
+    if(r.source==='manual')e.onsiteMin+=r.minutes||0;
+    else if(typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(r.detail))e.driveMin+=r.minutes||0;
+    else if(typeof _geoIsPlaceSource==='function'&&_geoIsPlaceSource(r.detail))e.placeMin+=r.minutes||0;
+    else e.onsiteMin+=r.minutes||0;
+    if(!e.name&&r.personName)e.name=r.personName;
+  });
+  return byEmp;
+}
+function _tlEmpLoadedTotal(byEmp,rateMap){
+  return Object.keys(byEmp).reduce((s,uid)=>s+(byEmp[uid].min/60)*(rateMap.loaded[uid]||0),0);
+}
+// Owner/manager week body: one row per employee, hours breakdown + $ cost.
+// Same wage+burden framing as Crew Cost (_crewCostRender), just bucketed by
+// week/month here instead of a rolling range.
+function _tlWeekOwnerHtml(byEmp,rateMap){
+  const uids=Object.keys(byEmp).sort((a,b)=>byEmp[b].min-byEmp[a].min);
+  return uids.map(uid=>{
+    const e=byEmp[uid];const hrs=e.min/60;
+    const wage=hrs*(rateMap.wage[uid]||0),loaded=hrs*(rateMap.loaded[uid]||0);
+    const parts=[hrs.toFixed(1)+'h','On-site '+(e.onsiteMin/60).toFixed(1)+'h'];
+    if(e.driveMin>3)parts.push('Drive '+(e.driveMin/60).toFixed(1)+'h');
+    if(e.placeMin>3)parts.push('Supply/other '+(e.placeMin/60).toFixed(1)+'h');
+    const otTag=e.weekOT?' <span style="color:var(--c-amber);font-weight:800">OT</span>':'';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 2px;border-bottom:1px solid var(--line)">'+
+      '<div style="min-width:0"><div style="font-size:13px;font-weight:700">'+escHtml(rateMap.name[uid]||e.name||'Crew')+'</div>'+
+      '<div style="font-size:10.5px;color:var(--text3);margin-top:1px">'+parts.join(' · ')+otTag+'</div></div>'+
+      '<div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:800">'+fmt(loaded)+'</div>'+
+      '<div style="font-size:10.5px;color:var(--text3)">wage '+fmt(wage)+' + burden</div></div>'+
+    '</div>';
+  }).join('');
+}
+// Individual week body: own days, no dollars, matches the "your hours only"
+// mockup exactly (owner call 2026-08-20: individuals never see money here).
+function _tlWeekMineHtml(rows){
+  const byDay={};
+  rows.forEach(r=>{
+    const d=r.date||'unknown';
+    const e=byDay[d]||(byDay[d]={min:0,labels:new Set()});
+    e.min+=r.minutes||0;
+    if(r.clientName)e.labels.add(r.clientName);
+  });
+  const days=Object.keys(byDay).sort();
+  return days.map(d=>{
+    const e=byDay[d];const labels=[...e.labels];
+    const label=labels.length===1?labels[0]:(labels.length>1?labels.length+' stops':'');
+    return '<div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text3);padding:3px 0">'+
+      '<span>'+_tlDayShort(d)+(label?' · '+escHtml(label):'')+'</span>'+
+      '<span style="font-weight:700;color:var(--text)">'+(typeof _fmtMin==='function'?_fmtMin(e.min):e.min+'m')+'</span>'+
+    '</div>';
+  }).join('');
+}
+// "Share this week's hours" (owner mockup, individual view only): the
+// current Sun–Sat week, own rows only. _tlLastRows is already scoped to the
+// signed-in person for a non-comp viewer, so no re-filtering by uid needed.
+async function _tlShareWeek(){
+  const wkStart=new Date();wkStart.setHours(0,0,0,0);wkStart.setDate(wkStart.getDate()-wkStart.getDay());
+  const wkEnd=new Date(wkStart);wkEnd.setDate(wkEnd.getDate()+6);
+  const wkStartStr=dateKey(wkStart),wkEndStr=dateKey(wkEnd);
+  const rows=_tlLastRows.filter(r=>r.date>=wkStartStr&&r.date<=wkEndStr);
+  if(!rows.length){typeof showToast==='function'&&showToast('No hours logged this week yet','📋');return;}
+  const byDay={};
+  rows.forEach(r=>{byDay[r.date]=(byDay[r.date]||0)+(r.minutes||0);});
+  const totalMin=rows.reduce((s,r)=>s+(r.minutes||0),0);
+  const lines=Object.keys(byDay).sort().map(d=>_tlDayShort(d)+': '+(typeof _fmtMin==='function'?_fmtMin(byDay[d]):byDay[d]+'m'));
+  const text='My hours this week ('+_tlWeekLabel(wkStartStr)+')\n'+lines.join('\n')+'\nTotal: '+(typeof _fmtMin==='function'?_fmtMin(totalMin):totalMin+'m');
+  if(typeof pwaShare==='function')await pwaShare({title:'This week\'s hours',text});
+}
 async function renderTimeLog(){
   const el=document.getElementById('tl-list');if(!el)return;
   _tlStartOpenRefresh();
   const totalEl=document.getElementById('tl-total');
+  const shareEl=document.getElementById('tl-share');
   el.innerHTML='<div style="padding:6px 2px">'+_tdSkelRows(4,12)+'</div>';
   let allRows;
   try{allRows=await _timeLogRows(null);}
   catch(_e){el.innerHTML='<div class="empty">Couldn\'t load time entries.</div>';return;}
+  const canComp=typeof _canViewComp==='function'&&_canViewComp();
   const myUid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
-  const visible=(typeof _canViewComp==='function'&&_canViewComp())?allRows:allRows.filter(r=>r.personUid===myUid);
+  const visible=canComp?allRows:allRows.filter(r=>r.personUid===myUid);
   // "This week" is a live indicator, not tied to the year selector, a
   // contractor running payroll cares about the current pay period regardless
   // of what year's history they happen to be scrolled to.
@@ -304,38 +415,88 @@ async function renderTimeLog(){
   if(!rows.length){
     el.innerHTML='<div class="empty">No time logged in '+yr+'.</div>';
     if(totalEl)totalEl.textContent='';
+    if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
     _tlLastRows=[];
     return;
   }
   _tlComputeOT(rows);
   _tlComputeWeeklyRunning(rows);
   _tlLastRows=rows;
+  const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
+  // Rate maps only, entries/shopEntries from this call are unused (the rows
+  // already carry their own minutes from _timeLogRows above); owner/manager
+  // view is the only one that ever needs a $ figure, so individuals skip
+  // the query entirely.
+  const rateMap=canComp?await _fetchCrewLabor(null):null;
+  if(rateMap)rateMap.cid=cid;
   const totalMin=rows.reduce((s,r)=>s+(r.minutes||0),0);
-  if(totalEl)totalEl.textContent=(typeof _fmtMin==='function'?_fmtMin(totalMin):totalMin+'m')+' total in '+yr;
+  if(totalEl){
+    if(rateMap){
+      const grand=_tlEmpLoadedTotal(_tlEmpWeekAgg(rows,cid),rateMap);
+      totalEl.textContent=fmt(grand)+' in '+yr;
+    }else{
+      totalEl.textContent=(typeof _fmtMin==='function'?_fmtMin(totalMin):totalMin+'m')+' total in '+yr;
+    }
+  }
   const byMonth={};
   rows.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';(byMonth[mo]||(byMonth[mo]=[])).push(r);});
-  const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
+  // January (oldest) → December (newest), owner call 2026-08-20. Every other
+  // Books accordion (Income/Expenses) reads newest-first; this one deliberately
+  // doesn't, so don't "fix" this sort to match them.
+  const months=Object.keys(byMonth).sort((a,b)=>a.localeCompare(b));
   const curMo=todayKey().slice(0,7);
+  const curWk=_tlWeekKey(todayKey());
   el.innerHTML='<div class="bk-months">'+months.map(mo=>{
     const moRows=byMonth[mo];
-    const moMin=moRows.reduce((s,r)=>s+(r.minutes||0),0);
-    const[y,m]=mo.split('-');
-    const moLabel=(y&&m)?new Date(parseInt(y),parseInt(m)-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}):mo;
-    const isOpen=/^\d{4}-\d{2}$/.test(mo)&&mo>=curMo;
-    return '<div id="bk-tl-mo-'+mo+'" class="bk-month'+(isOpen?' open':'')+'">'+
-      '<button class="bk-month-hd" onclick="_bkTogMonth(\'tl\',\''+mo+'\')">'+
-        '<div style="flex:1;text-align:left">'+
-          '<div class="bk-month-title">'+moLabel+'</div>'+
-          '<div class="bk-month-sub">'+moRows.length+' entr'+(moRows.length!==1?'ies':'y')+'</div>'+
-        '</div>'+
-        '<div style="display:flex;align-items:center;gap:10px">'+
-          '<div style="font-size:15px;font-weight:900;color:var(--text);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+(typeof _fmtMin==='function'?_fmtMin(moMin):moMin+'m')+'</div>'+
-          '<div class="bk-month-chev">▸</div>'+
-        '</div>'+
-      '</button>'+
-      '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+
-        _bkRenderDays('tl',mo,moRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,typeof _fmtMin==='function'?_fmtMin:(m=>m+'m'))+
-      '</div>'+
+    const byWeek={};
+    moRows.forEach(r=>{const wk=_tlWeekKey(r.date)||'unknown';(byWeek[wk]||(byWeek[wk]=[])).push(r);});
+    const weeks=Object.keys(byWeek).sort((a,b)=>a.localeCompare(b));
+    const moOpen=/^\d{4}-\d{2}$/.test(mo)&&mo>=curMo;
+    let moSub,moTotalHtml;
+    if(rateMap){
+      const byEmpMo=_tlEmpWeekAgg(moRows,cid);
+      const empCount=Object.keys(byEmpMo).length;
+      moSub=weeks.length+' week'+(weeks.length!==1?'s':'')+' · '+empCount+' employee'+(empCount!==1?'s':'');
+      moTotalHtml='<div style="font-size:15px;font-weight:900;color:var(--c-red);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+fmt(_tlEmpLoadedTotal(byEmpMo,rateMap))+'</div>';
+    }else{
+      const moMin=moRows.reduce((s,r)=>s+(r.minutes||0),0);
+      moSub=weeks.length+' week'+(weeks.length!==1?'s':'');
+      moTotalHtml='<div style="font-size:15px;font-weight:900;color:var(--text);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+(typeof _fmtMin==='function'?_fmtMin(moMin):moMin+'m')+'</div>';
+    }
+    // Every week's body ends with the same day-by-day entries table this page
+    // always had (Person/Job site/Clock In/Clock Out/Duration/Week total,
+    // Edit on manual rows), just nested one level deeper than before. This is
+    // the only place a manual entry can still be edited or deleted, so it
+    // has to survive the week tier, not just the summary rows above it.
+    const _tlEntriesHtml=weekRows=>'<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)">'+
+      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:0 2px 6px">Entries</div>'+
+      _bkRenderDays('tl',mo,weekRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,typeof _fmtMin==='function'?_fmtMin:(m=>m+'m'))+
     '</div>';
+    const weeksHtml=weeks.map(wk=>{
+      const weekRows=byWeek[wk];
+      const wkId=wk.replace(/[^0-9]/g,'')||'x';
+      const wkOpen=moOpen&&wk===curWk;
+      const wkLabel=_tlWeekLabel(wk);
+      if(rateMap){
+        const byEmp=_tlEmpWeekAgg(weekRows,cid);
+        const empCount=Object.keys(byEmp).length;
+        return _bkWeekAcc('tl',mo,wkId,wkLabel,empCount+' employee'+(empCount!==1?'s':''),
+          '<div style="font-size:12.5px;font-weight:800;color:var(--c-red)">'+fmt(_tlEmpLoadedTotal(byEmp,rateMap))+'</div>',
+          _tlWeekOwnerHtml(byEmp,rateMap)+_tlEntriesHtml(weekRows),wkOpen);
+      }
+      const wkMin=weekRows.reduce((s,r)=>s+(r.minutes||0),0);
+      return _bkWeekAcc('tl',mo,wkId,wkLabel,weekRows.length+' entr'+(weekRows.length!==1?'ies':'y'),
+        '<div style="font-size:12.5px;font-weight:800;color:var(--text)">'+(typeof _fmtMin==='function'?_fmtMin(wkMin):wkMin+'m')+'</div>',
+        _tlWeekMineHtml(weekRows)+_tlEntriesHtml(weekRows),wkOpen);
+    }).join('');
+    return _bkMonthAcc('tl',mo,_bkMonthLabel(mo),moSub,moTotalHtml,weeksHtml,moOpen);
   }).join('')+'</div>';
+  if(shareEl){
+    if(!canComp){
+      shareEl.style.display='block';
+      shareEl.innerHTML='<button onclick="_tlShareWeek()" class="btn btn-p" style="width:100%;margin-top:16px;height:48px;font-size:14px">'+svgIcon('⬆',{size:14})+' Share this week\'s hours</button>';
+    }else{
+      shareEl.style.display='none';shareEl.innerHTML='';
+    }
+  }
 }

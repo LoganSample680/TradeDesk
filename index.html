@@ -1119,6 +1119,17 @@ body.dark .cal-cell.other{background:var(--cream)}
 .bk-day-body{display:block;padding:2px 8px 8px}
 .bk-day:not(.open) .bk-day-body{display:none}
 @media(max-width:767px){.bk-day-body{padding:2px 6px 6px}}
+/* Week-level accordion, nested inside a month (Time Log unified report). */
+.bk-week{border-top:1px solid var(--line);background:var(--bg-card)}
+.bk-week:first-child{border-top:none}
+.bk-week-hd{display:flex;align-items:center;justify-content:space-between;padding:10px 14px 10px 20px;background:var(--bg-card);cursor:pointer;width:100%;text-align:left;border:none;font-family:var(--font-ui);gap:12px;transition:background .1s}
+.bk-week-hd:hover{background:var(--cream)}
+.bk-week-title{font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.1px}
+.bk-week-sub{font-size:11px;color:var(--text-3);font-weight:500;margin-top:2px}
+.bk-week-chev{font-size:11px;color:var(--text-3);width:14px;text-align:center;transition:transform .15s;flex-shrink:0}
+.bk-week:not(.open) .bk-week-chev{transform:rotate(-90deg)}
+.bk-week-body{border-top:1px solid var(--line);overflow:hidden;display:none;padding:2px 8px 10px 14px}
+.bk-week.open .bk-week-body{display:block}
 /* ── Mileage: trip rows ── */
 .mil-day-trip{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line)}
 .mil-day-trip:last-child{border-bottom:none}
@@ -2378,6 +2389,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div style="padding:0 12px 80px">
     <div id="tl-open" style="display:none"></div>
     <div id="tl-list"></div>
+    <div id="tl-share" style="display:none"></div>
   </div>
 </div>
 <div class="pg" id="pg-dispatch"></div>

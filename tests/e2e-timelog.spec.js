@@ -1,9 +1,12 @@
 // @ts-check
 /**
- * Exhaustive E2E coverage for js/timelog.js: the Time Log page. Structure
- * mirrors Books exactly: year selector → month accordions (newest first,
- * current month open by default) → day accordions within each month (newest
- * first), reusing _bkTogMonth/_bkTogDay/_bkRenderDays from js/finance.js.
+ * Exhaustive E2E coverage for js/timelog.js: the Time Log page, now also the
+ * unified crew hours + cost report (owner call 2026-08-20). Year selector →
+ * month accordions, January (oldest) through December (newest, current month
+ * open by default) → week accordions (_bkWeekAcc, the tier new to this
+ * change) → the same day-by-day entries table (_bkRenderDays) this page
+ * always had. Owners/managers see every employee's hours + $ per week;
+ * everyone else sees only their own hours (no dollars) plus a share button.
  */
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
@@ -947,16 +950,21 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r).toContain('Timelog No-Bid Client');
     });
 
-    test('month accordions, newest month sorts first', async () => {
+    // Old behavior (until 2026-08-20): newest month first, matching every
+    // other Books accordion (Income/Expenses). Owner call 2026-08-20 flipped
+    // this deliberately for Time Log specifically: it's now a "how did the
+    // year build up" crew report, January (oldest) through December
+    // (newest), not a "what happened lately" ledger. Income/Expenses are
+    // untouched, this reorder is scoped to _tlYear grouping only.
+    test('month accordions, oldest (January) sorts first, current month last', async () => {
       const r = await page.evaluate(async () => {
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
         return [...document.querySelectorAll('.bk-month')].map(el => el.id);
       });
-      // curMonthPrefix (e.g. bk-tl-mo-2026-07) should sort before bk-tl-mo-2026-01
       const idx = (yyyymm) => r.indexOf('bk-tl-mo-' + yyyymm);
       expect(idx(curMonthPrefix)).toBeGreaterThanOrEqual(0);
-      expect(idx(`${new Date().getFullYear()}-01`)).toBeGreaterThan(idx(curMonthPrefix));
+      expect(idx(`${new Date().getFullYear()}-01`)).toBeLessThan(idx(curMonthPrefix));
     });
 
     test('current month accordion is open by default', async () => {
@@ -979,6 +987,86 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.length).toBeGreaterThan(0);
       // The current-day entry should appear in this month's day list.
       expect(r.some(id => id.includes(todayStr.replace(/-/g, '')))).toBe(true);
+    });
+
+    test('week accordions sit between month and day, current week open by default', async () => {
+      const r = await page.evaluate(async (curMo) => {
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        const monthEl = document.getElementById('bk-tl-mo-' + curMo);
+        const weeks = monthEl ? [...monthEl.querySelectorAll(':scope > .bk-month-body > .bk-week')] : [];
+        return { count: weeks.length, anyOpen: weeks.some(w => w.classList.contains('open')) };
+      }, curMonthPrefix);
+      expect(r.count).toBeGreaterThan(0);
+      expect(r.anyOpen).toBe(true);
+    });
+
+    test('owner sees per-employee $ cost inside a week, an employee without payroll permission sees only their own hours, no dollars', async () => {
+      const r = await page.evaluate(async () => {
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        const ownerHtml = document.getElementById('tl-list').innerHTML;
+        const origIsEmployee = window._isEmployee, origEmpRecord = window._employeeRecord, origSupaUser = window._supaUser;
+        window._isEmployee = true;
+        window._employeeRecord = { name: 'Test Crew Member', permissions: { payroll: false } };
+        window._supaUser = { id: 'emp-test-uid' };
+        await renderTimeLog();
+        const empHtml = document.getElementById('tl-list').innerHTML;
+        window._isEmployee = origIsEmployee; window._employeeRecord = origEmpRecord; window._supaUser = origSupaUser;
+        await renderTimeLog();
+        return { ownerHasWage: ownerHtml.includes('wage $'), empHasWage: empHtml.includes('wage $') };
+      });
+      expect(r.ownerHasWage).toBe(true);
+      expect(r.empHasWage).toBe(false);
+    });
+
+    test('entries table (Edit button on manual rows) still renders nested inside a week', async () => {
+      const r = await page.evaluate(async () => {
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        return document.getElementById('tl-list').innerHTML;
+      });
+      expect(r).toContain('_openEditTimeEntry(');
+      expect(r).toContain('data-lp-id=');
+    });
+
+    test('"Share this week\'s hours" button shows for an individual, not for the owner', async () => {
+      const r = await page.evaluate(async () => {
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        const ownerVisible = document.getElementById('tl-share').style.display !== 'none' && !!document.getElementById('tl-share').innerHTML;
+        const origIsEmployee = window._isEmployee, origEmpRecord = window._employeeRecord, origSupaUser = window._supaUser;
+        window._isEmployee = true;
+        window._employeeRecord = { name: 'Test Crew Member', permissions: { payroll: false } };
+        window._supaUser = { id: 'emp-test-uid' };
+        await renderTimeLog();
+        const empVisible = document.getElementById('tl-share').style.display !== 'none' && !!document.querySelector('#tl-share button[onclick="_tlShareWeek()"]');
+        window._isEmployee = origIsEmployee; window._employeeRecord = origEmpRecord; window._supaUser = origSupaUser;
+        await renderTimeLog();
+        return { ownerVisible, empVisible };
+      });
+      expect(r.ownerVisible).toBe(false);
+      expect(r.empVisible).toBe(true);
+    });
+
+    test('_tlShareWeek calls pwaShare with this week\'s hours, no-op with a toast when nothing logged this week', async () => {
+      const r = await page.evaluate(async () => {
+        const origShare = window.pwaShare;
+        let captured = null;
+        window.pwaShare = (opts) => { captured = opts; return Promise.resolve(); };
+        const origLastRows = window._tlLastRows;
+        try {
+          window._tlLastRows = [{ date: new Date().toISOString().slice(0, 10), minutes: 90, clientName: 'X' }];
+          await _tlShareWeek();
+          const withData = captured;
+          captured = null;
+          window._tlLastRows = [];
+          await _tlShareWeek();
+          return { withDataText: withData && withData.text, calledAgain: captured };
+        } finally { window.pwaShare = origShare; window._tlLastRows = origLastRows; }
+      });
+      expect(r.withDataText).toContain('1h 30m');
+      expect(r.calledAgain).toBe(null);
     });
 
     test('requesting a year with no data clamps back to the newest year that has data (matches Books\' own year-selector behavior)', async () => {

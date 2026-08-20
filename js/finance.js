@@ -3557,6 +3557,32 @@ function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor,sumFn,fmtFn
     '</div>';
   }).join('');
 }
+// Week-level accordion nested inside a month (Time Log unified report: Year →
+// Month → Week). Same shell/toggle shape as _bkTogMonth/_bkMonthAcc one tier
+// down, keyed by (tab,mo,wk) since a week id must be unique within its month.
+function _bkTogWeek(tab,mo,wk){
+  const el=document.getElementById('bk-'+tab+'-wk-'+mo+'-'+wk);
+  if(!el)return;
+  const body=el.querySelector('.bk-week-body');
+  const opening=!el.classList.contains('open');
+  el.classList.toggle('open');
+  if(body)body.style.display=opening?'block':'none';
+}
+function _bkWeekAcc(tab,mo,wk,wkLabel,subLabel,totalHtml,inner,isOpen){
+  return '<div id="bk-'+tab+'-wk-'+mo+'-'+wk+'" class="bk-week'+(isOpen?' open':'')+'">'+
+    '<button class="bk-week-hd" onclick="_bkTogWeek(\''+tab+'\',\''+mo+'\',\''+wk+'\')">'+
+      '<div style="flex:1;text-align:left">'+
+        '<div class="bk-week-title">'+wkLabel+'</div>'+
+        '<div class="bk-week-sub">'+subLabel+'</div>'+
+      '</div>'+
+      '<div style="display:flex;align-items:center;gap:10px">'+
+        (totalHtml||'')+
+        '<div class="bk-week-chev">▸</div>'+
+      '</div>'+
+    '</button>'+
+    '<div class="bk-week-body"'+(isOpen?'':' style="display:none"')+'>'+inner+'</div>'+
+  '</div>';
+}
 function renderIncome(){
   const el=document.getElementById('inc-table');if(!el)return;
   const yr=String(trackerYear||new Date().getFullYear());
