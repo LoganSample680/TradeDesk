@@ -230,7 +230,7 @@ async function openTrueMeasure(c){
       </div>
     </div>
     <div id="tm-canvas-wrap" style="flex:1;position:relative;overflow:hidden;background:var(--bg2)">
-      <div id="tm-map" style="position:absolute;inset:0"></div>
+      <div id="tm-map" style="position:absolute;inset:0;touch-action:none"></div>
       <div id="tm-unavailable" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:30px;text-align:center;color:var(--text3)">
         <div style="font-size:32px">🛰️</div>
         <div style="font-size:14px;font-weight:700;color:var(--text2)">Aerial map isn't available here</div>
@@ -350,7 +350,7 @@ async function _tmInitMap(){
 // drawImage/getImageData, so a true magnifying-glass duplicate isn't safe.
 function _tmInitPrecisionGesture(map,wrap){
   const THRESH=8,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70;
-  let downX=0,downY=0,moved=false,active=false,timer=null,origDistance=null;
+  let downX=0,downY=0,moved=false,active=false,timer=null,origDistance=null,suppressTouchEnd=false;
   const cross=document.getElementById('tm-crosshair');
   function cancelTimer(){ if(timer){clearTimeout(timer);timer=null;} }
   function relPoint(e){
@@ -422,11 +422,19 @@ function _tmInitPrecisionGesture(map,wrap){
   // function ever ran, so a bubble-phase listener added here fires AFTER
   // MapKit's already has, too late to stop anything. Capture-phase
   // listeners on an ancestor run BEFORE any bubble-phase (or same-element)
-  // listener beneath them, no matter the registration order — the only
-  // mechanism that can actually keep MapKit from ever seeing the drag once
-  // our own hold-gesture has taken over. stopImmediatePropagation() on the
-  // live pointer event is what finally makes "camera holds still" true;
-  // the isScrollEnabled/isRotationEnabled flags above never reliably did.
+  // listener beneath them, no matter the registration order.
+  //
+  // TWO event streams, both intercepted (probe run 2026-08-20, real
+  // deployed MapKit): the browser dispatches pointer events AND touch
+  // events in parallel for the same finger. MapKit's recognizers consume
+  // the TOUCH stream, so stopping only pointermove did nothing to stop the
+  // map panning under the drag — the touch listeners below are the ones
+  // that actually make "camera holds still" true. And without
+  // touch-action:none on #tm-map (set in the markup), the browser itself
+  // hijacks the touch for scrolling and fires pointercancel, killing our
+  // pointer stream mid-gesture — which both aborted the hold AND, on a
+  // quick tap, swallowed the pointerup that places the point (the probe
+  // caught taps placing nothing at all).
   wrap.addEventListener('pointermove',e=>{
     if(!e.isPrimary)return;
     if(!active){
@@ -454,6 +462,7 @@ function _tmInitPrecisionGesture(map,wrap){
         coord=map.convertPointOnPageToCoordinate(new DOMPoint(r.left+p.x,r.top+crossY));
       }catch(_e){}
       exitPrecision();
+      suppressTouchEnd=true; // pointerup precedes touchend — see below
       if(coord)_tmAddPoint(coord.latitude,coord.longitude);
       return;
     }
@@ -466,6 +475,7 @@ function _tmInitPrecisionGesture(map,wrap){
     // not MapKit's 'single-tap' event (see _tmInitMap — no longer used).
     e.stopImmediatePropagation();
     e.preventDefault();
+    suppressTouchEnd=true;
     const p=relPoint(e);
     try{
       const r=wrap.getBoundingClientRect();
@@ -478,6 +488,34 @@ function _tmInitPrecisionGesture(map,wrap){
     if(!active)return;
     e.stopImmediatePropagation();
     exitPrecision();
+  },{capture:true});
+  // The touch-stream half of the interception (see the comment above): once
+  // the hold gesture owns the finger, MapKit's touch-listening recognizers
+  // must never see another event from it. The pointer listeners above still
+  // do all the actual work (crosshair, preview, drop); these only silence
+  // the parallel touch dispatches. suppressTouchEnd covers the ordering gap:
+  // pointerup fires BEFORE touchend, and the placement handlers above set
+  // active=false, so "while active" alone would let the sequence-closing
+  // touchend through to MapKit — whose tap recognizer would then count our
+  // placement taps toward a double-tap-to-zoom, recentering the camera
+  // mid-trace (the original owner-reported bug). One-shot, cleared on the
+  // next touchstart so a stale flag can never eat a real gesture's end.
+  wrap.addEventListener('touchstart',()=>{
+    if(!active)suppressTouchEnd=false;
+  },{capture:true});
+  wrap.addEventListener('touchmove',e=>{
+    if(!active)return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+  },{capture:true,passive:false});
+  wrap.addEventListener('touchend',e=>{
+    if(!active&&!suppressTouchEnd)return;
+    suppressTouchEnd=false;
+    e.stopImmediatePropagation();
+  },{capture:true});
+  wrap.addEventListener('touchcancel',e=>{
+    if(!active)return;
+    e.stopImmediatePropagation();
   },{capture:true});
 }
 
