@@ -390,6 +390,23 @@ function _tmCurrentDigi(){
     return m.a||1; // uniform scale() only here, no rotation/skew
   }catch(_e){return (_tmState&&_tmState.digiZoom)||1;}
 }
+// Halts an in-flight ease-back-out RIGHT WHERE IT IS, the instant a new
+// touch begins, instead of letting it keep animating underneath the new
+// gesture. _tmCurrentDigi() alone (above) fixed the "one wrong point"
+// symptom for every point EXCEPT the very first tap fired right after a
+// hold release — because the scale itself is still a moving target for the
+// whole 280ms, a finger-down read and the SAME finger's later finger-up
+// read can land at two different instants of that motion and legitimately
+// disagree, no matter how precisely either single read is taken. Freezing
+// on touchstart makes the scale stable for the ENTIRE duration of the next
+// gesture, so its own touchstart and touchend always agree with each other.
+function _tmFreezeDigi(){
+  if(!_tmState)return;
+  const z=_tmCurrentDigi();
+  const el=document.getElementById('tm-scale');
+  if(el)el.style.transition='none'; // cancel the transition synchronously, no re-animation
+  _tmDigiSet(z,false);
+}
 // Visual (finger) page point -> the page point MapKit's converters expect.
 // The CSS scale is around the canvas-wrap center and MapKit is unaware of
 // it, so un-scale around that center first. (The math is identical whether
@@ -470,6 +487,7 @@ function _tmInitPrecisionGesture(map,wrap){
   }
   wrap.addEventListener('pointerdown',e=>{
     if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;
+    _tmFreezeDigi(); // stop any in-flight ease-back-out before this touch's own math ever runs
     const p=relPoint(e);
     downX=p.x;downY=p.y;moved=false;
     cancelTimer();

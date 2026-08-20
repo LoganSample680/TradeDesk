@@ -228,12 +228,17 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
 
     const results = [];
     for (const c of corners) {
+      const before = await page.evaluate(() => _tmState.points.length);
+      await touch('touchStart', [c]);
+      // Sample the target AFTER touchStart, not before: the app freezes the
+      // digital scale the instant its own pointerdown fires (in response to
+      // this exact touchStart), so this is the same instant the app's math
+      // uses — sampling earlier would measure a still-moving scale the app
+      // was never going to use either.
       const target = await page.evaluate(([x, y]) => {
         const t = _tmPageToCoord(x, y);
         return { lat: t.latitude, lng: t.longitude };
       }, [c.x, c.y]);
-      const before = await page.evaluate(() => _tmState.points.length);
-      await touch('touchStart', [c]);
       await sleep(60); // well under HOLD_MS(420) — a genuine quick tap
       await touch('touchEnd', []);
       await sleep(70); // short, fixed — NOT waiting for any transition to settle
