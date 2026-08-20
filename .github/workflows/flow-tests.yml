@@ -23,6 +23,13 @@ on:
           Optional Playwright project filter (chromium | webkit). Blank runs both.
         required: false
         default: ''
+      base_url:
+        description: >-
+          Optional E2E_BASE_URL override (e.g. https://uat.tradedesk-cyp.pages.dev
+          to test what UAT is actually serving right now). Blank uses the branch
+          preview URL below, which only updates on deliberate preview builds.
+        required: false
+        default: ''
   pull_request:
     types: [labeled]      # only fires the job below when the label is `run-flow`
   # NOTE: deliberately NO `push: [main]` and NO `schedule:` cron. A main-push trigger
@@ -65,7 +72,7 @@ jobs:
       # Target the pages.dev preview, which sits OUTSIDE the tradedeskpro.app zone
       # and its Bot Fight Mode (a WAF skip rule can't override Bot Fight Mode).
       # Same app code + /api proxy. Override per-run via repo secret/var if needed.
-      E2E_BASE_URL: https://claude-review-app-ux-flow-mr.tradedesk-cyp.pages.dev
+      E2E_BASE_URL: ${{ github.event.inputs.base_url || 'https://claude-review-app-ux-flow-mr.tradedesk-cyp.pages.dev' }}
 
     steps:
       - name: Checkout
