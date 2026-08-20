@@ -28,6 +28,26 @@ test.describe('TrueMeasure recon (real address framing)', () => {
     );
     await sleep(2000);
 
+    // Measure MapKit's REAL zoom floor on satellite imagery: request an
+    // absurdly close camera and read back where it actually settles. The
+    // owner keeps hitting "can't zoom in any further" even with
+    // cameraZoomRange(1,3000), so something below our requested floor is
+    // clamping — this tells us exactly where, which decides whether a
+    // digital-zoom-past-the-floor layer is needed.
+    const floor = await page.evaluate(async () => {
+      const m = _tmState.map;
+      const out = {};
+      try { m.cameraZoomRange = new mapkit.CameraZoomRange(0.1, 3000); out.rangeMin = m.cameraZoomRange.minCameraDistance; } catch (e) { out.rangeErr = String(e).slice(0, 120); }
+      m.cameraDistance = 1;
+      await new Promise((r) => setTimeout(r, 1500));
+      out.settledAt1 = m.cameraDistance;
+      m.cameraDistance = 50;
+      await new Promise((r) => setTimeout(r, 1500));
+      out.settledAt50 = m.cameraDistance;
+      return out;
+    });
+    console.log(`[recon] zoom floor probe: ${JSON.stringify(floor)}`);
+
     const framed = await page.evaluate((span) => {
       const c = _tmState.map.center;
       _tmState.map.region = new mapkit.CoordinateRegion(
