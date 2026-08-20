@@ -322,23 +322,15 @@ async function _tmInitMap(){
     // a contractor can zoom OUT, past "the whole property" there's nothing
     // useful left to trace.
     map.cameraZoomRange=new mapkit.CameraZoomRange(1,3000);
-    map.addEventListener('single-tap',e=>{
-      // e.pointOnPage is page-relative (includes document scroll), but this
-      // overlay is position:fixed — its container sits at a fixed spot on
-      // screen and does NOT move with page scroll. If the screen behind
-      // TrueMeasure was scrolled when it opened, every tap lands off by
-      // exactly that scroll offset: a CONSTANT error on every tap, not a
-      // timing-dependent one (owner report 2026-08-20, live device: even
-      // the very first tap of a fresh session landed nowhere near the
-      // finger, which a rapid-succession/gesture-race theory can't explain
-      // but a fixed page-vs-viewport offset does). Converting back to
-      // viewport-relative coordinates before handing off to MapKit matches
-      // how the precision-hold gesture below already computes its own
-      // coordinates via getBoundingClientRect(), never raw page coordinates.
-      const pt=new DOMPoint(e.pointOnPage.x-(window.scrollX||0),e.pointOnPage.y-(window.scrollY||0));
-      const c=map.convertPointOnPageToCoordinate(pt);
-      _tmAddPoint(c.latitude,c.longitude);
-    });
+    // No MapKit 'single-tap' listener: quick taps are handled inside
+    // _tmInitPrecisionGesture's own pointerup, the same reliable
+    // getBoundingClientRect()-based coordinate math as the hold gesture,
+    // instead of MapKit's synthesized event and its e.pointOnPage. Two
+    // rounds of owner live-device retests (2026-08-20) still showed plain
+    // taps landing nowhere near the finger even after correcting for page
+    // scroll, so pointOnPage's exact semantics in this fixed-overlay
+    // context are not trustworthy enough to keep building on — one proven
+    // coordinate path for every kind of point placement, not two.
     _tmInitPrecisionGesture(map,wrap);
     _tmState.map=map;
   }catch(_e){
@@ -347,7 +339,9 @@ async function _tmInitMap(){
 }
 
 // Press-and-hold-and-drag precision point placement, the iOS-loupe pattern:
-// a normal tap still drops a point immediately (single-tap above, untouched).
+// a normal tap still drops a point immediately, handled in this same
+// function's pointerup (the !active/!moved branch), not a separate MapKit
+// gesture listener — one coordinate path for every kind of placement.
 // Holding zooms the real map in around the touch point and shows a fixed
 // crosshair offset above the finger (never obscured by the thumb) that
 // tracks further dragging; lifting drops the point under the crosshair, then
@@ -355,8 +349,8 @@ async function _tmInitMap(){
 // screenshot loupe, MapKit's tiles aren't guaranteed CORS-readable for
 // drawImage/getImageData, so a true magnifying-glass duplicate isn't safe.
 function _tmInitPrecisionGesture(map,wrap){
-  const THRESH=8,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70,ZOOM_ANIM_MS=400;
-  let downX=0,downY=0,moved=false,active=false,timer=null,origDistance=null,zoomLockTimer=null;
+  const THRESH=8,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70;
+  let downX=0,downY=0,moved=false,active=false,timer=null,origDistance=null;
   const cross=document.getElementById('tm-crosshair');
   function cancelTimer(){ if(timer){clearTimeout(timer);timer=null;} }
   function relPoint(e){
@@ -380,19 +374,13 @@ function _tmInitPrecisionGesture(map,wrap){
   function exitPrecision(){
     active=false;
     if(cross)cross.style.display='none';
-    if(zoomLockTimer){clearTimeout(zoomLockTimer);zoomLockTimer=null;}
-    // isZoomEnabled may currently be locked off (see the delayed lock
-    // below) — re-enable it BEFORE the ease-back-out animation, or this
-    // call gets silently cancelled the same way the entrance zoom did.
-    try{map.isZoomEnabled=true;}catch(_e){}
     if(origDistance!=null){
       try{map.setCameraDistanceAnimated(origDistance,true);}catch(_e){}
     }
     origDistance=null;
     _tmClearPreview();
-    // Mirror of the lock below: give the map's own scroll/rotation gestures
-    // back once the hold-drag ends, whether it ended by dropping a pin or
-    // by cancelling.
+    // Mirror of the lock below: give the map's own gestures back once the
+    // hold-drag ends, whether it ended by dropping a pin or by cancelling.
     try{map.isScrollEnabled=true;map.isRotationEnabled=true;}catch(_e){}
   }
   wrap.addEventListener('pointerdown',e=>{
@@ -414,52 +402,50 @@ function _tmInitPrecisionGesture(map,wrap){
         map.setCenterAnimated(coord,true);
         map.setCameraDistanceAnimated(Math.max(1,origDistance*ZOOM_FACTOR),true);
       }catch(_e){}
-      // MapKit's own gesture recognizers are still listening on this same
-      // wrap element and were reacting to the very drag that's supposed to
-      // only move the crosshair overlay below, so the map itself visibly
-      // panned/zoomed during what's meant to be a "camera holds still, only
-      // the crosshair tracks your finger" precision placement (owner
-      // reports 2026-08-20, live device, two rounds). isScrollEnabled is
-      // the fix for plain panning, locked immediately below. But a
-      // STATIONARY press-then-drag is also exactly MapKit's own native
-      // one-finger hold-and-drag-to-zoom gesture, which reads isZoomEnabled
-      // specifically, not isScrollEnabled — confirmed by the live preview's
-      // distance label holding a constant value while the crosshair visibly
-      // slid across most of the screen, meaning the CAMERA was moving in
-      // lockstep with it, not staying put. isZoomEnabled can't just be
-      // locked off immediately though: it also gates our OWN
-      // setCameraDistanceAnimated call just above (confirmed by the
-      // previous retest: locking it immediately silently cancelled the
-      // entrance zoom entirely). So scroll/rotation lock NOW, zoom locks
-      // AFTER a short delay long enough for our own entrance animation to
-      // actually finish easing in — exitPrecision cancels this timer and
-      // re-enables zoom itself if the gesture ends first.
+      // Belt-and-suspenders: harmless, and was worth something in an
+      // earlier round, but three straight owner retests (2026-08-20) show
+      // toggling MapKit's isScrollEnabled/isZoomEnabled flags does NOT
+      // reliably stop its native gesture recognizers mid-drag — measuring
+      // the actual video frame-by-frame showed the map continuing to pan
+      // (and never actually zooming in) for nearly the ENTIRE hold, not
+      // just some narrow timing window. The flags aren't the real fix;
+      // see the capture-phase listeners below, which are.
       try{map.isScrollEnabled=false;map.isRotationEnabled=false;}catch(_e){}
-      zoomLockTimer=setTimeout(()=>{
-        zoomLockTimer=null;
-        if(active){try{map.isZoomEnabled=false;}catch(_e){}}
-      },ZOOM_ANIM_MS);
       if(cross)cross.style.display='block';
       placeCrosshair(downX,downY);
       try{_tmUpdatePreview(crosshairCoord(downX,downY));}catch(_e){}
       if(typeof _tdHaptic==='function')_tdHaptic('tick');
     },HOLD_MS);
   });
+  // Capture phase, not bubble: MapKit constructed its own gesture
+  // recognizers on (or inside) this same `wrap` element before this
+  // function ever ran, so a bubble-phase listener added here fires AFTER
+  // MapKit's already has, too late to stop anything. Capture-phase
+  // listeners on an ancestor run BEFORE any bubble-phase (or same-element)
+  // listener beneath them, no matter the registration order — the only
+  // mechanism that can actually keep MapKit from ever seeing the drag once
+  // our own hold-gesture has taken over. stopImmediatePropagation() on the
+  // live pointer event is what finally makes "camera holds still" true;
+  // the isScrollEnabled/isRotationEnabled flags above never reliably did.
   wrap.addEventListener('pointermove',e=>{
     if(!e.isPrimary)return;
-    const p=relPoint(e);
     if(!active){
+      const p=relPoint(e);
       if(Math.abs(p.x-downX)>THRESH||Math.abs(p.y-downY)>THRESH){moved=true;cancelTimer();}
       return;
     }
+    e.stopImmediatePropagation();
     e.preventDefault();
+    const p=relPoint(e);
     placeCrosshair(p.x,p.y);
     try{_tmUpdatePreview(crosshairCoord(p.x,p.y));}catch(_e){}
-  },{passive:false});
+  },{capture:true,passive:false});
   wrap.addEventListener('pointerup',e=>{
     if(!e.isPrimary)return;
     cancelTimer();
     if(active){
+      e.stopImmediatePropagation();
+      e.preventDefault();
       const p=relPoint(e);
       const crossY=Math.max(20,p.y-OFFSET_Y);
       let coord=null;
@@ -467,16 +453,32 @@ function _tmInitPrecisionGesture(map,wrap){
         const r=wrap.getBoundingClientRect();
         coord=map.convertPointOnPageToCoordinate(new DOMPoint(r.left+p.x,r.top+crossY));
       }catch(_e){}
-      // Read the coordinate off the still-zoomed-in camera first, THEN
-      // release the gesture lock: exitPrecision hands the map's own zoom
-      // gesture back, and _tmAddPoint's own brief re-suppression (below)
-      // needs to be the thing that wins, not get immediately undone by
-      // exitPrecision restoring it right after.
       exitPrecision();
       if(coord)_tmAddPoint(coord.latitude,coord.longitude);
+      return;
     }
-  });
-  wrap.addEventListener('pointercancel',()=>{cancelTimer();if(active)exitPrecision();});
+    // A real pan/drag that never engaged our hold gesture — leave it
+    // alone entirely, MapKit's own pan handling saw every event of this
+    // sequence untouched (we never intercepted while !active).
+    if(moved)return;
+    // A genuine quick tap: place the point directly under the finger,
+    // same getBoundingClientRect()-based math as the hold gesture above,
+    // not MapKit's 'single-tap' event (see _tmInitMap — no longer used).
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    const p=relPoint(e);
+    try{
+      const r=wrap.getBoundingClientRect();
+      const coord=map.convertPointOnPageToCoordinate(new DOMPoint(r.left+p.x,r.top+p.y));
+      _tmAddPoint(coord.latitude,coord.longitude);
+    }catch(_e){}
+  },{capture:true});
+  wrap.addEventListener('pointercancel',e=>{
+    cancelTimer();
+    if(!active)return;
+    e.stopImmediatePropagation();
+    exitPrecision();
+  },{capture:true});
 }
 
 // Cached client coords first (the same nearby-geocode cache clients.js/

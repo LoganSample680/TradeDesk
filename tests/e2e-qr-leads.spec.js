@@ -33,10 +33,30 @@ test.describe('QR lead tracking: js/qr-leads.js', () => {
     window._supa = {
       from: (tbl) => ({
         select: () => ({
-          eq: (col, val) => ({
-            order: () => Promise.resolve({ data: tbl === 'qr_sources' ? window.__qrSourcesData : [] }),
-            then: (cb) => cb({ data: tbl === 'qr_sources' ? window.__qrSourcesData : [] }),
-          }),
+          eq: (col, val) => {
+            const data = tbl === 'qr_sources' ? window.__qrSourcesData : [];
+            const base = {
+              order: () => Promise.resolve({ data }),
+              then: (cb) => cb({ data }),
+            };
+            // A background pull the app can genuinely fire mid-test (same
+            // class as e2e-geo-send-coverage.spec.js's _noopQuery, fixed
+            // tonight) can chain a filter this narrow mock never
+            // anticipated, e.g. .eq(...).maybeSingle() on an unrelated
+            // table. A mock with no such method throws a real TypeError,
+            // which trips assertNoErrors() on this file's own unrelated
+            // test. Proxy so any method this mock doesn't know about
+            // resolves harmlessly instead, while order()/then() above keep
+            // their real, asserted-on behavior untouched.
+            return new Proxy(base, {
+              get(target, prop) {
+                if (prop in target) return target[prop];
+                if (prop === 'maybeSingle' || prop === 'single') return () => Promise.resolve({ data: data[0] || null, error: null });
+                if (prop === 'catch') return () => target;
+                return () => target;
+              },
+            });
+          },
           in: (col, ids) => Promise.resolve({ data: tbl === 'qr_events' ? window.__qrEventsData.filter(e => ids.includes(e.qr_source_id)) : [] }),
         }),
         insert: (row) => {
