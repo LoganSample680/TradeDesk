@@ -381,9 +381,10 @@ function _tmInitPrecisionGesture(map,wrap){
     }
     origDistance=null;
     _tmClearPreview();
-    // Mirror of the lock below: give the map's own gestures back once the
-    // hold-drag ends, whether it ended by dropping a pin or by cancelling.
-    try{map.isScrollEnabled=true;map.isZoomEnabled=true;map.isRotationEnabled=true;}catch(_e){}
+    // Mirror of the lock below: give the map's own scroll/rotation gestures
+    // back once the hold-drag ends, whether it ended by dropping a pin or
+    // by cancelling.
+    try{map.isScrollEnabled=true;map.isRotationEnabled=true;}catch(_e){}
   }
   wrap.addEventListener('pointerdown',e=>{
     if(!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;
@@ -404,15 +405,22 @@ function _tmInitPrecisionGesture(map,wrap){
         map.setCenterAnimated(coord,true);
         map.setCameraDistanceAnimated(Math.max(3,origDistance*ZOOM_FACTOR),true);
       }catch(_e){}
-      // MapKit's own pan/zoom gesture recognizers are still listening on
+      // MapKit's own pan/rotate gesture recognizers are still listening on
       // this same wrap element and were reacting to the very drag that's
       // supposed to only move the crosshair overlay below, so the map
       // itself visibly panned around during what's meant to be a "camera
       // holds still, only the crosshair tracks your finger" precision
-      // placement (owner report 2026-08-20, live device). Locking the
-      // map's gestures for the duration of the hold, restored in
-      // exitPrecision, is what actually keeps it fixed.
-      try{map.isScrollEnabled=false;map.isZoomEnabled=false;map.isRotationEnabled=false;}catch(_e){}
+      // placement (owner report 2026-08-20, live device). Locking scroll/
+      // rotation for the duration of the hold, restored in exitPrecision,
+      // is what actually keeps it fixed. isZoomEnabled is deliberately left
+      // alone: disabling it here also blocked our OWN setCameraDistance
+      // Animated call just above (owner retest 2026-08-20: the hold no
+      // longer zoomed in at all once this was added) — MapKit treats it as
+      // a blanket switch, not gesture-only, so it has to stay enabled for
+      // the precision zoom-in itself to work. A one-finger drag can't
+      // trigger MapKit's own pinch/double-tap zoom gestures anyway, so
+      // nothing was actually gained by locking it.
+      try{map.isScrollEnabled=false;map.isRotationEnabled=false;}catch(_e){}
       if(cross)cross.style.display='block';
       placeCrosshair(downX,downY);
       try{_tmUpdatePreview(crosshairCoord(downX,downY));}catch(_e){}
@@ -474,33 +482,7 @@ function _tmAddPoint(lat,lng){
   if(!_tmState)return;
   _tmState.points.push({lat,lng});
   document.getElementById('tm-precision-hint')?.remove();
-  _tmSuppressDoubleTapZoom();
   _tmRedraw();
-}
-
-// Placing points quickly one after another along an edge reads to MapKit's
-// own gesture recognizer exactly like the start of a double-tap-to-zoom:
-// two taps, close together in time and screen position. MapKit then
-// recenters/zooms the camera BETWEEN the two taps instead of firing two
-// ordinary single-taps, so the second point lands wherever that shifted
-// camera now maps the same screen spot, nowhere near where the user
-// actually tapped (owner report 2026-08-20, live device: a nonsensical
-// triangle spanning three separate houses from what should've been three
-// points traced along one roofline). Briefly disabling zoom right after
-// every placed point closes that window: a tap that lands inside it can
-// only ever register as a second point, never get reinterpreted as a zoom
-// gesture. Normal pinch-zoom navigation between points is unaffected once
-// the cooldown clears a moment later.
-function _tmSuppressDoubleTapZoom(){
-  const map=_tmState&&_tmState.map;
-  if(!map)return;
-  try{map.isZoomEnabled=false;}catch(_e){}
-  if(_tmState._zoomCooldownTimer)clearTimeout(_tmState._zoomCooldownTimer);
-  _tmState._zoomCooldownTimer=setTimeout(()=>{
-    if(!_tmState||_tmState.map!==map)return;
-    try{map.isZoomEnabled=true;}catch(_e){}
-    _tmState._zoomCooldownTimer=null;
-  },400);
 }
 
 function _tmUndo(){
