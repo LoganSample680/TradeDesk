@@ -1032,7 +1032,7 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     localStorage.removeItem('zp3_geo_queue'); localStorage.removeItem('zp3_geo_open');
     localStorage.removeItem('zp3_geo_manual'); localStorage.removeItem('zp3_geo_prune_day');
     _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
-    _geoDriveStartedAt = null; _geoGapHiddenAt = null; _geoGapExitPending = null;
+    _geoDriveStartedAt = null; _geoGapHiddenAt = null; _geoExitPending = null;
     _geoLastPingTs = 0; _geoPingBusy = false;
     window._isEmployee = false;
     window._supaUser = { id: 'geo-hard-user-1', email: 'g@t.com' };
@@ -1152,14 +1152,14 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
       await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 8 } });
       await new Promise(res => setTimeout(res, 50));
       const row = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries' && String(u.row.job_id) === String(jobId)) || {}).row || null;
-      const out = { row, cur: _geoCurrentJob, gap: _geoGapHiddenAt, pending: _geoGapExitPending };
+      const out = { row, cur: _geoCurrentJob, gap: _geoGapHiddenAt, pending: _geoExitPending };
       jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
       return out;
     });
     expect(r.row).toBeNull();                    // nothing written yet, unconfirmed
     expect(String(r.cur)).toBe('883001');         // entry stays open
     expect(r.gap).not.toBeNull();                 // still resolving the gap
-    expect(r.pending && String(r.pending.jobId)).toBe('883001'); // first candidate noted
+    expect(r.pending && r.pending.key).toBe('job:883001'); // first candidate noted
     await geoRestore();
   });
 
@@ -1214,7 +1214,7 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
       }
       await new Promise(res => setTimeout(res, 50));
       const row = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries' && String(u.row.job_id) === String(jobId)) || {}).row || null;
-      const out = { row, cur: _geoCurrentJob, pending: _geoGapExitPending };
+      const out = { row, cur: _geoCurrentJob, pending: _geoExitPending };
       jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
       return out;
     });

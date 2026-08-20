@@ -484,13 +484,24 @@ test.describe('Drive matrix: every origin to every destination', () => {
     //   • a stop is bounded by the pings that VERIFIED it, so the minute of
     //     pulling out belongs to the drive rather than to lunch.
     // Neither invents or loses a minute, which is what the total proves.
+    // Four of the six drive legs depart a GATED fence (job or place) into
+    // open road: job→supply, supply→job, job→lunch, job→shop. Each of those
+    // departures is now confirmed one ping late (owner mandate 2026-08-20:
+    // a lone reading in open space is never trusted off one fix), so the
+    // ORIGIN stays open one extra minute and the following drive leg is one
+    // minute shorter. shop→job and lunch→job depart an ungated origin (shop
+    // is never gated; lunch is an anonymous stop, not a job/place/client
+    // fence) and are unaffected. Net: -4 minutes off drive, landing back on
+    // job (+3, the three job-origin departures) and place (+1, the one
+    // place-origin departure) — nothing invented or lost, just re-homed to
+    // whichever side of the confirming ping the minute actually falls on.
     const detail = ` rows=${out.all}`;
     expect(out.driveN, 'drive legs' + detail).toBe(6);
     expect(out.jobN, 'job visits' + detail).toBe(3);
     expect(out.shop,  'shop time' + detail).toBe(45);
-    expect(out.drive, 'drive time' + detail).toBe(92);
-    expect(out.job,   'on-site time' + detail).toBe(276);
-    expect(out.place, 'supply time' + detail).toBe(21);
+    expect(out.drive, 'drive time' + detail).toBe(88);
+    expect(out.job,   'on-site time' + detail).toBe(279);
+    expect(out.place, 'supply time' + detail).toBe(22);
     expect(out.stop,  'off-job time' + detail).toBe(45);
     // 480 minutes were driven. 479 are closed and filed; the last one is the
     // shop dwell they are still sitting in, which closes when they leave. So:
