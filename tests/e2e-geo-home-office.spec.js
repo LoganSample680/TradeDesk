@@ -93,7 +93,14 @@ test.describe('Home office: presence is not work', () => {
         if (_geoPlaceArrivedAt) _geoPlaceArrivedAt = startIso;
 
         rows.length = 0;                     // ignore whatever the arrival logged
-        await ping(a.road);                  // pull out: this ping closes the visit
+        // Pull out: two pings, not one. A place/client fence now needs the
+        // pending-then-confirming pair every departure does (owner mandate
+        // 2026-08-20) before it closes; the shop-dwell mechanism this same
+        // helper also drives (S.officeLat / _geoWasInShop) is unaffected and
+        // still closes on the very first one, so the second is a harmless
+        // no-op there.
+        await ping(a.road);
+        await ping(a.road);
         if (hiddenDesc) Object.defineProperty(document, 'hidden', hiddenDesc);
         return rows;
       } finally {

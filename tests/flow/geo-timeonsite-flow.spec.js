@@ -101,10 +101,14 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
         }));
         // Simulate a 12-minute dwell by back-dating the arrival the handler stored.
         await p.evaluate(() => { _geoArrivedAt = new Date(Date.now() - 12 * 60000).toISOString(); });
-        await ping(p, FAR.lat, FAR.lon);                         // depart (outside fence)
+        // Departure now needs the pending-then-confirming pair every fence
+        // exit does (owner mandate 2026-08-20): the first outside ping is
+        // pending, the second confirms it and actually closes the visit.
+        await ping(p, FAR.lat, FAR.lon);                         // depart (outside fence): pending
+        await ping(p, FAR.lat, FAR.lon);                         // confirms it
         await p.waitForTimeout(1500);                            // let the awaited insert land
         await restore();
-        return 2; // two pings
+        return 3; // three pings
       },
       rule: async (p) => {
         const r = await geoEntries(p, jobOn);

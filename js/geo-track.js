@@ -785,14 +785,24 @@ async function _geoOnPing(pos){
       }
     }
   }else{
-    // A departure from a job/place/client fence is never trusted off a
-    // single fix (see _geoExitPending above), gap or not: the resolving
-    // reading must clear the accuracy floor AND be confirmed, either by a
-    // genuine driving-speed reading (immediate — that's real evidence of
-    // motion) or by a second qualifying ping agreeing, before the visit is
-    // treated as actually left. A shaky or lone reading just waits, entry
-    // stays open, nothing is written yet.
-    if(prev&&(prev.k==='job'||prev.k==='place'||prev.k==='client')&&(!cur||cur.k!==prev.k||cur.id!==prev.id)){
+    // A departure into AMBIGUITY (cur is null — not clearly anywhere) is
+    // never trusted off a single fix (see _geoExitPending above), gap or
+    // not: the resolving reading must clear the accuracy floor AND be
+    // confirmed, either by a genuine driving-speed reading (immediate —
+    // that's real evidence of motion) or by a second qualifying ping
+    // agreeing, before the visit is treated as actually left. A shaky or
+    // lone reading just waits, entry stays open, nothing is written yet.
+    //
+    // Landing DIRECTLY inside a DIFFERENT, well-defined fence (cur is a
+    // real job/shop/place/client, not null) needs none of this: a clean fix
+    // squarely inside another address entirely is not ambiguous the way a
+    // reading in open space is, it is its own strong evidence the first
+    // fence was left, and a backgrounded phone commonly delivers exactly
+    // one ping between two fences with nothing in between (the DIRECT case
+    // this app has always had to log correctly). Gating that on a second
+    // ping would mean a single-ping drive between two real fences never
+    // logs at all.
+    if(prev&&(prev.k==='job'||prev.k==='place'||prev.k==='client')&&!cur){
       const accOk=acc>0&&acc<=_GEO_GAP_EXIT_MAX_ACC_M;
       const drivingNow=typeof pos.coords.speed==='number'&&pos.coords.speed>=_GEO_DRIVEBY_SPEED_MPS;
       const exitKey=prev.k+':'+prev.id;
