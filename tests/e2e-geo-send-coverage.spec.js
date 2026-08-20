@@ -1039,8 +1039,24 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     window.__rec = { upserts: [], inserts: [], deletes: [] };
     window.__supaMode = 'ok'; // 'ok' | 'fail' | 'no-conflict' | 'no-column'
     window.__origSupa = window.__origSupa || window._supa;
+    // Every test in this block awaits something (a setTimeout, a drain) while
+    // this narrow mock is active, and the app's own background reconnect pull
+    // (_onReconnect's routine "pull latest on any online/reconnect signal"
+    // case, js/cloud.js) is not gated on anything this file controls, so it
+    // can genuinely fire mid-test and call _supa.from(...).select(...). A
+    // mock with no .select() then throws a real TypeError, which
+    // _classifyCloudError correctly reports as a console.error and trips
+    // assertNoErrors on an entirely unrelated test. This mock only cares
+    // about writes, so give it a harmless, infinitely-chainable read stub
+    // instead of leaving it a landmine for an incidental background pull.
+    const _noopQuery = () => {
+      const q = { then: (resolve) => resolve({ data: null, error: null }), catch: () => q };
+      ['select', 'eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'order', 'limit', 'range', 'maybeSingle', 'single', 'not', 'or', 'filter'].forEach(m => { q[m] = () => q; });
+      return q;
+    };
     window._supa = {
       from: (tbl) => ({
+        select: () => _noopQuery(),
         upsert: (row, opts) => {
           if (window.__supaMode === 'fail') return Promise.resolve({ error: { message: 'network down' } });
           if (window.__supaMode === 'no-conflict') return Promise.resolve({ error: { message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification' } });
