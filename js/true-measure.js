@@ -215,7 +215,7 @@ function _tmPickMethod(id){
 async function openTrueMeasure(c){
   if(!c)return;
   document.getElementById('_style-pick-ov')?.remove();
-  _tmState={c,mode:_tmDefaultMode(),points:[],repeatCount:1,map:null,previewCoord:null,projAxis:'auto',projCal:null};
+  _tmState={c,mode:_tmDefaultMode(),points:[],repeatCount:1,map:null,previewCoord:null,projAxis:'auto',projCal:null,closed:false};
 
   const ov=document.createElement('div');
   ov.id='_tm-ov';
@@ -291,6 +291,7 @@ function _tmSetMode(m){
   _tmState.mode=m;
   _tmState.points=[];
   _tmState.repeatCount=1;
+  _tmState.closed=false;
   _tmUpdateModeUI();
   _tmRedraw();
 }
@@ -386,21 +387,48 @@ async function _tmInitMap(){
 // stay exact at any digital zoom.
 const _TM_CAM_FLOOR=83;   // just above the measured 82.53m clamp
 const _TM_DIGI_MAX=8;
-function _tmDigiSet(z,animate){
+// The digital-zoom transform is translate(tx,ty) scale(z) with
+// transform-origin fixed at the wrap center: an unscaled wrap-local point p
+// renders at c + z*(p - c) + t. The translate is what lets the hold gesture
+// magnify TOWARD THE PRESSED POINT in pure CSS with zero MapKit camera
+// involvement (the old setCenterAnimated recenter at hold engage let
+// MapKit's own animation fling the map to a random spot mid-hold, owner
+// live retest 2026-08-20). Pinch and the resting state keep t=0 (center
+// focus), exactly the old behavior.
+function _tmXformSet(z,tx,ty,animate){
   if(!_tmState)return;
   z=Math.max(1,Math.min(_TM_DIGI_MAX,z||1));
+  tx=+tx||0;ty=+ty||0;
   _tmState.digiZoom=z;
   const el=document.getElementById('tm-scale');
   if(el){
     // Animated for the hold gesture's zoom in/out; instant while a pinch is
     // live-tracking the fingers (a transition there reads as rubber-band lag).
     el.style.transition=animate?'transform .28s cubic-bezier(.22,1,.36,1)':'none';
-    el.style.transform=z===1?'':'scale('+z+')';
+    el.style.transform=(z===1&&!tx&&!ty)?'':('translate('+tx+'px,'+ty+'px) scale('+z+')');
   }
   // The trace labels live in the app's own draw layer (outside #tm-scale)
-  // and are positioned via _tmProject, which reads the live digi itself, so
-  // no counter-scaling is needed here anymore; the draw loop re-renders them
-  // through the whole 280ms transition.
+  // and are positioned via _tmProject, which reads the live transform
+  // itself, so no counter-scaling is needed here; the draw loop re-renders
+  // them through the whole 280ms transition.
+}
+// Rescale to z while PRESERVING the transform's current focus point. Any
+// (z,t) pair is a zoom about the fixed point Q = c + t/(1-z); keeping Q
+// while changing scale means t' = t*(1-z')/(1-z). With t=0 (the normal
+// pinch/resting case) this is exactly the old center-origin behavior, and
+// it means a pinch that starts inside a hold-exit's 280ms ease (nonzero t
+// mid-flight) rescales the view it is actually looking at instead of
+// snapping the translate to 0.
+function _tmDigiSet(z,animate){
+  if(!_tmState)return;
+  z=Math.max(1,Math.min(_TM_DIGI_MAX,z||1));
+  const cur=_tmXform();
+  let tx=0,ty=0;
+  if(cur.z>1.0001&&(cur.tx||cur.ty)){
+    const f=(1-z)/(1-cur.z);
+    tx=cur.tx*f;ty=cur.ty*f;
+  }
+  _tmXformSet(z,tx,ty,animate);
 }
 // The TRUE current scale, read off the live rendered transform, never the
 // JS target alone. _tmDigiSet's exit/entrance reset ANIMATES over 280ms
@@ -414,15 +442,20 @@ function _tmDigiSet(z,animate){
 // isolated bad point, not a systemic offset). Reading the browser's own
 // live matrix instead of a cached JS number makes this race impossible:
 // there is no "in-flight" state to be wrong about.
-function _tmCurrentDigi(){
+function _tmXform(){
   const el=document.getElementById('tm-scale');
-  if(!el)return (_tmState&&_tmState.digiZoom)||1;
+  const fallback={z:(_tmState&&_tmState.digiZoom)||1,tx:0,ty:0};
+  if(!el)return fallback;
   try{
     const t=getComputedStyle(el).transform;
-    if(!t||t==='none')return 1;
+    if(!t||t==='none')return {z:1,tx:0,ty:0};
     const m=new DOMMatrix(t);
-    return m.a||1; // uniform scale() only here, no rotation/skew
-  }catch(_e){return (_tmState&&_tmState.digiZoom)||1;}
+    // translate+scale only here, no rotation/skew: a=d=scale, e/f=translate.
+    return {z:m.a||1,tx:m.e||0,ty:m.f||0};
+  }catch(_e){return fallback;}
+}
+function _tmCurrentDigi(){
+  return _tmXform().z;
 }
 // Halts an in-flight ease-back-out RIGHT WHERE IT IS, the instant a new
 // touch begins, instead of letting it keep animating underneath the new
@@ -436,10 +469,10 @@ function _tmCurrentDigi(){
 // gesture, so its own touchstart and touchend always agree with each other.
 function _tmFreezeDigi(){
   if(!_tmState)return;
-  const z=_tmCurrentDigi();
+  const x=_tmXform(); // the live matrix: scale AND translate, both frozen
   const el=document.getElementById('tm-scale');
   if(el)el.style.transition='none'; // cancel the transition synchronously, no re-animation
-  _tmDigiSet(z,false);
+  _tmXformSet(x.z,x.tx,x.ty,false);
 }
 // ── The app's OWN projection: one frame for everything the user sees ───────
 // Root cause of the displaced-shape bug (owner, 2026-08-20, live retests):
@@ -522,24 +555,25 @@ function _tmProjectRaw(lat,lng,k){
   };
 }
 // lat/lng -> wrap-local VISUAL px (what the user sees: calibration offset
-// applied in the unscaled frame, then the live digital zoom around the wrap
-// center, matching #tm-scale's transform-origin:50% 50%).
+// applied in the unscaled frame, then the live digital-zoom transform
+// v = c + z*(p - c) + t, matching #tm-scale's translate+scale around its
+// 50%/50% transform-origin).
 function _tmProject(lat,lng){
   const k=_tmProjBase();
   if(!k)return null;
   const p=_tmProjectRaw(lat,lng,k);
   const cal=_tmState&&_tmState.projCal;
   if(cal&&cal.applied){p.x+=cal.dx;p.y+=cal.dy;}
-  const z=_tmCurrentDigi();
-  if(z!==1){
-    p.x=k.cx+(p.x-k.cx)*z;
-    p.y=k.cy+(p.y-k.cy)*z;
+  const x=_tmXform();
+  if(x.z!==1||x.tx||x.ty){
+    p.x=k.cx+(p.x-k.cx)*x.z+x.tx;
+    p.y=k.cy+(p.y-k.cy)*x.z+x.ty;
   }
   return p;
 }
 // Viewport client px (e.clientX/e.clientY space, same as the retired
 // _tmPageToCoord took) -> {latitude,longitude}. Exact inverse of _tmProject:
-// wrap-local, un-digital-zoom around the center, un-calibrate, invert the
+// wrap-local, invert the live translate+scale, un-calibrate, invert the
 // Mercator mapping.
 function _tmUnproject(x,y){
   const k=_tmProjBase();
@@ -547,10 +581,10 @@ function _tmUnproject(x,y){
   if(!k||!wrap)return null;
   const r=wrap.getBoundingClientRect();
   let lx=x-r.left,ly=y-r.top;
-  const z=_tmCurrentDigi();
-  if(z!==1){
-    lx=k.cx+(lx-k.cx)/z;
-    ly=k.cy+(ly-k.cy)/z;
+  const xf=_tmXform();
+  if(xf.z!==1||xf.tx||xf.ty){
+    lx=k.cx+(lx-xf.tx-k.cx)/xf.z;
+    ly=k.cy+(ly-xf.ty-k.cy)/xf.z;
   }
   const cal=_tmState&&_tmState.projCal;
   if(cal&&cal.applied){lx-=cal.dx;ly-=cal.dy;}
@@ -639,11 +673,12 @@ function _tmDebugSnap(label,x,y,coord){
     let convTxt=' conv=n/a';
     if(map){
       try{
-        // Feed the converter the same unscaled point the retired pipeline
-        // would have (the old _tmUnscalePt math, inlined).
-        const z=_tmCurrentDigi();
+        // Feed the converter the unscaled position of the tapped visual
+        // point (the retired _tmUnscalePt math, generalized to the
+        // translate+scale transform).
+        const xf=_tmXform();
         const ccx=r.left+r.width/2,ccy=r.top+r.height/2;
-        const cv=map.convertPointOnPageToCoordinate(new DOMPoint(ccx+(x-ccx)/z,ccy+(y-ccy)/z));
+        const cv=map.convertPointOnPageToCoordinate(new DOMPoint(ccx+(x-xf.tx-ccx)/xf.z,ccy+(y-xf.ty-ccy)/xf.z));
         const cvPx=_tmProject(cv.latitude,cv.longitude);
         const dPx=(cvPx&&own)?Math.hypot(cvPx.x-own.x,cvPx.y-own.y):-1;
         const dM=Math.hypot(
@@ -688,9 +723,16 @@ function _tmInitPrecisionGesture(map,wrap){
   // touch-slop range (~20px) so normal tremor during the hold's own window
   // survives; an intentional pan is still unmistakably past this in the
   // first couple frames of a real drag.
-  const THRESH=20,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70;
+  // GRAB_R: screen-px hit radius around a rendered dot, shared by the two
+  // vertex interactions: a quick tap on dot 0 closes an area trace, a
+  // press-and-hold on any dot grabs THAT vertex for adjustment.
+  const THRESH=20,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70,GRAB_R=20;
   let downX=0,downY=0,moved=false,active=false,timer=null,suppressTouchEnd=false;
   let holdStartDigi=1,pinchOwn=false,pinchD0=0,pinchDigi0=1,pinchCam0=null;
+  // Index of the existing vertex this touch grabbed for adjustment, decided
+  // ONCE at pointerdown against the dots' rendered screen positions; -1 = a
+  // normal placement gesture.
+  let grabIdx=-1;
   // The deliberate, SETTLED resting digi level, distinct from _tmCurrentDigi()
   // (the live/frozen visual scale). A hold's exitPrecision() commits its
   // target synchronously but the CSS takes 280ms to visually catch up; a
@@ -728,10 +770,29 @@ function _tmInitPrecisionGesture(map,wrap){
     const crossY=Math.max(20,y-OFFSET_Y);
     return _tmUnproject(r.left+x,r.top+crossY);
   }
+  // Which rendered dot (if any) sits within GRAB_R of this viewport point.
+  // Screen-space against _tmProject, the same positions the SVG dots are
+  // drawn at, so the hit test agrees with what the user sees.
+  function hitVertex(clientX,clientY){
+    if(!_tmState||!_tmState.points.length)return -1;
+    const r=frameEl.getBoundingClientRect();
+    let best=-1,bestD=GRAB_R;
+    _tmState.points.forEach((p,i)=>{
+      const pr=_tmProject(p.lat,p.lng);
+      if(!pr)return;
+      const d=Math.hypot(r.left+pr.x-clientX,r.top+pr.y-clientY);
+      if(d<=bestD){bestD=d;best=i;}
+    });
+    return best;
+  }
   function exitPrecision(){
     active=false;
+    grabIdx=-1;
     if(cross)cross.style.display='none';
-    _tmDigiSet(holdStartDigi,true); // release the hold's digital close-up
+    // Release the hold's digital close-up: back to the resting scale with a
+    // zero translate (the resting state is always center-focused), animated.
+    // Pure CSS, no camera call, same as the whole hold lifecycle.
+    _tmXformSet(holdStartDigi,0,0,true);
     restDigi=holdStartDigi; // the ease's committed target, not its mid-flight visual
     _tmClearPreview();
     // Mirror of the lock below: give the map's own pan back once the
@@ -745,17 +806,19 @@ function _tmInitPrecisionGesture(map,wrap){
     _tmFreezeDigi(); // stop any in-flight ease-back-out before this touch's own math ever runs
     const p=relPoint(e);
     downX=p.x;downY=p.y;moved=false;
+    // Decide NOW, against the dots' rendered screen positions, whether a
+    // hold on this touch adjusts an existing vertex instead of placing a
+    // new point.
+    grabIdx=hitVertex(e.clientX,e.clientY);
     cancelTimer();
     timer=setTimeout(()=>{
       if(moved)return;
+      if(!_tmState)return;
+      // A closed polygon takes no NEW points; only a vertex grab may hold
+      // on it (a plain tap on it is ignored in pointerup below).
+      if(_tmState.closed&&grabIdx<0)return;
       active=true;
       try{
-        // Viewport-relative (getBoundingClientRect + relative offset), same
-        // as crosshairCoord()/pointerup below — NOT e.pageX/e.pageY, which
-        // are page-relative (include document scroll) and land wrong the
-        // moment this fixed-position overlay sits over a scrolled page.
-        const r=frameEl.getBoundingClientRect();
-        const coord=_tmUnproject(r.left+downX,r.top+downY);
         // The committed RESTING target (see restDigi above), not
         // _tmCurrentDigi()'s live visual value: a hold fired again before the
         // previous one's 280ms ease-back-out finished must still start from
@@ -767,21 +830,24 @@ function _tmInitPrecisionGesture(map,wrap){
         // 3.33 -> 4.66 -> 6.51 once _tmFreezeDigi() started freezing the
         // mid-exit visual on the very next touch).
         holdStartDigi=restDigi;
-        // Recenter on the pressed point (the digital scale magnifies around
-        // the frame CENTER, so without this an off-center press would zoom
-        // toward the middle of the screen instead of the finger). The own
-        // projection reads map.region live, so this animation is always
-        // tracked, never raced.
-        if(coord)map.setCenterAnimated(new mapkit.Coordinate(coord.latitude,coord.longitude),true);
-        // The close-up is FULLY digital, the camera distance is never
-        // touched. Two probe rounds on the live app showed
-        // setCameraDistanceAnimated contributing exactly nothing here
-        // (111m -> 111m; the concurrent setCenterAnimated appears to
-        // cancel it), and MapKit's satellite floor (~82.5m, measured)
-        // caps it at a puny 1.3x from a typical view anyway. Digital
-        // delivers the exact same 1/ZOOM_FACTOR magnification every time,
-        // from any starting zoom, with nothing to race against.
-        _tmDigiSet(holdStartDigi/ZOOM_FACTOR,true);
+        // Magnify TOWARD THE PRESSED POINT in pure CSS: compose the
+        // translate so the content under the finger stays exactly under
+        // the finger while the scale animates up around it. NO MapKit
+        // camera call anywhere in the hold lifecycle: the old
+        // setCenterAnimated recenter here is what let MapKit scroll the
+        // map to a random location mid-hold (owner live retest
+        // 2026-08-20). Starting from the LIVE frozen transform (z0,t0)
+        // keeps the view continuous at engage from any state, a prior
+        // pinch's resting zoom included. The close-up is FULLY digital,
+        // camera distance untouched (probe-measured: the satellite floor
+        // caps a real camera zoom at a puny ~1.3x anyway).
+        const x0=_tmXform(); // frozen by _tmFreezeDigi at pointerdown
+        const cx=frameEl.clientWidth/2,cy=frameEl.clientHeight/2;
+        const z1=Math.max(1,Math.min(_TM_DIGI_MAX,holdStartDigi/ZOOM_FACTOR));
+        const rz=z1/(x0.z||1);
+        // Pressed visual point F=(downX,downY); content under it is
+        // pF=c+(F-t0-c)/z0; solving V1(pF)=F gives t1=F-c-(z1/z0)*(F-t0-c).
+        _tmXformSet(z1,downX-cx-rz*(downX-x0.tx-cx),downY-cy-rz*(downY-x0.ty-cy),true);
       }catch(_e){}
       // Belt-and-suspenders: harmless, and was worth something in an
       // earlier round, but three straight owner retests (2026-08-20) show
@@ -794,7 +860,16 @@ function _tmInitPrecisionGesture(map,wrap){
       try{map.isScrollEnabled=false;map.isRotationEnabled=false;}catch(_e){}
       if(cross)cross.style.display='block';
       placeCrosshair(downX,downY);
-      try{_tmUpdatePreview(crosshairCoord(downX,downY));}catch(_e){}
+      try{
+        const c=crosshairCoord(downX,downY);
+        if(grabIdx>=0){
+          // Vertex adjustment: the grabbed point tracks the crosshair live
+          // from the moment the hold engages; the polygon re-renders with it.
+          if(c){_tmState.points[grabIdx]={lat:c.latitude,lng:c.longitude};_tmRedraw();}
+        }else{
+          _tmUpdatePreview(c);
+        }
+      }catch(_e){}
       if(typeof _tdHaptic==='function')_tdHaptic('tick');
     },HOLD_MS);
   });
@@ -837,7 +912,16 @@ function _tmInitPrecisionGesture(map,wrap){
     e.preventDefault();
     const p=relPoint(e);
     placeCrosshair(p.x,p.y);
-    try{_tmUpdatePreview(crosshairCoord(p.x,p.y));}catch(_e){}
+    try{
+      const c=crosshairCoord(p.x,p.y);
+      if(grabIdx>=0){
+        // Live vertex drag: move the grabbed point, re-render the whole
+        // trace (closed fill included) in the same frame.
+        if(c&&_tmState){_tmState.points[grabIdx]={lat:c.latitude,lng:c.longitude};_tmRedraw();}
+      }else{
+        _tmUpdatePreview(c);
+      }
+    }catch(_e){}
   },{capture:true,passive:false});
   wrap.addEventListener('pointerup',e=>{
     if(!e.isPrimary)return;
@@ -854,24 +938,47 @@ function _tmInitPrecisionGesture(map,wrap){
         // exitPrecision (which releases it) — the crosshair the user aimed
         // with was on the zoomed view.
         coord=_tmUnproject(r.left+p.x,r.top+crossY);
-        _tmDebugSnap('HOLD',r.left+p.x,r.top+crossY,coord);
+        _tmDebugSnap(grabIdx>=0?'ADJ':'HOLD',r.left+p.x,r.top+crossY,coord);
       }catch(_e){}
+      const gi=grabIdx; // exitPrecision resets it
       exitPrecision();
       suppressTouchEnd=true; // pointerup precedes touchend — see below
-      if(coord)_tmAddPoint(coord.latitude,coord.longitude);
+      if(gi>=0){
+        // Commit the adjusted vertex at the crosshair's release position;
+        // never add a new point on a grab.
+        if(coord&&_tmState&&_tmState.points[gi]){
+          _tmState.points[gi]={lat:coord.latitude,lng:coord.longitude};
+          _tmRedraw();
+        }
+      }else if(coord){
+        _tmAddPoint(coord.latitude,coord.longitude);
+      }
       return;
     }
     // A real pan/drag that never engaged our hold gesture — leave it
     // alone entirely, MapKit's own pan handling saw every event of this
     // sequence untouched (we never intercepted while !active).
     if(moved)return;
-    // A genuine quick tap: place the point directly under the finger,
-    // same getBoundingClientRect()-based math as the hold gesture above,
-    // not MapKit's 'single-tap' event (see _tmInitMap — no longer used).
+    // A genuine quick tap: still swallowed from MapKit (the suppression
+    // below), then routed by what it landed on: a closed trace ignores it,
+    // a tap on dot 0 of a 3+-point area trace CLOSES the polygon, anything
+    // else places a point directly under the finger via the own projection.
     e.stopImmediatePropagation();
     e.preventDefault();
     suppressTouchEnd=true;
     try{
+      if(_tmState&&_tmState.closed)return; // a closed trace takes no more taps
+      if(_tmState&&_tmState.mode==='area'&&_tmState.points.length>=3){
+        const p0=_tmState.points[0];
+        const pr=_tmProject(p0.lat,p0.lng);
+        const r=frameEl.getBoundingClientRect();
+        if(pr&&Math.hypot(r.left+pr.x-e.clientX,r.top+pr.y-e.clientY)<=GRAB_R){
+          // Tap on the first dot: close the loop and fill the coverage area.
+          _tmState.closed=true;
+          _tmRedraw();
+          return;
+        }
+      }
       const coord=_tmUnproject(e.clientX,e.clientY);
       _tmDebugSnap('TAP',e.clientX,e.clientY,coord);
       if(coord)_tmAddPoint(coord.latitude,coord.longitude);
@@ -1008,7 +1115,15 @@ function _tmAddPoint(lat,lng){
 }
 
 function _tmUndo(){
-  if(!_tmState||!_tmState.points.length)return;
+  if(!_tmState)return;
+  if(_tmState.closed){
+    // Undo on a closed trace REOPENS it first (clears the closure, keeps
+    // every point); the next undo starts removing points as usual.
+    _tmState.closed=false;
+    _tmRedraw();
+    return;
+  }
+  if(!_tmState.points.length)return;
   _tmState.points.pop();
   _tmRedraw();
 }
@@ -1039,8 +1154,14 @@ function _tmRenderTrace(){
   const parts=[];
   if(usable&&points.length>=2){
     const d=proj.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
-    if(mode==='area'&&points.length>=3){
+    if(mode==='area'&&_tmState.closed&&points.length>=3){
+      // Closed by tapping the first dot: the closing edge appears and the
+      // coverage area fills in (SVG <polygon> closes itself).
       parts.push('<polygon points="'+d+'" fill="#2D5DA8" fill-opacity="0.28" stroke="#2D5DA8" stroke-width="3" stroke-linejoin="round"/>');
+    }else if(mode==='area'){
+      // Still being traced: an OPEN dashed run, no closing edge, no fill,
+      // so "in progress" and "closed" read as two different states.
+      parts.push('<polyline points="'+d+'" fill="none" stroke="#2D5DA8" stroke-width="3" stroke-opacity="0.85" stroke-dasharray="8 6" stroke-linejoin="round" stroke-linecap="round"/>');
     }else{
       parts.push('<polyline points="'+d+'" fill="none" stroke="#2D5DA8" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>');
     }
@@ -1117,14 +1238,16 @@ function _tmDrawSig(){
   const wrap=document.getElementById('tm-canvas-wrap');
   const pv=_tmState.previewCoord;
   const cal=_tmState.projCal;
+  const xf=_tmXform();
   return [
     region,
-    _tmCurrentDigi().toFixed(4),
+    xf.z.toFixed(4)+','+xf.tx.toFixed(2)+','+xf.ty.toFixed(2),
     wrap?(wrap.clientWidth+'x'+wrap.clientHeight):'',
     _tmState.points.map(p=>p.lat.toFixed(7)+','+p.lng.toFixed(7)).join(';'),
     pv?(pv.lat.toFixed(7)+','+pv.lng.toFixed(7)):'',
     _tmState.mode,
     _tmState.repeatCount,
+    _tmState.closed?'closed':'open',
     (_tmState.projAxis||'auto')+(cal&&cal.applied?(':'+cal.dx.toFixed(2)+','+cal.dy.toFixed(2)):''),
   ].join('|');
 }

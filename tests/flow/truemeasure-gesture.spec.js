@@ -135,21 +135,30 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     expect(tapErr, 'the rendered dot must sit under the finger (px)').toBeLessThan(12);
 
     // ── B: press-and-hold engages the precision zoom-in ──────────────────
+    // The hold is now 100% CSS: the LIVE rendered scale must climb while
+    // the MapKit camera does not move AT ALL, engage included (the old
+    // setCenterAnimated recenter at engage is deleted; it was what let
+    // MapKit scroll the map to a random spot mid-hold on the live device).
     const holdX = Math.round(wrapBox.x + wrapBox.w * 0.35);
     const holdY = Math.round(wrapBox.y + wrapBox.h * 0.55);
     const preHold = await mapInfo();
-    const preDigi = await page.evaluate(() => (_tmState.digiZoom || 1));
+    const preDigi = await page.evaluate(() => _tmCurrentDigi());
     await touch('touchStart', [{ x: holdX, y: holdY }]);
     await sleep(1300); // HOLD_MS(420) + entrance zoom animation
     const zoomed = await mapInfo();
-    const zoomedDigi = await page.evaluate(() => (_tmState.digiZoom || 1));
+    const zoomedDigi = await page.evaluate(() => _tmCurrentDigi());
     const crossVisible = await page.evaluate(() => document.getElementById('tm-crosshair').style.display === 'block');
-    // Effective magnification = camera zoom (clamped at MapKit's ~82.5m
-    // satellite floor) x the digital scale layer that covers the remainder.
-    const effective = (preHold.dist / zoomed.dist) * (zoomedDigi / preDigi);
-    console.log(`[probe] HOLD: preDist=${preHold.dist.toFixed(0)}m zoomedDist=${zoomed.dist.toFixed(0)}m digi=${zoomedDigi.toFixed(2)} effective=${effective.toFixed(2)}x crosshair=${crossVisible}`);
+    const effective = zoomedDigi / preDigi; // pure digital magnification
+    const engageDriftM = Math.hypot(
+      (zoomed.center.lat - preHold.center.lat) * 111320,
+      (zoomed.center.lng - preHold.center.lng) * 111320 * Math.cos(preHold.center.lat * Math.PI / 180),
+    );
+    console.log(`[probe] HOLD: preDist=${preHold.dist.toFixed(0)}m zoomedDist=${zoomed.dist.toFixed(0)}m digi=${zoomedDigi.toFixed(2)} effective=${effective.toFixed(2)}x engageDrift=${engageDriftM.toFixed(2)}m crosshair=${crossVisible}`);
     expect(crossVisible, 'crosshair must appear on hold').toBe(true);
-    expect(effective, 'hold must magnify ~1/ZOOM_FACTOR overall (camera + digital)').toBeGreaterThan(2.5);
+    expect(effective, 'hold must magnify ~1/ZOOM_FACTOR via the live CSS scale').toBeGreaterThan(2.5);
+    expect(engageDriftM, 'camera CENTER must not move at hold engage (no recenter exists anymore)').toBeLessThan(1);
+    expect(zoomed.dist / preHold.dist, 'camera DISTANCE must not move at hold engage').toBeGreaterThan(0.99);
+    expect(zoomed.dist / preHold.dist).toBeLessThan(1.01);
 
     // Round-trip the OWN projection while the digital zoom is applied. This
     // is a consistency check by construction (_tmProject/_tmUnproject are
@@ -185,8 +194,9 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
 
     // ── D: releasing drops the point under the crosshair ─────────────────
     const endX = holdX + steps * 10, endY = holdY + steps * 4;
-    // Sample the expected drop position BEFORE touchEnd: the camera eases
-    // back out afterwards, which moves every screen<->coord mapping.
+    // Sample the expected drop position BEFORE touchEnd: the CSS zoom eases
+    // back out afterwards, which moves every screen<->coord mapping (the
+    // camera itself no longer moves at all).
     const expectedDrop = await page.evaluate(([x, y]) => {
       // The crosshair lives OUTSIDE the digital-zoom layer (visual space,
       // relative to the unscaled canvas frame) — mirror the app's own math:
@@ -199,12 +209,29 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
       return { lat: c.latitude, lng: c.longitude };
     }, [endX, endY]);
     await touch('touchEnd', []);
-    await sleep(400);
+    await sleep(600); // let the CSS ease-back-out settle before DOM-rect checks
     const dropped = await page.evaluate(() => {
       const p = _tmState.points[_tmState.points.length - 1];
       return p ? { placed: true, lat: p.lat, lng: p.lng, pts: _tmState.points.length } : { placed: false };
     });
     expect(dropped.placed && dropped.pts === 2, 'hold-release must drop a 2nd point').toBe(true);
+
+    // The dropped dot's RENDERED DOM rect must sit where the crosshair's
+    // content went: at rest, the dot and the re-projected crosshair coord
+    // coincide on screen.
+    const dropDom = await page.evaluate((exp) => {
+      const dots = document.querySelectorAll('#tm-draw-svg .tm-dot');
+      const dot = dots[dots.length - 1];
+      if (!dot) return null;
+      const r = dot.getBoundingClientRect();
+      const pr = _tmProject(exp.lat, exp.lng);
+      const w = document.getElementById('tm-canvas-wrap').getBoundingClientRect();
+      return { dx: (r.x + r.width / 2) - (w.left + pr.x), dy: (r.y + r.height / 2) - (w.top + pr.y) };
+    }, expectedDrop);
+    expect(dropDom, 'the dropped point must render as an SVG dot').not.toBeNull();
+    const dropDomErr = Math.hypot(dropDom.dx, dropDom.dy);
+    console.log(`[probe] DROP-DOM: errPx=${dropDomErr.toFixed(1)}`);
+    expect(dropDomErr, 'the rendered dot must sit at the crosshair position (px)').toBeLessThan(4);
 
     // §7.1, the render half: with a 2-point trace live, MapKit must be
     // carrying ZERO overlays and ZERO annotations: the trace (and its
@@ -225,16 +252,25 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     console.log(`[probe] DROP: errM=${dropErrM.toFixed(2)}m`);
 
     // Camera-hold is THE owner-reported bug: fail loudly with the measurement.
-    expect(driftM, 'camera center must hold still during the precision drag (meters)').toBeLessThan(3);
-    expect(distRatio, 'camera distance must hold during the precision drag').toBeGreaterThan(0.8);
-    expect(distRatio).toBeLessThan(1.25);
+    // With every camera call gone from the hold, "holds still" is now
+    // near-zero, not just bounded.
+    expect(driftM, 'camera center must hold still during the precision drag (meters)').toBeLessThan(1);
+    expect(distRatio, 'camera distance must hold during the precision drag').toBeGreaterThan(0.99);
+    expect(distRatio).toBeLessThan(1.01);
     expect(dropErrM, 'dropped point must land under the crosshair (meters)').toBeLessThan(2);
 
-    // Ease-back-out restores the pre-hold zoom level.
-    await sleep(900);
+    // After release the camera must be exactly where it was BEFORE the whole
+    // hold began: the entire lifecycle (engage, drag, release) is CSS-only.
+    await sleep(500);
     const released = await mapInfo();
-    console.log(`[probe] RELEASE: dist=${released.dist.toFixed(0)}m (preHold=${preHold.dist.toFixed(0)}m)`);
-    expect(released.dist, 'camera must ease back out after release').toBeGreaterThan(preHold.dist * 0.5);
+    const releaseDriftM = Math.hypot(
+      (released.center.lat - preHold.center.lat) * 111320,
+      (released.center.lng - preHold.center.lng) * 111320 * Math.cos(preHold.center.lat * Math.PI / 180),
+    );
+    console.log(`[probe] RELEASE: dist=${released.dist.toFixed(0)}m (preHold=${preHold.dist.toFixed(0)}m) drift=${releaseDriftM.toFixed(2)}m`);
+    expect(releaseDriftM, 'camera center must be untouched across the entire hold lifecycle').toBeLessThan(1);
+    expect(released.dist / preHold.dist, 'camera distance must be untouched across the entire hold lifecycle').toBeGreaterThan(0.99);
+    expect(released.dist / preHold.dist).toBeLessThan(1.01);
 
     // cloudflareinsights.com/cdn-cgi/rum: Cloudflare's own RUM beacon, CORS-
     // blocked on the uat.* preview domain, not something this codebase adds
@@ -421,8 +457,11 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     }));
 
     // Prime the race: one hold-drop first (this is what leaves digiZoom
-    // mid-transition for the taps that immediately follow).
-    const holdPt = { x: Math.round(wrapBox.x + wrapBox.w * 0.5), y: Math.round(wrapBox.y + wrapBox.h * 0.5) };
+    // mid-transition for the taps that immediately follow). Placed WELL AWAY
+    // from the corner path: this dot becomes points[0], and a later tap
+    // landing within the close radius of dot 0 would now legitimately CLOSE
+    // the trace instead of adding a corner.
+    const holdPt = { x: Math.round(wrapBox.x + wrapBox.w * 0.75), y: Math.round(wrapBox.y + wrapBox.h * 0.75) };
     await touch('touchStart', [holdPt]);
     await sleep(900); // engage the hold + entrance zoom
     await touch('touchEnd', []);
@@ -782,5 +821,181 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
 
     const relevant = errors.filter(realError);
     expect(relevant.length, 'zero console errors during the displacement probe: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
+  });
+
+  // ── Close the trace by tapping the first dot (owner ask 2026-08-20) ──────
+  // Area mode, 3+ points: a plain tap landing within the grab radius of dot 0
+  // CLOSES the polygon (closing edge + filled coverage area) instead of
+  // adding a point, and a closed trace ignores further plain taps. While
+  // OPEN the trace renders as a dashed open polyline (no fill, no closing
+  // edge), so the two states are visually distinct.
+  test('tapping dot 0 closes the area trace, filled polygon renders, further taps ignored', async ({ page, context }) => {
+    test.setTimeout(90000);
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await signIn(page);
+    await page.waitForFunction(() => typeof openTrueMeasure === 'function', null, { timeout: 30000 });
+    await page.waitForFunction(() => typeof _mapkitReady !== 'undefined' && _mapkitReady === true, null, { timeout: 30000 });
+    await page.evaluate(() => openTrueMeasure({ id: 991239, name: 'Close Probe', addr: '' }));
+    await page.waitForFunction(() => typeof _tmState !== 'undefined' && _tmState && !!_tmState.map, null, { timeout: 20000 });
+    await sleep(2500);
+    // The close gesture is area-mode-only; the account's trade may default
+    // the tool to distance mode, so pin it.
+    await page.evaluate(() => _tmSetMode('area'));
+
+    const wrapBox = await page.evaluate(() => {
+      const r = document.getElementById('tm-map').getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const cdp = await context.newCDPSession(page);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', {
+      type, touchPoints: points.map((p) => ({ x: p.x, y: p.y, radiusX: 8, radiusY: 8, force: 1, id: 1 })),
+    });
+    const tap = async (x, y) => {
+      await touch('touchStart', [{ x, y }]);
+      await sleep(70);
+      await touch('touchEnd', []);
+      await sleep(350);
+    };
+
+    // A triangle, all corners well outside each other's 20px close radius.
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.30), Math.round(wrapBox.y + wrapBox.h * 0.30));
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.65), Math.round(wrapBox.y + wrapBox.h * 0.35));
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.46), Math.round(wrapBox.y + wrapBox.h * 0.60));
+
+    const open = await page.evaluate(() => ({
+      pts: _tmState.points.length,
+      closed: !!_tmState.closed,
+      polygons: document.querySelectorAll('#tm-draw-svg polygon').length,
+      polylines: document.querySelectorAll('#tm-draw-svg polyline').length,
+    }));
+    expect(open.pts, 'three taps must place three points').toBe(3);
+    expect(open.closed, 'the trace must still be open').toBe(false);
+    expect(open.polygons, 'an open area trace must NOT render a filled polygon').toBe(0);
+    expect(open.polylines, 'an open area trace renders as a dashed polyline').toBe(1);
+
+    // Tap dot 0 at its RENDERED position: this closes the loop.
+    const dot0 = await page.evaluate(() => {
+      const d = document.querySelector('#tm-draw-svg .tm-dot[data-idx="0"]');
+      const r = d.getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    });
+    await tap(dot0.x, dot0.y);
+    const closed = await page.evaluate(() => ({
+      pts: _tmState.points.length,
+      closed: !!_tmState.closed,
+      polygons: document.querySelectorAll('#tm-draw-svg polygon').length,
+      polylines: document.querySelectorAll('#tm-draw-svg polyline').length,
+      fillOpacity: (document.querySelector('#tm-draw-svg polygon') || {}).getAttribute?.('fill-opacity'),
+      ctaDisabled: document.getElementById('tm-cta').disabled,
+      readout: document.getElementById('tm-readout').textContent,
+    }));
+    console.log(`[probe] CLOSE: ${JSON.stringify(closed)}`);
+    expect(closed.closed, 'tapping dot 0 must set the closed flag').toBe(true);
+    expect(closed.pts, 'closing must not add a point').toBe(3);
+    expect(closed.polygons, 'a closed trace renders exactly one filled polygon').toBe(1);
+    expect(closed.fillOpacity, 'the polygon must carry the coverage fill').toBe('0.28');
+    expect(closed.polylines, 'the in-progress dashed polyline must be gone once closed').toBe(0);
+    expect(closed.ctaDisabled, 'Add to estimate must stay enabled on a closed trace').toBe(false);
+    expect(closed.readout, 'the area readout must still show the measurement').not.toContain('Tap the map');
+
+    // A further plain tap on a closed trace adds nothing.
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.8), Math.round(wrapBox.y + wrapBox.h * 0.8));
+    const after = await page.evaluate(() => ({ pts: _tmState.points.length, closed: !!_tmState.closed }));
+    expect(after.pts, 'a closed trace must ignore further plain taps').toBe(3);
+    expect(after.closed, 'the trace must stay closed').toBe(true);
+
+    const relevant = errors.filter(realError);
+    expect(relevant.length, 'zero console errors during the close probe: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
+  });
+
+  // ── Adjust an existing point by press-holding its dot ────────────────────
+  // A hold landing within the grab radius of a rendered dot grabs THAT
+  // vertex: the same precision machinery (CSS zoom toward the press,
+  // crosshair with its 70px offset), but dragging moves points[idx] live and
+  // release commits the move with NO new point added.
+  test('press-hold on an existing dot grabs and moves that vertex, no new point', async ({ page, context }) => {
+    test.setTimeout(90000);
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await signIn(page);
+    await page.waitForFunction(() => typeof openTrueMeasure === 'function', null, { timeout: 30000 });
+    await page.waitForFunction(() => typeof _mapkitReady !== 'undefined' && _mapkitReady === true, null, { timeout: 30000 });
+    await page.evaluate(() => openTrueMeasure({ id: 991240, name: 'Adjust Probe', addr: '' }));
+    await page.waitForFunction(() => typeof _tmState !== 'undefined' && _tmState && !!_tmState.map, null, { timeout: 20000 });
+    await sleep(2500);
+
+    const wrapBox = await page.evaluate(() => {
+      const r = document.getElementById('tm-map').getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const cdp = await context.newCDPSession(page);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', {
+      type, touchPoints: points.map((p) => ({ x: p.x, y: p.y, radiusX: 8, radiusY: 8, force: 1, id: 1 })),
+    });
+    const tap = async (x, y) => {
+      await touch('touchStart', [{ x, y }]);
+      await sleep(70);
+      await touch('touchEnd', []);
+      await sleep(350);
+    };
+
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.30), Math.round(wrapBox.y + wrapBox.h * 0.30));
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.62), Math.round(wrapBox.y + wrapBox.h * 0.36));
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.46), Math.round(wrapBox.y + wrapBox.h * 0.60));
+
+    const dotRects = () => page.evaluate(() => {
+      return Array.from(document.querySelectorAll('#tm-draw-svg .tm-dot')).map((d) => {
+        const r = d.getBoundingClientRect();
+        return { idx: d.getAttribute('data-idx'), x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      });
+    });
+    const beforeDots = await dotRects();
+    expect(beforeDots.length, 'three dots must be rendered').toBe(3);
+
+    // Press-hold ON dot index 1, engage the grab, then drag ~60px.
+    const grab = { x: Math.round(beforeDots[1].x), y: Math.round(beforeDots[1].y) };
+    await touch('touchStart', [{ x: grab.x, y: grab.y }]);
+    await sleep(900); // HOLD_MS + entrance zoom settles
+    const crossVisible = await page.evaluate(() => document.getElementById('tm-crosshair').style.display === 'block');
+    expect(crossVisible, 'the grab hold must engage the crosshair').toBe(true);
+    const steps = 6;
+    for (let i = 1; i <= steps; i++) {
+      await touch('touchMove', [{ x: grab.x + i * 10, y: grab.y + i * 3 }]);
+      await sleep(80);
+    }
+    const endX = grab.x + steps * 10, endY = grab.y + steps * 3;
+    // The committed position is the crosshair's (70px above the finger,
+    // clamped), sampled through the app's own math BEFORE release.
+    const expected = await page.evaluate(([x, y]) => {
+      const r = document.getElementById('tm-canvas-wrap').getBoundingClientRect();
+      const OFFSET_Y = 70;
+      const crossY = r.y + Math.max(20, (y - r.y) - OFFSET_Y);
+      const c = _tmUnproject(x, crossY);
+      return { lat: c.latitude, lng: c.longitude };
+    }, [endX, endY]);
+    await touch('touchEnd', []);
+    await sleep(600); // ease-back settles
+
+    const afterDots = await dotRects();
+    const result = await page.evaluate((exp) => {
+      const pr = _tmProject(exp.lat, exp.lng);
+      const w = document.getElementById('tm-canvas-wrap').getBoundingClientRect();
+      return { pts: _tmState.points.length, expX: w.left + pr.x, expY: w.top + pr.y };
+    }, expected);
+    expect(result.pts, 'adjusting must not change the point count').toBe(3);
+    expect(afterDots.length, 'still exactly three dots').toBe(3);
+    const movedErr = Math.hypot(afterDots[1].x - result.expX, afterDots[1].y - result.expY);
+    const d0Err = Math.hypot(afterDots[0].x - beforeDots[0].x, afterDots[0].y - beforeDots[0].y);
+    const d2Err = Math.hypot(afterDots[2].x - beforeDots[2].x, afterDots[2].y - beforeDots[2].y);
+    console.log(`[probe] ADJUST: movedErr=${movedErr.toFixed(1)}px d0Err=${d0Err.toFixed(1)}px d2Err=${d2Err.toFixed(1)}px`);
+    expect(movedErr, 'the grabbed vertex must land at the crosshair-adjusted release position (px)').toBeLessThan(4);
+    expect(d0Err, 'dot 0 must not move during the adjustment').toBeLessThan(3);
+    expect(d2Err, 'dot 2 must not move during the adjustment').toBeLessThan(3);
+
+    const relevant = errors.filter(realError);
+    expect(relevant.length, 'zero console errors during the adjust probe: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
   });
 });
