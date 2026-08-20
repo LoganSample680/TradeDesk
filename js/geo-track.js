@@ -312,6 +312,20 @@ function _geoPersistOpen(hiddenAt){
         // designed to let iOS kill the app while parked.
         legOrigin:_geoLegOrigin,lastFenceLoc:_geoLastFenceLoc,lastFenceAt:_geoLastFenceAt,
         stopAnchor:_geoStopAnchor,
+        // Live banner display state (owner report: a UAT reload "kills" the
+        // in-progress drive card and the Live Activity/Dynamic Island). None
+        // of this was persisted before, only driveStartedAt, so a WebView
+        // reload mid-drive (this app's own version-mismatch auto-reload,
+        // js/cloud.js _autoSaveAndReload, or any app relaunch) came back up
+        // with _geoDriveMovingAt at its fresh default of 0. _geoDriving()
+        // gates visibility on `Date.now()-_geoDriveMovingAt<150000`, so a
+        // reset-to-0 value always read as "no recent movement" until a fresh
+        // GPS ping confirmed driving speed again, and until then both the
+        // dashboard's DRIVING banner and _liveActDrive() (js/live-activity.js)
+        // treated a drive that never actually stopped as not driving. Carrying
+        // these across the reload closes that gap.
+        driveMovingAt:_geoDriveMovingAt,driveMiles:_geoDriveMiles,driveSteps:_geoDriveSteps,
+        driveMph:_geoDriveMph,driveLastFix:_geoDriveLastFix,
         hiddenAt:hiddenAt||new Date().toISOString(),uid:(_supaUser&&_supaUser.id)||null,day:todayKey()
       }));
     }else localStorage.removeItem(_GEO_OPEN_KEY);
@@ -358,6 +372,17 @@ function _geoRestoreOpen(){
     // now works across a restart precisely BECAUSE the origin survives: a
     // bounce restores with origin == destination and is refused.)
     _geoDriveStartedAt=s.driveStartedAt;
+    // Carried alongside driveStartedAt so a drive already in progress reads as
+    // driving again immediately, not after the next confirmed-moving ping (see
+    // the comment on these fields in _geoPersistOpen). Only meaningful when a
+    // drive was actually open (driveStartedAt truthy); a stale 0/null on a
+    // restore that has no open drive is harmless, _geoDriving() already
+    // requires driveStartedAt too.
+    if(s.driveMovingAt)_geoDriveMovingAt=s.driveMovingAt;
+    if(typeof s.driveMiles==='number')_geoDriveMiles=s.driveMiles;
+    if(typeof s.driveSteps==='number')_geoDriveSteps=s.driveSteps;
+    if(typeof s.driveMph==='number')_geoDriveMph=s.driveMph;
+    if(s.driveLastFix)_geoDriveLastFix=s.driveLastFix;
     if(!_geoLegOrigin&&s.legOrigin)_geoLegOrigin=s.legOrigin;
     if(!_geoLastFenceLoc&&s.lastFenceLoc)_geoLastFenceLoc=s.lastFenceLoc;
     if(!_geoLastFenceAt&&s.lastFenceAt)_geoLastFenceAt=s.lastFenceAt;
