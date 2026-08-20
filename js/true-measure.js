@@ -245,6 +245,13 @@ async function openTrueMeasure(c){
       </div>
       <button id="tm-undo" onclick="_tmUndo()" style="display:none;position:absolute;bottom:14px;left:12px;background:rgba(255,255,255,.92);color:var(--text2);font-size:11px;font-weight:700;padding:7px 12px;border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:none;cursor:pointer;font-family:inherit">↺ Undo last point</button>
       <div id="tm-precision-hint" style="position:absolute;top:12px;left:12px;background:rgba(0,0,0,.55);color:#fff;font-size:10.5px;font-weight:700;padding:6px 10px;border-radius:999px;pointer-events:none">Hold &amp; drag to place precisely</div>
+      <!-- TEMPORARY diagnostic overlay (owner report 2026-08-20: a plain
+           quick tap on a still map landed a whole property away — magnitude
+           way past anything jitter/tremor explains, root cause not yet
+           confirmed). Shows the raw inputs behind each placed point so the
+           next live repro can be read directly off the screen instead of
+           guessed at from a photo. Remove once the real cause is found. -->
+      <div id="tm-debug" style="position:absolute;left:6px;right:6px;bottom:6px;max-height:150px;overflow:auto;background:rgba(0,0,0,.8);color:#5f5;font:9px/1.35 ui-monospace,monospace;padding:6px;border-radius:6px;z-index:30;pointer-events:none;white-space:pre-wrap"></div>
       <div id="tm-crosshair" style="display:none;position:absolute;width:46px;height:46px;transform:translate(-50%,-50%);pointer-events:none;z-index:5">
         <div style="position:absolute;inset:0;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.35),0 2px 10px rgba(0,0,0,.3)"></div>
         <div style="position:absolute;left:50%;top:50%;width:2px;height:14px;background:#fff;transform:translate(-50%,-50%);box-shadow:0 0 2px rgba(0,0,0,.6)"></div>
@@ -435,6 +442,28 @@ function _tmCoordToPagePt(lat,lng){
   const p=_tmState.map.convertCoordinateToPointOnPage(new mapkit.Coordinate(lat,lng));
   return _tmScalePt(p.x,p.y);
 }
+// TEMPORARY diagnostic (see the tm-debug panel comment in openTrueMeasure):
+// records exactly what went into and came out of one point's coordinate
+// conversion, plus a round-trip check (coord -> page point, compared back
+// against the original tap), so a live repro shows real numbers instead of
+// a screenshot to reason about blind. Remove this and its call sites once
+// the real cause is confirmed and fixed.
+function _tmDebugSnap(label,x,y,coord){
+  try{
+    const el=document.getElementById('tm-debug');
+    if(!el||!_tmState||!_tmState.map||!coord)return;
+    const map=_tmState.map;
+    const rt=_tmCoordToPagePt(coord.latitude,coord.longitude);
+    const rtErr=Math.hypot(rt.x-x,rt.y-y);
+    const r=document.getElementById('tm-canvas-wrap').getBoundingClientRect();
+    const line=label+' tap=('+x.toFixed(0)+','+y.toFixed(0)+') rt=('+rt.x.toFixed(0)+','+rt.y.toFixed(0)+
+      ') rtErr='+rtErr.toFixed(1)+'px dpr='+(window.devicePixelRatio||1)+' digi='+_tmCurrentDigi().toFixed(2)+
+      ' rect=('+r.left.toFixed(0)+','+r.top.toFixed(0)+' '+r.width.toFixed(0)+'x'+r.height.toFixed(0)+')'+
+      ' cam='+Math.round(map.cameraDistance||0)+'m ctr=('+map.center.latitude.toFixed(5)+','+map.center.longitude.toFixed(5)+')'+
+      ' pt=('+coord.latitude.toFixed(6)+','+coord.longitude.toFixed(6)+')';
+    el.textContent=line+'\n'+el.textContent;
+  }catch(_e){}
+}
 
 // Press-and-hold-and-drag precision point placement, the iOS-loupe pattern:
 // a normal tap still drops a point immediately, handled in this same
@@ -624,6 +653,7 @@ function _tmInitPrecisionGesture(map,wrap){
         // exitPrecision (which releases it) — the crosshair the user aimed
         // with was on the zoomed view.
         coord=_tmPageToCoord(r.left+p.x,r.top+crossY);
+        _tmDebugSnap('HOLD',r.left+p.x,r.top+crossY,coord);
       }catch(_e){}
       exitPrecision();
       suppressTouchEnd=true; // pointerup precedes touchend — see below
@@ -642,6 +672,7 @@ function _tmInitPrecisionGesture(map,wrap){
     suppressTouchEnd=true;
     try{
       const coord=_tmPageToCoord(e.clientX,e.clientY);
+      _tmDebugSnap('TAP',e.clientX,e.clientY,coord);
       _tmAddPoint(coord.latitude,coord.longitude);
     }catch(_e){}
   },{capture:true});
