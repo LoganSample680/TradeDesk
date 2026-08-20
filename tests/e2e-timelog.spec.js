@@ -62,7 +62,13 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
   test.beforeEach(async () => {
     await seedFixtures();
-    await page.evaluate(() => { _tlYear = null; });
+    // _tlScope defaults itself ONCE per whole page lifetime (renderTimeLog
+    // only sets it when still null), same pattern as _tlYear, so it has to
+    // be reset here too or whichever role happened to render first "wins"
+    // the default for every later test regardless of who's actually
+    // signed in, e.g. an earlier manager test leaving scope on 'me' would
+    // silently filter the owner's own "sees everyone" test down to one person.
+    await page.evaluate(() => { _tlYear = null; _tlScope = null; _tlPickerSel = {}; });
   });
 
   test.afterAll(async () => {
@@ -1043,6 +1049,11 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r).toContain('data-lp-id=');
     });
 
+    // Really a Me/Team scope test now (see the Me/Team describe block below),
+    // not strictly role-based: an owner defaults to Team so this still holds,
+    // but a manager toggled to Team would hide it too, and a manager left on
+    // its own Me default would show it. Kept here since it's the one the
+    // original share-button work landed with.
     test('"Share this week\'s hours" button shows for an individual, not for the owner', async () => {
       const r = await page.evaluate(async () => {
         setTimeLogYear(new Date().getFullYear());
@@ -1254,6 +1265,330 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.headerText).toBe('Year');
       expect(r.sameClass, 'the year select and Export button must share the same .btn.btn-sm sizing').toBe(true);
       expect(r.heightDiff, 'both controls must render at the same height').toBeLessThanOrEqual(1);
+    });
+  });
+
+  // _tlWeekOwnerHtml direct unit coverage: the Team-scope per-employee row
+  // (avatar, split bar, OT badge, "(you)" tag). Works on any row-subset
+  // aggregate (_tlEmpWeekAgg output), so tested directly against hand-built
+  // byEmp maps rather than through a full render for every case.
+  test.describe('_tlWeekOwnerHtml', () => {
+    test('golden path: one row per uid, name, total, avatar label', async () => {
+      const r = await page.evaluate(() => {
+        const byEmp = { u1: { min: 90, onsiteMin: 90, driveMin: 0, placeMin: 0, weekOT: false, name: 'Dave Torres' } };
+        return _tlWeekOwnerHtml(byEmp, null);
+      });
+      expect(r).toContain('Dave Torres');
+      expect(r).toContain('1h 30m');
+      expect(r).toContain('DT'); // initials() avatar label
+      expect(r).toContain('tl-emp-row');
+      expect(r).toContain('tl-split-bar');
+    });
+
+    test('"Owner (me)" gets the "Me" avatar label, not broken initials', async () => {
+      const r = await page.evaluate(() => {
+        const byEmp = { owner1: { min: 60, onsiteMin: 60, driveMin: 0, placeMin: 0, weekOT: false, name: 'Owner (me)' } };
+        return _tlWeekOwnerHtml(byEmp, null);
+      });
+      expect(r).toContain('>Me<');
+      expect(r).not.toContain('O(');
+    });
+
+    test('selfUid tags exactly that row "(you)", never another row', async () => {
+      const r = await page.evaluate(() => {
+        const byEmp = {
+          u1: { min: 60, onsiteMin: 60, driveMin: 0, placeMin: 0, weekOT: false, name: 'Mike Sample' },
+          u2: { min: 30, onsiteMin: 30, driveMin: 0, placeMin: 0, weekOT: false, name: 'Dave Torres' },
+        };
+        const html = _tlWeekOwnerHtml(byEmp, 'u2');
+        const mikeIdx = html.indexOf('Mike Sample');
+        const daveIdx = html.indexOf('Dave Torres');
+        const youIdx = html.indexOf('(you)');
+        return { hasYou: html.includes('(you)'), youNearDave: youIdx > daveIdx && (mikeIdx < 0 || youIdx < mikeIdx || youIdx > mikeIdx + 200) };
+      });
+      expect(r.hasYou).toBe(true);
+    });
+
+    test('no selfUid match, "(you)" never appears', async () => {
+      const r = await page.evaluate(() => {
+        const byEmp = { u1: { min: 60, onsiteMin: 60, driveMin: 0, placeMin: 0, weekOT: false, name: 'Mike Sample' } };
+        return _tlWeekOwnerHtml(byEmp, 'someone-else');
+      });
+      expect(r).not.toContain('(you)');
+    });
+
+    test('weekOT true, renders the OT badge and the highlighted-row class', async () => {
+      const r = await page.evaluate(() => {
+        const byEmp = { u1: { min: 2500, onsiteMin: 2500, driveMin: 0, placeMin: 0, weekOT: true, name: 'Mike Sample' } };
+        return _tlWeekOwnerHtml(byEmp, null);
+      });
+      expect(r).toContain('tl-ot-badge');
+      expect(r).toContain('tl-emp-row ot');
+    });
+
+    test('weekOT false, no OT badge, no highlighted-row class', async () => {
+      const r = await page.evaluate(() => {
+        const byEmp = { u1: { min: 300, onsiteMin: 300, driveMin: 0, placeMin: 0, weekOT: false, name: 'Mike Sample' } };
+        return _tlWeekOwnerHtml(byEmp, null);
+      });
+      expect(r).not.toContain('tl-ot-badge');
+      expect(r).not.toContain('tl-emp-row ot');
+    });
+
+    test('drive/supply minutes over the 3-minute noise floor show in the split legend, under it are suppressed', async () => {
+      const r = await page.evaluate(() => {
+        const byEmp = { u1: { min: 100, onsiteMin: 90, driveMin: 10, placeMin: 2, weekOT: false, name: 'Mike Sample' } };
+        return _tlWeekOwnerHtml(byEmp, null);
+      });
+      expect(r).toContain('Drive');
+      expect(r).not.toContain('Supply/other');
+    });
+
+    test('sorted by minutes descending', async () => {
+      const r = await page.evaluate(() => {
+        const byEmp = {
+          low: { min: 30, onsiteMin: 30, driveMin: 0, placeMin: 0, weekOT: false, name: 'Low Person' },
+          high: { min: 400, onsiteMin: 400, driveMin: 0, placeMin: 0, weekOT: false, name: 'High Person' },
+        };
+        const html = _tlWeekOwnerHtml(byEmp, null);
+        return html.indexOf('High Person') < html.indexOf('Low Person');
+      });
+      expect(r).toBe(true);
+    });
+
+    test('empty byEmp, returns empty string, no throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, html: _tlWeekOwnerHtml({}, null) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.html).toBe('');
+    });
+
+    test('missing name falls back to "Crew", does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, html: _tlWeekOwnerHtml({ u1: { min: 60, onsiteMin: 60, driveMin: 0, placeMin: 0, weekOT: false, name: null } }, null) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.html).toContain('Crew');
+    });
+  });
+
+  test.describe('_tlWeekDayDates / _tlDayFullLabel', () => {
+    test('golden path: 7 dates, Sunday through Saturday, starting from the given Sunday', async () => {
+      const r = await page.evaluate(() => _tlWeekDayDates('2026-08-16'));
+      expect(r).toEqual(['2026-08-16', '2026-08-17', '2026-08-18', '2026-08-19', '2026-08-20', '2026-08-21', '2026-08-22']);
+    });
+
+    test('malformed input, returns empty array, does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, val: _tlWeekDayDates('not-a-date') }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.val).toEqual([]);
+    });
+
+    test('_tlDayFullLabel: golden path renders weekday + month + day', async () => {
+      const r = await page.evaluate(() => _tlDayFullLabel('2026-08-19'));
+      expect(r).toContain('Wed');
+      expect(r).toContain('Aug');
+      expect(r).toContain('19');
+    });
+
+    test('_tlDayFullLabel: malformed date, does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, val: _tlDayFullLabel('garbage') }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+  });
+
+  // Me/Team scope toggle + the per-week day picker (owner call 2026-08-20:
+  // "need the day picker to change what day we're looking at" / "confusing
+  // for my brother in law" → managers default to Me, not the full crew).
+  test.describe('Me/Team scope + day picker', () => {
+    test('owner defaults to Team, sees the toggle, own row tagged "(you)"', async () => {
+      const r = await page.evaluate(async () => {
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        const toggle = document.getElementById('tl-scope-toggle');
+        return {
+          visible: toggle.style.display !== 'none',
+          teamActive: !!toggle.querySelector('.tl-scope-btn.active')?.textContent.includes('Team'),
+          scope: _tlScope,
+          hasYouTag: document.getElementById('tl-list').innerHTML.includes('(you)'),
+        };
+      });
+      expect(r.visible).toBe(true);
+      expect(r.teamActive).toBe(true);
+      expect(r.scope).toBe('team');
+      expect(r.hasYouTag).toBe(true);
+    });
+
+    test('a manager (employee with payroll permission) defaults to Me, sees the toggle', async () => {
+      const r = await page.evaluate(async () => {
+        const orig = { isEmp: window._isEmployee, emp: window._employeeRecord, user: window._supaUser };
+        window._isEmployee = true;
+        window._employeeRecord = { name: 'Manager Test', permissions: { payroll: true, team: true } };
+        window._supaUser = { id: 'emp-test-uid' };
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        const toggle = document.getElementById('tl-scope-toggle');
+        const result = {
+          visible: toggle.style.display !== 'none',
+          meActive: !!toggle.querySelector('.tl-scope-btn.active')?.textContent.includes('Me'),
+          scope: _tlScope,
+        };
+        window._isEmployee = orig.isEmp; window._employeeRecord = orig.emp; window._supaUser = orig.user;
+        await renderTimeLog();
+        return result;
+      });
+      expect(r.visible).toBe(true);
+      expect(r.meActive).toBe(true);
+      expect(r.scope).toBe('me');
+    });
+
+    test('an individual employee (no payroll permission) never sees the toggle', async () => {
+      const r = await page.evaluate(async () => {
+        const orig = { isEmp: window._isEmployee, emp: window._employeeRecord, user: window._supaUser };
+        window._isEmployee = true;
+        window._employeeRecord = { name: 'Test Crew Member', permissions: { payroll: false } };
+        window._supaUser = { id: 'emp-test-uid' };
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        const hidden = document.getElementById('tl-scope-toggle').style.display === 'none';
+        window._isEmployee = orig.isEmp; window._employeeRecord = orig.emp; window._supaUser = orig.user;
+        await renderTimeLog();
+        return hidden;
+      });
+      expect(r).toBe(true);
+    });
+
+    test('setTimeLogScope switches a manager between Me and Team, Share button follows scope, sticks until changed again', async () => {
+      const r = await page.evaluate(async () => {
+        const orig = { isEmp: window._isEmployee, emp: window._employeeRecord, user: window._supaUser };
+        window._isEmployee = true;
+        window._employeeRecord = { name: 'Manager Test', permissions: { payroll: true, team: true } };
+        window._supaUser = { id: 'emp-test-uid' };
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        const meShare = document.getElementById('tl-share').style.display !== 'none';
+        const meHtml = document.getElementById('tl-list').innerHTML;
+        setTimeLogScope('team');
+        const teamShare = document.getElementById('tl-share').style.display !== 'none';
+        const teamHtml = document.getElementById('tl-list').innerHTML;
+        const scopeAfterTeam = _tlScope;
+        window._isEmployee = orig.isEmp; window._employeeRecord = orig.emp; window._supaUser = orig.user;
+        await renderTimeLog();
+        return {
+          meShare, teamShare, scopeAfterTeam,
+          meHasOwner: meHtml.includes('Owner (me)'),
+          meHasSelf: meHtml.includes('Test Crew Member'),
+          teamHasOwner: teamHtml.includes('Owner (me)'),
+          teamHasSelf: teamHtml.includes('Test Crew Member'),
+        };
+      });
+      expect(r.meShare).toBe(true);
+      expect(r.teamShare).toBe(false);
+      expect(r.scopeAfterTeam).toBe('team');
+      expect(r.meHasOwner).toBe(false); // Me scope: only the manager's own rows
+      expect(r.meHasSelf).toBe(true);
+      expect(r.teamHasOwner).toBe(true); // Team scope: everyone
+      expect(r.teamHasSelf).toBe(true);
+    });
+
+    test('setTimeLogScope ignores an invalid value instead of corrupting state', async () => {
+      const r = await page.evaluate(async () => {
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        const before = _tlScope;
+        setTimeLogScope('nonsense');
+        return { before, after: _tlScope };
+      });
+      expect(r.after).toBe(r.before);
+    });
+
+    test('a permission loss (dual-hat-style switch to no payroll access) clamps scope back to Me, never stuck on Team', async () => {
+      const r = await page.evaluate(async () => {
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        setTimeLogScope('team'); // owner explicitly on Team
+        const orig = { isEmp: window._isEmployee, emp: window._employeeRecord, user: window._supaUser };
+        window._isEmployee = true;
+        window._employeeRecord = { name: 'Test Crew Member', permissions: { payroll: false } };
+        window._supaUser = { id: 'emp-test-uid' };
+        await renderTimeLog();
+        const scopeWhileNoPerm = _tlScope;
+        const toggleHidden = document.getElementById('tl-scope-toggle').style.display === 'none';
+        window._isEmployee = orig.isEmp; window._employeeRecord = orig.emp; window._supaUser = orig.user;
+        await renderTimeLog();
+        return { scopeWhileNoPerm, toggleHidden };
+      });
+      expect(r.scopeWhileNoPerm).toBe('me');
+      expect(r.toggleHidden).toBe(true);
+    });
+
+    test('day picker: Week is selected by default, clicking a worked day switches the scope header and rows, clicking Week returns', async () => {
+      const r = await page.evaluate(async (curMo) => {
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        const monthEl = document.getElementById('bk-tl-mo-' + curMo);
+        const weekChip = monthEl.querySelector('.tl-chip.wk');
+        const bodyEl = weekChip.closest('[id^="tl-wkbody-"]');
+        const weekActiveBefore = weekChip.classList.contains('active');
+        const scopeTtlBefore = bodyEl.querySelector('.tl-scope-ttl').textContent;
+        const dotChip = [...bodyEl.querySelectorAll('.tl-chip')].find(c => c !== weekChip && c.querySelector('.tl-dot'));
+        dotChip.click();
+        const scopeTtlAfter = bodyEl.querySelector('.tl-scope-ttl').textContent;
+        const dotChipActive = dotChip.classList.contains('active');
+        const weekChipStillActive = weekChip.classList.contains('active');
+        weekChip.click();
+        const scopeTtlBack = bodyEl.querySelector('.tl-scope-ttl').textContent;
+        const weekActiveAgain = weekChip.classList.contains('active');
+        return { weekActiveBefore, scopeTtlBefore, scopeTtlAfter, dotChipActive, weekChipStillActive, scopeTtlBack, weekActiveAgain };
+      }, curMonthPrefix);
+      expect(r.weekActiveBefore).toBe(true);
+      expect(r.scopeTtlBefore).toContain('Week of');
+      expect(r.scopeTtlAfter).not.toContain('Week of');
+      expect(r.dotChipActive).toBe(true);
+      expect(r.weekChipStillActive).toBe(false);
+      expect(r.scopeTtlBack).toContain('Week of');
+      expect(r.weekActiveAgain).toBe(true);
+    });
+
+    test('day picker: a day nobody worked shows the empty state, no throw', async () => {
+      const r = await page.evaluate(async (curMo) => {
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        const monthEl = document.getElementById('bk-tl-mo-' + curMo);
+        const weekChip = monthEl.querySelector('.tl-chip.wk');
+        const bodyEl = weekChip.closest('[id^="tl-wkbody-"]');
+        const emptyChip = [...bodyEl.querySelectorAll('.tl-chip')].find(c => c !== weekChip && !c.querySelector('.tl-dot'));
+        if (!emptyChip) return { skip: true };
+        emptyChip.click();
+        return { skip: false, html: bodyEl.innerHTML };
+      }, curMonthPrefix);
+      if (!r.skip) expect(r.html).toContain('No hours logged');
+    });
+
+    test('setTimeLogDayPick with an unknown cacheKey, no-ops without throwing', async () => {
+      const r = await page.evaluate(() => {
+        try { setTimeLogDayPick('bogus|key', 'week'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('_tlRenderWeekBody with an unknown cacheKey, returns empty string, no throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, html: _tlRenderWeekBody('bogus|key') }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.html).toBe('');
     });
   });
 
