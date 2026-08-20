@@ -1062,21 +1062,44 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.empVisible).toBe(true);
     });
 
+    // _tlLastRows is a script-top-level `let` in js/timelog.js, not a `window`
+    // property (unlike `var`), so `window._tlLastRows = ...` silently writes to
+    // an unrelated global and never reaches the real closure variable
+    // _tlShareWeek reads. Drive it through the real render path instead: seed
+    // timeEntries with exactly one known entry, render for real (which sets
+    // the real _tlLastRows), then call _tlShareWeek and check its output.
     test('_tlShareWeek calls pwaShare with this week\'s hours, no-op with a toast when nothing logged this week', async () => {
       const r = await page.evaluate(async () => {
         const origShare = window.pwaShare;
         let captured = null;
         window.pwaShare = (opts) => { captured = opts; return Promise.resolve(); };
-        const origLastRows = window._tlLastRows;
+        const origIsEmployee = window._isEmployee, origEmpRecord = window._employeeRecord, origSupaUser = window._supaUser;
+        const origEntries = timeEntries;
         try {
-          window._tlLastRows = [{ date: new Date().toISOString().slice(0, 10), minutes: 90, clientName: 'X' }];
+          // Individual (crew, no payroll perm) view only sees their own rows,
+          // so scoping to one uid + one entry makes the share text deterministic
+          // regardless of what other tests left in the shared timeEntries array.
+          window._isEmployee = true;
+          window._employeeRecord = { name: 'Share Test Crew', permissions: { payroll: false } };
+          window._supaUser = { id: 'share-test-uid' };
+          const now = new Date();
+          timeEntries = [
+            { id: 9990301, job_id: 87701, date: now.toISOString().slice(0, 10), start_time: now.toISOString(), end_time: now.toISOString(), minutes: 90, open: false, logged_by_uid: 'share-test-uid', logged_by_name: 'Share Test Crew' }
+          ];
+          setTimeLogYear(now.getFullYear());
+          await renderTimeLog();
           await _tlShareWeek();
           const withData = captured;
           captured = null;
-          window._tlLastRows = [];
+          timeEntries = [];
+          await renderTimeLog();
           await _tlShareWeek();
           return { withDataText: withData && withData.text, calledAgain: captured };
-        } finally { window.pwaShare = origShare; window._tlLastRows = origLastRows; }
+        } finally {
+          window.pwaShare = origShare;
+          window._isEmployee = origIsEmployee; window._employeeRecord = origEmpRecord; window._supaUser = origSupaUser;
+          timeEntries = origEntries;
+        }
       });
       expect(r.withDataText).toContain('1h 30m');
       expect(r.calledAgain).toBe(null);
