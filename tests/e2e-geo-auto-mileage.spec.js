@@ -4872,6 +4872,151 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── Exit confirmation, gap or not (owner mandate 2026-08-20) ────────────────
+  // "when I enter a fence I am there... this should persist until iOS says hey
+  // big fella you're driving." Before this, the two-ping confirm-before-exit
+  // protection only applied to a departure discovered while resolving a
+  // BACKGROUND gap (_geoGapHiddenAt set). Live, screen-on, continuously
+  // tracking the whole time, a single noisy ping reading outside the fence
+  // closed the visit immediately — ordinary GPS wander while standing still at
+  // a job site (owner report the same day: lost the on-site card mid-shift,
+  // no gap involved at all). This generalizes the same confirmation bar to
+  // every live departure from a job/place/client fence, with a driving-speed
+  // reading trusted as immediate confirmation (real evidence of motion) and a
+  // second agreeing position otherwise required.
+  test.describe('exit confirmation: a lone noisy ping never closes an on-site visit', () => {
+    test('a single out-of-fence ping with no speed signal does not close the job; a confirming return leaves it untouched', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realEnq = window._geoEnqueue;
+        const entries = [];
+        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+        _supaUser = { id: 'u-wander' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoExitPending = null;
+          const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+          await ping(a.job);                                // arrive, immediate
+          const job1 = _geoCurrentJob;
+          _geoArrivedAt = new Date(Date.now() - 10 * 60000).toISOString(); // backdate: real visit, not a pass-through
+          const arrivedAt1 = _geoArrivedAt;
+          // Ordinary GPS wander: one good-accuracy ping ~1000ft away, no speed.
+          await ping({ lat: a.job.lat + 0.003, lon: a.job.lon });
+          const afterWander = { job: _geoCurrentJob, arrivedAt: _geoArrivedAt, closed: entries.length };
+          // Position confirms them back on site: the wander was noise, not a trip.
+          await ping(a.job);
+          return {
+            job1, arrivedAt1, afterWander,
+            job2: _geoCurrentJob, arrivedAt2: _geoArrivedAt, closedTotal: entries.length,
+          };
+        } finally {
+          _supaUser = realUser; window._geoEnqueue = realEnq;
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoExitPending = null;
+        }
+      }, { job: JOB });
+      expect(r.job1, 'arrival is immediate, no confirmation needed to enter').toBe(9901);
+      expect(r.afterWander.job, 'one noisy out-of-fence ping must not close the visit').toBe(9901);
+      expect(r.afterWander.arrivedAt, 'the original arrival time must survive the wander').toBe(r.arrivedAt1);
+      expect(r.afterWander.closed, 'nothing gets written on an unconfirmed reading').toBe(0);
+      expect(r.job2, 'confirmed back on site: still the same open visit').toBe(9901);
+      expect(r.arrivedAt2, 'the visit never actually closed, so arrival time is unchanged').toBe(r.arrivedAt1);
+      expect(r.closedTotal, 'the whole wander-and-return produced zero closes').toBe(0);
+    });
+
+    test('two agreeing out-of-fence pings DO close the visit when no speed signal is available', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realEnq = window._geoEnqueue;
+        const entries = [];
+        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+        _supaUser = { id: 'u-confirm' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoExitPending = null;
+          const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+          await ping(a.job);
+          _geoArrivedAt = new Date(Date.now() - 10 * 60000).toISOString();
+          await ping(a.road);                               // first out-of-fence ping: pending
+          const afterFirst = { job: _geoCurrentJob, closed: entries.length };
+          await ping(a.road);                               // second agreeing ping: confirmed
+          return {
+            afterFirst, jobAfter: _geoCurrentJob, closedAfter: entries.length,
+            closedTbl: entries[0] && entries[0].tbl,
+          };
+        } finally {
+          _supaUser = realUser; window._geoEnqueue = realEnq;
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoExitPending = null;
+        }
+      }, { job: JOB, road: ROAD });
+      expect(r.afterFirst.job, 'the first out-of-fence ping must not close it yet').toBe(9901);
+      expect(r.afterFirst.closed).toBe(0);
+      expect(r.jobAfter, 'the SECOND agreeing ping confirms the departure').toBe(null);
+      expect(r.closedAfter, 'exactly one close, on the confirming ping').toBe(1);
+      expect(r.closedTbl).toBe('job_time_entries');
+    });
+
+    test('a driving-speed reading confirms departure immediately, no second ping needed', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realEnq = window._geoEnqueue;
+        const entries = [];
+        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+        _supaUser = { id: 'u-speed' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoExitPending = null;
+          await _geoOnPing({ coords: { latitude: a.job.lat, longitude: a.job.lon, accuracy: 8 } });
+          _geoArrivedAt = new Date(Date.now() - 10 * 60000).toISOString();
+          // One ping, outside the fence, reporting real driving speed (~13mph).
+          await _geoOnPing({ coords: { latitude: a.road.lat, longitude: a.road.lon, accuracy: 8, speed: 6 } });
+          return { job: _geoCurrentJob, closed: entries.length, closedTbl: entries[0] && entries[0].tbl };
+        } finally {
+          _supaUser = realUser; window._geoEnqueue = realEnq;
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoExitPending = null;
+        }
+      }, { job: JOB, road: ROAD });
+      expect(r.job, 'a confirmed driving-speed ping closes the visit on the FIRST out-of-fence reading').toBe(null);
+      expect(r.closed).toBe(1);
+      expect(r.closedTbl).toBe('job_time_entries');
+    });
+
+    test('bad-accuracy pings never confirm a departure, no matter how many arrive', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realEnq = window._geoEnqueue;
+        const entries = [];
+        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+        _supaUser = { id: 'u-bad-acc' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoExitPending = null;
+          const ping = (c, acc) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: acc } });
+          await ping(a.job, 8);
+          _geoArrivedAt = new Date(Date.now() - 10 * 60000).toISOString();
+          for (let i = 0; i < 5; i++) await ping(a.road, 250); // well past the 100m trust floor
+          return { job: _geoCurrentJob, closed: entries.length };
+        } finally {
+          _supaUser = realUser; window._geoEnqueue = realEnq;
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoExitPending = null;
+        }
+      }, { job: JOB, road: ROAD });
+      expect(r.job, 'no fix bad enough to trust can ever confirm a departure').toBe(9901);
+      expect(r.closed).toBe(0);
+    });
+  });
+
   // ── Phantom legs (owner report 2026-08-09) ──────────────────────────────────
   // One real Shop→FBC drive produced four rows: two 2-minute "FBC to FBC"
   // trips (GPS jitter bouncing across the fence line), and a duplicate
