@@ -794,6 +794,14 @@ async function checkNearbyJob(){
     const{latitude:myLat,longitude:myLon}=pos.coords;
     const tk=todayKey();
     const geoCache=_nearbyGeoCache();
+    // Match radius: ServiceTitan's own documented "Arrive by GPS" threshold
+    // (125m / ~410ft), the tightest of the industry numbers researched, owner
+    // chose to match it directly rather than TradeDesk's own driving-fence
+    // constant (600ft). The old 0.5km (1,640ft) here was 4x that and easily
+    // spanned a next-door neighbor's address on a normal residential block
+    // (owner report 2026-08-19: matched to "2011 SW Randolph", his own
+    // neighbor, while working an actual job nearby).
+    const _matchKm=0.125;
     // Root cause of the old 5s+ banner delay: a single loop interleaved cached
     // (instant) and uncached (network geocode + 1.1s throttle sleep) clients in
     // raw array order, so ANY uncached client positioned before the real match
@@ -801,19 +809,28 @@ async function checkNearbyJob(){
     // checked. Cached clients are the common case (same client book every day)
     // and cost nothing, check ALL of them first, with zero network/delay, before
     // ever touching the throttled uncached path.
+    //
+    // Nearest match wins, not first match: the old code returned on the FIRST
+    // cached client under the radius in raw array order, so two addresses
+    // both inside the (now-tighter, but still real) radius let whichever one
+    // happened to sort earlier in the client list win regardless of which was
+    // actually closer, the other half of the neighbor-misattribution bug.
     const uncached=[];
+    let best=null,bestKm=Infinity;
     for(const c of clients){
       if(!c.addr)continue;
       const cached=geoCache[c.id];
       if(cached&&cached.addr===c.addr){
-        if(_haversineKm(myLat,myLon,cached.lat,cached.lon)<0.5){
-          _nearbyJob=_nearbyResolveClient(c,myLat,myLon,tk);
-          renderDash&&renderDash();
-          return;
-        }
+        const d=_haversineKm(myLat,myLon,cached.lat,cached.lon);
+        if(d<_matchKm&&d<bestKm){best=c;bestKm=d;}
       }else{
         uncached.push(c);
       }
+    }
+    if(best){
+      _nearbyJob=_nearbyResolveClient(best,myLat,myLon,tk);
+      renderDash&&renderDash();
+      return;
     }
     // No cached client is nearby, fall back to throttled geocoding of the rest.
     // Still respects Nominatim's ~1 req/sec limit, but this path only runs (and
@@ -829,17 +846,16 @@ async function checkNearbyJob(){
         if(geocodeBudget<=0)break;
         geocodeBudget--;
         const coords=await _geocodeAddr(c.addr);
-        if(coords){geoCache[c.id]={lat:coords.lat,lon:coords.lon,addr:c.addr};cacheDirty=true;}
-        if(coords&&_haversineKm(myLat,myLon,coords.lat,coords.lon)<0.5){
-          if(cacheDirty)_saveNearbyGeoCache(geoCache);
-          _nearbyJob=_nearbyResolveClient(c,myLat,myLon,tk);
-          renderDash&&renderDash();
-          return;
+        if(coords){
+          geoCache[c.id]={lat:coords.lat,lon:coords.lon,addr:c.addr};cacheDirty=true;
+          const d=_haversineKm(myLat,myLon,coords.lat,coords.lon);
+          if(d<_matchKm&&d<bestKm){best=c;bestKm=d;}
         }
         if(geocodeBudget>0)await new Promise(r=>setTimeout(r,1100)); // stay under Nominatim's ~1 req/sec
       }
       if(cacheDirty)_saveNearbyGeoCache(geoCache);
-      if(_nearbyJob){_nearbyJob=null;renderDash&&renderDash();}
+      if(best){_nearbyJob=_nearbyResolveClient(best,myLat,myLon,tk);renderDash&&renderDash();}
+      else if(_nearbyJob){_nearbyJob=null;renderDash&&renderDash();}
     }finally{
       _nearbyGeoSweepRunning=false;
     }

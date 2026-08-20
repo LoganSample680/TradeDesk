@@ -2381,6 +2381,63 @@ test.describe('jobs.js: exhaustive coverage', () => {
         expect(r.cached.lat).toBe(37.71);
         expect(r.cached.addr).toBe('40 Nearby Rd, Wichita KS');
       });
+
+      // Regression (owner report 2026-08-19): the dashboard matched a
+      // contractor's real job to his own NEXT-DOOR NEIGHBOR's client record,
+      // wrong client shown, wrong address to clock into. Root cause was two
+      // compounding bugs: the match radius was 0.5km (1,640ft, easily spans
+      // several houses down a block) and the loop returned on the FIRST
+      // client under that radius in raw array order, not the nearest one.
+      test('the match radius is tightened to ServiceTitan\'s Arrive-by-GPS threshold (410ft), not the old 1,640ft', async () => {
+        const r = await page.evaluate(() => {
+          const orig = { clients, bids, jobs, payments };
+          // ~1,000ft away: inside the OLD 0.5km radius, outside the new
+          // ~410ft one. A real match here would prove the radius never
+          // actually tightened.
+          clients = [{ id: 79970, name: 'Down The Block', addr: '1000ft Away Rd, Wichita KS' }];
+          bids = []; jobs = []; payments = [];
+          const origGeo = window.geoIfGranted, origGeocode = window._geocodeAddr;
+          window.geoIfGranted = (cb) => cb({ coords: { latitude: 37.6872, longitude: -97.3301, accuracy: 10 } });
+          window._geocodeAddr = async () => ({ lat: 37.68994, lon: -97.3301 }); // ~0.305km / ~1,000ft north
+          return checkNearbyJob().then(() => {
+            window.geoIfGranted = origGeo; window._geocodeAddr = origGeocode;
+            const nb = _nearbyJob;
+            ({ clients, bids, jobs, payments } = orig);
+            return { nb };
+          });
+        });
+        expect(r.nb, 'a client 1,000ft away must NOT match, that distance only "worked" under the old 1,640ft radius').toBeFalsy();
+      });
+
+      test('nearest client wins, not the first one in array order', async () => {
+        const r = await page.evaluate(() => {
+          const orig = { clients, bids, jobs, payments };
+          // Farther client (~350ft, still inside the 410ft radius) listed
+          // FIRST, nearer client (~50ft) listed SECOND: under the old
+          // first-match-wins loop the farther one would win purely by array
+          // position, even though the nearer one is the obviously correct
+          // match.
+          clients = [
+            { id: 79971, name: 'Farther Neighbor', addr: 'Far Rd, Wichita KS' },
+            { id: 79972, name: 'Actual Job', addr: 'Near Rd, Wichita KS' },
+          ];
+          bids = []; jobs = []; payments = [];
+          const origGeo = window.geoIfGranted, origGeocode = window._geocodeAddr;
+          window.geoIfGranted = (cb) => cb({ coords: { latitude: 37.6872, longitude: -97.3301, accuracy: 10 } });
+          window._geocodeAddr = async (addr) => addr.startsWith('Far')
+            ? { lat: 37.6881583, lon: -97.3301 }  // ~350ft
+            : { lat: 37.6873369, lon: -97.3301 }; // ~50ft
+          return checkNearbyJob().then(() => {
+            window.geoIfGranted = origGeo; window._geocodeAddr = origGeocode;
+            const nb = _nearbyJob;
+            ({ clients, bids, jobs, payments } = orig);
+            return { nb };
+          });
+        });
+        expect(r.nb).toBeTruthy();
+        expect(r.nb.clientId, 'the nearer client must win regardless of array order').toBe(79972);
+        expect(r.nb.clientName).toBe('Actual Job');
+      });
     });
   });
 
