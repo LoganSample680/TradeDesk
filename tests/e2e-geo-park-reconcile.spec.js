@@ -73,8 +73,28 @@ test.describe('Geo park detection + mileage reconciliation', () => {
           };
           return q;
         },
-        upsert: (row, opts) => { window.__rec.upserts.push({ tbl, row, opts }); return Promise.resolve({ error: null }); },
-        insert: (row) => { window.__rec.inserts.push({ tbl, row }); return Promise.resolve({ error: null }); },
+        // Chainable AND directly awaitable: the reconciliation code this file
+        // exercises just awaits upsert()/insert() bare, but this test boots
+        // the FULL app (waitForAppBoot), so the periodic whole-account cloud
+        // save (js/cloud.js supaSaveToCloud, unrelated to geo/mileage) can
+        // fire mid-test and chains .select('updated_at').single() off its own
+        // zj_data upsert. A bare Promise has no .select, that TypeError is a
+        // real console.error and fails assertNoErrors() (seen in CI). Mirror
+        // the select() query builder's shape above so any chain resolves safely.
+        upsert: (row, opts) => {
+          window.__rec.upserts.push({ tbl, row, opts });
+          const q = { select: () => q, single: () => Promise.resolve({ data: null, error: null }),
+                      maybeSingle: () => Promise.resolve({ data: null, error: null }),
+                      then: (res, rej) => Promise.resolve({ data: null, error: null }).then(res, rej) };
+          return q;
+        },
+        insert: (row) => {
+          window.__rec.inserts.push({ tbl, row });
+          const q = { select: () => q, single: () => Promise.resolve({ data: null, error: null }),
+                      maybeSingle: () => Promise.resolve({ data: null, error: null }),
+                      then: (res, rej) => Promise.resolve({ data: null, error: null }).then(res, rej) };
+          return q;
+        },
         update: (patch) => ({ eq: (col, val) => { window.__rec.updates.push({ tbl, patch, col, val }); return Promise.resolve({ data: null, error: null }); } }),
         delete: () => ({ eq: () => ({ lt: () => ({ then: (res) => { res && res({}); return { catch: () => {} }; } }) }) }),
       }),

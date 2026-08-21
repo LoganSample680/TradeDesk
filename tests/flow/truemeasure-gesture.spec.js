@@ -1321,4 +1321,232 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     const relevant = errors.filter(realError);
     expect(relevant.length, 'zero console errors during the undo-walkback probe: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
   });
+
+  // ── Regression: the calibration mechanism must never bake in a huge,
+  // zoom-amplified offset again (owner video, 2026-08-21: pinch-zooming in
+  // and back out visibly moved traced shapes relative to the rooftops
+  // underneath, root cause read directly off the on-screen debug panel as
+  // cal=(0.0,384.0)). Confirmed cause: map.convertPointOnPageToCoordinate
+  // wants a DOCUMENT-space point (event.pageX/pageY's frame), but
+  // _tmCalibrateProjection was handing it a VIEWPORT-space point (from
+  // wrap.getBoundingClientRect()), so whenever the underlying page was
+  // scrolled before TrueMeasure opened, the converter's answer was off by
+  // exactly that scroll amount: a huge, Y-only (this single-column app has
+  // no horizontal scroll), perfectly CONSTANT error, which is exactly why
+  // the existing spread<2 "is this a constant" check never caught it, a
+  // constant error always looks constant. This drives that exact scenario
+  // (forces a real scroll, then opens TrueMeasure on top of it) and checks
+  // both halves of the fix: the scroll term is now accounted for (so the
+  // real offset should stay small even scrolled), and a huge offset can
+  // never be silently applied regardless of what causes it
+  // (js/true-measure.js's _TM_CAL_MAX_PX backstop).
+  test('a scrolled page never bakes a huge calibration offset (2026-08-21 regression)', async ({ page, context }) => {
+    test.setTimeout(60000);
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await signIn(page);
+    await page.waitForFunction(() => typeof openTrueMeasure === 'function', null, { timeout: 30000 });
+    await page.waitForFunction(() => typeof _mapkitReady !== 'undefined' && _mapkitReady === true, null, { timeout: 30000 });
+
+    // Force the underlying page to actually be scrollable (whichever screen
+    // happens to be current may not carry enough content on its own), then
+    // scroll it down BEFORE opening TrueMeasure, matching the owner's real
+    // scenario of opening it partway down a long bid/list page. TrueMeasure
+    // itself is a position:fixed overlay; it never resets scroll on open.
+    await page.evaluate(() => {
+      const spacer = document.createElement('div');
+      spacer.id = '_tm-test-scroll-spacer';
+      spacer.style.cssText = 'height:1400px;width:1px';
+      document.body.appendChild(spacer);
+      window.scrollTo(0, 520);
+    });
+    const scrolledTo = await page.evaluate(() => window.scrollY);
+    console.log(`[probe] CAL-SCROLL: forced window.scrollY=${scrolledTo}`);
+    expect(scrolledTo, 'test setup must actually scroll the page (sanity check on the spacer)').toBeGreaterThan(200);
+
+    await page.evaluate(() => openTrueMeasure({ id: 991245, name: 'Cal-Scroll Probe', addr: '' }));
+    await page.waitForFunction(() => typeof _tmState !== 'undefined' && _tmState && !!_tmState.map, null, { timeout: 20000 });
+    await sleep(2500); // both calibration passes (init + the 1500ms retry) settle
+
+    const cal = await page.evaluate(() => ({ ..._tmState.projCal, axis: _tmState.projAxis }));
+    const maxPx = await page.evaluate(() => _TM_CAL_MAX_PX);
+    const mag = Math.hypot(cal.dx || 0, cal.dy || 0);
+    console.log(`[probe] CAL-SCROLL result: ${JSON.stringify(cal)} mag=${mag.toFixed(1)}px maxPx=${maxPx}`);
+
+    // Root-cause check: the scroll term is now included, so a genuine
+    // origin correction should stay small even with the page scrolled
+    // 520px. Generous bound (well above the production _TM_CAL_MAX_PX) to
+    // absorb real CI/device jitter while still catching anything remotely
+    // near the 384px that actually shipped.
+    expect(mag, 'the scroll fix must keep the sampled offset well under the old 384px failure').toBeLessThan(100);
+
+    // Backstop check: whatever WAS computed, applied can only ever be true
+    // when it's within the production sanity bound. This must hold
+    // regardless of whether the root-cause fix above is what saved it.
+    if (cal.applied) {
+      expect(mag, 'an APPLIED calibration offset must never exceed the sanity bound').toBeLessThanOrEqual(maxPx);
+    }
+
+    await page.evaluate(() => { document.getElementById('_tm-test-scroll-spacer')?.remove(); });
+    const relevant = errors.filter(realError);
+    expect(relevant.length, 'zero console errors during the cal-scroll probe: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
+  });
+
+  // ── Regression: a shape must not drift relative to its own stored
+  // coordinates as zoom changes AFTER it's already placed (owner video,
+  // 2026-08-21: shapes sat reasonably close to the traced houses at low
+  // zoom, then visibly moved onto the wrong ground at high zoom). The
+  // digi~2.5 DISPLACEMENT test above only checks placement accuracy AT one
+  // fixed zoom level; it never re-checks already-placed points after zoom
+  // changes AGAIN, which is exactly the reported bug's shape: fine right
+  // after placing, wrong once you keep zooming, because a bad calibration
+  // offset baked in once (at digi=1) gets multiplied by the live digital-
+  // zoom scale on every redraw. This never routes through MapKit's
+  // converters for ground truth (see the file's GROUND TRUTH RULE at top):
+  // each already-placed point is re-found via its OWN rendered SVG dot, a
+  // fresh REAL CDP tap is fired exactly on that pixel at the NEW zoom
+  // level, and the freshly-tapped point's STORED coordinate must land back
+  // at the ORIGINAL point's stored coordinate, proving the real tap
+  // pipeline's projection stays internally consistent across a zoom change
+  // that happens after points already exist, not just at the moment they
+  // were placed.
+  test('points placed before a zoom stay put after a real camera + digital zoom change', async ({ page, context }) => {
+    test.setTimeout(90000);
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await signIn(page);
+    await page.waitForFunction(() => typeof openTrueMeasure === 'function', null, { timeout: 30000 });
+    await page.waitForFunction(() => typeof _mapkitReady !== 'undefined' && _mapkitReady === true, null, { timeout: 30000 });
+    await page.evaluate(() => openTrueMeasure({ id: 991246, name: 'Zoom-Drift Probe', addr: '' }));
+    await page.waitForFunction(() => typeof _tmState !== 'undefined' && _tmState && !!_tmState.map, null, { timeout: 20000 });
+    await sleep(2500); // both calibration passes (init + the 1500ms retry) settle
+    // Distance mode, not area: area mode's "tap dot 0 to close the shape"
+    // gesture would fire when this test later re-taps near the original
+    // dot 0's rendered position, turning that point-add into a close.
+    // Distance mode has no such special-casing on a plain quick tap, every
+    // tap just adds another point, which is what this test needs.
+    await page.evaluate(() => _tmSetMode('distance'));
+
+    const wrapBox = await page.evaluate(() => {
+      const r = document.getElementById('tm-map').getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const cdp = await context.newCDPSession(page);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', {
+      type,
+      touchPoints: points.map((p) => ({ x: p.x, y: p.y, radiusX: 8, radiusY: 8, force: 1, id: p.id || 1 })),
+    });
+    const tap = async (x, y) => {
+      await touch('touchStart', [{ x, y }]);
+      await sleep(70);
+      await touch('touchEnd', []);
+      await sleep(350);
+    };
+    const metersBetween = (a, b) => Math.hypot(
+      (a.lat - b.lat) * 111320,
+      (a.lng - b.lng) * 111320 * Math.cos(a.lat * Math.PI / 180),
+    );
+
+    // Digi=1, no zoom of any kind yet: a small triangle straddling the wrap
+    // CENTER, not off in a corner. The digital pinch below (like the real
+    // one, js/true-measure.js's touchmove pinch handler) always scales
+    // about the wrap center, never the fingers' own midpoint (t stays 0
+    // for a pinch, only the hold gesture ever sets a nonzero translate), so
+    // a point's distance FROM THE WRAP CENTER, not from wherever the
+    // fingers are, is what decides how far it drifts on screen as digi
+    // climbs, and it must stay on screen through a big zoom to be re-tapped.
+    const cx = wrapBox.x + wrapBox.w * 0.5, cy = wrapBox.y + wrapBox.h * 0.5;
+    const origPts = [
+      { x: Math.round(cx - 26), y: Math.round(cy - 18) },
+      { x: Math.round(cx + 26), y: Math.round(cy - 18) },
+      { x: Math.round(cx), y: Math.round(cy + 26) },
+    ];
+    for (const p of origPts) await tap(p.x, p.y);
+    const before = await page.evaluate(() => _tmState.points.map((p) => ({ lat: p.lat, lng: p.lng })));
+    expect(before.length, 'all 3 points must have placed').toBe(3);
+    const preDots = await page.evaluate(() => [0, 1, 2].map((i) => (
+      !!document.querySelector('#tm-draw-svg .tm-dot[data-shape="0"][data-idx="' + i + '"]')
+    )));
+    expect(preDots, 'all 3 points must render as SVG dots before any zoom').toEqual([true, true, true]);
+
+    // Stage 1: a REAL camera zoom (independent of digital zoom), clamped to
+    // MapKit's own satellite floor (~82.53m), matching the video's low end.
+    await page.evaluate(() => { _tmState.map.cameraDistance = 50; });
+    await sleep(800);
+    const preDigi1 = await page.evaluate(() => _tmCurrentDigi());
+    expect(preDigi1, 'a real camera zoom must never touch the digital-zoom scale').toBeCloseTo(1, 2);
+
+    // Stage 2: a real two-finger pinch stacks a big DIGITAL zoom on top of
+    // the now-floored camera, well past the zoom level where a bad
+    // calibration offset would still be small enough to go unnoticed (the
+    // video's failure was specifically at HIGH zoom, not near digi~1).
+    const steps = 10, d0 = 100, d1 = 300;
+    await touch('touchStart', [
+      { id: 1, x: cx - d0 / 2, y: cy },
+      { id: 2, x: cx + d0 / 2, y: cy },
+    ]);
+    for (let i = 1; i <= steps; i++) {
+      const d = d0 + (d1 - d0) * (i / steps);
+      await touch('touchMove', [
+        { id: 1, x: cx - d / 2, y: cy },
+        { id: 2, x: cx + d / 2, y: cy },
+      ]);
+      await sleep(60);
+    }
+    await touch('touchEnd', []);
+    await sleep(500);
+    const digi = await page.evaluate(() => _tmCurrentDigi());
+    console.log(`[probe] ZOOM-DRIFT: digi after real-camera-floor + pinch = ${digi.toFixed(2)}`);
+    expect(digi, 'the pinch must land well past the zoom level where a bad calibration offset would be invisible').toBeGreaterThan(2.5);
+
+    // The stored points themselves must be UNTOUCHED by either zoom stage:
+    // they are lat/lng, zoom only changes how they're DRAWN, never what
+    // they ARE.
+    const afterStore = await page.evaluate(() => _tmState.points.slice(0, 3).map((p) => ({ lat: p.lat, lng: p.lng })));
+    expect(afterStore, 'stored points must be byte-for-byte unchanged by any zoom').toEqual(before);
+
+    // The real proof: for each original point, find where it renders RIGHT
+    // NOW (post both zoom stages), fire a REAL tap on that exact pixel, and
+    // confirm the freshly-placed point lands back at the ORIGINAL point's
+    // real-world coordinate. If the projection disagreed with itself across
+    // the zoom change (the reported bug), the fresh tap would decode to a
+    // meaningfully different lat/lng than what's actually drawn there.
+    for (let i = 0; i < 3; i++) {
+      const dot = await page.evaluate((idx) => {
+        const d = document.querySelector('#tm-draw-svg .tm-dot[data-shape="0"][data-idx="' + idx + '"]');
+        if (!d) return null;
+        const r = d.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      }, i);
+      expect(dot, `point ${i}'s dot must still render after the zoom`).not.toBeNull();
+      // On-screen sanity: the whole point of centering the triangle on the
+      // wrap was to survive this zoom without scrolling off it.
+      expect(dot.x, `point ${i} must still be within the visible wrap after zoom`).toBeGreaterThan(wrapBox.x);
+      expect(dot.x).toBeLessThan(wrapBox.x + wrapBox.w);
+      expect(dot.y).toBeGreaterThan(wrapBox.y);
+      expect(dot.y).toBeLessThan(wrapBox.y + wrapBox.h);
+
+      await tap(Math.round(dot.x), Math.round(dot.y));
+      const fresh = await page.evaluate(() => {
+        const p = _tmState.points[_tmState.points.length - 1];
+        return { lat: p.lat, lng: p.lng };
+      });
+      const freshDot = await page.evaluate(() => {
+        const dots = document.querySelectorAll('#tm-draw-svg .tm-dot');
+        const d = dots[dots.length - 1];
+        const r = d.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      });
+      const tapErrPx = Math.hypot(freshDot.x - dot.x, freshDot.y - dot.y);
+      const driftM = metersBetween(fresh, before[i]);
+      console.log(`[probe] ZOOM-DRIFT re-tap[${i}]: tapErrPx=${tapErrPx.toFixed(1)} driftM=${driftM.toFixed(2)}`);
+      expect(tapErrPx, `re-tap on point ${i}'s dot must itself land under the finger (px)`).toBeLessThan(12);
+      expect(driftM, `point ${i} re-tapped at the SAME post-zoom pixel must decode back to the SAME original coordinate (meters)`).toBeLessThan(2);
+    }
+
+    const relevant = errors.filter(realError);
+    expect(relevant.length, 'zero console errors during the zoom-drift probe: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
+  });
 });
