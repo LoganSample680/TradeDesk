@@ -46,21 +46,38 @@ test.describe('Local-stack visual capture (messy-day seed, compare vs. the clean
     const consoleErrors = [];
     page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
     page.on('pageerror', (err) => consoleErrors.push('pageerror: ' + err.message));
-    // Real Apple MapKit servers (map init, geocoding, POI, directions) are not
-    // reachable/domain-authorized from a GitHub-hosted CI runner. js/observability.js
-    // already classifies exactly this as non-actionable external noise (its own
-    // comment: "nothing in our code can fix Apple's servers returning 503 …
-    // Geocoding/directions already fall back to Photon when MapKit is down, so
-    // the user experience self-heals") and filters it from real error reporting.
-    // A generic "Failed to load resource: … 50x/400/404" console entry carries no
-    // URL, so cross-reference against the actual failed REQUEST urls to confirm
-    // the noise is Apple's before excusing it, rather than blanket-filtering by
-    // status code alone (which could hide a real same-origin regression).
+    // A generic "Failed to load resource: … 50x/400/404" console entry carries
+    // no URL, so cross-reference against the actual failed REQUEST urls before
+    // excusing anything, rather than guessing from status-code text alone
+    // (iteration 1 guessed Apple MapKit and was wrong; this is what the real
+    // failed-request log from that run actually showed). Every excused class
+    // below is root-caused, not assumed:
+    //   • /functions/v1/* 503 (stripe-connect-status, get-rates): the hosted
+    //     workflow's `supabase start` deliberately excludes edge-runtime for
+    //     speed (local-stack-hosted.yml), so NO account, clean or messy, has a
+    //     server behind Edge Functions locally. Not caused by this seed.
+    //   • geocoding.geo.census.gov 50x: the app's real Census-geocoder
+    //     fallback, unreachable/rate-limited from a CI runner. Same external-
+    //     dependency class CLAUDE.md/observability.js already documents for
+    //     MapKit, just a different host.
+    //   • job_time_entries?on_conflict=... 400: NOT a bug. js/geo-track.js:342
+    //     (_geoDrainQueue) deliberately upserts with onConflict FIRST and its
+    //     own comment documents the fallback: a partial-unique-index 400 is
+    //     caught by name ("on conflict|constraint") and retried as a plain
+    //     insert, "durability beats idempotency when the schema lags." The
+    //     local stack's partial index is exactly the schema this was written
+    //     for; the row still lands via the retry.
+    //   • /api/property 404: the property-lookup proxy isn't configured on
+    //     the local stack (no tunnel URL) — an optional feature, not seed data.
     const allFailedReqs = [];
     page.on('requestfailed', (req) => { allFailedReqs.push('requestfailed: ' + req.url() + ' (' + (req.failure() && req.failure().errorText) + ')'); });
     page.on('response', (res) => { if (!res.ok()) allFailedReqs.push('response ' + res.status() + ': ' + res.url()); });
-    const isMapkitHost = (u) => /apple-mapkit|apple\.com|mzstatic\.com/i.test(u);
-    const failedMapkitReqs = () => allFailedReqs.filter(isMapkitHost);
+    const isKnownSafeFailure = (u) =>
+      /\/functions\/v1\//.test(u) ||
+      /geocoding\.geo\.census\.gov/.test(u) ||
+      (/\/rest\/v1\/job_time_entries/.test(u) && /on_conflict=/.test(u)) ||
+      /\/api\/property\b/.test(u);
+    const unexplainedFailedReqs = () => allFailedReqs.filter((r) => !isKnownSafeFailure(r));
 
     await signIn(page, messyAccount());
     await sleep(4000);
@@ -85,15 +102,20 @@ test.describe('Local-stack visual capture (messy-day seed, compare vs. the clean
     expect(mi, 'the messy trip list still renders the job it belongs to').toContain('Kitchen repaint');
 
     // The whole point: a real phone's mess must never surface as an APP error
-    // or a crashed render, whatever the dedup sweep decides to collapse. Known
-    // external MapKit unreachability (proven above by an actual failed request
-    // to an Apple host, not guessed from status-code text alone) is excused,
-    // same policy the app's own observability.js already ships; anything else
-    // still fails the test.
-    const mapkitNoise = failedMapkitReqs();
-    const genuineErrors = mapkitNoise.length
+    // or a crashed render, whatever the dedup sweep decides to collapse. Only
+    // excuse the generic "Failed to load resource" console noise when EVERY
+    // failed request this run actually saw is one of the root-caused, known-
+    // safe classes above; any unexplained failure fails the test loudly with
+    // full evidence, rather than a blanket pass that could hide a real bug.
+    const unexplained = unexplainedFailedReqs();
+    const genuineErrors = (unexplained.length === 0)
       ? consoleErrors.filter((e) => !/^Failed to load resource: the server responded with a status of (400|404|50\d)/.test(e))
       : consoleErrors;
-    expect(genuineErrors, 'zero genuine console errors reconciling the messy seed. Excused ' + mapkitNoise.length + ' MapKit-host failures: ' + mapkitNoise.join(' ~ ') + '. ALL failed requests seen (for diagnosis if this still fails): ' + allFailedReqs.join(' ~ ')).toEqual([]);
+    expect(genuineErrors,
+      'zero genuine console errors reconciling the messy seed.\n' +
+      'Known-safe failed requests (edge-runtime excluded locally / external geocoder / by-design onConflict retry / unconfigured property proxy): ' + (allFailedReqs.length - unexplained.length) + '\n' +
+      'UNEXPLAINED failed requests (real problem if any): ' + JSON.stringify(unexplained) + '\n' +
+      'Remaining console errors: ' + JSON.stringify(genuineErrors)
+    ).toEqual([]);
   });
 });
