@@ -9055,42 +9055,52 @@ test.describe('Sign in with Apple: native onboarding routing fix (2026-08-21)', 
       if (typeof window.__capturedAuthCallback !== 'function') return { skip: true };
       const savedLoadAccountData = window.loadAccountData;
       const savedBeginOAuth = window._beginOAuthOnboarding;
-      const savedRenderDash = window.renderDash;
+      const savedSetStatus = window.supaSetStatus;
+      // _supaUser/_supaCloudLoaded/_loadedDataOwner are `let`-declared at cloud.js
+      // script scope (cloud.js:638, :1662), NOT window properties, a plain
+      // `window._supaUser=...` is a no-op against the real handler and leaves it
+      // reading whatever state earlier tests/boot left behind. Bare identifiers only.
       const saved = {
-        supaUser: window._supaUser, cloudLoaded: window._supaCloudLoaded, loadedOwner: window._loadedDataOwner,
+        supaUser: _supaUser, cloudLoaded: _supaCloudLoaded, loadedOwner: _loadedDataOwner,
         obInProgress: window._obInProgress, pending: window._nativeSocialAuthPending,
       };
-      let onboardCalls = 0, dashCalls = 0;
+      let onboardCalls = 0, setStatusCalls = 0;
       try {
         // Preconditions for the SIGNED_IN handler's "brand-new account" branch:
         // no data already in memory for this incoming id, and not mid-onboarding.
-        window._supaUser = null;
-        window._supaCloudLoaded = false;
-        window._loadedDataOwner = null;
+        _supaUser = null;
+        _supaCloudLoaded = false;
+        _loadedDataOwner = null;
         window._obInProgress = false;
         window._nativeSocialAuthPending = 'apple';
         // loadAccountData resolving false is the real "no accounts row yet" signal
         // the handler branches on (js/cloud.js: `const hasAccount=await loadAccountData();`).
         window.loadAccountData = async () => false;
         window._beginOAuthOnboarding = () => { onboardCalls++; };
-        window.renderDash = () => { dashCalls++; };
+        // renderDash/goPg('pg-dash') fire unconditionally early in this handler
+        // (cloud.js:2276, before hasAccount is even known) purely to avoid
+        // flashing a stale page during the load, so counting them can't tell the
+        // two branches apart. supaSetStatus('cloud') is only ever called from
+        // the direct-to-dashboard branch, never the onboarding-routing branch,
+        // that's the real signal for which path actually ran.
+        window.supaSetStatus = () => { setStatusCalls++; };
         let threw = null;
         try {
           await window.__capturedAuthCallback('SIGNED_IN', { user: { id: 'native-apple-first-time-' + Date.now() } });
         } catch (e) { threw = e.message; }
-        return { skip: false, threw, onboardCalls, dashCalls, pendingAfter: window._nativeSocialAuthPending };
+        return { skip: false, threw, onboardCalls, setStatusCalls, pendingAfter: window._nativeSocialAuthPending };
       } finally {
         window.loadAccountData = savedLoadAccountData;
         window._beginOAuthOnboarding = savedBeginOAuth;
-        window.renderDash = savedRenderDash;
-        window._supaUser = saved.supaUser; window._supaCloudLoaded = saved.cloudLoaded; window._loadedDataOwner = saved.loadedOwner;
+        window.supaSetStatus = savedSetStatus;
+        _supaUser = saved.supaUser; _supaCloudLoaded = saved.cloudLoaded; _loadedDataOwner = saved.loadedOwner;
         window._obInProgress = saved.obInProgress; window._nativeSocialAuthPending = saved.pending;
       }
     });
     if (r.skip) return;
     expect(r.threw).toBe(null);
     expect(r.onboardCalls, '_beginOAuthOnboarding must fire for a pending native Apple signup').toBe(1);
-    expect(r.dashCalls, 'must NOT take the direct-to-dashboard same-device-switch path').toBe(0);
+    expect(r.setStatusCalls, 'must NOT take the direct-to-dashboard same-device-switch path').toBe(0);
     expect(r.pendingAfter, 'the one-shot flag is consumed').toBe(null);
   });
 
@@ -9101,38 +9111,38 @@ test.describe('Sign in with Apple: native onboarding routing fix (2026-08-21)', 
       if (typeof window.__capturedAuthCallback !== 'function') return { skip: true };
       const savedLoadAccountData = window.loadAccountData;
       const savedBeginOAuth = window._beginOAuthOnboarding;
-      const savedRenderDash = window.renderDash;
+      const savedSetStatus = window.supaSetStatus;
       const saved = {
-        supaUser: window._supaUser, cloudLoaded: window._supaCloudLoaded, loadedOwner: window._loadedDataOwner,
+        supaUser: _supaUser, cloudLoaded: _supaCloudLoaded, loadedOwner: _loadedDataOwner,
         obInProgress: window._obInProgress, pending: window._nativeSocialAuthPending,
       };
-      let onboardCalls = 0, dashCalls = 0;
+      let onboardCalls = 0, setStatusCalls = 0;
       try {
-        window._supaUser = null;
-        window._supaCloudLoaded = false;
-        window._loadedDataOwner = null;
+        _supaUser = null;
+        _supaCloudLoaded = false;
+        _loadedDataOwner = null;
         window._obInProgress = false;
         window._nativeSocialAuthPending = null; // the flag genuinely never set
         window.loadAccountData = async () => false; // still "no accounts row"
         window._beginOAuthOnboarding = () => { onboardCalls++; };
-        window.renderDash = () => { dashCalls++; };
+        window.supaSetStatus = () => { setStatusCalls++; };
         let threw = null;
         try {
           await window.__capturedAuthCallback('SIGNED_IN', { user: { id: 'same-device-switch-' + Date.now() } });
         } catch (e) { threw = e.message; }
-        return { skip: false, threw, onboardCalls, dashCalls, pendingAfter: window._nativeSocialAuthPending };
+        return { skip: false, threw, onboardCalls, setStatusCalls, pendingAfter: window._nativeSocialAuthPending };
       } finally {
         window.loadAccountData = savedLoadAccountData;
         window._beginOAuthOnboarding = savedBeginOAuth;
-        window.renderDash = savedRenderDash;
-        window._supaUser = saved.supaUser; window._supaCloudLoaded = saved.cloudLoaded; window._loadedDataOwner = saved.loadedOwner;
+        window.supaSetStatus = savedSetStatus;
+        _supaUser = saved.supaUser; _supaCloudLoaded = saved.cloudLoaded; _loadedDataOwner = saved.loadedOwner;
         window._obInProgress = saved.obInProgress; window._nativeSocialAuthPending = saved.pending;
       }
     });
     if (r.skip) return;
     expect(r.threw).toBe(null);
     expect(r.onboardCalls, 'must NOT hijack a real same-device account switch into onboarding').toBe(0);
-    expect(r.dashCalls, 'the original direct-to-dashboard behavior must still fire').toBe(1);
+    expect(r.setStatusCalls, 'the original direct-to-dashboard behavior must still fire').toBe(1);
     expect(r.pendingAfter).toBe(null);
   });
 
