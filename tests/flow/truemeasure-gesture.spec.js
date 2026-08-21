@@ -829,7 +829,7 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
   // adding a point, and a closed trace ignores further plain taps. While
   // OPEN the trace renders as a dashed open polyline (no fill, no closing
   // edge), so the two states are visually distinct.
-  test('tapping dot 0 closes the area trace, filled polygon renders, further taps ignored', async ({ page, context }) => {
+  test('tapping dot 0 closes the area trace, filled polygon renders, a further tap starts shape 2', async ({ page, context }) => {
     test.setTimeout(90000);
     const errors = [];
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -902,11 +902,27 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     expect(closed.ctaDisabled, 'Add to estimate must stay enabled on a closed trace').toBe(false);
     expect(closed.readout, 'the area readout must still show the measurement').not.toContain('Tap the map');
 
-    // A further plain tap on a closed trace adds nothing.
+    // A further plain tap on a closed trace does NOT get ignored (owner
+    // report 2026-08-21: closing one area made the whole tool inert with no
+    // way to trace a second one): it starts a new shape instead, same as
+    // the dedicated two-shape test below covers end to end. This test only
+    // checks the boundary right at the moment of that first extra tap:
+    // shape 0 stays exactly as closed as it was, and a second shape opens
+    // with the tap's own point in it, addressed live through _tmState's
+    // points/closed accessor pair (which always reads the ACTIVE shape).
     await tap(Math.round(wrapBox.x + wrapBox.w * 0.8), Math.round(wrapBox.y + wrapBox.h * 0.8));
-    const after = await page.evaluate(() => ({ pts: _tmState.points.length, closed: !!_tmState.closed }));
-    expect(after.pts, 'a closed trace must ignore further plain taps').toBe(3);
-    expect(after.closed, 'the trace must stay closed').toBe(true);
+    const after = await page.evaluate(() => ({
+      shapeCount: _tmState.shapes.length,
+      shape0Pts: _tmState.shapes[0].points.length,
+      shape0Closed: !!_tmState.shapes[0].closed,
+      activePts: _tmState.points.length,
+      activeClosed: !!_tmState.closed,
+    }));
+    expect(after.shapeCount, 'the extra tap opens a second shape').toBe(2);
+    expect(after.shape0Pts, 'the first, already-closed shape keeps its own 3 points').toBe(3);
+    expect(after.shape0Closed, 'the first shape stays closed').toBe(true);
+    expect(after.activePts, 'the new active shape holds the tap as its first point').toBe(1);
+    expect(after.activeClosed, 'a brand new shape starts open').toBe(false);
 
     const relevant = errors.filter(realError);
     expect(relevant.length, 'zero console errors during the close probe: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
