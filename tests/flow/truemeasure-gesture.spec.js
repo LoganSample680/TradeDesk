@@ -875,9 +875,11 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     expect(open.polygons, 'an open area trace must NOT render a filled polygon').toBe(0);
     expect(open.polylines, 'an open area trace renders as a dashed polyline').toBe(1);
 
-    // Tap dot 0 at its RENDERED position: this closes the loop.
+    // Tap dot 0 at its RENDERED position: this closes the loop. Addressed
+    // by data-shape+data-idx now that more than one shape can exist in a
+    // session (this test only ever has shape 0).
     const dot0 = await page.evaluate(() => {
-      const d = document.querySelector('#tm-draw-svg .tm-dot[data-idx="0"]');
+      const d = document.querySelector('#tm-draw-svg .tm-dot[data-shape="0"][data-idx="0"]');
       const r = d.getBoundingClientRect();
       return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
     });
@@ -946,14 +948,17 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
     await tap(Math.round(wrapBox.x + wrapBox.w * 0.62), Math.round(wrapBox.y + wrapBox.h * 0.36));
     await tap(Math.round(wrapBox.x + wrapBox.w * 0.46), Math.round(wrapBox.y + wrapBox.h * 0.60));
 
+    // data-shape+data-idx now that more than one shape can exist in a
+    // session (this test only ever has shape 0).
     const dotRects = () => page.evaluate(() => {
       return Array.from(document.querySelectorAll('#tm-draw-svg .tm-dot')).map((d) => {
         const r = d.getBoundingClientRect();
-        return { idx: d.getAttribute('data-idx'), x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        return { shape: d.getAttribute('data-shape'), idx: d.getAttribute('data-idx'), x: r.x + r.width / 2, y: r.y + r.height / 2 };
       });
     });
     const beforeDots = await dotRects();
     expect(beforeDots.length, 'three dots must be rendered').toBe(3);
+    expect(beforeDots.every((d) => d.shape === '0'), 'a single-shape trace must address every dot under shape 0').toBe(true);
 
     // Press-hold ON dot index 1, engage the grab, then drag ~60px.
     const grab = { x: Math.round(beforeDots[1].x), y: Math.round(beforeDots[1].y) };
@@ -997,5 +1002,307 @@ test.describe('TrueMeasure gesture probe (real MapKit)', () => {
 
     const relevant = errors.filter(realError);
     expect(relevant.length, 'zero console errors during the adjust probe: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
+  });
+
+  // ── Multiple shapes per session (owner report 2026-08-21: "if I complete
+  // one area I can't add another") ─────────────────────────────────────────
+  // Area mode now holds _tmState.shapes:[{points,closed}], the LAST entry is
+  // always the "active" shape a plain tap targets. Closing shape 1 must not
+  // make the whole gesture inert: the very next tap starts shape 2 right
+  // there, and shape 2 closes independently by tapping ITS OWN dot 0, never
+  // shape 1's.
+  test('closing one area shape lets a second, separate shape be traced and closed', async ({ page, context }) => {
+    test.setTimeout(90000);
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await signIn(page);
+    await page.waitForFunction(() => typeof openTrueMeasure === 'function', null, { timeout: 30000 });
+    await page.waitForFunction(() => typeof _mapkitReady !== 'undefined' && _mapkitReady === true, null, { timeout: 30000 });
+    await page.evaluate(() => openTrueMeasure({ id: 991241, name: 'Two-Shape Probe', addr: '' }));
+    await page.waitForFunction(() => typeof _tmState !== 'undefined' && _tmState && !!_tmState.map, null, { timeout: 20000 });
+    await sleep(2500);
+    await page.evaluate(() => _tmSetMode('area'));
+
+    const wrapBox = await page.evaluate(() => {
+      const r = document.getElementById('tm-map').getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const cdp = await context.newCDPSession(page);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', {
+      type, touchPoints: points.map((p) => ({ x: p.x, y: p.y, radiusX: 8, radiusY: 8, force: 1, id: 1 })),
+    });
+    const tap = async (x, y) => {
+      await touch('touchStart', [{ x, y }]);
+      await sleep(70);
+      await touch('touchEnd', []);
+      await sleep(350);
+    };
+
+    // Shape 1: a triangle in the top-left quadrant.
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.18), Math.round(wrapBox.y + wrapBox.h * 0.20));
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.35), Math.round(wrapBox.y + wrapBox.h * 0.22));
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.26), Math.round(wrapBox.y + wrapBox.h * 0.38));
+    const dot0Shape1 = await page.evaluate(() => {
+      const d = document.querySelector('#tm-draw-svg .tm-dot[data-shape="0"][data-idx="0"]');
+      const r = d.getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    });
+    await tap(dot0Shape1.x, dot0Shape1.y); // closes shape 1
+
+    const afterShape1 = await page.evaluate(() => ({
+      shapes: _tmState.shapes.length,
+      s0closed: _tmState.shapes[0].closed,
+      s0pts: _tmState.shapes[0].points.length,
+    }));
+    expect(afterShape1.shapes, 'closing shape 1 must not create shape 2 by itself').toBe(1);
+    expect(afterShape1.s0closed).toBe(true);
+    expect(afterShape1.s0pts).toBe(3);
+
+    // Shape 2: a SEPARATE triangle in the bottom-right quadrant, far from
+    // shape 1's dots (no accidental grab/close overlap).
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.62), Math.round(wrapBox.y + wrapBox.h * 0.62));
+    const afterFirstTapOfShape2 = await page.evaluate(() => ({
+      shapes: _tmState.shapes.length,
+      s1pts: _tmState.shapes[1] ? _tmState.shapes[1].points.length : -1,
+    }));
+    expect(afterFirstTapOfShape2.shapes, 'a tap on an already-closed active shape must start a NEW shape').toBe(2);
+    expect(afterFirstTapOfShape2.s1pts, 'the new shape must carry the tapped point as its first point').toBe(1);
+
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.80), Math.round(wrapBox.y + wrapBox.h * 0.64));
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.70), Math.round(wrapBox.y + wrapBox.h * 0.80));
+    const dot0Shape2 = await page.evaluate(() => {
+      const d = document.querySelector('#tm-draw-svg .tm-dot[data-shape="1"][data-idx="0"]');
+      const r = d.getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    });
+    await tap(dot0Shape2.x, dot0Shape2.y); // closes shape 2, its OWN dot 0, not shape 1's
+
+    const final = await page.evaluate(() => {
+      const s = _tmState.shapes;
+      return {
+        count: s.length,
+        closed: s.map((sh) => sh.closed),
+        pts: s.map((sh) => sh.points.length),
+        polygons: document.querySelectorAll('#tm-draw-svg polygon').length,
+        area0: _tmAreaFt2(s[0].points),
+        area1: _tmAreaFt2(s[1].points),
+        total: _tmMeasure().rawFt2,
+      };
+    });
+    console.log(`[probe] TWO-SHAPE: ${JSON.stringify(final)}`);
+    expect(final.count, 'exactly two shapes must exist').toBe(2);
+    expect(final.closed).toEqual([true, true]);
+    expect(final.pts).toEqual([3, 3]);
+    expect(final.polygons, 'two closed shapes must render as two filled polygons').toBe(2);
+    expect(final.total, 'the reported total area must be the sum of both shapes').toBe(final.area0 + final.area1);
+
+    const relevant = errors.filter(realError);
+    expect(relevant.length, 'zero console errors during the two-shape probe: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
+  });
+
+  // ── Grab a vertex from an ALREADY-FINISHED shape while a second shape
+  // exists (owner report 2026-08-21: "can't grab the points to edit their
+  // placement", entangled in practice with the multi-shape bug above, since
+  // nobody could reach "a shape is finished, now adjust a corner" while also
+  // needing a second shape) ─────────────────────────────────────────────────
+  test('press-hold grabs a vertex from an earlier, already-closed shape without touching the other shape', async ({ page, context }) => {
+    test.setTimeout(90000);
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await signIn(page);
+    await page.waitForFunction(() => typeof openTrueMeasure === 'function', null, { timeout: 30000 });
+    await page.waitForFunction(() => typeof _mapkitReady !== 'undefined' && _mapkitReady === true, null, { timeout: 30000 });
+    await page.evaluate(() => openTrueMeasure({ id: 991242, name: 'Cross-Shape Grab Probe', addr: '' }));
+    await page.waitForFunction(() => typeof _tmState !== 'undefined' && _tmState && !!_tmState.map, null, { timeout: 20000 });
+    await sleep(2500);
+    await page.evaluate(() => _tmSetMode('area'));
+
+    const wrapBox = await page.evaluate(() => {
+      const r = document.getElementById('tm-map').getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const cdp = await context.newCDPSession(page);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', {
+      type, touchPoints: points.map((p) => ({ x: p.x, y: p.y, radiusX: 8, radiusY: 8, force: 1, id: 1 })),
+    });
+    const tap = async (x, y) => {
+      await touch('touchStart', [{ x, y }]);
+      await sleep(70);
+      await touch('touchEnd', []);
+      await sleep(350);
+    };
+    const dotsOf = (si) => page.evaluate((s) => Array.from(document.querySelectorAll(`#tm-draw-svg .tm-dot[data-shape="${s}"]`)).map((d) => {
+      const r = d.getBoundingClientRect();
+      return { idx: d.getAttribute('data-idx'), x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }), si);
+
+    // Shape 0: closed triangle, top-left.
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.18), Math.round(wrapBox.y + wrapBox.h * 0.20));
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.35), Math.round(wrapBox.y + wrapBox.h * 0.22));
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.26), Math.round(wrapBox.y + wrapBox.h * 0.38));
+    const dot0 = await page.evaluate(() => {
+      const d = document.querySelector('#tm-draw-svg .tm-dot[data-shape="0"][data-idx="0"]');
+      const r = d.getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    });
+    await tap(dot0.x, dot0.y);
+
+    // Shape 1: a second closed triangle, bottom-right, far from shape 0.
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.62), Math.round(wrapBox.y + wrapBox.h * 0.62));
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.80), Math.round(wrapBox.y + wrapBox.h * 0.64));
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.70), Math.round(wrapBox.y + wrapBox.h * 0.80));
+    const dot1 = await page.evaluate(() => {
+      const d = document.querySelector('#tm-draw-svg .tm-dot[data-shape="1"][data-idx="0"]');
+      const r = d.getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    });
+    await tap(dot1.x, dot1.y);
+
+    const before0 = await dotsOf(0);
+    const before1 = await dotsOf(1);
+    expect(before0.length).toBe(3);
+    expect(before1.length).toBe(3);
+
+    // Press-hold ON shape 0's dot index 1 (the ALREADY-CLOSED, earlier
+    // shape), drag it, release. Shape 1 (the active shape, also closed)
+    // must come out completely untouched.
+    const grabDot = before0.find((d) => d.idx === '1');
+    const gx = Math.round(grabDot.x), gy = Math.round(grabDot.y);
+    await touch('touchStart', [{ x: gx, y: gy }]);
+    await sleep(900); // HOLD_MS + entrance zoom settles
+    const crossVisible = await page.evaluate(() => document.getElementById('tm-crosshair').style.display === 'block');
+    expect(crossVisible, 'a hold on an already-closed shape\'s dot must still engage the grab').toBe(true);
+    const steps = 6;
+    for (let i = 1; i <= steps; i++) {
+      await touch('touchMove', [{ x: gx + i * 8, y: gy + i * 4 }]);
+      await sleep(80);
+    }
+    await touch('touchEnd', []);
+    await sleep(600);
+
+    const after0 = await dotsOf(0);
+    const after1 = await dotsOf(1);
+    const shapeCount = await page.evaluate(() => _tmState.shapes.length);
+    const movedD1 = Math.hypot(after0[1].x - before0[1].x, after0[1].y - before0[1].y);
+    const d0Still = Math.hypot(after0[0].x - before0[0].x, after0[0].y - before0[0].y);
+    const d2Still = Math.hypot(after0[2].x - before0[2].x, after0[2].y - before0[2].y);
+    console.log(`[probe] CROSS-SHAPE GRAB: movedD1=${movedD1.toFixed(1)}px shapeCount=${shapeCount}`);
+    expect(shapeCount, 'grabbing must not create or remove a shape').toBe(2);
+    expect(movedD1, 'the grabbed vertex on the earlier, already-closed shape must actually move').toBeGreaterThan(15);
+    expect(d0Still, 'shape 0\'s other dots must not move').toBeLessThan(3);
+    expect(d2Still, 'shape 0\'s other dots must not move').toBeLessThan(3);
+    for (let i = 0; i < 3; i++) {
+      const d = Math.hypot(after1[i].x - before1[i].x, after1[i].y - before1[i].y);
+      expect(d, `shape 1's dot ${i} must be completely unaffected by grabbing a vertex on shape 0`).toBeLessThan(3);
+    }
+
+    const relevant = errors.filter(realError);
+    expect(relevant.length, 'zero console errors during the cross-shape grab probe: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
+  });
+
+  // ── Undo walks BACKWARD through shapes once the active one has nothing
+  // left to pop (owner spec 2026-08-21) ─────────────────────────────────────
+  test('undo reopens shape 2, empties it, then falls back to reopening shape 1', async ({ page, context }) => {
+    test.setTimeout(90000);
+    const errors = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await signIn(page);
+    await page.waitForFunction(() => typeof openTrueMeasure === 'function', null, { timeout: 30000 });
+    await page.waitForFunction(() => typeof _mapkitReady !== 'undefined' && _mapkitReady === true, null, { timeout: 30000 });
+    await page.evaluate(() => openTrueMeasure({ id: 991243, name: 'Undo-Across-Shapes Probe', addr: '' }));
+    await page.waitForFunction(() => typeof _tmState !== 'undefined' && _tmState && !!_tmState.map, null, { timeout: 20000 });
+    await sleep(2500);
+    await page.evaluate(() => _tmSetMode('area'));
+
+    const wrapBox = await page.evaluate(() => {
+      const r = document.getElementById('tm-map').getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    const cdp = await context.newCDPSession(page);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', {
+      type, touchPoints: points.map((p) => ({ x: p.x, y: p.y, radiusX: 8, radiusY: 8, force: 1, id: 1 })),
+    });
+    const tap = async (x, y) => {
+      await touch('touchStart', [{ x, y }]);
+      await sleep(70);
+      await touch('touchEnd', []);
+      await sleep(350);
+    };
+
+    // Shape 1: closed triangle.
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.18), Math.round(wrapBox.y + wrapBox.h * 0.20));
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.35), Math.round(wrapBox.y + wrapBox.h * 0.22));
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.26), Math.round(wrapBox.y + wrapBox.h * 0.38));
+    const dot0 = await page.evaluate(() => {
+      const d = document.querySelector('#tm-draw-svg .tm-dot[data-shape="0"][data-idx="0"]');
+      const r = d.getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    });
+    await tap(dot0.x, dot0.y);
+
+    // Shape 2: closed triangle, a separate location.
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.62), Math.round(wrapBox.y + wrapBox.h * 0.62));
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.80), Math.round(wrapBox.y + wrapBox.h * 0.64));
+    await tap(Math.round(wrapBox.x + wrapBox.w * 0.70), Math.round(wrapBox.y + wrapBox.h * 0.80));
+    const dot1 = await page.evaluate(() => {
+      const d = document.querySelector('#tm-draw-svg .tm-dot[data-shape="1"][data-idx="0"]');
+      const r = d.getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    });
+    await tap(dot1.x, dot1.y);
+
+    const setup = await page.evaluate(() => ({
+      count: _tmState.shapes.length,
+      closed: _tmState.shapes.map((s) => s.closed),
+      pts: _tmState.shapes.map((s) => s.points.length),
+    }));
+    expect(setup.count).toBe(2);
+    expect(setup.closed).toEqual([true, true]);
+    expect(setup.pts).toEqual([3, 3]);
+
+    // Undo #1: reopens shape 2 (the active one), keeps all 3 points, does
+    // NOT remove or touch shape 1.
+    await page.evaluate(() => _tmUndo());
+    let s = await page.evaluate(() => ({
+      count: _tmState.shapes.length,
+      closed: _tmState.shapes.map((x) => x.closed),
+      pts: _tmState.shapes.map((x) => x.points.length),
+    }));
+    expect(s.count, 'reopening the active shape must not remove a shape').toBe(2);
+    expect(s.closed, 'undo on a closed active shape reopens it first').toEqual([true, false]);
+    expect(s.pts, 'reopening must keep every point').toEqual([3, 3]);
+
+    // Undo #2-4: pop shape 2's 3 points one at a time; shape 2 stays present
+    // (empty) until the NEXT undo, shape 1 stays untouched throughout.
+    await page.evaluate(() => _tmUndo());
+    await page.evaluate(() => _tmUndo());
+    await page.evaluate(() => _tmUndo());
+    s = await page.evaluate(() => ({
+      count: _tmState.shapes.length,
+      pts: _tmState.shapes.map((x) => x.points.length),
+    }));
+    expect(s.count, 'an emptied active shape is not removed until the FOLLOWING undo').toBe(2);
+    expect(s.pts).toEqual([3, 0]);
+
+    // Undo #5: the active shape (shape 2) has 0 points and an earlier shape
+    // exists, so this undo REMOVES the now-empty shape 2 and falls back to
+    // editing shape 1, reopened, exactly like undo already reopens a closed
+    // shape before it starts removing points, just walked one shape further.
+    await page.evaluate(() => _tmUndo());
+    s = await page.evaluate(() => ({
+      count: _tmState.shapes.length,
+      closed: _tmState.shapes.map((x) => x.closed),
+      pts: _tmState.shapes.map((x) => x.points.length),
+    }));
+    console.log(`[probe] UNDO-WALKBACK final: ${JSON.stringify(s)}`);
+    expect(s.count, 'the now-empty shape 2 must be removed').toBe(1);
+    expect(s.closed, 'undo must fall back to editing shape 1, reopened').toEqual([false]);
+    expect(s.pts, 'shape 1\'s own points must be untouched by the whole walk-back').toEqual([3]);
+
+    const relevant = errors.filter(realError);
+    expect(relevant.length, 'zero console errors during the undo-walkback probe: ' + relevant.slice(0, 3).join(' | ')).toBe(0);
   });
 });

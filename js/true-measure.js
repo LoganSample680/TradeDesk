@@ -100,7 +100,67 @@ function _tmAreaValue(ft2){
   return _tmAreaUnit()==='sq'?Math.round((ft2/100)*10)/10:Math.round(ft2);
 }
 
-let _tmState=null; // {c, mode, points:[{lat,lng}], repeatCount}
+let _tmState=null; // {c, mode, shapes:[{points:[{lat,lng}],closed}], repeatCount}
+
+// ── Multi-shape data model (owner report 2026-08-21: finishing one area
+// trace made the whole gesture inert, no way to start a second lawn/roof
+// section) ───────────────────────────────────────────────────────────────
+// Area mode holds an ARRAY of shapes now, not one flat points/closed pair;
+// the LAST entry is always the "active" shape a plain tap or hold targets,
+// there is no separate current-points field. Distance mode (repeatCount,
+// single traced run) is explicitly out of scope for this change and never
+// grows shapes past one entry, it just reads/writes shapes[0] the same way
+// it always read/wrote the old flat points/closed fields, so its behavior
+// is untouched by construction, not by a special-cased branch.
+function _tmActiveShape(state){
+  state=state||_tmState;
+  const shapes=_tmEnsureShapes(state);
+  return shapes&&shapes.length?shapes[shapes.length-1]:null;
+}
+// Lazily builds state.shapes the first time anything needs it, adopting
+// whatever flat points/closed the state ALREADY had as the sole shape
+// rather than erroring. This is what keeps the older offline exhaustive-
+// coverage suite working unmodified: it hand-builds a plain {points,closed}
+// _tmState object and bypasses openTrueMeasure entirely, so it never gets
+// the live accessor pair _tmAttachStateAliases installs below. Uses the
+// SAME points array (never a copy), so a `.push()`/`.pop()` on either side
+// still lands on the other even before shapes formally "exists".
+function _tmEnsureShapes(state){
+  if(!state)return null;
+  if(!Array.isArray(state.shapes)){
+    state.shapes=[{points:Array.isArray(state.points)?state.points:[],closed:!!state.closed}];
+    // Attach the live accessor pair right here too, not just in
+    // openTrueMeasure: without it, a hand-built state that adopts here on
+    // its FIRST touch would still hold a plain, disconnected .points
+    // property afterward, and a later direct `.points=` write (exactly what
+    // this file's own offline suite does) would silently stop reaching the
+    // shape it just adopted. Idempotent, safe to call on a state that
+    // already has the pair installed.
+    _tmAttachStateAliases(state);
+  }
+  return state.shapes;
+}
+// Back-compat accessor pair, installed ONLY on states openTrueMeasure itself
+// builds (which always seed .shapes up front): any later read OR write of
+// the old flat state.points/state.closed is routed live to the ACTIVE
+// shape, so e.g. a live flow test's `_tmState.points = []` genuinely clears
+// the shape being worked on instead of silently detaching from it (the
+// lazy-adopt path above is one-shot and one-way, sufficient for a hand-
+// built state that's never reassigned after its first touch, not sufficient
+// for the real app's own state which tests reach into mid-session).
+function _tmAttachStateAliases(state){
+  Object.defineProperty(state,'points',{
+    configurable:true,enumerable:true,
+    get(){const s=_tmActiveShape(state);return s?s.points:[];},
+    set(v){const s=_tmActiveShape(state);if(s)s.points=Array.isArray(v)?v:[];},
+  });
+  Object.defineProperty(state,'closed',{
+    configurable:true,enumerable:true,
+    get(){const s=_tmActiveShape(state);return !!(s&&s.closed);},
+    set(v){const s=_tmActiveShape(state);if(s)s.closed=!!v;},
+  });
+  return state;
+}
 
 function _tmModeLabel(m){
   return m==='area'?'Area':'Distance';
@@ -215,7 +275,8 @@ function _tmPickMethod(id){
 async function openTrueMeasure(c){
   if(!c)return;
   document.getElementById('_style-pick-ov')?.remove();
-  _tmState={c,mode:_tmDefaultMode(),points:[],repeatCount:1,map:null,previewCoord:null,projAxis:'auto',projCal:null,closed:false};
+  _tmState={c,mode:_tmDefaultMode(),shapes:[{points:[],closed:false}],repeatCount:1,map:null,previewCoord:null,projAxis:'auto',projCal:null};
+  _tmAttachStateAliases(_tmState);
 
   const ov=document.createElement('div');
   ov.id='_tm-ov';
@@ -242,7 +303,11 @@ async function openTrueMeasure(c){
            supplies imagery and camera underneath, never trace geometry. -->
       <div id="tm-draw-layer" style="position:absolute;inset:0;pointer-events:none;z-index:4">
         <svg id="tm-draw-svg" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible"></svg>
-        <div id="tm-area-label" class="tm-area-label" style="display:none;position:absolute;transform:translate(-50%,-50%);background:var(--ink,#15161a);color:#fff;font-weight:900;padding:8px 14px;border-radius:999px;white-space:nowrap;font-family:var(--font-display,sans-serif);font-size:15px;letter-spacing:-.2px;box-shadow:0 3px 10px rgba(0,0,0,.3);pointer-events:none"></div>
+        <!-- One shape's label used to be enough (one shape per session);
+             now every closed shape gets its own, so this is a plain
+             container _tmRenderTrace fills with one .tm-area-label div per
+             closed shape, each positioned at that shape's own centroid. -->
+        <div id="tm-area-labels" style="position:absolute;inset:0;pointer-events:none"></div>
         <div id="tm-live-label" class="tm-live-label" style="display:none;position:absolute;transform:translate(-50%,-50%);background:rgba(21,22,26,.82);color:#fff;font-weight:800;padding:3px 8px;border-radius:999px;white-space:nowrap;font-family:var(--font-display,sans-serif);box-shadow:0 2px 6px rgba(0,0,0,.25);pointer-events:none"></div>
       </div>
       <div id="tm-unavailable" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:30px;text-align:center;color:var(--text3)">
@@ -289,9 +354,15 @@ function _tmClose(){
 function _tmSetMode(m){
   if(!_tmState||_tmState.mode===m)return;
   _tmState.mode=m;
-  _tmState.points=[];
+  _tmState.shapes=[{points:[],closed:false}];
+  // Re-attach (or attach for the first time): this assignment replaces
+  // .shapes directly rather than going through _tmEnsureShapes's lazy
+  // adopt, so a state that never had the live accessor pair (a hand-built
+  // one, most often) would otherwise keep a STALE plain .points property
+  // from before the switch, permanently disconnected from the fresh shape
+  // this just created. Idempotent on a state that already has it.
+  _tmAttachStateAliases(_tmState);
   _tmState.repeatCount=1;
-  _tmState.closed=false;
   _tmUpdateModeUI();
   _tmRedraw();
 }
@@ -725,14 +796,34 @@ function _tmInitPrecisionGesture(map,wrap){
   // first couple frames of a real drag.
   // GRAB_R: screen-px hit radius around a rendered dot, shared by the two
   // vertex interactions: a quick tap on dot 0 closes an area trace, a
-  // press-and-hold on any dot grabs THAT vertex for adjustment.
-  const THRESH=20,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70,GRAB_R=20;
+  // press-and-hold on any dot grabs THAT vertex for adjustment. Raised from
+  // 20 to 27 (owner report 2026-08-21, "can't grab the points to edit their
+  // placement"): the exact same reasoning that already justified THRESH's
+  // 8->20 bump applies here too, a real thumb's FIRST-CONTACT point is not
+  // pixel-precise, and unlike THRESH (which tolerates drift over the whole
+  // 420ms hold), GRAB_R is a single one-shot check at pointerdown with no
+  // second chance, grab is decided once and never revisited for this
+  // touch. Nothing else about the grab path read as broken on inspection
+  // (see hitVertex/pointerdown/pointerup below): _tmFreezeDigi runs before
+  // every hitVertex call so dot positions are never read mid-transition,
+  // and a grab was never actually gated by the active shape's closed state
+  // even before this change (the old closed-trace timer gate only ever
+  // blocked a NEW placement, a found grab already bypassed it). So in
+  // practice bug 1 (closing a shape made everything else inert) is the
+  // more likely full explanation for "grab doesn't work either": nobody
+  // could reach a "shape is finished, now adjust a corner" moment to even
+  // try grabbing. This bump is real hardening on top of that, not a
+  // confirmed second root cause, the live device is the only way to know
+  // for sure whether 27px alone would have been enough.
+  const THRESH=20,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70,GRAB_R=27;
   let downX=0,downY=0,moved=false,active=false,timer=null,suppressTouchEnd=false;
   let holdStartDigi=1,pinchOwn=false,pinchD0=0,pinchDigi0=1,pinchCam0=null;
-  // Index of the existing vertex this touch grabbed for adjustment, decided
-  // ONCE at pointerdown against the dots' rendered screen positions; -1 = a
-  // normal placement gesture.
-  let grabIdx=-1;
+  // The {s,i} (shapeIndex,pointIndex) of the existing vertex this touch
+  // grabbed for adjustment, decided ONCE at pointerdown against the dots'
+  // rendered screen positions, searched across EVERY shape (active or
+  // already closed, adjusting a finished shape's corner is the whole point
+  // of this feature); null = a normal placement gesture.
+  let grab=null;
   // The deliberate, SETTLED resting digi level, distinct from _tmCurrentDigi()
   // (the live/frozen visual scale). A hold's exitPrecision() commits its
   // target synchronously but the CSS takes 280ms to visually catch up; a
@@ -770,24 +861,28 @@ function _tmInitPrecisionGesture(map,wrap){
     const crossY=Math.max(20,y-OFFSET_Y);
     return _tmUnproject(r.left+x,r.top+crossY);
   }
-  // Which rendered dot (if any) sits within GRAB_R of this viewport point.
-  // Screen-space against _tmProject, the same positions the SVG dots are
-  // drawn at, so the hit test agrees with what the user sees.
+  // Which rendered dot (if any, in ANY shape) sits within GRAB_R of this
+  // viewport point. Screen-space against _tmProject, the same positions the
+  // SVG dots are drawn at, so the hit test agrees with what the user sees.
+  // Searches every shape, not just the active one: a finished shape's
+  // corners are exactly as grabbable as the one still being traced.
   function hitVertex(clientX,clientY){
-    if(!_tmState||!_tmState.points.length)return -1;
+    if(!_tmState||!_tmState.shapes)return null;
     const r=frameEl.getBoundingClientRect();
-    let best=-1,bestD=GRAB_R;
-    _tmState.points.forEach((p,i)=>{
-      const pr=_tmProject(p.lat,p.lng);
-      if(!pr)return;
-      const d=Math.hypot(r.left+pr.x-clientX,r.top+pr.y-clientY);
-      if(d<=bestD){bestD=d;best=i;}
+    let best=null,bestD=GRAB_R;
+    _tmState.shapes.forEach((shape,si)=>{
+      shape.points.forEach((p,i)=>{
+        const pr=_tmProject(p.lat,p.lng);
+        if(!pr)return;
+        const d=Math.hypot(r.left+pr.x-clientX,r.top+pr.y-clientY);
+        if(d<=bestD){bestD=d;best={s:si,i};}
+      });
     });
     return best;
   }
   function exitPrecision(){
     active=false;
-    grabIdx=-1;
+    grab=null;
     if(cross)cross.style.display='none';
     // Release the hold's digital close-up: back to the resting scale with a
     // zero translate (the resting state is always center-focused), animated.
@@ -807,16 +902,23 @@ function _tmInitPrecisionGesture(map,wrap){
     const p=relPoint(e);
     downX=p.x;downY=p.y;moved=false;
     // Decide NOW, against the dots' rendered screen positions, whether a
-    // hold on this touch adjusts an existing vertex instead of placing a
-    // new point.
-    grabIdx=hitVertex(e.clientX,e.clientY);
+    // hold on this touch adjusts an existing vertex (in ANY shape) instead
+    // of placing a new point.
+    grab=hitVertex(e.clientX,e.clientY);
     cancelTimer();
     timer=setTimeout(()=>{
       if(moved)return;
       if(!_tmState)return;
-      // A closed polygon takes no NEW points; only a vertex grab may hold
-      // on it (a plain tap on it is ignored in pointerup below).
-      if(_tmState.closed&&grabIdx<0)return;
+      // No closed-trace gate here at all (Fix 1/2, owner report 2026-08-21):
+      // a grab may target ANY shape regardless of that shape's own closed
+      // state, adjusting a finished shape's corner is the point, so this
+      // gate must never concern itself with what's being grabbed FROM, only
+      // with whether a NEW point is being placed. And when grab is null, a
+      // hold on an already-closed ACTIVE shape is now a legitimate "place
+      // the first, precisely-zoomed point of a NEW shape" gesture, mirroring
+      // what a plain tap already does in the pointerup branch below via
+      // _tmAddPoint's own closed-shape handling, so a corner of shape 2
+      // deserves the same hold-to-zoom precision shape 1's corners got.
       active=true;
       try{
         // The committed RESTING target (see restDigi above), not
@@ -862,10 +964,11 @@ function _tmInitPrecisionGesture(map,wrap){
       placeCrosshair(downX,downY);
       try{
         const c=crosshairCoord(downX,downY);
-        if(grabIdx>=0){
-          // Vertex adjustment: the grabbed point tracks the crosshair live
-          // from the moment the hold engages; the polygon re-renders with it.
-          if(c){_tmState.points[grabIdx]={lat:c.latitude,lng:c.longitude};_tmRedraw();}
+        if(grab){
+          // Vertex adjustment: the grabbed point (any shape, active or
+          // already closed) tracks the crosshair live from the moment the
+          // hold engages; the whole multi-shape trace re-renders with it.
+          if(c){_tmState.shapes[grab.s].points[grab.i]={lat:c.latitude,lng:c.longitude};_tmRedraw();}
         }else{
           _tmUpdatePreview(c);
         }
@@ -914,10 +1017,11 @@ function _tmInitPrecisionGesture(map,wrap){
     placeCrosshair(p.x,p.y);
     try{
       const c=crosshairCoord(p.x,p.y);
-      if(grabIdx>=0){
-        // Live vertex drag: move the grabbed point, re-render the whole
-        // trace (closed fill included) in the same frame.
-        if(c&&_tmState){_tmState.points[grabIdx]={lat:c.latitude,lng:c.longitude};_tmRedraw();}
+      if(grab){
+        // Live vertex drag: move the grabbed point (any shape), re-render
+        // the whole multi-shape trace (closed fills included) in the same
+        // frame.
+        if(c&&_tmState){_tmState.shapes[grab.s].points[grab.i]={lat:c.latitude,lng:c.longitude};_tmRedraw();}
       }else{
         _tmUpdatePreview(c);
       }
@@ -938,19 +1042,25 @@ function _tmInitPrecisionGesture(map,wrap){
         // exitPrecision (which releases it) — the crosshair the user aimed
         // with was on the zoomed view.
         coord=_tmUnproject(r.left+p.x,r.top+crossY);
-        _tmDebugSnap(grabIdx>=0?'ADJ':'HOLD',r.left+p.x,r.top+crossY,coord);
+        _tmDebugSnap(grab?'ADJ':'HOLD',r.left+p.x,r.top+crossY,coord);
       }catch(_e){}
-      const gi=grabIdx; // exitPrecision resets it
+      const g=grab; // exitPrecision resets it
       exitPrecision();
       suppressTouchEnd=true; // pointerup precedes touchend — see below
-      if(gi>=0){
-        // Commit the adjusted vertex at the crosshair's release position;
-        // never add a new point on a grab.
-        if(coord&&_tmState&&_tmState.points[gi]){
-          _tmState.points[gi]={lat:coord.latitude,lng:coord.longitude};
+      if(g){
+        // Commit the adjusted vertex (any shape, active or already closed)
+        // at the crosshair's release position; never adds a new point on a
+        // grab.
+        const gShape=_tmState&&_tmState.shapes[g.s];
+        if(coord&&gShape&&gShape.points[g.i]){
+          gShape.points[g.i]={lat:coord.latitude,lng:coord.longitude};
           _tmRedraw();
         }
       }else if(coord){
+        // Not a grab: a hold-drop on a closed active shape starts a NEW
+        // shape at the dropped point exactly like a plain tap does below
+        // (_tmAddPoint owns that decision), so the first corner of shape 2
+        // gets the same precision zoom-in shape 1's corners did.
         _tmAddPoint(coord.latitude,coord.longitude);
       }
       return;
@@ -960,21 +1070,26 @@ function _tmInitPrecisionGesture(map,wrap){
     // sequence untouched (we never intercepted while !active).
     if(moved)return;
     // A genuine quick tap: still swallowed from MapKit (the suppression
-    // below), then routed by what it landed on: a closed trace ignores it,
-    // a tap on dot 0 of a 3+-point area trace CLOSES the polygon, anything
-    // else places a point directly under the finger via the own projection.
+    // below), then routed by what it landed on: a tap on the ACTIVE shape's
+    // own dot 0 closes it (3+ points) or, if it's already closed, is a
+    // harmless no-op re-tap; anything else places a point directly under
+    // the finger via the own projection, which itself starts a fresh shape
+    // when the active one is already closed (_tmAddPoint, Fix 1).
     e.stopImmediatePropagation();
     e.preventDefault();
     suppressTouchEnd=true;
     try{
-      if(_tmState&&_tmState.closed)return; // a closed trace takes no more taps
-      if(_tmState&&_tmState.mode==='area'&&_tmState.points.length>=3){
-        const p0=_tmState.points[0];
+      const shape=_tmState&&_tmState.mode==='area'?_tmActiveShape():null;
+      const p0=shape&&shape.points[0];
+      if(p0){
         const pr=_tmProject(p0.lat,p0.lng);
         const r=frameEl.getBoundingClientRect();
-        if(pr&&Math.hypot(r.left+pr.x-e.clientX,r.top+pr.y-e.clientY)<=GRAB_R){
+        const onDot0=pr&&Math.hypot(r.left+pr.x-e.clientX,r.top+pr.y-e.clientY)<=GRAB_R;
+        if(shape.closed){
+          if(onDot0)return; // re-tapping an already-closed shape's own first dot: no-op, not an error
+        }else if(shape.points.length>=3&&onDot0){
           // Tap on the first dot: close the loop and fill the coverage area.
-          _tmState.closed=true;
+          shape.closed=true;
           _tmRedraw();
           return;
         }
@@ -1109,29 +1224,72 @@ async function _tmClientCoord(c){
 
 function _tmAddPoint(lat,lng){
   if(!_tmState)return;
-  _tmState.points.push({lat,lng});
+  let shape=_tmActiveShape();
+  if(!shape)return;
+  if(shape.closed){
+    // The active shape already finished (area mode only: distance mode's
+    // active shape never closes, out of scope for this change): a plain
+    // tap or hold-drop landing on it starts a brand-new shape right there
+    // instead of being refused outright, so tracing the next lawn/roof
+    // section needs no separate "new shape" control, the same placement
+    // gesture just recognizes where it landed (owner report 2026-08-21,
+    // "if I complete one area I can't add another").
+    shape={points:[],closed:false};
+    _tmState.shapes.push(shape);
+  }
+  shape.points.push({lat,lng});
   document.getElementById('tm-precision-hint')?.remove();
   _tmRedraw();
 }
 
 function _tmUndo(){
   if(!_tmState)return;
-  if(_tmState.closed){
-    // Undo on a closed trace REOPENS it first (clears the closure, keeps
-    // every point); the next undo starts removing points as usual.
-    _tmState.closed=false;
+  const shape=_tmActiveShape();
+  if(!shape)return;
+  if(shape.closed){
+    // Undo on a closed ACTIVE shape REOPENS it first (clears the closure,
+    // keeps every point); the next undo starts removing points as usual.
+    // Scoped to the active shape only, an earlier already-finished shape is
+    // untouched by undo, adjusting it is what the grab gesture is for.
+    shape.closed=false;
     _tmRedraw();
     return;
   }
-  if(!_tmState.points.length)return;
-  _tmState.points.pop();
+  if(!shape.points.length){
+    // Nothing left to pop off the active shape: if an earlier shape
+    // exists, drop this now-empty active shape and hand control back to
+    // the previous one, reopened, so undo walks BACKWARD through shapes
+    // exactly like it already walks backward through one shape's points.
+    // If this is the only shape left, undo does nothing further (today's
+    // terminal case).
+    if(_tmState.shapes.length>1){
+      _tmState.shapes.pop();
+      const prev=_tmActiveShape();
+      if(prev)prev.closed=false;
+      _tmRedraw();
+    }
+    return;
+  }
+  shape.points.pop();
   _tmRedraw();
 }
 
 function _tmRedraw(){
   if(!_tmState)return;
   _tmRenderTrace();
-  document.getElementById('tm-undo').style.display=_tmState.points.length?'block':'none';
+  const shape=_tmActiveShape();
+  // Undo stays available whenever it would actually DO something: the
+  // active shape has a point to pop or reopen, OR (multi-shape) there's a
+  // previous shape to walk back into even while the active one is empty.
+  const canUndo=(shape&&shape.points.length>0)||(_tmState.shapes&&_tmState.shapes.length>1);
+  // Optional chaining, not an assumed element: _tmRedraw is reachable from
+  // _tmSetMode/_tmUndo/_tmAddPoint against a hand-built _tmState with no
+  // live overlay at all (this file's own offline suite calls those
+  // functions directly against a fake state that way, and hit this exact
+  // crash intermittently). A missing #tm-undo means there is nothing on
+  // screen to show or hide, not an error.
+  const undoBtn=document.getElementById('tm-undo');
+  if(undoBtn)undoBtn.style.display=canUndo?'block':'none';
   _tmUpdateReadout();
 }
 
@@ -1148,62 +1306,88 @@ function _tmRenderTrace(){
   if(!_tmState)return;
   const svg=document.getElementById('tm-draw-svg');
   if(!svg)return;
-  const {points,mode}=_tmState;
-  const proj=points.map(p=>_tmProject(p.lat,p.lng));
-  const usable=proj.every(Boolean);
+  const shapes=_tmEnsureShapes(_tmState)||[];
+  const mode=_tmState.mode;
+  const active=shapes[shapes.length-1]||{points:[],closed:false};
   const parts=[];
-  if(usable&&points.length>=2){
-    const d=proj.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
-    if(mode==='area'&&_tmState.closed&&points.length>=3){
+  // Every CLOSED shape (area mode only, distance mode's single shape never
+  // closes) renders as a filled polygon, looped over ALL of them, not just
+  // the active one, so a finished shape stays visible and pokeable after
+  // the user has moved on to tracing the next.
+  if(mode==='area'){
+    shapes.forEach(shape=>{
+      if(!shape.closed||shape.points.length<3)return;
+      const proj=shape.points.map(p=>_tmProject(p.lat,p.lng));
+      if(!proj.every(Boolean))return;
+      const d=proj.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
       // Closed by tapping the first dot: the closing edge appears and the
       // coverage area fills in (SVG <polygon> closes itself).
       parts.push('<polygon points="'+d+'" fill="#2D5DA8" fill-opacity="0.28" stroke="#2D5DA8" stroke-width="3" stroke-linejoin="round"/>');
-    }else if(mode==='area'){
-      // Still being traced: an OPEN dashed run, no closing edge, no fill,
-      // so "in progress" and "closed" read as two different states.
+    });
+  }
+  // The ACTIVE (last) shape, while still open, renders as an in-progress
+  // run: dashed for area (visually distinct from a finished fill, "in
+  // progress" vs "closed" read as two different states), solid for
+  // distance (today's look, unchanged, out of scope).
+  const activeProj=active.points.map(p=>_tmProject(p.lat,p.lng));
+  const activeUsable=activeProj.length>0&&activeProj.every(Boolean);
+  if(!active.closed&&activeUsable&&active.points.length>=2){
+    const d=activeProj.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
+    if(mode==='area'){
       parts.push('<polyline points="'+d+'" fill="none" stroke="#2D5DA8" stroke-width="3" stroke-opacity="0.85" stroke-dasharray="8 6" stroke-linejoin="round" stroke-linecap="round"/>');
     }else{
       parts.push('<polyline points="'+d+'" fill="none" stroke="#2D5DA8" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>');
     }
   }
   // Live preview while precision-holding to place the NEXT point (owner ask
-  // 2026-08-19): a dashed run from the last confirmed point to wherever the
-  // crosshair currently sits. Transient, cleared on release/cancel.
+  // 2026-08-19): a dashed run from the active shape's last confirmed point
+  // to wherever the crosshair currently sits. Transient, cleared on
+  // release/cancel. Only ever the active shape, a preview line to a
+  // finished shape makes no sense.
   const pv=_tmState.previewCoord;
   let pvMid=null,pvFt=0;
-  if(usable&&pv&&points.length){
-    const last=points[points.length-1];
-    const a=proj[proj.length-1],b=_tmProject(pv.lat,pv.lng);
+  if(activeUsable&&pv&&active.points.length){
+    const last=active.points[active.points.length-1];
+    const a=activeProj[activeProj.length-1],b=_tmProject(pv.lat,pv.lng);
     if(a&&b){
       parts.push('<line x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="#2D5DA8" stroke-width="3" stroke-opacity="0.85" stroke-dasharray="8 6" stroke-linecap="round"/>');
       pvMid=_tmProject((last.lat+pv.lat)/2,(last.lng+pv.lng)/2);
       pvFt=(typeof _geoDistFt==='function')?_geoDistFt(last,pv):0;
     }
   }
-  // Vertex dots last so they sit on top of the edges. class="tm-dot" +
-  // data-idx is the flow tests' ground truth: the dot's own DOM position IS
-  // what the user sees, no MapKit converter anywhere in the check.
-  if(usable){
+  // Vertex dots last so they sit on top of the edges, for EVERY point in
+  // EVERY shape (a finished shape's corners must stay grabbable). Unique
+  // per-shape addressing now that more than one shape can exist at once:
+  // data-shape+data-idx together are the flow tests' ground truth (and
+  // hitVertex's cross-shape search target) for exactly which dot this is.
+  shapes.forEach((shape,si)=>{
+    const proj=shape.points.map(p=>_tmProject(p.lat,p.lng));
+    if(!proj.length||!proj.every(Boolean))return;
     proj.forEach((p,i)=>{
-      parts.push('<circle class="tm-dot" data-idx="'+i+'" cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="5" fill="#2D5DA8" stroke="#fff" stroke-width="2"/>');
+      parts.push('<circle class="tm-dot" data-shape="'+si+'" data-idx="'+i+'" cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="5" fill="#2D5DA8" stroke="#fff" stroke-width="2"/>');
     });
-  }
+  });
   svg.innerHTML=parts.join('');
-  // Total-sqft label smack in the middle of a completed shape (owner ask
-  // 2026-08-19), at the area-weighted centroid.
-  const areaLbl=document.getElementById('tm-area-label');
-  if(areaLbl){
-    const centroid=(mode==='area'&&points.length>=3)?_tmCentroidCoord(points):null;
-    const cp=centroid?_tmProject(centroid.lat,centroid.lng):null;
-    if(cp){
-      const m=_tmMeasure();
-      areaLbl.textContent=m.value.toLocaleString()+' '+m.unit;
-      areaLbl.style.left=cp.x+'px';
-      areaLbl.style.top=cp.y+'px';
-      areaLbl.style.display='block';
-    }else{
-      areaLbl.style.display='none';
+  // Total-sqft label at the centroid of EVERY closed shape (owner ask
+  // 2026-08-19, extended 2026-08-21 to one-per-shape): a single fixed
+  // #tm-area-label div only ever fit one shape's worth of text, so this
+  // pool lives in the #tm-area-labels container the markup builds once and
+  // _tmRenderTrace repopulates in full every pass, same "diff by full
+  // rebuild" approach the SVG itself already uses.
+  const labelWrap=document.getElementById('tm-area-labels');
+  if(labelWrap){
+    const labelParts=[];
+    if(mode==='area'){
+      shapes.forEach(shape=>{
+        if(!shape.closed||shape.points.length<3)return;
+        const centroid=_tmCentroidCoord(shape.points);
+        const cp=centroid?_tmProject(centroid.lat,centroid.lng):null;
+        if(!cp)return;
+        const val=_tmAreaValue(_tmAreaFt2(shape.points));
+        labelParts.push('<div class="tm-area-label" style="position:absolute;left:'+cp.x.toFixed(1)+'px;top:'+cp.y.toFixed(1)+'px;transform:translate(-50%,-50%);background:var(--ink,#15161a);color:#fff;font-weight:900;padding:8px 14px;border-radius:999px;white-space:nowrap;font-family:var(--font-display,sans-serif);font-size:15px;letter-spacing:-.2px;box-shadow:0 3px 10px rgba(0,0,0,.3)">'+val.toLocaleString()+' '+_tmAreaUnit()+'</div>');
+      });
     }
+    labelWrap.innerHTML=labelParts.join('');
   }
   // The preview run's live distance label, font size scaling with length so
   // the marker visibly grows and shrinks as the line does.
@@ -1239,15 +1423,19 @@ function _tmDrawSig(){
   const pv=_tmState.previewCoord;
   const cal=_tmState.projCal;
   const xf=_tmXform();
+  const shapes=_tmEnsureShapes(_tmState)||[];
+  // Every shape's points AND its own closed flag, so the loop redraws when
+  // ANY shape changes (a grab on an already-closed earlier shape included),
+  // not just when the active one does.
+  const shapesSig=shapes.map(s=>s.points.map(p=>p.lat.toFixed(7)+','+p.lng.toFixed(7)).join(';')+'#'+(s.closed?'closed':'open')).join('|');
   return [
     region,
     xf.z.toFixed(4)+','+xf.tx.toFixed(2)+','+xf.ty.toFixed(2),
     wrap?(wrap.clientWidth+'x'+wrap.clientHeight):'',
-    _tmState.points.map(p=>p.lat.toFixed(7)+','+p.lng.toFixed(7)).join(';'),
+    shapesSig,
     pv?(pv.lat.toFixed(7)+','+pv.lng.toFixed(7)):'',
     _tmState.mode,
     _tmState.repeatCount,
-    _tmState.closed?'closed':'open',
     (_tmState.projAxis||'auto')+(cal&&cal.applied?(':'+cal.dx.toFixed(2)+','+cal.dy.toFixed(2)):''),
   ].join('|');
 }
@@ -1281,16 +1469,26 @@ function _tmClearPreview(){
 
 function _tmMeasure(){
   if(!_tmState)return {value:0,unit:'',label:''};
-  const {mode,points,repeatCount}=_tmState;
+  const {mode,repeatCount}=_tmState;
+  const shapes=_tmEnsureShapes(_tmState)||[];
   if(mode==='area'){
-    const ft2=_tmAreaFt2(points);
+    // Sum every shape's own area: a closed shape's finished area, PLUS the
+    // active shape's in-progress area the moment it has 3+ points (same as
+    // always, just now it's one of possibly several contributors instead
+    // of the only one).
+    let ft2=0;
+    shapes.forEach(s=>{ft2+=_tmAreaFt2(s.points);});
     return {value:_tmAreaValue(ft2),unit:_tmAreaUnit(),rawFt2:ft2,label:'Traced area'};
   }
+  // Distance mode is out of scope for the shapes migration: it never grows
+  // past one shape, so this is exactly the old single-run math, just read
+  // off shapes[0]/the active shape instead of the old flat points field.
+  const active=shapes[shapes.length-1]||{points:[]};
   // Round the leg FIRST, then multiply: rounding oneLeg and (oneLeg*count)
   // independently can disagree by a foot (364.5 rounds to 365, but
   // 364.5*4=1458 rounds to 1458, not 1460), and a label reading "4 runs ×
   // 365 ft" has to actually multiply out to the total shown next to it.
-  const oneLeg=Math.round(_tmPathFt(points));
+  const oneLeg=Math.round(_tmPathFt(active.points));
   const total=oneLeg*(repeatCount||1);
   return {value:total,unit:'ft',oneLeg,repeatCount:repeatCount||1,label:(repeatCount>1)?(repeatCount+' runs × '+oneLeg+' ft'):'Traced run'};
 }
@@ -1301,7 +1499,15 @@ function _tmUpdateReadout(){
   const sub=document.getElementById('tm-readout-sub');
   const cta=document.getElementById('tm-cta');
   if(!readout)return;
-  const ready=(_tmState.mode==='area'&&_tmState.points.length>=3)||(_tmState.mode==='distance'&&_tmState.points.length>=2);
+  const shapes=_tmEnsureShapes(_tmState)||[];
+  // "Ready" means the TOTAL measurement is already meaningful, not just the
+  // active shape in isolation: once an earlier shape is closed its area
+  // keeps counting toward the total even while the active shape is still a
+  // fresh, empty trace of the next section. Distance mode never grows past
+  // one shape, so this is exactly the old single-shape check for it.
+  const ready=_tmState.mode==='area'
+    ?shapes.some(s=>s.points.length>=3)
+    :(shapes[shapes.length-1]?shapes[shapes.length-1].points.length>=2:false);
   if(!ready){
     readout.textContent='Tap the map to start';
     if(sub)sub.textContent='';
@@ -1309,7 +1515,11 @@ function _tmUpdateReadout(){
     return;
   }
   readout.textContent=m.value.toLocaleString()+' '+m.unit;
-  if(sub)sub.textContent=m.label+' · '+_tmState.points.length+' points traced';
+  // Total points across EVERY shape, not just the active one, so this
+  // never regresses to "0 points traced" the instant a fresh shape starts
+  // right after a previous one was closed with a perfectly valid total.
+  const totalPts=shapes.reduce((n,s)=>n+s.points.length,0);
+  if(sub)sub.textContent=m.label+' · '+totalPts+' points traced';
   if(cta)cta.disabled=false;
 }
 
