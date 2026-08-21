@@ -654,9 +654,10 @@ async function _geoOnPing(pos){
   // First fix of the day anchors the commute guard: wherever the working day
   // started is where this person left FROM, and that leg is not deductible.
   if(typeof noteDayStart==='function')noteDayStart(here);
-  // Throttled breadcrumb (~60s). A replayed TdGeo buffer event carries the
-  // moment it actually happened (__tdTs); everything downstream in this
-  // handler clocks off nowMs, so the whole fence machine honors it.
+  // Throttled breadcrumb (~60s). Every TdGeo event, live or replayed, carries
+  // the moment it actually happened (__tdTs, see _geoTdEvent); everything
+  // downstream in this handler clocks off nowMs, so the whole fence machine
+  // honors it instead of whenever this handler happened to run.
   const nowMs=(pos&&pos.__tdTs)||Date.now();
   if(nowMs-_geoLastPingTs>60000){_geoLastPingTs=nowMs;_geoWritePing(here,acc);}
   // Every fix, from every source (web watcher, native watcher, TdGeo burst,
@@ -2363,10 +2364,31 @@ function _geoDiagPanel(){
   ov.appendChild(m);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
-// A native event, live (listener) or replayed (drainBuffer). Replayed events
-// carry __tdTs so the fence machine clocks them at the moment they actually
-// happened, not at boot: without that, a buffered overnight drive collapses to
-// zero minutes and drops under the 2-minute floor.
+// A native event, live (listener) or replayed (drainBuffer). Every event
+// carries __tdTs (its native CAPTURE moment) so the fence machine always
+// clocks off that, live or replayed alike: without that, a buffered overnight
+// drive collapses to zero minutes and drops under the 2-minute floor.
+//
+// OWNER VIDEO 2026-08-21: two same-job "Driving" legs, 7:52-8:00 and 7:52-8:02.
+// Root cause: TdGeoPlugin.swift's record() buffers EVERY native event to disk
+// UNCONDITIONALLY, live or not, and only an explicit drainBuffer() call (which
+// only ever runs once per JS boot, from _geoTdInit) clears it. So any event
+// that fires mid-session, gets delivered live, AND is still sitting in that
+// buffer at the NEXT reload (the version watchdog, a WKWebView memory-pressure
+// kill, a park-mode wake) gets replayed a second time with its true capture
+// timestamp. That alone is harmless IF live and replay agree on the leg's
+// start/end clock, because _geoLegKey is deterministic on legStart, so a
+// second close with an IDENTICAL legStart is caught for free by the existing
+// exact-legKey idempotency guard (mileage.js autoLogDriveTrip). The bug was
+// that they did NOT agree: this function used to stamp __tdTs only when
+// `replay` was true, so a LIVE event clocked itself off Date.now() at
+// whatever moment the JS handler actually got around to it (which lags the
+// real GPS fix by however long the main thread was busy, an in-flight
+// geocode, a _geoPingBusy drop-and-retry on the next ping), while its
+// buffered twin, replayed later, clocked off the true ev.ts. Two derivations
+// of ONE physical exit/arrival, seconds apart, mint two different legKeys.
+// Always honoring ev.ts removes the second clock entirely: live and replay
+// can now only ever agree.
 async function _geoTdEvent(ev,replay){
   if(!ev||typeof ev!=='object')return;
   // The shadow engine (js/geo-shadow.js) sees the SAME raw event, so any
@@ -2383,7 +2405,7 @@ async function _geoTdEvent(ev,replay){
   return _geoOnPing({
     coords:{latitude:ev.lat,longitude:ev.lng,accuracy:ev.acc||0,
             speed:(typeof ev.speed==='number'&&ev.speed>=0)?ev.speed:null},
-    __tdTs:(replay&&typeof ev.ts==='number')?ev.ts:undefined
+    __tdTs:typeof ev.ts==='number'?ev.ts:undefined
   });
 }
 function _geoTdInit(){

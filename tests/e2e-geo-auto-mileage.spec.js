@@ -5367,6 +5367,151 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── TdGeo live delivery vs buffer replay (owner video 2026-08-21) ───────────
+  // The owner's phone showed two "Driving" legs to the same job, both display
+  // 7:52a, ending 8:00a and 8:02a. Root cause: TdGeoPlugin.swift's record()
+  // buffers every native event UNCONDITIONALLY (live or not), and the buffer
+  // is only cleared by an explicit drainBuffer() call, which only ever runs
+  // once per JS boot. So a live-delivered event still sitting in that buffer
+  // at the next reload (version watchdog, a WKWebView kill, a park-mode wake)
+  // gets replayed a second time with its ORIGINAL native timestamp. That alone
+  // is harmless if live and replay agree on the leg's clock (same legStart =
+  // same deterministic legKey = the existing exact-match idempotency guard in
+  // autoLogDriveTrip blocks the second write for free). The bug: _geoTdEvent
+  // used to stamp __tdTs only on replay, so a LIVE event clocked itself off
+  // Date.now() at whatever moment the JS handler actually ran (which lags the
+  // true GPS fix by however long the main thread was busy), while its
+  // buffered twin, replayed later, clocked off the true capture time. Two
+  // derivations of ONE physical exit/arrival, seconds apart, mint two
+  // different legKeys.
+  test.describe('TdGeo live delivery vs buffer replay (owner video 2026-08-21)', () => {
+    // One physical drive, told to _geoTdEvent twice: once "live" (a JS-side
+    // processing lag simulated via a stubbed Date.now, standing in for the
+    // main-thread contention the code's own comments already document as
+    // real) and once "replayed" the way a reload's drainBuffer would, with
+    // the SAME two native events and their true, unstubbed ts fields.
+    async function driveTwice(a) {
+      return page.evaluate(async (d) => {
+        const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue, realNow = Date.now;
+        _supaUser = { id: 'u-replay-clock' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 8.1, mins: 9 });
+        window._geoEnqueue = () => {};
+        const before = mileage.length;
+        const reset = (trueExitTs) => {
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoDriveReset();
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLegOrigin = null; _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoExitPending = null; _geoFlickerCandidate = null; _geoParkModeOn = false;
+          _geoParkCluster = null; _geoSoftJob = null;
+          // Parked at the shop before the drive, as if freshly booted (a
+          // reload wipes every one of these `let` module variables).
+          _geoWasInShop = true; _geoLegAtShop = true;
+          _geoShopArrivedAt = new Date(trueExitTs - 30 * 60000).toISOString();
+          _geoLastFenceAt = new Date(trueExitTs - 60000).toISOString();
+          _geoLastFenceLoc = { lat: d.shop.lat, lng: d.shop.lon, name: 'Shop', kind: 'shop' };
+        };
+        try {
+          __seedGeo();
+          // The TRUE native capture instants (what TdGeoPlugin.swift actually
+          // stamped and buffered, byte-identical on both passes below).
+          const trueExitTs = Date.parse('2026-08-21T07:52:03.000Z');
+          const trueArriveTs = Date.parse('2026-08-21T08:00:10.000Z');
+          const exitEvent = { type: 'regionExit', lat: d.road.lat, lng: d.road.lon, acc: 20, speed: 12, ts: trueExitTs };
+          const arriveEvent = { type: 'fix', lat: d.job.lat, lng: d.job.lon, acc: 8, speed: 0, ts: trueArriveTs };
+
+          // ── PASS 1: "live" delivery, lagging the true capture moment ──────
+          reset(trueExitTs);
+          Date.now = () => trueExitTs + 5000;      // 5s of live-processing lag
+          await _geoTdEvent(exitEvent, false);
+          Date.now = () => trueArriveTs + 118000;  // ~2min of lag (a busy main
+          await _geoTdEvent(arriveEvent, false);   // thread, a slow geocode)
+          Date.now = realNow;
+
+          // ── PASS 2: buffer replay after a "reload", true ts honored ───────
+          reset(trueExitTs);
+          await _geoTdEvent(exitEvent, true);
+          await _geoTdEvent(arriveEvent, true);
+
+          await new Promise(r => setTimeout(r, 30));
+          const rows = mileage.slice(0, Math.max(0, mileage.length - before));
+          return {
+            count: rows.length,
+            legKeys: [...new Set(rows.map(m => m.legKey))],
+            rows: rows.map(m => ({ from: m.from_name, to: m.to_name, startedIso: m.startedIso, endedIso: m.endedIso, mins: m.mins })),
+          };
+        } finally {
+          Date.now = realNow;
+          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute; window._geoEnqueue = realEnq;
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
+          _geoDriveStartedAt = null; _geoDriveReset(); _geoLegAtShop = false;
+          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoStopAnchor = null; _geoLegOrigin = null;
+          _geoExitPending = null; _geoFlickerCandidate = null; _geoParkCluster = null; _geoSoftJob = null;
+        }
+      }, a);
+    }
+
+    test('the same drive, live then replayed, collapses to ONE row', async () => {
+      const out = await driveTwice({ shop: SHOP, road: ROAD, job: JOB });
+      // Both passes display the same "7:52a" start (5s apart, same minute),
+      // and both are real ~8-10 minute drives, well clear of the 2-min floor.
+      // Before the fix this produced 2 rows with 2 different legKeys, exactly
+      // the owner's screenshot. The deterministic legKey now agrees on both
+      // passes (both clock off the true ev.ts), so the second close is
+      // recognised as the first one again and never writes a second row.
+      expect(out.count, 'one physical drive must never produce two rows').toBe(1);
+      expect(out.legKeys.length).toBe(1);
+      expect(out.rows[0].startedIso).toBe('2026-08-21T07:52:03.000Z');
+      expect(out.rows[0].endedIso).toBe('2026-08-21T08:00:10.000Z');
+      expect(out.rows[0].to).toBe('Miller Residence');
+    });
+  });
+
+  // ── Mileage-side cleanup: the owner's real duplicate pair (2026-08-21) ─────
+  // Proves the ALREADY-SHIPPED boot heal (efa418d, 2026-08-11) still collapses
+  // this exact shape once it runs: same person, same near-identical shop/job
+  // endpoints, starts a few seconds apart, overlapping windows. This is the
+  // cleanup half of the fix, independent of the prevention fix above: it is
+  // what actually clears rows a phone already wrote before this deploy landed
+  // (existing duplicate rows the owner already has need this heal to run on
+  // their next boot/reconnect; the prevention fix above only stops NEW ones).
+  test.describe('the owner\'s real duplicate pair heals (owner video 2026-08-21)', () => {
+    test('same job, starts seconds apart, ends 2 minutes apart: heal keeps one', async () => {
+      const out = await page.evaluate(() => {
+        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
+        // Same measured route both times (same two geocoded endpoints), so
+        // _mileTripWinner's mileage comparison ties and falls to earliest
+        // loggedAt, "the contemporaneous one" (its own documented rule).
+        // Row 501 is the LIVE row: written for real, in real time, during
+        // the drive. Row 502 is its buffer-replayed twin: it only exists
+        // once a LATER reload runs drainBuffer, so its loggedAt is later in
+        // wall-clock terms even though the trip IT describes started first.
+        const rows = [
+          { id: 501, gps: true, legKey: 'live-8f2a', calc_method: 'auto_route', miles: 3.1, client_id: 77,
+            to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
+            startedIso: '2026-08-21T07:52:08.000Z', endedIso: '2026-08-21T08:02:08.000Z',
+            mins: 10, loggedAt: '2026-08-21T08:02:10.000Z', date: '2026-08-21' },
+          { id: 502, gps: true, legKey: 'replay-3c91', calc_method: 'auto_route', miles: 3.1, client_id: 77,
+            to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
+            startedIso: '2026-08-21T07:52:03.000Z', endedIso: '2026-08-21T08:00:10.000Z',
+            mins: 8, loggedAt: '2026-08-21T09:15:00.000Z', date: '2026-08-21' },
+        ];
+        const keep = mileage.splice(0);
+        try {
+          rows.forEach(m => mileage.push(m));
+          const healed = _mileDedupTrips(true);
+          const left = mileage.map(m => m.id);
+          mileage.length = 0; rows.forEach(m => mileage.push(m));
+          const live = _mileDedupTrips();   // the live sweep must defer this to boot
+          return { healed, left, live, liveLeft: mileage.length };
+        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
+      });
+      expect(out.healed, 'exactly one duplicate collapses').toBe(1);
+      expect(out.left).toEqual([501]);
+      expect(out.live, 'the strict live sweep does not touch this pair').toBe(0);
+      expect(out.liveLeft).toBe(2);
+    });
+  });
+
   // ── The last leg of the day (owner report 2026-08-09) ───────────────────────
   // "FBC to Culver's for personal lunch, then home, it didn't grab my mileage
   // direct from FBC back to home." The inbound leg was only ever written on
