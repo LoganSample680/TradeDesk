@@ -1742,7 +1742,14 @@ function obStepAccount(el){
   const _socialBtn=(prov,label,bg,fg,bd)=>'<button onclick="_obOAuth(\''+prov+'\')" style="display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:12px;border-radius:9px;border:'+bd+';background:'+bg+';color:'+fg+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">'+label+'</button>';
   el.innerHTML=
     (oauth
-      ?'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Finish setting up</div><div style="font-size:14px;color:var(--text3)">You\'re signed in. Confirm the email we should use for your business, then add your details.</div></div>'
+      ?'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Finish setting up</div><div style="font-size:14px;color:var(--text3)">You\'re signed in. Confirm the email we should use for your business, then add your details.</div>'+
+          // Escape hatch (owner decision 2026-08-21): Apple/Google sign-in can't be
+          // reliably matched to an existing account by email (a private-relay or
+          // otherwise different address defeats any text match), so instead of
+          // guessing, a contractor who recognizes their own account mid-flow gets
+          // an obvious way out right here, before they finish creating a second one.
+          '<div style="margin-top:10px;font-size:13px"><a href="#" id="ob-already-have-account" onclick="_obAlreadyHaveAccount();return false" style="color:var(--blue);text-decoration:underline">Already have a TradeDesk account? Sign in instead</a></div>'+
+        '</div>'
       :'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Create your account</div><div style="font-size:14px;color:var(--text3)">Takes about a minute, you can add the rest later.</div></div>'+
         // Social sign-in (primary). Activates once the provider is configured in Supabase.
         _socialBtn('google','Continue with Google','#fff','#1f2328','1.5px solid #dadce0')+
@@ -1762,6 +1769,21 @@ function obStepAccount(el){
     obBtn('Continue','obNextAccount()');
 }
 function _obShowTos(e){if(e)e.preventDefault();if(typeof zAlert==='function')zAlert('TradeDesk is an organizational tool for running your trade business, proposals, jobs, payments, mileage, and tax summaries. It is NOT tax, legal, or financial advice: consult a qualified professional for those. You are responsible for authorization to store client data. Data is stored securely via Supabase; keep your own backups of critical records. Provided "as is" with no warranty.',{title:'Terms of Service'});}
+// Owner decision 2026-08-21: Apple/Google sign-in has no reliable way to detect
+// a returning contractor whose provider email doesn't textually match their
+// existing account (a private-relay address, or just a different inbox), that's
+// not a bug to matching harder, there is no shared identifier to match on across
+// a password account and a fresh Apple/Google identity. Rather than silently
+// risk a second account, the oauth onboarding screen offers this escape hatch:
+// the contractor bails out and signs in with whatever method their real account
+// actually uses. Mirrors the password path's own "already registered" recovery
+// (sign out the just-created session, drop to login, point them at it).
+async function _obAlreadyHaveAccount(){
+  try{if(typeof _supa!=='undefined'&&_supa&&_supa.auth&&_supa.auth.signOut)await _supa.auth.signOut();}catch(_e){}
+  document.getElementById('onboarding-overlay')?.remove();
+  if(typeof supaShowLogin==='function')supaShowLogin();
+  setTimeout(()=>{const el=document.getElementById('supa-login-err');if(el){el.textContent='Sign in with your original method below.';el.style.color='var(--blue)';}},150);
+}
 // ── Native Sign in with Apple (shell only) ──────────────────────────────────
 // The browser OAuth redirect leaves the WebView for appleid.apple.com and
 // never comes back to the app (owner report 2026-08-07: "routed to website").

@@ -4327,6 +4327,7 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
         hasEmailField: !!document.getElementById('ob-email'),
         noPassField: !document.getElementById('ob-pass'),
         noSocial: !/continue with google/i.test(txt),
+        hasEscapeHatch: !!document.getElementById('ob-already-have-account'),
         hasBusiness: !!document.getElementById('ob-bname') && !!document.getElementById('ob-bphone') && !!document.getElementById('ob-state'),
       };
       ov?.remove();
@@ -4351,6 +4352,10 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     expect(result.hasEmailField, 'email field shown (editable) even in oauth mode').toBe(true);
     expect(result.noPassField, 'no password field in oauth mode').toBe(true);
     expect(result.noSocial, 'no social buttons inside oauth-mode onboarding').toBe(true);
+    // Owner decision 2026-08-21: no email match can catch a private-relay or
+    // otherwise-mismatched provider email against an existing password account,
+    // so oauth onboarding offers an explicit way out instead of guessing.
+    expect(result.hasEscapeHatch, '"Already have an account? Sign in instead" link shown in oauth mode').toBe(true);
     expect(result.hasBusiness, 'business name/phone/state still collected').toBe(true);
   });
 
@@ -4422,6 +4427,62 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     if (result.skip) return;
     expect(result.relayHintShown, 'a privaterelay.appleid.com address shows the explanatory hint').toBe(true);
     expect(result.realEmailHintHidden, 'a normal email shows no relay hint').toBe(true);
+  });
+
+  // Owner decision 2026-08-21: since no automatic check can catch a returning
+  // contractor whose Apple/Google email doesn't match their existing password
+  // account, the escape hatch has to actually work, sign out of the fresh
+  // duplicate-risk session and drop them at login rather than leave them stuck.
+  test('_obAlreadyHaveAccount: signs out, closes onboarding, and routes to login', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _obAlreadyHaveAccount !== 'function') return { skip: true };
+      const savedSupa = _supa, savedShowLogin = window.supaShowLogin;
+      document.querySelectorAll('#onboarding-overlay,#supa-login-err').forEach(n => n.remove());
+      const ov = document.createElement('div'); ov.id = 'onboarding-overlay'; document.body.appendChild(ov);
+      const loginErrEl = document.createElement('div'); loginErrEl.id = 'supa-login-err'; document.body.appendChild(loginErrEl);
+      let signOutCalled = false, showLoginCalled = false;
+      try {
+        _supa = { ...savedSupa, auth: { ...savedSupa.auth, signOut: () => { signOutCalled = true; return Promise.resolve({ error: null }); } } };
+        window.supaShowLogin = () => { showLoginCalled = true; };
+        await _obAlreadyHaveAccount();
+        const overlayGone = !document.getElementById('onboarding-overlay');
+        // The error line is written inside a setTimeout(...,150).
+        await new Promise(res => setTimeout(res, 300));
+        const errText = document.getElementById('supa-login-err')?.textContent;
+        return { skip: false, signOutCalled, showLoginCalled, overlayGone, errText };
+      } finally {
+        document.querySelectorAll('#onboarding-overlay,#supa-login-err').forEach(n => n.remove());
+        _supa = savedSupa; window.supaShowLogin = savedShowLogin;
+      }
+    });
+    if (result.skip) return;
+    expect(result.signOutCalled, 'the just-created duplicate-risk session is signed out').toBe(true);
+    expect(result.overlayGone, 'onboarding overlay is removed').toBe(true);
+    expect(result.showLoginCalled, 'routes to the login screen').toBe(true);
+    expect(result.errText).toBe('Sign in with your original method below.');
+  });
+
+  test('_obAlreadyHaveAccount: a signOut failure still closes onboarding and reaches login (fail open)', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _obAlreadyHaveAccount !== 'function') return { skip: true };
+      const savedSupa = _supa, savedShowLogin = window.supaShowLogin;
+      document.querySelectorAll('#onboarding-overlay,#supa-login-err').forEach(n => n.remove());
+      const ov = document.createElement('div'); ov.id = 'onboarding-overlay'; document.body.appendChild(ov);
+      let showLoginCalled = false, threw = null;
+      try {
+        _supa = { ...savedSupa, auth: { ...savedSupa.auth, signOut: () => Promise.reject(new Error('network unreachable')) } };
+        window.supaShowLogin = () => { showLoginCalled = true; };
+        try { await _obAlreadyHaveAccount(); } catch (e) { threw = e.message; }
+        return { skip: false, threw, showLoginCalled, overlayGone: !document.getElementById('onboarding-overlay') };
+      } finally {
+        document.querySelectorAll('#onboarding-overlay,#supa-login-err').forEach(n => n.remove());
+        _supa = savedSupa; window.supaShowLogin = savedShowLogin;
+      }
+    });
+    if (result.skip) return;
+    expect(result.threw, 'a signOut network failure must never throw out to the caller').toBe(null);
+    expect(result.overlayGone, 'onboarding still closes even if signOut fails').toBe(true);
+    expect(result.showLoginCalled, 'still reaches the login screen even if signOut fails').toBe(true);
   });
 
   test('onboarding restructure, cut steps are actually gone (§7.1)', async () => {
