@@ -125,6 +125,20 @@ test.describe('timelog.js: exhaustive coverage', () => {
       });
       expect(r.addr).toBe('42 Snapshot Ave, Wichita KS 67204');
     });
+
+    // Root cause (owner report 2026-08-21, "if at a job it says the address
+    // but still"): jobs[].id is a local NUMBER (_newId()), but a GPS auto
+    // row's job_id comes back from Supabase (job_time_entries, written by
+    // both _geoCloseEntry and _geoReconcileFromMileage as String(jobId)) as
+    // a STRING. A strict === silently missed the match on every auto/
+    // reconciled row and blanked the address. Same String() coercion the
+    // rest of the app already uses at this exact boundary (js/geo-track.js
+    // _notifyArrival's job lookup, js/cloud.js, js/dashboard.js).
+    test('resolves the address when jobId arrives as a STRING (the shape a Supabase job_time_entries row actually carries)', async () => {
+      const r = await page.evaluate(() => _tlJobClientInfo(String(87701)));
+      expect(r.clientName).toBe('Timelog Test Client');
+      expect(r.addr).toBe('1 Timelog St, Wichita KS 67202');
+    });
   });
 
   test.describe('_timeLogRows', () => {
@@ -697,8 +711,61 @@ test.describe('timelog.js: exhaustive coverage', () => {
         return _tlRow({ id: 'm10', rawId: 10, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'No-Addr Client', addr: '', jobName: 'Some Job', detail: '', minutes: 60 });
       });
       expect(r).toContain('No-Addr Client');
-      expect(r).toContain('Auto');
+      // The generic "Auto" tag was replaced (owner 2026-08-21: "wish there
+      // was a way for it to say drive and be color coded") with an explicit
+      // On-site/Driving badge, see the _tlRow describe block below.
+      expect(r).toContain('On-site');
       expect(r).not.toContain('style="font-weight:700">'); // the bold address <div> is only emitted when addr is truthy
+    });
+
+    // Owner report 2026-08-21: "don't understand these many different
+    // entries, wish there was a way for it to say drive and be color coded
+    // with our system in some way, then if at a job it says the address".
+    test('a drive-sourced row gets the amber Driving badge and left-border accent', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'a2', rawId: 2, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'DEV A shop', addr: '', jobName: '', detail: 'Driving', minutes: 6 });
+      });
+      // #9F5B00 is the SAME amber the Team split bar already uses for drive
+      // time (_tlWeekOwnerHtml), reused rather than invented (§7.3).
+      expect(r).toContain('#9F5B00');
+      expect(r).toContain('Driving');
+      expect(r).toContain('border-left:3px solid #9F5B00');
+      // The word "Driving" is not repeated in plain text next to the badge.
+      expect((r.match(/Driving/g) || []).length).toBe(1);
+    });
+
+    test('a drive-rider/personal-vehicle suffix still reads as a driving row (badge, not plain text)', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'a3', rawId: 3, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'Riverside Remodel', addr: '', jobName: '', detail: 'Driving (rider)', minutes: 10 });
+      });
+      expect(r).toContain('#9F5B00');
+      expect(r).toContain('border-left:3px solid #9F5B00');
+    });
+
+    test('an on-site (geofence) auto row gets NEITHER the amber badge nor the left-border accent', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'a4', rawId: 4, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'John Doe', addr: '123 Main St', jobName: 'Repaint', detail: '', minutes: 200 });
+      });
+      expect(r).toContain('On-site');
+      expect(r).toContain('123 Main St');
+      expect(r).not.toContain('#9F5B00');
+      expect(r).not.toContain('border-left:3px solid');
+    });
+
+    test('a manual row never gets the driving badge, even with an unrelated detail/task label', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'm15', rawId: 15, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: 'Driving the crew to pick up materials', minutes: 30 });
+      });
+      // A manual row's own free-text detail can legitimately start with the
+      // word "Driving" (a task label, not the source), and must still be
+      // treated as Manual, not mistaken for a GPS drive leg.
+      expect(r).not.toContain('#9F5B00');
+      expect(r).toContain('Manual');
+      expect(r).toContain('Driving the crew to pick up materials');
     });
 
     test('renders Clock In / Clock Out columns from startTime/endTime', async () => {

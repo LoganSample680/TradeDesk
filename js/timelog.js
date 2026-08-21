@@ -32,7 +32,15 @@
 // $ cost lives entirely in Crew Cost (js/finance.js _crewCostRender), which
 // reads the same underlying rows; this page never touches wage/loaded rates.
 function _tlJobClientInfo(jobId){
-  const j=jobs.find(x=>x.id===jobId);
+  // String(): a GPS auto row's job_id came back from Supabase (job_time_entries,
+  // _geoCloseEntry/_geoReconcileFromMileage both write String(jobId)), while
+  // jobs[].id is a local NUMBER (_newId()), so a strict === here silently misses
+  // the match on every auto/reconciled row and blanks the address (owner report
+  // 2026-08-21: "if at a job it says the address but still"). Same coercion the
+  // rest of the app already uses at the Supabase boundary, js/geo-track.js:1042,
+  // js/cloud.js and js/dashboard.js's job_id lookups (§7.3, don't hand-roll a
+  // parallel comparison here).
+  const j=jobs.find(x=>String(x.id)===String(jobId));
   const bid=j&&j.bid_id?bids.find(b=>b.id===j.bid_id):null;
   const c=bid?getClientById(bid.client_id):(j?getClientById(j.client_id):null);
   // Job-site address, not billing address, a bid's own addr (when set) is the
@@ -250,16 +258,38 @@ function _tlRow(r){
   // nothing) on GPS/auto rows and on entries this person isn't allowed to
   // touch: same visibility rule the Edit button already follows.
   const lpAttrs=canEdit?' data-lp-id="'+r.rawId+'" data-lp-type="timelog" data-lp-label="'+escHtml(r.personName+' · '+r.clientName)+'"':'';
+  // Driving vs on-site: the owner couldn't tell the entries apart ("don't
+  // understand these many different entries, wish there was a way for it to
+  // say drive and be color coded", 2026-08-21). r.detail is already the
+  // friendly _tlSourceLabel() text ('Driving'/'Driving (rider)'/etc for a
+  // drive-sourced auto row, '' for a geofence/place row), so a driving row
+  // is exactly one that starts with it.
+  const isAutoDrive=r.source==='auto'&&/^Driving/.test(r.detail||'');
   // Job address is the primary line (owner request 2026-07-11: "show the day,
   // job address, person..."): client name/job/task fold into a muted second
-  // line along with the manual-vs-GPS source tag, which used to be its own column.
-  const jobLine=[r.clientName,(r.jobName&&r.jobName!==r.clientName)?r.jobName:null,r.detail||null].filter(Boolean).map(escHtml).join(' · ');
-  const sourceTag=r.source==='auto'?svgIcon('📍',{size:10})+' Auto':svgIcon('▶',{size:10})+' Manual';
-  return '<tr'+lpAttrs+'>'+
+  // line along with the source tag, which used to be its own column. The
+  // driving row's own detail text is dropped here, the amber badge below
+  // already says it, so it is not repeated in plain gray right next to it.
+  const jobLine=[r.clientName,(r.jobName&&r.jobName!==r.clientName)?r.jobName:null,isAutoDrive?null:(r.detail||null)]
+    .filter(Boolean).map(escHtml).join(' · ');
+  // Amber (#9F5B00) is the SAME color drive time already gets in the Team
+  // split bar/legend (_tlWeekOwnerHtml above), reused rather than invented
+  // (§7.3) so "amber" means "driving" consistently everywhere on this page.
+  const sourceTag=r.source==='auto'
+    ?(isAutoDrive
+        ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:800;padding:1px 6px;border-radius:4px;background:#9F5B0022;color:#9F5B00">'+svgIcon('🚗',{size:9})+' Driving</span>'
+        :'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('📍',{size:9})+' On-site</span>')
+    :'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('▶',{size:9})+' Manual</span>';
+  // Left-edge accent on the whole row, same amber, so "this one's a drive"
+  // reads at a glance without hunting for the badge text (a colored border
+  // is the other option the ask named alongside a badge; doing both costs
+  // nothing and reads clearer on a fast scroll down a long day).
+  const rowAccent=isAutoDrive?' style="border-left:3px solid #9F5B00"':'';
+  return '<tr'+lpAttrs+rowAccent+'>'+
     '<td class="bold" data-label="Person">'+escHtml(r.personName)+'</td>'+
     '<td data-label="Job site">'+
       (r.addr?'<div style="font-weight:700">'+escHtml(r.addr)+'</div>':'')+
-      '<div class="mute" style="font-size:11px;margin-top:'+(r.addr?'2px':'0')+'">'+jobLine+(jobLine?' · ':'')+sourceTag+'</div>'+
+      '<div class="mute" style="font-size:11px;margin-top:'+(r.addr?'2px':'0')+';display:flex;align-items:center;flex-wrap:wrap;gap:5px">'+(jobLine?'<span>'+jobLine+'</span>':'')+sourceTag+'</div>'+
     '</td>'+
     '<td data-label="Clock In">'+(_tlFmtTime(r.startTime)||'-')+'</td>'+
     '<td data-label="Clock Out">'+(_tlFmtTime(r.endTime)||'-')+'</td>'+

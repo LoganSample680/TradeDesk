@@ -433,6 +433,90 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // Owner report (2026-08-21, live account): a real morning produced a
+  // near-duplicate leg pair (two "Driving" rows both starting ~7:52am, ending
+  // 2 minutes apart) instead of one clean leg, and the genuine 4h+ on-site
+  // gap right after that pair NEVER reconciled, because the old pairer only
+  // ever compared STRICTLY ADJACENT legs: the one adjacent pair spanning the
+  // real gap paired the WRONG member of the duplicate cluster half the time.
+  // _geoReconcileFromMileage now folds legs under the min-gap apart into one
+  // cluster before pairing, and scans every member's toCoord for a job match
+  // rather than trusting only whichever leg sorted last.
+  test('reconciliation: a duplicate/near-duplicate leg cluster no longer blinds the pairer to the real gap after it', async () => {
+    await geoReset();
+    const seed = await page.evaluate(([jid]) => {
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      window.__origTimeEntries = timeEntries.slice(); timeEntries.length = 0;
+      const JOB = { lat: 37.6872, lon: -97.3301 };
+      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      _geoJobCoords = {};
+      const T = Date.now();
+      const iso = (ms) => new Date(ms).toISOString();
+      // The morning cluster: two legs starting at the SAME instant (the
+      // reported duplicate), pushed in this order so a stable sort keeps
+      // legA first. Both end at the job.
+      const legA = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 5 * 3600000), endedIso: iso(T - 4.833 * 3600000),
+                     fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+      const legA2 = { id: 'ml-A2', gps: true, legKey: 'lgA2-' + jid, startedIso: iso(T - 5 * 3600000), endedIso: iso(T - 4.8 * 3600000),
+                      fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+      // The real leg well after the cluster: proof the visit ended.
+      const legB = { id: 'ml-B', gps: true, legKey: 'lgB-' + jid, startedIso: iso(T - 1 * 3600000), endedIso: iso(T - 0.9 * 3600000),
+                     fromCoord: { lat: JOB.lat, lng: JOB.lon }, toCoord: { lat: 37.7500, lng: -97.4500 }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+      mileage.push(legA, legA2, legB);
+      return { legA2End: legA2.endedIso, legBStart: legB.startedIso, jid: String(jid) };
+    }, [886010]);
+    const r = await runRecon();
+    expect(r.recRows.length, 'the gap after the duplicate cluster still reconciles').toBe(1);
+    const row = r.recRows[0];
+    expect(row.job_id).toBe(seed.jid);
+    // Arrival anchors to the LATEST end in the cluster (the last confirmed
+    // movement stop), not whichever leg happened to sort first.
+    expect(row.arrived_at).toBe(seed.legA2End);
+    expect(row.departed_at).toBe(seed.legBStart);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  // Same shape, but the leg that sorts adjacent to B (legA2) has a GARBAGE
+  // toCoord (spotty GPS on the way out of the cluster), while its sibling
+  // (legA, only reachable via the invalid same-cluster pair under the old
+  // adjacency rule) has the real one. The reconciler must scan every member
+  // of the cluster for a job match, not just the one leg strict adjacency
+  // would have handed it.
+  test('reconciliation: a cluster member with a bad toCoord does not block a sibling member from proving the arrival', async () => {
+    await geoReset();
+    const seed = await page.evaluate(([jid]) => {
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      window.__origTimeEntries = timeEntries.slice(); timeEntries.length = 0;
+      const JOB = { lat: 37.6872, lon: -97.3301 };
+      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      _geoJobCoords = {};
+      const T = Date.now();
+      const iso = (ms) => new Date(ms).toISOString();
+      const legA = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 5 * 3600000), endedIso: iso(T - 4.833 * 3600000),
+                     fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+      // legA2 sorts second (same start as legA) and is the leg immediately
+      // adjacent to legB: a GARBAGE toCoord, 20+ miles from the job.
+      const legA2 = { id: 'ml-A2', gps: true, legKey: 'lgA2-' + jid, startedIso: iso(T - 5 * 3600000), endedIso: iso(T - 4.8 * 3600000),
+                      fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: 39.0, lng: -95.0 }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+      const legB = { id: 'ml-B', gps: true, legKey: 'lgB-' + jid, startedIso: iso(T - 1 * 3600000), endedIso: iso(T - 0.9 * 3600000),
+                     fromCoord: { lat: JOB.lat, lng: JOB.lon }, toCoord: { lat: 37.7500, lng: -97.4500 }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+      mileage.push(legA, legA2, legB);
+      return { legA2End: legA2.endedIso, legBStart: legB.startedIso, legAKey: legA.legKey, jid: String(jid) };
+    }, [886011]);
+    const r = await runRecon();
+    expect(r.recRows.length, 'legA (the good member) still proves the arrival').toBe(1);
+    const row = r.recRows[0];
+    expect(row.job_id).toBe(seed.jid);
+    expect(row.arrived_at).toBe(seed.legA2End);     // still the cluster's latest end
+    expect(row.departed_at).toBe(seed.legBStart);
+    expect(row.client_key).toBe('rec-' + seed.legAKey);  // keyed off the MATCHING member
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
   test('no console errors during park/reconcile tests', async () => {
     assertNoErrors(page, 'geo park/reconcile');
   });

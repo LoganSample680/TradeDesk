@@ -2480,11 +2480,35 @@ async function _geoReconcileFromMileage(){
       (m.logged_by_id||null)===_me&&
       (Date.parse(m.startedIso)||0)>=_cutoff)
       .slice().sort((a,b)=>String(a.startedIso).localeCompare(String(b.startedIso)));
+    // Real GPS is never this clean: a park-detection race or a plain jittery
+    // fix can log two overlapping legs for ONE physical trip, or several
+    // short hops minutes apart while the truck sits still. Pairing strictly
+    // ADJACENT legs (owner report 2026-08-21: a morning with a duplicate
+    // 7:52am blip pair) makes the genuine multi-hour gap on the far side of
+    // that cluster invisible, because the only adjacent pair spanning it
+    // gets the WRONG member of the cluster as its endpoint half the time.
+    // Fix: fold legs less than the min gap apart into one cluster before
+    // pairing. A cluster's end anchor is the LATEST endedIso among its
+    // members (the last confirmed movement); which member leg's toCoord
+    // actually lands at a job is resolved per-window below by scanning every
+    // leg in the cluster, not just whichever one sorted last.
+    const clusters=[];
+    for(const leg of legs){
+      const cur=clusters[clusters.length-1];
+      const stMs=Date.parse(leg.startedIso)||0;
+      if(cur&&stMs-cur.endMs<_GEO_RECON_MIN_GAP_MS){
+        cur.legs.push(leg);
+        const enMs=Date.parse(leg.endedIso)||0;
+        if(enMs>cur.endMs){cur.endMs=enMs;cur.endedIso=leg.endedIso;}
+      }else{
+        clusters.push({legs:[leg],startedIso:leg.startedIso,endMs:Date.parse(leg.endedIso)||0,endedIso:leg.endedIso});
+      }
+    }
     const margin=_geoFenceFt()+_GEO_PARK_JOB_EXTRA_FT;
     const wins=[];
-    for(let i=0;i<legs.length-1;i++){
-      const A=legs[i],B=legs[i+1];
-      const t1=Date.parse(A.endedIso),t2=Date.parse(B.startedIso);
+    for(let i=0;i<clusters.length-1;i++){
+      const A=clusters[i],B=clusters[i+1];
+      const t1=A.endMs,t2=Date.parse(B.startedIso)||0;
       if(!(t1>0&&t2>t1))continue;
       if(t2-t1<_GEO_RECON_MIN_GAP_MS)continue;
       // Unobserved hours are never claimed, but a real on-site stretch
@@ -2501,7 +2525,22 @@ async function _geoReconcileFromMileage(){
       // duration: the same day is trusted whatever it adds up to, a gap
       // that crosses into a new day never is.
       if(_ctDateStr(new Date(t1))!==_ctDateStr(new Date(t2)))continue;
-      if(!A.toCoord||A.toCoord.lat==null)continue;
+      // Which job were they at: nearest one within the fence plus the park
+      // wander margin of where ANY leg in cluster A actually ended. Scanning
+      // every member (not just A's last leg) is what lets a good fix inside
+      // a messy cluster still prove the arrival, even when a sibling blip in
+      // the same cluster has a missing or garbage toCoord.
+      let jb=null,jbFt=Infinity,jbLeg=null;
+      for(const memberLeg of A.legs){
+        if(!memberLeg.toCoord||memberLeg.toCoord.lat==null)continue;
+        for(const j of _geoMyJobs()){
+          const c=await _geoJobLatLng(j);
+          if(!c)continue;
+          const ft=_geoDistFt({lat:memberLeg.toCoord.lat,lng:memberLeg.toCoord.lng},c);
+          if(ft<=margin&&ft<jbFt){jb=j;jbFt=ft;jbLeg=memberLeg;}
+        }
+      }
+      if(!jb)continue;
       // B's own LOGGED origin is never required to match the job (owner,
       // 2026-08-21): if GPS was spotty leaving the site, the departure leg
       // is exactly as likely to carry a missing or wrong fromCoord as the
@@ -2511,16 +2550,6 @@ async function _geoReconcileFromMileage(){
       // where B says it started, it is that B EXISTS at all: any later drive
       // by this same person is proof they were no longer on site by the
       // moment it began, whatever its own origin thinks happened.
-      // Which job were they at: nearest one within the fence plus the park
-      // wander margin of where leg A actually ended.
-      let jb=null,jbFt=Infinity;
-      for(const j of _geoMyJobs()){
-        const c=await _geoJobLatLng(j);
-        if(!c)continue;
-        const ft=_geoDistFt({lat:A.toCoord.lat,lng:A.toCoord.lng},c);
-        if(ft<=margin&&ft<jbFt){jb=j;jbFt=ft;}
-      }
-      if(!jb)continue;
       // A human's clock record always wins: any manual timeEntries row by the
       // same person overlapping the window means somebody already answered
       // this question on purpose, skip the whole window. logged_by_uid null
@@ -2528,7 +2557,7 @@ async function _geoReconcileFromMileage(){
       if(typeof timeEntries!=='undefined'&&Array.isArray(timeEntries)&&
          timeEntries.some(e=>e&&(e.logged_by_uid||null)===_me&&e.start_time&&
            Date.parse(e.start_time)<t2&&(!e.end_time||Date.parse(e.end_time)>t1)))continue;
-      wins.push({A,B,t1,t2,jobId:String(jb.id)});
+      wins.push({A,B,t1,t2,jobId:String(jb.id),legKey:jbLeg.legKey});
     }
     if(!wins.length)return;
     // ONE coverage query for every window: what does the server already hold
@@ -2573,15 +2602,16 @@ async function _geoReconcileFromMileage(){
         }catch(_e){}
         continue;
       }
-      // Nothing to extend: insert the window whole. 'rec-'+A.legKey is
-      // deterministic (the leg key already is, _geoLegKey), so with the
-      // server's unique (contractor_user_id,client_key) index a re-run, or a
-      // coverage fetch racing a slow write, can never double-claim the hours.
+      // Nothing to extend: insert the window whole. 'rec-'+legKey is
+      // deterministic (the matched member leg's own legKey, _geoLegKey), so
+      // with the server's unique (contractor_user_id,client_key) index a
+      // re-run, or a coverage fetch racing a slow write, can never
+      // double-claim the hours.
       _geoEnqueue('job_time_entries',{
         contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
         job_id:w.jobId,arrived_at:w.A.endedIso,departed_at:w.B.startedIso,
         minutes:Math.max(0,Math.round(span/60000)),dest_place:null,
-        client_key:'rec-'+w.A.legKey,source:'geofence-reconciled'
+        client_key:'rec-'+w.legKey,source:'geofence-reconciled'
       });
     }
   }catch(_e){}
