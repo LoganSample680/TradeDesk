@@ -263,6 +263,65 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // Owner correction (2026-08-21): leg B's OWN logged origin must never be
+  // required to match the job. If GPS was spotty leaving the site, the
+  // departure leg is exactly as likely to carry a missing or wrong fromCoord
+  // as the arrival was to be missed in the first place, that is the SAME bug
+  // this feature exists to route around. What proves the visit ended by t2
+  // is that B exists at all, not where B says it started.
+  test('reconciliation: leg B with no fromCoord at all still closes the window', async () => {
+    await geoReset();
+    const seed = await page.evaluate(([jid]) => {
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      window.__origTimeEntries = timeEntries.slice(); timeEntries.length = 0;
+      const JOB = { lat: 37.6872, lon: -97.3301 };
+      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      _geoJobCoords = {};
+      const T = Date.now();
+      const iso = (ms) => new Date(ms).toISOString();
+      const A = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 3 * 3600000), endedIso: iso(T - 2 * 3600000),
+                  fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+      // B's departure leg never got a clean fix leaving the site: no
+      // fromCoord at all, same shape a stale/gap-inferred leg can carry.
+      const B = { id: 'ml-B', gps: true, legKey: 'lgB-' + jid, startedIso: iso(T - 1 * 3600000), endedIso: iso(T - 0.5 * 3600000),
+                  toCoord: { lat: 39.0, lng: -95.0 }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+      mileage.push(A, B);
+      return { A: { legKey: A.legKey, endedIso: A.endedIso }, B: { startedIso: B.startedIso }, jid: String(jid) };
+    }, [886005]);
+    const r = await runRecon();
+    expect(r.recRows.length, 'the window closes on B\'s mere existence, not its origin').toBe(1);
+    expect(r.recRows[0].departed_at).toBe(seed.B.startedIso);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  test('reconciliation: leg B logged a WRONG origin, miles from the job, still closes the window', async () => {
+    await geoReset();
+    const seed = await page.evaluate(([jid]) => {
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      window.__origTimeEntries = timeEntries.slice(); timeEntries.length = 0;
+      const JOB = { lat: 37.6872, lon: -97.3301 };
+      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      _geoJobCoords = {};
+      const T = Date.now();
+      const iso = (ms) => new Date(ms).toISOString();
+      const A = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 3 * 3600000), endedIso: iso(T - 2 * 3600000),
+                  fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+      // B thinks it started 20+ miles away, a stale/garbage origin fix.
+      const B = { id: 'ml-B', gps: true, legKey: 'lgB-' + jid, startedIso: iso(T - 1 * 3600000), endedIso: iso(T - 0.5 * 3600000),
+                  fromCoord: { lat: 38.0, lng: -96.0 }, toCoord: { lat: 39.0, lng: -95.0 }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+      mileage.push(A, B);
+      return { A: { legKey: A.legKey, endedIso: A.endedIso }, B: { startedIso: B.startedIso }, jid: String(jid) };
+    }, [886006]);
+    const r = await runRecon();
+    expect(r.recRows.length, 'a wrong-looking B origin no longer refuses the pairing').toBe(1);
+    expect(r.recRows[0].departed_at).toBe(seed.B.startedIso);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
   test('reconciliation: a window the server already covers writes nothing', async () => {
     await geoReset();
     const seed = await seedReconPair(886002);

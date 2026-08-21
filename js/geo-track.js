@@ -2492,10 +2492,16 @@ async function _geoReconcileFromMileage(){
       // "keep the miles, drop the hours"). A gap this long is a phone that
       // was asleep, not a shift.
       if(t2-t1>_GEO_MAX_INFERRED_LEG_MS)continue;
-      if(!A.toCoord||!B.fromCoord||A.toCoord.lat==null||B.fromCoord.lat==null)continue;
-      // The next leg has to LEAVE from the same spot the last one arrived at,
-      // or the window is not anchored to one place at all.
-      if(_geoDistFt({lat:A.toCoord.lat,lng:A.toCoord.lng},{lat:B.fromCoord.lat,lng:B.fromCoord.lng})>margin)continue;
+      if(!A.toCoord||A.toCoord.lat==null)continue;
+      // B's own LOGGED origin is never required to match the job (owner,
+      // 2026-08-21): if GPS was spotty leaving the site, the departure leg
+      // is exactly as likely to carry a missing or wrong fromCoord as the
+      // arrival was to be missed in the first place, that is the SAME bug
+      // this whole feature exists to route around, not a reason to refuse
+      // the pairing. What actually proves the visit had ended by t2 is not
+      // where B says it started, it is that B EXISTS at all: any later drive
+      // by this same person is proof they were no longer on site by the
+      // moment it began, whatever its own origin thinks happened.
       // Which job were they at: nearest one within the fence plus the park
       // wander margin of where leg A actually ended.
       let jb=null,jbFt=Infinity;
