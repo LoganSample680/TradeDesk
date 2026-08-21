@@ -2339,6 +2339,16 @@ function _geoDiagPanel(){
   const dwellMin=_geoFenceEnteredAtMs?Math.round((Date.now()-_geoFenceEnteredAtMs)/60000):null;
   const state=[
     ['Shell',(_geoTdPlugin()?'yes':'no')],
+    // The one thing the whole park/dedup/reconcile chain was missing: a
+    // stuck queue looked identical to a working one from every OTHER field
+    // here, "wrote" logs on enqueue, not on server confirmation (owner
+    // report 2026-08-21: repeated "wrote 551m @job..." lines, zero matching
+    // rows ever landed server-side, no way to tell from this panel until
+    // now). _geoQueueLastError is set the moment a drain attempt fails and
+    // stops (js/geo-track.js _geoDrainQueue); a stuck row blocks every row
+    // enqueued after it, so this is also why unrelated windows never landed.
+    ['Queue pending',String(_geoQueueRead().length)],
+    ['Queue error',_geoQueueLastError||'none'],
     ['GPS watcher',_geoNativeWatcherId!=null?String(_geoNativeWatcherId):'off'],
     ['Park mode',_geoParkModeOn?'ON (GPS off)':'off'],
     ['Park countdown',_geoParkTimer?'running':'idle'],
