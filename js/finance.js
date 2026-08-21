@@ -3045,7 +3045,13 @@ async function _fetchCrewLabor(sinceISO){
     out.loaded[cid]=(typeof _empLoadedHourly==='function')?_empLoadedHourly(_oc):0;
     out.wage[cid]=(typeof _empEffectiveHourly==='function')?_empEffectiveHourly(_oc):0;
     out.name[cid]=S.ownerName||(typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)';
-    let q=_supa.from('job_time_entries').select('employee_user_id,job_id,minutes,arrived_at,departed_at,source').eq('contractor_user_id',cid);
+    // dest_place carries the actual place/client name for a job_id:null row
+    // (a supply house, a home office, an unscheduled client visit): without
+    // it the Time Log has nothing to show but a bare '-' for every one of
+    // those rows (owner report, the JOB SITE line reading as unlabeled
+    // noise). Additive column, every other _fetchCrewLabor consumer (Crew
+    // Cost, Books) already ignores fields it doesn't use.
+    let q=_supa.from('job_time_entries').select('employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place').eq('contractor_user_id',cid);
     if(sinceISO)q=q.gte('arrived_at',sinceISO);
     const{data:te}=await q;
     out.entries=te||[];

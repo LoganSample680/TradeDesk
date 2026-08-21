@@ -42,6 +42,23 @@ function _tlJobClientInfo(jobId){
   const addr=(bid&&bid.addr)||(j&&j.addr)||(c&&c.addr)||'';
   return{jobName:j?j.name:'-',clientName:c?c.name:(j?j.name:'-'),addr};
 }
+// A friendly word for the raw job_time_entries.source column (owner report
+// 2026-08-21: "the tags themselves are confusing"). geofence* rows already
+// say what they are via the job/client name on the row, nothing to add.
+// drive* rows are windshield time, never a site visit, and are labeled as
+// such regardless of which vehicle-mode suffix they carry. 'place' rows
+// carry their own destination name in dest_place now (see _timeLogRows),
+// so the raw word itself adds nothing on top of that. Anything unrecognized
+// (a future source this function hasn't learned yet) falls back to the raw
+// string rather than hiding it, so a real change is never silently blank.
+function _tlSourceLabel(source){
+  const s=String(source||'');
+  if(/^geofence/.test(s))return '';
+  if(/^drive/.test(s))return 'Driving'+(s.indexOf('rider')>=0?' (rider)':s.indexOf('personal')>=0?' (personal vehicle)':'');
+  if(s==='place')return '';
+  if(s==='manual')return 'GPS clock';
+  return s;
+}
 // Still-running entries, clocked in, never closed. Separate from the history
 // below: an open entry has no minutes yet, so mixing it into the month/day
 // accordions would just show a confusing "0m" row. This is also the visibility
@@ -83,11 +100,18 @@ async function _timeLogRows(sinceISO){
     // could push someone into overtime they never worked.
     if(typeof _geoIsOffJobSource==='function'&&_geoIsOffJobSource(e.source))return;
     const info=_tlJobClientInfo(e.job_id);
+    // dest_place is the actual name behind a job_id:null row (a supply
+    // house, a home office, an unscheduled client visit, or wherever a
+    // drive leg ended); without it the row showed a bare '-' with nothing
+    // to tell you what it was (owner report: reads as unlabeled noise). A
+    // real job always wins when job_id resolved to one.
+    const clientName=(info.clientName!=='-')?info.clientName:(e.dest_place||info.clientName);
     rows.push({
       id:'a'+e.job_id+'_'+e.employee_user_id+'_'+e.arrived_at,
       source:'auto',date:(typeof _ctDateStr==='function')?_ctDateStr(new Date(e.arrived_at)):e.arrived_at.slice(0,10),
       minutes:e.minutes||0,personName:crew.name[e.employee_user_id]||'Crew',personUid:e.employee_user_id,
-      clientName:info.clientName,addr:info.addr,jobName:info.jobName,detail:e.source||'geo',
+      clientName,addr:info.addr,jobName:info.jobName,
+      detail:(typeof _tlSourceLabel==='function')?_tlSourceLabel(e.source):(e.source||''),
       startTime:e.arrived_at||null,endTime:e.departed_at||null
     });
   });
