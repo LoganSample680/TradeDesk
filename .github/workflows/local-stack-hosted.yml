@@ -12,7 +12,11 @@ name: Local Supabase (hosted runner)
 # (screenshots of the seeded dashboard / Time Log / Mileage / dual-hat
 # switcher, uploaded as the local-visual-shots artifact).
 #
-# On-demand only: it pulls ~2GB of container images, so it never runs per-push.
+# On-demand, plus a TIGHTLY-SCOPED push trigger: GitHub refuses to dispatch a
+# workflow that is not yet on the default branch (404), and merges to main are
+# owner-gated, so until this file lands there the harness fires itself when a
+# push touches its own four files, exactly the moments an iteration needs a
+# run, and nothing else (app pushes never pay the ~2GB image pull).
 on:
   workflow_dispatch:
     inputs:
@@ -21,6 +25,12 @@ on:
         type: string
         required: false
         default: 'local-visual'
+  push:
+    paths:
+      - '.github/workflows/local-stack-hosted.yml'
+      - 'tests/flow/local-visual.spec.js'
+      - 'tests/flow/global-setup.js'
+      - 'tests/flow/local-server.js'
 
 concurrency:
   group: local-stack-hosted-${{ github.ref }}
@@ -91,7 +101,7 @@ jobs:
           case "$HEALTH" in 200|401) ;; *) echo "::error::/api did not reach the local stack (got $HEALTH)"; cat /tmp/local-server.log; exit 1;; esac
 
       - name: Run flow specs against the local stack
-        run: npx playwright test -c playwright.flow.config.js --project=chromium ${{ inputs.spec }}
+        run: npx playwright test -c playwright.flow.config.js --project=chromium ${{ github.event.inputs.spec || 'local-visual' }}
 
       - name: Stop local server
         if: always()
