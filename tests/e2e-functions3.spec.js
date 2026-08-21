@@ -6534,6 +6534,11 @@ test.describe('Proposals photo, hub, contract, and form functions', () => {
         window.Capacitor = realCap;
         _supa.auth.signInWithIdToken = realIdToken;
         _supa.auth.signInWithOAuth = realOAuth;
+        // A successful mock never hits _obOAuth's own failure-path cleanup
+        // (that only clears the flag on a rejected/missing-plugin sheet), so
+        // this test would otherwise leak _nativeSocialAuthPending='apple'
+        // into every test that runs after it on this file's shared page.
+        window._nativeSocialAuthPending = null;
       }
     });
     expect(r.clientId).toBe('app.tradedesk.beta');
@@ -8898,5 +8903,227 @@ test.describe('Haptics bridge', () => {
 
   test('no console errors during haptics tests', async () => {
     assertNoErrors(page, 'haptics bridge');
+  });
+});
+
+// ── Native Sign in with Apple: onboarding-routing fix (owner incident 2026-08-21) ──
+// The native Apple sheet never reloads (unlike the browser-redirect path), so it
+// lands in the IN-TAB SIGNED_IN handler instead of boot. That handler used to have
+// no way to tell "first native social signup" apart from "same-device account
+// switch" and silently rendered an empty dashboard. The fix: _obOAuth sets a
+// one-shot window._nativeSocialAuthPending flag right before the native sheet
+// opens; the SIGNED_IN handler's brand-new-account branch consumes it to route
+// into onboarding instead. The same flag doubles as a re-entry guard: a second
+// tap while a sheet is already in flight is a no-op, so a losing first attempt's
+// cleanup can never clear a second attempt's still-pending flag out from under it.
+test.describe('Sign in with Apple: native onboarding routing fix (2026-08-21)', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => { window.location.reload = () => {}; window._activePg = 'pg-dash'; });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('_obOAuth(\'apple\') sets _nativeSocialAuthPending before the native sheet opens, clears it on failure', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const realCache = window._applePluginCache;
+      try {
+        // A cancel-shaped rejection (matches the /cancel|1001/i regex) so the
+        // flag-clearing path is exercised without the deliberate console.error
+        // the code fires for every OTHER kind of failure (that path is a
+        // different, existing behavior, not what this test is about).
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: (name) => name === 'SignInWithApple' ? {
+            authorize: () => Promise.reject(new Error('User cancelled the authorization attempt')),
+          } : null,
+        };
+        window._applePluginCache = null; // force re-registration against this stub
+        window._nativeSocialAuthPending = null;
+        _obOAuth('apple');
+        // _obOAuth is synchronous up to the point it kicks off _obNativeApple();
+        // the flag is set BEFORE that call, so it must already be visible here,
+        // before anything has had a chance to await/settle.
+        const immediatelyAfterCall = window._nativeSocialAuthPending;
+        await new Promise(res => setTimeout(res, 150));
+        const afterSettle = window._nativeSocialAuthPending;
+        return { immediatelyAfterCall, afterSettle };
+      } finally {
+        window.Capacitor = realCap;
+        window._applePluginCache = realCache;
+      }
+    });
+    expect(r.immediatelyAfterCall, 'the flag is set synchronously before the native sheet opens').toBe('apple');
+    expect(r.afterSettle, 'a rejected/cancelled sheet clears the flag').toBe(null);
+  });
+
+  test('_obOAuth(\'apple\') clears _nativeSocialAuthPending when the plugin is entirely missing (handled===false)', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const realCache = window._applePluginCache;
+      try {
+        // registerPlugin resolves but hands back nothing usable, and there is
+        // no cap.Plugins fallback either: _obNativeApple's AppleP ends up null,
+        // so it resolves false (this shell build predates the plugin) rather
+        // than throwing.
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: () => null,
+        };
+        window._applePluginCache = null;
+        window._nativeSocialAuthPending = null;
+        const errEl = document.getElementById('supa-login-err');
+        const preErrText = errEl ? errEl.textContent : null;
+        _obOAuth('apple');
+        const immediatelyAfterCall = window._nativeSocialAuthPending;
+        await new Promise(res => setTimeout(res, 150));
+        const afterSettle = window._nativeSocialAuthPending;
+        const postErrText = errEl ? errEl.textContent : null;
+        if (errEl) errEl.textContent = preErrText || '';
+        return { immediatelyAfterCall, afterSettle, preErrText, postErrText };
+      } finally {
+        window.Capacitor = realCap;
+        window._applePluginCache = realCache;
+      }
+    });
+    expect(r.immediatelyAfterCall, 'the flag is set synchronously before the native sheet opens').toBe('apple');
+    expect(r.afterSettle, 'handled===false clears the flag').toBe(null);
+  });
+
+  test('SIGNED_IN handler routes a first-time native Apple signup to onboarding via _nativeSocialAuthPending, not straight to dashboard', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof window.__capturedAuthCallback !== 'function') return { skip: true };
+      const savedLoadAccountData = window.loadAccountData;
+      const savedBeginOAuth = window._beginOAuthOnboarding;
+      const savedRenderDash = window.renderDash;
+      const saved = {
+        supaUser: window._supaUser, cloudLoaded: window._supaCloudLoaded, loadedOwner: window._loadedDataOwner,
+        obInProgress: window._obInProgress, pending: window._nativeSocialAuthPending,
+      };
+      let onboardCalls = 0, dashCalls = 0;
+      try {
+        // Preconditions for the SIGNED_IN handler's "brand-new account" branch:
+        // no data already in memory for this incoming id, and not mid-onboarding.
+        window._supaUser = null;
+        window._supaCloudLoaded = false;
+        window._loadedDataOwner = null;
+        window._obInProgress = false;
+        window._nativeSocialAuthPending = 'apple';
+        // loadAccountData resolving false is the real "no accounts row yet" signal
+        // the handler branches on (js/cloud.js: `const hasAccount=await loadAccountData();`).
+        window.loadAccountData = async () => false;
+        window._beginOAuthOnboarding = () => { onboardCalls++; };
+        window.renderDash = () => { dashCalls++; };
+        let threw = null;
+        try {
+          await window.__capturedAuthCallback('SIGNED_IN', { user: { id: 'native-apple-first-time-' + Date.now() } });
+        } catch (e) { threw = e.message; }
+        return { skip: false, threw, onboardCalls, dashCalls, pendingAfter: window._nativeSocialAuthPending };
+      } finally {
+        window.loadAccountData = savedLoadAccountData;
+        window._beginOAuthOnboarding = savedBeginOAuth;
+        window.renderDash = savedRenderDash;
+        window._supaUser = saved.supaUser; window._supaCloudLoaded = saved.cloudLoaded; window._loadedDataOwner = saved.loadedOwner;
+        window._obInProgress = saved.obInProgress; window._nativeSocialAuthPending = saved.pending;
+      }
+    });
+    if (r.skip) return;
+    expect(r.threw).toBe(null);
+    expect(r.onboardCalls, '_beginOAuthOnboarding must fire for a pending native Apple signup').toBe(1);
+    expect(r.dashCalls, 'must NOT take the direct-to-dashboard same-device-switch path').toBe(0);
+    expect(r.pendingAfter, 'the one-shot flag is consumed').toBe(null);
+  });
+
+  // Regression guard: the ORIGINAL same-device account-switch behavior (no
+  // native Apple sheet involved at all) must be completely unchanged.
+  test('SIGNED_IN handler still goes straight to dashboard for a genuine same-device account switch (no _nativeSocialAuthPending set)', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof window.__capturedAuthCallback !== 'function') return { skip: true };
+      const savedLoadAccountData = window.loadAccountData;
+      const savedBeginOAuth = window._beginOAuthOnboarding;
+      const savedRenderDash = window.renderDash;
+      const saved = {
+        supaUser: window._supaUser, cloudLoaded: window._supaCloudLoaded, loadedOwner: window._loadedDataOwner,
+        obInProgress: window._obInProgress, pending: window._nativeSocialAuthPending,
+      };
+      let onboardCalls = 0, dashCalls = 0;
+      try {
+        window._supaUser = null;
+        window._supaCloudLoaded = false;
+        window._loadedDataOwner = null;
+        window._obInProgress = false;
+        window._nativeSocialAuthPending = null; // the flag genuinely never set
+        window.loadAccountData = async () => false; // still "no accounts row"
+        window._beginOAuthOnboarding = () => { onboardCalls++; };
+        window.renderDash = () => { dashCalls++; };
+        let threw = null;
+        try {
+          await window.__capturedAuthCallback('SIGNED_IN', { user: { id: 'same-device-switch-' + Date.now() } });
+        } catch (e) { threw = e.message; }
+        return { skip: false, threw, onboardCalls, dashCalls, pendingAfter: window._nativeSocialAuthPending };
+      } finally {
+        window.loadAccountData = savedLoadAccountData;
+        window._beginOAuthOnboarding = savedBeginOAuth;
+        window.renderDash = savedRenderDash;
+        window._supaUser = saved.supaUser; window._supaCloudLoaded = saved.cloudLoaded; window._loadedDataOwner = saved.loadedOwner;
+        window._obInProgress = saved.obInProgress; window._nativeSocialAuthPending = saved.pending;
+      }
+    });
+    if (r.skip) return;
+    expect(r.threw).toBe(null);
+    expect(r.onboardCalls, 'must NOT hijack a real same-device account switch into onboarding').toBe(0);
+    expect(r.dashCalls, 'the original direct-to-dashboard behavior must still fire').toBe(1);
+    expect(r.pendingAfter).toBe(null);
+  });
+
+  test('_obOAuth(\'apple\') ignores a second tap while the first sheet is still in flight (double-tap race guard)', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const realCache = window._applePluginCache;
+      try {
+        let authorizeCalls = 0;
+        let rejectFirst;
+        const firstAttemptGate = new Promise((_res, rej) => { rejectFirst = rej; });
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: (name) => name === 'SignInWithApple' ? {
+            authorize: () => { authorizeCalls++; return firstAttemptGate; },
+          } : null,
+        };
+        window._applePluginCache = null;
+        window._nativeSocialAuthPending = null;
+        // First tap: opens the sheet, hangs mid-authorize (simulates the real
+        // multi-second Face ID prompt window a double-tap actually races).
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 20));
+        const pendingAfterFirstTap = window._nativeSocialAuthPending;
+        // Second tap while the first is still in flight: must be a no-op, not
+        // a second concurrent _obNativeApple() call.
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 20));
+        const pendingAfterSecondTap = window._nativeSocialAuthPending;
+        // Let the single real attempt settle. Cancel-shaped rejection, same as
+        // the other failure-path test, so this doesn't trip a real console.error.
+        rejectFirst(new Error('User cancelled the authorization attempt'));
+        await new Promise(res => setTimeout(res, 50));
+        return { authorizeCalls, pendingAfterFirstTap, pendingAfterSecondTap, pendingAfterResolve: window._nativeSocialAuthPending };
+      } finally {
+        window.Capacitor = realCap;
+        window._applePluginCache = realCache;
+      }
+    });
+    expect(r.pendingAfterFirstTap, 'first tap sets the flag').toBe('apple');
+    expect(r.pendingAfterSecondTap, 'second tap while pending changes nothing').toBe('apple');
+    expect(r.authorizeCalls, 'the native sheet must only ever open once for the overlapping taps').toBe(1);
+    expect(r.pendingAfterResolve, 'the single real attempt still cleans up its own flag').toBe(null);
+  });
+
+  test('no console errors during Apple sign-in onboarding-routing tests', async () => {
+    assertNoErrors(page, 'apple sign-in onboarding routing');
   });
 });

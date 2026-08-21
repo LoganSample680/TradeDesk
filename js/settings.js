@@ -1799,13 +1799,34 @@ function _obOAuth(provider){
     // Shell + Apple: the native sheet, never the browser redirect.
     const _cap=window.Capacitor;
     if(provider==='apple'&&_cap&&typeof _cap.isNativePlatform==='function'&&_cap.isNativePlatform()){
+      // The browser-redirect path marks itself with _oauthPending (localStorage,
+      // survives the reload it causes) so the boot handler knows to open
+      // onboarding for a brand-new signup instead of treating it as a same-
+      // device account switch. The native sheet never reloads, so it lands in
+      // the IN-TAB SIGNED_IN handler instead of boot, and that handler had no
+      // way to tell "first native social signup" apart from "account switch"
+      // (owner report 2026-08-21: onboarding "closed itself out," every
+      // native-Apple signup silently skipped straight to an empty dashboard).
+      // Same idea, in-memory since there is no reload to survive it across:
+      // set right before the sheet opens, consumed once by the SIGNED_IN
+      // handler the moment it fires.
+      // Re-entry guard, same flag: the native sheet can take a few real
+      // seconds (Face ID prompt), long enough for an impatient double-tap.
+      // Two overlapping attempts would race this flag's own cleanup, a
+      // losing first attempt's .catch() nulling out a second attempt's still-
+      // in-flight flag and reproducing the exact "closed itself out" bug this
+      // exists to fix. One attempt in flight at a time, full stop.
+      if(window._nativeSocialAuthPending)return;
+      window._nativeSocialAuthPending=provider;
       _obNativeApple().then(handled=>{
         if(handled===false){
+          window._nativeSocialAuthPending=null;
           const errEl=document.getElementById('supa-login-err');
           if(errEl)errEl.textContent='Update TradeDesk Beta in TestFlight for Apple sign-in, or use email.';
           if(typeof showToast==='function')showToast('Update TradeDesk Beta in TestFlight for Apple sign-in, or use email','⚠️',5000);
         }
       }).catch(e=>{
+        window._nativeSocialAuthPending=null;
         // User-cancelled sheets stay quiet. EVERYTHING else says exactly what
         // broke (owner 2026-08-10: a swallowed error read as a dead click and
         // left nothing to diagnose from), and console.error feeds the live
