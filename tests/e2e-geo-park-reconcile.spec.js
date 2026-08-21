@@ -69,6 +69,13 @@ test.describe('Geo park detection + mileage reconciliation', () => {
           const q = {
             eq: () => q, neq: () => q, lt: () => q, gt: () => q, gte: () => q, lte: () => q,
             in: () => q, is: () => q, order: () => q, limit: () => q,
+            // The periodic whole-account cloud load (js/cloud.js, zj_data)
+            // chains .select(...).eq(...).maybeSingle() off its own query,
+            // unrelated to geo/mileage but it can fire mid-test since this
+            // file boots the FULL app. Without these the TypeError is a real
+            // console.error and fails assertNoErrors() (seen in CI 2026-08-21).
+            single: () => Promise.resolve({ data: (window.__selRows || [])[0] || null, error: (window.__selErr || null) }),
+            maybeSingle: () => Promise.resolve({ data: (window.__selRows || [])[0] || null, error: (window.__selErr || null) }),
             then: (res, rej) => Promise.resolve({ data: (window.__selRows || []), error: (window.__selErr || null) }).then(res, rej),
           };
           return q;
