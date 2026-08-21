@@ -359,10 +359,27 @@ async function _geoDrainQueue(){
         // constraint's own name never matches /client_key/i either. Every
         // row enqueued after this one then never even got attempted (owner
         // report 2026-08-21: 71 rows stuck behind one already-written
-        // window). A duplicate on OUR OWN deterministic key means the row is
-        // already in the database, durability already achieved: that is
-        // success, not a reason to block everything behind it forever.
-        if(error&&/duplicate key value violates unique constraint/i.test(String(error.message||''))){error=null;}
+        // window).
+        //
+        // UPDATE, never just excuse (owner's second live catch, same night):
+        // the reconciler's own window for a still-open visit grows across
+        // the day as later mileage legs arrive (a 3pm departure fragment,
+        // then the real 10pm one once it finally logs), and every recompute
+        // shares the SAME client_key because it's keyed to the ARRIVAL leg,
+        // not the departure. `ignoreDuplicates:true` on the very first
+        // upsert attempt never even matters (that attempt always 400s on the
+        // partial index before it can decide ignore-vs-update), so the
+        // effective behavior was "whichever write landed first wins
+        // forever": the first, stale, incomplete window (12:55->16:27, a
+        // since-superseded mid-afternoon fragment) got recorded, and the
+        // true final one (12:55->22:07, the real departure) kept computing
+        // correctly and kept silently losing to it. A duplicate on OUR OWN
+        // deterministic key means this is the SAME visit, still being
+        // measured: overwrite it with the newer numbers, don't discard them.
+        if(error&&/duplicate key value violates unique constraint/i.test(String(error.message||''))){
+          const{contractor_user_id,client_key,...patch}=item.row;
+          ({error}=await _supa.from(item.tbl).update(patch).eq('contractor_user_id',contractor_user_id).eq('client_key',client_key));
+        }
       }catch(_e){error=_e;}
       if(error){
         // A stuck queue used to be completely invisible: the error was swallowed

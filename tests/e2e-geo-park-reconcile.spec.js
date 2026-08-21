@@ -102,7 +102,16 @@ test.describe('Geo park detection + mileage reconciliation', () => {
                       then: (res, rej) => Promise.resolve({ data: null, error: null }).then(res, rej) };
           return q;
         },
-        update: (patch) => ({ eq: (col, val) => { window.__rec.updates.push({ tbl, patch, col, val }); return Promise.resolve({ data: null, error: null }); } }),
+        // Chainable on MULTIPLE .eq() calls (the duplicate-key drain fix
+        // matches on both contractor_user_id AND client_key), and directly
+        // awaitable bare, same reasoning as upsert/insert above.
+        update: (patch) => {
+          const rec = { tbl, patch, filters: {} };
+          window.__rec.updates.push(rec);
+          const q = { eq: (col, val) => { rec.filters[col] = val; return q; },
+                      then: (res, rej) => Promise.resolve({ data: null, error: null }).then(res, rej) };
+          return q;
+        },
         // Chainable AND directly awaitable, same reasoning as upsert/insert
         // above: location_pings pruning chains .eq().lt().then(), while
         // _geoDedupTimeEntries just awaits .eq(col,val) bare.
@@ -554,7 +563,8 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   });
 
   // ── _geoDrainQueue: the already-written duplicate must never block the
-  // queue behind it (owner report 2026-08-21, live device) ────────────────
+  // queue, AND must never silently discard a newer, more complete
+  // recompute (owner report 2026-08-21, live device, two rounds) ──────────
   // job_time_entries_ckey_uq is a PARTIAL unique index, so PostgREST's
   // on_conflict can never target it: the first upsert attempt fails with
   // "constraint" on every single row, always (not an edge case), which is
@@ -563,28 +573,46 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   // pass, the plain insert collides with the same partial index and throws
   // its own "duplicate key value violates unique constraint" error, one the
   // drain loop had no handling for: it broke and left every row enqueued
-  // after it permanently stuck (the owner's live diagnostic showed 71
-  // pending rows and the exact error text asserted below).
-  test('_geoDrainQueue: a duplicate-key error on our own client_key clears the item instead of blocking the queue', async () => {
+  // after it permanently stuck (round one: the owner's live diagnostic
+  // showed 71 pending rows and the exact error text below). Round two, live
+  // an hour later: a same-key duplicate isn't always a re-send of the SAME
+  // window, a still-open visit's window is keyed on its ARRIVAL leg and
+  // grows as later mileage legs arrive, so a duplicate can mean "a newer,
+  // more complete recompute of the same visit." The fix is an UPDATE keyed
+  // on (contractor_user_id, client_key), never a no-op.
+  test('_geoDrainQueue: a duplicate-key error on our own client_key UPDATEs the row instead of blocking or discarding it', async () => {
     await geoReset();
     const r = await page.evaluate(async () => {
       localStorage.setItem('zp3_geo_queue', JSON.stringify([
-        { tbl: 'job_time_entries', row: { contractor_user_id: 'geo-park-user-1', employee_user_id: 'geo-park-user-1', job_id: '77', arrived_at: new Date().toISOString(), departed_at: new Date().toISOString(), minutes: 5, client_key: 'rec-dup1', source: 'geofence-reconciled' } },
+        { tbl: 'job_time_entries', row: { contractor_user_id: 'geo-park-user-1', employee_user_id: 'geo-park-user-1', job_id: '77', arrived_at: '2026-08-21T12:55:00.000Z', departed_at: '2026-08-21T22:07:00.000Z', minutes: 551, dest_place: null, client_key: 'rec-dup1', source: 'geofence-reconciled' } },
       ]));
       window.__origSupaDrain = window._supa;
       window._supa = {
         from: (tbl) => ({
           upsert: () => Promise.resolve({ error: { message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification' } }),
           insert: () => Promise.resolve({ error: { message: 'duplicate key value violates unique constraint "job_time_entries_ckey_uq"' } }),
+          update: (patch) => {
+            const rec = { tbl, patch, filters: {} };
+            window.__rec.updates.push(rec);
+            const q = { eq: (col, val) => { rec.filters[col] = val; return q; },
+                        then: (res, rej) => Promise.resolve({ data: null, error: null }).then(res, rej) };
+            return q;
+          },
         }),
       };
       await _geoDrainQueue();
-      const result = { lastError: _geoQueueLastError, pending: _geoQueueRead().length };
+      const result = { lastError: _geoQueueLastError, pending: _geoQueueRead().length, updates: window.__rec.updates.slice() };
       window._supa = window.__origSupaDrain;
       return result;
     });
     expect(r.lastError, 'a duplicate on our own key is durability already achieved, not a failure').toBe(null);
     expect(r.pending, 'the item is removed, nothing left stuck behind it').toBe(0);
+    expect(r.updates.length, 'the collision triggers an UPDATE, not a silent no-op').toBe(1);
+    expect(r.updates[0].filters, 'matched on the deterministic key, never a bare table-wide update').toEqual({ contractor_user_id: 'geo-park-user-1', client_key: 'rec-dup1' });
+    expect(r.updates[0].patch.minutes, 'the newer, more complete recompute wins, the stale row does not').toBe(551);
+    expect(r.updates[0].patch.departed_at).toBe('2026-08-21T22:07:00.000Z');
+    expect(r.updates[0].patch.contractor_user_id, 'the match keys never ride along inside the patch itself').toBeUndefined();
+    expect(r.updates[0].patch.client_key).toBeUndefined();
     await geoRestore();
   });
 
