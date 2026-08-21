@@ -214,4 +214,76 @@ module.exports = async () => {
   }
   fs.writeFileSync(CREW_FILE, JSON.stringify(crew, null, 2));
   console.log(`[global-setup] LOCAL STACK: provisioned ${crew.length}/${CREW_N} crew accounts → ${path.basename(CREW_FILE)}`);
+
+  // ── SHOWCASE account (owner ask 2026-08-21: "seed data everywhere … mileage
+  // and time entries and all the stuff … switching between businesses").
+  // A DEDICATED account OUTSIDE the worker pool, so the per-worker isolation
+  // specs never see its rows, that demonstrates the whole surface at once:
+  //   • owns its own fully-onboarded business (Showcase Painting), AND
+  //   • is an ACTIVE team_members employee of worker 0's account, the exact
+  //     dual-hat shape (crew by day, owner on the side) the switcher serves.
+  //   • carries one realistic seeded workday: client, job, two GPS drive legs
+  //     (shop→job, job→shop) in mileage, the matching drive + geofence visit
+  //     rows in job_time_entries, and a manual clock entry, so Dashboard,
+  //     Time Log, and Mileage all render real content for screenshots.
+  // Times anchor to YESTERDAY ~9am–3:30pm Central (14:00Z–20:44Z), safely
+  // inside one Central calendar day. Every id is fixed → idempotent re-seeds.
+  try {
+    const email = 'e2e+showcase@tradedesk.local';
+    const password = 'Showcase-Passw0rd-1!';
+    let uid = null;
+    const r = await fetch(`${LOCAL_API}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: { apikey: LOCAL_SECRET, Authorization: 'Bearer ' + LOCAL_SECRET, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, email_confirm: true }),
+    });
+    if (r.status === 200 || r.status === 201) {
+      const data = await r.json();
+      uid = data && (data.id || (data.user && data.user.id)) || null;
+    } else { uid = await findExistingUid(email); }
+    if (uid) {
+      const now = new Date().toISOString();
+      const y = new Date(Date.now() - 86400000);
+      const ymd = y.toISOString().slice(0, 10);
+      const T = (hm) => `${ymd}T${hm}:00.000Z`;   // yesterday at hh:mm UTC
+      const JOB = { lat: 37.6889, lng: -97.3271 }, SHOP = { lat: 37.7200, lng: -97.4200 };
+      const settings = JSON.stringify({
+        bname: 'Showcase Painting', bphone: '3165552000', state: 'KS', goalMonthly: 15000,
+        ownerName: 'Sam Showcase',
+        myRates: { int_walls: { labor: 2.25, mat: 0 } },
+      });
+      await _seedUpsert('accounts', { id: uid, business_name: 'Showcase Painting', phone: '3165552000', email, state: 'KS', owner_id: uid }, 'id');
+      await _seedUpsert('users', { id: uid, email, name: 'Sam Showcase', role: 'owner', account_id: uid, business_type: 'painting' }, 'id');
+      await _seedUpsert('account_users', { account_id: uid, user_id: uid, role: 'owner' }, 'account_id,user_id');
+      await _seedUpsert('zj_data', { user_id: uid, account_id: uid, settings, updated_at: now }, 'user_id');
+      // Dual-hat: showcase is ALSO an active employee of worker 0's business.
+      if (accounts[0] && accounts[0].uid !== uid) {
+        await _seedUpsert('team_members', {
+          contractor_user_id: accounts[0].uid, employee_user_id: uid,
+          name: 'Sam Showcase', email, role: 'tech',
+          permissions: { collect: true, expenses: true, mileage: true, estimate: false, financials: false, schedule: false, clients: false, leads: false, team: false, payroll: false },
+          active: true, joined_at: now,
+        }, 'contractor_user_id,email');
+      }
+      // Per-record synced rows: the {id, user_id, data} wrapper mirrors what
+      // supaSaveToCloud writes for every _TD_TABLES entry.
+      const td = (t, rec) => _seedUpsert(t, { id: String(rec.id), user_id: uid, data: rec, updated_at: now }, 'id,user_id');
+      await td('td_clients', { id: 'sc-client-1', name: 'Dana Showcase', addr: '1200 E Douglas Ave, Wichita, KS 67214', phone: '3165552001', createdAt: now });
+      await td('td_jobs', { id: 'sc-job-1', name: 'Kitchen repaint', client_id: 'sc-client-1', addr: '1200 E Douglas Ave, Wichita, KS 67214', lat: JOB.lat, lon: JOB.lng, start: ymd, days: 1, status: 'active', eventType: 'job' });
+      await td('td_mileage', { id: 'sc-mile-a', gps: true, legKey: 'showcase-leg-a', calc_method: 'auto_route', miles: 6.2, mins: 14, date: ymd, startedIso: T('14:00'), endedIso: T('14:14'), fromCoord: { lat: SHOP.lat, lng: SHOP.lng }, toCoord: { lat: JOB.lat, lng: JOB.lng }, from_name: 'Shop', to_name: 'Kitchen repaint', purpose: 'business' });
+      await td('td_mileage', { id: 'sc-mile-b', gps: true, legKey: 'showcase-leg-b', calc_method: 'auto_route', miles: 6.2, mins: 14, date: ymd, startedIso: T('20:30'), endedIso: T('20:44'), fromCoord: { lat: JOB.lat, lng: JOB.lng }, toCoord: { lat: SHOP.lat, lng: SHOP.lng }, from_name: 'Kitchen repaint', to_name: 'Shop', purpose: 'business' });
+      await td('td_time_entries', { id: 'sc-manual-1', job_id: 'sc-job-1', date: ymd, start_time: T('14:20'), end_time: T('18:00'), minutes: 220, open: false, logged_by_uid: null, logged_by_name: 'Sam Showcase', scope_label: 'Cabinets' });
+      // Server-authoritative time rows (what _fetchCrewLabor reads for Time Log).
+      const jte = (rec, key) => _seedUpsert('job_time_entries', { contractor_user_id: uid, employee_user_id: uid, client_key: key, ...rec }, 'contractor_user_id,client_key');
+      await jte({ job_id: 'sc-job-1', arrived_at: T('14:00'), departed_at: T('14:14'), minutes: 14, source: 'drive', dest_place: null }, 'seed-sc-drive-a');
+      await jte({ job_id: 'sc-job-1', arrived_at: T('14:14'), departed_at: T('20:30'), minutes: 376, source: 'geofence', dest_place: null }, 'seed-sc-visit-1');
+      await jte({ job_id: null, arrived_at: T('20:30'), departed_at: T('20:44'), minutes: 14, source: 'drive', dest_place: 'Shop' }, 'seed-sc-drive-b');
+      fs.writeFileSync(path.join(__dirname, '.local-showcase.json'), JSON.stringify({ email, password, uid, hostBusinessUid: accounts[0] ? accounts[0].uid : null }, null, 2));
+      console.log('[global-setup] LOCAL STACK: showcase (dual-hat) account seeded → .local-showcase.json');
+    } else {
+      console.log('[global-setup] showcase account: could not provision (non-fatal)');
+    }
+  } catch (e) {
+    console.log('[global-setup] showcase seed: error ' + (e && e.message) + ' (non-fatal)');
+  }
 };

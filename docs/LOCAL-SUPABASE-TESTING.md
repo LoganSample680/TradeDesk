@@ -123,3 +123,24 @@ Pages env; `functions/api/property.js` forwards `/api/property` → there.
   null, the durable fix is a licensed property API (Rentcast/Estated), tracked separately.
 - Manage: `systemctl status td-property-proxy td-property-tunnel`,
   `journalctl -u td-property-tunnel -f`.
+
+## Hosted-runner mode — no jarvis needed (added 2026-08-21)
+
+`.github/workflows/local-stack-hosted.yml` runs the same local-stack harness on
+GitHub's own `ubuntu-latest` runners: the job boots a disposable Supabase stack
+from `supabase/migrations/` with `supabase start`, reads the service/anon keys
+from `supabase status` at run time (ZERO GitHub secrets), provisions the
+per-worker pool + crew pool, and additionally seeds the **showcase account**:
+
+- `e2e+showcase@tradedesk.local` owns "Showcase Painting" AND is an active
+  `team_members` employee of worker 0's business — the dual-hat shape.
+- One seeded workday: client, job, two GPS mileage legs (shop→job→shop), the
+  matching drive + geofence rows in `job_time_entries`, and a manual clock
+  entry — so Dashboard, Time Log, and Mileage all render real content.
+
+Default spec is `tests/flow/local-visual.spec.js`, which signs in as the
+showcase account, asserts the seeded pipeline renders, and uploads full-page
+screenshots (dashboard / Time Log / Mileage / dual-hat switcher) as the
+`local-visual-shots` artifact. Dispatch it with any other spec filter to run
+that subset against the local stack instead. On-demand only (workflow_dispatch);
+it pulls ~2GB of images, so it never runs per-push.

@@ -23,3 +23,6 @@ _shot_*.png
 # without them. One pattern covers every plugin ever added.
 !native/package.json
 !native/*/package.json
+tests/flow/.local-crew.json
+tests/flow/.local-showcase.json
+local-visual-shots/
