@@ -272,7 +272,12 @@ module.exports = async () => {
       // empty state instead of the trip list when the fleet is empty (found by
       // this harness's own run 2 screenshot, the exact class of catch it
       // exists for). td_vehicles is the synced fleet array getVehicles() reads.
-      await td('td_vehicles', { id: 'sc-veh-1', name: 'Showcase Van', type: 'van', plate: 'SHW-001' });
+      // WITH a current-year Jan 1 odometer reading (v.odo, _vehOdo's shape):
+      // run 3 caught the NEXT gate, a vehicle missing its year-start reading
+      // pops the IRS odometer modal over the whole tracker, exactly like a
+      // real just-onboarded account would see.
+      const yr = String(new Date().getFullYear());
+      await td('td_vehicles', { id: 'sc-veh-1', name: 'Showcase Van', type: 'van', plate: 'SHW-001', odo: { [yr]: { start: 48200, startDate: `${yr}-01-01` } } });
       await td('td_clients', { id: 'sc-client-1', name: 'Dana Showcase', addr: '1200 E Douglas Ave, Wichita, KS 67214', phone: '3165552001', createdAt: now });
       await td('td_jobs', { id: 'sc-job-1', name: 'Kitchen repaint', client_id: 'sc-client-1', addr: '1200 E Douglas Ave, Wichita, KS 67214', lat: JOB.lat, lon: JOB.lng, start: ymd, days: 1, status: 'active', eventType: 'job' });
       await td('td_mileage', { id: 'sc-mile-a', gps: true, legKey: 'showcase-leg-a', calc_method: 'auto_route', miles: 6.2, mins: 14, date: ymd, startedIso: T('14:00'), endedIso: T('14:14'), fromCoord: { lat: SHOP.lat, lng: SHOP.lng }, toCoord: { lat: JOB.lat, lng: JOB.lng }, from_name: 'Shop', to_name: 'Kitchen repaint', client_id: 'sc-client-1', client_name: 'Dana Showcase', vehicleId: 'sc-veh-1', purpose: 'business' });
