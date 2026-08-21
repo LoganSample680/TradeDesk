@@ -97,7 +97,30 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
   // ── The day engine ────────────────────────────────────────────────────────
   const ping = (c, spd) => page.evaluate(([c2, s]) =>
     _geoOnPing({ coords: { latitude: c2.lat, longitude: c2.lon, accuracy: 8, speed: s } }), [c, spd || 0]);
-  const ff = async (mins) => { await page.clock.fastForward(Math.round(mins * 60000)); };
+  // Fast-forward that VERIFIES the clock actually moved, because
+  // page.clock.fastForward can silently no-op on a starved CI runner (observed
+  // locally under CPU stress, 2026-08-21: fastForward(300000) advanced Date.now()
+  // by 6ms). A lost tick inside a dwell shrinks the measured minutes and flips
+  // threshold decisions: the day-6 CI flake was one lost 48s tick inside the
+  // pizza sit, 3.2min of dwell measured as 2.4min, under the 2.5min pause floor,
+  // so the observed-miles floor collected (got 4.2 want 3). The loop re-issues
+  // the remainder until the page clock really advanced the full amount.
+  // _ffLossy is the regression hook: when armed, the first attempt of every call
+  // is treated as lost, simulating the CI race deterministically.
+  let _ffLossy = false;
+  async function ffMs(ms) {
+    let left = Math.round(ms);
+    let dropNext = _ffLossy;
+    for (let tries = 0; left > 0 && tries < 25; tries++) {
+      const before = await page.evaluate(() => Date.now());
+      if (dropNext) dropNext = false;                  // simulated silent no-op
+      else await page.clock.fastForward(left);
+      const after = await page.evaluate(() => Date.now());
+      left -= Math.max(0, after - before);             // the clock also ticks real time; count what actually landed
+    }
+    if (left > 0) throw new Error('fake clock refused to advance, ' + left + 'ms still owed');
+  }
+  const ff = (mins) => ffMs(Math.round(mins * 60000));
   const mid = (a, b, f) => ({ lat: a.lat + (b.lat - a.lat) * f, lon: a.lon + (b.lon - a.lon) * f });
 
   // A drive is fixes: parked at the origin, two road fixes, parked at the door.
@@ -114,7 +137,15 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
     for (let t = 0; t < mins; t += step) { await ping(at, 0); await ff(step); }
   }
   async function newDay() {
-    await page.clock.setSystemTime(_day0());   // every day begins at the same 9:00am
+    // Every day begins at the same 9:00am. Verified for the same reason ffMs
+    // exists: a clock protocol call can be silently lost on a starved runner,
+    // and a day inheriting the previous day's late clock drifts every dwell.
+    const target = _day0().getTime();
+    for (let tries = 0; tries < 25; tries++) {
+      await page.clock.setSystemTime(new Date(target));
+      const now = await page.evaluate(() => Date.now());
+      if (Math.abs(now - target) < 5000) break;
+    }
     await page.evaluate((G) => {
       mileage.length = 0; window.__enq.length = 0;
       _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
@@ -135,7 +166,7 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
   }
   async function closeDay() {
     await page.evaluate(async () => { await _retryPendingTrips(); await new Promise(r => setTimeout(r, 5)); });
-    await page.clock.fastForward(2000);
+    await ffMs(2000);   // verified advance, same reason as ff() above
     return page.evaluate(() => ({
       rows: mileage.map(m => ({
         from: m.from_name || m.from, to: m.to_name || m.to, miles: m.miles,
@@ -331,6 +362,13 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
     // down, the direct route saves (the CPA's direct-miles rule). The
     // control leg proves the floor itself still works: same dogleg with no
     // pause is a real detour and the observed miles save.
+    const d = await playPizzaDay();
+    expectPizzaDay(d);
+  });
+
+  // The day-6 journey and its assertions, shared with the lossy-clock
+  // regression below so both runs prove the identical behavior.
+  async function playPizzaDay() {
     await newDay();
     const PIZZA = { lat: 39.0350, lon: -95.7000 };
     const OUT = [
@@ -356,7 +394,9 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
     for (const p of [...OUT].reverse()) { await ping(p, 13); await ff(0.7); }
     await ping(GEO.JOB1, 0); await ff(0.5);
     await dwell(GEO.JOB1, 8);
-    const d = await closeDay();
+    return closeDay();
+  }
+  function expectPizzaDay(d) {
     const routeJS = routeMiles(GEO.JOB1, GEO.SHOP);
     expect(d.rows.length, JSON.stringify(d.rows)).toBe(2);
     const [pA, pB] = d.rows;
@@ -366,6 +406,26 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
     expect(String(pB.from)).toContain('Shop');
     expect(String(pB.to)).toContain('John');
     expect(pB.miles, `the pauseless dogleg is a real detour, observed saves, got ${pB.miles} vs route ${routeJS}`).toBeGreaterThan(routeJS + 0.5);
+  }
+
+  test('day 6 again on a clock that silently loses fastForwards: the pause still registers (CI flake regression, 2026-08-21)', async () => {
+    test.setTimeout(120000);
+    // The CI failure this pins: on a starved runner, page.clock.fastForward
+    // occasionally no-ops (measured: fastForward(300000) advanced Date.now()
+    // by 6ms). One lost 48s tick inside the pizza sit measured the 3.2-minute
+    // dwell as 2.4 minutes, under the 2.5-minute pause floor (_GEO_PAUSE_MS,
+    // js/geo-track.js), so the leg was never marked paused and the
+    // observed-miles floor collected: "got 4.2 want 3", identical on webkit
+    // and chromium because the wrong branch is deterministic once the tick is
+    // lost. _ffLossy makes ffMs treat the FIRST attempt of every fast-forward
+    // as silently lost; the verify-and-retry loop must recover every tick, so
+    // this day plays out with the exact timeline the baseline day 6 gets.
+    // Red before the ffMs fix, green after, forever.
+    _ffLossy = true;
+    try {
+      const d = await playPizzaDay();
+      expectPizzaDay(d);
+    } finally { _ffLossy = false; }
   });
 
   test('day 7: a 90-second pickup the time rule cannot see is caught by the coprocessor walk record', async () => {
