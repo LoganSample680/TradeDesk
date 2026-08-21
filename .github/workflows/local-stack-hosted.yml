@@ -8,14 +8,18 @@ name: Local Supabase (hosted runner)
 #
 # ZERO secrets: the stack is created fresh in-job, so the service_role and anon
 # keys are read from `supabase status` at run time — nothing to provision,
-# nothing real to leak, no jarvis required. Default spec is local-visual
-# (screenshots of the seeded dashboard / Time Log / Mileage / dual-hat
-# switcher, uploaded as the local-visual-shots artifact).
+# nothing real to leak, no jarvis required. Default spec filter is
+# local-visual, which matches BOTH local-visual.spec.js (clean showcase day:
+# dashboard / Time Log / Mileage / dual-hat switcher) and
+# local-visual-messy.spec.js (the SAME day seeded chaotic: GPS jitter,
+# fragmented stop-start drives, a dead-phone gap + reconnect drift, and fence
+# exit/re-entry churn), uploaded together as the local-visual-shots artifact
+# so the clean and messy renders sit side by side.
 #
 # On-demand, plus a TIGHTLY-SCOPED push trigger: GitHub refuses to dispatch a
 # workflow that is not yet on the default branch (404), and merges to main are
 # owner-gated, so until this file lands there the harness fires itself when a
-# push touches its own four files, exactly the moments an iteration needs a
+# push touches its own five files, exactly the moments an iteration needs a
 # run, and nothing else (app pushes never pay the ~2GB image pull).
 on:
   workflow_dispatch:
@@ -29,6 +33,7 @@ on:
     paths:
       - '.github/workflows/local-stack-hosted.yml'
       - 'tests/flow/local-visual.spec.js'
+      - 'tests/flow/local-visual-messy.spec.js'
       - 'tests/flow/global-setup.js'
       - 'tests/flow/local-server.js'
 

@@ -25,4 +25,5 @@ _shot_*.png
 !native/*/package.json
 tests/flow/.local-crew.json
 tests/flow/.local-showcase.json
+tests/flow/.local-showcase-messy.json
 local-visual-shots/

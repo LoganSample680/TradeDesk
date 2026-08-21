@@ -137,10 +137,21 @@ per-worker pool + crew pool, and additionally seeds the **showcase account**:
 - One seeded workday: client, job, two GPS mileage legs (shop→job→shop), the
   matching drive + geofence rows in `job_time_entries`, and a manual clock
   entry — so Dashboard, Time Log, and Mileage all render real content.
+- **`e2e+messy@tradedesk.local`** (added 2026-08-21): the SAME day, SAME job
+  and coordinates, seeded chaotic instead of clean — 10 fragmented/jittery
+  mileage legs instead of 2 (stop-start drives, near-zero jitter blips at
+  lights), a dead-phone gap followed by a GPS-drift blip on reconnect, and
+  the on-site stay logged as 5 separate fence exit/re-entry `job_time_entries`
+  rows instead of one window, plus a manual clock entry overlapping the mess.
+  Owner ask: prove the live reconcile/dedup sweep (`_geoReconcileFromMileage`
+  → `_geoDedupTimeEntries`, `js/geo-track.js`) survives real-phone messiness
+  against real Supabase rows, not just synthetic objects in an offline mock.
 
-Default spec is `tests/flow/local-visual.spec.js`, which signs in as the
-showcase account, asserts the seeded pipeline renders, and uploads full-page
-screenshots (dashboard / Time Log / Mileage / dual-hat switcher) as the
-`local-visual-shots` artifact. Dispatch it with any other spec filter to run
+Default spec filter is `local-visual`, which matches BOTH
+`tests/flow/local-visual.spec.js` (clean showcase day) and
+`tests/flow/local-visual-messy.spec.js` (the messy comparison day, asserting
+zero console errors and that the job still renders through the mess), so a
+default run uploads clean and messy screenshots side by side in the same
+`local-visual-shots` artifact. Dispatch with any other spec filter to run
 that subset against the local stack instead. On-demand only (workflow_dispatch);
 it pulls ~2GB of images, so it never runs per-push.

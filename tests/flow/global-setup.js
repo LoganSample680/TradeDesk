@@ -309,4 +309,124 @@ module.exports = async () => {
   } catch (e) {
     console.log('[global-setup] showcase seed: error ' + (e && e.message) + ' (non-fatal)');
   }
+
+  // ── MESSY-DAY account (owner ask 2026-08-21: "I want it all to be messy,
+  // like super fucking messy … if the first run throws clean, the next one
+  // to compare is the same day rendered but messy as fuck"). SAME day, SAME
+  // job/shop coordinates as the clean showcase above, but every leg and visit
+  // is the chaotic version a real phone in a real pocket actually produces:
+  //   • GPS jitter: near-zero-distance blip legs while stopped at a light
+  //   • stop-start fragmented drives instead of one clean leg
+  //   • a dead-phone gap (silence, then a spurious drift blip on reconnect)
+  //   • fence exit/re-entry churn: the same on-site stay logged as several
+  //     geofence visit rows instead of one continuous window
+  //   • a manual clock entry overlapping the automatic mess (tests the
+  //     manual-wins rule against real, not synthetic, data)
+  // A separate, single-business account (no dual-hat) so this run isolates
+  // the GPS-messiness question from the switcher question already proven
+  // above. Non-fatal: a failure here never blocks the clean showcase seed.
+  try {
+    const email = 'e2e+messy@tradedesk.local';
+    const password = 'Messy-Passw0rd-1!';
+    let uid = null;
+    const r = await fetch(`${LOCAL_API}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: { apikey: LOCAL_SECRET, Authorization: 'Bearer ' + LOCAL_SECRET, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, email_confirm: true }),
+    });
+    if (r.status === 200 || r.status === 201) {
+      const data = await r.json();
+      uid = data && (data.id || (data.user && data.user.id)) || null;
+    } else { uid = await findExistingUid(email); }
+    if (uid) {
+      const now = new Date().toISOString();
+      const y = new Date(Date.now() - 86400000);
+      const ymd = y.toISOString().slice(0, 10);
+      const T = (hm) => `${ymd}T${hm}:00.000Z`;
+      // Same shop/job anchors as the clean day, plus the messy-only points:
+      // a morning partway stop (J1), its jitter twin (J1B, ~30ft off), a
+      // post-reconnect GPS-drift point near the job (DRIFT, ~220ft off, still
+      // inside the 350ft fence radius but far enough to read as a blip), the
+      // supply-run errand stop, and a departure partway stop (J2) + its jitter twin.
+      const JOB = { lat: 37.6889, lng: -97.3271 }, SHOP = { lat: 37.7200, lng: -97.4200 };
+      const J1 = { lat: 37.70445, lng: -97.37355 }, J1B = { lat: 37.70455, lng: -97.3736 };
+      const DRIFT = { lat: 37.6895, lng: -97.3267 };
+      const SUPPLY = { lat: 37.6800, lng: -97.3400 };
+      const J2 = { lat: 37.7076, lng: -97.3828 }, J2B = { lat: 37.70766, lng: -97.38274 };
+      const settings = JSON.stringify({
+        bname: 'Showcase Painting (Messy Day)', bphone: '3165553000', state: 'KS', goalMonthly: 15000,
+        ownerName: 'Max Messy',
+        myRates: { int_walls: { labor: 2.25, mat: 0 } },
+      });
+      await _seedUpsert('accounts', { id: uid, business_name: 'Showcase Painting (Messy Day)', phone: '3165553000', email, state: 'KS', owner_id: uid }, 'id');
+      await _seedUpsert('users', { id: uid, email, name: 'Max Messy', role: 'owner', account_id: uid, business_type: 'painting' }, 'id');
+      await _seedUpsert('account_users', { account_id: uid, user_id: uid, role: 'owner' }, 'account_id,user_id');
+      await _seedUpsert('zj_data', { user_id: uid, account_id: uid, settings, updated_at: now }, 'user_id');
+      const td = (t, rec) => _seedUpsert(t, { id: String(rec.id), user_id: uid, data: rec, updated_at: now }, 'id,user_id');
+      const yr = String(new Date().getFullYear());
+      await td('td_vehicles', { id: 'mx-veh-1', name: 'Messy Van', type: 'van', plate: 'MSY-001', odo: { [yr]: { start: 61500, startDate: `${yr}-01-01` } } });
+      await td('td_clients', { id: 'mx-client-1', name: 'Dana Showcase', addr: '1200 E Douglas Ave, Wichita, KS 67214', phone: '3165552001', createdAt: now });
+      await td('td_jobs', { id: 'mx-job-1', name: 'Kitchen repaint', client_id: 'mx-client-1', addr: '1200 E Douglas Ave, Wichita, KS 67214', lat: JOB.lat, lon: JOB.lng, start: ymd, days: 1, status: 'active', eventType: 'job' });
+
+      // MILEAGE: 10 fragmented/jittery legs standing in for what a real
+      // phone logs, vs. the clean day's 2. Same total round trip.
+      const mile = (id, from, to, startHm, endHm, miles, fromName, toName) =>
+        td('td_mileage', {
+          id, gps: true, legKey: id, calc_method: 'auto_route', miles, mins: null,
+          date: ymd, startedIso: T(startHm), endedIso: T(endHm),
+          fromCoord: { lat: from.lat, lng: from.lng }, toCoord: { lat: to.lat, lng: to.lng },
+          from_name: fromName, to_name: toName,
+          client_id: 'mx-client-1', client_name: 'Dana Showcase', vehicleId: 'mx-veh-1', purpose: 'business',
+        });
+      // Morning: stop-start drive to the job, with a jitter blip at a light.
+      await mile('mx-mile-1', SHOP, J1, '14:00', '14:03', 2.9, 'Shop', null);
+      await mile('mx-mile-2', J1, J1B, '14:03', '14:04', 0.05, null, null);            // jitter blip, ~stopped
+      await mile('mx-mile-3', J1B, JOB, '14:04', '14:12', 3.3, null, 'Kitchen repaint');
+      // Phone dies 14:12–15:46 (silence, nothing seeded). Reconnects with a
+      // spurious drift blip before settling back onto the job.
+      await mile('mx-mile-4', JOB, DRIFT, '15:46', '15:47', 0.06, 'Kitchen repaint', null);
+      await mile('mx-mile-5', DRIFT, JOB, '15:47', '15:48', 0.06, null, 'Kitchen repaint');
+      // Midday supply-run errand (a genuine separate trip, not jitter).
+      await mile('mx-mile-6', JOB, SUPPLY, '17:00', '17:15', 4.4, 'Kitchen repaint', 'Supply Run');
+      await mile('mx-mile-7', SUPPLY, JOB, '17:35', '17:50', 4.4, 'Supply Run', 'Kitchen repaint');
+      // Evening: stop-start departure drive, jitter blip again.
+      await mile('mx-mile-8', JOB, J2, '19:58', '20:04', 2.8, 'Kitchen repaint', null);
+      await mile('mx-mile-9', J2, J2B, '20:04', '20:05', 0.04, null, null);
+      await mile('mx-mile-10', J2B, SHOP, '20:05', '20:20', 3.4, null, 'Shop');
+
+      // JOB_TIME_ENTRIES: the same messiness at the reconciled-entry layer,
+      // fence exit/re-entry churn instead of one clean visit window.
+      const jte = async (rec, key) => {
+        const r2 = await fetch(`${LOCAL_API}/rest/v1/job_time_entries`, {
+          method: 'POST',
+          headers: { apikey: LOCAL_SECRET, Authorization: 'Bearer ' + LOCAL_SECRET, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ contractor_user_id: uid, employee_user_id: uid, client_key: key, ...rec }),
+        });
+        if (!(r2.status >= 200 && r2.status < 300) && r2.status !== 409) {
+          console.log(`[global-setup] seed job_time_entries ${key}: ${r2.status} ${(await r2.text().catch(() => '')).slice(0, 140)}`);
+        }
+      };
+      await jte({ job_id: 'mx-job-1', arrived_at: T('14:00'), departed_at: T('14:12'), minutes: 12, source: 'drive', dest_place: null }, 'seed-mx-drive-a');
+      await jte({ job_id: 'mx-job-1', arrived_at: T('14:12'), departed_at: T('14:18'), minutes: 6, source: 'geofence', dest_place: null }, 'seed-mx-visit-1');
+      await jte({ job_id: 'mx-job-1', arrived_at: T('14:19'), departed_at: T('14:25'), minutes: 6, source: 'geofence', dest_place: null }, 'seed-mx-visit-2');
+      await jte({ job_id: 'mx-job-1', arrived_at: T('14:26'), departed_at: T('15:44'), minutes: 78, source: 'geofence', dest_place: null }, 'seed-mx-visit-3');
+      await jte({ job_id: null, arrived_at: T('15:46'), departed_at: T('15:48'), minutes: 2, source: 'drive', dest_place: 'reconnect-jitter' }, 'seed-mx-drive-b');
+      await jte({ job_id: 'mx-job-1', arrived_at: T('15:48'), departed_at: T('17:00'), minutes: 72, source: 'geofence', dest_place: null }, 'seed-mx-visit-4');
+      await jte({ job_id: null, arrived_at: T('17:00'), departed_at: T('17:15'), minutes: 15, source: 'drive', dest_place: 'Supply Run' }, 'seed-mx-drive-c');
+      await jte({ job_id: null, arrived_at: T('17:35'), departed_at: T('17:50'), minutes: 15, source: 'drive', dest_place: null }, 'seed-mx-drive-d');
+      await jte({ job_id: 'mx-job-1', arrived_at: T('17:50'), departed_at: T('19:58'), minutes: 128, source: 'geofence', dest_place: null }, 'seed-mx-visit-5');
+      await jte({ job_id: null, arrived_at: T('19:58'), departed_at: T('20:20'), minutes: 22, source: 'drive', dest_place: 'Shop' }, 'seed-mx-drive-e');
+
+      // A manual clock entry overlapping the automatic mess (visit-2/3
+      // boundary), so the "manual wins" rule is proven against real data too.
+      await td('td_time_entries', { id: 'mx-manual-1', job_id: 'mx-job-1', date: ymd, start_time: T('14:20'), end_time: T('14:40'), minutes: 20, open: false, logged_by_uid: null, logged_by_name: 'Max Messy', scope_label: 'Prep' });
+
+      fs.writeFileSync(path.join(__dirname, '.local-showcase-messy.json'), JSON.stringify({ email, password, uid }, null, 2));
+      console.log('[global-setup] LOCAL STACK: messy-day account seeded → .local-showcase-messy.json');
+    } else {
+      console.log('[global-setup] messy-day account: could not provision (non-fatal)');
+    }
+  } catch (e) {
+    console.log('[global-setup] messy-day seed: error ' + (e && e.message) + ' (non-fatal)');
+  }
 };
