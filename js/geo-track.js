@@ -2624,10 +2624,19 @@ async function _geoReconcileFromMileage(){
       }
     }
     const margin=_geoFenceFt()+_GEO_PARK_JOB_EXTRA_FT;
+    // BREADCRUMBS into the tracking diagnostic (_geoParkNote, the same trail
+    // the Copy-everything button exports): the owner cannot see WHY a window
+    // did or did not repair, and CI cannot sign into the owner's account to
+    // look (the live probe 2026-08-21 read an empty secondary account), so
+    // the device itself records each pass verbatim. 30-entry cap in
+    // _geoParkNote bounds this; a day rarely has more than a handful of
+    // windows.
+    _geoParkNote('recon-scan',legs.length+' legs of '+mileage.length+' rows, '+clusters.length+' clusters');
     const wins=[];
     for(let i=0;i<clusters.length-1;i++){
       const A=clusters[i],B=clusters[i+1];
       const t1=A.endMs,t2=Date.parse(B.startedIso)||0;
+      const _wTag=new Date(t1).toISOString().slice(5,16)+'→'+new Date(t2).toISOString().slice(11,16)+'Z '+Math.round((t2-t1)/60000)+'m';
       if(!(t1>0&&t2>t1))continue;
       if(t2-t1<_GEO_RECON_MIN_GAP_MS)continue;
       // Unobserved hours are never claimed, but a real on-site stretch
@@ -2643,13 +2652,13 @@ async function _geoReconcileFromMileage(){
       // time, the app's own convention, _ctDateStr) instead of a flat
       // duration: the same day is trusted whatever it adds up to, a gap
       // that crosses into a new day never is.
-      if(_ctDateStr(new Date(t1))!==_ctDateStr(new Date(t2)))continue;
+      if(_ctDateStr(new Date(t1))!==_ctDateStr(new Date(t2))){_geoParkNote('recon-win',_wTag+': crosses midnight');continue;}
       // Which job were they at: nearest one within the fence plus the park
       // wander margin of where ANY leg in cluster A actually ended. Scanning
       // every member (not just A's last leg) is what lets a good fix inside
       // a messy cluster still prove the arrival, even when a sibling blip in
       // the same cluster has a missing or garbage toCoord.
-      let jb=null,jbFt=Infinity,jbLeg=null;
+      let jb=null,jbFt=Infinity,jbLeg=null,_minFt=Infinity;
       // Jobs active ON THE WINDOW'S OWN DAY, not today's fence list
       // (_geoMyJobs): a yesterday window at a since-finished job is exactly
       // the case this repairs (owner report 2026-08-21), see _geoJobsOnDay.
@@ -2660,10 +2669,14 @@ async function _geoReconcileFromMileage(){
           const c=await _geoJobLatLng(j);
           if(!c)continue;
           const ft=_geoDistFt({lat:memberLeg.toCoord.lat,lng:memberLeg.toCoord.lng},c);
+          if(ft<_minFt)_minFt=ft;
           if(ft<=margin&&ft<jbFt){jb=j;jbFt=ft;jbLeg=memberLeg;}
         }
       }
-      if(!jb)continue;
+      if(!jb){
+        _geoParkNote('recon-win',_wTag+': no job match, '+_dayJobs.length+' day jobs, nearest '+(_minFt===Infinity?'n/a':Math.round(_minFt)+'ft'));
+        continue;
+      }
       // B's own LOGGED origin is never required to match the job (owner,
       // 2026-08-21): if GPS was spotty leaving the site, the departure leg
       // is exactly as likely to carry a missing or wrong fromCoord as the
@@ -2679,7 +2692,10 @@ async function _geoReconcileFromMileage(){
       // means the owner (js/jobs.js clockIn), same null convention as above.
       if(typeof timeEntries!=='undefined'&&Array.isArray(timeEntries)&&
          timeEntries.some(e=>e&&(e.logged_by_uid||null)===_me&&e.start_time&&
-           Date.parse(e.start_time)<t2&&(!e.end_time||Date.parse(e.end_time)>t1)))continue;
+           Date.parse(e.start_time)<t2&&(!e.end_time||Date.parse(e.end_time)>t1))){
+        _geoParkNote('recon-win',_wTag+': manual entry wins');continue;
+      }
+      _geoParkNote('recon-win',_wTag+': candidate @'+(jb.name||jb.id));
       wins.push({A,B,t1,t2,jobId:String(jb.id),legKey:jbLeg.legKey});
     }
     if(!wins.length)return;
@@ -2696,7 +2712,7 @@ async function _geoReconcileFromMileage(){
         .lt('arrived_at',hiIso).gt('departed_at',loIso);
       if(error||!Array.isArray(data))return;
       rows=data;
-    }catch(_e){return;}
+    }catch(_e){_geoParkNote('recon-win','coverage fetch failed, retrying next pass');return;}
     for(const w of wins){
       const span=w.t2-w.t1;
       const overl=rows.filter(r=>r&&r.arrived_at&&r.departed_at&&
@@ -2709,7 +2725,7 @@ async function _geoReconcileFromMileage(){
         if(!/^(geofence|stop)/.test(String(r.source||'')))continue;
         covered+=Math.min(w.t2,Date.parse(r.departed_at))-Math.max(w.t1,Date.parse(r.arrived_at));
       }
-      if(covered>=span*0.8)continue;   // the log already tells this story
+      if(covered>=span*0.8){_geoParkNote('recon-win','already covered '+Math.round(covered/span*100)+'%');continue;}
       // A truncated geofence row for the SAME job: extend the largest one to
       // the union of its own span and the window, rather than stacking a
       // second overlapping row next to a 9-minute stub.
@@ -2723,6 +2739,7 @@ async function _geoReconcileFromMileage(){
             minutes:Math.max(0,Math.round((uE-uS)/60000)),source:'geofence-reconciled'
           }).eq('id',cand.id);
         }catch(_e){}
+        _geoParkNote('recon-win','extended row '+cand.id+' to '+Math.max(0,Math.round((uE-uS)/60000))+'m');
         continue;
       }
       // Nothing to extend: insert the window whole. 'rec-'+legKey is
@@ -2736,6 +2753,7 @@ async function _geoReconcileFromMileage(){
         minutes:Math.max(0,Math.round(span/60000)),dest_place:null,
         client_key:'rec-'+w.legKey,source:'geofence-reconciled'
       });
+      _geoParkNote('recon-win','wrote '+Math.max(0,Math.round(span/60000))+'m @job '+w.jobId);
     }
   }catch(_e){}
   finally{_geoReconBusy=false;}
