@@ -270,11 +270,24 @@ module.exports = async () => {
       const td = (t, rec) => _seedUpsert(t, { id: String(rec.id), user_id: uid, data: rec, updated_at: now }, 'id,user_id');
       await td('td_clients', { id: 'sc-client-1', name: 'Dana Showcase', addr: '1200 E Douglas Ave, Wichita, KS 67214', phone: '3165552001', createdAt: now });
       await td('td_jobs', { id: 'sc-job-1', name: 'Kitchen repaint', client_id: 'sc-client-1', addr: '1200 E Douglas Ave, Wichita, KS 67214', lat: JOB.lat, lon: JOB.lng, start: ymd, days: 1, status: 'active', eventType: 'job' });
-      await td('td_mileage', { id: 'sc-mile-a', gps: true, legKey: 'showcase-leg-a', calc_method: 'auto_route', miles: 6.2, mins: 14, date: ymd, startedIso: T('14:00'), endedIso: T('14:14'), fromCoord: { lat: SHOP.lat, lng: SHOP.lng }, toCoord: { lat: JOB.lat, lng: JOB.lng }, from_name: 'Shop', to_name: 'Kitchen repaint', purpose: 'business' });
-      await td('td_mileage', { id: 'sc-mile-b', gps: true, legKey: 'showcase-leg-b', calc_method: 'auto_route', miles: 6.2, mins: 14, date: ymd, startedIso: T('20:30'), endedIso: T('20:44'), fromCoord: { lat: JOB.lat, lng: JOB.lng }, toCoord: { lat: SHOP.lat, lng: SHOP.lng }, from_name: 'Kitchen repaint', to_name: 'Shop', purpose: 'business' });
+      await td('td_mileage', { id: 'sc-mile-a', gps: true, legKey: 'showcase-leg-a', calc_method: 'auto_route', miles: 6.2, mins: 14, date: ymd, startedIso: T('14:00'), endedIso: T('14:14'), fromCoord: { lat: SHOP.lat, lng: SHOP.lng }, toCoord: { lat: JOB.lat, lng: JOB.lng }, from_name: 'Shop', to_name: 'Kitchen repaint', client_id: 'sc-client-1', client_name: 'Dana Showcase', purpose: 'business' });
+      await td('td_mileage', { id: 'sc-mile-b', gps: true, legKey: 'showcase-leg-b', calc_method: 'auto_route', miles: 6.2, mins: 14, date: ymd, startedIso: T('20:30'), endedIso: T('20:44'), fromCoord: { lat: JOB.lat, lng: JOB.lng }, toCoord: { lat: SHOP.lat, lng: SHOP.lng }, from_name: 'Kitchen repaint', to_name: 'Shop', client_id: 'sc-client-1', client_name: 'Dana Showcase', purpose: 'business' });
       await td('td_time_entries', { id: 'sc-manual-1', job_id: 'sc-job-1', date: ymd, start_time: T('14:20'), end_time: T('18:00'), minutes: 220, open: false, logged_by_uid: null, logged_by_name: 'Sam Showcase', scope_label: 'Cabinets' });
-      // Server-authoritative time rows (what _fetchCrewLabor reads for Time Log).
-      const jte = (rec, key) => _seedUpsert('job_time_entries', { contractor_user_id: uid, employee_user_id: uid, client_key: key, ...rec }, 'contractor_user_id,client_key');
+      // Server-authoritative time rows (what _fetchCrewLabor reads for Time
+      // Log). PLAIN INSERT, not upsert: the unique (contractor_user_id,
+      // client_key) index is PARTIAL (where client_key is not null), which
+      // PostgREST's on_conflict cannot target (42P10, seen run 1). A 409 on
+      // re-seed means the row already exists, which IS the idempotency.
+      const jte = async (rec, key) => {
+        const r2 = await fetch(`${LOCAL_API}/rest/v1/job_time_entries`, {
+          method: 'POST',
+          headers: { apikey: LOCAL_SECRET, Authorization: 'Bearer ' + LOCAL_SECRET, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify({ contractor_user_id: uid, employee_user_id: uid, client_key: key, ...rec }),
+        });
+        if (!(r2.status >= 200 && r2.status < 300) && r2.status !== 409) {
+          console.log(`[global-setup] seed job_time_entries ${key}: ${r2.status} ${(await r2.text().catch(() => '')).slice(0, 140)}`);
+        }
+      };
       await jte({ job_id: 'sc-job-1', arrived_at: T('14:00'), departed_at: T('14:14'), minutes: 14, source: 'drive', dest_place: null }, 'seed-sc-drive-a');
       await jte({ job_id: 'sc-job-1', arrived_at: T('14:14'), departed_at: T('20:30'), minutes: 376, source: 'geofence', dest_place: null }, 'seed-sc-visit-1');
       await jte({ job_id: null, arrived_at: T('20:30'), departed_at: T('20:44'), minutes: 14, source: 'drive', dest_place: 'Shop' }, 'seed-sc-drive-b');

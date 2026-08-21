@@ -55,12 +55,17 @@ test.describe('Local-stack visual capture (seeded showcase account)', () => {
     const tl = await page.evaluate(() => document.getElementById('pg-timelog').innerText);
     expect(tl, 'seeded job name renders in Time Log').toContain('Kitchen repaint');
 
-    // Mileage tracker: the two seeded GPS legs (shop→job, job→shop).
+    // Mileage tracker: the two seeded GPS legs (shop→job, job→shop). The
+    // tracker lands on its Summary tab (which run 1 proved already shows the
+    // seeded totals, "12.4 mi"); the per-trip list with the job name lives
+    // under the Mileage TAB, so click it the way a person would.
     await page.evaluate(() => goPg('pg-tracker'));
     await sleep(2500);
+    await page.click('#tr-t-mileage');
+    await sleep(1500);
     await snap(page, testInfo, '03-mileage');
     const mi = await page.evaluate(() => document.getElementById('pg-tracker').innerText);
-    expect(mi, 'seeded mileage legs render in the tracker').toContain('Kitchen repaint');
+    expect(mi, 'seeded mileage legs render in the trip list').toContain('Kitchen repaint');
   });
 
   test('dual-hat: the seeded crew link resolves and the switcher is reachable', async ({ page }, testInfo) => {
