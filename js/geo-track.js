@@ -2761,11 +2761,19 @@ async function _geoReconcileFromMileage(){
         .select('id,client_key,job_id,arrived_at,departed_at,minutes,source')
         .eq('contractor_user_id',_geoCid()).eq('employee_user_id',_supaUser.id)
         .lt('arrived_at',hiIso).gt('departed_at',loIso);
-      if(error||!Array.isArray(data))return;
+      if(error||!Array.isArray(data)){_geoParkNote('recon-win','coverage query error: '+(error?String(error.message||error):'bad data'));return;}
       rows=data;
-    }catch(_e){_geoParkNote('recon-win','coverage fetch failed, retrying next pass');return;}
+      // Owner report 2026-08-21: two duplicate rows landed on the same job
+      // (Aug 18 + Aug 19) despite an existing 'geofence' row that should have
+      // tripped the 80% skip below. Every static check (contractor/employee
+      // id match, RLS) came back clean, so this logs the raw fetch itself:
+      // if the account genuinely has more job_time_entries in [loIso,hiIso]
+      // than this query returns, that gap is the bug.
+      _geoParkNote('recon-win','coverage fetch: '+rows.length+' rows in ['+loIso.slice(0,16)+'..'+hiIso.slice(0,16)+']');
+    }catch(_e){_geoParkNote('recon-win','coverage fetch failed, retrying next pass: '+String((_e&&_e.message)||_e));return;}
     for(const w of wins){
       const span=w.t2-w.t1;
+      const _wTag2=new Date(w.t1).toISOString().slice(5,16)+'@job'+w.jobId;
       const overl=rows.filter(r=>r&&r.arrived_at&&r.departed_at&&
         Date.parse(r.arrived_at)<w.t2&&Date.parse(r.departed_at)>w.t1);
       // Coverage counts ON-SITE evidence only: geofence visits (gap-resolved
@@ -2776,6 +2784,10 @@ async function _geoReconcileFromMileage(){
         if(!/^(geofence|stop)/.test(String(r.source||'')))continue;
         covered+=Math.min(w.t2,Date.parse(r.departed_at))-Math.max(w.t1,Date.parse(r.arrived_at));
       }
+      // Always logged (not just on skip): the "wrote"/"extended" branches
+      // below need this number too, so a future duplicate shows its own
+      // coverage% right next to the write that shouldn't have happened.
+      _geoParkNote('recon-win',_wTag2+': '+overl.length+' overlapping row(s), covered '+Math.round(covered/span*100)+'%');
       if(covered>=span*0.8){_geoParkNote('recon-win','already covered '+Math.round(covered/span*100)+'%');continue;}
       // A truncated geofence row for the SAME job: extend the largest one to
       // the union of its own span and the window, rather than stacking a
