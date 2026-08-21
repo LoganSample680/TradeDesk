@@ -677,6 +677,29 @@ function _tmUnproject(x,y){
 //      projection origin, turning the converter into a one-time calibration
 //      input immune to whatever per-tap frame drift it develops later.
 // Results (or the refusal to apply them) are logged to the tm-debug panel.
+//
+// Root cause of the 2026-08-21 displaced-shape-under-zoom bug (owner video,
+// digi=1.30 log line: cal=(0.0,384.0)): MapKit's "page point" is a DOCUMENT
+// coordinate, the same frame as event.pageX/pageY, not the VIEWPORT
+// coordinate wrap.getBoundingClientRect() returns. This app's body allows
+// normal vertical scroll (index.html: only overflow-x is hidden, html/body
+// both set touch-action:pan-y) and nothing resets scroll position when this
+// position:fixed overlay opens on top of a scrolled screen (e.g. partway
+// down a long bid or client list), so the DOMPoint handed to the converter
+// was off by exactly window.scrollY, a large, purely constant, Y-only error
+// (this single-column app has no horizontal scroll anywhere, matching the
+// x=0.0 half of cal exactly). Fixed below by adding the scroll back in.
+//
+// That alone doesn't make the converter trustworthy again on its own: a
+// scroll-confused answer is STILL perfectly self-consistent between two
+// nearby samples, so the existing spread<2 constant-ness check sailed
+// right through it, spread only catches a NON-constant disagreement (an
+// axis/scale mixup), never a wrong-but-constant one. So this also adds a
+// magnitude backstop (_TM_CAL_MAX_PX): a genuine origin correction should
+// be single-to-low-double-digit px; anything at or above an order of
+// magnitude under the 384px that actually shipped is treated as a
+// measurement bug, not a real correction, logged loudly, and never applied.
+const _TM_CAL_MAX_PX=40;
 function _tmCalibrateProjection(){
   try{
     if(!_tmState||!_tmState.map)return;
@@ -687,8 +710,13 @@ function _tmCalibrateProjection(){
     if(!wrap||!k)return;
     const r=wrap.getBoundingClientRect();
     const OX=80,OY=60;
+    // getBoundingClientRect() is viewport-relative (client space); MapKit's
+    // convertPointOnPageToCoordinate wants document space (page space), the
+    // two differ by exactly the page's current scroll offset. See the
+    // header comment above for why this specific gap explains cal=(0.0,384.0).
+    const scrX=window.scrollX||0,scrY=window.scrollY||0;
     const samples=[{x:k.cx,y:k.cy},{x:k.cx+OX,y:k.cy+OY}];
-    const conv=samples.map(p=>map.convertPointOnPageToCoordinate(new DOMPoint(r.left+p.x,r.top+p.y)));
+    const conv=samples.map(p=>map.convertPointOnPageToCoordinate(new DOMPoint(r.left+p.x+scrX,r.top+p.y+scrY)));
     if(!conv[0]||!conv[1])return;
     const dLngRad=(conv[1].longitude-conv[0].longitude)*Math.PI/180; // +OX px east => positive
     const dMerc=_tmMercY(conv[0].latitude)-_tmMercY(conv[1].latitude); // +OY px south => positive
@@ -708,18 +736,28 @@ function _tmCalibrateProjection(){
     });
     if(!deltas[0]||!deltas[1])return;
     const spread=Math.hypot(deltas[0].dx-deltas[1].dx,deltas[0].dy-deltas[1].dy);
-    if(spread<2){
-      _tmState.projCal={dx:(deltas[0].dx+deltas[1].dx)/2,dy:(deltas[0].dy+deltas[1].dy)/2,applied:true,spread};
+    const avgDx=(deltas[0].dx+deltas[1].dx)/2,avgDy=(deltas[0].dy+deltas[1].dy)/2;
+    const mag=Math.hypot(avgDx,avgDy);
+    if(spread<2&&mag<=_TM_CAL_MAX_PX){
+      _tmState.projCal={dx:avgDx,dy:avgDy,applied:true,spread,mag};
     }else{
-      // Not a constant: applying it would smear a scale mismatch into the
-      // origin. Leave uncorrected and let the per-tap dConv logging show it.
-      _tmState.projCal={dx:0,dy:0,applied:false,spread};
+      // Refuse to apply. Two independent ways to land here: spread>=2 (the
+      // samples disagree, not a real constant, applying it would smear a
+      // scale mismatch into the origin, this half already existed) or
+      // mag>_TM_CAL_MAX_PX (the samples agree suspiciously well on
+      // something huge, the new check, see the header comment for why
+      // spread alone can never catch this case).
+      if(mag>_TM_CAL_MAX_PX){
+        console.warn('[TrueMeasure] calibration offset ('+avgDx.toFixed(1)+','+avgDy.toFixed(1)+')px rejected: exceeds the '+_TM_CAL_MAX_PX+'px sanity bound, not applying');
+      }
+      _tmState.projCal={dx:0,dy:0,applied:false,spread,mag};
     }
     const el=document.getElementById('tm-debug');
     if(el){
       const cal=_tmState.projCal;
       el.textContent='CAL axis='+axis+' sx='+k.sx.toFixed(0)+' sy='+k.sy.toFixed(0)+' sConv='+sConv.toFixed(0)+
-        ' off=('+cal.dx.toFixed(1)+','+cal.dy.toFixed(1)+')px spread='+spread.toFixed(1)+'px applied='+cal.applied+
+        ' off=('+cal.dx.toFixed(1)+','+cal.dy.toFixed(1)+')px mag='+(cal.mag||0).toFixed(1)+'px spread='+spread.toFixed(1)+'px applied='+cal.applied+
+        ' scroll=('+scrX+','+scrY+')'+
         '\n'+el.textContent;
     }
   }catch(_e){}
@@ -746,10 +784,15 @@ function _tmDebugSnap(label,x,y,coord){
       try{
         // Feed the converter the unscaled position of the tapped visual
         // point (the retired _tmUnscalePt math, generalized to the
-        // translate+scale transform).
+        // translate+scale transform). +scrX/scrY: same page-vs-viewport
+        // fix as _tmCalibrateProjection above, this DOMPoint is otherwise
+        // viewport (client) space and the converter wants document (page)
+        // space, without it dConv below is measuring the scroll gap, not
+        // a real disagreement.
         const xf=_tmXform();
         const ccx=r.left+r.width/2,ccy=r.top+r.height/2;
-        const cv=map.convertPointOnPageToCoordinate(new DOMPoint(ccx+(x-xf.tx-ccx)/xf.z,ccy+(y-xf.ty-ccy)/xf.z));
+        const scrX=window.scrollX||0,scrY=window.scrollY||0;
+        const cv=map.convertPointOnPageToCoordinate(new DOMPoint(ccx+(x-xf.tx-ccx)/xf.z+scrX,ccy+(y-xf.ty-ccy)/xf.z+scrY));
         const cvPx=_tmProject(cv.latitude,cv.longitude);
         const dPx=(cvPx&&own)?Math.hypot(cvPx.x-own.x,cvPx.y-own.y):-1;
         const dM=Math.hypot(
