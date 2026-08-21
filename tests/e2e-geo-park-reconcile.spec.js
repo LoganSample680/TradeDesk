@@ -380,9 +380,34 @@ test.describe('Geo park detection + mileage reconciliation', () => {
 
   test('reconciliation: an overnight gap is never claimed (unobserved hours honesty rule)', async () => {
     await geoReset();
-    await seedReconPair(886005, { gapHrs: 14 }); // leg A ends 15h ago, leg B leaves 1h ago
+    // The gap ceiling is now CALENDAR DAY (Central time), not a flat
+    // duration (see js/geo-track.js _geoReconcileFromMileage, owner
+    // 2026-08-21). A hardcoded "14 hours ago" no longer reliably proves
+    // anything: depending on the wall-clock time CI happens to run, 14 real
+    // hours may or may not cross a Central-time midnight. So walk t1
+    // backward from t2 using the app's own _ctDateStr until the day string
+    // actually differs, this is deterministic regardless of when the test runs.
+    const seed = await page.evaluate(([jid]) => {
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      window.__origTimeEntries = timeEntries.slice(); timeEntries.length = 0;
+      const JOB = { lat: 37.6872, lon: -97.3301 };
+      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      _geoJobCoords = {};
+      const iso = (ms) => new Date(ms).toISOString();
+      const t2 = Date.now() - 1 * 3600000; // leg B leaves 1h ago, same anchor every other recon test uses
+      let t1 = t2;
+      const STEP = 30 * 60000;
+      while (_ctDateStr(new Date(t1)) === _ctDateStr(new Date(t2))) t1 -= STEP;
+      const A = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(t1 - 3600000), endedIso: iso(t1),
+                  fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date(t1).toISOString().slice(0, 10) };
+      const B = { id: 'ml-B', gps: true, legKey: 'lgB-' + jid, startedIso: iso(t2), endedIso: iso(t2 + 1800000),
+                  fromCoord: { lat: JOB.lat, lng: JOB.lon }, toCoord: { lat: 37.7500, lng: -97.4500 }, miles: 9, date: new Date(t2).toISOString().slice(0, 10) };
+      mileage.push(A, B);
+      return { A: { legKey: A.legKey, endedIso: A.endedIso }, B: { startedIso: B.startedIso }, jid: String(jid) };
+    }, [886005]);
     const r = await runRecon();
-    expect(r.recRows.length, '14 unobserved hours are not a shift').toBe(0);
+    expect(r.recRows.length, 'a gap crossing into a new calendar day is never claimed').toBe(0);
     expect(r.updates.length).toBe(0);
     await restoreReconSeed();
     await geoRestore();

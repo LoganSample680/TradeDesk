@@ -2487,11 +2487,20 @@ async function _geoReconcileFromMileage(){
       const t1=Date.parse(A.endedIso),t2=Date.parse(B.startedIso);
       if(!(t1>0&&t2>t1))continue;
       if(t2-t1<_GEO_RECON_MIN_GAP_MS)continue;
-      // Unobserved hours are never claimed: the same overnight honesty rule
-      // the fence machine applies to inferred legs (_GEO_MAX_INFERRED_LEG_MS,
-      // "keep the miles, drop the hours"). A gap this long is a phone that
-      // was asleep, not a shift.
-      if(t2-t1>_GEO_MAX_INFERRED_LEG_MS)continue;
+      // Unobserved hours are never claimed, but a real on-site stretch
+      // (arrival AND departure both anchored to an actual mileage leg, not
+      // merely inferred) is nothing like an inferred drive across a sleep
+      // gap. This used to reuse _GEO_MAX_INFERRED_LEG_MS (4hr, sized for
+      // "how long can a DRIVE plausibly have gone unseen"), and it was
+      // refusing completely ordinary work mornings (owner report
+      // 2026-08-21, mileage log in hand: 8:00am arrival, 12:29pm departure,
+      // 4h29m on site, missed by 29 minutes because a shift is not a drive).
+      // The real risk this guard exists for is an OVERNIGHT or multi-day
+      // gap, not a long shift, so it is bounded by CALENDAR DAY (Central
+      // time, the app's own convention, _ctDateStr) instead of a flat
+      // duration: the same day is trusted whatever it adds up to, a gap
+      // that crosses into a new day never is.
+      if(_ctDateStr(new Date(t1))!==_ctDateStr(new Date(t2)))continue;
       if(!A.toCoord||A.toCoord.lat==null)continue;
       // B's own LOGGED origin is never required to match the job (owner,
       // 2026-08-21): if GPS was spotty leaving the site, the departure leg
