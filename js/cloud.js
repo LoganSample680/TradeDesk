@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.21.26.12';
+const APP_VERSION='08.21.26.13';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1818,6 +1818,10 @@ function _bootSyncSettled(){
   // heal=true: boot is the one moment the wider overlapping-clocks twin rule
   // is safe, the live sweep stays strict (see _mileSameLeg).
   try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
+  // Same idea for job_time_entries (js/geo-track.js _geoDedupTimeEntries,
+  // owner rule 2026-08-21): a duplicate visit collapses to the longest here
+  // too, whatever wrote it and whenever.
+  try{if(typeof _geoDedupTimeEntries==='function')_geoDedupTimeEntries();}catch(_e){}
 }
 function _removeBootOverlay(immediate){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
@@ -7393,6 +7397,11 @@ async function supaLoadFromCloud({silent=false}={}){
     // them. Healing here re-collapses any resurrection the moment it arrives;
     // the saveAll inside the sweep then propagates the deletes for real.
     try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
+    // Same reconnect-triggered heal for job_time_entries duplicates, same
+    // reasoning: a delete that never reached the cloud (offline heal) comes
+    // back the moment the cloud's copy merges in, so this re-collapses it
+    // for real, this time with a live connection to make the delete stick.
+    try{if(typeof _geoDedupTimeEntries==='function')_geoDedupTimeEntries();}catch(_e){}
     // The retroactive walk sweep rides the same settle point: the coprocessor
     // holds ~a week of history, so a leg that over-paid an errand's detour
     // before the walk check existed corrects itself here (once per session,
@@ -7913,7 +7922,15 @@ function _initRealtimeSubscriptions(uid){
     _supa.channel('sig-feed-'+_supaUser.id)
       .on('postgres_changes',{event:'*',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{checkNewSignatures('push');})
       .on('postgres_changes',{event:'*',schema:'public',table:'proposal_views',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{_fetchProposalViews();})
-      .on('postgres_changes',{event:'*',schema:'public',table:'job_time_entries',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{_fetchProposalViews();})
+      .on('postgres_changes',{event:'*',schema:'public',table:'job_time_entries',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{
+        _fetchProposalViews();
+        // A peer's own offline dedup can leave a delete stranded locally (it
+        // never reached the cloud), so its duplicate rides back in over
+        // realtime the moment that peer reconnects. Re-collapse shortly
+        // after the burst settles, same debounce shape as td_mileage above.
+        clearTimeout(window._rtTimeDedupTimer);
+        window._rtTimeDedupTimer=setTimeout(()=>{try{if(typeof _geoDedupTimeEntries==='function')_geoDedupTimeEntries();}catch(_e){}},1500);
+      })
       .subscribe(_sigFeedStatus);
   }catch(_sf){}
   try{

@@ -96,7 +96,16 @@ test.describe('Geo park detection + mileage reconciliation', () => {
           return q;
         },
         update: (patch) => ({ eq: (col, val) => { window.__rec.updates.push({ tbl, patch, col, val }); return Promise.resolve({ data: null, error: null }); } }),
-        delete: () => ({ eq: () => ({ lt: () => ({ then: (res) => { res && res({}); return { catch: () => {} }; } }) }) }),
+        // Chainable AND directly awaitable, same reasoning as upsert/insert
+        // above: location_pings pruning chains .eq().lt().then(), while
+        // _geoDedupTimeEntries just awaits .eq(col,val) bare.
+        delete: () => ({
+          eq: (col, val) => {
+            window.__rec.deletes.push({ tbl, col, val });
+            const q = { lt: () => q, then: (res, rej) => Promise.resolve({ data: null, error: null }).then(res, rej) };
+            return q;
+          },
+        }),
       }),
     };
   });
@@ -356,20 +365,31 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
-  test('reconciliation: a window the server already covers writes nothing', async () => {
+  // Owner correction (2026-08-21): the coverage-check/extend-in-place design
+  // below (skip when an existing row covers ≥80%, extend a truncated stub
+  // rather than insert) was itself the bug, two real duplicate rows landed
+  // on the SAME visit in production despite this exact check. Rather than
+  // debug an increasingly clever write-time decision, the reconciler now
+  // just writes plain, every time, the same way every other source in this
+  // file does, and a SEPARATE dedup sweep (_geoDedupTimeEntries, tested
+  // below) cleans up whatever overlaps afterward, mirroring how mileage
+  // duplicates are handled. These two tests used to assert the removed
+  // skip/extend behavior; they now assert the reconciler no longer tries to
+  // be clever at write time at all.
+  test('reconciliation: writes its window even when the server already holds a covering row (dedup cleans up after, not a write-time skip)', async () => {
     await geoReset();
     const seed = await seedReconPair(886002);
     await page.evaluate((s) => {
       window.__selRows = [{ id: 11, client_key: 'k11', job_id: s.jid, arrived_at: s.A.endedIso, departed_at: s.B.startedIso, minutes: 120, source: 'geofence' }];
     }, seed);
     const r = await runRecon();
-    expect(r.recRows.length).toBe(0);
-    expect(r.updates.length).toBe(0);
+    expect(r.recRows.length, 'no more coverage-check skip: the window always writes').toBe(1);
+    expect(r.updates.length, 'no more extend-in-place branch at all').toBe(0);
     await restoreReconSeed();
     await geoRestore();
   });
 
-  test('reconciliation: a truncated geofence row for the same job is EXTENDED to the union, not doubled', async () => {
+  test('reconciliation: never extends a truncated stub in place anymore, it inserts its own row', async () => {
     await geoReset();
     const seed = await seedReconPair(886003);
     // The owner's screenshot case: a 9-minute row for what was a 2-hour visit.
@@ -379,17 +399,108 @@ test.describe('Geo park detection + mileage reconciliation', () => {
                             departed_at: new Date(t1 + 9 * 60000).toISOString(), minutes: 9, source: 'geofence' }];
     }, seed);
     const r = await runRecon();
-    expect(r.updates.length, 'the stub row was extended in place').toBe(1);
-    const u = r.updates[0];
-    expect(u.tbl).toBe('job_time_entries');
-    expect(u.col).toBe('id');
-    expect(u.val).toBe(77);
-    expect(u.patch.arrived_at).toBe(seed.A.endedIso);          // union start = the row's own arrival
-    expect(u.patch.departed_at).toBe(seed.B.startedIso);       // union end = when leg B pulled away
-    expect(u.patch.minutes).toBe(120);
-    expect(u.patch.source).toBe('geofence-reconciled');
-    expect(r.recRows.length, 'no second overlapping row stacked on the stub').toBe(0);
+    expect(r.updates.length, 'the update/extend branch is gone').toBe(0);
+    expect(r.recRows.length, 'its own full-window row is inserted instead').toBe(1);
+    expect(r.recRows[0].arrived_at).toBe(seed.A.endedIso);
+    expect(r.recRows[0].departed_at).toBe(seed.B.startedIso);
+    expect(r.recRows[0].minutes).toBe(120);
     await restoreReconSeed();
+    await geoRestore();
+  });
+
+  // ── _geoDedupTimeEntries (owner rule 2026-08-21) ─────────────────────────
+  // The replacement for the removed coverage-check: same job/place + person +
+  // overlapping windows collapses to the longest, mirroring _mileDedupTrips
+  // for mileage. Runs against the server directly (no local job_time_entries
+  // array like mileage has), so these seed window.__selRows as the server's
+  // current rows and assert on window.__rec.deletes.
+  const dedupCall = () => page.evaluate(async () => {
+    window.__rec.deletes.length = 0;
+    const dropped = await _geoDedupTimeEntries();
+    return { dropped, deletes: window.__rec.deletes.slice() };
+  });
+
+  test('dedup: the longer of two overlapping automatic rows on the same job survives', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 501, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+        { id: 502, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence-reconciled',
+          arrived_at: new Date(now - 3.05 * 3600000).toISOString(), departed_at: new Date(now - 0.9 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await dedupCall();
+    expect(r.dropped).toBe(1);
+    expect(r.deletes.length).toBe(1);
+    expect(r.deletes[0].val, 'the shorter row (501) loses to the longer one (502)').toBe(501);
+    await geoRestore();
+  });
+
+  test('dedup: a manual bookend never loses, an overlapping automatic row does', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 601, employee_user_id: 'geo-park-user-1', job_id: '88', dest_place: null, source: 'manual',
+          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+        // Longer than the manual row, but manual still must win.
+        { id: 602, employee_user_id: 'geo-park-user-1', job_id: '88', dest_place: null, source: 'geofence-reconciled',
+          arrived_at: new Date(now - 4.5 * 3600000).toISOString(), departed_at: new Date(now - 0.5 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await dedupCall();
+    expect(r.dropped).toBe(1);
+    expect(r.deletes[0].val, "a human's clock record always wins, even over a longer automatic row").toBe(602);
+    await geoRestore();
+  });
+
+  test('dedup: two genuinely separate visits to the same job (no time overlap) are both kept', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 701, employee_user_id: 'geo-park-user-1', job_id: '99', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 6 * 3600000).toISOString(), departed_at: new Date(now - 5 * 3600000).toISOString() },
+        { id: 702, employee_user_id: 'geo-park-user-1', job_id: '99', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 2 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await dedupCall();
+    expect(r.dropped, 'a gap between visits is not a duplicate').toBe(0);
+    await geoRestore();
+  });
+
+  test('dedup: different jobs never merge, however close in time', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 801, employee_user_id: 'geo-park-user-1', job_id: '111', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+        { id: 802, employee_user_id: 'geo-park-user-1', job_id: '222', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await dedupCall();
+    expect(r.dropped, 'identical windows at two different jobs are not the same visit').toBe(0);
+    await geoRestore();
+  });
+
+  test('dedup: drive-sourced rows are never touched, even overlapping an on-site row', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 901, employee_user_id: 'geo-park-user-1', job_id: '333', dest_place: null, source: 'drive-unassigned',
+          arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+        { id: 902, employee_user_id: 'geo-park-user-1', job_id: '333', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 2.9 * 3600000).toISOString(), departed_at: new Date(now - 0.9 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await dedupCall();
+    expect(r.dropped, 'wheel time and on-site time overlapping in transition is normal, not a duplicate').toBe(0);
     await geoRestore();
   });
 

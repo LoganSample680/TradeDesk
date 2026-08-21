@@ -2597,10 +2597,12 @@ function stopGeoTracking(){
 // the MILEAGE legs on either side pin the truth: leg N ended AT the job at
 // endedIso, leg N+1 started FROM the same spot at startedIso, so the span
 // between them IS on-site time. This sweeps recent auto legs, finds those
-// job-anchored gaps, and repairs the log: extending a truncated geofence row
-// when one exists, inserting a 'geofence-reconciled' row when nothing does.
-// Never destructive, never claims unobserved overnight hours, and a human's
-// manual clock record always wins.
+// job-anchored gaps, and repairs the log by inserting a 'geofence-reconciled'
+// row for the window (2026-08-21: no more skip/extend decision at write
+// time, see the comment further down; _geoDedupTimeEntries cleans up any
+// overlap with what live detection already wrote). Never destructive, never
+// claims unobserved overnight hours, and a human's manual clock record
+// always wins.
 const _GEO_RECON_MIN_GAP_MS=5*60000;   // under this the fence machine already told the story
 const _GEO_RECON_EVERY_MS=10*60000;    // slow-burn cadence off the ping stream
 let _geoReconBusy=false;
@@ -2750,66 +2752,28 @@ async function _geoReconcileFromMileage(){
       wins.push({A,B,t1,t2,jobId:String(jb.id),legKey:jbLeg.legKey});
     }
     if(!wins.length)return;
-    // ONE coverage query for every window: what does the server already hold
-    // for this person across the whole span. On any error, return silently,
-    // offline is normal here and the next trigger retries.
-    let rows=[];
-    try{
-      const loIso=new Date(Math.min.apply(null,wins.map(w=>w.t1))).toISOString();
-      const hiIso=new Date(Math.max.apply(null,wins.map(w=>w.t2))).toISOString();
-      const {data,error}=await _supa.from('job_time_entries')
-        .select('id,client_key,job_id,arrived_at,departed_at,minutes,source')
-        .eq('contractor_user_id',_geoCid()).eq('employee_user_id',_supaUser.id)
-        .lt('arrived_at',hiIso).gt('departed_at',loIso);
-      if(error||!Array.isArray(data)){_geoParkNote('recon-win','coverage query error: '+(error?String(error.message||error):'bad data'));return;}
-      rows=data;
-      // Owner report 2026-08-21: two duplicate rows landed on the same job
-      // (Aug 18 + Aug 19) despite an existing 'geofence' row that should have
-      // tripped the 80% skip below. Every static check (contractor/employee
-      // id match, RLS) came back clean, so this logs the raw fetch itself:
-      // if the account genuinely has more job_time_entries in [loIso,hiIso]
-      // than this query returns, that gap is the bug.
-      _geoParkNote('recon-win','coverage fetch: '+rows.length+' rows in ['+loIso.slice(0,16)+'..'+hiIso.slice(0,16)+']');
-    }catch(_e){_geoParkNote('recon-win','coverage fetch failed, retrying next pass: '+String((_e&&_e.message)||_e));return;}
+    // No coverage query here anymore (owner 2026-08-21: "why is this so
+    // complicated, follow the way mileage does it"). This used to fetch the
+    // server's existing rows and decide skip/extend/insert before writing,
+    // and that decision was exactly where a real duplicate slipped through:
+    // two rows landed side by side on the same Aug 18/19 visit even though
+    // one should have covered the other, and adding more diagnostics to that
+    // check (the previous commit) never actually explained why. So it is
+    // gone, not patched again.
+    //
+    // Every window just writes now, plain, the same way every OTHER source in
+    // this file does (_geoCloseEntry, _geoDriveEntry, …): 'rec-'+legKey is
+    // deterministic, so a re-run of the SAME window can never double-claim
+    // itself (the server's unique contractor_user_id+client_key index catches
+    // that for free, same as always). Any overlap with a DIFFERENT row (a
+    // live 'geofence' entry that already covered this visit, a second pass's
+    // own insert) is cleaned up by _geoDedupTimeEntries right after this
+    // returns: the same "keep the longest, drop the rest" sweep
+    // _mileDedupTrips already runs for mileage duplicates, applied to
+    // job_time_entries. Simpler, and the actual bug can't hide inside a
+    // clever decision that never gets exercised by a real test.
     for(const w of wins){
       const span=w.t2-w.t1;
-      const _wTag2=new Date(w.t1).toISOString().slice(5,16)+'@job'+w.jobId;
-      const overl=rows.filter(r=>r&&r.arrived_at&&r.departed_at&&
-        Date.parse(r.arrived_at)<w.t2&&Date.parse(r.departed_at)>w.t1);
-      // Coverage counts ON-SITE evidence only: geofence visits (gap-resolved
-      // and reconciled included) and stops. Drive rows are wheel time, a
-      // drive "covering" the window would be the very defect being repaired.
-      let covered=0;
-      for(const r of overl){
-        if(!/^(geofence|stop)/.test(String(r.source||'')))continue;
-        covered+=Math.min(w.t2,Date.parse(r.departed_at))-Math.max(w.t1,Date.parse(r.arrived_at));
-      }
-      // Always logged (not just on skip): the "wrote"/"extended" branches
-      // below need this number too, so a future duplicate shows its own
-      // coverage% right next to the write that shouldn't have happened.
-      _geoParkNote('recon-win',_wTag2+': '+overl.length+' overlapping row(s), covered '+Math.round(covered/span*100)+'%');
-      if(covered>=span*0.8){_geoParkNote('recon-win','already covered '+Math.round(covered/span*100)+'%');continue;}
-      // A truncated geofence row for the SAME job: extend the largest one to
-      // the union of its own span and the window, rather than stacking a
-      // second overlapping row next to a 9-minute stub.
-      const cand=overl.filter(r=>/^geofence/.test(String(r.source||''))&&String(r.job_id)===w.jobId&&r.id!=null)
-        .sort((a,b)=>(Date.parse(b.departed_at)-Date.parse(b.arrived_at))-(Date.parse(a.departed_at)-Date.parse(a.arrived_at)))[0];
-      if(cand){
-        const uS=Math.min(w.t1,Date.parse(cand.arrived_at)),uE=Math.max(w.t2,Date.parse(cand.departed_at));
-        try{
-          await _supa.from('job_time_entries').update({
-            arrived_at:new Date(uS).toISOString(),departed_at:new Date(uE).toISOString(),
-            minutes:Math.max(0,Math.round((uE-uS)/60000)),source:'geofence-reconciled'
-          }).eq('id',cand.id);
-        }catch(_e){}
-        _geoParkNote('recon-win','extended row '+cand.id+' to '+Math.max(0,Math.round((uE-uS)/60000))+'m');
-        continue;
-      }
-      // Nothing to extend: insert the window whole. 'rec-'+legKey is
-      // deterministic (the matched member leg's own legKey, _geoLegKey), so
-      // with the server's unique (contractor_user_id,client_key) index a
-      // re-run, or a coverage fetch racing a slow write, can never
-      // double-claim the hours.
       _geoEnqueue('job_time_entries',{
         contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
         job_id:w.jobId,arrived_at:w.A.endedIso,departed_at:w.B.startedIso,
@@ -2820,7 +2784,77 @@ async function _geoReconcileFromMileage(){
     }
   }catch(_e){}
   finally{_geoReconBusy=false;}
+  if(typeof _geoDedupTimeEntries==='function'){try{await _geoDedupTimeEntries();}catch(_e){}}
   return true;
+}
+
+// ── Time entry dedup (owner rule 2026-08-21: "why can't this be as simple as
+// mileage") ──────────────────────────────────────────────────────────────
+// Mirrors _mileDedupTrips (js/mileage.js): same person, same destination,
+// overlapping windows is one visit, keep the longest, drop the rest. Unlike
+// mileage there is no synced local array for job_time_entries (js/finance.js
+// _fetchCrewLabor queries the server fresh every time Time Log opens), so
+// this fetches, decides, and deletes against the SERVER directly, in one
+// pass. Called right after every reconciliation pass, and (mirroring
+// _mileDedupTrips's own wiring) on boot and cloud reconnect from cloud.js.
+//
+// A human's clock record always wins (same rule the reconciler's own window
+// builder already honors before it ever proposes a window): a 'manual'
+// bookend (the Arrived/Done buttons, js/geo-track.js) is never the row that
+// gets dropped, an automatic row overlapping one always is. Drive-sourced
+// rows are wheel time, never compared here at all, they already carry their
+// own deterministic legKey and their own idempotency.
+//
+// RLS note: an employee's own device can only SELECT its own rows here
+// (policy "Employee reads own job time") and has no delete grant at all, so
+// a dup found on an employee's phone will fail its delete silently (caught
+// below) and simply wait for the owner's own device, which has full
+// contractor-scoped delete rights ("Contractor manages job time"), to run
+// this same sweep and clean up the whole team's duplicates.
+let _geoTimeDedupBusy=false;
+async function _geoDedupTimeEntries(){
+  if(_geoTimeDedupBusy||!_supa||!_supaUser)return 0;
+  _geoTimeDedupBusy=true;
+  try{
+    const cutoff=new Date(Date.now()-7*86400000).toISOString();
+    const {data,error}=await _supa.from('job_time_entries')
+      .select('id,employee_user_id,job_id,dest_place,source,arrived_at,departed_at')
+      .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
+    if(error||!Array.isArray(data)||data.length<2)return 0;
+    // Only ON-SITE presence dedupes: geofence, geofence-gap, geofence-
+    // reconciled, stop, and the manual bookend, never drive/wheel time.
+    const onSite=s=>/^(geofence|stop|manual)$/.test(String(s||''))||/^geofence-/.test(String(s||''));
+    const rows=data.filter(r=>r&&r.id!=null&&r.arrived_at&&r.departed_at&&onSite(r.source));
+    const drop=new Set();
+    for(let i=0;i<rows.length;i++){
+      const a=rows[i];if(drop.has(a.id))continue;
+      for(let j=i+1;j<rows.length;j++){
+        const b=rows[j];if(drop.has(b.id))continue;
+        if(String(a.employee_user_id||'')!==String(b.employee_user_id||''))continue;
+        // Same destination: same job, or (both jobless) the same named place.
+        const sameTarget=a.job_id!=null&&b.job_id!=null
+          ?String(a.job_id)===String(b.job_id)
+          :(a.job_id==null&&b.job_id==null&&a.dest_place&&String(a.dest_place)===String(b.dest_place));
+        if(!sameTarget)continue;
+        const aS=Date.parse(a.arrived_at),aE=Date.parse(a.departed_at);
+        const bS=Date.parse(b.arrived_at),bE=Date.parse(b.departed_at);
+        if(!(aS<bE&&bS<aE))continue;   // no real overlap: two genuinely separate visits
+        const aMan=a.source==='manual',bMan=b.source==='manual';
+        let loser;
+        if(aMan!==bMan)loser=aMan?b:a;               // a human's clock record always wins
+        else loser=(aE-aS)>=(bE-bS)?b:a;              // otherwise the longest measured wins
+        drop.add(loser.id);
+        if(loser.id===a.id)break;
+      }
+    }
+    if(!drop.size)return 0;
+    for(const id of drop){
+      try{await _supa.from('job_time_entries').delete().eq('id',id);}catch(_e){}
+    }
+    _geoParkNote('time-dedup','dropped '+drop.size+' duplicate row(s)');
+    return drop.size;
+  }catch(_e){return 0;}
+  finally{_geoTimeDedupBusy=false;}
 }
 
 // ── Init + two-layer consent ───────────────────────────────────────────────────
