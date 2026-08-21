@@ -2915,3 +2915,13 @@ try{
     if(_grp)_grp.style.display='';
   }
 }catch(_e){}
+// A second, always-reachable copy of the SAME panel under Settings → Cloud
+// sync, next to Location access (owner report 2026-08-21: "where is the
+// tracking diagnostic, don't see it, is it under Developer?", then "I can
+// reach it, just don't see tracking diagnostic panel" once they found
+// Developer, because that whole group is ALSO native-shell-gated above, and
+// they were testing the plain UAT web link, not the TestFlight app). The
+// Developer row needs is_dev in the database; that group needs the native
+// shell; this copy needs neither, plain HTML with no display:none, so it is
+// reachable on every platform and every account the moment this button
+// exists in the page, index.html.

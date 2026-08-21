@@ -4624,6 +4624,27 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.notUnderCloud, 'and no longer beside Cloud sync').toBe(true);
     });
 
+    // Owner report 2026-08-21: the Developer copy needs is_dev in the
+    // database (their real account never had it) AND the native shell (they
+    // were testing the plain UAT web link), so the panel they needed to
+    // unblock a live reconciliation bug was invisible on both counts. This
+    // second copy under Cloud sync needs neither: no display:none in the
+    // HTML, no reveal script gating it, reachable on every platform and
+    // account the moment index.html renders.
+    test('the second diagnostics button, under Cloud sync, is visible with no gating at all', async () => {
+      const r = await page.evaluate(() => {
+        const btn = document.getElementById('set-geo-diag-btn2');
+        return {
+          exists: !!btn,
+          visible: !!btn && btn.style.display !== 'none' && getComputedStyle(btn).display !== 'none',
+          underCloud: !!(btn && btn.closest('#setd-cloud')),
+        };
+      });
+      expect(r.exists).toBe(true);
+      expect(r.visible, 'no is_dev flag or native shell required to see this one').toBe(true);
+      expect(r.underCloud).toBe(true);
+    });
+
     // Owner report (2026-08-09, second sighting): arrow still on after four
     // minutes parked OUTSIDE every fence. Park mode only covered fences;
     // an anonymous stop (lunch, a supply run, a lead's driveway) ran
