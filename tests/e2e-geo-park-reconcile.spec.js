@@ -504,6 +504,45 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // Owner ask (2026-08-21): "everything that should stay actually stays."
+  // Two crew members can legitimately be on the SAME job at the SAME time
+  // (a two-person crew), and their identical windows must never read as one
+  // person's duplicate.
+  test('dedup: two DIFFERENT employees at the same job, same window, both kept', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 1001, employee_user_id: 'crew-member-a', job_id: '444', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+        { id: 1002, employee_user_id: 'crew-member-b', job_id: '444', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await dedupCall();
+    expect(r.dropped, 'a two-person crew at the same job is not a duplicate of itself').toBe(0);
+    await geoRestore();
+  });
+
+  // The actual GPS-drop shape: live detection never wrote anything for a
+  // visit at all (the fence fired, then GPS died mid-visit and the confirm
+  // ping never arrived), so the ONLY record is the reconciler's mileage-
+  // anchored inference. Dedup must be a pure no-op with nothing to compare
+  // against, the hours must not vanish.
+  test('dedup: a GPS-drop visit with only ONE record (nothing to compare) is left untouched', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 1101, employee_user_id: 'geo-park-user-1', job_id: '555', dest_place: null, source: 'geofence-reconciled',
+          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 0.5 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await dedupCall();
+    expect(r.dropped, 'a single record has nothing to dedup against, the hours survive').toBe(0);
+    await geoRestore();
+  });
+
   test('reconciliation: a manual clock record overlapping the window wins, nothing is written', async () => {
     await geoReset();
     const seed = await seedReconPair(886004);
