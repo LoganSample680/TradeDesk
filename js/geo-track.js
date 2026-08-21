@@ -2726,7 +2726,33 @@ async function _geoReconcileFromMileage(){
           if(ft<=margin&&ft<jbFt){jb=j;jbFt=ft;jbLeg=memberLeg;}
         }
       }
-      if(!jb){
+      // CLIENT FALLBACK (owner report 2026-08-21: a client visit reset to
+      // "now" by a mid-visit reload, because _geoPersistOpen/_geoRestoreOpen
+      // only ever covered job/shop/drive state, never a client fence — the
+      // in-memory arrival clock had no crash/reload durability at all. The
+      // mileage legs bounding the SAME visit are not in-memory: they went
+      // through the durable queue the moment the drive closed, well before
+      // any reload could touch them. So a job match is tried first (job is
+      // the strongest fence everywhere else in this file too), and only when
+      // NOTHING scheduled explains the window does a client get a turn,
+      // matched the exact same cache-only way a live ping resolves one
+      // (_geoClientAt): reconciliation must never burn a live geocode either.
+      let cb=null,cbFt=Infinity,cbLeg=null;
+      if(!jb&&typeof clients!=='undefined'&&clients.length){
+        const _cache=(typeof _nearbyGeoCache==='function')?_nearbyGeoCache():{};
+        for(const memberLeg of A.legs){
+          if(!memberLeg.toCoord||memberLeg.toCoord.lat==null)continue;
+          for(const cl of clients){
+            if(!cl||!cl.addr)continue;
+            const hit=_cache[cl.id];
+            if(!hit||hit.addr!==cl.addr)continue;
+            const ft=_geoDistFt({lat:memberLeg.toCoord.lat,lng:memberLeg.toCoord.lng},{lat:hit.lat,lng:hit.lon});
+            if(ft<_minFt)_minFt=ft;
+            if(ft<=margin&&ft<cbFt){cb=cl;cbFt=ft;cbLeg=memberLeg;}
+          }
+        }
+      }
+      if(!jb&&!cb){
         _geoParkNote('recon-win',_wTag+': no job match, '+_myJobs.length+' jobs, nearest '+(_minFt===Infinity?'n/a':Math.round(_minFt)+'ft'));
         continue;
       }
@@ -2748,8 +2774,13 @@ async function _geoReconcileFromMileage(){
            Date.parse(e.start_time)<t2&&(!e.end_time||Date.parse(e.end_time)>t1))){
         _geoParkNote('recon-win',_wTag+': manual entry wins');continue;
       }
-      _geoParkNote('recon-win',_wTag+': candidate @'+(jb.name||jb.id));
-      wins.push({A,B,t1,t2,jobId:String(jb.id),legKey:jbLeg.legKey});
+      if(jb){
+        _geoParkNote('recon-win',_wTag+': candidate @'+(jb.name||jb.id));
+        wins.push({A,B,t1,t2,jobId:String(jb.id),legKey:jbLeg.legKey});
+      }else{
+        _geoParkNote('recon-win',_wTag+': candidate @'+(cb.name||cb.id)+' (client)');
+        wins.push({A,B,t1,t2,clientId:String(cb.id),clientName:cb.name||null,legKey:cbLeg.legKey});
+      }
     }
     if(!wins.length)return;
     // No coverage query here anymore (owner 2026-08-21: "why is this so
@@ -2774,18 +2805,51 @@ async function _geoReconcileFromMileage(){
     // clever decision that never gets exercised by a real test.
     for(const w of wins){
       const span=w.t2-w.t1;
-      _geoEnqueue('job_time_entries',{
+      const mins=Math.max(0,Math.round(span/60000));
+      // Same shape _geoCloseClientEntry already writes for a LIVE client
+      // close (job_id null, dest_place carries the name, source 'place'):
+      // a reconciled client window has to read identically to a live one
+      // everywhere downstream (finance.js, the dedup sweep below) or it
+      // becomes its own second, unmatched category of row.
+      _geoEnqueue('job_time_entries',w.jobId?{
         contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
         job_id:w.jobId,arrived_at:w.A.endedIso,departed_at:w.B.startedIso,
-        minutes:Math.max(0,Math.round(span/60000)),dest_place:null,
+        minutes:mins,dest_place:null,
         client_key:'rec-'+w.legKey,source:'geofence-reconciled'
+      }:{
+        contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+        job_id:null,arrived_at:w.A.endedIso,departed_at:w.B.startedIso,
+        minutes:mins,dest_place:w.clientName,
+        client_key:'rec-'+w.legKey,source:'place-reconciled'
       });
-      _geoParkNote('recon-win','wrote '+Math.max(0,Math.round(span/60000))+'m @job '+w.jobId);
+      _geoParkNote('recon-win','wrote '+mins+'m @'+(w.jobId?'job '+w.jobId:'client '+w.clientId));
     }
   }catch(_e){}
   finally{_geoReconBusy=false;}
+  // Wait for THIS pass's own writes to actually reach the server before
+  // dedup reads it back (bounded, best-effort): _geoEnqueue's drain is
+  // fire-and-forget by design (a write must never block on network), so
+  // calling dedup immediately after enqueueing races those exact writes and
+  // reads a database snapshot that doesn't include them yet. That race is
+  // why the SAME window got written twice, 90 seconds apart, with no dedup
+  // event between (owner's own diagnostic paste 2026-08-21): the first
+  // pass's dedup ran before its own insert had landed, found nothing to
+  // drop, and the second pass repeated the whole cycle blind to the first.
+  if(typeof _geoAwaitQueueDrained==='function')await _geoAwaitQueueDrained();
   if(typeof _geoDedupTimeEntries==='function'){try{await _geoDedupTimeEntries();}catch(_e){}}
   return true;
+}
+// Bounded wait for the durable queue to finish draining, so a caller that
+// needs to read back what it just enqueued (the dedup sweep) sees a database
+// state that actually includes it. Not a correctness guarantee (still real
+// network time, still capped), just closes the race that mattered.
+async function _geoAwaitQueueDrained(maxMs){
+  const deadline=Date.now()+(maxMs||8000);
+  while(Date.now()<deadline){
+    if(!_geoDrainBusy&&_geoQueueRead().length===0)return true;
+    await new Promise(r=>setTimeout(r,150));
+  }
+  return false;
 }
 
 // ── Time entry dedup (owner rule 2026-08-21: "why can't this be as simple as
@@ -2822,8 +2886,15 @@ async function _geoDedupTimeEntries(){
       .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
     if(error||!Array.isArray(data)||data.length<2)return 0;
     // Only ON-SITE presence dedupes: geofence, geofence-gap, geofence-
-    // reconciled, stop, and the manual bookend, never drive/wheel time.
-    const onSite=s=>/^(geofence|stop|manual)$/.test(String(s||''))||/^geofence-/.test(String(s||''));
+    // reconciled, place (a client/saved-place visit, live or reconciled),
+    // stop, and the manual bookend, never drive/wheel time. 'place' was
+    // missing here (owner report 2026-08-21: a client visit reconciled twice
+    // by two reconciliation passes never got cleaned up, because neither
+    // 'place' nor the new 'place-reconciled' matched this regex at all) --
+    // the same class of gap drive rows are deliberately exempt from, except
+    // client/place visits were never MEANT to be exempt, they simply got left
+    // out when this was written for jobs first.
+    const onSite=s=>/^(geofence|stop|manual|place)$/.test(String(s||''))||/^(geofence|place)-/.test(String(s||''));
     const rows=data.filter(r=>r&&r.id!=null&&r.arrived_at&&r.departed_at&&onSite(r.source));
     const drop=new Set();
     for(let i=0;i<rows.length;i++){

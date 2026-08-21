@@ -415,6 +415,144 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // ── Client-address reconciliation (owner report 2026-08-21) ─────────────
+  // A client visit's arrival clock has no crash/reload durability at all
+  // (_geoPersistOpen/_geoRestoreOpen only ever covered job/shop/drive state),
+  // so a mid-visit reload silently resets it to "now" with the real hours
+  // gone from memory. The mileage legs bounding the SAME visit are durable
+  // (queued before any reload could touch them), so the fix is the exact
+  // pattern already proven for jobs: no job scheduled anywhere explains the
+  // window, but a client's cached geocode does, so the reconciler now tries
+  // a client as a fallback and writes the SAME shape a live client close
+  // already uses (_geoCloseClientEntry: job_id null, dest_place, source
+  // 'place') tagged 'place-reconciled' to keep it diagnosable from a live one.
+  const seedReconClientPair = (clientId, opts) => page.evaluate(([cid, o]) => {
+    window.__origJobs = jobs.slice(); jobs.length = 0;
+    window.__origClients = clients.slice(); clients.length = 0;
+    window.__origMileage = mileage.slice(); mileage.length = 0;
+    window.__origTimeEntries = timeEntries.slice(); timeEntries.length = 0;
+    window.__origNearbyCache = localStorage.getItem('zp3_nearby_geo');
+    const CL = { lat: 37.6872, lon: -97.3301 };
+    const addr = '123 Client St';
+    clients.push({ id: cid, name: 'Recon Client', addr });
+    localStorage.setItem('zp3_nearby_geo', JSON.stringify({ [cid]: { lat: CL.lat, lon: CL.lon, addr } }));
+    let T = Date.now();
+    const gapHrs = (o && o.gapHrs) || 2;
+    while (_ctDateStr(new Date(T - (gapHrs + 2) * 3600000)) !== _ctDateStr(new Date(T))) T -= 4 * 3600000;
+    const iso = (ms) => new Date(ms).toISOString();
+    const A = { id: 'mlc-A', gps: true, legKey: 'lgcA-' + cid, startedIso: iso(T - (gapHrs + 2) * 3600000), endedIso: iso(T - (gapHrs + 1) * 3600000),
+                fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: CL.lat, lng: CL.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+    const B = { id: 'mlc-B', gps: true, legKey: 'lgcB-' + cid, startedIso: iso(T - 1 * 3600000), endedIso: iso(T - 0.5 * 3600000),
+                fromCoord: { lat: CL.lat, lng: CL.lon }, toCoord: { lat: 37.7500, lng: -97.4500 }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+    mileage.push(A, B);
+    return { A: { legKey: A.legKey, endedIso: A.endedIso }, B: { startedIso: B.startedIso }, cid: String(cid) };
+  }, [clientId, opts || {}]);
+
+  const restoreReconClientSeed = () => page.evaluate(() => {
+    if (window.__origJobs) { jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null; }
+    if (window.__origClients) { clients.length = 0; window.__origClients.forEach(c => clients.push(c)); window.__origClients = null; }
+    if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; }
+    if (window.__origTimeEntries) { timeEntries.length = 0; window.__origTimeEntries.forEach(t => timeEntries.push(t)); window.__origTimeEntries = null; }
+    if (window.__origNearbyCache == null) localStorage.removeItem('zp3_nearby_geo'); else localStorage.setItem('zp3_nearby_geo', window.__origNearbyCache);
+    window.__origNearbyCache = undefined;
+    _geoJobCoords = {};
+  });
+
+  const runReconClient = () => page.evaluate(async () => {
+    await _geoReconcileFromMileage();
+    await new Promise(res => setTimeout(res, 60));
+    return {
+      recRows: window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && (u.row.source || '') === 'place-reconciled').map(u => u.row),
+    };
+  });
+
+  test('reconciliation: a client-anchored window with NO job scheduled anywhere still repairs (the reload-reset case)', async () => {
+    await geoReset();
+    const seed = await seedReconClientPair(886101);
+    const r = await runReconClient();
+    expect(r.recRows.length, 'exactly one reconciled client row').toBe(1);
+    const row = r.recRows[0];
+    expect(row.client_key).toBe('rec-' + seed.A.legKey);
+    expect(row.job_id).toBe(null);
+    expect(row.dest_place).toBe('Recon Client');
+    expect(row.arrived_at).toBe(seed.A.endedIso);
+    expect(row.departed_at).toBe(seed.B.startedIso);
+    expect(row.minutes).toBe(120);
+    await restoreReconClientSeed();
+    await geoRestore();
+  });
+
+  test('reconciliation: a scheduled JOB still wins over a client at the same coordinates', async () => {
+    await geoReset();
+    const seed = await seedReconClientPair(886102);
+    // A job at the exact same spot, same day, outranks the client fallback
+    // (job is the strongest fence everywhere else in this file too).
+    await page.evaluate((cid) => {
+      jobs.push({ id: 'job-' + cid, name: 'Same Spot Job', lat: 37.6872, lon: -97.3301, start: _ctDateStr(new Date()), days: 1, status: 'upcoming', eventType: 'job' });
+      _geoJobCoords = {};
+    }, seed.cid);
+    const r = await page.evaluate(async () => {
+      await _geoReconcileFromMileage();
+      await new Promise(res => setTimeout(res, 60));
+      return {
+        jobRows: window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && (u.row.source || '') === 'geofence-reconciled'),
+        placeRows: window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && (u.row.source || '') === 'place-reconciled'),
+      };
+    });
+    expect(r.jobRows.length, 'the job wins the window').toBe(1);
+    expect(r.placeRows.length, 'the client never gets a turn once a job matches').toBe(0);
+    await restoreReconClientSeed();
+    await geoRestore();
+  });
+
+  // ── _geoAwaitQueueDrained (owner report 2026-08-21) ──────────────────────
+  // _geoEnqueue's own drain is fire-and-forget by design (a write must never
+  // block on network), so a dedup pass launched immediately after enqueueing
+  // reconciliation writes used to race those exact writes and read the
+  // server before they landed: the SAME window got written twice, 90 seconds
+  // apart, with no dedup cleanup in between (the owner's own live diagnostic
+  // paste). This closes that race with a bounded wait for the queue to
+  // actually finish before dedup runs.
+  test('_geoAwaitQueueDrained: resolves immediately when nothing is queued', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      const t0 = Date.now();
+      const ok = await _geoAwaitQueueDrained(4000);
+      return { ok, ms: Date.now() - t0 };
+    });
+    expect(r.ok).toBe(true);
+    expect(r.ms, 'no reason to wait out the timeout when the queue is already empty').toBeLessThan(1000);
+    await geoRestore();
+  });
+
+  test('_geoAwaitQueueDrained: waits for _geoDrainBusy to clear before returning true', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      _geoDrainBusy = true;
+      setTimeout(() => { _geoDrainBusy = false; }, 300);
+      const t0 = Date.now();
+      const ok = await _geoAwaitQueueDrained(4000);
+      return { ok, ms: Date.now() - t0 };
+    });
+    expect(r.ok).toBe(true);
+    expect(r.ms, 'actually waited for the busy flag to clear, not a no-op').toBeGreaterThanOrEqual(250);
+    await geoRestore();
+  });
+
+  test('_geoAwaitQueueDrained: gives up at the bound rather than hanging forever', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      _geoDrainBusy = true; // never clears
+      const t0 = Date.now();
+      const ok = await _geoAwaitQueueDrained(500);
+      _geoDrainBusy = false;
+      return { ok, ms: Date.now() - t0 };
+    });
+    expect(r.ok, 'times out honestly rather than resolving true on a stuck queue').toBe(false);
+    expect(r.ms).toBeGreaterThanOrEqual(450);
+    await geoRestore();
+  });
+
   // ── _geoDedupTimeEntries (owner rule 2026-08-21) ─────────────────────────
   // The replacement for the removed coverage-check: same job/place + person +
   // overlapping windows collapses to the longest, mirroring _mileDedupTrips
@@ -442,6 +580,28 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     expect(r.dropped).toBe(1);
     expect(r.deletes.length).toBe(1);
     expect(r.deletes[0].val, 'the shorter row (501) loses to the longer one (502)').toBe(501);
+    await geoRestore();
+  });
+
+  // 'place' (a live client/saved-place visit) and 'place-reconciled' were
+  // missing from the dedup sweep's onSite matcher entirely (owner report
+  // 2026-08-21: a client visit reconciled twice by two passes never got
+  // cleaned up, the exact bug this fix closes for job/geofence rows already,
+  // just never extended to clients when this was first written).
+  test('dedup: the longer of two overlapping client/place rows survives (the gap this fix closes)', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 511, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
+          arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+        { id: 512, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place-reconciled',
+          arrived_at: new Date(now - 3.05 * 3600000).toISOString(), departed_at: new Date(now - 0.9 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await dedupCall();
+    expect(r.dropped).toBe(1);
+    expect(r.deletes[0].val, 'the shorter row (511) loses to the longer one (512)').toBe(511);
     await geoRestore();
   });
 
