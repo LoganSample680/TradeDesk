@@ -553,6 +553,64 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // ── _geoDrainQueue: the already-written duplicate must never block the
+  // queue behind it (owner report 2026-08-21, live device) ────────────────
+  // job_time_entries_ckey_uq is a PARTIAL unique index, so PostgREST's
+  // on_conflict can never target it: the first upsert attempt fails with
+  // "constraint" on every single row, always (not an edge case), which is
+  // exactly what the plain-insert fallback exists to route around. But if
+  // THAT row's own client_key was already written by an earlier successful
+  // pass, the plain insert collides with the same partial index and throws
+  // its own "duplicate key value violates unique constraint" error, one the
+  // drain loop had no handling for: it broke and left every row enqueued
+  // after it permanently stuck (the owner's live diagnostic showed 71
+  // pending rows and the exact error text asserted below).
+  test('_geoDrainQueue: a duplicate-key error on our own client_key clears the item instead of blocking the queue', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      localStorage.setItem('zp3_geo_queue', JSON.stringify([
+        { tbl: 'job_time_entries', row: { contractor_user_id: 'geo-park-user-1', employee_user_id: 'geo-park-user-1', job_id: '77', arrived_at: new Date().toISOString(), departed_at: new Date().toISOString(), minutes: 5, client_key: 'rec-dup1', source: 'geofence-reconciled' } },
+      ]));
+      window.__origSupaDrain = window._supa;
+      window._supa = {
+        from: (tbl) => ({
+          upsert: () => Promise.resolve({ error: { message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification' } }),
+          insert: () => Promise.resolve({ error: { message: 'duplicate key value violates unique constraint "job_time_entries_ckey_uq"' } }),
+        }),
+      };
+      await _geoDrainQueue();
+      const result = { lastError: _geoQueueLastError, pending: _geoQueueRead().length };
+      window._supa = window.__origSupaDrain;
+      return result;
+    });
+    expect(r.lastError, 'a duplicate on our own key is durability already achieved, not a failure').toBe(null);
+    expect(r.pending, 'the item is removed, nothing left stuck behind it').toBe(0);
+    await geoRestore();
+  });
+
+  test('_geoDrainQueue: a genuine unrelated error still stops the queue and records why', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      localStorage.setItem('zp3_geo_queue', JSON.stringify([
+        { tbl: 'job_time_entries', row: { contractor_user_id: 'geo-park-user-1', employee_user_id: 'geo-park-user-1', job_id: '77', arrived_at: new Date().toISOString(), departed_at: new Date().toISOString(), minutes: 5, client_key: 'rec-dup2', source: 'geofence-reconciled' } },
+      ]));
+      window.__origSupaDrain = window._supa;
+      window._supa = {
+        from: (tbl) => ({
+          upsert: () => Promise.resolve({ error: { message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification' } }),
+          insert: () => Promise.resolve({ error: { message: 'permission denied for table job_time_entries' } }),
+        }),
+      };
+      await _geoDrainQueue();
+      const result = { lastError: _geoQueueLastError, pending: _geoQueueRead().length };
+      window._supa = window.__origSupaDrain;
+      return result;
+    });
+    expect(r.lastError, 'a real failure still surfaces, this fix only excuses OUR OWN duplicate key').not.toBe(null);
+    expect(r.pending, 'the item stays queued to retry, never silently dropped').toBe(1);
+    await geoRestore();
+  });
+
   // ── _geoDedupTimeEntries (owner rule 2026-08-21) ─────────────────────────
   // The replacement for the removed coverage-check: same job/place + person +
   // overlapping windows collapses to the longest, mirroring _mileDedupTrips

@@ -345,6 +345,24 @@ async function _geoDrainQueue(){
         // way the entry lands, durability beats idempotency when the schema lags.
         if(error&&/on conflict|constraint/i.test(String(error.message||''))){({error}=await _supa.from(item.tbl).insert(item.row));}
         if(error&&/client_key/i.test(String(error.message||''))){const{client_key,...plain}=item.row;({error}=await _supa.from(item.tbl).insert(plain));}
+        // The plain-insert retry above can ALSO hit the same unique index it
+        // exists to route around: job_time_entries_ckey_uq is PARTIAL (where
+        // client_key is not null), so PostgREST's on_conflict param can never
+        // target it at all (no WHERE clause support), and the FIRST upsert
+        // fails with "constraint" on every single row, always, not just when
+        // the schema lags, that's what the fallback above is really for. But
+        // when THIS row's own client_key was already written by an earlier
+        // successful pass, the plain-insert retry collides with that same
+        // partial index and throws its own "duplicate key value violates
+        // unique constraint" error, which also contains the word
+        // "constraint" so it slips past the first check unretried, and the
+        // constraint's own name never matches /client_key/i either. Every
+        // row enqueued after this one then never even got attempted (owner
+        // report 2026-08-21: 71 rows stuck behind one already-written
+        // window). A duplicate on OUR OWN deterministic key means the row is
+        // already in the database, durability already achieved: that is
+        // success, not a reason to block everything behind it forever.
+        if(error&&/duplicate key value violates unique constraint/i.test(String(error.message||''))){error=null;}
       }catch(_e){error=_e;}
       if(error){
         // A stuck queue used to be completely invisible: the error was swallowed
