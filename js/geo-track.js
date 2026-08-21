@@ -127,6 +127,46 @@ let _geoExitPending=null;
 // A fix worse than this can't be used to declare someone gone; it's simply
 // ignored and the entry stays open until a tighter fix arrives.
 const _GEO_GAP_EXIT_MAX_ACC_M=100;
+// FLICKER-UNDO CANDIDATE (owner video 2026-08-20, same day as the mandate
+// above): _geoExitPending gates when a departure is trusted, but once it IS
+// trusted (a single spurious driving-speed reading, or two borderline-
+// accuracy pings agreeing) and the drive clock opens, the VERY NEXT ping
+// landing back inside that SAME fence had no guard at all: it went through
+// the unconditional "single clean ping into a well-defined fence" trust path
+// (the DIRECT rural-reconnect case this app deliberately never gates, see the
+// comment on that branch below), because by then `prev` reads null, so the
+// re-entry looks identical to a brand-new arrival. GPS settling back after a
+// boundary-jitter blip closed a real visit and re-opened it, logging a
+// phantom "Driving" leg for the gap (owner: two same-job legs 7:52-8:00/8:02,
+// then several more 2-6 minute job<->shop blips through midday while parked).
+//
+// Snapshot taken the instant a job/place/client exit is confirmed, holding
+// exactly what would let the very next ping undo it if it turns out to be
+// the same fence, moments later:
+//   {kind, id}          : the fence identity that was just confirmed departed
+//   arrivedAt            : its ORIGINAL arrival time, to restore if this was
+//                          nothing
+//   wroteRow              : did the close actually enqueue a row. Only false
+//                          (mins<2, the close's OWN existing floor) is safe
+//                          to restore: restoring over a row that already made
+//                          it into the queue would double-count that segment
+//                          when the visit finally closes for real. When true,
+//                          the flicker is still worth catching for the drive
+//                          leg (below), just not for re-stitching the dwell.
+//   driveStartedAt        : the exact _geoDriveStartedAt ISO this candidate
+//                          belongs to. Every existing test in this file (and
+//                          every real restart) resets _geoDriveStartedAt to
+//                          null/fresh, so requiring an EXACT match is what
+//                          keeps a leftover candidate from ever pairing with
+//                          an unrelated, later drive that happens to share a
+//                          job id, independent of the wall-clock bound below.
+// Bounded by _GEO_PARK_MS, the same "stationary long enough to trust" window
+// the park resolver already uses elsewhere in this function, reused rather
+// than inventing a new constant: a genuine round trip back to the same
+// address inside four minutes is vanishingly rare, and this only ever
+// intervenes when the destination is the EXACT fence just left, never a
+// different one, so the protected direct-into-a-new-fence case is untouched.
+let _geoFlickerCandidate=null;
 // A single ping inside a job/shop/place fence looks identical whether someone
 // parked there or just drove through it at 40mph (owner report, 2026-08-06:
 // "the mileage hits itself on all geofences the moment you cross without
@@ -927,7 +967,13 @@ async function _geoOnPing(pos){
       _geoExitPending=null;
     }
     // ── 1. Close whatever contained us ──────────────────────────────────────
+    // Snapshot BEFORE closing, kept only in a local var: if this exit turns
+    // out to be a same-fence flicker (settled back moments later), section 3
+    // below decides whether it's safe to undo (see _geoFlickerCandidate).
+    let _flickerPrev=null;
     if(prev){
+      const _preArrived=prev.k==='job'?_geoArrivedAt:prev.k==='place'?_geoPlaceArrivedAt:prev.k==='client'?_geoClientArrivedAt:null;
+      let _wroteClose=false;
       // HIDDEN-GAP RESOLUTION (leave): backgrounded on site, and this now-
       // CONFIRMED reading (gated above) is the first moment a departure was
       // actually verified. That confirmation moment is the departure time,
@@ -936,11 +982,14 @@ async function _geoOnPing(pos){
       // 2026-08-06, superseding the prior "close at the hidden moment"
       // behavior). The 'geofence-gap' source tag still marks the row as
       // gap-resolved rather than continuously observed.
-      if(prev.k==='job'&&_geoArrivedAt)await _geoCloseEntry(_geoCurrentJob,nowIso,!!_geoGapHiddenAt);
-      else if(prev.k==='place'&&_geoPlaceArrivedAt)_geoClosePlaceEntry(_geoCurrentPlace,_geoPlaceArrivedAt,nowIso);
-      else if(prev.k==='client'&&_geoClientArrivedAt)_geoCloseClientEntry(_geoCurrentClient,_geoClientArrivedAt,nowIso);
+      if(prev.k==='job'&&_geoArrivedAt)_wroteClose=await _geoCloseEntry(_geoCurrentJob,nowIso,!!_geoGapHiddenAt);
+      else if(prev.k==='place'&&_geoPlaceArrivedAt)_wroteClose=_geoClosePlaceEntry(_geoCurrentPlace,_geoPlaceArrivedAt,nowIso);
+      else if(prev.k==='client'&&_geoClientArrivedAt)_wroteClose=_geoCloseClientEntry(_geoCurrentClient,_geoClientArrivedAt,nowIso);
       // prev.k==='shop' needs nothing here: the independent shop block above
       // owns that dwell, and only closes it when they actually leave the yard.
+      if((prev.k==='job'||prev.k==='place'||prev.k==='client')&&_preArrived){
+        _flickerPrev={kind:prev.k,id:prev.id,arrivedAt:_preArrived,wroteRow:_wroteClose};
+      }
     }else if(_geoStopAnchor){
       // Leaving a stop settles it AND splits the leg at the kerb, so the parked
       // minutes never ride out attached to the drive entry.
@@ -974,6 +1023,20 @@ async function _geoOnPing(pos){
       _geoLegOrigin=_geoLastFenceLoc;
     }
     // ── 3. Enter the new one ────────────────────────────────────────────────
+    // FLICKER-UNDO (owner video 2026-08-20, see _geoFlickerCandidate above):
+    // checked before arriveIso is finalized below, because a confirmed
+    // flicker means the real arrival time is the ORIGINAL one, not now. Every
+    // field has to line up: the exact drive this candidate belongs to
+    // (driveStartedAt===legStart, so a leftover candidate from an unrelated
+    // drive can never match), the SAME fence identity, nothing already
+    // written for the segment that "closed" (wroteRow: restoring over a row
+    // already in the queue would double-count it), and a short enough gap
+    // (_GEO_PARK_MS, reused from the park resolver below) that this reads as
+    // jitter rather than a genuine round trip.
+    const _fc=_geoFlickerCandidate;
+    const _flicker=!!(cur&&_fc&&legStart&&_fc.driveStartedAt===legStart&&_fc.kind===cur.k&&
+      String(_fc.id)===String(cur.id)&&!_fc.wroteRow&&(nowMs-(Date.parse(legStart)||0))<=_GEO_PARK_MS);
+    _geoFlickerCandidate=null;
     // PARK BACKDATE (owner design 2026-08-20): when the park resolver forced
     // this membership, the drive must END at the moment the truck stopped
     // moving (the stationary cluster's birth), not four minutes later when
@@ -981,17 +1044,23 @@ async function _geoOnPing(pos){
     // drive and capture the end time." One-shot: consumed here and nulled
     // unconditionally, so it can never leak onto a later transition. On
     // every ordinary entry arriveIso IS nowIso, nothing else changes.
-    const arriveIso=(cur&&_geoParkBackdate)?_geoParkBackdate:nowIso;
+    const arriveIso=_flicker?_fc.arrivedAt:(cur&&_geoParkBackdate)?_geoParkBackdate:nowIso;
     _geoParkBackdate=null;
     if(cur){
-      _geoCollapseDetours();   // unreceipted anonymous stops between here and the last real endpoint are detours
-      if(legStart){
-        // arriveIso, not null: live it IS now, a replayed TdGeo buffer fix
-        // carries the moment the arrival actually happened, and a park
-        // resolution carries the moment the truck stopped, so the leg's
-        // duration stays honest instead of stretching to the noticing moment.
-        if(cur.k==='job')_geoDriveEntry(cur.id,legStart,null,arriveIso,legGap,curLoc,legStale);
-        else _geoDriveEntry(null,legStart,cur.name,arriveIso,legGap,curLoc,legStale);
+      if(_flicker){
+        // The visit never actually ended: no drive leg to log, nothing to
+        // collapse as a detour, just continue as if the exit never happened.
+        _geoParkNote('flicker-undo',(curLoc&&curLoc.name)||cur.k);
+      }else{
+        _geoCollapseDetours();   // unreceipted anonymous stops between here and the last real endpoint are detours
+        if(legStart){
+          // arriveIso, not null: live it IS now, a replayed TdGeo buffer fix
+          // carries the moment the arrival actually happened, and a park
+          // resolution carries the moment the truck stopped, so the leg's
+          // duration stays honest instead of stretching to the noticing moment.
+          if(cur.k==='job')_geoDriveEntry(cur.id,legStart,null,arriveIso,legGap,curLoc,legStale);
+          else _geoDriveEntry(null,legStart,cur.name,arriveIso,legGap,curLoc,legStale);
+        }
       }
       _geoDriveStartedAt=null;
       _geoDriveReset();
@@ -1005,20 +1074,31 @@ async function _geoOnPing(pos){
         _geoDriveStartedAt=nowIso;_geoLegOrigin=_geoLastFenceLoc;
         _geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs,acc};
         _geoDriveHadPause=false;
+        // This exit was JUST confirmed and the drive is only NOW opening:
+        // stash who we left, so a settle-back into this exact fence within
+        // the grace window above can undo it instead of logging a phantom
+        // round trip (see _geoFlickerCandidate above).
+        if(_flickerPrev)_geoFlickerCandidate={..._flickerPrev,driveStartedAt:_geoDriveStartedAt};
       }
       _geoStopAnchor={lat:here.lat,lng:here.lng,at:nowIso,lastAt:nowIso};
     }
     // ── 4. Commit the new state ─────────────────────────────────────────────
     _geoCurrentJob=(cur&&cur.k==='job')?insideId:null;
-    // arriveIso: nowIso everywhere except a park-resolved job arrival, which
-    // starts when the truck stopped. Place/client stamps stay on nowIso, the
-    // park resolver only ever forces JOB membership.
+    // arriveIso: nowIso everywhere except a park-resolved job arrival (starts
+    // when the truck stopped) or a flicker-undo (starts at the ORIGINAL
+    // arrival). Place/client stamps ride the same arriveIso now too: the park
+    // resolver still never forces place/client membership, so arriveIso is
+    // always nowIso for them outside of a flicker-undo.
     _geoArrivedAt=(cur&&cur.k==='job')?arriveIso:null;
     _geoLegAtShop=!!(cur&&cur.k==='shop');
     _geoCurrentPlace=(cur&&cur.k==='place')?cur.id:null;
-    _geoPlaceArrivedAt=(cur&&cur.k==='place')?nowIso:null;
+    _geoPlaceArrivedAt=(cur&&cur.k==='place')?arriveIso:null;
     _geoCurrentClient=(cur&&cur.k==='client')?cur.id:null;
-    _geoClientArrivedAt=(cur&&cur.k==='client')?nowIso:null;
+    _geoClientArrivedAt=(cur&&cur.k==='client')?arriveIso:null;
+    // A flicker-undo is not a fresh arrival: re-arm the notification dedupe
+    // so the tap-back below (which re-arms itself on every non-job ping,
+    // including the phantom "exit" this undoes) does not fire a duplicate.
+    if(_flicker&&cur&&cur.k==='job')_geoNotifiedArrivalJob=_geoCurrentJob;
     // The park dwell clock starts at the moment THIS fence was entered; a
     // shop-to-job hop must not inherit the shop's dwell.
     _geoFenceEnteredAtMs=cur?nowMs:null;
@@ -1182,19 +1262,24 @@ function _geoWritePing(here,acc){
 // the device before any network is attempted, so a dead spot can never lose it.
 // `departedIso` (optional) closes at an earlier VERIFIED moment, the hidden-gap
 // path: and `gap` tags the row 'geofence-gap' so reports can show confidence.
+// Returns whether a row was actually enqueued (false for `mins<2`/no user/no
+// arrival): _geoOnPing's flicker-undo (see _geoFlickerCandidate) reads this to
+// know whether restoring the original arrival on a same-fence settle-back
+// would double-count a segment that already made it into the queue.
 async function _geoCloseEntry(jobId,departedIso,gap){
   const arrived=_geoArrivedAt; _geoArrivedAt=null;
   _geoClearOpen();
-  if(!arrived)return;
+  if(!arrived)return false;
   const departed=departedIso||new Date().toISOString();
   const mins=Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrived))/60000));
-  if(mins<2)return;            // ignore brief pass-throughs
-  if(!_supaUser)return;
+  if(mins<2)return false;      // ignore brief pass-throughs
+  if(!_supaUser)return false;
   _geoEnqueue('job_time_entries',{
     contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
     job_id:String(jobId),arrived_at:arrived,departed_at:departed,minutes:mins,
     source:gap?'geofence-gap':'geofence'
   });
+  return true;
 }
 function _geoCloseShopEntry(arrivedAt,departedIso){
   if(!arrivedAt)return;
@@ -1258,22 +1343,25 @@ function _geoBindInteract(){
 function _geoIsPlaceSource(s){return String(s||'')==='place';}
 // Time at a known place, closed on departure. Bounded by a real fence at both
 // ends, so unlike an off-job stop this is verified work time.
+// Returns whether a row was actually enqueued, same contract as
+// _geoCloseEntry (see its comment): _geoOnPing's flicker-undo reads this.
 function _geoClosePlaceEntry(placeId,arrivedAt,departedIso){
-  if(!arrivedAt)return;
+  if(!arrivedAt)return false;
   const departed=departedIso||new Date().toISOString();
   // Same rule as the shop: a saved place marked home_office bills active app
   // time only, every other kind bills the dwell.
   const mins=_geoHomeDwell
     ? Math.floor(_geoHomeDwell.activeMs/60000)
     : Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrivedAt))/60000));
-  if(mins<2)return;              // a pass-through, not a stop
-  if(!_supaUser)return;
+  if(mins<2)return false;        // a pass-through, not a stop
+  if(!_supaUser)return false;
   const pl=(typeof getPlaces==='function')?getPlaces().find(p=>String(p.id)===String(placeId)):null;
   _geoEnqueue('job_time_entries',{
     contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
     job_id:null,arrived_at:arrivedAt,departed_at:departed,minutes:mins,
     dest_place:(pl&&pl.name)||null,source:'place'
   });
+  return true;
 }
 // ── Client-address fences (owner report 2026-08-07) ─────────────────────────
 // "Home office to John Doe logged nothing", with the app open the whole
@@ -1327,18 +1415,21 @@ function _geoHasQueuedBid(clientId){
 // The visit itself, closed on departure: same shape as a place visit (the
 // client's name is the destination), so it lands in the day's story and the
 // Time at Places report without a new table or source.
+// Returns whether a row was actually enqueued, same contract as
+// _geoCloseEntry (see its comment): _geoOnPing's flicker-undo reads this.
 function _geoCloseClientEntry(clientId,arrivedAt,departedIso){
-  if(!arrivedAt)return;
+  if(!arrivedAt)return false;
   const departed=departedIso||new Date().toISOString();
   const mins=Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrivedAt))/60000));
-  if(mins<2)return;               // a pass-through, not a visit
-  if(!_supaUser)return;
+  if(mins<2)return false;         // a pass-through, not a visit
+  if(!_supaUser)return false;
   const c=(typeof clients!=='undefined')?clients.find(x=>String(x.id)===String(clientId)):null;
   _geoEnqueue('job_time_entries',{
     contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
     job_id:null,arrived_at:arrivedAt,departed_at:departed,minutes:mins,
     dest_place:(c&&c.name)||null,source:'place'
   });
+  return true;
 }
 // A stop is only real once they LEAVE it, which is also the first moment it can
 // be bounded at both ends. Both edges use a VERIFIED ping rather than now: the

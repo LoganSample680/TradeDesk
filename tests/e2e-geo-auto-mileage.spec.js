@@ -5216,6 +5216,136 @@ test.describe('Automatic mileage from drive legs', () => {
 
   });
 
+  // ── Same-fence flicker (owner video 2026-08-20) ─────────────────────────────
+  // Real device: two near-duplicate "Driving" legs both to job "John Doe",
+  // same start, end times two minutes apart, then several more 2-6 minute
+  // job<->shop blips through midday, all while genuinely parked. Root cause:
+  // once _geoExitPending confirms a departure (a lone driving-speed blip, or
+  // two borderline-accuracy pings agreeing) and the drive clock opens, the
+  // VERY NEXT ping landing back inside that SAME fence had no guard at all,
+  // it went through the unconditional "single clean ping into a well-defined
+  // fence" trust path (protected further below), because by then `prev` reads
+  // null, so the settle-back looks identical to a brand-new arrival. See
+  // _geoFlickerCandidate in js/geo-track.js for the full mechanism.
+  test.describe('same-fence flicker (owner video 2026-08-20)', () => {
+    test('a confirmed exit that settles back into the SAME job within the grace window logs no drive leg and never splits the visit', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realEnq = window._geoEnqueue;
+        const entries = [];
+        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+        _supaUser = { id: 'u-flicker' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null; _geoDriveReset();
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoExitPending = null;
+          _geoFlickerCandidate = null;
+          const ping = (c, extra) => _geoOnPing({
+            coords: Object.assign({ latitude: c.lat, longitude: c.lon, accuracy: 8 }, extra || {}),
+          });
+          // Arrive at the job: single ping, trusted immediately.
+          await ping(a.job);
+          const arrivedAt = _geoArrivedAt;
+          // A spurious driving-speed blip reads them outside every fence: the
+          // exit is confirmed on the FIRST ping (real evidence of motion, by
+          // design, see _GEO_DRIVEBY_SPEED_MPS).
+          await ping(a.road, { speed: 5 });
+          const afterExit = { job: _geoCurrentJob, driveOpen: !!_geoDriveStartedAt, closed: entries.length };
+          // GPS settles right back inside the SAME job fence, moments later.
+          await ping(a.job);
+          const afterFlicker = {
+            job: _geoCurrentJob, arrivedAt: _geoArrivedAt,
+            driveOpen: !!_geoDriveStartedAt, closed: entries.length,
+          };
+          // Backdate the (restored) arrival to simulate a real, longer dwell
+          // already in progress, then leave for real: proves the flicker never
+          // split the visit, the eventual close spans the WHOLE time, the
+          // original arrival included.
+          _geoArrivedAt = new Date(Date.parse(_geoArrivedAt) - 12 * 60000).toISOString();
+          const trueArrivedAt = _geoArrivedAt;
+          await ping(a.road, { speed: 5 });   // the real departure, confirmed immediately
+          await new Promise(r2 => setTimeout(r2, 30));
+          return {
+            arrivedAt, afterExit, afterFlicker, trueArrivedAt,
+            driveRows: entries.filter(e => e.tbl === 'job_time_entries' && /^drive/.test(e.row.source)),
+            allRows: entries.filter(e => e.tbl === 'job_time_entries')
+              .map(e => ({ source: e.row.source, arrived_at: e.row.arrived_at, departed_at: e.row.departed_at, minutes: e.row.minutes, job_id: e.row.job_id })),
+          };
+        } finally {
+          _supaUser = realUser; window._geoEnqueue = realEnq;
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoDriveReset();
+          _geoExitPending = null; _geoFlickerCandidate = null; _geoStopAnchor = null; _geoLegOrigin = null;
+        }
+      }, { job: JOB, road: ROAD });
+
+      expect(r.afterExit.job, 'the spurious exit is confirmed immediately (real evidence of motion)').toBe(null);
+      expect(r.afterExit.driveOpen, 'a drive clock opens for the (phantom) exit').toBe(true);
+      expect(r.afterExit.closed, 'arriving seconds ago: the close floor (mins<2) refuses to write anything yet').toBe(0);
+      expect(r.afterFlicker.job, 'settling back into the SAME job undoes the exit').toBe(9901);
+      expect(r.afterFlicker.arrivedAt, 'the ORIGINAL arrival time survives, not a fresh one').toBe(r.arrivedAt);
+      expect(r.afterFlicker.driveOpen, 'the phantom drive clock is discarded').toBe(false);
+      expect(r.afterFlicker.closed, 'still nothing written after the undo').toBe(0);
+      expect(r.driveRows.length, 'no drive leg was ever logged for the flicker').toBe(0);
+      expect(r.allRows.length, 'exactly one row for the whole visit, never split in two').toBe(1);
+      expect(r.allRows[0].job_id).toBe('9901');
+      expect(r.allRows[0].arrived_at, 'the row spans the ORIGINAL arrival, flicker gap included').toBe(r.trueArrivedAt);
+      expect(r.allRows[0].minutes).toBeGreaterThanOrEqual(12);
+    });
+
+    // The mirror case: a same-fence flicker must never suppress a REAL exit to
+    // somewhere else. This is the "single clean ping into a well-defined
+    // fence" trust path the flicker guard must leave untouched (js/geo-track.js
+    // comment above _geoExitPending): a job/shop/place/client entry is
+    // trusted on ONE ping whether or not a drive clock happens to be open,
+    // because the flicker candidate only ever matches its OWN exact fence.
+    test('settling into a DIFFERENT fence right after an exit is a real trip, not a flicker', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realEnq = window._geoEnqueue;
+        const entries = [];
+        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+        _supaUser = { id: 'u-real-trip' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null; _geoDriveReset();
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoExitPending = null;
+          _geoFlickerCandidate = null;
+          const ping = (c, extra) => _geoOnPing({
+            coords: Object.assign({ latitude: c.lat, longitude: c.lon, accuracy: 8 }, extra || {}),
+          });
+          await ping(a.job);                       // arrive at the job
+          await ping(a.road, { speed: 5 });         // confirmed exit, drive opens
+          // Backdate the drive clock so this reads as a real 20-minute drive,
+          // same as every other real-trip test in this file (drive()'s own
+          // rewind helper): a sub-second synthetic gap between pings would
+          // otherwise trip the existing mins<2 pass-through floor in
+          // _geoDriveEntry, unrelated to the thing under test here.
+          if (_geoDriveStartedAt) _geoDriveStartedAt = new Date(Date.now() - 20 * 60000).toISOString();
+          await ping(a.shop);                       // lands at a DIFFERENT, real fence
+          await new Promise(r2 => setTimeout(r2, 30));
+          return {
+            job: _geoCurrentJob, atShop: _geoWasInShop, legAtShop: _geoLegAtShop,
+            driveRows: entries.filter(e => e.tbl === 'job_time_entries' && /^drive/.test(e.row.source)).length,
+          };
+        } finally {
+          _supaUser = realUser; window._geoEnqueue = realEnq;
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
+          _geoDriveStartedAt = null; _geoDriveReset();
+          _geoExitPending = null; _geoFlickerCandidate = null; _geoStopAnchor = null; _geoLegOrigin = null;
+        }
+      }, { job: JOB, road: ROAD, shop: SHOP });
+
+      expect(r.job, 'no longer at the job').toBe(null);
+      expect(r.atShop, 'a single clean ping into a DIFFERENT fence is still trusted immediately').toBe(true);
+      expect(r.legAtShop).toBe(true);
+      expect(r.driveRows, 'a real trip to a different destination still logs its drive leg').toBe(1);
+    });
+  });
+
   // ── The last leg of the day (owner report 2026-08-09) ───────────────────────
   // "FBC to Culver's for personal lunch, then home, it didn't grab my mileage
   // direct from FBC back to home." The inbound leg was only ever written on
