@@ -501,10 +501,15 @@ function _tlRenderWeekBody(cacheKey){
   // Entries: the only place a manual clock entry can still be edited or
   // deleted (Edit button, _tlRow), scoped to whatever the picker currently
   // shows (a whole week or one day) instead of always the whole week.
+  // Newest entry first within a day, oldest at the bottom (owner request
+  // 2026-08-21). _bkRenderDays groups by day but otherwise renders rows in
+  // whatever order they arrive, so the sort happens here rather than in that
+  // shared helper (Income/Expenses/Client timeline all read it unchanged).
+  const entryRows=scopeRows.slice().sort((a,b)=>(b.startTime||'').localeCompare(a.startTime||''));
   const entriesHtml=scopeRows.length?
     '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)">'+
       '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:0 2px 6px">Entries</div>'+
-      _bkRenderDays('tl',mo,scopeRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,fm)+
+      _bkRenderDays('tl',mo,entryRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,fm)+
     '</div>':'';
   return pickerHtml+scopeHdHtml+'<div style="padding:0 2px 4px">'+summaryHtml+'</div>'+entriesHtml;
 }
@@ -544,6 +549,17 @@ async function renderTimeLog(){
   const shareEl=document.getElementById('tl-share');
   const toggleEl=document.getElementById('tl-scope-toggle');
   el.innerHTML='<div style="padding:6px 2px">'+_tdSkelRows(4,12)+'</div>';
+  // Catch up any already-closed gap before showing hours. _geoReconcileSoon's
+  // periodic trigger only ever fires from a LIVE GPS watcher (js/geo-track.js:
+  // "if(_geoWatchId==null&&_geoNativeWatcherId==null)return;"), so a gap left
+  // by a drive that already finished never gets backfilled once tracking goes
+  // quiet (owner report 2026-08-21: hours still missing on reopening Time Log
+  // well after the job). Opening this page is an explicit, deliberate look at
+  // hours, not ambient background noise, so it calls the reconciler directly
+  // instead of waiting on a live ping stream that may never come again today.
+  if(typeof _geoReconcileFromMileage==='function'){
+    try{await _geoReconcileFromMileage();}catch(_e){}
+  }
   let allRows;
   try{allRows=await _timeLogRows(null);}
   catch(_e){el.innerHTML='<div class="empty">Couldn\'t load time entries.</div>';return;}

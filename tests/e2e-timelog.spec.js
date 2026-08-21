@@ -1009,6 +1009,53 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.anyOpen).toBe(true);
     });
 
+    // Owner report 2026-08-21: entries within a single day had no defined
+    // order at all (_bkRenderDays just renders whatever order they arrived
+    // in). Fixed to sort newest clock-in first, oldest last, matching how a
+    // day actually reads (what you're doing now belongs at the top).
+    test('entries within a day: newest clock-in sorts first (top), oldest last (bottom)', async () => {
+      const r = await page.evaluate(async () => {
+        const now = new Date();
+        const dateStr = now.toISOString().slice(0, 10);
+        const early = new Date(now); early.setHours(8, 0, 0, 0);
+        const late = new Date(now); late.setHours(13, 0, 0, 0);
+        timeEntries.push(
+          { id: 8990201, job_id: 87701, date: dateStr, start_time: early.toISOString(), end_time: new Date(early.getTime() + 30 * 60000).toISOString(), minutes: 30, logged_by_uid: null, logged_by_name: 'Owner (me)' },
+          { id: 8990202, job_id: 87701, date: dateStr, start_time: late.toISOString(), end_time: new Date(late.getTime() + 30 * 60000).toISOString(), minutes: 30, logged_by_uid: null, logged_by_name: 'Owner (me)' }
+        );
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        const rows = [...document.querySelectorAll('#tl-list tr[data-lp-id]')];
+        const idxOf = (id) => rows.findIndex(tr => tr.getAttribute('data-lp-id') === String(id));
+        const result = { earlyIdx: idxOf(8990201), lateIdx: idxOf(8990202) };
+        timeEntries = timeEntries.filter(e => e.id !== 8990201 && e.id !== 8990202);
+        return result;
+      });
+      expect(r.earlyIdx, 'the 8am entry must render').toBeGreaterThanOrEqual(0);
+      expect(r.lateIdx, 'the 1pm entry must render').toBeGreaterThanOrEqual(0);
+      expect(r.lateIdx, 'the later clock-in (1pm) must render before the earlier one (8am): newest on top').toBeLessThan(r.earlyIdx);
+    });
+
+    // Owner report 2026-08-21: opening Time Log well after a job finished
+    // (no live GPS watcher running right then) still showed the gap missing,
+    // because _geoReconcileSoon's periodic trigger only ever fires from a
+    // live watcher. renderTimeLog now calls the reconciler directly on open;
+    // this proves that call happens and never blocks the page on failure.
+    test('renderTimeLog calls the mileage reconciler on open, and a throwing reconciler never blocks the page', async () => {
+      const r = await page.evaluate(async () => {
+        const orig = window._geoReconcileFromMileage;
+        let called = false;
+        window._geoReconcileFromMileage = async () => { called = true; throw new Error('boom'); };
+        try {
+          setTimeLogYear(new Date().getFullYear());
+          await renderTimeLog();
+          return { called, listHtml: document.getElementById('tl-list').innerHTML.length };
+        } finally { window._geoReconcileFromMileage = orig; }
+      });
+      expect(r.called, 'renderTimeLog must call the reconciler').toBe(true);
+      expect(r.listHtml, 'the page must still render even if the reconciler throws').toBeGreaterThan(0);
+    });
+
     // Owner call 2026-08-20 ("don't need pay rate here just time"): this is a
     // pure time report, never dollars, for owner/manager or individual. The
     // owner/manager view breaks hours out per employee (both fixture people
