@@ -543,7 +543,8 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   // and excludes done jobs. So a window at a job scheduled yesterday, or at a
   // job since marked done (the normal finish-then-review flow), matched
   // nothing and silently never repaired, despite the 7-day leg sweep. Now
-  // matched against _geoJobsOnDay(the window's own Central day).
+  // matched by proximity alone (_geoReconcilableJobs), no date filter at all,
+  // see the overrun test below for why even a day-scoped fix wasn't enough.
   test('reconciliation: a window at YESTERDAY\'s job still reconciles today', async () => {
     await geoReset();
     const seed = await page.evaluate(([jid]) => {
@@ -614,6 +615,49 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     });
     r = await runRecon();
     expect(r.recRows.length, 'a cancelled job never claims hours').toBe(0);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  // Owner's own diagnostic paste, round two (2026-08-21): the first day-scoped
+  // fix above still failed on the owner's REAL account. Evidence straight off
+  // the device's tracking journal: a window at "John Doe" matched fine two
+  // days running, then on the THIRD day (the exact 8am-12:29pm gap originally
+  // reported) came back "no job match, 0 day jobs". The job was booked for
+  // 2 days but the crew was still there on day 3, routine in trades work
+  // ("supposed to be two days"), and the calendar's plan is not where the
+  // truck physically was. Matching is proximity-only now (_geoReconcilableJobs,
+  // no date filter at all), so an overrun day reconciles exactly like the
+  // booked days on either side of it.
+  test('reconciliation: a job that ran a day PAST its scheduled span still reconciles that overrun day', async () => {
+    await geoReset();
+    const seed = await page.evaluate(([jid]) => {
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      window.__origTimeEntries = timeEntries.slice(); timeEntries.length = 0;
+      const JOB = { lat: 37.6872, lon: -97.3301 };
+      _geoJobCoords = {};
+      let T = Date.now();
+      while (_ctDateStr(new Date(T - 5 * 3600000)) !== _ctDateStr(new Date(T))) T -= 6 * 3600000;
+      const overrunDay = _ctDateStr(new Date(T - 4.8 * 3600000));
+      // Booked for 2 days ending the day BEFORE the window: exactly the
+      // "supposed to be two days" overrun, invisible under the old
+      // day-scoped match (which would find 0 jobs active on overrunDay).
+      const bookedStart = new Date(new Date(overrunDay + 'T12:00:00Z').getTime() - 86400000).toISOString().slice(0, 10);
+      jobs.push({ id: jid, name: 'Overran Job', lat: JOB.lat, lon: JOB.lon, start: bookedStart, days: 1, status: 'upcoming', eventType: 'job' });
+      const iso = (ms) => new Date(ms).toISOString();
+      mileage.push(
+        { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 5 * 3600000), endedIso: iso(T - 4.8 * 3600000),
+          fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: overrunDay },
+        { id: 'ml-B', gps: true, legKey: 'lgB-' + jid, startedIso: iso(T - 1 * 3600000), endedIso: iso(T - 0.5 * 3600000),
+          fromCoord: { lat: JOB.lat, lng: JOB.lon }, toCoord: { lat: 37.7500, lng: -97.4500 }, miles: 9, date: overrunDay }
+      );
+      return { jid: String(jid), bookedStart, overrunDay };
+    }, [886022]);
+    expect(seed.bookedStart < seed.overrunDay, 'sanity: the job\'s booked span really does end before the window\'s day').toBe(true);
+    const r = await runRecon();
+    expect(r.recRows.length, 'the overrun day reconciles even though the job was booked for the day before').toBe(1);
+    expect(r.recRows[0].job_id).toBe(seed.jid);
     await restoreReconSeed();
     await geoRestore();
   });

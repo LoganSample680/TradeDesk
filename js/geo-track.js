@@ -544,28 +544,32 @@ function _geoMyJobs(){
   }
   return jobs.filter(j=>_jobActiveOn(j,tk));
 }
-// Jobs whose scheduled span covered a PAST day, for reconciliation matching
-// (owner report 2026-08-21: "still not seeing the reconciliation fire, not
-// for yesterday or today"). _geoMyJobs above answers "what should this device
-// fence RIGHT NOW", so it is pinned to today and excludes done jobs, both
-// correct live and both fatal for repairing history: the reconciler sweeps
-// seven days of mileage legs, and a window at a job scheduled yesterday, or
-// at a job since marked done (the NORMAL flow: finish the work, close the
-// job out, then look at hours), matched nothing and silently never repaired.
-// This deliberately diverges from _jobActiveOn (§7.3 divergence note): a
-// completion_date or status done must NOT exclude here, marking a job done
-// after working it is exactly when its hours get reviewed. Only cancelled
-// jobs stay out. Employee scoping matches _geoMyJobs.
-function _geoJobsOnDay(dk){
+// Every reconcilable job, for repairing history. _geoMyJobs above answers
+// "what should this device fence RIGHT NOW", so it is pinned to TODAY and
+// excludes done jobs, both correct live and both fatal for repairing the
+// past: the reconciler sweeps seven days of mileage legs, and a window at a
+// job scheduled yesterday, or since marked done (the NORMAL flow: finish the
+// work, close the job out, then look at hours), matched nothing.
+//
+// A first fix (owner report 2026-08-21, round one) scoped this to jobs whose
+// SCHEDULED span covered the window's own day, which fixed the yesterday/done
+// cases but not a third: a job booked for, say, Aug 18-19 that actually ran
+// into Aug 20 (routine in trades, "supposed to be two days") locked its own
+// third day out of reconciliation, because the calendar never knew about the
+// overrun (owner's own diagnostic paste, round two: the exact 8am-12:29pm
+// window on the day the job overran, "0 day jobs", while the SAME job
+// matched fine the two days before it). The crew was physically there, GPS
+// proves it, the scheduled date range is a plan, not a fact.
+//
+// So there is no date filter at all now: a job's real-world location is what
+// a coordinate match verifies, not whatever the calendar happened to say
+// that week. Only cancelled jobs stay out, nobody worked those. Employee
+// scoping matches _geoMyJobs.
+function _geoReconcilableJobs(){
   const mine=_isEmployee
     ?jobs.filter(j=>String(j.assignedTo)===String(_employeeRecord?.id))
     :jobs;
-  return mine.filter(j=>{
-    if(!j||j.cancelled)return false;
-    const start=j.start||j.date||'';if(!start)return false;
-    const end=addDays(start,(parseInt(j.days)||1)-1);
-    return start<=dk&&end>=dk;
-  });
+  return mine.filter(j=>j&&!j.cancelled);
 }
 async function _geoJobLatLng(j){
   const c0=clients.find(x=>x.id===j.client_id);
@@ -2632,6 +2636,9 @@ async function _geoReconcileFromMileage(){
     // _geoParkNote bounds this; a day rarely has more than a handful of
     // windows.
     _geoParkNote('recon-scan',legs.length+' legs of '+mileage.length+' rows, '+clusters.length+' clusters');
+    // Computed once: no date filter to vary per window anymore (see
+    // _geoReconcilableJobs), so the same list serves every window below.
+    const _myJobs=_geoReconcilableJobs();
     const wins=[];
     for(let i=0;i<clusters.length-1;i++){
       const A=clusters[i],B=clusters[i+1];
@@ -2659,13 +2666,14 @@ async function _geoReconcileFromMileage(){
       // a messy cluster still prove the arrival, even when a sibling blip in
       // the same cluster has a missing or garbage toCoord.
       let jb=null,jbFt=Infinity,jbLeg=null,_minFt=Infinity;
-      // Jobs active ON THE WINDOW'S OWN DAY, not today's fence list
-      // (_geoMyJobs): a yesterday window at a since-finished job is exactly
-      // the case this repairs (owner report 2026-08-21), see _geoJobsOnDay.
-      const _dayJobs=_geoJobsOnDay(_ctDateStr(new Date(t1)));
+      // Which job were they at: proximity only, no date filter (see
+      // _geoReconcilableJobs, owner's own diagnostic paste 2026-08-21: a job
+      // that overran its scheduled span still needs its overrun day
+      // reconciled, the calendar's plan is not what decides where the truck
+      // physically was).
       for(const memberLeg of A.legs){
         if(!memberLeg.toCoord||memberLeg.toCoord.lat==null)continue;
-        for(const j of _dayJobs){
+        for(const j of _myJobs){
           const c=await _geoJobLatLng(j);
           if(!c)continue;
           const ft=_geoDistFt({lat:memberLeg.toCoord.lat,lng:memberLeg.toCoord.lng},c);
@@ -2674,7 +2682,7 @@ async function _geoReconcileFromMileage(){
         }
       }
       if(!jb){
-        _geoParkNote('recon-win',_wTag+': no job match, '+_dayJobs.length+' day jobs, nearest '+(_minFt===Infinity?'n/a':Math.round(_minFt)+'ft'));
+        _geoParkNote('recon-win',_wTag+': no job match, '+_myJobs.length+' jobs, nearest '+(_minFt===Infinity?'n/a':Math.round(_minFt)+'ft'));
         continue;
       }
       // B's own LOGGED origin is never required to match the job (owner,
