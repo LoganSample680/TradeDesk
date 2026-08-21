@@ -280,6 +280,23 @@ function _geoClientKey(){return ((_supaUser&&_supaUser.id)||'anon').slice(0,8)+'
 function _geoLegKey(startedIso){
   return ((_supaUser&&_supaUser.id)||'anon').slice(0,8)+'-leg-'+((Date.parse(startedIso)||0)).toString(36);
 }
+// Same idea as _geoLegKey, for a VISIT close (job/shop/place/client/stop)
+// instead of a drive leg: deterministic on who + what they arrived at + when,
+// so a re-delivered close of the same arrival (a buffered native event
+// replayed, a re-processed ping) mints the same key again instead of a fresh
+// random one. _geoLegKey already got this treatment on 2026-08-11 (the
+// triple-logged drive); the visit closers below never did, which is why a
+// duplicate live/replay pair (2026-08-21, __tdTs) could self-heal on the
+// mileage side (_mileDedupTrips, keyed off legKey) but never on the Time Log
+// side: _geoCloseEntry/_geoCloseShopEntry/_geoClosePlaceEntry/
+// _geoCloseClientEntry/_geoCloseStop all called _geoEnqueue with no
+// client_key at all, so _geoEnqueue minted a random one (_geoClientKey())
+// every single time, and the server's unique (contractor_user_id,client_key)
+// index had nothing to catch. kind distinguishes job/shop/place/client/stop
+// so two different visit TYPES starting at the same instant never collide.
+function _geoVisitKey(kind,id,arrivedIso){
+  return ((_supaUser&&_supaUser.id)||'anon').slice(0,8)+'-vis-'+kind+'-'+(id!=null?String(id):'x')+'-'+((Date.parse(arrivedIso)||0)).toString(36);
+}
 function _geoQueueRead(){try{return JSON.parse(localStorage.getItem(_GEO_QUEUE_KEY)||'[]');}catch(_e){return[];}}
 function _geoQueueWrite(q){try{localStorage.setItem(_GEO_QUEUE_KEY,JSON.stringify(q));}catch(_e){}}
 function _geoEnqueue(tbl,row){
@@ -1305,6 +1322,7 @@ async function _geoCloseEntry(jobId,departedIso,gap){
   _geoEnqueue('job_time_entries',{
     contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
     job_id:String(jobId),arrived_at:arrived,departed_at:departed,minutes:mins,
+    client_key:_geoVisitKey('job',jobId,arrived),
     source:gap?'geofence-gap':'geofence'
   });
   return true;
@@ -1322,7 +1340,8 @@ function _geoCloseShopEntry(arrivedAt,departedIso){
   if(!_supaUser)return;
   _geoEnqueue('shop_time_entries',{
     contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
-    arrived_at:arrivedAt,departed_at:departed,minutes:mins
+    arrived_at:arrivedAt,departed_at:departed,minutes:mins,
+    client_key:_geoVisitKey('shop',null,arrivedAt)
   });
 }
 // destPlace names a non-job destination (a supply house). A leg ending at a
@@ -1387,7 +1406,8 @@ function _geoClosePlaceEntry(placeId,arrivedAt,departedIso){
   _geoEnqueue('job_time_entries',{
     contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
     job_id:null,arrived_at:arrivedAt,departed_at:departed,minutes:mins,
-    dest_place:(pl&&pl.name)||null,source:'place'
+    dest_place:(pl&&pl.name)||null,client_key:_geoVisitKey('place',placeId,arrivedAt),
+    source:'place'
   });
   return true;
 }
@@ -1455,7 +1475,8 @@ function _geoCloseClientEntry(clientId,arrivedAt,departedIso){
   _geoEnqueue('job_time_entries',{
     contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
     job_id:null,arrived_at:arrivedAt,departed_at:departed,minutes:mins,
-    dest_place:(c&&c.name)||null,source:'place'
+    dest_place:(c&&c.name)||null,client_key:_geoVisitKey('client',clientId,arrivedAt),
+    source:'place'
   });
   return true;
 }
@@ -1521,7 +1542,7 @@ function _geoCloseStop(a){
     _geoEnqueue('job_time_entries',{
       contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
       job_id:null,arrived_at:a.at,departed_at:a.lastAt,minutes:mins,
-      dest_place:null,source:'stop'
+      dest_place:null,client_key:_geoVisitKey('stop',null,a.at),source:'stop'
     });
     return;
   }
@@ -1559,7 +1580,7 @@ function _geoCloseStop(a){
   _geoEnqueue('job_time_entries',{
     contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
     job_id:null,arrived_at:a.at,departed_at:a.lastAt,minutes:mins,
-    dest_place:null,source:'stop'
+    dest_place:null,client_key:_geoVisitKey('stop',null,a.at),source:'stop'
   });
 }
 // A personal stop must not become the origin of the next leg. Called once the

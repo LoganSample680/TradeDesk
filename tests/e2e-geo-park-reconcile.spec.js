@@ -681,6 +681,121 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // ── Visit-close idempotency (owner report 2026-08-21) ───────────────────────
+  // _geoLegKey already made a re-delivered DRIVE close idempotent (2026-08-11:
+  // same person + same leg start = same key, so a replayed native event can't
+  // mint a second row). The VISIT closers (job/shop/place/client/stop) never
+  // got the same treatment: _geoEnqueue minted a random client_key every call
+  // (_geoClientKey()), so the exact live/replay duplicate-delivery bug fixed
+  // today for drives (__tdTs) could still double-write a Time Log entry with
+  // nothing to catch it, because two different random keys both pass the
+  // server's unique (contractor_user_id,client_key) index. This is why GPS
+  // mileage self-healed (deterministic legKey + _mileDedupTrips) but Time Log
+  // never did: it had no deterministic key to heal around in the first place.
+  // _geoVisitKey (person + kind + id + arrived_at) closes that gap the same
+  // way _geoLegKey already closed it for drives.
+  test.describe('visit-close idempotency: a re-delivered close writes the same client_key twice', () => {
+    test('_geoCloseEntry (job)', async () => {
+      await geoReset();
+      const r = await page.evaluate(async () => {
+        window.__rec.upserts.length = 0;
+        const arrived = new Date(Date.now() - 10 * 60000).toISOString();
+        _geoArrivedAt = arrived; await _geoCloseEntry(991001, new Date().toISOString());
+        _geoArrivedAt = arrived; await _geoCloseEntry(991001, new Date().toISOString());
+        const otherArrived = new Date(Date.now() - 30 * 60000).toISOString();
+        _geoArrivedAt = otherArrived; await _geoCloseEntry(991001, new Date().toISOString());
+        await new Promise(res => setTimeout(res, 60));
+        const rows = window.__rec.upserts.filter(u => u.tbl === 'job_time_entries').map(u => u.row.client_key);
+        return { rows };
+      });
+      expect(r.rows.length).toBe(3);
+      expect(r.rows[0]).toBe(r.rows[1]);
+      expect(r.rows[0]).not.toBe(r.rows[2]);
+      await geoRestore();
+    });
+
+    test('_geoCloseShopEntry (shop)', async () => {
+      await geoReset();
+      const r = await page.evaluate(async () => {
+        window.__rec.upserts.length = 0;
+        const arrived = new Date(Date.now() - 10 * 60000).toISOString();
+        _geoCloseShopEntry(arrived, new Date().toISOString());
+        _geoCloseShopEntry(arrived, new Date().toISOString());
+        await new Promise(res => setTimeout(res, 60));
+        const rows = window.__rec.upserts.filter(u => u.tbl === 'shop_time_entries').map(u => u.row.client_key);
+        return { rows };
+      });
+      expect(r.rows.length).toBe(2);
+      expect(r.rows[0]).toBeTruthy();
+      expect(r.rows[0]).toBe(r.rows[1]);
+      await geoRestore();
+    });
+
+    test('_geoClosePlaceEntry (place)', async () => {
+      await geoReset();
+      const r = await page.evaluate(async () => {
+        window.__rec.upserts.length = 0;
+        const arrived = new Date(Date.now() - 10 * 60000).toISOString();
+        _geoClosePlaceEntry(991002, arrived, new Date().toISOString());
+        _geoClosePlaceEntry(991002, arrived, new Date().toISOString());
+        await new Promise(res => setTimeout(res, 60));
+        const rows = window.__rec.upserts.filter(u => u.tbl === 'job_time_entries').map(u => u.row.client_key);
+        return { rows };
+      });
+      expect(r.rows.length).toBe(2);
+      expect(r.rows[0]).toBe(r.rows[1]);
+      await geoRestore();
+    });
+
+    test('_geoCloseClientEntry (client)', async () => {
+      await geoReset();
+      const r = await page.evaluate(async () => {
+        window.__rec.upserts.length = 0;
+        const arrived = new Date(Date.now() - 10 * 60000).toISOString();
+        _geoCloseClientEntry(991003, arrived, new Date().toISOString());
+        _geoCloseClientEntry(991003, arrived, new Date().toISOString());
+        await new Promise(res => setTimeout(res, 60));
+        const rows = window.__rec.upserts.filter(u => u.tbl === 'job_time_entries').map(u => u.row.client_key);
+        return { rows };
+      });
+      expect(r.rows.length).toBe(2);
+      expect(r.rows[0]).toBe(r.rows[1]);
+      await geoRestore();
+    });
+
+    test('_geoCloseStop (stop)', async () => {
+      await geoReset();
+      const r = await page.evaluate(async () => {
+        window.__rec.upserts.length = 0;
+        const at = new Date(Date.now() - 20 * 60000).toISOString();
+        const lastAt = new Date(Date.now() - 13 * 60000).toISOString(); // 7 min, clears _GEO_STOP_MS
+        _geoCloseStop({ at, lastAt, lat: 37.7, lng: -97.3, legClosed: true });
+        _geoCloseStop({ at, lastAt, lat: 37.7, lng: -97.3, legClosed: true });
+        await new Promise(res => setTimeout(res, 60));
+        const rows = window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && u.row.source === 'stop').map(u => u.row.client_key);
+        return { rows };
+      });
+      expect(r.rows.length).toBe(2);
+      expect(r.rows[0]).toBeTruthy();
+      expect(r.rows[0]).toBe(r.rows[1]);
+      await geoRestore();
+    });
+
+    test('_geoVisitKey: different kinds and ids never collide even at the same instant', async () => {
+      const r = await page.evaluate(() => {
+        const t = new Date().toISOString();
+        return {
+          jobVsShop: _geoVisitKey('job', 1, t) === _geoVisitKey('shop', null, t),
+          jobIdMatters: _geoVisitKey('job', 1, t) === _geoVisitKey('job', 2, t),
+          sameEverything: _geoVisitKey('job', 1, t) === _geoVisitKey('job', 1, t),
+        };
+      });
+      expect(r.jobVsShop, 'kind is part of the key').toBe(false);
+      expect(r.jobIdMatters, 'id is part of the key').toBe(false);
+      expect(r.sameEverything, 'identical inputs are deterministic').toBe(true);
+    });
+  });
+
   test('no console errors during park/reconcile tests', async () => {
     assertNoErrors(page, 'geo park/reconcile');
   });
