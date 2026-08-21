@@ -238,11 +238,18 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     window.__origMileage = mileage.slice(); mileage.length = 0;
     window.__origTimeEntries = timeEntries.slice(); timeEntries.length = 0;
     const JOB = { lat: 37.6872, lon: -97.3301 };
-    jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
     _geoJobCoords = {};
-    const T = Date.now();
-    const iso = (ms) => new Date(ms).toISOString();
+    // Anchor the whole seeded span inside ONE Central calendar day: the
+    // reconciler's honesty rule refuses windows that cross midnight, so a
+    // raw Date.now() anchor makes this seed flaky for any CI run in the
+    // small hours (same determinism fix the overnight test already got).
+    let T = Date.now();
     const gapHrs = (o && o.gapHrs) || 2;
+    while (_ctDateStr(new Date(T - (gapHrs + 2) * 3600000)) !== _ctDateStr(new Date(T))) T -= 4 * 3600000;
+    // The job is dated to the WINDOW'S day (its Central day-key), which is
+    // what the reconciler's day-scoped job match compares against.
+    jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _ctDateStr(new Date(T - (gapHrs + 1) * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
+    const iso = (ms) => new Date(ms).toISOString();
     const A = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - (gapHrs + 2) * 3600000), endedIso: iso(T - (gapHrs + 1) * 3600000),
                 fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
     const B = { id: 'ml-B', gps: true, legKey: 'lgB-' + jid, startedIso: iso(T - 1 * 3600000), endedIso: iso(T - 0.5 * 3600000),
@@ -296,9 +303,13 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       window.__origMileage = mileage.slice(); mileage.length = 0;
       window.__origTimeEntries = timeEntries.slice(); timeEntries.length = 0;
       const JOB = { lat: 37.6872, lon: -97.3301 };
-      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
       _geoJobCoords = {};
-      const T = Date.now();
+      // Same-Central-day anchor + job dated to the window's own Central
+      // day-key: the reconciler's day rules (midnight refusal, day-scoped
+      // job match) both read Central time, a raw now/UTC date drifts on CI.
+      let T = Date.now();
+      while (_ctDateStr(new Date(T - 3 * 3600000)) !== _ctDateStr(new Date(T))) T -= 4 * 3600000;
+      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _ctDateStr(new Date(T - 2 * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
       const iso = (ms) => new Date(ms).toISOString();
       const A = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 3 * 3600000), endedIso: iso(T - 2 * 3600000),
                   fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
@@ -323,9 +334,12 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       window.__origMileage = mileage.slice(); mileage.length = 0;
       window.__origTimeEntries = timeEntries.slice(); timeEntries.length = 0;
       const JOB = { lat: 37.6872, lon: -97.3301 };
-      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
       _geoJobCoords = {};
-      const T = Date.now();
+      // Same-Central-day anchor + job dated to the window's own Central
+      // day-key, same reasoning as the no-fromCoord seed above.
+      let T = Date.now();
+      while (_ctDateStr(new Date(T - 3 * 3600000)) !== _ctDateStr(new Date(T))) T -= 4 * 3600000;
+      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _ctDateStr(new Date(T - 2 * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
       const iso = (ms) => new Date(ms).toISOString();
       const A = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 3 * 3600000), endedIso: iso(T - 2 * 3600000),
                   fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
@@ -449,9 +463,12 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       window.__origMileage = mileage.slice(); mileage.length = 0;
       window.__origTimeEntries = timeEntries.slice(); timeEntries.length = 0;
       const JOB = { lat: 37.6872, lon: -97.3301 };
-      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
       _geoJobCoords = {};
-      const T = Date.now();
+      // Same-Central-day anchor + job dated to the window's own Central
+      // day-key, same reasoning as the fromCoord seeds above.
+      let T = Date.now();
+      while (_ctDateStr(new Date(T - 5 * 3600000)) !== _ctDateStr(new Date(T))) T -= 6 * 3600000;
+      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _ctDateStr(new Date(T - 4.8 * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
       const iso = (ms) => new Date(ms).toISOString();
       // The morning cluster: two legs starting at the SAME instant (the
       // reported duplicate), pushed in this order so a stable sort keeps
@@ -491,9 +508,12 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       window.__origMileage = mileage.slice(); mileage.length = 0;
       window.__origTimeEntries = timeEntries.slice(); timeEntries.length = 0;
       const JOB = { lat: 37.6872, lon: -97.3301 };
-      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
       _geoJobCoords = {};
-      const T = Date.now();
+      // Same-Central-day anchor + job dated to the window's own Central
+      // day-key, same reasoning as the fromCoord seeds above.
+      let T = Date.now();
+      while (_ctDateStr(new Date(T - 5 * 3600000)) !== _ctDateStr(new Date(T))) T -= 6 * 3600000;
+      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _ctDateStr(new Date(T - 4.8 * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
       const iso = (ms) => new Date(ms).toISOString();
       const legA = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 5 * 3600000), endedIso: iso(T - 4.833 * 3600000),
                      fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
@@ -514,6 +534,106 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     expect(row.departed_at).toBe(seed.legBStart);
     expect(row.client_key).toBe('rec-' + seed.legAKey);  // keyed off the MATCHING member
     await restoreReconSeed();
+    await geoRestore();
+  });
+
+  // Owner report 2026-08-21 ("still not seeing the reconciliation fire, not
+  // for yesterday or today"): the reconciler matched arrivals against
+  // _geoMyJobs(), the LIVE fence list, which is pinned to jobs active TODAY
+  // and excludes done jobs. So a window at a job scheduled yesterday, or at a
+  // job since marked done (the normal finish-then-review flow), matched
+  // nothing and silently never repaired, despite the 7-day leg sweep. Now
+  // matched against _geoJobsOnDay(the window's own Central day).
+  test('reconciliation: a window at YESTERDAY\'s job still reconciles today', async () => {
+    await geoReset();
+    const seed = await page.evaluate(([jid]) => {
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      window.__origTimeEntries = timeEntries.slice(); timeEntries.length = 0;
+      const JOB = { lat: 37.6872, lon: -97.3301 };
+      _geoJobCoords = {};
+      // Walk back to a moment on a PREVIOUS Central day whose 4-hour window
+      // sits entirely inside that day, using the app's own _ctDateStr so no
+      // timezone/DST assumption is baked in.
+      const today = _ctDateStr(new Date());
+      let T = Date.now() - 6 * 3600000;
+      while (_ctDateStr(new Date(T)) === today || _ctDateStr(new Date(T - 4 * 3600000)) !== _ctDateStr(new Date(T))) T -= 4 * 3600000;
+      const winDay = _ctDateStr(new Date(T - 3 * 3600000));
+      // The job's span was YESTERDAY (the window's day), one day only: under
+      // the old _geoMyJobs matching this is invisible today, red before the fix.
+      jobs.push({ id: jid, name: 'Yesterday Job', lat: JOB.lat, lon: JOB.lon, start: winDay, days: 1, status: 'upcoming', eventType: 'job' });
+      const iso = (ms) => new Date(ms).toISOString();
+      const A = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 4 * 3600000), endedIso: iso(T - 3 * 3600000),
+                  fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: winDay };
+      const B = { id: 'ml-B', gps: true, legKey: 'lgB-' + jid, startedIso: iso(T), endedIso: iso(T + 0.3 * 3600000),
+                  fromCoord: { lat: JOB.lat, lng: JOB.lon }, toCoord: { lat: 37.7500, lng: -97.4500 }, miles: 9, date: winDay };
+      mileage.push(A, B);
+      return { AEnd: A.endedIso, BStart: B.startedIso, jid: String(jid) };
+    }, [886020]);
+    const r = await runRecon();
+    expect(r.recRows.length, 'yesterday\'s window repairs even though the job is not on today\'s fence list').toBe(1);
+    expect(r.recRows[0].job_id).toBe(seed.jid);
+    expect(r.recRows[0].arrived_at).toBe(seed.AEnd);
+    expect(r.recRows[0].departed_at).toBe(seed.BStart);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  test('reconciliation: a job since marked DONE still reconciles; a cancelled one never does', async () => {
+    await geoReset();
+    const seed = await page.evaluate(([jid]) => {
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      window.__origTimeEntries = timeEntries.slice(); timeEntries.length = 0;
+      const JOB = { lat: 37.6872, lon: -97.3301 };
+      _geoJobCoords = {};
+      let T = Date.now();
+      while (_ctDateStr(new Date(T - 3 * 3600000)) !== _ctDateStr(new Date(T))) T -= 4 * 3600000;
+      const winDay = _ctDateStr(new Date(T - 2 * 3600000));
+      // Worked this morning, marked done since: the exact finish-then-review
+      // flow that used to erase reconcilability (_jobActiveOn excludes done).
+      jobs.push({ id: jid, name: 'Done Job', lat: JOB.lat, lon: JOB.lon, start: winDay, days: 1, status: 'done', completion_date: winDay, eventType: 'job' });
+      const iso = (ms) => new Date(ms).toISOString();
+      mileage.push(
+        { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 3 * 3600000), endedIso: iso(T - 2 * 3600000),
+          fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: winDay },
+        { id: 'ml-B', gps: true, legKey: 'lgB-' + jid, startedIso: iso(T - 1 * 3600000), endedIso: iso(T - 0.5 * 3600000),
+          fromCoord: { lat: JOB.lat, lng: JOB.lon }, toCoord: { lat: 37.7500, lng: -97.4500 }, miles: 9, date: winDay }
+      );
+      return { jid: String(jid) };
+    }, [886021]);
+    let r = await runRecon();
+    expect(r.recRows.length, 'a done job\'s hours still repair').toBe(1);
+    expect(r.recRows[0].job_id).toBe(seed.jid);
+    // Cancelled is different: nobody worked a cancelled job, its fence must
+    // never claim hours. Same window, job flipped to cancelled, zero rows.
+    await page.evaluate(() => {
+      jobs[0].status = 'upcoming'; delete jobs[0].completion_date; jobs[0].cancelled = true;
+      window.__rec.upserts.length = 0; window.__rec.updates.length = 0;
+      _geoReconBusy = false;
+    });
+    r = await runRecon();
+    expect(r.recRows.length, 'a cancelled job never claims hours').toBe(0);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  // renderTimeLog's one-shot call was silently dropped whenever a GPS ping
+  // happened to be mid-flight (_geoPingBusy), which on a phone with live
+  // tracking is exactly when someone opens Time Log right after a drive. The
+  // return value is the retry signal: false = skipped, retry; anything else =
+  // the pass ran (found work or legitimately found none).
+  test('reconciliation: returns false when skipped for a busy ping, non-false when it actually runs', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      _geoPingBusy = true;
+      const skipped = await _geoReconcileFromMileage();
+      _geoPingBusy = false;
+      const ran = await _geoReconcileFromMileage();
+      return { skipped, ran };
+    });
+    expect(r.skipped, 'a ping in flight skips the pass and says so').toBe(false);
+    expect(r.ran, 'an idle pass never reads as skipped').not.toBe(false);
     await geoRestore();
   });
 

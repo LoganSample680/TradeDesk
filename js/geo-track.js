@@ -544,6 +544,29 @@ function _geoMyJobs(){
   }
   return jobs.filter(j=>_jobActiveOn(j,tk));
 }
+// Jobs whose scheduled span covered a PAST day, for reconciliation matching
+// (owner report 2026-08-21: "still not seeing the reconciliation fire, not
+// for yesterday or today"). _geoMyJobs above answers "what should this device
+// fence RIGHT NOW", so it is pinned to today and excludes done jobs, both
+// correct live and both fatal for repairing history: the reconciler sweeps
+// seven days of mileage legs, and a window at a job scheduled yesterday, or
+// at a job since marked done (the NORMAL flow: finish the work, close the
+// job out, then look at hours), matched nothing and silently never repaired.
+// This deliberately diverges from _jobActiveOn (§7.3 divergence note): a
+// completion_date or status done must NOT exclude here, marking a job done
+// after working it is exactly when its hours get reviewed. Only cancelled
+// jobs stay out. Employee scoping matches _geoMyJobs.
+function _geoJobsOnDay(dk){
+  const mine=_isEmployee
+    ?jobs.filter(j=>String(j.assignedTo)===String(_employeeRecord?.id))
+    :jobs;
+  return mine.filter(j=>{
+    if(!j||j.cancelled)return false;
+    const start=j.start||j.date||'';if(!start)return false;
+    const end=addDays(start,(parseInt(j.days)||1)-1);
+    return start<=dk&&end>=dk;
+  });
+}
 async function _geoJobLatLng(j){
   const c0=clients.find(x=>x.id===j.client_id);
   const addr=j.addr||(c0&&c0.addr)||'';
@@ -2547,17 +2570,22 @@ function _geoReconcileSoon(){
   if(_geoReconTimer)return;
   _geoReconTimer=setTimeout(()=>{_geoReconTimer=null;_geoReconcileFromMileage();},8000);
 }
+// Returns true when a pass actually ran, false when it was skipped (another
+// pass or a GPS ping in flight). renderTimeLog (js/timelog.js) retries a
+// couple of times on false: on a phone with live tracking, opening Time Log
+// right after a drive lands exactly when pings are flowing, and a silently
+// dropped one-shot call meant the repair never happened for that visit.
 async function _geoReconcileFromMileage(){
-  if(_geoReconBusy)return;
+  if(_geoReconBusy)return false;
   // Never interleave with a ping in flight: this function awaits (geocodes,
   // the coverage fetch) and the fence machine awaits, so running both
   // concurrently would let their continuations land between each other's
   // steps in an order that depends on real network pacing, not on the data.
   // The machine's own re-entrancy rule (_geoPingBusy) exists for exactly
   // this reason; reconciliation defers to it and the next trigger retries.
-  if(_geoPingBusy)return;
-  if(!_supa||!_supaUser)return;
-  if(typeof mileage==='undefined'||!Array.isArray(mileage))return;
+  if(_geoPingBusy)return false;
+  if(!_supa||!_supaUser)return true;
+  if(typeof mileage==='undefined'||!Array.isArray(mileage))return true;
   _geoReconBusy=true;
   try{
     // Auto legs by THIS person. logged_by_id is only stamped on employee rows
@@ -2622,9 +2650,13 @@ async function _geoReconcileFromMileage(){
       // a messy cluster still prove the arrival, even when a sibling blip in
       // the same cluster has a missing or garbage toCoord.
       let jb=null,jbFt=Infinity,jbLeg=null;
+      // Jobs active ON THE WINDOW'S OWN DAY, not today's fence list
+      // (_geoMyJobs): a yesterday window at a since-finished job is exactly
+      // the case this repairs (owner report 2026-08-21), see _geoJobsOnDay.
+      const _dayJobs=_geoJobsOnDay(_ctDateStr(new Date(t1)));
       for(const memberLeg of A.legs){
         if(!memberLeg.toCoord||memberLeg.toCoord.lat==null)continue;
-        for(const j of _geoMyJobs()){
+        for(const j of _dayJobs){
           const c=await _geoJobLatLng(j);
           if(!c)continue;
           const ft=_geoDistFt({lat:memberLeg.toCoord.lat,lng:memberLeg.toCoord.lng},c);
@@ -2707,6 +2739,7 @@ async function _geoReconcileFromMileage(){
     }
   }catch(_e){}
   finally{_geoReconBusy=false;}
+  return true;
 }
 
 // ── Init + two-layer consent ───────────────────────────────────────────────────

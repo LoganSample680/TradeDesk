@@ -587,8 +587,23 @@ async function renderTimeLog(){
   // well after the job). Opening this page is an explicit, deliberate look at
   // hours, not ambient background noise, so it calls the reconciler directly
   // instead of waiting on a live ping stream that may never come again today.
+  //
+  // An explicit false means the pass was SKIPPED (a GPS ping was mid-flight,
+  // exactly when a phone with live tracking opens this page right after a
+  // drive), not that it ran and found nothing: retry briefly rather than
+  // silently never repairing this visit (owner report 2026-08-21, round two).
+  // Then drain the write queue, so a row the reconciler just enqueued is on
+  // the server BEFORE _timeLogRows fetches: without this the repair raced its
+  // own render and only showed up on the NEXT visit to this page.
   if(typeof _geoReconcileFromMileage==='function'){
-    try{await _geoReconcileFromMileage();}catch(_e){}
+    try{
+      for(let _i=0;_i<3;_i++){
+        const ran=await _geoReconcileFromMileage();
+        if(ran!==false)break;
+        await new Promise(res=>setTimeout(res,350));
+      }
+      if(typeof _geoDrainQueue==='function')await _geoDrainQueue();
+    }catch(_e){}
   }
   let allRows;
   try{allRows=await _timeLogRows(null);}
