@@ -1064,19 +1064,35 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
       });
       return q;
     };
+    // Chainable AND directly awaitable, same shape as _noopQuery above: real
+    // app code (js/cloud.js supaSaveToCloud, the periodic whole-account save,
+    // unrelated to anything this file is testing) can fire mid-test and chain
+    // .select('updated_at').single() off its own zj_data upsert. A bare
+    // Promise has no .select, that TypeError is a real console.error and
+    // fails assertNoErrors() (seen in CI). Every branch below still resolves
+    // the SAME {data,error} shape the mode-specific tests assert on, .select()
+    // and friends are just no-ops layered on top so an unrelated chain never
+    // throws.
+    const _mkResult = (result) => {
+      const q = {
+        select: () => q, single: () => Promise.resolve(result), maybeSingle: () => Promise.resolve(result),
+        then: (res, rej) => Promise.resolve(result).then(res, rej),
+      };
+      return q;
+    };
     window._supa = {
       from: (tbl) => ({
         select: () => _noopQuery(),
         upsert: (row, opts) => {
-          if (window.__supaMode === 'fail') return Promise.resolve({ error: { message: 'network down' } });
-          if (window.__supaMode === 'no-conflict') return Promise.resolve({ error: { message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification' } });
-          if (window.__supaMode === 'no-column') return Promise.resolve({ error: { message: "Could not find the 'client_key' column of 'job_time_entries' in the schema cache" } });
-          window.__rec.upserts.push({ tbl, row, opts }); return Promise.resolve({ error: null });
+          if (window.__supaMode === 'fail') return _mkResult({ error: { message: 'network down' } });
+          if (window.__supaMode === 'no-conflict') return _mkResult({ error: { message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification' } });
+          if (window.__supaMode === 'no-column') return _mkResult({ error: { message: "Could not find the 'client_key' column of 'job_time_entries' in the schema cache" } });
+          window.__rec.upserts.push({ tbl, row, opts }); return _mkResult({ data: null, error: null });
         },
         insert: (row) => {
-          if (window.__supaMode === 'fail') return Promise.resolve({ error: { message: 'network down' } });
-          if (window.__supaMode === 'no-column' && row.client_key !== undefined) return Promise.resolve({ error: { message: "Could not find the 'client_key' column" } });
-          window.__rec.inserts.push({ tbl, row }); return Promise.resolve({ error: null });
+          if (window.__supaMode === 'fail') return _mkResult({ error: { message: 'network down' } });
+          if (window.__supaMode === 'no-column' && row.client_key !== undefined) return _mkResult({ error: { message: "Could not find the 'client_key' column" } });
+          window.__rec.inserts.push({ tbl, row }); return _mkResult({ data: null, error: null });
         },
         delete: () => ({ eq: () => ({ lt: (col, val) => ({ then: (res) => { window.__rec.deletes.push({ tbl, col, val }); res && res({}); return { catch: () => {} }; } }) }) }),
       }),
