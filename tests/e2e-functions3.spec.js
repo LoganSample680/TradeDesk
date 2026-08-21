@@ -4324,7 +4324,7 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
         noStickyFlag: window._obInProgress === _obBefore,
         reentryKept,
         header: /finish setting up/i.test(txt),
-        noEmailField: !document.getElementById('ob-email'),
+        hasEmailField: !!document.getElementById('ob-email'),
         noPassField: !document.getElementById('ob-pass'),
         noSocial: !/continue with google/i.test(txt),
         hasBusiness: !!document.getElementById('ob-bname') && !!document.getElementById('ob-bphone') && !!document.getElementById('ob-state'),
@@ -4342,12 +4342,19 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     expect(result.noStickyFlag, '_beginOAuthOnboarding leaves no sticky _obInProgress flag').toBe(true);
     expect(result.reentryKept, 'a second call while onboarding is open does not restart/wipe answers').toBe(true);
     expect(result.header, '"Finish setting up" header shown, not "Create your account"').toBe(true);
-    expect(result.noEmailField && result.noPassField, 'no email/password fields in oauth mode').toBe(true);
+    // Old behavior: oauth mode showed no email field at all and silently trusted
+    // whatever the provider sent (owner incident 2026-08-21: that was Apple's
+    // private-relay address with nothing on screen to correct it). New behavior
+    // (owner decision, same day): the email field IS shown, prefilled from the
+    // provider, so the contractor confirms or edits it. Password stays hidden,
+    // the session is already authenticated.
+    expect(result.hasEmailField, 'email field shown (editable) even in oauth mode').toBe(true);
+    expect(result.noPassField, 'no password field in oauth mode').toBe(true);
     expect(result.noSocial, 'no social buttons inside oauth-mode onboarding').toBe(true);
     expect(result.hasBusiness, 'business name/phone/state still collected').toBe(true);
   });
 
-  test('obNextAccount (oauth): advances to trade with no email/password, provider email kept', async () => {
+  test('obNextAccount (oauth): advances to trade with no password, provider email prefilled but editable', async () => {
     const result = await page.evaluate(() => {
       if (typeof obNextAccount !== 'function' || typeof obStepAccount !== 'function') return { skip: true };
       const _savedOb = _ob; const _origRender = window.renderObStep; window.renderObStep = () => {};
@@ -4355,7 +4362,9 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
       const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
       _ob = { ..._savedOb, step: 1, oauth: true, name: 'Grace Green', email: 'grace@greenpaint.com', businessName: '', phone: '', state: '' };
       obStepAccount(el);
-      // No email/password inputs exist in oauth mode; fill only the business fields.
+      // No password input exists in oauth mode. Email IS on screen, prefilled
+      // from the provider, left untouched here to prove the prefill survives
+      // straight through to _ob.email unless the contractor edits it.
       el.querySelector('#ob-name').value = 'Grace Green';
       el.querySelector('#ob-bname').value = 'Green Painting';
       el.querySelector('#ob-bphone').value = '316-555-0100';
@@ -4367,6 +4376,52 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     });
     if (result.skip) return;
     expect(result.advanced, 'oauth step 1 advances with no email/password, provider email preserved').toBe(true);
+  });
+
+  // Owner decision 2026-08-21: a first-time Apple/Google signup no longer
+  // silently trusts whatever email the provider sent (that used to be Apple's
+  // private-relay address with no way to correct it). The contractor can edit
+  // the prefilled value, and the edit must be what actually lands on the account.
+  test('obNextAccount (oauth): editing the prefilled email overrides the provider value', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obNextAccount !== 'function' || typeof obStepAccount !== 'function') return { skip: true };
+      const _savedOb = _ob; const _origRender = window.renderObStep; window.renderObStep = () => {};
+      document.querySelectorAll('#ob-body,#ob-err').forEach(n => n.remove());
+      const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
+      _ob = { ..._savedOb, step: 1, oauth: true, name: 'Grace Green', email: '9x7f2k@privaterelay.appleid.com', businessName: '', phone: '', state: '' };
+      obStepAccount(el);
+      el.querySelector('#ob-name').value = 'Grace Green';
+      el.querySelector('#ob-email').value = 'grace@greenpaint.com'; // the contractor's real inbox, typed over the relay address
+      el.querySelector('#ob-bname').value = 'Green Painting';
+      el.querySelector('#ob-bphone').value = '316-555-0100';
+      el.querySelector('#ob-state').value = 'KS';
+      obNextAccount();
+      const advanced = _ob.step === 2 && _ob.email === 'grace@greenpaint.com';
+      el.remove(); window.renderObStep = _origRender; _ob = _savedOb; _ob.oauth = false;
+      return { advanced };
+    });
+    if (result.skip) return;
+    expect(result.advanced, 'the typed-over email wins, not the private-relay address the provider sent').toBe(true);
+  });
+
+  test('obStepAccount (oauth): private-relay email shows the explanatory hint, a real email does not', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obStepAccount !== 'function') return { skip: true };
+      const _savedOb = _ob;
+      document.querySelectorAll('#ob-body').forEach(n => n.remove());
+      const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
+      _ob = { ..._savedOb, oauth: true, email: '9x7f2k@privaterelay.appleid.com' };
+      obStepAccount(el);
+      const relayHintShown = /hid your real email/i.test(el.textContent);
+      _ob = { ..._savedOb, oauth: true, email: 'grace@greenpaint.com' };
+      obStepAccount(el);
+      const realEmailHintHidden = !/hid your real email/i.test(el.textContent);
+      el.remove(); _ob = _savedOb;
+      return { relayHintShown, realEmailHintHidden };
+    });
+    if (result.skip) return;
+    expect(result.relayHintShown, 'a privaterelay.appleid.com address shows the explanatory hint').toBe(true);
+    expect(result.realEmailHintHidden, 'a normal email shows no relay hint').toBe(true);
   });
 
   test('onboarding restructure, cut steps are actually gone (§7.1)', async () => {
@@ -9121,6 +9176,51 @@ test.describe('Sign in with Apple: native onboarding routing fix (2026-08-21)', 
     expect(r.pendingAfterSecondTap, 'second tap while pending changes nothing').toBe('apple');
     expect(r.authorizeCalls, 'the native sheet must only ever open once for the overlapping taps').toBe(1);
     expect(r.pendingAfterResolve, 'the single real attempt still cleans up its own flag').toBe(null);
+  });
+
+  // End-to-end close of the loop: the email typed over Apple's relay address on
+  // the account step is what actually lands in the account/user rows, never the
+  // provider's own auth.users.email (which is the relay address here).
+  test('obSubmit(): the contractor-edited email lands on the account, not the provider\'s relay address', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof obSubmit !== 'function') return { skip: true };
+      const savedOb = _ob, savedUser = _supaUser, savedSupa = _supa;
+      const savedAccount = typeof _account !== 'undefined' ? _account : null;
+      const savedUserRow = typeof _user !== 'undefined' ? _user : null;
+      document.querySelectorAll('#ob-err,#ob-progress,#onboarding-overlay').forEach(n => n.remove());
+      const errEl = document.createElement('div'); errEl.id = 'ob-err'; document.body.appendChild(errEl);
+      const progEl = document.createElement('div'); progEl.id = 'ob-progress'; document.body.appendChild(progEl);
+      let accountsInsertPayload = null, usersInsertPayload = null;
+      try {
+        _ob = { ...savedOb, oauth: true, email: 'grace@greenpaint.com', businessName: 'Green Painting Co',
+                 phone: '316-555-0100', address: '', licenseInfo: '', state: 'KS', businessType: 'painting',
+                 tradeLines: [], vehicles: [], jobs: [], name: 'Grace Green', role: 'owner' };
+        // The provider's own session carries the private-relay address, exactly
+        // what a real Apple sign-in hands back, distinct from what the contractor
+        // typed on the account step above.
+        _supaUser = { id: 'apple-relay-' + Date.now(), email: '9x7f2k@privaterelay.appleid.com' };
+        _supa = {
+          ...savedSupa,
+          from: (t) => {
+            if (t === 'accounts') return { insert: (payload) => { accountsInsertPayload = payload; return { select: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'test-acct-' + Date.now() }, error: null }) }) }; } };
+            if (t === 'users') return { insert: (payload) => { usersInsertPayload = payload; return Promise.resolve({ data: null, error: null }); } };
+            return savedSupa.from(t);
+          },
+        };
+        let threw = null;
+        try { await obSubmit(); } catch (e) { threw = e.message; }
+        return { skip: false, threw, accountsInsertPayload, usersInsertPayload };
+      } finally {
+        document.querySelectorAll('#ob-err,#ob-progress,#onboarding-overlay').forEach(n => n.remove());
+        _ob = savedOb; _supaUser = savedUser; _supa = savedSupa;
+        _account = savedAccount; _user = savedUserRow;
+        window._obInProgress = false;
+      }
+    });
+    if (r.skip) return;
+    expect(r.threw).toBe(null);
+    expect(r.accountsInsertPayload?.email, 'accounts row gets the contractor-typed email').toBe('grace@greenpaint.com');
+    expect(r.usersInsertPayload?.email, 'users row gets the contractor-typed email').toBe('grace@greenpaint.com');
   });
 
   test('no console errors during Apple sign-in onboarding-routing tests', async () => {

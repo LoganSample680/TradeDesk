@@ -1742,15 +1742,16 @@ function obStepAccount(el){
   const _socialBtn=(prov,label,bg,fg,bd)=>'<button onclick="_obOAuth(\''+prov+'\')" style="display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:12px;border-radius:9px;border:'+bd+';background:'+bg+';color:'+fg+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">'+label+'</button>';
   el.innerHTML=
     (oauth
-      ?'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Finish setting up</div><div style="font-size:14px;color:var(--text3)">You\'re signed in'+(_ob.email?' as '+escHtml(_ob.email):'')+'. Just your business details and you\'re in.</div></div>'
+      ?'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Finish setting up</div><div style="font-size:14px;color:var(--text3)">You\'re signed in. Confirm the email we should use for your business, then add your details.</div></div>'
       :'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Create your account</div><div style="font-size:14px;color:var(--text3)">Takes about a minute, you can add the rest later.</div></div>'+
         // Social sign-in (primary). Activates once the provider is configured in Supabase.
         _socialBtn('google','Continue with Google','#fff','#1f2328','1.5px solid #dadce0')+
         _socialBtn('apple','Continue with Apple','#000','#fff','1.5px solid #000')+
         '<div style="display:flex;align-items:center;gap:10px;margin:14px 0 16px"><div style="flex:1;height:1px;background:var(--border)"></div><span style="font-size:11px;color:var(--text3);font-weight:600">or sign up with email</span><div style="flex:1;height:1px;background:var(--border)"></div></div>')+
     obInput('ob-name','Your full name','John Smith','text',_ob.name)+
-    (oauth?'':obInput('ob-email','Email','you@yourbusiness.com','email',_ob.email)+
-    obInput('ob-pass','Password (min 6 chars)','••••••••','password',''))+
+    obInput('ob-email','Email','you@yourbusiness.com','email',_ob.email)+
+    (oauth&&/@privaterelay\.appleid\.com$/i.test(_ob.email||'')?'<div style="font-size:12px;color:var(--text3);margin:-12px 0 18px">Apple hid your real email behind that address, it still forwards to your inbox, or enter the one you\'d rather use here.</div>':'')+
+    (oauth?'':obInput('ob-pass','Password (min 6 chars)','••••••••','password',''))+
     obInput('ob-bname','Business name','Smith Painting Co','text',_ob.businessName)+
     '<div class="f" style="margin-bottom:18px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Phone</label>'+
     '<input type="tel" id="ob-bphone" placeholder="316-555-0100" value="'+((_ob.phone)||'')+'" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,10).replace(/^(\\d{3})(\\d{3})(\\d{1,4})$/,\'$1-$2-$3\').replace(/^(\\d{3})(\\d{1,3})$/,\'$1-$2\')" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit"></div>'+
@@ -1864,16 +1865,18 @@ function obNextAccount(){
   const phone=document.getElementById('ob-bphone')?.value.trim();
   const state=document.getElementById('ob-state')?.value||'';
   if(!name){if(err)err.textContent='Enter your name.';return;}
-  // Email + password only exist (and are only required) on the email signup path.
-  // OAuth users are already authenticated, those fields aren't on the screen.
+  // Email is always on screen now (owner decision 2026-08-21: the provider's
+  // email, private-relay or otherwise, is never silently trusted, the
+  // contractor confirms/edits the real one their business uses). Password
+  // stays gated to the email signup path, OAuth users are already authenticated.
+  if(!email||!email.includes('@')){if(err)err.textContent='Enter a valid email.';return;}
   if(!oauth){
-    if(!email||!email.includes('@')){if(err)err.textContent='Enter a valid email.';return;}
     if(!pass||pass.length<6){if(err)err.textContent='Password must be at least 6 characters.';return;}
   }
   if(!bname){if(err)err.textContent='Enter your business name.';return;}
   if(!phone){if(err)err.textContent='Enter a phone number.';return;}
   if(!state){if(err)err.textContent='Select your state.';return;}
-  _ob.name=name;if(!oauth){_ob.email=email;_ob.password=pass;}_ob.businessName=bname;_ob.phone=phone;_ob.state=state;
+  _ob.name=name;_ob.email=email;if(!oauth){_ob.password=pass;}_ob.businessName=bname;_ob.phone=phone;_ob.state=state;
   // Prefill sales tax from state base, contractor refines later.
   if(state&&typeof lookupSalesTaxRate==='function'&&!(parseFloat(S.salesTaxRate)>0)){
     lookupSalesTaxRate('',state).then(r=>{if(r.rate>0){S.salesTaxRate=r.rate;S.salesTaxRateSource='onboarding';}}).catch(()=>{});
@@ -1998,11 +2001,15 @@ async function obSubmit(){
   try{
     let uid;
     if(_ob.oauth&&typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id){
-      // Social sign-in already created the auth user AND a live session (RLS works),
-      // so there is nothing to signUp/signInWithPassword. Use the session we have and
-      // pull the email from the provider (there was no email field on the screen).
+      // Social sign-in already created the auth user AND a live session (RLS
+      // works), so there is nothing to signUp/signInWithPassword. Use the
+      // session we have; _ob.email is the contractor's own confirmed/edited
+      // value from the account step, not blindly whatever the provider sent
+      // (that used to be a private-relay address with nothing typed to override
+      // it). Provider email is only a last-resort fallback if the field somehow
+      // arrived empty.
       uid=_supaUser.id;
-      _ob.email=_supaUser.email||_ob.email||'';
+      _ob.email=_ob.email||_supaUser.email||'';
       setProgress('Setting up your business...');
     } else {
       setProgress('Creating your account...');
