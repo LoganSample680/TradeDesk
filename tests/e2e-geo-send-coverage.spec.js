@@ -1163,6 +1163,7 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
       _geoCurrentJob = jobId; _geoArrivedAt = arrived;
       _geoPersistOpen(hidden); // what the visibilitychange→hidden handler does
       _geoCurrentJob = null; _geoArrivedAt = null; _geoGapHiddenAt = null;
+      window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
       _geoRestoreOpen();
       // ONE post-gap ping lands far outside the fence: not enough to confirm.
       await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 8 } });
@@ -1191,6 +1192,7 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
       _geoCurrentJob = jobId; _geoArrivedAt = arrived;
       _geoPersistOpen(hidden);
       _geoCurrentJob = null; _geoArrivedAt = null; _geoGapHiddenAt = null;
+      window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
       _geoRestoreOpen();
       await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 8 } }); // 1st: pending
       const beforeConfirm = new Date().toISOString();
@@ -1223,6 +1225,7 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
       _geoCurrentJob = jobId; _geoArrivedAt = arrived;
       _geoPersistOpen(hidden);
       _geoCurrentJob = null; _geoArrivedAt = null; _geoGapHiddenAt = null;
+      window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
       _geoRestoreOpen();
       // Three low-accuracy fixes in a row, the classic "just woke up" cell/wifi fix.
       for (let i = 0; i < 3; i++) {

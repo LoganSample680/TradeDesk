@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.22.26.12';
+const APP_VERSION='08.22.26.13';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2284,7 +2284,7 @@ async function supaInit(){
         // dashboard render holds the FULL shimmer (every widget + greeting),
         // one swap + one waterfall when the load below fully settles, exactly
         // like a fresh boot. _bootCascadeRan resets so this load gets its pour.
-        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;window._mileMotionHealRan=false;window._milePersonalSweepRan=false;window._bootChecklistHoldUntil=null;window._bootChecklistPending=0;
+        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;window._mileMotionHealRan=false;window._milePersonalSweepRan=false;window._geoOpenRestored=false;window._bootChecklistHoldUntil=null;window._bootChecklistPending=0;
         goPg('pg-dash');
         try{
         const hasAccount=await loadAccountData();
@@ -7865,6 +7865,15 @@ async function supaLoadFromCloud({silent=false}={}){
     // back the moment the cloud's copy merges in, so this re-collapses it
     // for real, this time with a live connection to make the delete stick.
     try{if(typeof _geoDedupTimeEntries==='function')_geoDedupTimeEntries();}catch(_e){}
+    // Restore _geoLastFenceLoc/_geoLastFenceAt from the persisted open-entry
+    // record BEFORE the mileage sweeps below run, not after. This used to
+    // only happen ~2.4s later via _geoTrackInit's own deliberate boot delay
+    // (js/geo-track.js _geoRestoreOpen, guarded one-shot there so calling it
+    // again from _geoTrackInit is a no-op), which meant the personal-stop
+    // sweep's pass 2 always saw a null fence and could never fire on a real
+    // boot, no matter how many times the app was relaunched (owner report
+    // 2026-08-22).
+    try{if(typeof _geoRestoreOpen==='function')_geoRestoreOpen();}catch(_e){}
     // The retroactive walk sweep rides the same settle point: the coprocessor
     // holds ~a week of history, so a leg that over-paid an errand's detour
     // before the walk check existed corrects itself here (once per session,

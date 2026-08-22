@@ -5116,6 +5116,7 @@ test.describe('Automatic mileage from drive legs', () => {
           _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null;
           _geoLastFenceAt = null; _geoGapHiddenAt = null; _geoStopAnchor = null;
           _geoQuietSinceMs = null; _geoParkPrevFix = null; _geoFenceEnteredAtMs = null;
+          window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
           _geoRestoreOpen();
           const restoredOrigin = _geoLegOrigin && _geoLegOrigin.name;
           const restoredDrive = !!_geoDriveStartedAt;
@@ -5175,6 +5176,7 @@ test.describe('Automatic mileage from drive legs', () => {
           // ── app dies here, relaunches tomorrow ──
           _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null;
           _geoLastFenceAt = null; _geoGapHiddenAt = null; _geoStopAnchor = null;
+          window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
           _geoRestoreOpen();
           const salvaged = entries.filter(e => e.tbl === 'job_time_entries' && e.row.source === 'drive-unassigned-salvaged');
           return {
@@ -5218,6 +5220,7 @@ test.describe('Automatic mileage from drive legs', () => {
           _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null;
           _geoLastFenceAt = null; _geoGapHiddenAt = null;
           _geoQuietSinceMs = null; _geoParkPrevFix = null; _geoFenceEnteredAtMs = null;
+          window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
           _geoRestoreOpen();
           _geoDriveMiles = 0;                     // nothing actually moved
           await _geoOnPing({ coords: { latitude: a.shop.lat, longitude: a.shop.lon, accuracy: 8, speed: 0 }, __tdTs: t0 });
@@ -5724,6 +5727,7 @@ test.describe('Automatic mileage from drive legs', () => {
           const liveStart = _geoDriveStartedAt;
           _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null; _geoLastFenceAt = null;
           _geoStopAnchor = null; _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+          window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
           _geoRestoreOpen();
           return {
             snapHasDrive: !!(snap && snap.driveStartedAt),

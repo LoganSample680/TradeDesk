@@ -275,6 +275,7 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
       _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null; _geoLastFenceAt = null;
       _geoStopAnchor = null; _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
       _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoCurrentClient = null; _geoClientArrivedAt = null;
+      window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
       _geoRestoreOpen();
     });
     await ping(mid(GEO.HOMEOFF, GEO.JOB1, 0.7), 13); await ff(6);
@@ -509,6 +510,7 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
       _geoStopAnchor = null; _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
       _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoCurrentClient = null; _geoClientArrivedAt = null;
       _geoCurrentJob = null; _geoArrivedAt = null;
+      window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
       _geoRestoreOpen();
     });
     const echoAttack = async (prevPoint, atPoint) => {

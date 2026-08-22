@@ -1185,6 +1185,79 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // ── Boot-order regression: _geoRestoreOpen must run before the sweep ──────
+  // The four tests above prove pass 2's RULES are correct once
+  // _geoLastFenceLoc/_geoLastFenceAt are populated. They all populate those
+  // globals directly (setLastFence), which is exactly what let a real bug
+  // hide behind them: on an actual boot, that state comes from
+  // _geoRestoreOpen() reading localStorage's zp3_geo_open, and that call used
+  // to only happen ~2.4s into boot via _geoTrackInit's own delay chain
+  // (js/cloud.js _removeBootOverlay: 320ms + 700ms + 1400ms, sequenced after
+  // the vehicle picker on purpose), while supaLoadFromCloud() called the
+  // sweep synchronously, long before that timer chain even started. So
+  // _geoLastFenceLoc was always still null when pass 2 checked it, on every
+  // real boot, no matter how many times the app was relaunched (owner live
+  // report 2026-08-22: force-quit and reopen made no difference). This test
+  // does not set the globals directly, it seeds the SAME localStorage record
+  // _geoPersistOpen would have written while genuinely standing in the shop,
+  // and proves the fix: supaLoadFromCloud now calls _geoRestoreOpen() before
+  // the sweep (js/cloud.js), so the sweep sees real evidence on a real boot.
+  test('stop-sweep pass 2: fence evidence restored from localStorage (not set directly) still collapses the lone leg, proving the boot order fix', async () => {
+    await geoReset();
+    const row = stopLegRows()[0];
+    await stopSweepSeed([row, FILLER()]);
+    await page.evaluate(({ shopLat, shopLon, endedIso }) => {
+      window._geoOpenRestored = false;   // fresh session: the one-shot restore has not run yet
+      localStorage.setItem('zp3_geo_open', JSON.stringify({
+        job: null, arrivedAt: null,
+        wasInShop: true, shopArrivedAt: new Date(Date.now() - 30 * 60000).toISOString(),
+        driveStartedAt: null, legOrigin: null,
+        lastFenceLoc: { lat: shopLat, lng: shopLon, name: 'Shop' },
+        lastFenceAt: endedIso,   // after the leg ended, same as the live shop_time_entries proof
+        stopAnchor: null, driveMovingAt: 0, driveMiles: 0, driveSteps: 0, driveMph: 0, driveLastFix: null,
+        hiddenAt: new Date().toISOString(), uid: 'geo-park-user-1', day: new Date().toISOString().slice(0, 10),
+      }));
+    }, { shopLat: SHOPX.lat, shopLon: SHOPX.lon, endedIso: new Date(now() - 60000).toISOString() });
+    // The exact order supaLoadFromCloud now uses: restore, then sweep.
+    await page.evaluate(() => { _geoRestoreOpen(); });
+    const r = await sweepCall();
+    expect(r.fixed, 'localStorage-restored fence evidence must reach pass 2, the same as evidence set directly').toBe(1);
+    expect(r.left).toEqual(['sw-filler']);
+    // Calling it again (mirroring _geoTrackInit's own later call) must be a no-op, not a second restore or a crash.
+    await page.evaluate(() => { _geoRestoreOpen(); });
+    localStorage.removeItem('zp3_geo_open');
+    await restoreLastFence();
+    await stopSweepRestore();
+    await geoRestore();
+  });
+
+  test('stop-sweep pass 2: with no _geoRestoreOpen call at all, a real boot leaves the lone leg unswept (documents the bug this fix closes)', async () => {
+    await geoReset();
+    const row = stopLegRows()[0];
+    await stopSweepSeed([row, FILLER()]);
+    await page.evaluate(({ shopLat, shopLon, endedIso }) => {
+      window._geoOpenRestored = false;
+      localStorage.setItem('zp3_geo_open', JSON.stringify({
+        job: null, arrivedAt: null,
+        wasInShop: true, shopArrivedAt: new Date(Date.now() - 30 * 60000).toISOString(),
+        driveStartedAt: null, legOrigin: null,
+        lastFenceLoc: { lat: shopLat, lng: shopLon, name: 'Shop' },
+        lastFenceAt: endedIso,
+        stopAnchor: null, driveMovingAt: 0, driveMiles: 0, driveSteps: 0, driveMph: 0, driveLastFix: null,
+        hiddenAt: new Date().toISOString(), uid: 'geo-park-user-1', day: new Date().toISOString().slice(0, 10),
+      }));
+    }, { shopLat: SHOPX.lat, shopLon: SHOPX.lon, endedIso: new Date(now() - 60000).toISOString() });
+    // Deliberately skip _geoRestoreOpen(): _geoLastFenceLoc stays null, exactly
+    // like a sweep that runs before the old ~2.4s-delayed restore had fired.
+    const r = await sweepCall();
+    expect(r.fixed, 'without a restore, the evidence sitting in localStorage never reaches pass 2').toBe(0);
+    expect(r.left.sort()).toEqual(['sw-filler', 'sw-inb']);
+    localStorage.removeItem('zp3_geo_open');
+    await restoreLastFence();
+    await stopSweepRestore();
+    await geoRestore();
+  });
+
   test('stop-sweep: unnamed Stop, round trip back to the same origin, no business match, both legs collapse', async () => {
     await geoReset();
     await stopSweepSeed(stopLegRows());

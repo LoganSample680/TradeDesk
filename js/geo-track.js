@@ -475,6 +475,24 @@ function _geoPersistOpen(hiddenAt){
 }
 function _geoClearOpen(){try{localStorage.removeItem(_GEO_OPEN_KEY);}catch(_e){}}
 function _geoRestoreOpen(){
+  // One-shot per session, same pattern as the mileage sweeps (js/mileage.js
+  // _milePersonalStopSweep/_mileMotionHealSweep): this used to only ever get
+  // called ~2.4s into boot via _geoTrackInit's own deliberate delay chain
+  // (js/cloud.js _removeBootOverlay: 320ms + 700ms + 1400ms, sequenced after
+  // the vehicle picker on purpose). supaLoadFromCloud() calls the mileage
+  // sweeps synchronously, well before that chain even starts, so
+  // _geoLastFenceLoc/_geoLastFenceAt were always still their module-load
+  // null/undefined when the personal-stop sweep's pass 2 checked them: the
+  // "durable proof survives a restart" comment on that pass was never true in
+  // practice, because the restore that proof depends on had not run yet
+  // (owner report 2026-08-22: a Shop -> Stop leg with a proven live return to
+  // Shop on the server never got swept, force-quit/reopen made no difference,
+  // any number of times). The guard makes it safe to call this once, early,
+  // from supaLoadFromCloud (right before the sweeps) as well as from its
+  // original spot inside _geoTrackInit: whichever runs first restores the
+  // state for real, the second call is a harmless no-op.
+  if(window._geoOpenRestored)return;
+  window._geoOpenRestored=true;
   try{
     const s=JSON.parse(localStorage.getItem(_GEO_OPEN_KEY)||'null');
     if(!s||s.uid!==((_supaUser&&_supaUser.id)||null))return;
