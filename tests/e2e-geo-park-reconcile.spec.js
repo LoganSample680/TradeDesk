@@ -55,7 +55,8 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoCurrentClient = null; _geoClientArrivedAt = null;
     _geoStopAnchor = null; _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoLegOrigin = null;
     _geoLegAtShop = false; _geoHomeDwell = null; _geoWasAtHome = false; _geoDrivebyRun = 0;
-    _geoParkCluster = null; _geoSoftJob = null; _geoSoftJobSpeedRun = 0; _geoParkBackdate = null;
+    _geoParkCluster = null; _geoSoftJob = null; _geoSoftJobSpeedRun = 0;
+    _geoSoftShop = null; _geoSoftShopSpeedRun = 0; _geoParkBackdate = null;
     _geoLastPingTs = 0; _geoPingBusy = false; _geoDriveReset();
     if (typeof _geoReconBusy !== 'undefined') _geoReconBusy = false;
     window._isEmployee = false;
@@ -250,6 +251,141 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     expect(r.cluster, 'the cluster stays, later pings just re-check').toBe(true);
     expect(r.anchor, 'the anonymous-stop machinery still owns this park').toBe(true);
     await restoreJobs();
+    await geoRestore();
+  });
+
+  // ── Park detection: the Shop (owner report 2026-08-22) ──────────────────────
+  // A job parked outside its strict fence already got a +350ft forgiving
+  // margin (above); the Shop never did, only the raw 600ft check on every
+  // ping. A Shop/Home-office account whose actual parking spot (a driveway, a
+  // detached garage, a second building) sits past that circle never
+  // registered a Shop dwell at all, leaving the day's drive back there
+  // orphaned with nothing to prove they'd returned. Same harness as
+  // parkAtJob above, for the Shop instead.
+  const parkAtShop = () => page.evaluate(async () => {
+    window.__origJobs = jobs.slice(); jobs.length = 0;   // no jobs today: only the Shop can match
+    _geoJobCoords = {};
+    const SHOP = { lat: 37.6872, lon: -97.3301 };
+    S.officeLat = SHOP.lat; S.officeLon = SHOP.lon;
+    _geoDriveStartedAt = new Date(Date.now() - 20 * 60000).toISOString();
+    _geoLegOrigin = { lat: 37.7500, lng: -97.4500, name: 'Ace Supply', kind: 'place' };
+    const fence = _geoFenceFt();
+    const spot = { lat: SHOP.lat + (fence + 150) / 364584, lng: SHOP.lon };
+    const spotFt = _geoDistFt(spot, { lat: SHOP.lat, lng: SHOP.lon });
+    const ping = (c, spd) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lng, accuracy: 8, speed: spd } });
+    await ping(spot, 0);
+    const clusterAfterFirst = _geoParkCluster ? { n: _geoParkCluster.n } : null;
+    if (_geoParkCluster) _geoParkCluster.sinceMs = Date.now() - 5 * 60000;
+    await ping(spot, 0);
+    await new Promise(res => setTimeout(res, 60));
+    const driveRow = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries' && /^drive/.test(u.row.source || '')) || {}).row || null;
+    return {
+      fence, spotFt, clusterAfterFirst, spot,
+      wasInShop: _geoWasInShop, shopArrivedAt: _geoShopArrivedAt, softShop: _geoSoftShop,
+      driveOpen: _geoDriveStartedAt != null, driveRow,
+    };
+  });
+
+  const restoreShop = () => page.evaluate(() => {
+    if (window.__origJobs) { jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null; }
+    _geoJobCoords = {};
+    S.officeLat = null; S.officeLon = null;
+  });
+
+  test('park detection: a stationary drive outside the strict Shop fence resolves to a backdated Shop arrival', async () => {
+    await geoReset();
+    const r = await parkAtShop();
+    expect(r.spotFt).toBeGreaterThan(r.fence);
+    expect(r.spotFt).toBeLessThan(r.fence + 350);
+    expect(r.clusterAfterFirst, 'first stationary fix starts the cluster').not.toBeNull();
+    expect(r.wasInShop, 'the park resolved to the Shop, no job existed to compete for it').toBe(true);
+    expect(r.softShop && r.softShop.lat).toBeCloseTo(r.spot.lat, 4);
+    expect(Date.parse(r.shopArrivedAt)).toBeLessThanOrEqual(Date.now() - 4.5 * 60000);
+    expect(r.driveOpen).toBe(false);
+    expect(r.driveRow, 'the 20-minute leg into the Shop was written').not.toBeNull();
+    expect(r.driveRow.departed_at).toBe(r.shopArrivedAt);
+    expect(r.driveRow.minutes).toBeGreaterThanOrEqual(14);
+    expect(r.driveRow.minutes).toBeLessThanOrEqual(16);
+    await restoreShop();
+    await geoRestore();
+  });
+
+  test('park release: driving-speed fixes close a soft-locked Shop visit, one phantom fix does not', async () => {
+    await geoReset();
+    await parkAtShop();
+    const r = await page.evaluate(async () => {
+      const spot = { lat: 37.6872 + (_geoFenceFt() + 150) / 364584, lng: -97.3301 };
+      const ping = (c, spd) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lng, accuracy: 8, speed: spd } });
+      await ping({ lat: spot.lat + 0.0002, lng: spot.lng }, 8);
+      const afterOne = { wasInShop: _geoWasInShop, soft: !!_geoSoftShop };
+      await ping({ lat: spot.lat + 0.0004, lng: spot.lng }, 8);
+      await new Promise(res => setTimeout(res, 60));
+      const visitRow = (window.__rec.upserts.find(u => u.tbl === 'shop_time_entries') || {}).row || null;
+      return { afterOne, wasInShop: _geoWasInShop, soft: _geoSoftShop, visitRow };
+    });
+    expect(r.afterOne.wasInShop, 'one phantom driving fix never closes the Shop visit').toBe(true);
+    expect(r.afterOne.soft).toBe(true);
+    expect(r.wasInShop, 'second consecutive driving fix closes it').toBe(false);
+    expect(r.soft).toBeNull();
+    expect(r.visitRow, 'the visit wrote its shop_time_entries row').not.toBeNull();
+    expect(r.visitRow.minutes).toBeGreaterThanOrEqual(4);
+    await restoreShop();
+    await geoRestore();
+  });
+
+  test('park priority: when a job AND the Shop are both in reach, the job wins, matching live strict-fence priority', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      const SHOP = { lat: 37.6872, lon: -97.3301 };
+      const JOB = { lat: 37.6872, lon: -97.3301 };   // same property: a job fenced right at the shop
+      jobs.push({ id: 885201, name: 'Job At The Shop', lat: JOB.lat, lon: JOB.lon, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      _geoJobCoords = {};
+      S.officeLat = SHOP.lat; S.officeLon = SHOP.lon;
+      _geoDriveStartedAt = new Date(Date.now() - 20 * 60000).toISOString();
+      _geoLegOrigin = { lat: 37.7500, lng: -97.4500, name: 'Ace Supply', kind: 'place' };
+      const fence = _geoFenceFt();
+      const spot = { lat: SHOP.lat + (fence + 150) / 364584, lng: SHOP.lon };
+      const ping = (c, spd) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lng, accuracy: 8, speed: spd } });
+      await ping(spot, 0);
+      if (_geoParkCluster) _geoParkCluster.sinceMs = Date.now() - 5 * 60000;
+      await ping(spot, 0);
+      await new Promise(res => setTimeout(res, 60));
+      return { cur: _geoCurrentJob, wasInShop: _geoWasInShop, softJob: _geoSoftJob, softShop: _geoSoftShop };
+    });
+    expect(String(r.cur), 'a job always outranks the Shop when both are in reach').toBe('885201');
+    expect(r.wasInShop).toBe(false);
+    expect(r.softJob && String(r.softJob.id)).toBe('885201');
+    expect(r.softShop).toBeNull();
+    await restoreShop();
+    await geoRestore();
+  });
+
+  test('park no-match: the Shop is set but out of reach, the anonymous-stop machinery still owns the park', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      _geoJobCoords = {};
+      S.officeLat = 37.6872; S.officeLon = -97.3301;   // the Shop exists, just nowhere near this park
+      _geoDriveStartedAt = new Date(Date.now() - 20 * 60000).toISOString();
+      _geoLegOrigin = { lat: 37.7500, lng: -97.4500, name: 'Ace Supply', kind: 'place' };
+      const spot = { lat: 38.9000, lng: -96.9000 };
+      const ping = (c, spd) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lng, accuracy: 8, speed: spd } });
+      await ping(spot, 0);
+      if (_geoParkCluster) _geoParkCluster.sinceMs = Date.now() - 5 * 60000;
+      await ping(spot, 0);
+      await new Promise(res => setTimeout(res, 60));
+      return {
+        wasInShop: _geoWasInShop, softShop: _geoSoftShop, backdate: _geoParkBackdate,
+        cluster: !!_geoParkCluster, anchor: !!_geoStopAnchor,
+      };
+    });
+    expect(r.wasInShop).toBe(false);
+    expect(r.softShop).toBeNull();
+    expect(r.backdate).toBeNull();
+    expect(r.cluster, 'the cluster stays, later pings just re-check').toBe(true);
+    expect(r.anchor, 'the anonymous-stop machinery still owns this park').toBe(true);
+    await restoreShop();
     await geoRestore();
   });
 

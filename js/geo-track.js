@@ -245,6 +245,19 @@ function _geoNotePause(a){
 let _geoParkCluster=null;   // {lat,lng,n,sinceMs} running-mean centroid of stationary fixes
 let _geoSoftJob=null;       // {id,lat,lng} centroid lock holding a visit open OUTSIDE the strict fence
 let _geoSoftJobSpeedRun=0;  // consecutive driving-speed fixes seen against the soft lock
+// Same soft-lock shape as _geoSoftJob above, for the Shop specifically (owner
+// report 2026-08-22: a Shop/Home-office account parked back at the property
+// and it never registered, no Shop dwell, the return leg's own mileage row
+// left orphaned with nothing to prove they'd come back). The park-resolve
+// block below already gives a job a +350ft margin beyond the strict fence for
+// exactly this "stopped moving nearby, not dead center" case; the Shop never
+// got the same treatment, only the raw 600ft check on every ping, with no
+// fallback once GPS quiets down in park mode. A home-based shop's actual
+// parking spot, a driveway, a detached garage, a second building, sitting
+// just past the strict circle is the common case this was built for, not an
+// edge case.
+let _geoSoftShop=null;      // {lat,lng} centroid lock holding a Shop visit open OUTSIDE the strict fence
+let _geoSoftShopSpeedRun=0; // consecutive driving-speed fixes seen against the soft lock
 let _geoParkBackdate=null;  // one-shot ISO: the moment motion stopped, consumed by the transition
 // DELIBERATELY under _GEO_STOP_MS (5 min): the park has to resolve BEFORE the
 // same parked dwell matures into an anonymous 'stop' row (_geoSettleStopLeg /
@@ -875,12 +888,24 @@ async function _geoOnPing(pos){
       else _geoSoftJob=null;
     }
   }
+  // Same soft-lock, for the Shop. Only when nothing already claimed this ping
+  // (a job or a strict-fence shop hit always wins), same release rule as the
+  // job lock above: two consecutive driving-speed fixes, or wandering past
+  // the centroid's own margin.
+  if(!insideId&&!inShop&&_geoSoftShop){
+    if(typeof pos.coords.speed==='number'&&pos.coords.speed>=_GEO_DRIVEBY_SPEED_MPS){
+      _geoSoftShopSpeedRun++;
+      if(_geoSoftShopSpeedRun>=2)_geoSoftShop=null;
+    }else _geoSoftShopSpeedRun=0;
+    if(_geoSoftShop&&_geoDistFt(here,_geoSoftShop)<=_geoFenceFt()+_GEO_PARK_JOB_EXTRA_FT)inShop=true;
+    else _geoSoftShop=null;
+  }
   // ── Park cluster: an open drive that stopped moving is a dead drive ───────
   // Only while a drive is open, outside EVERY fence, with a fix trustworthy
   // enough to act on (_driveAccOk, the same bar the exit machinery uses). A
   // bad-accuracy fix neither starts, grows, nor clears the cluster: one
   // coarse indoor fix must not restart the four-minute clock on a real park.
-  if(_geoDriveStartedAt&&!_geoSoftJob&&!insideId&&!inShop&&!atPlaceId&&!atClientId){
+  if(_geoDriveStartedAt&&!_geoSoftJob&&!_geoSoftShop&&!insideId&&!inShop&&!atPlaceId&&!atClientId){
     if(typeof pos.coords.speed==='number'&&pos.coords.speed>=_GEO_DRIVEBY_SPEED_MPS){
       _geoParkCluster=null;   // still rolling, whatever the positions say
     }else if(_driveAccOk){
@@ -926,10 +951,30 @@ async function _geoOnPing(pos){
             insideJob=pj;insideId=pj.id;   // enter the fence machine NOW
             _geoParkCluster=null;
             _geoParkNote('park-resolve',(pj.name||pj.id)+' @'+Math.round(pjFt)+'ft');
+          }else if(shopC){
+            // No job in reach: the Shop gets the exact same forgiving margin
+            // a job already had, which is the gap this whole addition exists
+            // to close (owner report 2026-08-22: a Shop/Home-office account
+            // parked back at the property and it never registered, no Shop
+            // dwell, the day's drive leg back left orphaned with nothing to
+            // prove they'd come back). Only tried after every job already had
+            // first refusal, the same priority a job gets over the shop in
+            // the strict membership just below (`cur`, "A JOB wins").
+            const sft=_geoDistFt(c,shopC);
+            if(sft<=_geoFenceFt()+_GEO_PARK_JOB_EXTRA_FT){
+              _geoSoftShop={lat:c.lat,lng:c.lng};
+              _geoSoftShopSpeedRun=0;
+              const _anchMsS=_geoStopAnchor?Math.max(0,(Date.parse(_geoStopAnchor.lastAt||'')||0)-(Date.parse(_geoStopAnchor.at||'')||0)):0;
+              _geoParkBackdate=(_anchMsS>=_GEO_STOP_MS)?null:new Date(c.sinceMs).toISOString();
+              inShop=true;   // enter the fence machine NOW
+              _geoParkCluster=null;
+              _geoParkNote('park-resolve','Shop @'+Math.round(sft)+'ft');
+            }
           }
-          // No job in reach: leave everything alone. The existing stop
-          // machinery owns non-job parking, and later pings just keep
-          // folding in and re-checking, which costs nothing extra.
+          // Nothing in reach, job or Shop: leave everything alone. The
+          // existing stop machinery owns non-job, non-shop parking, and
+          // later pings just keep folding in and re-checking, which costs
+          // nothing extra.
         }
       }
     }
@@ -2628,7 +2673,7 @@ function stopGeoTracking(){
   // Park-detection state dies with tracking too: a lock or a half-grown
   // cluster from this session must never resolve an arrival for the next one
   // (same reason the job-coordinate cache below is cleared).
-  _geoParkCluster=null;_geoSoftJob=null;_geoSoftJobSpeedRun=0;_geoParkBackdate=null;
+  _geoParkCluster=null;_geoSoftJob=null;_geoSoftJobSpeedRun=0;_geoSoftShop=null;_geoSoftShopSpeedRun=0;_geoParkBackdate=null;
   if(_geoReconTimer){clearTimeout(_geoReconTimer);_geoReconTimer=null;}
   _geoDriveReset();_geoDriveShown=false;
   _geoCurrentClient=null;_geoClientArrivedAt=null;_geoClientCacheMemo=null;
