@@ -2167,10 +2167,7 @@ function getDashGreeting(){
   const hr=new Date().getHours();
   const time=hr<12?'Good Morning':hr<17?'Good Afternoon':'Good Evening';
   const name=getUserName()||'';
-  // Friday-evening nod (js/milestones.js): one changed word when the week is
-  // genuinely finished, never a popup.
-  const egg=(typeof _eggGreetingSuffix==='function')?_eggGreetingSuffix():'';
-  return (name?time+', '+name.split(' ')[0]+'!':time+'!')+egg;
+  return name?time+', '+name.split(' ')[0]+'!':time+'!';
 }
 
 

@@ -269,20 +269,6 @@ function _eggRivalResult(q){
   '</div>';
 }
 
-// 3. FRIDAY CLOSING TIME. After 4pm on a Friday with nothing left on the
-// board, the greeting changes once. Not a popup, not a sound, just the app
-// noticing the week is done.
-function _eggGreetingSuffix(){
-  try{
-    const now=new Date();
-    if(now.getDay()!==5||now.getHours()<16)return '';
-    const openToday=(typeof jobs!=='undefined'?jobs:[]).some(j=>j&&j.start===todayKey()&&j.status!=='done'&&!j.completion_date);
-    if(openToday)return '';
-    return ' Go home.';
-  }catch(_e){return '';}
-}
-
-
 // (Tracking diagnostics live in the EXISTING Location diagnostics panel,
 // js/geo-track.js _geoDiagPanel, under Settings > Developer. A second viewer
 // was written here and deleted: the app already had one, and §7.3 says point

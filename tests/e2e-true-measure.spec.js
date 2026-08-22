@@ -221,6 +221,19 @@ test.describe('true-measure.js: exhaustive coverage', () => {
       expect(r.fallbackShown).toBe(true);
     });
 
+    test('the tm-debug diagnostic panel is hidden by default (owner 2026-08-22 cleanup)', async () => {
+      const r = await page.evaluate(async () => {
+        const c = clients.find(x => x.id === 79001);
+        await openTrueMeasure(c);
+        const el = document.getElementById('tm-debug');
+        return { exists: !!el, display: el && el.style.display };
+      });
+      // Still in the DOM (so future debugging can flip it back on without
+      // rebuilding the logging), just never visible to a live user.
+      expect(r.exists).toBe(true);
+      expect(r.display).toBe('none');
+    });
+
     // Every test below owns its own _tmState from scratch (never assumes an
     // earlier test in this file already set it): CI can shard individual
     // tests, not whole files, so a test landing on a shard without the

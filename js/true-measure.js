@@ -322,13 +322,12 @@ async function openTrueMeasure(c){
       </div>
       <button id="tm-undo" onclick="_tmUndo()" style="display:none;position:absolute;bottom:14px;left:12px;background:rgba(255,255,255,.92);color:var(--text2);font-size:11px;font-weight:700;padding:7px 12px;border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:none;cursor:pointer;font-family:inherit">↺ Undo last point</button>
       <div id="tm-precision-hint" style="position:absolute;top:12px;left:12px;background:rgba(0,0,0,.55);color:#fff;font-size:10.5px;font-weight:700;padding:6px 10px;border-radius:999px;pointer-events:none">Hold &amp; drag to place precisely</div>
-      <!-- TEMPORARY diagnostic overlay (owner report 2026-08-20: a plain
-           quick tap on a still map landed a whole property away — magnitude
-           way past anything jitter/tremor explains, root cause not yet
-           confirmed). Shows the raw inputs behind each placed point so the
-           next live repro can be read directly off the screen instead of
-           guessed at from a photo. Remove once the real cause is found. -->
-      <div id="tm-debug" style="position:absolute;left:6px;right:6px;bottom:6px;max-height:150px;overflow:auto;background:rgba(0,0,0,.8);color:#5f5;font:9px/1.35 ui-monospace,monospace;padding:6px;border-radius:6px;z-index:30;pointer-events:none;white-space:pre-wrap"></div>
+      <!-- Diagnostic overlay from the 2026-08-20/21 tap-placement bug hunt.
+           Root cause is fixed now, so it's hidden from the live UI (owner
+           2026-08-22), but left in the DOM: _tmDebugSnap still writes into
+           it so a future repro can flip display back on without rebuilding
+           the logging. -->
+      <div id="tm-debug" style="display:none;position:absolute;left:6px;right:6px;bottom:6px;max-height:150px;overflow:auto;background:rgba(0,0,0,.8);color:#5f5;font:9px/1.35 ui-monospace,monospace;padding:6px;border-radius:6px;z-index:30;pointer-events:none;white-space:pre-wrap"></div>
       <div id="tm-crosshair" style="display:none;position:absolute;width:46px;height:46px;transform:translate(-50%,-50%);pointer-events:none;z-index:5">
         <div style="position:absolute;inset:0;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.35),0 2px 10px rgba(0,0,0,.3)"></div>
         <div style="position:absolute;left:50%;top:50%;width:2px;height:14px;background:#fff;transform:translate(-50%,-50%);box-shadow:0 0 2px rgba(0,0,0,.6)"></div>
@@ -858,8 +857,14 @@ function _tmInitPrecisionGesture(map,wrap){
   // try grabbing. This bump is real hardening on top of that, not a
   // confirmed second root cause, the live device is the only way to know
   // for sure whether 27px alone would have been enough.
-  const THRESH=20,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70,GRAB_R=27;
+  const THRESH=20,HOLD_MS=420,ZOOM_FACTOR=0.3,OFFSET_Y=70,GRAB_R=27,DRAG_HAPTIC_MS=45;
   let downX=0,downY=0,moved=false,active=false,timer=null,suppressTouchEnd=false;
+  // Rapid-fire haptic while a point is being dragged (owner ask): the ruler-
+  // like buzz confirms every bit of movement is registering, not just the
+  // grab and the drop. Throttled by time, not distance, so it stays a steady
+  // rhythm even for a slow, precise nudge. 45ms keeps it under the ~60Hz
+  // pointermove cadence without spamming the native bridge on every event.
+  let lastDragHaptic=0;
   let holdStartDigi=1,pinchOwn=false,pinchD0=0,pinchDigi0=1,pinchCam0=null;
   // The {s,i} (shapeIndex,pointIndex) of the existing vertex this touch
   // grabbed for adjustment, decided ONCE at pointerdown against the dots'
@@ -1058,6 +1063,10 @@ function _tmInitPrecisionGesture(map,wrap){
     e.preventDefault();
     const p=relPoint(e);
     placeCrosshair(p.x,p.y);
+    if(typeof _tdHaptic==='function'){
+      const now=performance.now();
+      if(now-lastDragHaptic>=DRAG_HAPTIC_MS){lastDragHaptic=now;_tdHaptic('tick');}
+    }
     try{
       const c=crosshairCoord(p.x,p.y);
       if(grab){
