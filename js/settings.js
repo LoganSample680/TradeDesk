@@ -1795,6 +1795,11 @@ function _obShowTos(e){if(e)e.preventDefault();if(typeof zAlert==='function')zAl
 // (sign out the just-created session, drop to login, point them at it).
 async function _obAlreadyHaveAccount(){
   try{if(typeof _supa!=='undefined'&&_supa&&_supa.auth&&_supa.auth.signOut)await _supa.auth.signOut();}catch(_e){}
+  // The just-created throwaway session's identity must never linger as a
+  // "remembered device" (js/cloud.js _clearRememberedLogin): otherwise the
+  // supaShowLogin() called two lines down would immediately offer to resume
+  // the very account this bail-out is trying to get away from.
+  if(typeof _clearRememberedLogin==='function')_clearRememberedLogin();
   document.getElementById('onboarding-overlay')?.remove();
   if(typeof supaShowLogin==='function')supaShowLogin();
   setTimeout(()=>{const el=document.getElementById('supa-login-err');if(el){el.textContent='Sign in with your original method below.';el.style.color='var(--blue)';}},150);

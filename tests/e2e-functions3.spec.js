@@ -2048,6 +2048,299 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(result.stepReset).toBe(true);
   });
 
+  // ── Remembered device: cold-launch Face ID resume (owner design 2026-08-22) ─
+  // "Remember this device, skip straight to Face ID" the way Navy Federal and
+  // other banking apps do. A small local-only zp3_remembered_login record
+  // (NOT a security boundary, just UI state, like a bank pre-filling your
+  // username) lets supaShowLogin() replace a cold blank email box with either
+  // an auto-firing TdLock resume (session already valid) or the cached
+  // Apple/Google/password buttons (session gone, real re-auth required, no
+  // RPC round trip needed since the methods are already known). See
+  // js/cloud.js _rememberLogin / _loginShowWelcomeBack / _loginRunTdLock /
+  // _loginEnterAppWithSession / _loginNotYou, and js/handoff.js's
+  // _lockPlugin, reused as-is, never a second registerPlugin('TdLock') call.
+  test.describe('Remembered device: cold-launch Face ID resume', () => {
+    test('no remembered login: the blank gate renders exactly as before, regression guard', async () => {
+      const result = await page.evaluate(async () => {
+        if (typeof supaShowLogin !== 'function') return { skip: true };
+        document.getElementById('supa-login-overlay')?.remove();
+        localStorage.removeItem('zp3_remembered_login');
+        await supaShowLogin({ force: true });
+        const gate = document.getElementById('login-gate');
+        const resultEl = document.getElementById('login-result');
+        const r = {
+          gateShown: gate ? gate.style.display !== 'none' : false,
+          resultHidden: resultEl ? resultEl.style.display !== 'block' : true,
+          hasWelcomeBack: !!document.getElementById('login-welcome-back'),
+        };
+        document.getElementById('supa-login-overlay')?.remove();
+        return { skip: false, ...r };
+      });
+      if (result.skip) return;
+      expect(result.gateShown, 'nothing remembered means the same blank email gate as before this feature').toBe(true);
+      expect(result.resultHidden).toBe(true);
+      expect(result.hasWelcomeBack).toBe(false);
+    });
+
+    test('remembered login + valid session + TdLock available: fires automatically, no email typed, success resumes straight into the app', async () => {
+      const result = await page.evaluate(async () => {
+        if (typeof supaShowLogin !== 'function' || typeof _lockPlugin !== 'function') return { skip: true };
+        document.getElementById('supa-login-overlay')?.remove();
+        localStorage.setItem('zp3_remembered_login', JSON.stringify({ email: 'grace@greenpaint.com', hasApple: true, hasGoogle: false, hasPassword: true, ts: Date.now() }));
+        const realCap = window.Capacitor;
+        const savedSupa = _supa;
+        const savedLoadAccountData = window.loadAccountData;
+        const savedCloudLoad = window.supaLoadFromCloud;
+        const savedBootSettled = window._bootSyncSettled;
+        const savedGoPg = window.goPg;
+        const savedUserState = { supaUser: _supaUser, cloudLoaded: _supaCloudLoaded };
+        let unlockCalls = 0, loadAccountCalls = 0, cloudLoadCalls = 0;
+        const goPgCalls = [];
+        const savedLoginIdentify = window._loginIdentify;
+        let identifyCalls = 0;
+        const fakeSession = { access_token: 'fake-jwt', refresh_token: 'fake-refresh', user: { id: 'e2e-remembered-user', email: 'grace@greenpaint.com' } };
+        try {
+          // _loginIdentify is what typing an email + tapping Continue actually
+          // calls, spying on it is the precise proof nothing was ever typed,
+          // not just that the overlay happened to be gone by the time we look.
+          window._loginIdentify = async (...a) => { identifyCalls++; return savedLoginIdentify.apply(this, a); };
+          _supa = { ...savedSupa, auth: { ...savedSupa.auth, getSession: () => Promise.resolve({ data: { session: fakeSession }, error: null }) } };
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: () => ({
+              available: () => Promise.resolve({ available: true, kind: 'face' }),
+              unlock: () => { unlockCalls++; return Promise.resolve({ ok: true }); },
+            }),
+          };
+          window.loadAccountData = async () => { loadAccountCalls++; return true; };
+          window.supaLoadFromCloud = async () => { cloudLoadCalls++; };
+          window._bootSyncSettled = () => {};
+          window.goPg = (id) => { goPgCalls.push(id); };
+          await supaShowLogin({ force: true });
+          // supaShowLogin's own await chain covers getSession(), but the TdLock
+          // probe+unlock+account-load it kicks off is deliberately fire-and-
+          // forget from supaShowLogin's point of view (a "show the screen"
+          // function shouldn't block on the whole downstream sign-in), so poll
+          // for it to settle rather than assuming the outer await covers it.
+          const t0 = Date.now();
+          while (goPgCalls.length === 0 && Date.now() - t0 < 2000) { await new Promise(r => setTimeout(r, 15)); }
+          return {
+            skip: false, unlockCalls, loadAccountCalls, cloudLoadCalls, goPgCalls, identifyCalls,
+            overlayGone: !document.getElementById('supa-login-overlay'),
+          };
+        } finally {
+          _supa = savedSupa;
+          window.Capacitor = realCap;
+          window.loadAccountData = savedLoadAccountData;
+          window.supaLoadFromCloud = savedCloudLoad;
+          window._bootSyncSettled = savedBootSettled;
+          window.goPg = savedGoPg;
+          window._loginIdentify = savedLoginIdentify;
+          _supaUser = savedUserState.supaUser; _supaCloudLoaded = savedUserState.cloudLoaded;
+          localStorage.removeItem('zp3_remembered_login');
+          document.getElementById('supa-login-overlay')?.remove();
+        }
+      });
+      if (result.skip) return;
+      expect(result.unlockCalls, 'TdLock fires the instant the screen appears, no preliminary tap').toBe(1);
+      expect(result.loadAccountCalls, 'a TdLock success resumes the already-valid session via the real account-load path').toBe(1);
+      expect(result.cloudLoadCalls).toBe(1);
+      expect(result.goPgCalls, 'lands on the dashboard').toContain('pg-dash');
+      expect(result.overlayGone, 'the login overlay is gone once the session resumes').toBe(true);
+      expect(result.identifyCalls, 'no email was ever typed and submitted, the fast path never needed the identify step').toBe(0);
+    });
+
+    test('remembered login + valid session + TdLock fails/cancels: drops to the password field, pre-filled with the remembered email', async () => {
+      const result = await page.evaluate(async () => {
+        if (typeof supaShowLogin !== 'function' || typeof _lockPlugin !== 'function') return { skip: true };
+        document.getElementById('supa-login-overlay')?.remove();
+        localStorage.setItem('zp3_remembered_login', JSON.stringify({ email: 'grace@greenpaint.com', hasApple: false, hasGoogle: false, hasPassword: true, ts: Date.now() }));
+        const realCap = window.Capacitor;
+        const savedSupa = _supa;
+        let unlockCalls = 0;
+        const fakeSession = { access_token: 'fake-jwt', refresh_token: 'fake-refresh', user: { id: 'e2e-remembered-user-2', email: 'grace@greenpaint.com' } };
+        try {
+          _supa = { ...savedSupa, auth: { ...savedSupa.auth, getSession: () => Promise.resolve({ data: { session: fakeSession }, error: null }) } };
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: () => ({
+              available: () => Promise.resolve({ available: true, kind: 'face' }),
+              unlock: () => { unlockCalls++; return Promise.resolve({ ok: false }); },
+            }),
+          };
+          await supaShowLogin({ force: true });
+          const t0 = Date.now();
+          while (!document.getElementById('supa-pass') && Date.now() - t0 < 2000) { await new Promise(r => setTimeout(r, 15)); }
+          const html = document.getElementById('login-result')?.innerHTML || '';
+          return {
+            skip: false, unlockCalls,
+            hasPasswordField: html.includes('id="supa-pass"'),
+            emailCarried: html.includes('value="grace@greenpaint.com"'),
+            welcomeBackGone: !document.getElementById('login-welcome-back'),
+          };
+        } finally {
+          _supa = savedSupa;
+          window.Capacitor = realCap;
+          localStorage.removeItem('zp3_remembered_login');
+          document.getElementById('supa-login-overlay')?.remove();
+        }
+      });
+      if (result.skip) return;
+      expect(result.unlockCalls).toBe(1);
+      expect(result.hasPasswordField, 'a cancelled/failed unlock falls through to real re-auth, never a blank email box').toBe(true);
+      expect(result.emailCarried, 'the remembered email pre-fills the password path, never typed twice').toBe(true);
+      expect(result.welcomeBackGone).toBe(true);
+    });
+
+    test('remembered login + valid session + TdLock reports unavailable: straight to password fallback, no dead-end prompt shown', async () => {
+      const result = await page.evaluate(async () => {
+        if (typeof supaShowLogin !== 'function' || typeof _lockPlugin !== 'function') return { skip: true };
+        document.getElementById('supa-login-overlay')?.remove();
+        localStorage.setItem('zp3_remembered_login', JSON.stringify({ email: 'grace@greenpaint.com', hasApple: false, hasGoogle: false, hasPassword: true, ts: Date.now() }));
+        const realCap = window.Capacitor;
+        const savedSupa = _supa;
+        let unlockCalls = 0, availableCalls = 0;
+        const fakeSession = { access_token: 'fake-jwt', refresh_token: 'fake-refresh', user: { id: 'e2e-remembered-user-3', email: 'grace@greenpaint.com' } };
+        try {
+          _supa = { ...savedSupa, auth: { ...savedSupa.auth, getSession: () => Promise.resolve({ data: { session: fakeSession }, error: null }) } };
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: () => ({
+              available: () => { availableCalls++; return Promise.resolve({ available: false, kind: 'none' }); },
+              unlock: () => { unlockCalls++; return Promise.resolve({ ok: true }); },
+            }),
+          };
+          await supaShowLogin({ force: true });
+          const t0 = Date.now();
+          while (!document.getElementById('supa-pass') && Date.now() - t0 < 2000) { await new Promise(r => setTimeout(r, 15)); }
+          const html = document.getElementById('login-result')?.innerHTML || '';
+          return { skip: false, unlockCalls, availableCalls, hasPasswordField: html.includes('id="supa-pass"') };
+        } finally {
+          _supa = savedSupa;
+          window.Capacitor = realCap;
+          localStorage.removeItem('zp3_remembered_login');
+          document.getElementById('supa-login-overlay')?.remove();
+        }
+      });
+      if (result.skip) return;
+      expect(result.availableCalls, 'availability is checked before ever trying to unlock').toBe(1);
+      expect(result.unlockCalls, 'never fires a doomed prompt on a device with no biometrics/passcode').toBe(0);
+      expect(result.hasPasswordField, 'skips straight to real re-auth, never a dead end').toBe(true);
+    });
+
+    test('remembered login but NO valid session (expired): straight to cached method buttons, zero RPC call, TdLock never fires (it only gates resuming an ALREADY-valid session)', async () => {
+      const result = await page.evaluate(async () => {
+        if (typeof supaShowLogin !== 'function') return { skip: true };
+        document.getElementById('supa-login-overlay')?.remove();
+        localStorage.setItem('zp3_remembered_login', JSON.stringify({ email: 'grace@greenpaint.com', hasApple: true, hasGoogle: false, hasPassword: true, ts: Date.now() }));
+        const realCap = window.Capacitor;
+        const savedSupa = _supa;
+        let rpcCalled = false, unlockCalls = 0, availableCalls = 0;
+        try {
+          _supa = { ...savedSupa, auth: { ...savedSupa.auth, getSession: () => Promise.resolve({ data: { session: null }, error: null }) }, rpc: (fn, args) => { rpcCalled = true; return Promise.resolve({ data: { exists: true, hasPassword: true, hasApple: true, hasGoogle: false }, error: null }); } };
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: () => ({
+              available: () => { availableCalls++; return Promise.resolve({ available: true, kind: 'face' }); },
+              unlock: () => { unlockCalls++; return Promise.resolve({ ok: true }); },
+            }),
+          };
+          await supaShowLogin({ force: true });
+          const html = document.getElementById('login-result')?.innerHTML || '';
+          return {
+            skip: false, rpcCalled, unlockCalls, availableCalls,
+            hasFaceId: /continue with face id/i.test(html),
+            hasPasswordField: html.includes('id="supa-pass"'),
+            emailCarried: html.includes('value="grace@greenpaint.com"'),
+          };
+        } finally {
+          _supa = savedSupa;
+          window.Capacitor = realCap;
+          localStorage.removeItem('zp3_remembered_login');
+          document.getElementById('supa-login-overlay')?.remove();
+        }
+      });
+      if (result.skip) return;
+      expect(result.rpcCalled, 'the cached methods answer the question, no check_login_methods round trip needed').toBe(false);
+      expect(result.unlockCalls, 'TdLock only ever gates resuming an already-valid session, it must never substitute for real re-auth').toBe(0);
+      expect(result.availableCalls, 'TdLock is not even probed on the no-session branch').toBe(0);
+      expect(result.hasFaceId, 'the account\'s own Apple Face ID button still shows, that is separate from TdLock').toBe(true);
+      expect(result.hasPasswordField).toBe(true);
+      expect(result.emailCarried, 'the remembered email pre-fills the password path').toBe(true);
+    });
+
+    test('"Not you?" clears the remembered-device record and signs out, landing back on a genuinely blank gate', async () => {
+      const result = await page.evaluate(async () => {
+        if (typeof _loginNotYou !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+        document.getElementById('supa-login-overlay')?.remove();
+        localStorage.setItem('zp3_remembered_login', JSON.stringify({ email: 'grace@greenpaint.com', hasApple: false, hasGoogle: false, hasPassword: true, ts: Date.now() }));
+        const savedSupa = _supa;
+        let signOutCalled = false;
+        try {
+          _supa = { ...savedSupa, auth: { ...savedSupa.auth, signOut: (opts) => { signOutCalled = true; return savedSupa.auth.signOut(opts); } } };
+          const p = _loginNotYou();
+          // supaSignOut() (which _loginNotYou reuses, §7.3) waits (bounded 3s) for
+          // the real SIGNED_OUT event to drain _deliberateSignOut. The mocked
+          // client's signOut() never fires onAuthStateChange on its own
+          // (tests/helpers.js), so fire it by hand to settle promptly instead of
+          // eating the full timeout.
+          setTimeout(() => { if (typeof window.__capturedAuthCallback === 'function') window.__capturedAuthCallback('SIGNED_OUT', null); }, 20);
+          await p;
+          return {
+            skip: false, signOutCalled,
+            remembered: localStorage.getItem('zp3_remembered_login'),
+            overlayPresent: !!document.getElementById('supa-login-overlay'),
+            gateShown: document.getElementById('login-gate')?.style.display !== 'none',
+          };
+        } finally {
+          _supa = savedSupa;
+          localStorage.removeItem('zp3_remembered_login');
+          document.getElementById('supa-login-overlay')?.remove();
+        }
+      });
+      if (result.skip) return;
+      expect(result.signOutCalled, 'the lingering session is actually signed out, iOS never clears this on its own').toBe(true);
+      expect(result.remembered, 'the remembered-device record is cleared').toBe(null);
+      expect(result.overlayPresent, 'a fresh login screen exists in its place').toBe(true);
+      expect(result.gateShown, 'lands on the blank email gate, not a stale welcome-back screen').toBe(true);
+    });
+
+    test('every real sign-out path clears the remembered-device record, not just the "Not you?" escape hatch', async () => {
+      const result = await page.evaluate(async () => {
+        if (typeof _wipeLocalAccountData !== 'function') return { skip: true };
+        const setRemembered = () => localStorage.setItem('zp3_remembered_login', JSON.stringify({ email: 'grace@greenpaint.com', hasApple: false, hasGoogle: false, hasPassword: true, ts: Date.now() }));
+        // _wipeLocalAccountData is the single choke point both the deliberate
+        // SIGNED_OUT handler and supaSignOut()'s own guarantee-wipe call
+        // through (js/cloud.js), covering all 3 "Sign out" buttons in the app.
+        setRemembered();
+        _wipeLocalAccountData();
+        const afterWipe = localStorage.getItem('zp3_remembered_login');
+        // The onboarding "I already have an account" bail-out (js/settings.js
+        // _obAlreadyHaveAccount) signs a just-created throwaway session out via
+        // a RAW _supa.auth.signOut(), never reaching _wipeLocalAccountData at
+        // all, so it needs (and has) its own explicit clear.
+        let afterObBail = 'skipped-ob-check';
+        if (typeof _obAlreadyHaveAccount === 'function') {
+          setRemembered();
+          document.getElementById('onboarding-overlay')?.remove();
+          const savedSupa = _supa;
+          try {
+            _supa = { ...savedSupa, auth: { ...savedSupa.auth, signOut: () => Promise.resolve({ error: null }) } };
+            await _obAlreadyHaveAccount();
+            afterObBail = localStorage.getItem('zp3_remembered_login');
+          } finally {
+            _supa = savedSupa;
+            document.getElementById('supa-login-overlay')?.remove();
+          }
+        }
+        return { skip: false, afterWipe, afterObBail };
+      });
+      if (result.skip) return;
+      expect(result.afterWipe, '_wipeLocalAccountData (deliberate sign-out + cross-account reset) clears it').toBe(null);
+      expect(result.afterObBail, '_obAlreadyHaveAccount\'s mid-onboarding bail-out clears it too').toBe(null);
+    });
+  });
+
   test('supaSignIn: calls without throwing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof supaSignIn !== 'function') return { skip: true };

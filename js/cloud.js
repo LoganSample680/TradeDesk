@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.21.26.45';
+const APP_VERSION='08.21.26.46';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2259,6 +2259,13 @@ async function supaInit(){
         }
         _supaUser=session.user;
         _saveSessionBackup(session);
+        // "Remember this device" (owner design 2026-08-22): every real sign-in
+        // that reaches here (onboarding signups are suppressed by the
+        // _obInProgress return above) caches WHO signed in and HOW, so the next
+        // cold launch's login gate can skip straight to a Face ID resume or, at
+        // worst, straight to the right buttons instead of a blank email box.
+        // Pure UI convenience, never a security boundary: see _rememberLogin.
+        _rememberLogin(session.user);
         document.getElementById('supa-login-overlay')?.remove();
         document.getElementById('welcome-overlay')?.remove();
         // Navigate to the dashboard NOW, before awaiting the account load below.
@@ -5220,7 +5227,7 @@ function _pwToggle(inputId,btnId){
   btn.innerHTML=_eyeSvg(visible);
   btn.setAttribute('aria-label',visible?'Hide password':'Show password');
 }
-function supaShowLogin(opts={}){
+async function supaShowLogin(opts={}){
   if(!supaEnabled())return;
   // Never interrupt the user with a login screen if they have a session backup
   // (setSession() will silently re-auth on the next connection probe) or cached data
@@ -5395,6 +5402,154 @@ function supaShowLogin(opts={}){
       _fi.style.justifyContent='flex-start';
     }
   }
+  // ── Cold-launch fast path: remembered device (owner design 2026-08-22,
+  // "remember this device, skip straight to Face ID") ──────────────────────
+  // The blank #login-gate above has already rendered synchronously (existing
+  // behavior, untouched): a genuinely new/unrecognized visitor sees exactly
+  // what they always have. This block only runs for the normal branded
+  // screen (never the invite/sub-referral pitches, those are unrelated
+  // flows), and only replaces that blank gate with something smarter when
+  // there's an actual remembered identity to act on. getSession() is
+  // local/instant (only network-refreshes if the stored token is stale), so
+  // in the common case this resolves before anyone could type anything.
+  if(_normalLogin){
+    let _remembered=null;
+    try{_remembered=JSON.parse(localStorage.getItem('zp3_remembered_login')||'null');}catch(_e){_remembered=null;}
+    if(_remembered&&_remembered.email&&_supa){
+      let _fpSession=null;
+      try{const{data}=await _supa.auth.getSession();_fpSession=data&&data.session||null;}catch(_e){_fpSession=null;}
+      // The overlay can be gone by the time this await settles (a real
+      // sign-in landed, or the caller tore it down some other way): never
+      // resurrect fast-path UI onto a screen nobody is looking at.
+      if(document.getElementById('supa-login-overlay')){
+        if(_fpSession){
+          _loginShowWelcomeBack(_remembered,_fpSession);
+        }else{
+          // Real re-authentication is required here, so this uses the exact
+          // same rendering _loginIdentify's RPC result would, just skipping
+          // the round trip: the cached methods ARE the answer, no network
+          // call needed to ask a question we already know the answer to.
+          _loginRenderResult(_remembered.email,{exists:true,hasApple:!!_remembered.hasApple,hasGoogle:!!_remembered.hasGoogle,hasPassword:!!_remembered.hasPassword});
+        }
+      }
+    }
+  }
+}
+// "Welcome back" resume screen: a remembered device AND an already-valid
+// session (confirmed by supaShowLogin's own getSession() check just above).
+// There is nothing left to authenticate, only to RESUME, so this fires
+// TdLock the instant it appears, no preliminary tap, the "glance and you're
+// in" pattern banking apps use. TdLock ONLY ever gates resuming an
+// already-valid session, here, it must never substitute for real re-auth:
+// every other branch of this feature (no session, TdLock fails/unavailable)
+// routes through _loginRenderResult's normal Apple/Google/password buttons,
+// which is real re-authentication and correctly requires it.
+function _loginShowWelcomeBack(remembered,session){
+  const gate=document.getElementById('login-gate');
+  const result=document.getElementById('login-result');
+  const sub=document.getElementById('login-sub');
+  if(gate)gate.style.display='none';
+  if(!result)return;
+  if(sub)sub.textContent='';
+  const _faceIdIconLg='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 012-2h2"/><path d="M4 16v2a2 2 0 002 2h2"/><path d="M20 8V6a2 2 0 00-2-2h-2"/><path d="M20 16v2a2 2 0 01-2 2h-2"/><circle cx="9" cy="10" r="1" fill="#fff" stroke="none"/><circle cx="15" cy="10" r="1" fill="#fff" stroke="none"/><path d="M9 15c1 1 5 1 6 0"/></svg>';
+  result.innerHTML=
+    '<div id="login-welcome-back" style="text-align:center;padding:14px 0 6px">'+
+      '<div style="width:56px;height:56px;margin:0 auto 14px;border-radius:16px;background:linear-gradient(135deg,#2563eb,#1e40af);display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(37,99,235,.35)">'+_faceIdIconLg+'</div>'+
+      '<div style="font-size:19px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Welcome back</div>'+
+      '<div style="font-size:13.5px;color:var(--text3);margin-bottom:20px">'+escHtml(remembered.email)+'</div>'+
+      '<div id="login-wb-status" style="font-size:13px;color:var(--text3);margin-bottom:18px;min-height:16px">Unlocking…</div>'+
+      '<button onclick="_loginNotYou()" style="border:none;background:none;color:var(--text3);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0">Not you? Use a different email</button>'+
+    '</div>';
+  result.style.display='block';
+  _loginRunTdLock(remembered,session);
+}
+// Fires the actual OS biometric check via TdLock (native/td-lock, reused
+// as-is per js/handoff.js's _lockPlugin resolver, never a second
+// registerPlugin('TdLock') call). Every outcome that isn't a clean success
+// falls through to the same real-re-auth screen: unavailable (no
+// biometrics/passcode on this device) never shows a dead-end prompt, and
+// fail/cancel never leaves the user stranded on a screen with nothing to
+// tap but "not you".
+async function _loginRunTdLock(remembered,session){
+  const _cachedMethods={exists:true,hasApple:!!remembered.hasApple,hasGoogle:!!remembered.hasGoogle,hasPassword:!!remembered.hasPassword};
+  const P=(typeof _lockPlugin==='function')?_lockPlugin():null;
+  if(!P||typeof P.available!=='function'||typeof P.unlock!=='function'){
+    _loginRenderResult(remembered.email,_cachedMethods);
+    return;
+  }
+  let avail=null;
+  try{avail=await P.available();}catch(_e){avail=null;}
+  if(!avail||!avail.available){
+    _loginRenderResult(remembered.email,_cachedMethods);
+    return;
+  }
+  const status=document.getElementById('login-wb-status');
+  if(status)status.textContent='Unlocking…';
+  let r=null;
+  try{r=await P.unlock({reason:'Sign in to TradeDesk'});}catch(_e){r=null;}
+  // The welcome-back screen (or the whole overlay) may already be gone by
+  // the time the OS sheet resolves, e.g. "Not you?" was tapped mid-prompt.
+  if(!document.getElementById('login-welcome-back'))return;
+  if(r&&r.ok){
+    await _loginEnterAppWithSession(session);
+  }else{
+    _loginRenderResult(remembered.email,_cachedMethods);
+  }
+}
+// Resumes an already-valid session straight into the app: the session was
+// confirmed valid before TdLock ever fired, TdLock only gated whether THIS
+// device may resume it, so there is no sign-in left to perform, only the
+// account load. Deliberately its own small function rather than reusing the
+// _supa init boot sequence's inline "session found" branch: that code
+// carries boot-only state (the boot overlay, the OAuth-return handshake,
+// _oauthRet) that has no meaning this far after boot has already finished,
+// threading it through would mean passing boot context into a function
+// invoked from a screen boot doesn't know exists. It reuses the same two
+// underlying primitives that branch does, loadAccountData() then
+// supaLoadFromCloud(), rather than inventing a third loading path.
+async function _loginEnterAppWithSession(session){
+  _supaUser=session.user;
+  _hlcInit();_opDbLoad();
+  _saveSessionBackup(session);
+  document.getElementById('supa-login-overlay')?.remove();
+  const hasAccount=await loadAccountData();
+  if(hasAccount){
+    window._bootSyncPending=true;
+    goPg('pg-dash');
+    try{await supaLoadFromCloud();}finally{_bootSyncSettled();}
+    _supaCloudLoaded=true;
+  } else {
+    // Defensive only: a remembered login implies a real account existed as
+    // of the last sign-in. If it's somehow gone now, land on the plain
+    // empty dashboard rather than stranding the user on a dead screen.
+    _authSettingsLoaded=true;
+    supaSetStatus('cloud');
+    renderDash();
+    goPg('pg-dash');
+  }
+}
+// Escape hatch from the remembered-device fast path. Deliberately does MORE
+// than the ordinary "try a different email" reset (_loginResetGate): iOS
+// does not clear a biometry-protected identity on its own, so this is the
+// explicit point that stops a shared/resold phone from whispering the last
+// person's email (and auto-offering their Face ID) forever. Reuses
+// supaSignOut() (the same function every "Sign out" button in the app
+// calls, §7.3: don't hand-roll a parallel sign-out path) rather than a raw
+// _supa.auth.signOut(), so this gets the exact same guaranteed wipe +
+// realtime-channel teardown every other sign-out gets, instead of risking
+// the involuntary-SIGNED_OUT "keep cache, show offline banner" branch a bare
+// signOut() call would fall into here.
+async function _loginNotYou(){
+  _clearRememberedLogin();
+  document.getElementById('supa-login-overlay')?.remove();
+  if(typeof supaSignOut==='function'){
+    try{await supaSignOut();}catch(_e){}
+  }
+  // Belt-and-suspenders: supaSignOut's SIGNED_OUT handler rebuilds the login
+  // overlay itself (force:true) once the wipe completes. If that somehow
+  // didn't happen (e.g. _supa never initialized), build the plain blank
+  // gate directly so "Not you" never strands the user on a removed overlay.
+  if(!document.getElementById('supa-login-overlay'))supaShowLogin({force:true});
 }
 // True only in the native iOS shell, never a browser on any platform. Google
 // Sign-In is hidden there whenever Face ID is also available for that account
@@ -5576,6 +5731,41 @@ async function _supaEmpSignUp(){
   if(err){err.style.color='var(--text3)';err.textContent='Account created, signing you in...';}
   await _supa.auth.signInWithPassword({email,password:pass});
 }
+// ── Remembered device (owner design 2026-08-22, "remember this device, skip
+// straight to Face ID") ─────────────────────────────────────────────────────
+// A small local-only record of who last signed in on THIS device and which
+// methods their account has on file. NOT a security boundary, exactly like a
+// banking app pre-filling your username: the real authority stays (1) the
+// Supabase session token itself (persistSession:true, already survives a
+// relaunch) and (2) TdLock's OS-level biometric check gating whether the
+// cold-launch fast path in supaShowLogin() is allowed to resume that token
+// without asking again. Deriving hasApple/hasGoogle/hasPassword from
+// session.user.identities is a heuristic (an 'email' identity here always
+// means password auth, since this app never offers magic-link/OTP), good
+// enough for pre-filling which buttons to show, never used to grant access.
+function _rememberLogin(user){
+  if(!user||!user.email)return;
+  try{
+    const ids=user.identities||[];
+    const has=p=>ids.some(i=>i&&i.provider===p);
+    localStorage.setItem('zp3_remembered_login',JSON.stringify({
+      email:user.email,
+      hasApple:has('apple'),
+      hasGoogle:has('google'),
+      hasPassword:has('email'),
+      ts:Date.now()
+    }));
+  }catch(_e){}
+}
+// Every real sign-out path must call this (see _wipeLocalAccountData, the
+// single deliberate-sign-out choke point, and _obAlreadyHaveAccount's
+// mid-onboarding bail-out which never reaches that function). Without it a
+// shared/resold phone would keep whispering the last person's email and
+// auto-firing Face ID for THEIR account forever, iOS does not clear a
+// biometry-protected identity like this on its own.
+function _clearRememberedLogin(){
+  try{localStorage.removeItem('zp3_remembered_login');}catch(_e){}
+}
 let _deliberateSignOut=false;
 function _saveSessionBackup(session){
   if(!session)return;
@@ -5626,6 +5816,11 @@ function _wipeLocalAccountData(){
   _mergeOnSignIn=false;_loadedFromCacheOnly=false;_loadedDataOwner=null;
   localStorage.removeItem('zp3_offline_pending');
   localStorage.removeItem('zp3_cloud_cache');
+  // Deliberate sign-out: the remembered-device fast path must never survive
+  // it, or the very next cold launch (or the login screen this same wipe is
+  // about to render) would auto-offer Face ID for the account that just
+  // explicitly signed out. See _clearRememberedLogin.
+  _clearRememberedLogin();
   // Delta cursor + its sidecar are per-account too, drop both so the next account
   // rebuilds from a full load rather than delta-ing against this account's cursor.
   _deltaCursor=null;localStorage.removeItem('zp3_delta_meta');
