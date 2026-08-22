@@ -572,8 +572,24 @@ async function _milePersonalStopSweep(){
       if(!mileage.includes(inb)||!mileage.includes(out))continue;
       if(!near(inb.toCoord,out.fromCoord))continue;            // not the same waypoint
       if((inb.logged_by_id||null)!==(out.logged_by_id||null))continue;
+      // 'Stop' (or blank) used to be skipped outright here on the theory that
+      // an unnamed waypoint is "the fence layer's job" (_geoCollapseDetours,
+      // js/geo-track.js), which collapses it live while the trip is still in
+      // memory. That theory has a hole: _geoCollapseDetours only works while
+      // its origin chain survives intact between the stop and the return to
+      // a business fence, and a real personal errand risks an app
+      // suspend/kill in between, which resets that chain. When that happens
+      // the live collapse silently never runs, and this durable sweep was
+      // the ONLY other thing that ever re-examines a closed pair of rows, so
+      // skipping unnamed ones left them orphaned in the log forever (owner
+      // report 2026-08-22: a Shop -> Stop leg that should have collapsed,
+      // still sitting in mileage days later). Not double judging: whenever
+      // the live collapse DID run, the split rows never existed separately
+      // to begin with, there's nothing left here to re-examine. A genuinely
+      // blank name (not even the 'Stop' placeholder) still bails, there is
+      // nothing to test or show for a truly empty label.
       const name=String(inb.to_name||'').trim();
-      if(!name||name==='Stop')continue;                        // unnamed is the fence layer's job
+      if(!name)continue;
       const day=inb.date||todayKey();
       const P={lat:inb.toCoord.lat,lon:inb.toCoord.lng};
       // A CLIENT or JOB SITE is a business destination by definition, and

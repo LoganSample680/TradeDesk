@@ -919,6 +919,105 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // ── _milePersonalStopSweep: unnamed 'Stop' legs (owner report 2026-08-22) ──
+  // A durable, on-load sweep pairing two adjacent completed mileage rows
+  // (leg IN to a waypoint, leg OUT of the same waypoint) and deciding if the
+  // waypoint was business or personal. Used to bail immediately whenever the
+  // waypoint's name was literally the 'Stop' placeholder (unresolved POI),
+  // on the theory that _geoCollapseDetours (js/geo-track.js) already owns
+  // that case live. It doesn't when the app gets backgrounded/killed mid
+  // stop, which breaks _geoCollapseDetours' in-memory origin chain, the
+  // exact live shape of the owner's report: a Shop -> Stop leg saved to
+  // mileage that should have collapsed. This sweep is the only other thing
+  // that ever re-examines a closed pair, so it must not skip unnamed ones.
+  const stopSweepSeed = (rows) => page.evaluate((rows) => {
+    window.__origMileage = mileage.slice(); mileage.length = 0;
+    window.__origJobs = jobs.slice(); jobs.length = 0;
+    window.__origClients = clients.slice(); clients.length = 0;
+    window.__origExpenses = expenses.slice(); expenses.length = 0;
+    window._milePersonalSweepRan = false;
+    rows.forEach(r => mileage.push(r));
+  }, rows);
+  const stopSweepRestore = () => page.evaluate(() => {
+    if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; }
+    if (window.__origJobs) { jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null; }
+    if (window.__origClients) { clients.length = 0; window.__origClients.forEach(c => clients.push(c)); window.__origClients = null; }
+    if (window.__origExpenses) { expenses.length = 0; window.__origExpenses.forEach(e => expenses.push(e)); window.__origExpenses = null; }
+  });
+  const sweepCall = () => page.evaluate(async () => {
+    const fixed = await _milePersonalStopSweep();
+    return { fixed, left: mileage.map(m => m.id) };
+  });
+  const STOP = { lat: 9.10, lon: 9.10 };
+  const SHOPX = { lat: 9.00, lon: 9.00 };
+  const BIZX = { lat: 9.50, lon: 9.50 };
+  const now = () => Date.now();
+  const stopLegRows = () => ([
+    { id: 'sw-inb', gps: true, legKey: 'sw-lg-1', fromCoord: { lat: SHOPX.lat, lng: SHOPX.lon }, toCoord: { lat: STOP.lat, lng: STOP.lon },
+      from_name: 'Shop', to_name: 'Stop', miles: 3.5, date: todayKeySafe(), startedIso: new Date(now() - 3600000).toISOString(), endedIso: new Date(now() - 3300000).toISOString() },
+    { id: 'sw-out', gps: true, legKey: 'sw-lg-2', fromCoord: { lat: STOP.lat, lng: STOP.lon }, toCoord: { lat: SHOPX.lat, lng: SHOPX.lon },
+      from_name: 'Stop', to_name: 'Shop', miles: 3.4, date: todayKeySafe(), startedIso: new Date(now() - 3000000).toISOString(), endedIso: new Date(now() - 2700000).toISOString() },
+  ]);
+  function todayKeySafe() { return new Date().toISOString().slice(0, 10); }
+
+  test('stop-sweep: unnamed Stop, round trip back to the same origin, no business match, both legs collapse', async () => {
+    await geoReset();
+    await stopSweepSeed(stopLegRows());
+    const r = await sweepCall();
+    expect(r.fixed, 'the owner report shape: a Shop -> Stop -> Shop trip with nothing business in it').toBe(1);
+    expect(r.left).toEqual([]);
+    await stopSweepRestore();
+    await geoRestore();
+  });
+
+  test('stop-sweep: unnamed Stop between two DIFFERENT businesses collapses to one direct leg, not a round trip', async () => {
+    await geoReset();
+    const rows = [
+      { id: 'sw-inb2', gps: true, legKey: 'sw-lg-3', fromCoord: { lat: SHOPX.lat, lng: SHOPX.lon }, toCoord: { lat: STOP.lat, lng: STOP.lon },
+        from_name: 'Shop', to_name: 'Stop', miles: 3.5, date: todayKeySafe(), startedIso: new Date(now() - 3600000).toISOString(), endedIso: new Date(now() - 3300000).toISOString() },
+      { id: 'sw-out2', gps: true, legKey: 'sw-lg-4', fromCoord: { lat: STOP.lat, lng: STOP.lon }, toCoord: { lat: BIZX.lat, lng: BIZX.lon },
+        from_name: 'Stop', to_name: 'Ace Supply', miles: 6.0, date: todayKeySafe(), startedIso: new Date(now() - 3000000).toISOString(), endedIso: new Date(now() - 2700000).toISOString() },
+    ];
+    await stopSweepSeed(rows);
+    await page.evaluate(() => { window.__origRouteDistance = _routeDistance; window._routeDistance = _routeDistance = async () => ({ miles: 5.1, mins: 12 }); });
+    const r = await sweepCall();
+    expect(r.fixed).toBe(1);
+    expect(r.left).toEqual(['sw-out2']);
+    const survivor = await page.evaluate(() => mileage.find(m => m.id === 'sw-out2'));
+    expect(survivor.from_name, 'the surviving leg now runs endpoint to endpoint, origin to the far business').toBe('Shop');
+    expect(survivor.passedThrough && survivor.passedThrough.stop && survivor.passedThrough.stop.name).toBe('Stop');
+    await page.evaluate(() => { _routeDistance = window._routeDistance = window.__origRouteDistance; window.__origRouteDistance = null; });
+    await stopSweepRestore();
+    await geoRestore();
+  });
+
+  test('stop-sweep: unnamed Stop with a same-day receipt at its pin stays, both legs survive', async () => {
+    await geoReset();
+    await stopSweepSeed(stopLegRows());
+    await page.evaluate(() => {
+      window.__origBizReceipt = _bizReceiptForStop;
+      window._bizReceiptForStop = _bizReceiptForStop = () => ({ id: 999, vendor: 'Test' });
+    });
+    const r = await sweepCall();
+    expect(r.fixed, 'a receipt at the pin is proof of business, the sweep must not touch it').toBe(0);
+    expect(r.left.sort()).toEqual(['sw-inb', 'sw-out']);
+    await page.evaluate(() => { _bizReceiptForStop = window._bizReceiptForStop = window.__origBizReceipt; window.__origBizReceipt = null; });
+    await stopSweepRestore();
+    await geoRestore();
+  });
+
+  test('stop-sweep: a genuinely blank to_name (not even the Stop placeholder) is still left alone', async () => {
+    await geoReset();
+    const rows = stopLegRows();
+    rows[0].to_name = '';
+    await stopSweepSeed(rows);
+    const r = await sweepCall();
+    expect(r.fixed, 'nothing to test or show for a truly empty label').toBe(0);
+    expect(r.left.sort()).toEqual(['sw-inb', 'sw-out']);
+    await stopSweepRestore();
+    await geoRestore();
+  });
+
   test('reconciliation: a manual clock record overlapping the window wins, nothing is written', async () => {
     await geoReset();
     const seed = await seedReconPair(886004);
