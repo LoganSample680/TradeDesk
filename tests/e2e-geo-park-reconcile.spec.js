@@ -1225,7 +1225,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     expect(r.left).toEqual(['sw-filler']);
     // Calling it again (mirroring _geoTrackInit's own later call) must be a no-op, not a second restore or a crash.
     await page.evaluate(() => { _geoRestoreOpen(); });
-    localStorage.removeItem('zp3_geo_open');
+    await page.evaluate(() => { localStorage.removeItem('zp3_geo_open'); });
     await restoreLastFence();
     await stopSweepRestore();
     await geoRestore();
@@ -1252,7 +1252,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     const r = await sweepCall();
     expect(r.fixed, 'without a restore, the evidence sitting in localStorage never reaches pass 2').toBe(0);
     expect(r.left.sort()).toEqual(['sw-filler', 'sw-inb']);
-    localStorage.removeItem('zp3_geo_open');
+    await page.evaluate(() => { localStorage.removeItem('zp3_geo_open'); });
     await restoreLastFence();
     await stopSweepRestore();
     await geoRestore();
