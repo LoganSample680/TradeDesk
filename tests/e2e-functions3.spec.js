@@ -4396,7 +4396,7 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
         launched: !!ov,
         oauthFlag: _ob.oauth === true,
         namePrefill: _ob.name === 'Grace Green',
-        emailPrefill: _ob.email === 'grace@greenpaint.com',
+        emailLeftBlank: _ob.email === '',
         // Must NOT leave a sticky global flag (that would wedge future sign-ins).
         noStickyFlag: window._obInProgress === _obBefore,
         reentryKept,
@@ -4416,16 +4416,22 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     expect(result.launched, 'onboarding overlay opened').toBe(true);
     expect(result.oauthFlag, '_ob.oauth set').toBe(true);
     expect(result.namePrefill, 'name prefilled from provider').toBe(true);
-    expect(result.emailPrefill, 'email prefilled from provider').toBe(true);
+    // Owner report 2026-08-22 (live device, real signup): prefilling Apple's own
+    // email here was the actual bug, a private-relay address (or any address
+    // that isn't obviously "theirs") landing pre-typed read as broken. Email is
+    // now left blank on purpose, the contractor types the one they want.
+    expect(result.emailLeftBlank, 'email must NOT be prefilled from the provider').toBe(true);
     expect(result.noStickyFlag, '_beginOAuthOnboarding leaves no sticky _obInProgress flag').toBe(true);
     expect(result.reentryKept, 'a second call while onboarding is open does not restart/wipe answers').toBe(true);
     expect(result.header, '"Finish setting up" header shown, not "Create your account"').toBe(true);
-    // Old behavior: oauth mode showed no email field at all and silently trusted
-    // whatever the provider sent (owner incident 2026-08-21: that was Apple's
-    // private-relay address with nothing on screen to correct it). New behavior
-    // (owner decision, same day): the email field IS shown, prefilled from the
-    // provider, so the contractor confirms or edits it. Password stays hidden,
-    // the session is already authenticated.
+    // Original behavior: oauth mode showed no email field at all and silently
+    // trusted whatever the provider sent (owner incident 2026-08-21: that was
+    // Apple's private-relay address with nothing on screen to correct it).
+    // First fix (same day): show the field, prefilled from the provider. Owner
+    // report on a real device the next day: the prefill itself read as broken.
+    // Final behavior: the field IS shown, but starts blank, the contractor types
+    // the email they want. Password stays hidden, the session is already
+    // authenticated.
     expect(result.hasEmailField, 'email field shown (editable) even in oauth mode').toBe(true);
     expect(result.noPassField, 'no password field in oauth mode').toBe(true);
     expect(result.noSocial, 'no social buttons inside oauth-mode onboarding').toBe(true);
@@ -4436,28 +4442,33 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     expect(result.hasBusiness, 'business name/phone/state still collected').toBe(true);
   });
 
-  test('obNextAccount (oauth): advances to trade with no password, provider email prefilled but editable', async () => {
+  // Owner report 2026-08-22 (live device, real signup): _beginOAuthOnboarding no
+  // longer prefills email from the provider (a private-relay address landing
+  // pre-typed read as broken), so this now matches the real starting state:
+  // blank email, same "must type one to continue" validation as the password path.
+  test('obNextAccount (oauth): advances to trade with no password, blank email must be typed before continuing', async () => {
     const result = await page.evaluate(() => {
       if (typeof obNextAccount !== 'function' || typeof obStepAccount !== 'function') return { skip: true };
       const _savedOb = _ob; const _origRender = window.renderObStep; window.renderObStep = () => {};
       document.querySelectorAll('#ob-body,#ob-err').forEach(n => n.remove());
       const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
-      _ob = { ..._savedOb, step: 1, oauth: true, name: 'Grace Green', email: 'grace@greenpaint.com', businessName: '', phone: '', state: '' };
+      _ob = { ..._savedOb, step: 1, oauth: true, name: 'Grace Green', email: '', businessName: '', phone: '', state: '' };
       obStepAccount(el);
-      // No password input exists in oauth mode. Email IS on screen, prefilled
-      // from the provider, left untouched here to prove the prefill survives
-      // straight through to _ob.email unless the contractor edits it.
       el.querySelector('#ob-name').value = 'Grace Green';
       el.querySelector('#ob-bname').value = 'Green Painting';
       el.querySelector('#ob-bphone').value = '316-555-0100';
       el.querySelector('#ob-state').value = 'KS';
+      obNextAccount(); // email field is still blank, must block same as the password path
+      const blockedOnBlankEmail = _ob.step === 1;
+      el.querySelector('#ob-email').value = 'grace@greenpaint.com';
       obNextAccount();
       const advanced = _ob.step === 2 && _ob.businessName === 'Green Painting' && _ob.state === 'KS' && _ob.email === 'grace@greenpaint.com';
       el.remove(); window.renderObStep = _origRender; _ob = _savedOb; _ob.oauth = false;
-      return { advanced };
+      return { blockedOnBlankEmail, advanced };
     });
     if (result.skip) return;
-    expect(result.advanced, 'oauth step 1 advances with no email/password, provider email preserved').toBe(true);
+    expect(result.blockedOnBlankEmail, 'a blank email must block advancing, oauth mode is not exempt').toBe(true);
+    expect(result.advanced, 'typing a real email advances normally').toBe(true);
   });
 
   // Owner decision 2026-08-21: a first-time Apple/Google signup no longer

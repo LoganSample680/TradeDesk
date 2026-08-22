@@ -1642,7 +1642,12 @@ function _beginOAuthOnboarding(){
     if(typeof _supaUser!=='undefined'&&_supaUser){
       const m=_supaUser.user_metadata||{};
       _ob.name=m.full_name||m.name||m.given_name||'';
-      _ob.email=_supaUser.email||'';
+      // Owner report 2026-08-22 (live device, real signup): prefilling Apple's
+      // own email here was the confusing part, a private-relay address (or any
+      // address that isn't obviously "theirs") landing pre-typed in the field
+      // read as broken. Leave it blank, the field is still right there, they
+      // just type the one they actually want, nothing pre-guessed for them.
+      _ob.email='';
     }
     showOnboarding();
   }catch(_e){if(typeof console!=='undefined')console.warn('OAuth onboarding launch failed:',_e);}
@@ -1736,7 +1741,8 @@ function obInput(id,label,placeholder,type,value){
 // Step 1 (§9.9 restructure): account + core business in one screen. Everything a
 // contractor knows off the top of their head, email, password, business name,
 // phone, state, so a branded proposal can go out the moment they're in. Social
-// sign-in on top collapses this to near-nothing (name/email come from the provider).
+// sign-in on top collapses this to near-nothing (password gone, name prefilled;
+// email is left blank on purpose, see _beginOAuthOnboarding's own comment).
 const OB_STATE_OPTS=['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
 function obStepAccount(el){
   // OAuth mode: the provider already handled sign-in, so no social buttons, no
@@ -1746,7 +1752,7 @@ function obStepAccount(el){
   const _socialBtn=(prov,label,bg,fg,bd)=>'<button onclick="_obOAuth(\''+prov+'\')" style="display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:12px;border-radius:9px;border:'+bd+';background:'+bg+';color:'+fg+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">'+label+'</button>';
   el.innerHTML=
     (oauth
-      ?'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Finish setting up</div><div style="font-size:14px;color:var(--text3)">You\'re signed in. Confirm the email we should use for your business, then add your details.</div>'+
+      ?'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Finish setting up</div><div style="font-size:14px;color:var(--text3)">You\'re signed in. Enter the email you want for your business, then add your details.</div>'+
           // Escape hatch (owner decision 2026-08-21): Apple/Google sign-in can't be
           // reliably matched to an existing account by email (a private-relay or
           // otherwise different address defeats any text match), so instead of
