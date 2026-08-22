@@ -1918,6 +1918,32 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(result.focused, 'password is the only path in here, the original convenience focus still applies').toBe('supa-pass');
   });
 
+  // Regression for the actual CI failure this feature shipped with: a
+  // password-only render schedules its legitimate 60ms focus timer, then a
+  // SECOND render (Apple-linked, should never focus) happens before that
+  // timer fires. Without cancelling the earlier pending timer, it looks up
+  // #supa-pass by ID when it finally goes off and lands on the NEWER
+  // render's field, stealing focus the second render explicitly decided
+  // against.
+  test('_loginRenderResult: a stale focus timer from an earlier render never fires against a later render that should not focus', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      // First render legitimately schedules the 60ms focus timer...
+      _loginRenderResult('wrong@address.com', { exists: true, hasPassword: true, hasApple: false, hasGoogle: false });
+      // ...then a second render replaces it immediately, well before that
+      // timer fires, and this one has Face ID: it must never end up focused.
+      _loginRenderResult('grace@greenpaint.com', { exists: true, hasPassword: true, hasApple: true, hasGoogle: false });
+      await new Promise(r => setTimeout(r, 150));
+      const focused = document.activeElement && document.activeElement.id;
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, focused };
+    });
+    if (result.skip) return;
+    expect(result.focused, 'the first render\'s stale timer must be cancelled by the second render, not left to fire later').not.toBe('supa-pass');
+  });
+
   test('_loginRenderResult: account exists but no recognized method still offers a way in (safety net)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };

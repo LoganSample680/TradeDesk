@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.22.26.2';
+const APP_VERSION='08.22.26.3';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -5618,6 +5618,11 @@ function _loginGoToSignup(prefillEmail){
   if(prefillEmail){_ob.step=1;_ob.email=prefillEmail;}
   showOnboarding();
 }
+// Tracked so a render can cancel the PREVIOUS render's pending password-
+// focus timer (see the clearTimeout inside _loginRenderResult): without
+// this, two renders in quick succession let the earlier one's stale timer
+// fire against the later render's same-ID #supa-pass field.
+let _loginPwFocusTimer=null;
 function _loginRenderResult(email,methods){
   const gate=document.getElementById('login-gate');
   const result=document.getElementById('login-result');
@@ -5690,7 +5695,15 @@ function _loginRenderResult(email,methods){
   // is genuinely the sole path in, exactly the same condition that decided
   // whether to render the field at all: no Apple, no Google, nothing to tap
   // instead.
-  if(!(methods.hasApple||methods.hasGoogle))setTimeout(()=>document.getElementById('supa-pass')?.focus(),60);
+  //
+  // clearTimeout first: this function can render twice in quick succession
+  // (a corrected email typed within the same ~60ms window, or two tests/two
+  // renders back to back), and a PENDING timer from the earlier call looks
+  // up #supa-pass by ID when it finally fires, landing on whatever element
+  // now has that ID, the NEWER render's field, even when THIS render decided
+  // not to focus it. One tracked handle makes each render's decision final.
+  clearTimeout(_loginPwFocusTimer);
+  if(!(methods.hasApple||methods.hasGoogle))_loginPwFocusTimer=setTimeout(()=>document.getElementById('supa-pass')?.focus(),60);
 }
 
 async function supaSignIn(){
