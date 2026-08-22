@@ -9601,6 +9601,54 @@ test.describe('Sign in with Apple: native onboarding routing fix (2026-08-21)', 
     expect(r.pendingAfter).toBe(null);
   });
 
+  // Owner question 2026-08-22: a returning contractor whose Apple sign-in used
+  // a hidden relay email (never confirmed the real-email sync) can land on the
+  // onboarding overlay via the identifier-first gate's "no account found"
+  // path, tap Continue with Apple there, and have Apple's own identity match
+  // (keyed on its stable id, not email) correctly find their REAL account
+  // anyway. goPg('pg-dash') only touches .pg elements, never the onboarding
+  // overlay (position:fixed, z-index:9999), so without an explicit removal
+  // the real dashboard loads UNDER a frozen-looking signup form, signed in
+  // but visually stuck. This is the regression guard for that gap.
+  test('SIGNED_IN handler removes a lingering onboarding overlay when the account actually already exists', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof window.__capturedAuthCallback !== 'function') return { skip: true };
+      const savedLoadAccountData = window.loadAccountData;
+      const savedLoadFromCloud = window.supaLoadFromCloud;
+      const saved = {
+        supaUser: _supaUser, cloudLoaded: _supaCloudLoaded, loadedOwner: _loadedDataOwner,
+        obInProgress: window._obInProgress, mergeOnSignIn: typeof _mergeOnSignIn !== 'undefined' ? _mergeOnSignIn : undefined,
+      };
+      document.querySelectorAll('#onboarding-overlay').forEach(n => n.remove());
+      const ov = document.createElement('div'); ov.id = 'onboarding-overlay'; document.body.appendChild(ov);
+      localStorage.removeItem('zp3_offline_pending');
+      try {
+        _supaUser = null;
+        _supaCloudLoaded = false;
+        _loadedDataOwner = null;
+        window._obInProgress = false;
+        if (typeof _mergeOnSignIn !== 'undefined') _mergeOnSignIn = false;
+        window.loadAccountData = async () => true; // the account genuinely already exists
+        window.supaLoadFromCloud = async () => {}; // real cloud load, irrelevant to this test
+        let threw = null;
+        try {
+          await window.__capturedAuthCallback('SIGNED_IN', { user: { id: 'apple-relay-returning-' + Date.now() } });
+        } catch (e) { threw = e.message; }
+        return { skip: false, threw, overlayGone: !document.getElementById('onboarding-overlay') };
+      } finally {
+        window.loadAccountData = savedLoadAccountData;
+        window.supaLoadFromCloud = savedLoadFromCloud;
+        document.querySelectorAll('#onboarding-overlay').forEach(n => n.remove());
+        _supaUser = saved.supaUser; _supaCloudLoaded = saved.cloudLoaded; _loadedDataOwner = saved.loadedOwner;
+        window._obInProgress = saved.obInProgress;
+        if (typeof _mergeOnSignIn !== 'undefined' && saved.mergeOnSignIn !== undefined) _mergeOnSignIn = saved.mergeOnSignIn;
+      }
+    });
+    if (r.skip) return;
+    expect(r.threw).toBe(null);
+    expect(r.overlayGone, 'the onboarding overlay must not linger over a real dashboard load').toBe(true);
+  });
+
   test('_obOAuth(\'apple\') ignores a second tap while the first sheet is still in flight (double-tap race guard)', async () => {
     const r = await page.evaluate(async () => {
       const realCap = window.Capacitor;

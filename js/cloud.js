@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.21.26.37';
+const APP_VERSION='08.21.26.38';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2277,6 +2277,15 @@ async function supaInit(){
         try{
         const hasAccount=await loadAccountData();
         if(hasAccount){
+          // A returning contractor can land here from the onboarding overlay
+          // (e.g. the identifier-first gate said "no account" off a hidden
+          // relay email, they tapped Create an account -> Continue with Apple,
+          // and Apple's own identity match, keyed on its stable id not email,
+          // correctly found their real account anyway). goPg('pg-dash') below
+          // only touches .pg elements, never this overlay, so without this the
+          // real dashboard loads UNDER a frozen-looking signup form still
+          // covering the whole screen at z-index 9999, signed in but stuck.
+          document.getElementById('onboarding-overlay')?.remove();
           // Trigger merge path if _mergeOnSignIn is set OR if zp3_offline_pending exists.
           // The flag may be false after a force-quit restart even if there is pending data,
           // checking the key directly means no offline record is ever silently dropped.
