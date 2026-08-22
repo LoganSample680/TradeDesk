@@ -961,9 +961,14 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   function todayKeySafe() { return new Date().toISOString().slice(0, 10); }
   // A second, unrelated, already-final row so the sweep's own "at least 2
   // eligible rows" floor (nothing to pair yet, try again next load) is met
-  // without it ever pairing against the lone leg under test below: far away
-  // coordinates, a real business name, never touched by either pass.
-  const FILLER = () => ({ id: 'sw-filler', gps: true, legKey: 'sw-lg-filler',
+  // without it ever being swept itself. Protected by client_id, not by its
+  // coordinates staying clear of whatever _geoLastFenceLoc a given pass-2
+  // test sets: a coordinate-only "control" row collided with the
+  // 'somewhere else' test's own fence location (both used BIZX), which made
+  // the sweep correctly, if confusingly, collapse the filler instead of
+  // leaving it alone. client_id is checked first and never depends on where
+  // any test decides the device last was.
+  const FILLER = () => ({ id: 'sw-filler', gps: true, legKey: 'sw-lg-filler', client_id: 9999,
     fromCoord: { lat: BIZX.lat, lng: BIZX.lon }, toCoord: { lat: BIZX.lat + 0.5, lng: BIZX.lon + 0.5 },
     from_name: 'Ace Supply', to_name: 'Another Business', miles: 2.0, date: todayKeySafe(),
     startedIso: new Date(now() - 200000).toISOString(), endedIso: new Date(now() - 100000).toISOString() });
