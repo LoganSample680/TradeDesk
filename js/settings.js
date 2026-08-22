@@ -1762,7 +1762,11 @@ function obStepAccount(el){
         '</div>'
       :'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Create your account</div><div style="font-size:14px;color:var(--text3)">Takes about a minute, you can add the rest later.</div></div>'+
         // Social sign-in (primary). Activates once the provider is configured in Supabase.
-        _socialBtn('google','Continue with Google','#fff','#1f2328','1.5px solid #dadce0')+
+        // Google is hidden on iOS: Apple is always offered right below it on this
+        // screen, so there's no dead end, just one less redundant tap where Face
+        // ID already leads. Still shown on Android/desktop, where there's no
+        // native Apple option to make it redundant.
+        (typeof _isIOSShell==='function'&&_isIOSShell()?'':_socialBtn('google','Continue with Google','#fff','#1f2328','1.5px solid #dadce0'))+
         _socialBtn('apple','Continue with Apple','#000','#fff','1.5px solid #000')+
         '<div style="display:flex;align-items:center;gap:10px;margin:14px 0 16px"><div style="flex:1;height:1px;background:var(--border)"></div><span style="font-size:11px;color:var(--text3);font-weight:600">or sign up with email</span><div style="flex:1;height:1px;background:var(--border)"></div></div>')+
     obInput('ob-name','Your full name','John Smith','text',_ob.name)+

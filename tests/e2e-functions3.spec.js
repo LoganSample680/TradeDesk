@@ -1755,6 +1755,70 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(result.noPasswordField, 'no password field when the account has no password').toBe(true);
   });
 
+  // Owner design 2026-08-22: Google is trimmed on iOS ONLY when Face ID is also
+  // on file for that account, redundant, one less tap. Never hidden when it
+  // would be the only way in, that's a dead end, not a simplification.
+  test('_loginRenderResult: Google is hidden on iOS when Face ID is also available (redundant, not a dead end)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      const realCap = window.Capacitor;
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      try {
+        window.Capacitor = { isNativePlatform: () => true };
+        _loginRenderResult('multi@methods.com', { exists: true, hasPassword: false, hasApple: true, hasGoogle: true });
+        const html = document.getElementById('login-result')?.innerHTML || '';
+        return { skip: false, hasFaceId: /continue with face id/i.test(html), hasGoogle: /continue with google/i.test(html) };
+      } finally {
+        window.Capacitor = realCap;
+        document.getElementById('supa-login-overlay')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.hasFaceId).toBe(true);
+    expect(result.hasGoogle, 'Google trimmed, Face ID already covers this account on iOS').toBe(false);
+  });
+
+  test('_loginRenderResult: Google stays on iOS when it is the account\'s ONLY method (never a dead end)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      const realCap = window.Capacitor;
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      try {
+        window.Capacitor = { isNativePlatform: () => true };
+        _loginRenderResult('googleonly@example.com', { exists: true, hasPassword: false, hasApple: false, hasGoogle: true });
+        const html = document.getElementById('login-result')?.innerHTML || '';
+        return { skip: false, hasGoogle: /continue with google/i.test(html) };
+      } finally {
+        window.Capacitor = realCap;
+        document.getElementById('supa-login-overlay')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.hasGoogle, 'Google is this account\'s only method, must never be hidden, even on iOS').toBe(true);
+  });
+
+  test('_loginRenderResult: Google stays on non-iOS regardless of Face ID', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      const realCap = window.Capacitor;
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      try {
+        window.Capacitor = undefined;
+        _loginRenderResult('multi@methods.com', { exists: true, hasPassword: false, hasApple: true, hasGoogle: true });
+        const html = document.getElementById('login-result')?.innerHTML || '';
+        return { skip: false, hasGoogle: /continue with google/i.test(html) };
+      } finally {
+        window.Capacitor = realCap;
+        document.getElementById('supa-login-overlay')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.hasGoogle, 'no native shell means no Apple option, Google must never be trimmed off-platform').toBe(true);
+  });
+
   test('_loginRenderResult: password-only account surfaces the password field, no social buttons', async () => {
     const result = await page.evaluate(() => {
       if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
@@ -4555,6 +4619,32 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     expect(result.title, 'account header shows').toBe(true);
     expect(result.fields, 'name/email/password/business/phone/state all present').toBe(true);
     expect(result.google && result.apple, 'Google + Apple sign-in offered').toBe(true);
+  });
+
+  // Owner design 2026-08-22: Google is redundant with Face ID on iOS, Apple is
+  // always offered right alongside it here, so hiding Google is never a dead
+  // end, just one less tap where the platform already has a faster option.
+  test('obStepAccount: Google is hidden on the native iOS shell, Apple stays', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obStepAccount !== 'function') return { skip: true };
+      const realCap = window.Capacitor;
+      document.getElementById('onboarding-overlay')?.remove();
+      document.querySelectorAll('#ob-body,#ob-err').forEach(n => n.remove());
+      const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
+      try {
+        window.Capacitor = { isNativePlatform: () => true };
+        obStepAccount(el);
+        const r = {
+          google: /continue with google/i.test(el.textContent),
+          apple: /continue with apple/i.test(el.textContent),
+        };
+        el.remove();
+        return { skip: false, ...r };
+      } finally { window.Capacitor = realCap; }
+    });
+    if (result.skip) return;
+    expect(result.google, 'Google hidden on the iOS shell').toBe(false);
+    expect(result.apple, 'Apple stays, no dead end').toBe(true);
   });
 
   test('obNextAccount: validates and advances step 1 → 2', async () => {

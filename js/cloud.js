@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.21.26.36';
+const APP_VERSION='08.21.26.37';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -5382,6 +5382,16 @@ function supaShowLogin(opts={}){
     }
   }
 }
+// True only in the native iOS shell, never a browser on any platform. Google
+// Sign-In is hidden there whenever Face ID is also available for that account
+// (Face ID leads on iOS, Google stays the option everywhere else), but only
+// as a redundancy trim, never applied when Google would be someone's ONLY
+// way in, that's a dead end, not a simplification. Shared by the login gate
+// (js/cloud.js) and the onboarding social buttons (js/settings.js).
+function _isIOSShell(){
+  const cap=window.Capacitor;
+  return !!(cap&&typeof cap.isNativePlatform==='function'&&cap.isNativePlatform());
+}
 // ── Identifier-first sign-in gate (owner design 2026-08-22) ────────────────
 // Social buttons no longer show blind on the login screen: the person types
 // an email first, THEN we surface exactly the sign-in methods actually on
@@ -5452,7 +5462,11 @@ function _loginRenderResult(email,methods){
   if(sub)sub.textContent='Welcome back.';
   let btns='';
   if(methods.hasApple)btns+='<button onclick="_obOAuth(\'apple\')" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border-radius:10px;border:1.5px solid #000;background:#000;color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">'+_faceIdIcon+'<span>Continue with Face ID</span></button>';
-  if(methods.hasGoogle)btns+='<button onclick="_obOAuth(\'google\')" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border-radius:10px;border:1.5px solid #dadce0;background:#fff;color:#1f2328;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">'+_gLogo+'<span>Continue with Google</span></button>';
+  // Google is trimmed on iOS ONLY when Face ID is also available for this
+  // account, that's a redundant second tap, never when Google is the only
+  // method on file, hiding it there would be a dead end, not a simplification.
+  const _hideGoogleHere=methods.hasGoogle&&methods.hasApple&&_isIOSShell();
+  if(methods.hasGoogle&&!_hideGoogleHere)btns+='<button onclick="_obOAuth(\'google\')" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border-radius:10px;border:1.5px solid #dadce0;background:#fff;color:#1f2328;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">'+_gLogo+'<span>Continue with Google</span></button>';
   // A password field is the safe universal fallback: shown whenever the
   // account has a password on file, or (edge case) when none of the three
   // recognized methods matched anything, better than a dead end, worst
