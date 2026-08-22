@@ -4141,6 +4141,21 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // Owner report 2026-08-22 (live device, iPhone with Dynamic Island): the mobile
+  // header rendered UNDER the status bar/Dynamic Island, a flat 16px top padding
+  // is nowhere near env(safe-area-inset-top) on a Pro-model iPhone (§15: a layout
+  // bleed like this is a defect, same severity as a broken function).
+  test('renderObStep: mobile header clears the notch/Dynamic Island safe area', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof renderObStep !== 'function') return { skip: true };
+      renderObStep();
+      const hdr = document.getElementById('ob-mobile-hdr');
+      return { skip: false, usesSafeArea: !!hdr && /env\(safe-area-inset-top\)/.test(hdr.getAttribute('style') || '') };
+    });
+    if (result.skip) return;
+    expect(result.usesSafeArea, 'header top padding must clear env(safe-area-inset-top), not a flat px value').toBe(true);
+  });
+
   test('obSelectType: calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof obSelectType !== 'function') return { skip: true };

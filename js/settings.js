@@ -1693,7 +1693,11 @@ function renderObStep(){
     // Right panel, form content
     '<div style="flex:1;display:flex;flex-direction:column;background:#fff;min-height:100%;overflow-y:auto">'+
       // Mobile header
-      '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)" id="ob-mobile-hdr">'+
+      // padding-top clears the Dynamic Island / notch safe area (owner report
+      // 2026-08-22: header rendered UNDER the status bar/Dynamic Island on a real
+      // device, a flat 16px is nowhere near env(safe-area-inset-top) on a Pro
+      // iPhone). max() keeps the old 16px on devices with no inset to clear.
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:max(16px,env(safe-area-inset-top)) 20px 16px;border-bottom:1px solid var(--border)" id="ob-mobile-hdr">'+
         '<div style="display:flex;align-items:center;gap:8px">'+
           '<div style="width:28px;height:28px;background:var(--blue);border-radius:7px;display:flex;align-items:center;justify-content:center">'+
             '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>'+
