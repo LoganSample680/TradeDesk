@@ -2748,7 +2748,13 @@ test.describe('Cloud Supabase and account functions', () => {
         }
       });
       if (r.skip || r.html === null) return;
-      expect(r.html).toContain("Jack&#39;s iPhone");
+      // escHtml('s) encodes to &#39; when the string is first built, but
+      // reading .innerHTML back out re-serializes the live DOM, and a
+      // browser's HTML serializer never re-escapes a plain apostrophe in
+      // text content (only & < > need it there), so it decodes back to a
+      // literal apostrophe on the round trip. Assert the actually-rendered
+      // text, not the entity string that only exists momentarily.
+      expect(r.html).toContain("Jack's iPhone");
       expect(r.html).toContain('iPhone17,2');
       expect(r.html).toContain('440×956');
     });
