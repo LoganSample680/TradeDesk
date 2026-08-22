@@ -822,7 +822,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     }, now);
     const r = await syncCall();
     expect(r.dropped, 'the leg is still a real, surviving mileage row, its paid time stays').toBe(0);
-    if (window.__origMileage !== undefined) await page.evaluate(() => { if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; } });
+    await page.evaluate(() => { if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; } });
     await geoRestore();
   });
 
