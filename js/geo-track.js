@@ -1886,10 +1886,6 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // including the time, because that one never happened at all.
   if(sameSpot){
     _geoParkNote('roundtrip-no-miles',destLoc&&(destLoc.name||destLoc.kind)||'');
-    // This IS the live evidence the personal-stop sweep's unpaired-leg pass
-    // is built to act on: back at the exact fence a trip left from. An
-    // earlier outbound leg into an unnamed stop may now be provably closed.
-    _geoStopSweepSoon();
     return;
   }
   // The arrival stamp rides along so the row can show WHEN the trip ran, not
@@ -1898,14 +1894,6 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // A leg just closed, which is exactly the evidence reconciliation reads:
   // schedule a debounced pass (no-op unless a live watcher is running).
   _geoReconcileSoon();
-  // _geoStopSweepSoon deliberately NOT called here (every ordinary leg
-  // close): it was, briefly, and the blast radius was every geo test in the
-  // suite that fakes a live _geoWatchId for unrelated reasons, an unrelated
-  // background sweep firing 8s later and mutating shared mileage state mid-
-  // test. The sameSpot/roundtrip-no-miles branch above is the one place
-  // that actually produces the evidence pass 2 needs (proof of a return to
-  // the exact origin fence); an ordinary different-destination leg close
-  // has nothing new for it to check, the next boot/reconnect load covers it.
 }
 
 // ── Automatic mileage: the leg we just timed, measured ───────────────────────
@@ -2737,27 +2725,6 @@ function _geoReconcileSoon(){
   if(_geoWatchId==null&&_geoNativeWatcherId==null)return;
   if(_geoReconTimer)return;
   _geoReconTimer=setTimeout(()=>{_geoReconTimer=null;_geoReconcileFromMileage();},8000);
-}
-let _geoStopSweepTimer=null;
-// _milePersonalStopSweep (js/mileage.js) only ever runs once per session
-// (window._milePersonalSweepRan), which is right for its PAIRED pass, the
-// mileage array it reads doesn't change without a fresh boot/reconnect
-// load. It's wrong for its second, unpaired-leg pass: that one's evidence
-// is _geoLastFenceLoc/_geoLastFenceAt, which is live and can arrive at ANY
-// point mid-session, well after the one-shot sweep already ran and found
-// nothing (owner report 2026-08-22: opened the app, sweep ran immediately
-// with no fence yet, drove home 20 minutes later, the orphaned leg never
-// got a second look because the one-shot flag was already spent). Same
-// debounce shape as _geoReconcileSoon above, and the same live-session-only
-// guard: fixture/test worlds call the sweep directly.
-function _geoStopSweepSoon(){
-  if(_geoWatchId==null&&_geoNativeWatcherId==null)return;
-  if(_geoStopSweepTimer)return;
-  _geoStopSweepTimer=setTimeout(()=>{
-    _geoStopSweepTimer=null;
-    window._milePersonalSweepRan=false;
-    try{if(typeof _milePersonalStopSweep==='function')_milePersonalStopSweep();}catch(_e){}
-  },8000);
 }
 // Returns true when a pass actually ran, false when it was skipped (another
 // pass or a GPS ping in flight). renderTimeLog (js/timelog.js) retries a
