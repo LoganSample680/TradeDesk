@@ -1745,11 +1745,11 @@ function obInput(id,label,placeholder,type,value){
 // email is left blank on purpose, see _beginOAuthOnboarding's own comment).
 const OB_STATE_OPTS=['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
 function obStepAccount(el){
-  // OAuth mode: the provider already handled sign-in, so no social buttons, no
-  // email, no password, just their name (prefilled) + business details.
+  // OAuth mode: the provider already handled sign-in, so no social buttons and
+  // no password, just their name (prefilled), a blank editable email, and
+  // business details.
   const oauth=!!_ob.oauth;
   const _stateOpts='<option value="">- Select your state -</option>'+OB_STATE_OPTS.map(s=>'<option value="'+s+'"'+(_ob.state===s?' selected':'')+'>'+s+'</option>').join('');
-  const _socialBtn=(prov,label,bg,fg,bd)=>'<button onclick="_obOAuth(\''+prov+'\')" style="display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:12px;border-radius:9px;border:'+bd+';background:'+bg+';color:'+fg+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">'+label+'</button>';
   el.innerHTML=
     (oauth
       ?'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Finish setting up</div><div style="font-size:14px;color:var(--text3)">You\'re signed in. Enter the email you want for your business, then add your details.</div>'+
@@ -1760,15 +1760,16 @@ function obStepAccount(el){
           // an obvious way out right here, before they finish creating a second one.
           '<div style="margin-top:10px;font-size:13px"><a href="#" id="ob-already-have-account" onclick="_obAlreadyHaveAccount();return false" style="color:var(--blue);text-decoration:underline">Already have a TradeDesk account? Sign in instead</a></div>'+
         '</div>'
-      :'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Create your account</div><div style="font-size:14px;color:var(--text3)">Takes about a minute, you can add the rest later.</div></div>'+
-        // Social sign-in (primary). Activates once the provider is configured in Supabase.
-        // Google is hidden on iOS: Apple is always offered right below it on this
-        // screen, so there's no dead end, just one less redundant tap where Face
-        // ID already leads. Still shown on Android/desktop, where there's no
-        // native Apple option to make it redundant.
-        (typeof _isIOSShell==='function'&&_isIOSShell()?'':_socialBtn('google','Continue with Google','#fff','#1f2328','1.5px solid #dadce0'))+
-        _socialBtn('apple','Continue with Apple','#000','#fff','1.5px solid #000')+
-        '<div style="display:flex;align-items:center;gap:10px;margin:14px 0 16px"><div style="flex:1;height:1px;background:var(--border)"></div><span style="font-size:11px;color:var(--text3);font-weight:600">or sign up with email</span><div style="flex:1;height:1px;background:var(--border)"></div></div>')+
+      // Owner decision 2026-08-22: brand-new signups are email-only now, no
+      // social buttons on account creation at all. Apple/Google sign-in only
+      // ever shows for a RETURNING contractor whose account already has that
+      // method linked (the identifier-first login gate, js/cloud.js
+      // _loginRenderResult), never as a way to CREATE an account. That closes
+      // off the whole class of problem tonight was spent chasing (prefilled
+      // relay emails, duplicate accounts, matching text against a hidden
+      // address): if social sign-in can never create a new account, none of
+      // that can happen, full stop, not just mitigated.
+      :'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Create your account</div><div style="font-size:14px;color:var(--text3)">Takes about a minute, you can add the rest later.</div></div>')+
     obInput('ob-name','Your full name','John Smith','text',_ob.name)+
     obInput('ob-email','Email','you@yourbusiness.com','email',_ob.email)+
     (oauth&&/@privaterelay\.appleid\.com$/i.test(_ob.email||'')?'<div style="font-size:12px;color:var(--text3);margin:-12px 0 18px">Apple hid your real email behind that address, it still forwards to your inbox, or enter the one you\'d rather use here.</div>':'')+

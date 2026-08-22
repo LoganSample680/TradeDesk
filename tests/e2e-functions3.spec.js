@@ -4598,7 +4598,15 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
   // Booked-jobs import step (owner 2026-07-14): onboarding step 10 imports work
   // already sold, each row becomes a lead + a job on the calendar.
   // 3-step wizard (§9.9): step 1 merges account + core business into one screen.
-  test('obStepAccount: step 1 renders account + business fields + social sign-in', async () => {
+  // Owner decision 2026-08-22: brand-new signups are email-only, no social
+  // buttons on account creation at all, on any platform. Apple/Google
+  // sign-in only ever shows for a RETURNING contractor whose account already
+  // has that method linked (the identifier-first login gate), never as a way
+  // to CREATE one. This closes off the whole class of problem chased
+  // tonight (prefilled relay emails, duplicate accounts, matching text
+  // against a hidden address) at the root: if social sign-in can never
+  // create a new account, none of that can happen, full stop.
+  test('obStepAccount: step 1 is email-only, no Google or Apple offered on account creation', async () => {
     const result = await page.evaluate(() => {
       if (typeof obStepAccount !== 'function') return { skip: true };
       document.getElementById('onboarding-overlay')?.remove();
@@ -4618,13 +4626,11 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     if (result.skip) return;
     expect(result.title, 'account header shows').toBe(true);
     expect(result.fields, 'name/email/password/business/phone/state all present').toBe(true);
-    expect(result.google && result.apple, 'Google + Apple sign-in offered').toBe(true);
+    expect(result.google, 'no Google button on account creation').toBe(false);
+    expect(result.apple, 'no Apple button on account creation').toBe(false);
   });
 
-  // Owner design 2026-08-22: Google is redundant with Face ID on iOS, Apple is
-  // always offered right alongside it here, so hiding Google is never a dead
-  // end, just one less tap where the platform already has a faster option.
-  test('obStepAccount: Google is hidden on the native iOS shell, Apple stays', async () => {
+  test('obStepAccount: still email-only on the native iOS shell too, nothing platform-specific to create an account', async () => {
     const result = await page.evaluate(() => {
       if (typeof obStepAccount !== 'function') return { skip: true };
       const realCap = window.Capacitor;
@@ -4643,8 +4649,8 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
       } finally { window.Capacitor = realCap; }
     });
     if (result.skip) return;
-    expect(result.google, 'Google hidden on the iOS shell').toBe(false);
-    expect(result.apple, 'Apple stays, no dead end').toBe(true);
+    expect(result.google).toBe(false);
+    expect(result.apple).toBe(false);
   });
 
   test('obNextAccount: validates and advances step 1 → 2', async () => {
