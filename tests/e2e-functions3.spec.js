@@ -9382,6 +9382,136 @@ test.describe('Sign in with Apple: native onboarding routing fix (2026-08-21)', 
     expect(r.usersInsertPayload?.email, 'users row gets the contractor-typed email').toBe('grace@greenpaint.com');
   });
 
+  // Owner decision 2026-08-22: a future email+password sign-in with the real
+  // address matches Supabase by auth.users.email, if that's still stuck on
+  // Apple's relay address, the real-email sign-in would silently miss this
+  // account. Sync the typed email into Supabase's own Auth record too, not
+  // just accounts/users.
+  test('obSubmit(): syncs the contractor-typed email into Supabase\'s own Auth record via updateUser', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof obSubmit !== 'function') return { skip: true };
+      const savedOb = _ob, savedUser = _supaUser, savedSupa = _supa;
+      const savedAccount = typeof _account !== 'undefined' ? _account : null;
+      const savedUserRow = typeof _user !== 'undefined' ? _user : null;
+      document.querySelectorAll('#ob-err,#ob-progress,#onboarding-overlay').forEach(n => n.remove());
+      const errEl = document.createElement('div'); errEl.id = 'ob-err'; document.body.appendChild(errEl);
+      const progEl = document.createElement('div'); progEl.id = 'ob-progress'; document.body.appendChild(progEl);
+      let updateUserArgs = null;
+      try {
+        _ob = { ...savedOb, oauth: true, email: 'grace@greenpaint.com', businessName: 'Green Painting Co',
+                 phone: '316-555-0100', address: '', licenseInfo: '', state: 'KS', businessType: 'painting',
+                 tradeLines: [], vehicles: [], jobs: [], name: 'Grace Green', role: 'owner' };
+        _supaUser = { id: 'apple-relay-' + Date.now(), email: '9x7f2k@privaterelay.appleid.com' };
+        _supa = {
+          ...savedSupa,
+          auth: { ...savedSupa.auth, updateUser: (args) => { updateUserArgs = args; return Promise.resolve({ data: {}, error: null }); } },
+          from: (t) => {
+            if (t === 'accounts') return { insert: () => ({ select: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'test-acct-' + Date.now() }, error: null }) }) }) };
+            if (t === 'users') return { insert: () => Promise.resolve({ data: null, error: null }) };
+            return savedSupa.from(t);
+          },
+        };
+        let threw = null;
+        try { await obSubmit(); } catch (e) { threw = e.message; }
+        return { skip: false, threw, updateUserArgs };
+      } finally {
+        document.querySelectorAll('#ob-err,#ob-progress,#onboarding-overlay').forEach(n => n.remove());
+        _ob = savedOb; _supaUser = savedUser; _supa = savedSupa;
+        _account = savedAccount; _user = savedUserRow;
+        window._obInProgress = false;
+      }
+    });
+    if (r.skip) return;
+    expect(r.threw).toBe(null);
+    expect(r.updateUserArgs?.email, 'auth.updateUser is called with the contractor-typed email').toBe('grace@greenpaint.com');
+  });
+
+  test('obSubmit(): skips updateUser when the typed email already matches the provider\'s session email', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof obSubmit !== 'function') return { skip: true };
+      const savedOb = _ob, savedUser = _supaUser, savedSupa = _supa;
+      const savedAccount = typeof _account !== 'undefined' ? _account : null;
+      const savedUserRow = typeof _user !== 'undefined' ? _user : null;
+      document.querySelectorAll('#ob-err,#ob-progress,#onboarding-overlay').forEach(n => n.remove());
+      const errEl = document.createElement('div'); errEl.id = 'ob-err'; document.body.appendChild(errEl);
+      const progEl = document.createElement('div'); progEl.id = 'ob-progress'; document.body.appendChild(progEl);
+      let updateUserCalls = 0;
+      try {
+        // Google without "Hide My Email" style behavior: the typed value matches
+        // exactly what the provider session already carries, nothing to sync.
+        _ob = { ...savedOb, oauth: true, email: 'grace@greenpaint.com', businessName: 'Green Painting Co',
+                 phone: '316-555-0100', address: '', licenseInfo: '', state: 'KS', businessType: 'painting',
+                 tradeLines: [], vehicles: [], jobs: [], name: 'Grace Green', role: 'owner' };
+        _supaUser = { id: 'google-match-' + Date.now(), email: 'grace@greenpaint.com' };
+        _supa = {
+          ...savedSupa,
+          auth: { ...savedSupa.auth, updateUser: () => { updateUserCalls++; return Promise.resolve({ data: {}, error: null }); } },
+          from: (t) => {
+            if (t === 'accounts') return { insert: () => ({ select: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'test-acct-' + Date.now() }, error: null }) }) }) };
+            if (t === 'users') return { insert: () => Promise.resolve({ data: null, error: null }) };
+            return savedSupa.from(t);
+          },
+        };
+        let threw = null;
+        try { await obSubmit(); } catch (e) { threw = e.message; }
+        return { skip: false, threw, updateUserCalls };
+      } finally {
+        document.querySelectorAll('#ob-err,#ob-progress,#onboarding-overlay').forEach(n => n.remove());
+        _ob = savedOb; _supaUser = savedUser; _supa = savedSupa;
+        _account = savedAccount; _user = savedUserRow;
+        window._obInProgress = false;
+      }
+    });
+    if (r.skip) return;
+    expect(r.threw).toBe(null);
+    expect(r.updateUserCalls, 'no pointless updateUser call when nothing actually changed').toBe(0);
+  });
+
+  test('obSubmit(): an updateUser failure never blocks or throws, the signup already succeeded', async () => {
+    const consoleErrorsBefore = page._consoleErrors.length;
+    const r = await page.evaluate(async () => {
+      if (typeof obSubmit !== 'function') return { skip: true };
+      const savedOb = _ob, savedUser = _supaUser, savedSupa = _supa;
+      const savedAccount = typeof _account !== 'undefined' ? _account : null;
+      const savedUserRow = typeof _user !== 'undefined' ? _user : null;
+      document.querySelectorAll('#ob-err,#ob-progress,#onboarding-overlay').forEach(n => n.remove());
+      const errEl = document.createElement('div'); errEl.id = 'ob-err'; document.body.appendChild(errEl);
+      const progEl = document.createElement('div'); progEl.id = 'ob-progress'; document.body.appendChild(progEl);
+      let accountsInsertPayload = null;
+      try {
+        _ob = { ...savedOb, oauth: true, email: 'grace@greenpaint.com', businessName: 'Green Painting Co',
+                 phone: '316-555-0100', address: '', licenseInfo: '', state: 'KS', businessType: 'painting',
+                 tradeLines: [], vehicles: [], jobs: [], name: 'Grace Green', role: 'owner' };
+        _supaUser = { id: 'apple-relay-' + Date.now(), email: '9x7f2k@privaterelay.appleid.com' };
+        _supa = {
+          ...savedSupa,
+          // A collision with another auth user (email already taken elsewhere)
+          // is a real possible failure here, must never block a signup that
+          // already succeeded.
+          auth: { ...savedSupa.auth, updateUser: () => Promise.reject(new Error('email address already registered')) },
+          from: (t) => {
+            if (t === 'accounts') return { insert: (payload) => { accountsInsertPayload = payload; return { select: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'test-acct-' + Date.now() }, error: null }) }) }; } };
+            if (t === 'users') return { insert: () => Promise.resolve({ data: null, error: null }) };
+            return savedSupa.from(t);
+          },
+        };
+        let threw = null;
+        try { await obSubmit(); } catch (e) { threw = e.message; }
+        return { skip: false, threw, accountsInsertPayload };
+      } finally {
+        document.querySelectorAll('#ob-err,#ob-progress,#onboarding-overlay').forEach(n => n.remove());
+        _ob = savedOb; _supaUser = savedUser; _supa = savedSupa;
+        _account = savedAccount; _user = savedUserRow;
+        window._obInProgress = false;
+      }
+    });
+    if (r.skip) return;
+    expect(r.threw).toBe(null);
+    expect(r.accountsInsertPayload?.email, 'the account still gets created with the typed email regardless').toBe('grace@greenpaint.com');
+    const consoleErrorsAfter = page._consoleErrors.length;
+    expect(consoleErrorsAfter - consoleErrorsBefore, 'the updateUser rejection is swallowed silently, no leaked console.error').toBe(0);
+  });
+
   test('no console errors during Apple sign-in onboarding-routing tests', async () => {
     assertNoErrors(page, 'apple sign-in onboarding routing');
   });

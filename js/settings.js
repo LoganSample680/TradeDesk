@@ -2042,6 +2042,19 @@ async function obSubmit(){
       // arrived empty.
       uid=_supaUser.id;
       _ob.email=_ob.email||_supaUser.email||'';
+      // Owner decision 2026-08-22: sync the confirmed email into Supabase's own
+      // Auth record too, not just our accounts/users tables. Reason: if this
+      // contractor later tries to sign in with email+password using the REAL
+      // address typed here, Supabase matches against auth.users.email, if
+      // that's still stuck on Apple's private-relay address, a real-email
+      // sign-in would silently miss this account entirely. Best-effort: Supabase
+      // requires the new address to confirm via email before the change
+      // actually takes effect, and a collision with another auth user is
+      // possible, neither should ever block finishing a signup that already
+      // succeeded, so failures here are swallowed, not surfaced.
+      if(_ob.email&&_ob.email!==_supaUser.email){
+        try{await _supa.auth.updateUser({email:_ob.email});}catch(_e){}
+      }
       setProgress('Setting up your business...');
     } else {
       setProgress('Creating your account...');
