@@ -2305,39 +2305,57 @@ test.describe('Cloud Supabase and account functions', () => {
       expect(result.gateShown, 'lands on the blank email gate, not a stale welcome-back screen').toBe(true);
     });
 
-    test('every real sign-out path clears the remembered-device record, not just the "Not you?" escape hatch', async () => {
+    // Old assertion here (removed 2026-08-22, live owner test) claimed
+    // _wipeLocalAccountData should clear the remembered-device record on
+    // every sign-out, on the theory that a deliberate sign-out should never
+    // let the fast path survive it. That shipped and immediately broke the
+    // actual point of the feature: the owner signed in, signed back out,
+    // and was dropped straight back to a blank email box, exactly the typing
+    // this whole feature exists to remove. A routine Sign Out ends the
+    // SESSION, it was never supposed to mean "this device forgot who uses
+    // it", the same distinction every bank in the original research makes
+    // (their apps still show your username/Face ID offer after signing out).
+    // Only _loginNotYou() (the explicit "Not you?" repudiation) may clear it
+    // now, that is the real "this isn't my device/account" signal, a normal
+    // sign-out was never that.
+    test('_wipeLocalAccountData (a routine sign-out) does NOT clear the remembered-device record', async () => {
       const result = await page.evaluate(async () => {
         if (typeof _wipeLocalAccountData !== 'function') return { skip: true };
-        const setRemembered = () => localStorage.setItem('zp3_remembered_login', JSON.stringify({ email: 'grace@greenpaint.com', hasApple: false, hasGoogle: false, hasPassword: true, ts: Date.now() }));
-        // _wipeLocalAccountData is the single choke point both the deliberate
-        // SIGNED_OUT handler and supaSignOut()'s own guarantee-wipe call
-        // through (js/cloud.js), covering all 3 "Sign out" buttons in the app.
-        setRemembered();
+        localStorage.setItem('zp3_remembered_login', JSON.stringify({ email: 'grace@greenpaint.com', hasApple: false, hasGoogle: false, hasPassword: true, ts: Date.now() }));
         _wipeLocalAccountData();
-        const afterWipe = localStorage.getItem('zp3_remembered_login');
-        // The onboarding "I already have an account" bail-out (js/settings.js
-        // _obAlreadyHaveAccount) signs a just-created throwaway session out via
-        // a RAW _supa.auth.signOut(), never reaching _wipeLocalAccountData at
-        // all, so it needs (and has) its own explicit clear.
-        let afterObBail = 'skipped-ob-check';
-        if (typeof _obAlreadyHaveAccount === 'function') {
-          setRemembered();
-          document.getElementById('onboarding-overlay')?.remove();
-          const savedSupa = _supa;
-          try {
-            _supa = { ...savedSupa, auth: { ...savedSupa.auth, signOut: () => Promise.resolve({ error: null }) } };
-            await _obAlreadyHaveAccount();
-            afterObBail = localStorage.getItem('zp3_remembered_login');
-          } finally {
-            _supa = savedSupa;
-            document.getElementById('supa-login-overlay')?.remove();
-          }
-        }
-        return { skip: false, afterWipe, afterObBail };
+        return { skip: false, afterWipe: localStorage.getItem('zp3_remembered_login') };
       });
       if (result.skip) return;
-      expect(result.afterWipe, '_wipeLocalAccountData (deliberate sign-out + cross-account reset) clears it').toBe(null);
-      expect(result.afterObBail, '_obAlreadyHaveAccount\'s mid-onboarding bail-out clears it too').toBe(null);
+      expect(result.afterWipe, 'signing out ends the session, it must not make the device forget who uses it').not.toBe(null);
+      await page.evaluate(() => localStorage.removeItem('zp3_remembered_login'));
+    });
+
+    // Still correct, and unchanged: the onboarding "I already have an
+    // account" bail-out signs out a just-created THROWAWAY session whose
+    // identity got remembered the instant its OAuth completed (_obInProgress
+    // is only set later, inside obSubmit, so the normal SIGNED_IN handler's
+    // _rememberLogin call is NOT suppressed here). That throwaway identity
+    // was never the account the person actually wants, and by the time it
+    // was written it had already overwritten whatever this device
+    // remembered before, so there is nothing legitimate left to protect by
+    // skipping this clear.
+    test('_obAlreadyHaveAccount\'s mid-onboarding bail-out still clears the throwaway signup\'s remembered identity', async () => {
+      const result = await page.evaluate(async () => {
+        if (typeof _obAlreadyHaveAccount !== 'function') return { skip: true };
+        localStorage.setItem('zp3_remembered_login', JSON.stringify({ email: 'grace@greenpaint.com', hasApple: false, hasGoogle: false, hasPassword: true, ts: Date.now() }));
+        document.getElementById('onboarding-overlay')?.remove();
+        const savedSupa = _supa;
+        try {
+          _supa = { ...savedSupa, auth: { ...savedSupa.auth, signOut: () => Promise.resolve({ error: null }) } };
+          await _obAlreadyHaveAccount();
+          return { skip: false, afterObBail: localStorage.getItem('zp3_remembered_login') };
+        } finally {
+          _supa = savedSupa;
+          document.getElementById('supa-login-overlay')?.remove();
+        }
+      });
+      if (result.skip) return;
+      expect(result.afterObBail, 'the abandoned throwaway signup\'s identity does not linger as this device\'s remembered login').toBe(null);
     });
   });
 

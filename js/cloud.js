@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.21.26.46';
+const APP_VERSION='08.22.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -5816,11 +5816,16 @@ function _wipeLocalAccountData(){
   _mergeOnSignIn=false;_loadedFromCacheOnly=false;_loadedDataOwner=null;
   localStorage.removeItem('zp3_offline_pending');
   localStorage.removeItem('zp3_cloud_cache');
-  // Deliberate sign-out: the remembered-device fast path must never survive
-  // it, or the very next cold launch (or the login screen this same wipe is
-  // about to render) would auto-offer Face ID for the account that just
-  // explicitly signed out. See _clearRememberedLogin.
-  _clearRememberedLogin();
+  // Deliberately NOT clearing the remembered-device record here (owner
+  // correction 2026-08-22, live test: "signed in, signed back out, had to
+  // type email address yet again, not what I want"). A routine Sign Out
+  // ends the SESSION, it does not mean this device forgot who uses it, the
+  // same distinction every bank in the original research makes: their apps
+  // still show your username/Face ID offer after signing out, "remember
+  // this device" and "you're currently authenticated" are two different
+  // things. Only _loginNotYou() (the explicit "Not you?" repudiation) is
+  // allowed to clear it, that is the actual "this isn't my device/account"
+  // signal, a normal sign-out was never that.
   // Delta cursor + its sidecar are per-account too, drop both so the next account
   // rebuilds from a full load rather than delta-ing against this account's cursor.
   _deltaCursor=null;localStorage.removeItem('zp3_delta_meta');
