@@ -226,7 +226,16 @@ test.describe('true-measure.js: exhaustive coverage', () => {
         const c = clients.find(x => x.id === 79001);
         await openTrueMeasure(c);
         const el = document.getElementById('tm-debug');
-        return { exists: !!el, display: el && el.style.display };
+        const result = { exists: !!el, display: el && el.style.display };
+        // openTrueMeasure never removes a pre-existing #_tm-ov before
+        // appending a fresh one (only _style-pick-ov gets that treatment),
+        // so leaving this open stacks a second orphaned overlay onto the
+        // shared page's DOM: a later test's _tmClose() only removes the
+        // FIRST #_tm-ov it finds via getElementById, leaving this one behind
+        // and failing that test's own "overlay closed" assertion. Every test
+        // that opens TrueMeasure here must close what it opened.
+        _tmClose();
+        return result;
       });
       // Still in the DOM (so future debugging can flip it back on without
       // rebuilding the logging), just never visible to a live user.
