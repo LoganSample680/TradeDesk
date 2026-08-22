@@ -1322,7 +1322,8 @@ Two independent systems, don't conflate them:
 | **Cloudflare Pages** | Builds + deploys the static app to `pages.dev` | **Every push** (by default) | Cloudflare Pages **build minutes** |
 | **GitHub Actions, offline shards** | Mocked Playwright (6 shards, WebKit+Chromium) | Every push | GH Actions minutes |
 | **GitHub Actions, Flow Tests** | Live Playwright vs the deployed `pages.dev` preview | On-demand (`run-flow` label / `workflow_dispatch`) + nightly | GH Actions minutes |
-| **Supabase preview** | Applies new migrations to the preview branch | Every push |, |
+| **Supabase preview** | Supabase's own PR-integration check, NOT a migration push to the shared project (see §14.1.2) | Every push | Free |
+| **`deploy-functions.yml`** | The ACTUAL `supabase db push` to the shared dev/UAT/prod project + edge functions | `main` push, or manual `workflow_dispatch` (§14.1.2) | GH Actions minutes |
 
 **The flow tests run on GitHub Actions, NOT Cloudflare.** Cloudflare only ever
 *deploys the app*. So a test-only / migration-only / docs-only push that triggers
@@ -1381,6 +1382,41 @@ also wait for a separate "deploy" word after merging; the merge IS the word.
 - This is about `main`/production specifically, §14.1's skip-by-default rule
   for WIP pushes on feature branches (and for previews on request) is
   unchanged.
+
+### 14.1.2 Migrations Aren't Gated Like Code: Dispatch `deploy-functions.yml` Directly
+
+§3.1 already says only CODE is gated by the merge to `main`, migrations and
+edge functions are supposed to be free to land on the shared Supabase project
+ahead of a merge. But the only workflow that actually runs `supabase db push`
+(`.github/workflows/deploy-functions.yml`) triggers on `push: branches:
+[main]`, nothing else in this repo pushes migrations to the real project. In
+practice that meant migrations silently piled up on a long-lived dev branch
+(incident 2026-08-22: 5 migrations going back 9 days, including the RPC a
+brand-new login gate depended on, none of them live) waiting on a `main`
+merge nobody realized was blocking them, since the "Supabase Preview" check
+in the PR checks list is a DIFFERENT thing (Supabase's own branch-preview
+integration, not a push to the shared dev/UAT/prod database, see §3.1).
+
+**The fix already exists in the workflow, it just wasn't documented:**
+`deploy-functions.yml` also has a `workflow_dispatch: {}` trigger. Fire it
+manually against your branch whenever a migration needs to be live for
+testing (Dev/UAT) before the PR merges:
+
+```
+mcp__github__actions_run_trigger({ method: 'run_workflow', owner, repo,
+  workflow_id: 'deploy-functions.yml', ref: '<your-branch>' })
+```
+
+This only runs `supabase db push` (idempotent, additive) + edge function
+deploy + the Stripe webhook sync, against the ONE shared Supabase project.
+It never touches `main`, app code, or Cloudflare, so it needs no more
+caution than any other backend-only action, but it IS a shared-state change
+(§ Executing actions with care), so still worth a quick heads-up to the
+owner before firing it, same as any other action that touches live
+infrastructure. Confirm success via `mcp__github__actions_get` /
+`get_workflow_run` (the "Push database migrations" and "Deploy edge
+functions" steps), the same way CI green is verified elsewhere (§1.4), don't
+assume the dispatch succeeded just because it queued.
 
 ### 14.2 The `/api` Proxy Is Load-Bearing: Never Remove It
 
