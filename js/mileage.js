@@ -566,6 +566,51 @@ async function _milePersonalStopSweep(){
     // of a guess: how many rows were even eligible to pair.
     try{if(typeof _geoParkNote==='function')_geoParkNote('stop-sweep','rows='+rows.length);}catch(_e){}
     window._milePersonalSweepRan=true;
+
+    // The SAME "is this actually business" test for both passes below: a
+    // client, a job site, a client's own address, a saved BUSINESS place, or
+    // a same-day receipt at the pin. Anything the app only GUESSED (a
+    // purpose label, an unsaved place) does not count.
+    //
+    // A CLIENT or JOB SITE is a business destination by definition, and
+    // placeAt knows nothing about either: the first version of this sweep
+    // collapsed John Doe's job site straight out of the day and merged the
+    // legs around it, which is the worst possible failure for a sweep whose
+    // whole job is removing rows. Anything the app can recognise as work is
+    // refused before the personal test is even asked.
+    //
+    // NOT the row's purpose. That label is the app's own inference, and
+    // _poiPlaceKind stamps 'supply' on ANY non-food business, so a gas
+    // station became a "Supply run" the moment a fuel receipt made it look
+    // business, and that label then protected the row from ever being
+    // re-judged (owner 2026-08-14: "Casey's loop is still in it"). Only
+    // facts the CONTRACTOR established count as business here: a client
+    // link, a real job site, a place they saved, or money they spent that
+    // qualifies. Anything the app guessed is exactly what this sweep exists
+    // to second-guess.
+    //
+    // Only a saved place with a BUSINESS kind protects the stop, exactly the
+    // test the live path uses (savedIsBusiness in _autoNameStopTrip). 'Any
+    // saved place' was too broad: a gas station saved for navigation, or
+    // auto-suggested by the repeat-stop finder, became permanently
+    // untouchable and the loop never collapsed (owner 2026-08-15).
+    const isPersonalStop=(inb,name)=>{
+      if(inb.client_id!=null)return false;
+      const day=inb.date||todayKey();
+      const P={lat:inb.toCoord.lat,lon:inb.toCoord.lng};
+      const _atJob=(typeof jobs!=='undefined'&&Array.isArray(jobs))&&jobs.some(j=>j&&j.lat!=null&&near({lat:j.lat,lng:j.lon},inb.toCoord));
+      if(_atJob)return false;
+      const _atClient=(typeof clients!=='undefined'&&Array.isArray(clients))&&clients.some(c=>c&&c.lat!=null&&near({lat:c.lat,lng:c.lng!=null?c.lng:c.lon},inb.toCoord));
+      if(_atClient)return false;
+      const savedPlace=(typeof placeAt==='function')?placeAt(P):null;
+      if(savedPlace&&typeof _PLACE_KIND_TO_PURPOSE!=='undefined'&&_PLACE_KIND_TO_PURPOSE[savedPlace.kind])return false;
+      if(_bizReceiptForStop({lat:inb.toCoord.lat,lng:inb.toCoord.lng,name,day})){
+        try{if(typeof _geoParkNote==='function')_geoParkNote('stop-keep',name+' receipt');}catch(_e){}
+        return false;
+      }
+      return true;
+    };
+
     let fixed=0;
     for(let i=0;i<rows.length-1&&fixed<10;i++){
       const inb=rows[i],out=rows[i+1];
@@ -581,51 +626,17 @@ async function _milePersonalStopSweep(){
       // suspend/kill in between, which resets that chain. When that happens
       // the live collapse silently never runs, and this durable sweep was
       // the ONLY other thing that ever re-examines a closed pair of rows, so
-      // skipping unnamed ones left them orphaned in the log forever (owner
-      // report 2026-08-22: a Shop -> Stop leg that should have collapsed,
-      // still sitting in mileage days later). Not double judging: whenever
-      // the live collapse DID run, the split rows never existed separately
-      // to begin with, there's nothing left here to re-examine. A genuinely
-      // blank name (not even the 'Stop' placeholder) still bails, there is
-      // nothing to test or show for a truly empty label.
+      // skipping unnamed ones left them orphaned in the log forever. Not
+      // double judging: whenever the live collapse DID run, the split rows
+      // never existed separately to begin with, there's nothing left here to
+      // re-examine. A genuinely blank name (not even the 'Stop' placeholder)
+      // still bails, there is nothing to test or show for a truly empty label.
       const name=String(inb.to_name||'').trim();
       if(!name)continue;
-      const day=inb.date||todayKey();
-      const P={lat:inb.toCoord.lat,lon:inb.toCoord.lng};
-      // A CLIENT or JOB SITE is a business destination by definition, and
-      // placeAt knows nothing about either: the first pass of this sweep
-      // collapsed John Doe's job site straight out of the day and merged the
-      // legs around it, which is the worst possible failure for a sweep whose
-      // whole job is removing rows. Anything the app can recognise as work
-      // is refused before the personal test is even asked.
-      if(inb.client_id!=null)continue;
-      // NOT the row's purpose. That label is the app's own inference, and
-      // _poiPlaceKind stamps 'supply' on ANY non-food business, so a gas
-      // station became a "Supply run" the moment a fuel receipt made it look
-      // business, and that label then protected the row from ever being
-      // re-judged (owner 2026-08-14: "Casey's loop is still in it"). Only
-      // facts the CONTRACTOR established count as business here: a client
-      // link, a real job site, a place they saved, or money they spent that
-      // qualifies. Anything the app guessed is exactly what this sweep exists
-      // to second-guess.
-      const _atJob=(typeof jobs!=='undefined'&&Array.isArray(jobs))&&jobs.some(j=>j&&j.lat!=null&&near({lat:j.lat,lng:j.lon},inb.toCoord));
-      if(_atJob)continue;
-      const _atClient=(typeof clients!=='undefined'&&Array.isArray(clients))&&clients.some(c=>c&&c.lat!=null&&near({lat:c.lat,lng:c.lng!=null?c.lng:c.lon},inb.toCoord));
-      if(_atClient)continue;
-      // Only a saved place with a BUSINESS kind protects the stop, exactly
-      // the test the live path uses (savedIsBusiness in _autoNameStopTrip).
-      // 'Any saved place' was too broad: a gas station saved for navigation,
-      // or auto-suggested by the repeat-stop finder, became permanently
-      // untouchable and the loop never collapsed (owner 2026-08-15).
-      const savedPlace=(typeof placeAt==='function')?placeAt(P):null;
-      if(savedPlace&&typeof _PLACE_KIND_TO_PURPOSE!=='undefined'&&_PLACE_KIND_TO_PURPOSE[savedPlace.kind])continue;
-      if(_bizReceiptForStop({lat:inb.toCoord.lat,lng:inb.toCoord.lng,name,day})){
-        try{if(typeof _geoParkNote==='function')_geoParkNote('stop-keep',name+' receipt');}catch(_e){}
-        continue;
-      }
+      if(!isPersonalStop(inb,name))continue;
       // P is personal. Collapse.
       const crumb={stop:{lat:inb.toCoord.lat,lng:inb.toCoord.lng,name,addr:inb.to||'',kind:'stop'},
-                   day,leg:Object.assign({},inb),origin:{lat:inb.fromCoord.lat,lng:inb.fromCoord.lng,name:inb.from_name||''}};
+                   day:inb.date||todayKey(),leg:Object.assign({},inb),origin:{lat:inb.fromCoord.lat,lng:inb.fromCoord.lng,name:inb.from_name||''}};
       const idx=mileage.indexOf(inb);
       if(idx>=0)mileage.splice(idx,1);
       if(near(inb.fromCoord,out.toCoord)){
@@ -643,6 +654,48 @@ async function _milePersonalStopSweep(){
       }
       fixed++;
     }
+
+    // SECOND PASS: a leg into an unnamed Stop with no matching leg back OUT
+    // of it anywhere in the log, not even an undecided one. That is not a
+    // gap in the pairing loop above, it is the CORRECT, deliberate result of
+    // the live sameSpot guard in _geoDriveEntry (js/geo-track.js): when the
+    // return drive lands back at the exact fence this leg left from,
+    // sameSpot suppresses THAT leg's mileage row on purpose (a round trip
+    // claims no miles), so the outbound leg this sweep exists to remove
+    // never gets a partner row to pair against, not now, not ever. Confirmed
+    // against the owner's own live report (2026-08-22): a Shop -> Stop leg,
+    // one row, no return row, still sitting in the log.
+    //
+    // _geoLastFenceLoc/_geoLastFenceAt (js/geo-track.js) are the durable
+    // proof a genuine return happened: they update on every real fence
+    // arrival and survive an app restart (_geoPersistOpen/_geoRestoreOpen),
+    // so a fence arrival timestamped AFTER this leg ended, at the SAME place
+    // the leg left from, is exactly the "left, wandered, came back with
+    // nothing business in between" evidence the paired branch above already
+    // acts on. Requiring the arrival to be strictly after this leg's own end
+    // time is what keeps this from firing on someone who has not left the
+    // stop yet: a fence position from BEFORE they departed can never satisfy
+    // it, because nothing has moved it since.
+    if(fixed<10&&typeof _geoLastFenceLoc!=='undefined'&&_geoLastFenceLoc&&
+       typeof _geoLastFenceAt!=='undefined'&&_geoLastFenceAt){
+      const lastFenceAtMs=Date.parse(_geoLastFenceAt)||0;
+      for(const inb of rows){
+        if(fixed>=10)break;
+        if(!mileage.includes(inb))continue;
+        // Already has a leg out of it somewhere in the log: the paired pass
+        // above owns this one, whatever it decided.
+        if(rows.some(r=>r!==inb&&near(inb.toCoord,r.fromCoord)))continue;
+        const endedMs=Date.parse(inb.endedIso||inb.loggedAt||'')||0;
+        if(!endedMs||lastFenceAtMs<=endedMs)continue;
+        if(!near(_geoLastFenceLoc,inb.fromCoord))continue;   // back somewhere ELSE proves nothing here
+        const name=String(inb.to_name||'').trim();
+        if(!name)continue;
+        if(!isPersonalStop(inb,name))continue;
+        const idx=mileage.indexOf(inb);
+        if(idx>=0){mileage.splice(idx,1);fixed++;}
+      }
+    }
+
     if(fixed){
       saveAll();
       if(document.getElementById('mil-table'))renderAllMileage();

@@ -959,6 +959,90 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       from_name: 'Stop', to_name: 'Shop', miles: 3.4, date: todayKeySafe(), startedIso: new Date(now() - 3000000).toISOString(), endedIso: new Date(now() - 2700000).toISOString() },
   ]);
   function todayKeySafe() { return new Date().toISOString().slice(0, 10); }
+  // A second, unrelated, already-final row so the sweep's own "at least 2
+  // eligible rows" floor (nothing to pair yet, try again next load) is met
+  // without it ever pairing against the lone leg under test below: far away
+  // coordinates, a real business name, never touched by either pass.
+  const FILLER = () => ({ id: 'sw-filler', gps: true, legKey: 'sw-lg-filler',
+    fromCoord: { lat: BIZX.lat, lng: BIZX.lon }, toCoord: { lat: BIZX.lat + 0.5, lng: BIZX.lon + 0.5 },
+    from_name: 'Ace Supply', to_name: 'Another Business', miles: 2.0, date: todayKeySafe(),
+    startedIso: new Date(now() - 200000).toISOString(), endedIso: new Date(now() - 100000).toISOString() });
+  const setLastFence = (loc, atIso) => page.evaluate(({ loc, atIso }) => {
+    window.__origLastFenceLoc = _geoLastFenceLoc; window.__origLastFenceAt = _geoLastFenceAt;
+    _geoLastFenceLoc = loc; _geoLastFenceAt = atIso;
+  }, { loc, atIso });
+  const restoreLastFence = () => page.evaluate(() => {
+    _geoLastFenceLoc = window.__origLastFenceLoc; _geoLastFenceAt = window.__origLastFenceAt;
+    window.__origLastFenceLoc = null; window.__origLastFenceAt = null;
+  });
+
+  // ── _milePersonalStopSweep pass 2: a lone leg with NO return row at all ──
+  // (owner live report, 2026-08-22, 3.5mi Shop -> Stop, no return leg in the
+  // log). This is the CORRECT result of the live sameSpot guard in
+  // _geoDriveEntry (js/geo-track.js): landing back at the exact fence a leg
+  // left from suppresses that RETURN leg's own mileage row on purpose (a
+  // round trip claims no miles), which is exactly why pass 1 above, which
+  // requires a partner row, can never reach this leg. _geoLastFenceLoc /
+  // _geoLastFenceAt are the durable substitute for that missing partner row:
+  // a real fence arrival, timestamped after this leg ended, at the same
+  // place the leg left from.
+  test('stop-sweep pass 2: a lone Shop -> Stop leg with no return row collapses once the device is proven back at Shop', async () => {
+    await geoReset();
+    const row = stopLegRows()[0]; // 'sw-inb' only, no outbound partner
+    await stopSweepSeed([row, FILLER()]);
+    await setLastFence({ lat: SHOPX.lat, lng: SHOPX.lon, name: 'Shop' }, new Date(now() - 60000).toISOString());
+    const r = await sweepCall();
+    expect(r.fixed, 'the live guard already suppressed the return row, this durable pass covers the orphaned outbound leg').toBe(1);
+    expect(r.left).toEqual(['sw-filler']);
+    await restoreLastFence();
+    await stopSweepRestore();
+    await geoRestore();
+  });
+
+  test('stop-sweep pass 2: a lone leg is left alone while the device has not been seen back at the origin fence since it left', async () => {
+    await geoReset();
+    const row = stopLegRows()[0];
+    await stopSweepSeed([row, FILLER()]);
+    // The last known fence arrival predates the leg's own end: still out there.
+    await setLastFence({ lat: SHOPX.lat, lng: SHOPX.lon, name: 'Shop' }, new Date(now() - 7200000).toISOString());
+    const r = await sweepCall();
+    expect(r.fixed, 'a stale fence position from before departure proves nothing, the trip may still be in progress').toBe(0);
+    expect(r.left.sort()).toEqual(['sw-filler', 'sw-inb']);
+    await restoreLastFence();
+    await stopSweepRestore();
+    await geoRestore();
+  });
+
+  test('stop-sweep pass 2: a lone leg is left alone when the device is back somewhere ELSE, not the origin', async () => {
+    await geoReset();
+    const row = stopLegRows()[0];
+    await stopSweepSeed([row, FILLER()]);
+    await setLastFence({ lat: BIZX.lat, lng: BIZX.lon, name: 'Ace Supply' }, new Date(now() - 60000).toISOString());
+    const r = await sweepCall();
+    expect(r.fixed, 'back somewhere else is not proof this stop had nothing business in it').toBe(0);
+    expect(r.left.sort()).toEqual(['sw-filler', 'sw-inb']);
+    await restoreLastFence();
+    await stopSweepRestore();
+    await geoRestore();
+  });
+
+  test('stop-sweep pass 2: a receipted lone leg is still protected even with matching return-fence evidence', async () => {
+    await geoReset();
+    const row = stopLegRows()[0];
+    await stopSweepSeed([row, FILLER()]);
+    await setLastFence({ lat: SHOPX.lat, lng: SHOPX.lon, name: 'Shop' }, new Date(now() - 60000).toISOString());
+    await page.evaluate(() => {
+      window.__origBizReceipt = _bizReceiptForStop;
+      window._bizReceiptForStop = _bizReceiptForStop = () => ({ id: 998, vendor: 'Test' });
+    });
+    const r = await sweepCall();
+    expect(r.fixed).toBe(0);
+    expect(r.left.sort()).toEqual(['sw-filler', 'sw-inb']);
+    await page.evaluate(() => { _bizReceiptForStop = window._bizReceiptForStop = window.__origBizReceipt; window.__origBizReceipt = null; });
+    await restoreLastFence();
+    await stopSweepRestore();
+    await geoRestore();
+  });
 
   test('stop-sweep: unnamed Stop, round trip back to the same origin, no business match, both legs collapse', async () => {
     await geoReset();
