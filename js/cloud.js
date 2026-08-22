@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.22.26.1';
+const APP_VERSION='08.22.26.2';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -5681,7 +5681,16 @@ function _loginRenderResult(email,methods){
     '<button onclick="_loginResetGate()" style="border:none;background:none;color:var(--text3);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;display:block;margin:4px auto 0">Not you? Use a different email</button>'+
     '</div>';
   result.style.display='block';
-  setTimeout(()=>document.getElementById('supa-pass')?.focus(),60);
+  // Owner report 2026-08-22 (live device): auto-focusing here unconditionally
+  // popped the iOS keyboard even when Face ID/Google is the intended tap, and
+  // on iOS a tap on something else while the keyboard is up just dismisses
+  // the keyboard on its own, it never reaches the button underneath, so
+  // "Continue with Face ID" needed a wasted first tap to close the keyboard
+  // before a second tap actually registered. Only steal focus when password
+  // is genuinely the sole path in, exactly the same condition that decided
+  // whether to render the field at all: no Apple, no Google, nothing to tap
+  // instead.
+  if(!(methods.hasApple||methods.hasGoogle))setTimeout(()=>document.getElementById('supa-pass')?.focus(),60);
 }
 
 async function supaSignIn(){

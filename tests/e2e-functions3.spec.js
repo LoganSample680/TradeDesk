@@ -1868,6 +1868,56 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(result.noGoogle).toBe(true);
   });
 
+  // Owner report 2026-08-22 (live device): auto-focusing #supa-pass
+  // unconditionally popped the iOS keyboard even when Face ID/Google was the
+  // intended tap, and on iOS a tap elsewhere while the keyboard is up just
+  // dismisses it rather than reaching the button, so "Continue with Face ID"
+  // needed a wasted first tap before a second tap actually registered.
+  test('_loginRenderResult: an Apple-linked account never auto-focuses the password field (would pop the keyboard over Face ID)', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('grace@greenpaint.com', { exists: true, hasPassword: true, hasApple: true, hasGoogle: false });
+      await new Promise(r => setTimeout(r, 120));
+      const focused = document.activeElement && document.activeElement.id;
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, focused };
+    });
+    if (result.skip) return;
+    expect(result.focused, 'nothing should have stolen focus, Face ID is the intended tap, not typing').not.toBe('supa-pass');
+  });
+
+  test('_loginRenderResult: a Google-only account never auto-focuses the password field either', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('grace@greenpaint.com', { exists: true, hasPassword: true, hasApple: false, hasGoogle: true });
+      await new Promise(r => setTimeout(r, 120));
+      const focused = document.activeElement && document.activeElement.id;
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, focused };
+    });
+    if (result.skip) return;
+    expect(result.focused).not.toBe('supa-pass');
+  });
+
+  test('_loginRenderResult: a password-only account (nothing else to tap) still auto-focuses the password field', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('grace@greenpaint.com', { exists: true, hasPassword: true, hasApple: false, hasGoogle: false });
+      await new Promise(r => setTimeout(r, 120));
+      const focused = document.activeElement && document.activeElement.id;
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, focused };
+    });
+    if (result.skip) return;
+    expect(result.focused, 'password is the only path in here, the original convenience focus still applies').toBe('supa-pass');
+  });
+
   test('_loginRenderResult: account exists but no recognized method still offers a way in (safety net)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
