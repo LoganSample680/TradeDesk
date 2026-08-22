@@ -1732,6 +1732,32 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(result.noSocialOffered, 'no account means no social button, nothing to be one-tapped by accident').toBe(true);
   });
 
+  test('_loginRenderResult: checkFailed renders an honest "couldn\'t check" state, never the confident "no account" screen', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('grace@greenpaint.com', { exists: false, hasPassword: false, hasApple: false, hasGoogle: false, checkFailed: true });
+      const resultEl = document.getElementById('login-result');
+      const html = resultEl ? resultEl.innerHTML : '';
+      const r = {
+        resultShown: resultEl ? resultEl.style.display === 'block' : false,
+        mentionsEmail: html.includes('grace@greenpaint.com'),
+        hasTryAgain: /try again/i.test(html),
+        hasCreateBtn: /create an account/i.test(html),
+        claimsNoAccount: /don't have an account/i.test(html),
+      };
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, ...r };
+    });
+    if (result.skip) return;
+    expect(result.resultShown).toBe(true);
+    expect(result.mentionsEmail).toBe(true);
+    expect(result.hasTryAgain, 'offers a way to retry the actual check').toBe(true);
+    expect(result.hasCreateBtn, 'never routes a failed check straight into creating a duplicate account').toBe(false);
+    expect(result.claimsNoAccount, 'must never claim "no account" when the lookup itself failed, exists:false here is a stub, not a confirmed answer').toBe(false);
+  });
+
   test('_loginRenderResult: Apple-linked account surfaces Continue with Face ID', async () => {
     const result = await page.evaluate(() => {
       if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
@@ -1904,7 +1930,18 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(result.errText).toBe('Enter a valid email.');
   });
 
-  test('_loginIdentify: an RPC failure fails toward "no account found", never blocks the person', async () => {
+  // Old assertion here (removed 2026-08-22) claimed a lookup failure should
+  // fail toward "no account found" with zero console.error, on the theory
+  // that a transient network hiccup shouldn't block a real signup. That
+  // shipped and lied to a real returning user (the owner's own account):
+  // check_login_methods wasn't deployed yet, the RPC failed on every call,
+  // and every visitor, existing account or not, was confidently told "we
+  // don't have an account for you" — the exact false claim this whole gate
+  // exists to prevent, since it pushes a returning user toward creating a
+  // duplicate account. Corrected behavior: a genuine lookup failure must
+  // render as an honest "couldn't check, try again" state, never a confident
+  // wrong answer, and must log to console so a real outage is visible.
+  test('_loginIdentify: a thrown RPC failure renders "couldn\'t check" (checkFailed), never a confident "no account"', async () => {
     const consoleErrorsBefore = page._consoleErrors.length;
     const result = await page.evaluate(async () => {
       if (typeof _loginIdentify !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
@@ -1917,7 +1954,7 @@ test.describe('Cloud Supabase and account functions', () => {
         let threw = null;
         try { await _loginIdentify(); } catch (e) { threw = e.message; }
         const html = document.getElementById('login-result')?.innerHTML || '';
-        return { skip: false, threw, hasCreateBtn: /create an account/i.test(html) };
+        return { skip: false, threw, hasTryAgain: /try again/i.test(html), hasCreateBtn: /create an account/i.test(html) };
       } finally {
         _supa = savedSupa;
         document.getElementById('supa-login-overlay')?.remove();
@@ -1925,9 +1962,42 @@ test.describe('Cloud Supabase and account functions', () => {
     });
     if (result.skip) return;
     expect(result.threw, 'a network failure during identify must never throw out to the caller').toBe(null);
-    expect(result.hasCreateBtn, 'fails toward "create an account" rather than leaving the person stuck').toBe(true);
-    const consoleErrorsAfter = page._consoleErrors.length;
-    expect(consoleErrorsAfter - consoleErrorsBefore, 'the rejection is swallowed silently, no leaked console.error').toBe(0);
+    expect(result.hasTryAgain, 'a genuine lookup failure gets an honest retry state').toBe(true);
+    expect(result.hasCreateBtn, 'must never claim "no account" when the check itself failed').toBe(false);
+    // A real backend failure must be logged now (that visibility is the fix),
+    // deliberately triggered here so trim it back off the shared page's error
+    // list before it trips an unrelated assertNoErrors() later in this file.
+    expect(page._consoleErrors.length, 'the failure is logged, not swallowed silently').toBeGreaterThan(consoleErrorsBefore);
+    page._consoleErrors.length = consoleErrorsBefore;
+  });
+
+  // The actual shape of the production bug: supabase-js does NOT throw on a
+  // failed RPC call, it resolves with {data:null, error:{...}}. This is the
+  // path that silently produced the false "no account" screen; the thrown-
+  // rejection test above only covers the defensive catch{} branch.
+  test('_loginIdentify: an RPC error response (not a throw) also renders "couldn\'t check", the actual 2026-08-22 bug shape', async () => {
+    const consoleErrorsBefore = page._consoleErrors.length;
+    const result = await page.evaluate(async () => {
+      if (typeof _loginIdentify !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      const savedSupa = _supa;
+      try {
+        _supa = { ...savedSupa, rpc: () => Promise.resolve({ data: null, error: { message: 'function check_login_methods does not exist' } }) };
+        document.getElementById('login-email').value = 'grace@greenpaint.com';
+        await _loginIdentify();
+        const html = document.getElementById('login-result')?.innerHTML || '';
+        return { skip: false, hasTryAgain: /try again/i.test(html), hasCreateBtn: /create an account/i.test(html) };
+      } finally {
+        _supa = savedSupa;
+        document.getElementById('supa-login-overlay')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.hasTryAgain, 'an {error} response (no throw) must still be treated as a failed check').toBe(true);
+    expect(result.hasCreateBtn, 'must never claim "no account" when the RPC itself errored').toBe(false);
+    expect(page._consoleErrors.length, 'the {error} response is logged, this is the exact shape that shipped silently').toBeGreaterThan(consoleErrorsBefore);
+    page._consoleErrors.length = consoleErrorsBefore;
   });
 
   test('_loginResetGate: returns from a result state to the plain email entry', async () => {

@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.21.26.40';
+const APP_VERSION='08.21.26.41';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -5424,9 +5424,18 @@ async function _loginIdentify(){
   if(btn){btn.disabled=true;btn.textContent='Checking…';btn.style.opacity='.7';}
   let methods={exists:false,hasPassword:false,hasApple:false,hasGoogle:false};
   try{
-    const{data}=await _supa.rpc('check_login_methods',{check_email:email});
-    if(data)methods=data;
-  }catch(_e){ /* network hiccup: fail toward "no account found", never blocks the person */ }
+    const{data,error}=await _supa.rpc('check_login_methods',{check_email:email});
+    // A failed RPC call resolves here, it does NOT throw (supabase-js
+    // convention), so `error` must be checked explicitly. Silently falling
+    // through to the "no account" default on a real backend failure is what
+    // caused the 2026-08-22 bug: a returning user with a genuine account got
+    // told "we don't have an account for you" whenever the lookup itself
+    // broke (e.g. the RPC not deployed yet), the exact false claim this
+    // whole gate exists to prevent. checkFailed routes _loginRenderResult to
+    // an honest "couldn't check" state instead of a confident wrong answer.
+    if(error){console.error('check_login_methods failed:',error.message||error);methods.checkFailed=true;}
+    else if(data)methods=data;
+  }catch(e){console.error('check_login_methods threw:',e.message||e);methods.checkFailed=true;}
   if(btn){btn.disabled=false;btn.textContent=origLabel;btn.style.opacity='1';}
   _loginRenderResult(email,methods);
 }
@@ -5457,6 +5466,21 @@ function _loginRenderResult(email,methods){
   if(!result)return;
   const _faceIdIcon='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 012-2h2"/><path d="M4 16v2a2 2 0 002 2h2"/><path d="M20 8V6a2 2 0 00-2-2h-2"/><path d="M20 16v2a2 2 0 01-2 2h-2"/><circle cx="9" cy="10" r="1" fill="#fff" stroke="none"/><circle cx="15" cy="10" r="1" fill="#fff" stroke="none"/><path d="M9 15c1 1 5 1 6 0"/></svg>';
   const _gLogo='<svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.71H.96v2.33A9 9 0 009 18z"/><path fill="#FBBC05" d="M3.97 10.71a5.4 5.4 0 010-3.42V4.96H.96a9 9 0 000 8.08l3.01-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0A9 9 0 00.96 4.96L3.97 7.3C4.68 5.17 6.66 3.58 9 3.58z"/></svg>';
+  // The lookup itself failed (RPC error/network), distinct from a confirmed
+  // "no account": never claim to know the answer when the check didn't
+  // actually run, that false confidence is what pushes a real returning
+  // user toward accidentally creating a duplicate account.
+  if(methods.checkFailed){
+    if(sub)sub.textContent='';
+    result.innerHTML=
+      '<div style="text-align:center;padding:8px 0 16px">'+
+      '<div style="font-size:14px;color:var(--text2);margin-bottom:16px;line-height:1.5">Couldn\'t check <strong>'+escHtml(email)+'</strong> right now. Try again.</div>'+
+      '<button onclick="_loginIdentify()" style="width:100%;padding:15px;border-radius:11px;border:none;background:linear-gradient(180deg,#1c2431,#0D1117);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Try again</button>'+
+      '<button onclick="_loginResetGate()" style="border:none;background:none;color:var(--blue);font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0">Try a different email</button>'+
+      '</div>';
+    result.style.display='block';
+    return;
+  }
   if(!methods.exists){
     if(sub)sub.textContent='';
     result.innerHTML=
