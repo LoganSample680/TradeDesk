@@ -1243,6 +1243,58 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // ── _geoStopSweepSoon: re-arms the sweep's one-shot guard when live ──────
+  // evidence for pass 2 (_geoLastFenceLoc/_geoLastFenceAt) shows up AFTER the
+  // sweep already ran and found nothing (owner report 2026-08-22: opened the
+  // app with no fence yet, the sweep ran and found nothing, drove home 20
+  // minutes later, the orphaned leg never got a second look). Fires from
+  // _geoDriveEntry (js/geo-track.js) whenever a leg closes, including the
+  // roundtrip-no-miles case that's the whole point of pass 2.
+  test('stop-sweep-soon: does nothing without a live tracking session (fixture/test worlds)', async () => {
+    await geoReset();
+    const r = await page.evaluate(() => {
+      const origWatch = _geoWatchId, origNative = _geoNativeWatcherId;
+      _geoWatchId = null; _geoNativeWatcherId = null;
+      _geoStopSweepSoon();
+      const armed = !!_geoStopSweepTimer;
+      _geoWatchId = origWatch; _geoNativeWatcherId = origNative;
+      return { armed };
+    });
+    expect(r.armed, 'no watcher running, nothing to debounce').toBe(false);
+    await geoRestore();
+  });
+
+  test('stop-sweep-soon: a live tracking session re-arms the one-shot guard and cleans up an orphan the first sweep missed', async () => {
+    test.setTimeout(20000);
+    await geoReset();
+    // Simulate the exact owner-reported sequence: the sweep already ran once
+    // this session (window._milePersonalSweepRan) and found nothing, because
+    // the fence-return evidence didn't exist yet at that point.
+    await stopSweepSeed([stopLegRows()[0], FILLER()]);   // lone leg, no return row
+    await page.evaluate(() => { window._milePersonalSweepRan = true; });
+    const r1 = await page.evaluate(() => mileage.map(m => m.id));
+    expect(r1.sort(), 'sanity: the orphan is still there before any live evidence arrives').toEqual(['sw-filler', 'sw-inb']);
+    await setLastFence({ lat: SHOPX.lat, lng: SHOPX.lon, name: 'Shop' }, new Date(now() - 60000).toISOString());
+    const r2 = await page.evaluate(() => {
+      const origWatch = _geoWatchId;
+      _geoWatchId = 999901;   // fake a live tracking session
+      _geoStopSweepSoon();
+      _geoWatchId = origWatch;
+      return { armed: !!_geoStopSweepTimer };
+    });
+    expect(r2.armed, 'a live session debounces a re-sweep').toBe(true);
+    // The debounce is 8s; wait past it rather than reaching into the timer.
+    await page.waitForTimeout(8500);
+    const r3 = await page.evaluate(() => ({
+      ran: window._milePersonalSweepRan, left: mileage.map(m => m.id),
+    }));
+    expect(r3.ran, 'the sweep re-ran and re-armed its own one-shot guard').toBe(true);
+    expect(r3.left, 'the orphan the first sweep missed is gone once real evidence arrived').toEqual(['sw-filler']);
+    await restoreLastFence();
+    await stopSweepRestore();
+    await geoRestore();
+  });
+
   test('reconciliation: a manual clock record overlapping the window wins, nothing is written', async () => {
     await geoReset();
     const seed = await seedReconPair(886004);
