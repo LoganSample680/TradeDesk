@@ -3961,6 +3961,68 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     expect(r.shown, 'must surface the login prompt instead of a silent no-op').toBeGreaterThanOrEqual(1);
   });
 
+  // Owner report 2026-08-22 (live device): a brand-new signup has no session by
+  // design the whole time onboarding is open (nothing to restore, nothing dead),
+  // but _isOfflineState() reads that as offline, so this tick fires every 5s
+  // instead of 30 and used to force the login screen out from under someone
+  // still filling out the account step. Root cause: _probeAndSync's "nothing
+  // left to retry" fallback couldn't tell "session died" apart from "no session
+  // yet because onboarding is legitimately showing." _supa/_supaUser/
+  // _sessionRestoreInProgress are let-declared at script scope (cloud.js:638,
+  // :1665), not window properties, bare identifiers only.
+  test('_probeAndSync must NOT force the login screen while onboarding is open', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _probeAndSync !== 'function') return { skip: true };
+      const saved = { supa: _supa, user: _supaUser, restoring: _sessionRestoreInProgress };
+      const origShowLogin = window.supaShowLogin;
+      document.querySelectorAll('#onboarding-overlay').forEach(n => n.remove());
+      const ov = document.createElement('div'); ov.id = 'onboarding-overlay'; document.body.appendChild(ov);
+      let shown = 0;
+      window.supaShowLogin = () => { shown++; };
+      try {
+        localStorage.removeItem('zp3_session_backup');
+        _supa = { auth: { getSession: () => Promise.resolve({ data: { session: null } }) } };
+        _supaUser = null;
+        _sessionRestoreInProgress = false;
+        await _probeAndSync();
+        return { skip: false, shown };
+      } finally {
+        document.querySelectorAll('#onboarding-overlay').forEach(n => n.remove());
+        window.supaShowLogin = origShowLogin;
+        _supa = saved.supa; _supaUser = saved.user; _sessionRestoreInProgress = saved.restoring;
+      }
+    });
+    if (r.skip) return;
+    expect(r.shown, 'no session yet during onboarding must never force the login screen').toBe(0);
+  });
+
+  // Regression guard: the exact same "nothing left to retry" scenario, without
+  // onboarding open, must still surface the login prompt (the fix is scoped to
+  // onboarding specifically, not a blanket disable of the recovery path).
+  test('_probeAndSync still forces the login screen when nothing is open and nothing can restore', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _probeAndSync !== 'function') return { skip: true };
+      const saved = { supa: _supa, user: _supaUser, restoring: _sessionRestoreInProgress };
+      const origShowLogin = window.supaShowLogin;
+      document.querySelectorAll('#onboarding-overlay').forEach(n => n.remove());
+      let shown = 0;
+      window.supaShowLogin = () => { shown++; };
+      try {
+        localStorage.removeItem('zp3_session_backup');
+        _supa = { auth: { getSession: () => Promise.resolve({ data: { session: null } }) } };
+        _supaUser = null;
+        _sessionRestoreInProgress = false;
+        await _probeAndSync();
+        return { skip: false, shown };
+      } finally {
+        window.supaShowLogin = origShowLogin;
+        _supa = saved.supa; _supaUser = saved.user; _sessionRestoreInProgress = saved.restoring;
+      }
+    });
+    if (r.skip) return;
+    expect(r.shown, 'a genuinely dead session outside onboarding must still surface the login prompt').toBeGreaterThanOrEqual(1);
+  });
+
   // ── Regression: the tick must try the SDK's own getSession() BEFORE falling
   // back to the hand-maintained zp3_session_backup, a transient blip that outlasted
   // the boot's own retry still deserves another shot at the real session, not an

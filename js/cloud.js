@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.21.26.32';
+const APP_VERSION='08.21.26.33';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -5889,7 +5889,17 @@ async function _probeAndSync(){
     // No active user, try silent session restore regardless of _mergeOnSignIn.
     // _mergeOnSignIn is only true after involuntary SIGNED_OUT; after deliberate sign-out
     // the flag stays false, but we still want to re-auth when the backup token is present.
-    if(_supa&&!_supaUser&&!_sessionRestoreInProgress){
+    // Owner report 2026-08-22 (live device): a brand-new signup has NO session by
+    // design (_supaCloudLoaded stays false the whole time onboarding is open, so
+    // _isOfflineState() is true and this tick fires every 5s, not 30), and this
+    // block used to read that as a DEAD session with nothing left to restore and
+    // force the login screen, blowing away in-progress onboarding out from under
+    // someone still typing their name and email. No session yet is normal here,
+    // not a symptom, skip the whole recovery dance while onboarding is legitimately
+    // showing (also protects against silently restoring a DIFFERENT account's
+    // backup token mid-signup, which would be worse than doing nothing).
+    const _onboardingOpen=typeof document!=='undefined'&&!!document.getElementById('onboarding-overlay');
+    if(_supa&&!_supaUser&&!_sessionRestoreInProgress&&!_onboardingOpen){
       _sessionRestoreInProgress=true;
       // Try the SDK's own session store FIRST, the same source of truth the boot
       // retry (initSupa) uses. This tick used to go STRAIGHT to the hand-maintained
