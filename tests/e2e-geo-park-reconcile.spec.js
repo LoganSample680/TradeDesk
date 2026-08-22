@@ -1295,6 +1295,42 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // Locks in the exact wiring point: _geoDriveEntry's own sameSpot/roundtrip
+  // branch, and ONLY that branch (deliberately not the ordinary leg-close
+  // path, see the comment beside _geoStopSweepSoon's call site). Direct call
+  // rather than a full ping simulation, same reasoning the day-chain tests
+  // in tests/e2e-mileage-days.spec.js use elsewhere for narrow checks: it
+  // isolates exactly what's under test. Explicitly clears the timer it arms
+  // before the test ends, this file's other tests must never see it fire.
+  test('stop-sweep-soon: a real round trip back to the same origin arms the debounce, ordinary leg closes do not', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      const origWatch = _geoWatchId;
+      _geoWatchId = 999902;
+      S.officeLat = 37.6872; S.officeLon = -97.3301;
+      const SHOP = { lat: 37.6872, lng: -97.3301, name: 'Shop', kind: 'shop' };
+      _geoLegOrigin = { ...SHOP };
+      _geoDriveMiles = 1;   // past the fence-bounce guard (real miles observed)
+      await _geoDriveEntry(null, new Date(Date.now() - 20 * 60000).toISOString(), null, new Date().toISOString(), false, { ...SHOP }, false);
+      const armedOnRoundtrip = !!_geoStopSweepTimer;
+      if (_geoStopSweepTimer) { clearTimeout(_geoStopSweepTimer); _geoStopSweepTimer = null; }
+      // Control: an ORDINARY leg to a DIFFERENT destination must not arm it.
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      _geoLegOrigin = { ...SHOP };
+      _geoDriveMiles = 1;
+      await _geoDriveEntry(null, new Date(Date.now() - 20 * 60000).toISOString(), null, new Date().toISOString(), false,
+        { lat: 37.75, lng: -97.45, name: 'Ace Supply', kind: 'place' }, false);
+      const armedOnOrdinary = !!_geoStopSweepTimer;
+      if (_geoStopSweepTimer) { clearTimeout(_geoStopSweepTimer); _geoStopSweepTimer = null; }
+      mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
+      _geoWatchId = origWatch;
+      return { armedOnRoundtrip, armedOnOrdinary };
+    });
+    expect(r.armedOnRoundtrip, 'a real round trip back to the exact origin arms the debounce').toBe(true);
+    expect(r.armedOnOrdinary, 'an ordinary leg to a different destination must not, that is the blast-radius fix').toBe(false);
+    await geoRestore();
+  });
+
   test('reconciliation: a manual clock record overlapping the window wins, nothing is written', async () => {
     await geoReset();
     const seed = await seedReconPair(886004);

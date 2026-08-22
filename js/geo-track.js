@@ -1898,7 +1898,14 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // A leg just closed, which is exactly the evidence reconciliation reads:
   // schedule a debounced pass (no-op unless a live watcher is running).
   _geoReconcileSoon();
-  _geoStopSweepSoon();
+  // _geoStopSweepSoon deliberately NOT called here (every ordinary leg
+  // close): it was, briefly, and the blast radius was every geo test in the
+  // suite that fakes a live _geoWatchId for unrelated reasons, an unrelated
+  // background sweep firing 8s later and mutating shared mileage state mid-
+  // test. The sameSpot/roundtrip-no-miles branch above is the one place
+  // that actually produces the evidence pass 2 needs (proof of a return to
+  // the exact origin fence); an ordinary different-destination leg close
+  // has nothing new for it to check, the next boot/reconnect load covers it.
 }
 
 // ── Automatic mileage: the leg we just timed, measured ───────────────────────
