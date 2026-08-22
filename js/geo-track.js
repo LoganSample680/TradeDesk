@@ -988,7 +988,16 @@ async function _geoOnPing(pos){
   // still counts as time at the yard, and shop time is overhead the contractor
   // wants to see regardless of what else is going on there.
   if(inShop!==_geoWasInShop){
-    if(inShop){_geoShopArrivedAt=nowIsoEarly;}
+    // _geoParkBackdate, not nowIsoEarly, when a park just resolved this same
+    // ping (the Shop's own soft-lock above, mirroring the job path's
+    // arriveIso below): stamping "now" instead of the moment they actually
+    // stopped moving is what left this dwell measuring ~0 minutes and its
+    // own 2-minute floor silently dropping the row. _geoParkBackdate is
+    // one-shot and still unconsumed here (both places that null it,
+    // "no transition happened" and arriveIso's own read, run later in this
+    // same function), so reading it costs nothing and can never pick up a
+    // stale value from an earlier ping.
+    if(inShop){_geoShopArrivedAt=_geoParkBackdate||nowIsoEarly;}
     else{
       // A hidden gap since arrival: close at the last VERIFIED moment rather
       // than claiming shop time nobody observed.
