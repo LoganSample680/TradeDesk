@@ -2588,6 +2588,172 @@ test.describe('Cloud Supabase and account functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  test.describe('device model capture (screen-class fallback + native TdDevice)', () => {
+    test('_resolveIOSScreenClass: known signature maps to a label, unrecognized signature returns null', async () => {
+      const r = await page.evaluate(() => {
+        if (typeof _resolveIOSScreenClass !== 'function') return { skip: true };
+        return {
+          proMax: _resolveIOSScreenClass({ w: 440, h: 956, dpr: 3 }),
+          standard: _resolveIOSScreenClass({ w: 393, h: 852, dpr: 3 }),
+          unknown: _resolveIOSScreenClass({ w: 777, h: 999, dpr: 3 }),
+          wrongDpr: _resolveIOSScreenClass({ w: 440, h: 956, dpr: 2 }),
+          nullSig: _resolveIOSScreenClass(null),
+          undefinedSig: _resolveIOSScreenClass(undefined),
+        };
+      });
+      if (r.skip) return;
+      expect(r.proMax).toMatch(/Pro Max/);
+      expect(r.standard).toBeTruthy();
+      expect(r.unknown).toBeNull();
+      expect(r.wrongDpr).toBeNull();
+      expect(r.nullSig).toBeNull();
+      expect(r.undefinedSig).toBeNull();
+    });
+
+    test('_deviceScreenSig: normalizes width/height to portrait order regardless of current orientation', async () => {
+      const r = await page.evaluate(() => {
+        if (typeof _deviceScreenSig !== 'function') return { skip: true };
+        const wDesc = Object.getOwnPropertyDescriptor(window.screen, 'width') || Object.getOwnPropertyDescriptor(Screen.prototype, 'width');
+        const hDesc = Object.getOwnPropertyDescriptor(window.screen, 'height') || Object.getOwnPropertyDescriptor(Screen.prototype, 'height');
+        try {
+          // Simulate a landscape reading, width/height flipped from the
+          // portrait signature the lookup table is keyed on.
+          Object.defineProperty(window.screen, 'width', { value: 956, configurable: true });
+          Object.defineProperty(window.screen, 'height', { value: 440, configurable: true });
+          const sig = _deviceScreenSig();
+          return { sig };
+        } finally {
+          try { if (wDesc) Object.defineProperty(window.screen, 'width', wDesc); } catch (_e) {}
+          try { if (hDesc) Object.defineProperty(window.screen, 'height', hDesc); } catch (_e) {}
+        }
+      });
+      if (r.skip) return;
+      expect(r.sig.w).toBe(440);
+      expect(r.sig.h).toBe(956);
+    });
+
+    test('registerDevice: writes screen dimensions and a best-effort screenClass onto the current device record', async () => {
+      const r = await page.evaluate(() => {
+        if (typeof registerDevice !== 'function' || typeof _initDeviceId !== 'function') return { skip: true };
+        const origDevices = S.devices ? JSON.parse(JSON.stringify(S.devices)) : null;
+        const origSig = window._deviceScreenSig;
+        try {
+          window._deviceScreenSig = () => ({ w: 402, h: 874, dpr: 3 });
+          registerDevice(false);
+          const id = _initDeviceId();
+          const dev = (S.devices || []).find(d => d.id === id);
+          return { screenW: dev && dev.screenW, screenH: dev && dev.screenH, dpr: dev && dev.dpr, screenClass: dev && dev.screenClass };
+        } finally {
+          window._deviceScreenSig = origSig;
+          S.devices = origDevices;
+        }
+      });
+      if (r.skip) return;
+      expect(r.screenW).toBe(402);
+      expect(r.screenH).toBe(874);
+      expect(r.dpr).toBe(3);
+      expect(r.screenClass).toMatch(/Pro/);
+    });
+
+    test('registerDevice: a mocked native TdDevice plugin overwrites hwId/deviceName/osVersion on the same device record', async () => {
+      const r = await page.evaluate(async () => {
+        if (typeof registerDevice !== 'function' || typeof _initDeviceId !== 'function') return { skip: true };
+        const origDevices = S.devices ? JSON.parse(JSON.stringify(S.devices)) : null;
+        const origPlugin = window._tdDevicePlugin;
+        try {
+          window._tdDevicePlugin = { info: async () => ({ hwId: 'iPhone17,2', name: "Jack's iPhone", systemVersion: '19.0' }) };
+          registerDevice(false);
+          // The native capture is async (a resolved promise queued on the
+          // microtask queue); flushing one microtask turn is enough since
+          // the mock above has no real I/O latency.
+          await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+          const id = _initDeviceId();
+          const dev = (S.devices || []).find(d => d.id === id);
+          return { hwId: dev && dev.hwId, deviceName: dev && dev.deviceName, osVersion: dev && dev.osVersion };
+        } finally {
+          window._tdDevicePlugin = origPlugin;
+          S.devices = origDevices;
+        }
+      });
+      if (r.skip) return;
+      expect(r.hwId).toBe('iPhone17,2');
+      expect(r.deviceName).toBe("Jack's iPhone");
+      expect(r.osVersion).toBe('19.0');
+    });
+
+    test('registerDevice: an existing exact hwId is never clobbered back to the coarser screenClass guess', async () => {
+      const r = await page.evaluate(() => {
+        if (typeof registerDevice !== 'function' || typeof _initDeviceId !== 'function') return { skip: true };
+        const origDevices = S.devices ? JSON.parse(JSON.stringify(S.devices)) : null;
+        const origSig = window._deviceScreenSig;
+        try {
+          const id = _initDeviceId();
+          S.devices = [{ id, label: 'iPhone', hwId: 'iPhone17,2', lastSeen: new Date().toISOString(), addedAt: new Date().toISOString() }];
+          window._deviceScreenSig = () => ({ w: 440, h: 956, dpr: 3 });
+          registerDevice(false);
+          const dev = S.devices.find(d => d.id === id);
+          return { hwId: dev && dev.hwId, screenClass: dev && dev.screenClass };
+        } finally {
+          window._deviceScreenSig = origSig;
+          S.devices = origDevices;
+        }
+      });
+      if (r.skip) return;
+      expect(r.hwId).toBe('iPhone17,2');
+      expect(r.screenClass).toBeUndefined();
+    });
+
+    test('registerDevice: a native plugin that rejects leaves the screen-class fallback in place, never throws', async () => {
+      const r = await page.evaluate(async () => {
+        if (typeof registerDevice !== 'function' || typeof _initDeviceId !== 'function') return { skip: true };
+        const origDevices = S.devices ? JSON.parse(JSON.stringify(S.devices)) : null;
+        const origPlugin = window._tdDevicePlugin;
+        const origSig = window._deviceScreenSig;
+        try {
+          window._tdDevicePlugin = { info: async () => { throw new Error('native bridge unavailable'); } };
+          window._deviceScreenSig = () => ({ w: 393, h: 852, dpr: 3 });
+          let threw = false;
+          try { registerDevice(false); } catch (_e) { threw = true; }
+          await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+          const id = _initDeviceId();
+          const dev = (S.devices || []).find(d => d.id === id);
+          return { threw, hwId: dev && dev.hwId, screenClass: dev && dev.screenClass };
+        } finally {
+          window._tdDevicePlugin = origPlugin;
+          window._deviceScreenSig = origSig;
+          S.devices = origDevices;
+        }
+      });
+      if (r.skip) return;
+      expect(r.threw).toBe(false);
+      expect(r.hwId).toBeUndefined();
+      expect(r.screenClass).toBeTruthy();
+    });
+
+    test('renderTeam: device card shows the native device name and hwId when present', async () => {
+      const r = await page.evaluate(() => {
+        if (typeof renderTeam !== 'function') return { skip: true };
+        const origDevices = S.devices ? JSON.parse(JSON.stringify(S.devices)) : null;
+        try {
+          S.devices = [{
+            id: 'test-dev-model-1', label: 'iPhone', deviceName: "Jack's iPhone", hwId: 'iPhone17,2',
+            screenW: 440, screenH: 956, dpr: 3, lastSeen: new Date().toISOString(), addedAt: new Date().toISOString(),
+          }];
+          renderTeam();
+          const el = document.getElementById('device-list') || document.getElementById('team-page-devices');
+          return { html: el ? el.innerHTML : null };
+        } finally {
+          S.devices = origDevices;
+          try { renderTeam(); } catch (_e) {}
+        }
+      });
+      if (r.skip || r.html === null) return;
+      expect(r.html).toContain("Jack&#39;s iPhone");
+      expect(r.html).toContain('iPhone17,2');
+      expect(r.html).toContain('440×956');
+    });
+  });
+
   test('removeDevice: calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof removeDevice !== 'function') return { skip: true };

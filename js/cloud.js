@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.22.26.4';
+const APP_VERSION='08.22.26.5';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2496,14 +2496,70 @@ function _deviceLabel(){
   if(/Windows/.test(ua))return'Windows PC';
   return'Device';
 }
+function _deviceScreenSig(){
+  try{
+    let w=Math.round(window.screen.width),h=Math.round(window.screen.height);
+    if(w>h){const t=w;w=h;h=t;} // normalize to portrait regardless of current orientation
+    const dpr=Math.round((window.devicePixelRatio||1)*100)/100;
+    return{w,h,dpr};
+  }catch(_e){return null;}
+}
+// Best-effort screen-SIZE-CLASS guess, never a specific generation: Apple
+// reuses the exact same panel across multiple years (iPhone 16 Pro Max and
+// 17 Pro Max are both 440x956@3x), so identical numbers can mean either one.
+// This is only a web-layer fallback for recreating a broken viewport. When
+// the native TdDevice plugin is present it supplies the real hardware
+// identifier instead (registerDevice below never lets this override that).
+const _IOS_SCREEN_CLASSES=[
+  {w:440,h:956,dpr:3,label:'iPhone Pro Max, 6.9″ class'},
+  {w:430,h:932,dpr:3,label:'iPhone Pro Max, 6.7″ class (15 Pro Max)'},
+  {w:428,h:926,dpr:3,label:'iPhone Pro Max/Plus, 6.7″ class'},
+  {w:402,h:874,dpr:3,label:'iPhone Pro, 6.3″ class'},
+  {w:393,h:852,dpr:3,label:'iPhone Pro/standard, 6.1″ class (14 Pro or newer)'},
+  {w:390,h:844,dpr:3,label:'iPhone standard, 6.1″ class (12/13/14)'},
+  {w:375,h:812,dpr:3,label:'iPhone/mini, 5.4–5.8″ class (X/XS/11 Pro/12 mini/13 mini)'},
+  {w:414,h:896,dpr:2,label:'iPhone Plus/XR/11-class, 6.1–6.5″'},
+  {w:414,h:736,dpr:3,label:'iPhone Plus, 5.5″ class (6/7/8 Plus)'},
+  {w:375,h:667,dpr:2,label:'iPhone, 4.7″ class (6/7/8, SE 2/3-gen)'},
+  {w:320,h:568,dpr:2,label:'iPhone SE 1st-gen / 5 / 5s'},
+];
+function _resolveIOSScreenClass(sig){
+  if(!sig)return null;
+  const hit=_IOS_SCREEN_CLASSES.find(c=>c.w===sig.w&&c.h===sig.h&&Math.abs(c.dpr-sig.dpr)<0.05);
+  return hit?hit.label:null;
+}
+// Lazy-resolves the native TdDevice plugin exactly like _tdHapticNative()
+// (js/utils.js): cached on window so a real "no native shell here" answer
+// is never re-derived, and a plain web/desktop session gets a silent null.
+function _tdDeviceNative(){
+  if(window._tdDevicePlugin!==undefined)return window._tdDevicePlugin;
+  try{
+    const cap=window.Capacitor;
+    if(cap&&typeof cap.isNativePlatform==='function'&&cap.isNativePlatform()){
+      if(typeof cap.registerPlugin==='function')window._tdDevicePlugin=cap.registerPlugin('TdDevice');
+      else if(cap.Plugins&&cap.Plugins.TdDevice)window._tdDevicePlugin=cap.Plugins.TdDevice;
+      else window._tdDevicePlugin=null;
+    }else window._tdDevicePlugin=null;
+  }catch(_e){window._tdDevicePlugin=null;}
+  return window._tdDevicePlugin;
+}
 function registerDevice(updateLocation){
   const id=_initDeviceId();
   const label=_deviceLabel();
+  const sig=_deviceScreenSig();
+  const screenClass=_resolveIOSScreenClass(sig);
   const now=new Date().toISOString();
   if(!S.devices)S.devices=[];
   const idx=S.devices.findIndex(d=>d.id===id);
-  if(idx>-1){S.devices[idx].lastSeen=now;S.devices[idx].label=label;}
-  else S.devices.push({id,label,lastSeen:now,addedAt:now});
+  if(idx>-1){
+    S.devices[idx].lastSeen=now;S.devices[idx].label=label;
+    if(sig){S.devices[idx].screenW=sig.w;S.devices[idx].screenH=sig.h;S.devices[idx].dpr=sig.dpr;}
+    // Never let the coarse screen-class guess clobber a real native hwId.
+    if(screenClass&&!S.devices[idx].hwId)S.devices[idx].screenClass=screenClass;
+  }
+  else S.devices.push({id,label,lastSeen:now,addedAt:now,
+    ...(sig?{screenW:sig.w,screenH:sig.h,dpr:sig.dpr}:{}),
+    ...(screenClass?{screenClass}:{})});
   // saveAll, NOT saveSettings, this runs at every boot, before the settings
   // form is ever filled. saveSettings() here harvested the EMPTY form and wiped
   // every saved setting on each app open (then pushed the wiped copy to cloud
@@ -2525,6 +2581,26 @@ function registerDevice(updateLocation){
         if(tpl||tsl)renderTeam();
       }
     });
+  }
+  // Exact hardware id/OS device name from the native shell, when present.
+  // Overwrites the JS screen-class guess above with something unambiguous.
+  // Cheap (one sysctl call), safe to run every boot; direct S mutation +
+  // saveAll(), same pattern as the GPS capture just above, never through
+  // saveSettings()/the form.
+  const nativeDev=_tdDeviceNative();
+  if(nativeDev&&typeof nativeDev.info==='function'){
+    Promise.resolve(nativeDev.info({})).then(info=>{
+      if(!info)return;
+      const devIdx=S.devices.findIndex(d=>d.id===id);
+      if(devIdx<0)return;
+      if(info.hwId)S.devices[devIdx].hwId=info.hwId;
+      if(info.name)S.devices[devIdx].deviceName=info.name;
+      if(info.systemVersion)S.devices[devIdx].osVersion=info.systemVersion;
+      saveAll();
+      const tpl=document.getElementById('team-page-devices');
+      const tsl=document.getElementById('device-list');
+      if(tpl||tsl)renderTeam();
+    }).catch(()=>{});
   }
 }
 // ── Employee Invite Flow ─────────────────────────────────────────────────────
@@ -3736,6 +3812,16 @@ function renderTeam(){
     const locAgo=hasLoc&&d.locAt?_timeAgo(d.locAt):'';
     const dname=escHtml(d.name||d.label);
     const typeTag=d.name?' <span style="font-size:9px;font-weight:600;background:var(--bg3,#f1f5f9);color:var(--text3);padding:1px 6px;border-radius:8px">'+escHtml(d.label)+'</span>':'';
+    // Model line: exact native OS device name + hardware id when we have them
+    // (the real thing, e.g. "Jack's iPhone" / "iPhone17,2"), falling back to
+    // the coarse JS screen-size-class guess, then to raw screen numbers so
+    // there's always enough here to recreate the exact viewport.
+    const modelBits=[];
+    if(d.deviceName&&d.deviceName!==d.name)modelBits.push(escHtml(d.deviceName));
+    if(d.hwId)modelBits.push(escHtml(d.hwId));
+    else if(d.screenClass)modelBits.push(escHtml(d.screenClass));
+    if(d.screenW&&d.screenH)modelBits.push(d.screenW+'×'+d.screenH+' @'+d.dpr+'x');
+    const modelLine=modelBits.length?'<div style="font-size:10px;color:var(--text3);margin-top:1px">'+modelBits.join(' · ')+'</div>':'';
     return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px'+(hasLoc?';cursor:pointer':'')+'" '+(hasLoc?'onclick="window.open(\''+mapUrl+'\',\'_blank\')"':'')+'>'+
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
         '<div style="display:flex;align-items:center;gap:10px">'+
@@ -3744,6 +3830,7 @@ function renderTeam(){
             '<div style="font-size:13px;font-weight:700">'+dname+(isMe?' <span style="font-size:9px;background:var(--blue);color:#fff;padding:1px 6px;border-radius:8px">This device</span>':'')+typeTag+'</div>'+
             '<div style="font-size:10px;color:'+(isActive?'var(--green-mid)':'var(--text3)')+'">'+
               (isActive?svgIcon('🟢')+' Active':svgIcon('⚪')+' Last seen '+ago)+'</div>'+
+            modelLine+
             (hasLoc?'<div style="font-size:10px;color:var(--blue);margin-top:1px">'+svgIcon('📍')+' Tap to view on map · '+locAgo+'</div>':'')+
           '</div>'+
         '</div>'+
