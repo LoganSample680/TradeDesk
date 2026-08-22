@@ -1862,8 +1862,17 @@ function _obOAuth(provider){
       if(window._nativeSocialAuthPending)return;
       window._nativeSocialAuthPending=provider;
       _obNativeApple().then(handled=>{
+        // Root cause of the "Continue with Face ID does nothing" report
+        // (owner live device, 2026-08-22): this used to only clear the flag
+        // in the handled===false branch, never on a genuine SUCCESS. A
+        // successful sign-in left it stuck at 'apple' for the rest of the
+        // page's life, silently no-oping the re-entry guard above on every
+        // later tap, no error, no feedback, just nothing, exactly what a
+        // sign-out-then-sign-back-in-again cycle (no reload in between) now
+        // does routinely. Clear it on every settle, not just the failure
+        // paths.
+        window._nativeSocialAuthPending=null;
         if(handled===false){
-          window._nativeSocialAuthPending=null;
           const errEl=document.getElementById('supa-login-err');
           if(errEl)errEl.textContent='Update TradeDesk Beta in TestFlight for Apple sign-in, or use email.';
           if(typeof showToast==='function')showToast('Update TradeDesk Beta in TestFlight for Apple sign-in, or use email','⚠️',5000);

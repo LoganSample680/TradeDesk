@@ -10154,6 +10154,49 @@ test.describe('Sign in with Apple: native onboarding routing fix (2026-08-21)', 
     expect(r.pendingAfterResolve, 'the single real attempt still cleans up its own flag').toBe(null);
   });
 
+  // Root cause of the owner's live-device report (2026-08-22): "Continue
+  // with Face ID, clicked 15 times, no response." _obNativeApple() resolves
+  // `true` on a genuine SUCCESS, and the .then() callback used to only clear
+  // _nativeSocialAuthPending in the handled===false branch, never on
+  // success. One successful sign-in left the flag stuck at 'apple' for the
+  // rest of the page's life, so the re-entry guard at the top of _obOAuth
+  // silently no-op'd every later tap, no error, no feedback, exactly what
+  // sign-out-then-sign-back-in (no reload in between) now does routinely.
+  test('_obOAuth(\'apple\') clears _nativeSocialAuthPending on a genuine SUCCESS too, a later tap must actually re-enter', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const realCache = window._applePluginCache;
+      const savedSupa = _supa;
+      try {
+        let authorizeCalls = 0;
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: (name) => name === 'SignInWithApple' ? {
+            authorize: () => { authorizeCalls++; return Promise.resolve({ response: { identityToken: 'fake-token' } }); },
+          } : null,
+        };
+        _supa = { ...savedSupa, auth: { ...savedSupa.auth, signInWithIdToken: () => Promise.resolve({ error: null }) } };
+        window._applePluginCache = null;
+        window._nativeSocialAuthPending = null;
+        // First (successful) tap.
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 150));
+        const pendingAfterSuccess = window._nativeSocialAuthPending;
+        // A SECOND tap afterward (the sign-out-then-sign-back-in shape) must
+        // actually open the sheet again, not silently no-op on a stuck flag.
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 150));
+        return { pendingAfterSuccess, authorizeCalls };
+      } finally {
+        window.Capacitor = realCap;
+        window._applePluginCache = realCache;
+        _supa = savedSupa;
+      }
+    });
+    expect(r.pendingAfterSuccess, 'a successful sign-in must clear the flag, not just failures').toBe(null);
+    expect(r.authorizeCalls, 'a later tap has to reach the native sheet again, not silently no-op forever').toBe(2);
+  });
+
   // End-to-end close of the loop: the email typed over Apple's relay address on
   // the account step is what actually lands in the account/user rows, never the
   // provider's own auth.users.email (which is the relay address here).
