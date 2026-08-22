@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.21.26.43';
+const APP_VERSION='08.21.26.44';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1822,6 +1822,11 @@ function _bootSyncSettled(){
   // owner rule 2026-08-21): a duplicate visit collapses to the longest here
   // too, whatever wrote it and whenever.
   try{if(typeof _geoDedupTimeEntries==='function')_geoDedupTimeEntries();}catch(_e){}
+  // And drive-time hygiene (js/geo-track.js _geoSyncDriveTimeEntries, owner
+  // rule 2026-08-22): the dedup just above ran (heal=true, sync), so any
+  // duplicate mileage leg it merged away has already lost its legKey by the
+  // time this runs, and the matching paid drive-time row drops with it.
+  try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
 }
 function _removeBootOverlay(immediate){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
@@ -7560,6 +7565,12 @@ async function supaLoadFromCloud({silent=false}={}){
     // runs once when Apple names the stop, so a day the app died through, or
     // a day judged under an older rule, never gets a second look without this.
     try{if(typeof _milePersonalStopSweep==='function')_milePersonalStopSweep();}catch(_e){}
+    // Drive-time hygiene last, after every mileage sweep above has had its
+    // turn: a leg the personal-stop sweep just collapsed away, or the motion
+    // heal just corrected, is exactly the kind of change whose paid
+    // drive-time counterpart needs re-checking (js/geo-track.js
+    // _geoSyncDriveTimeEntries, owner rule 2026-08-22).
+    try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
 
     // ── One-time fleet lift out of the settings blob (20260809_td_vehicles) ──
     // MUST run here, after the load: only now do we know whether this account
@@ -8078,7 +8089,10 @@ function _initRealtimeSubscriptions(uid){
         // realtime the moment that peer reconnects. Re-collapse shortly
         // after the burst settles, same debounce shape as td_mileage above.
         clearTimeout(window._rtTimeDedupTimer);
-        window._rtTimeDedupTimer=setTimeout(()=>{try{if(typeof _geoDedupTimeEntries==='function')_geoDedupTimeEntries();}catch(_e){}},1500);
+        window._rtTimeDedupTimer=setTimeout(()=>{
+          try{if(typeof _geoDedupTimeEntries==='function')_geoDedupTimeEntries();}catch(_e){}
+          try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
+        },1500);
       })
       .subscribe(_sigFeedStatus);
   }catch(_sf){}
@@ -8192,7 +8206,13 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   // after the burst settles; the heal is a no-op when nothing matches.
   if(tbl==='td_mileage'){
     clearTimeout(window._rtMileHealTimer);
-    window._rtMileHealTimer=setTimeout(()=>{try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}},1500);
+    window._rtMileHealTimer=setTimeout(()=>{
+      try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
+      // A peer's mileage collapse/dedup just landed here too: whatever legKey
+      // it dropped needs its paid drive-time counterpart re-checked (owner
+      // rule 2026-08-22, js/geo-track.js _geoSyncDriveTimeEntries).
+      try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
+    },1500);
   }
   if(fromRealtime&&Date.now()-_lastLocalSaveAt<5000)return;
   if(fromRealtime){

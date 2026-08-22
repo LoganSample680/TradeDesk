@@ -1816,9 +1816,17 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // which starts and ends in the same spot. So same place in, same place out,
   // no miles.
   //
-  // The DRIVE TIME still goes in, above. A crew member driving is being paid
-  // for it whatever the errand turned out to be, and stripping the hours would
-  // be a payroll bug dressed up as a mileage fix. Only the deduction goes.
+  // The job_time_entries row IS still written above (unconditionally, before
+  // this check runs): the write itself doesn't know yet whether this leg will
+  // turn out to be a round trip. What changed (owner rule 2026-08-22,
+  // superseding the note that used to live here): drive time is paid ONLY
+  // for a leg mileage itself would still stand behind, so a round trip with
+  // no business in it now loses its pay too, not just its deduction, the
+  // same fence-to-fence rule as everywhere else. That cleanup doesn't happen
+  // here (this function has no way to un-enqueue a write already in the
+  // durable queue); _geoSyncDriveTimeEntries removes it afterward, once it
+  // can see that no mileage row (this leg wrote none, `return` below) ever
+  // came to exist for this legKey.
   //
   // Distinct from the fence-bounce guard higher up, which drops the whole leg
   // including the time, because that one never happened at all.
@@ -2882,6 +2890,13 @@ async function _geoReconcileFromMileage(){
   // drop, and the second pass repeated the whole cycle blind to the first.
   if(typeof _geoAwaitQueueDrained==='function')await _geoAwaitQueueDrained();
   if(typeof _geoDedupTimeEntries==='function'){try{await _geoDedupTimeEntries();}catch(_e){}}
+  // Same settle point covers drive-time hygiene: this function's own writes
+  // (and whatever _mileDedupTrips/_milePersonalStopSweep already did earlier
+  // this session) are now on the server, so any drive row whose leg no
+  // longer survives in mileage is safe to drop here too. renderTimeLog
+  // awaits this whole chain before it ever reads a row, so a contractor
+  // opening Time Log always sees the reconciled state, not the stale one.
+  if(typeof _geoSyncDriveTimeEntries==='function'){try{await _geoSyncDriveTimeEntries();}catch(_e){}}
   return true;
 }
 // Bounded wait for the durable queue to finish draining, so a caller that
@@ -2971,6 +2986,60 @@ async function _geoDedupTimeEntries(){
     return drop.size;
   }catch(_e){return 0;}
   finally{_geoTimeDedupBusy=false;}
+}
+
+// ── Drive-time hygiene: paid drive minutes must match a leg mileage itself
+// would still stand behind (owner rule 2026-08-22) ──────────────────────────
+// A job_time_entries 'drive*' row is written the moment a raw GPS leg closes
+// (_geoDriveEntry), before mileage's own dedup/collapse sweeps
+// (_mileDedupTrips, _milePersonalStopSweep in js/mileage.js) ever get a
+// chance to judge whether that leg survives as a real, deductible
+// fence-to-fence business leg. Those sweeps correctly delete or re-origin
+// mileage rows after the fact, exactly the owner's Home Depot -> Sam's Club
+// -> Shop example: the personal middle stop drops out, and only the direct
+// Home Depot -> Shop leg survives. But nothing ever told the ALREADY-WRITTEN
+// payroll row about it, so paid drive time kept sitting on entries whose
+// underlying leg no longer exists, or was never a real leg at all (owner
+// live diagnostic, 2026-08-21: seven paid "Driving" rows with zero matching
+// mileage leg in one day, plus one physical drive double-paid from an
+// exact-duplicate leg pair 6ms apart that mileage's own live dedup missed by
+// a hair, see _mileSameLeg's exact-timestamp requirement).
+//
+// _geoDriveEntry already mints ONE legKey and stamps it on BOTH rows
+// (job_time_entries.client_key AND the mileage row's own legKey, "so the
+// SAME key lands on the time entry and on the mileage row"), so this is a
+// straight comparison, never a re-derivation: whatever legKey does not
+// currently survive in the local mileage array as a real gps-logged leg
+// loses its paid drive-time row too. A leg mileage would keep is paid; a leg
+// mileage collapsed away, merged into a survivor, or never wrote at all
+// (the round-trip-with-nothing-business-in-it case, sameSpot in
+// _geoDriveEntry) is not, matching the owner's stated rule exactly: drive
+// time is paid ONLY for a fence-to-fence leg, never independently of one.
+let _geoDriveSyncBusy=false;
+async function _geoSyncDriveTimeEntries(){
+  if(_geoDriveSyncBusy||!_supa||!_supaUser)return 0;
+  if(typeof mileage==='undefined'||!Array.isArray(mileage))return 0;
+  _geoDriveSyncBusy=true;
+  try{
+    const cutoff=new Date(Date.now()-7*86400000).toISOString();
+    const {data,error}=await _supa.from('job_time_entries')
+      .select('id,source,client_key')
+      .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
+    if(error||!Array.isArray(data)||!data.length)return 0;
+    const driveRows=data.filter(r=>r&&r.id!=null&&/^drive/.test(String(r.source||'')));
+    if(!driveRows.length)return 0;
+    // Real GPS legs only, a hand-typed manual mileage row never had a
+    // matching time entry to begin with and carries no legKey to compare.
+    const surviving=new Set(mileage.filter(m=>m&&m.gps&&m.legKey).map(m=>m.legKey));
+    const drop=driveRows.filter(r=>!r.client_key||!surviving.has(r.client_key));
+    if(!drop.length)return 0;
+    for(const r of drop){
+      try{await _supa.from('job_time_entries').delete().eq('id',r.id);}catch(_e){}
+    }
+    _geoParkNote('drive-sync','dropped '+drop.length+' drive row(s) with no surviving mileage leg');
+    return drop.length;
+  }catch(_e){return 0;}
+  finally{_geoDriveSyncBusy=false;}
 }
 
 // ── Init + two-layer consent ───────────────────────────────────────────────────

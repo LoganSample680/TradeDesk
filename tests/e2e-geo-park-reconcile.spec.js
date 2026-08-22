@@ -796,6 +796,129 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // ── _geoSyncDriveTimeEntries (owner rule 2026-08-22) ─────────────────────
+  // Paid drive time must match a leg mileage itself would still stand
+  // behind: _geoDriveEntry mints ONE legKey and stamps it on both the
+  // job_time_entries row (client_key) and the mileage row (legKey), so this
+  // is a straight comparison against the local, already-deduped/collapsed
+  // mileage array, never a re-derivation. Same harness as the dedup tests
+  // above (window.__selRows feeds the server rows), plus seeding the local
+  // `mileage` array the way the reconciliation tests below already do.
+  const syncCall = () => page.evaluate(async () => {
+    window.__rec.deletes.length = 0;
+    const dropped = await _geoSyncDriveTimeEntries();
+    return { dropped, deletes: window.__rec.deletes.slice() };
+  });
+
+  test('drive-sync: a drive row whose leg still survives in mileage is kept', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      mileage.push({ id: 'ml-keep', gps: true, legKey: 'lg-keep', startedIso: new Date(now - 3600000).toISOString(), endedIso: new Date(now - 3300000).toISOString(), fromCoord: { lat: 1, lng: 1 }, toCoord: { lat: 2, lng: 2 }, miles: 3, date: new Date().toISOString().slice(0, 10) });
+      window.__selRows = [
+        { id: 2001, source: 'drive-unassigned', client_key: 'lg-keep' },
+      ];
+    }, now);
+    const r = await syncCall();
+    expect(r.dropped, 'the leg is still a real, surviving mileage row, its paid time stays').toBe(0);
+    if (window.__origMileage !== undefined) await page.evaluate(() => { if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; } });
+    await geoRestore();
+  });
+
+  // The exact shape of the owner's 2026-08-21 live diagnostic: seven paid
+  // "Driving" rows with zero matching mileage leg in one day, because
+  // mileage's own personal-stop collapse or dedup sweep deleted the leg
+  // AFTER the payroll row already wrote.
+  test('drive-sync: a drive row whose leg no longer exists in mileage (collapsed/deduped away) is dropped', async () => {
+    await geoReset();
+    await page.evaluate(() => {
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      // mileage is empty: this leg was collapsed away (Home Depot -> Sam's
+      // Club example) or merged into a survivor under a different legKey.
+      window.__selRows = [
+        { id: 2002, source: 'drive-unassigned', client_key: 'lg-collapsed-away' },
+      ];
+    });
+    const r = await syncCall();
+    expect(r.dropped, 'no surviving mileage leg means no paid drive time either').toBe(1);
+    expect(r.deletes[0].val).toBe(2002);
+    await page.evaluate(() => { if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; } });
+    await geoRestore();
+  });
+
+  // The other half of the same live diagnostic: one physical drive, two
+  // near-duplicate mileage legs (6ms apart), each with its own paid
+  // job_time_entries row. Once only ONE of the two legs survives locally
+  // (whether from _mileDedupTrips healing it, or this device simply never
+  // having synced the loser), the orphaned twin's pay drops, the survivor's
+  // does not, one drive pays once.
+  test('drive-sync: of two duplicate-leg drive rows, only the one matching a surviving leg is kept', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      // Only the winner of the (already-run) mileage dedup survives locally.
+      mileage.push({ id: 'ml-winner', gps: true, legKey: 'lg-dup-winner', startedIso: new Date(now - 3600000).toISOString(), endedIso: new Date(now - 3540000).toISOString(), fromCoord: { lat: 1, lng: 1 }, toCoord: { lat: 2, lng: 2 }, miles: 3, date: new Date().toISOString().slice(0, 10) });
+      window.__selRows = [
+        { id: 2101, source: 'drive-unassigned', client_key: 'lg-dup-winner' },
+        { id: 2102, source: 'drive-unassigned', client_key: 'lg-dup-loser' },
+      ];
+    }, now);
+    const r = await syncCall();
+    expect(r.dropped).toBe(1);
+    expect(r.deletes[0].val, 'the loser leg of the duplicate pair loses its paid time, the winner keeps its').toBe(2102);
+    await page.evaluate(() => { if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; } });
+    await geoRestore();
+  });
+
+  test('drive-sync: on-site sources (geofence/place/stop/manual) are never touched, even with no matching leg', async () => {
+    await geoReset();
+    await page.evaluate(() => {
+      window.__origMileage = mileage.slice(); mileage.length = 0;   // nothing survives locally
+      window.__selRows = [
+        { id: 2201, source: 'geofence', client_key: 'not-a-drive-leg' },
+        { id: 2202, source: 'geofence-reconciled', client_key: 'rec-something' },
+        { id: 2203, source: 'place', client_key: 'place-key' },
+        { id: 2204, source: 'stop', client_key: 'stop-key' },
+        { id: 2205, source: 'manual', client_key: null },
+      ];
+    });
+    const r = await syncCall();
+    expect(r.dropped, 'this sweep only ever considers drive-sourced rows').toBe(0);
+    await page.evaluate(() => { if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; } });
+    await geoRestore();
+  });
+
+  test('drive-sync: a drive row with no client_key at all is treated as an orphan (no proof, no pay)', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      mileage.push({ id: 'ml-x', gps: true, legKey: 'lg-x', startedIso: new Date(now - 3600000).toISOString(), endedIso: new Date(now - 3300000).toISOString(), fromCoord: { lat: 1, lng: 1 }, toCoord: { lat: 2, lng: 2 }, miles: 3, date: new Date().toISOString().slice(0, 10) });
+      window.__selRows = [
+        { id: 2301, source: 'drive', client_key: null },
+      ];
+    }, now);
+    const r = await syncCall();
+    expect(r.dropped).toBe(1);
+    expect(r.deletes[0].val).toBe(2301);
+    await page.evaluate(() => { if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; } });
+    await geoRestore();
+  });
+
+  test('drive-sync: no drive-sourced rows at all is a clean no-op', async () => {
+    await geoReset();
+    await page.evaluate(() => {
+      window.__selRows = [
+        { id: 2401, source: 'geofence', client_key: 'k1' },
+      ];
+    });
+    const r = await syncCall();
+    expect(r.dropped).toBe(0);
+    await geoRestore();
+  });
+
   test('reconciliation: a manual clock record overlapping the window wins, nothing is written', async () => {
     await geoReset();
     const seed = await seedReconPair(886004);
