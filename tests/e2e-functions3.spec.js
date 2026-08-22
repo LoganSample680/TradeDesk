@@ -1698,6 +1698,222 @@ test.describe('Cloud Supabase and account functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // ── Identifier-first login gate (owner design 2026-08-22) ─────────────────
+  // Social buttons no longer show blind: the login screen starts with just an
+  // email field, and _loginIdentify's RPC result decides what shows next. This
+  // closes the duplicate-account problem structurally, a returning contractor
+  // can no longer accidentally create a second account through a social
+  // button, because the button doesn't exist until we've confirmed which
+  // methods their real account actually has.
+  test('_loginRenderResult: no account found offers signup, not a dead end', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('nobody@nowhere.com', { exists: false, hasPassword: false, hasApple: false, hasGoogle: false });
+      const gate = document.getElementById('login-gate');
+      const resultEl = document.getElementById('login-result');
+      const html = resultEl ? resultEl.innerHTML : '';
+      const r = {
+        gateHidden: gate ? gate.style.display === 'none' : false,
+        resultShown: resultEl ? resultEl.style.display === 'block' : false,
+        mentionsEmail: html.includes('nobody@nowhere.com'),
+        hasCreateBtn: /create an account/i.test(html),
+        noSocialOffered: !/continue with face id/i.test(html) && !/continue with google/i.test(html),
+      };
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, ...r };
+    });
+    if (result.skip) return;
+    expect(result.gateHidden, 'the email gate is hidden once a result renders').toBe(true);
+    expect(result.resultShown).toBe(true);
+    expect(result.mentionsEmail, 'the typed email is echoed back').toBe(true);
+    expect(result.hasCreateBtn, 'offers a way forward, never a dead end').toBe(true);
+    expect(result.noSocialOffered, 'no account means no social button, nothing to be one-tapped by accident').toBe(true);
+  });
+
+  test('_loginRenderResult: Apple-linked account surfaces Continue with Face ID', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('grace@greenpaint.com', { exists: true, hasPassword: false, hasApple: true, hasGoogle: false });
+      const html = document.getElementById('login-result')?.innerHTML || '';
+      const r = {
+        hasFaceId: /continue with face id/i.test(html),
+        noGoogle: !/continue with google/i.test(html),
+        // Apple-only account (no password on file): the password field must
+        // NOT show, that would be an option that can't actually work.
+        noPasswordField: !html.includes('id="supa-pass"'),
+      };
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, ...r };
+    });
+    if (result.skip) return;
+    expect(result.hasFaceId, 'Face ID button shown for a linked Apple identity').toBe(true);
+    expect(result.noGoogle, 'no Google button when Google is not linked').toBe(true);
+    expect(result.noPasswordField, 'no password field when the account has no password').toBe(true);
+  });
+
+  test('_loginRenderResult: password-only account surfaces the password field, no social buttons', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('grace@greenpaint.com', { exists: true, hasPassword: true, hasApple: false, hasGoogle: false });
+      const html = document.getElementById('login-result')?.innerHTML || '';
+      const r = {
+        hasPasswordField: html.includes('id="supa-pass"') && html.includes('id="supa-email"'),
+        emailCarried: html.includes('value="grace@greenpaint.com"'),
+        noFaceId: !/continue with face id/i.test(html),
+        noGoogle: !/continue with google/i.test(html),
+      };
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, ...r };
+    });
+    if (result.skip) return;
+    expect(result.hasPasswordField, 'password field shown for a password-only account').toBe(true);
+    expect(result.emailCarried, 'the identified email carries into the hidden field supaSignIn reads').toBe(true);
+    expect(result.noFaceId).toBe(true);
+    expect(result.noGoogle).toBe(true);
+  });
+
+  test('_loginRenderResult: account exists but no recognized method still offers a way in (safety net)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('weird@edge.com', { exists: true, hasPassword: false, hasApple: false, hasGoogle: false });
+      const html = document.getElementById('login-result')?.innerHTML || '';
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, hasPasswordField: html.includes('id="supa-pass"') };
+    });
+    if (result.skip) return;
+    expect(result.hasPasswordField, 'never a dead end, falls back to a password attempt + forgot-password recovery').toBe(true);
+  });
+
+  test('_loginIdentify: calls check_login_methods with the typed email and renders the result', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _loginIdentify !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      const savedSupa = _supa;
+      let rpcArgs = null;
+      try {
+        _supa = { ...savedSupa, rpc: (fn, args) => { rpcArgs = { fn, args }; return Promise.resolve({ data: { exists: true, hasPassword: false, hasApple: true, hasGoogle: false }, error: null }); } };
+        document.getElementById('login-email').value = 'grace@greenpaint.com';
+        await _loginIdentify();
+        const html = document.getElementById('login-result')?.innerHTML || '';
+        return { skip: false, rpcArgs, hasFaceId: /continue with face id/i.test(html) };
+      } finally {
+        _supa = savedSupa;
+        document.getElementById('supa-login-overlay')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.rpcArgs?.fn).toBe('check_login_methods');
+    expect(result.rpcArgs?.args?.check_email).toBe('grace@greenpaint.com');
+    expect(result.hasFaceId, 'renders the result the RPC actually returned').toBe(true);
+  });
+
+  test('_loginIdentify: blocks on a blank/invalid email before ever calling the RPC', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _loginIdentify !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      const savedSupa = _supa;
+      let rpcCalled = false;
+      try {
+        _supa = { ...savedSupa, rpc: () => { rpcCalled = true; return Promise.resolve({ data: null, error: null }); } };
+        document.getElementById('login-email').value = 'not-an-email';
+        await _loginIdentify();
+        const gateStillShown = document.getElementById('login-gate')?.style.display !== 'none';
+        return { skip: false, rpcCalled, gateStillShown, errText: document.getElementById('supa-login-err')?.textContent };
+      } finally {
+        _supa = savedSupa;
+        document.getElementById('supa-login-overlay')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.rpcCalled, 'an invalid email never even reaches the lookup').toBe(false);
+    expect(result.gateStillShown).toBe(true);
+    expect(result.errText).toBe('Enter a valid email.');
+  });
+
+  test('_loginIdentify: an RPC failure fails toward "no account found", never blocks the person', async () => {
+    const consoleErrorsBefore = page._consoleErrors.length;
+    const result = await page.evaluate(async () => {
+      if (typeof _loginIdentify !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      const savedSupa = _supa;
+      try {
+        _supa = { ...savedSupa, rpc: () => Promise.reject(new Error('network unreachable')) };
+        document.getElementById('login-email').value = 'grace@greenpaint.com';
+        let threw = null;
+        try { await _loginIdentify(); } catch (e) { threw = e.message; }
+        const html = document.getElementById('login-result')?.innerHTML || '';
+        return { skip: false, threw, hasCreateBtn: /create an account/i.test(html) };
+      } finally {
+        _supa = savedSupa;
+        document.getElementById('supa-login-overlay')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.threw, 'a network failure during identify must never throw out to the caller').toBe(null);
+    expect(result.hasCreateBtn, 'fails toward "create an account" rather than leaving the person stuck').toBe(true);
+    const consoleErrorsAfter = page._consoleErrors.length;
+    expect(consoleErrorsAfter - consoleErrorsBefore, 'the rejection is swallowed silently, no leaked console.error').toBe(0);
+  });
+
+  test('_loginResetGate: returns from a result state to the plain email entry', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginResetGate !== 'function' || typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('grace@greenpaint.com', { exists: true, hasPassword: true, hasApple: false, hasGoogle: false });
+      _loginResetGate();
+      const gate = document.getElementById('login-gate');
+      const resultEl = document.getElementById('login-result');
+      const r = {
+        gateShown: gate ? gate.style.display !== 'none' : false,
+        resultHidden: resultEl ? resultEl.style.display === 'none' : false,
+        resultCleared: resultEl ? resultEl.innerHTML === '' : false,
+      };
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, ...r };
+    });
+    if (result.skip) return;
+    expect(result.gateShown, 'the email gate reappears').toBe(true);
+    expect(result.resultHidden).toBe(true);
+    expect(result.resultCleared, 'stale results from a different email never linger').toBe(true);
+  });
+
+  test('_loginGoToSignup: closes the login overlay and carries the typed email into onboarding', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginGoToSignup !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      document.getElementById('onboarding-overlay')?.remove();
+      supaShowLogin({ force: true });
+      const savedOb = _ob;
+      _loginGoToSignup('brandnew@example.com');
+      const r = {
+        loginGone: !document.getElementById('supa-login-overlay'),
+        onboardingOpen: !!document.getElementById('onboarding-overlay'),
+        emailCarried: _ob.email === 'brandnew@example.com',
+        stepReset: _ob.step === 1,
+      };
+      document.getElementById('onboarding-overlay')?.remove();
+      _ob = savedOb;
+      return { skip: false, ...r };
+    });
+    if (result.skip) return;
+    expect(result.loginGone, 'the login overlay is removed').toBe(true);
+    expect(result.onboardingOpen, 'onboarding opens in its place').toBe(true);
+    expect(result.emailCarried, 'the typed email is never asked for twice').toBe(true);
+    expect(result.stepReset).toBe(true);
+  });
+
   test('supaSignIn: calls without throwing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof supaSignIn !== 'function') return { skip: true };

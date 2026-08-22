@@ -276,13 +276,16 @@ async function signIn(page, acctOverride) {
   // 'domcontentloaded', NOT the default 'load': the app's login form is interactive at
   // DOMContentLoaded, but 'load' blocks on every external resource, notably the Apple
   // MapKit CDN script, so waiting for it makes every test's boot slower and, on a busy
-  // bridge, tips into the 90s goto timeouts we saw. We still wait for #supa-email below,
+  // bridge, tips into the 90s goto timeouts we saw. We still wait for #login-email below,
   // so the app is provably ready before we touch it.
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  // #supa-email now lives inside the collapsed "Continue with email" block, so wait
-  // for it ATTACHED (login DOM built) rather than visible, signIn authenticates
-  // through the Supabase client below, it never types into the field.
-  await page.waitForSelector('#supa-email', { state: 'attached', timeout: 30000 });
+  // Identifier-first login gate (2026-08-22): #supa-email/#supa-pass no longer exist
+  // in the initial DOM at all, they're injected into #login-result only after typing
+  // an email and getting a matched-account response. #login-email (the gate's email
+  // field) is the element that's always attached the moment the login DOM is built,
+  // wait for that instead. signIn still authenticates through the Supabase client
+  // below, it never types into any field.
+  await page.waitForSelector('#login-email', { state: 'attached', timeout: 30000 });
   // Authenticate through the app's own Supabase client and RETURN the exact
   // result, so a bad credential or unconfirmed email reports as a one-line
   // finding instead of an opaque 120s timeout. This still triggers the app's

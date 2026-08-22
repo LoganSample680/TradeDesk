@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.21.26.35';
+const APP_VERSION='08.21.26.36';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -5290,12 +5290,8 @@ function supaShowLogin(opts={}){
     : // ── Normal login, branded two-panel, matches the onboarding wizard ─────
       (function(){
         const _wrench=(sz,st)=>'<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+'" fill="none" stroke="'+st+'" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>';
-        // Real vendor marks, what every premium app ships, reads as legitimate.
-        const _gLogo='<svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.71H.96v2.33A9 9 0 009 18z"/><path fill="#FBBC05" d="M3.97 10.71a5.4 5.4 0 010-3.42V4.96H.96a9 9 0 000 8.08l3.01-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0A9 9 0 00.96 4.96L3.97 7.3C4.68 5.17 6.66 3.58 9 3.58z"/></svg>';
-        const _aLogo='<svg width="16" height="16" viewBox="0 0 384 512" fill="#fff"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>';
         const _fldFocus='onfocus="this.style.borderColor=\'var(--blue)\';this.style.background=\'#fff\';this.style.boxShadow=\'0 0 0 3px rgba(37,99,235,.13)\'" onblur="this.style.borderColor=\'#e3e6eb\';this.style.background=\'#f7f8fa\';this.style.boxShadow=\'none\'"';
         const _fld='font-size:15px;padding:12px 14px;border-radius:10px;border:1.5px solid #e3e6eb;background:#f7f8fa;color:var(--text);width:100%;box-sizing:border-box;outline:none;font-family:inherit;transition:border-color .15s,box-shadow .15s,background .15s';
-        const _social=(prov,label,bg,fg,bd,icon)=>'<button onclick="_obOAuth(\''+prov+'\')" onmouseover="this.style.filter=\'brightness(.97)\'" onmouseout="this.style.filter=\'none\'" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border-radius:10px;border:'+bd+';background:'+bg+';color:'+fg+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px;transition:filter .15s">'+icon+'<span>'+label+'</span></button>';
         const _bullets=[[svgIcon('📋',{size:15,color:'#fff'}),'Estimates & proposals in minutes'],[svgIcon('💰',{size:15,color:'#fff'}),'Get paid on the spot'],[svgIcon('📍',{size:15,color:'#fff'}),'Mileage, crew & taxes tracked'],[svgIcon('📊',{size:15,color:'#fff'}),'Your whole business, one place']];
         // The whole login screen enters on the standard page fade (§8): it
         // used to hard-appear the moment the boot overlay lifted.
@@ -5330,24 +5326,24 @@ function supaShowLogin(opts={}){
             '</div>'+
             '<div id="login-form-inner" style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:34px 28px;max-width:404px;width:100%;margin:0 auto;box-sizing:border-box">'+
               _inviteBanner+
-              '<div style="margin-bottom:22px"><div style="font-size:25px;font-weight:800;letter-spacing:-.025em;color:var(--text);margin-bottom:4px">Sign in</div><div style="font-size:14px;color:var(--text3)">Pick up right where you left off.</div></div>'+
-              _social('google','Continue with Google','#fff','#1f2328','1.5px solid #dadce0',_gLogo)+
-              _social('apple','Continue with Apple','#000','#fff','1.5px solid #000',_aLogo)+
-              // Email is tucked behind a button so Google/Apple lead; tapping it pops the fields out.
-              '<div id="login-email-divider" style="display:flex;align-items:center;gap:10px;margin:16px 0 14px"><div style="flex:1;height:1px;background:var(--border)"></div><span style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.05em">or</span><div style="flex:1;height:1px;background:var(--border)"></div></div>'+
-              '<button id="login-email-toggle" onclick="_loginShowEmail()" onmouseover="this.style.filter=\'brightness(.97)\'" onmouseout="this.style.filter=\'none\'" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border-radius:10px;border:1.5px solid #dadce0;background:#fff;color:#1f2328;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;transition:filter .15s"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#1f2328" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"></rect><path d="m3 6.5 9 6 9-6"></path></svg><span>Continue with email</span></button>'+
-              '<div id="login-email-block" style="display:none">'+
-                '<div class="f" style="margin:2px 0 12px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Email</label>'+
-                  '<input type="email" id="supa-email" placeholder="you@yourbusiness.com" '+_fldFocus+' style="'+_fld+'"></div>'+
-                '<div class="f" style="margin-bottom:8px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Password</label>'+
-                  '<div style="position:relative">'+
-                    '<input type="password" id="supa-pass" placeholder="••••••••" onkeydown="if(event.key===\'Enter\')supaSignIn()" '+_fldFocus+' style="'+_fld+';padding-right:42px">'+
-                    '<button type="button" id="supa-pass-eye" onclick="_pwToggle(\'supa-pass\',\'supa-pass-eye\')" aria-label="Show password" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:34px;height:34px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text3);border-radius:8px;padding:0" onmouseover="this.style.color=\'var(--text)\'" onmouseout="this.style.color=\'var(--text3)\'">'+_eyeSvg(false)+'</button>'+
-                  '</div>'+
-                '</div>'+
-                '<div style="text-align:right;margin-bottom:18px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0">Forgot password?</button></div>'+
-                '<button onclick="supaSignIn()" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 6px 20px rgba(13,17,23,.28)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'0 3px 12px rgba(13,17,23,.18)\'" style="width:100%;padding:15px;border-radius:11px;border:none;background:linear-gradient(180deg,#1c2431,#0D1117);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 12px rgba(13,17,23,.18);letter-spacing:-.01em;transition:transform .15s,box-shadow .15s">Sign in</button>'+
+              '<div style="margin-bottom:22px"><div style="font-size:25px;font-weight:800;letter-spacing:-.025em;color:var(--text);margin-bottom:4px">Sign in</div><div id="login-sub" style="font-size:14px;color:var(--text3)">Enter your email to continue.</div></div>'+
+              // Identifier-first gate (owner design 2026-08-22): social buttons no
+              // longer show blind. Type an email, THEN we surface exactly the
+              // sign-in methods actually on file for it (Face ID for a linked
+              // Apple identity, Google, or password). A brand-new person never
+              // reaches this branch, "Create your account" below skips straight
+              // to signup, still offering Apple/Google there since declaring
+              // yourself new carries no duplicate-account risk. This closes the
+              // duplicate-account root cause structurally: a returning contractor
+              // can no longer accidentally create a second account through a
+              // social button, because the button doesn't exist until we've
+              // confirmed which methods their real account actually has.
+              '<div id="login-gate">'+
+                '<div class="f" style="margin-bottom:12px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Email</label>'+
+                  '<input type="email" id="login-email" placeholder="you@yourbusiness.com" onkeydown="if(event.key===\'Enter\')_loginIdentify()" '+_fldFocus+' style="'+_fld+'"></div>'+
+                '<button id="login-continue-btn" onclick="_loginIdentify()" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 6px 20px rgba(13,17,23,.28)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'0 3px 12px rgba(13,17,23,.18)\'" style="width:100%;padding:15px;border-radius:11px;border:none;background:linear-gradient(180deg,#1c2431,#0D1117);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 12px rgba(13,17,23,.18);letter-spacing:-.01em;transition:transform .15s,box-shadow .15s">Continue</button>'+
               '</div>'+
+              '<div id="login-result" style="display:none"></div>'+
               '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:12px;text-align:center;min-height:16px"></div>'+
               '<div style="text-align:center;font-size:13.5px;color:var(--text3);margin-top:20px">New to TradeDesk? <button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="border:none;background:none;color:var(--blue);font-weight:700;cursor:pointer;font-family:inherit;padding:0;font-size:13.5px">Create your account</button></div>'+
               // Deliberate offline-only entry removed: a crash / cleared cache / new device would
@@ -5386,15 +5382,99 @@ function supaShowLogin(opts={}){
     }
   }
 }
-// Reveal the email/password fields when the user chooses "Continue with email".
-function _loginShowEmail(){
-  const t=document.getElementById('login-email-toggle');
-  const d=document.getElementById('login-email-divider');
-  const b=document.getElementById('login-email-block');
-  if(t)t.style.display='none';
-  if(d)d.style.display='none';
-  if(b){b.style.display='block';b.style.animation='td-modal-enter .22s cubic-bezier(.22,1,.36,1) both';}
-  setTimeout(()=>document.getElementById('supa-email')?.focus(),60);
+// ── Identifier-first sign-in gate (owner design 2026-08-22) ────────────────
+// Social buttons no longer show blind on the login screen: the person types
+// an email first, THEN we surface exactly the sign-in methods actually on
+// file for it, Face ID for a linked Apple identity, Google, or password.
+// A brand-new person never reaches this branch at all, "Create your
+// account" on the login screen skips straight to signup and still offers
+// Apple/Google there, declaring yourself new carries no duplicate-account
+// risk. This closes the duplicate-account problem structurally instead of
+// the escape-hatch band-aid from earlier tonight: a returning contractor
+// can no longer accidentally create a second account through a social
+// button, because the button doesn't exist until we've confirmed which
+// methods their real account has.
+async function _loginIdentify(){
+  const emailEl=document.getElementById('login-email');
+  const email=(emailEl?.value||'').trim();
+  const err=document.getElementById('supa-login-err');
+  if(err)err.textContent='';
+  if(!email||!email.includes('@')){if(err)err.textContent='Enter a valid email.';return;}
+  const btn=document.getElementById('login-continue-btn');
+  const origLabel=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='Checking…';btn.style.opacity='.7';}
+  let methods={exists:false,hasPassword:false,hasApple:false,hasGoogle:false};
+  try{
+    const{data}=await _supa.rpc('check_login_methods',{check_email:email});
+    if(data)methods=data;
+  }catch(_e){ /* network hiccup: fail toward "no account found", never blocks the person */ }
+  if(btn){btn.disabled=false;btn.textContent=origLabel;btn.style.opacity='1';}
+  _loginRenderResult(email,methods);
+}
+// Back arrow from a result state (any outcome) to the plain email entry.
+function _loginResetGate(){
+  const gate=document.getElementById('login-gate');
+  const result=document.getElementById('login-result');
+  const sub=document.getElementById('login-sub');
+  if(result){result.style.display='none';result.innerHTML='';}
+  if(gate)gate.style.display='block';
+  if(sub)sub.textContent='Enter your email to continue.';
+  const err=document.getElementById('supa-login-err');
+  if(err)err.textContent='';
+  setTimeout(()=>document.getElementById('login-email')?.focus(),60);
+}
+// "No account found" result → straight into signup with the typed email
+// already carried over, never asked twice.
+function _loginGoToSignup(prefillEmail){
+  document.getElementById('supa-login-overlay')?.remove();
+  if(prefillEmail){_ob.step=1;_ob.email=prefillEmail;}
+  showOnboarding();
+}
+function _loginRenderResult(email,methods){
+  const gate=document.getElementById('login-gate');
+  const result=document.getElementById('login-result');
+  const sub=document.getElementById('login-sub');
+  if(gate)gate.style.display='none';
+  if(!result)return;
+  const _faceIdIcon='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 012-2h2"/><path d="M4 16v2a2 2 0 002 2h2"/><path d="M20 8V6a2 2 0 00-2-2h-2"/><path d="M20 16v2a2 2 0 01-2 2h-2"/><circle cx="9" cy="10" r="1" fill="#fff" stroke="none"/><circle cx="15" cy="10" r="1" fill="#fff" stroke="none"/><path d="M9 15c1 1 5 1 6 0"/></svg>';
+  const _gLogo='<svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.71H.96v2.33A9 9 0 009 18z"/><path fill="#FBBC05" d="M3.97 10.71a5.4 5.4 0 010-3.42V4.96H.96a9 9 0 000 8.08l3.01-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0A9 9 0 00.96 4.96L3.97 7.3C4.68 5.17 6.66 3.58 9 3.58z"/></svg>';
+  if(!methods.exists){
+    if(sub)sub.textContent='';
+    result.innerHTML=
+      '<div style="text-align:center;padding:8px 0 16px">'+
+      '<div style="font-size:14px;color:var(--text2);margin-bottom:16px;line-height:1.5">We don\'t have an account for <strong>'+escHtml(email)+'</strong> yet.</div>'+
+      '<button onclick="_loginGoToSignup(\''+email.replace(/'/g,"\\'").replace(/"/g,'&quot;')+'\')" style="width:100%;padding:15px;border-radius:11px;border:none;background:linear-gradient(180deg,#1c2431,#0D1117);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Create an account →</button>'+
+      '<button onclick="_loginResetGate()" style="border:none;background:none;color:var(--blue);font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0">Try a different email</button>'+
+      '</div>';
+    result.style.display='block';
+    return;
+  }
+  if(sub)sub.textContent='Welcome back.';
+  let btns='';
+  if(methods.hasApple)btns+='<button onclick="_obOAuth(\'apple\')" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border-radius:10px;border:1.5px solid #000;background:#000;color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">'+_faceIdIcon+'<span>Continue with Face ID</span></button>';
+  if(methods.hasGoogle)btns+='<button onclick="_obOAuth(\'google\')" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border-radius:10px;border:1.5px solid #dadce0;background:#fff;color:#1f2328;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">'+_gLogo+'<span>Continue with Google</span></button>';
+  // A password field is the safe universal fallback: shown whenever the
+  // account has a password on file, or (edge case) when none of the three
+  // recognized methods matched anything, better than a dead end, worst
+  // case they get "wrong password" and can reset it.
+  const _showPw=methods.hasPassword||!(methods.hasApple||methods.hasGoogle);
+  const _pwBlock=_showPw?
+    ('<div class="f" style="margin:2px 0 12px">'+
+      '<input type="hidden" id="supa-email" value="'+escHtml(email)+'">'+
+      '<label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Password</label>'+
+      '<div style="position:relative">'+
+        '<input type="password" id="supa-pass" placeholder="••••••••" onkeydown="if(event.key===\'Enter\')supaSignIn()" style="font-size:16px;padding:12px 42px 12px 14px;border-radius:10px;border:1.5px solid #e3e6eb;background:#f7f8fa;color:var(--text);width:100%;box-sizing:border-box;outline:none;font-family:inherit">'+
+        '<button type="button" id="supa-pass-eye" onclick="_pwToggle(\'supa-pass\',\'supa-pass-eye\')" aria-label="Show password" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:34px;height:34px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text3);border-radius:8px;padding:0">'+_eyeSvg(false)+'</button>'+
+      '</div></div>'+
+      '<div style="text-align:right;margin-bottom:14px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0">Forgot password?</button></div>'+
+      '<button onclick="supaSignIn()" style="width:100%;padding:15px;border-radius:11px;border:none;background:linear-gradient(180deg,#1c2431,#0D1117);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Sign in</button>')
+    :'';
+  result.innerHTML=
+    '<div>'+btns+_pwBlock+
+    '<button onclick="_loginResetGate()" style="border:none;background:none;color:var(--text3);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;display:block;margin:4px auto 0">Not you? Use a different email</button>'+
+    '</div>';
+  result.style.display='block';
+  setTimeout(()=>document.getElementById('supa-pass')?.focus(),60);
 }
 
 async function supaSignIn(){

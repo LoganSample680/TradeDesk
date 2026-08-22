@@ -82,9 +82,10 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     // App shell rendered (the login screen) = the deployed JS actually ran, not a blank
-    // page / 500 / wrong-root deploy. The email field is now behind "Continue with
-    // email", so assert the always-visible toggle instead.
-    await expect(page.locator('#login-email-toggle')).toBeVisible({ timeout: 20000 });
+    // page / 500 / wrong-root deploy. Identifier-first gate (2026-08-22): the email
+    // input is the always-visible element now, social buttons only appear after
+    // identifying which sign-in methods an account actually has.
+    await expect(page.locator('#login-email')).toBeVisible({ timeout: 20000 });
 
     const liveVersion = await page.evaluate(() => (typeof APP_VERSION !== 'undefined' ? APP_VERSION : null));
     const jsonRes = await page.request.get('/version.json');
