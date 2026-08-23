@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.23.26.6';
+const APP_VERSION='08.23.26.7';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1818,12 +1818,12 @@ function _bootSyncSettled(){
   // heal=true: boot is the one moment the wider overlapping-clocks twin rule
   // is safe, the live sweep stays strict (see _mileSameLeg).
   try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
-  // Same idea for job_time_entries (js/geo-track.js _geoDedupTimeEntries,
-  // owner rule 2026-08-21): a duplicate visit collapses to the longest here
-  // too, whatever wrote it and whenever. Chained (not fired in parallel):
-  // _geoMergeAdjacentVisits (owner rule 2026-08-23, same-place visit merge)
-  // needs dedup's trim/overlap writes to have actually landed first.
-  try{if(typeof _geoDedupTimeEntries==='function')_geoDedupTimeEntries().then(()=>{try{if(typeof _geoMergeAdjacentVisits==='function')_geoMergeAdjacentVisits();}catch(_e){}});}catch(_e){}
+  // Same idea for job_time_entries (js/geo-track.js _geoTimeEntriesSettleChain:
+  // dedup, owner rule 2026-08-21, then same-place merge and gap-absorption,
+  // owner rule 2026-08-23): a duplicate visit collapses to the longest here
+  // too, whatever wrote it and whenever, chained so each step sees the last
+  // one's writes rather than firing in parallel against a stale snapshot.
+  try{if(typeof _geoTimeEntriesSettleChain==='function')_geoTimeEntriesSettleChain();}catch(_e){}
   // And drive-time hygiene (js/geo-track.js _geoSyncDriveTimeEntries, owner
   // rule 2026-08-22): the dedup just above ran (heal=true, sync), so any
   // duplicate mileage leg it merged away has already lost its legKey by the
@@ -7869,7 +7869,7 @@ async function supaLoadFromCloud({silent=false}={}){
     // reasoning: a delete that never reached the cloud (offline heal) comes
     // back the moment the cloud's copy merges in, so this re-collapses it
     // for real, this time with a live connection to make the delete stick.
-    try{if(typeof _geoDedupTimeEntries==='function')_geoDedupTimeEntries().then(()=>{try{if(typeof _geoMergeAdjacentVisits==='function')_geoMergeAdjacentVisits();}catch(_e){}});}catch(_e){}
+    try{if(typeof _geoTimeEntriesSettleChain==='function')_geoTimeEntriesSettleChain();}catch(_e){}
     // Restore _geoLastFenceLoc/_geoLastFenceAt from the persisted open-entry
     // record BEFORE the mileage sweeps below run, not after. This used to
     // only happen ~2.4s later via _geoTrackInit's own deliberate boot delay
@@ -8416,7 +8416,7 @@ function _initRealtimeSubscriptions(uid){
         // after the burst settles, same debounce shape as td_mileage above.
         clearTimeout(window._rtTimeDedupTimer);
         window._rtTimeDedupTimer=setTimeout(()=>{
-          try{if(typeof _geoDedupTimeEntries==='function')_geoDedupTimeEntries().then(()=>{try{if(typeof _geoMergeAdjacentVisits==='function')_geoMergeAdjacentVisits();}catch(_e){}});}catch(_e){}
+          try{if(typeof _geoTimeEntriesSettleChain==='function')_geoTimeEntriesSettleChain();}catch(_e){}
           try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
           try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
         },1500);

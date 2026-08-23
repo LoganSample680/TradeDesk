@@ -61,17 +61,21 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     while (typeof _geoDrainBusy !== 'undefined' && _geoDrainBusy && Date.now() - settleStart < 2000) {
       await new Promise(res => setTimeout(res, 10));
     }
-    // The one-time boot-settle chain (js/cloud.js _bootSyncSettled) fires
-    // _geoDedupTimeEntries().then(()=>_geoMergeAdjacentVisits()) once, using
-    // whatever _supa mock is CURRENT when its own promise finally resolves,
-    // not the mock installed when it was kicked off. If it's still in flight
-    // when the first test(s) here start, wait it out (same pattern as
-    // _geoDrainBusy above) rather than force-clearing the flag mid-run, which
-    // would let two concurrent sweeps interleave writes into window.__rec.
+    // The one-time boot-settle chain (js/cloud.js _bootSyncSettled, now
+    // _geoTimeEntriesSettleChain: dedup, then merge, then gap-absorb) fires
+    // once, using whatever _supa mock is CURRENT when its own promise
+    // finally resolves, not the mock installed when it was kicked off. If
+    // it's still in flight when the first test(s) here start, wait it out
+    // (same pattern as _geoDrainBusy above) rather than force-clearing the
+    // flag mid-run, which would let two concurrent sweeps interleave writes
+    // into window.__rec.
     while (typeof _geoTimeDedupBusy !== 'undefined' && _geoTimeDedupBusy && Date.now() - settleStart < 2000) {
       await new Promise(res => setTimeout(res, 10));
     }
     while (typeof _geoMergeBusy !== 'undefined' && _geoMergeBusy && Date.now() - settleStart < 2000) {
+      await new Promise(res => setTimeout(res, 10));
+    }
+    while (typeof _geoGapAbsorbBusy !== 'undefined' && _geoGapAbsorbBusy && Date.now() - settleStart < 2000) {
       await new Promise(res => setTimeout(res, 10));
     }
     localStorage.removeItem('zp3_geo_queue'); localStorage.removeItem('zp3_geo_open');
@@ -89,6 +93,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // force clear so a genuinely stuck flag can't wedge every later test.
     if (typeof _geoMergeBusy !== 'undefined') _geoMergeBusy = false;
     if (typeof _geoTimeDedupBusy !== 'undefined') _geoTimeDedupBusy = false;
+    if (typeof _geoGapAbsorbBusy !== 'undefined') _geoGapAbsorbBusy = false;
     window._isEmployee = false;
     window._supaUser = { id: 'geo-park-user-1', email: 'p@t.com' };
     window.__rec = { upserts: [], inserts: [], deletes: [], updates: [] };
@@ -1398,6 +1403,170 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     expect(r.deletes.length).toBe(2);
     expect(new Date(r.updates[0].patch.arrived_at).getTime()).toBe(now - 6 * 3600000);
     expect(new Date(r.updates[0].patch.departed_at).getTime()).toBe(now - 1 * 3600000);
+    await geoRestore();
+  });
+
+  // ── _geoAbsorbGapsIntoStops (owner rule 2026-08-23) ──────────────────────
+  // Owner screenshot, 2026-08-23: a clean 4m33s hole between "Clock Out
+  // 11:37 AM" on a job card and "Clock In 11:42 AM" on the Unpaid card next
+  // to it, no mileage leg, no drive row, nothing on record for that
+  // stretch. Confirmed via SQL that departed_at is the GPS-confirmed exit
+  // moment, not a guess: the owner's call was that stretch belongs to the
+  // adjacent unpaid stop, never silently invisible. Same recording _supa
+  // harness as merge/dedup above.
+  const gapCall = () => page.evaluate(async () => {
+    window.__rec.updates.length = 0;
+    const changed = await _geoAbsorbGapsIntoStops();
+    return { changed, updates: window.__rec.updates.slice() };
+  });
+
+  // The exact 08/21 shape: John Doe ends 11:37:36, the stop starts
+  // 11:42:09, nothing fills the 4m33s between them.
+  test('gap-absorb: a leading gap before a stop extends the stop backward to meet it', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 3001, employee_user_id: 'geo-park-user-1', source: 'place',
+          arrived_at: new Date(now - 6 * 3600000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+        { id: 3002, employee_user_id: 'geo-park-user-1', source: 'stop',
+          arrived_at: new Date(now - 2 * 3600000 + 273000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await gapCall();
+    expect(r.updates.length).toBe(1);
+    expect(r.updates[0].filters.id).toBe(3002);
+    expect(new Date(r.updates[0].patch.arrived_at).getTime(), 'the stop absorbs the gap, stretching back to the job\'s own departure').toBe(now - 2 * 3600000);
+    expect(new Date(r.updates[0].patch.departed_at).getTime(), 'the far edge is untouched').toBe(now - 1 * 3600000);
+    expect(r.updates[0].patch.minutes, 'the absorbed span, start to end, not the original duration plus the gap').toBe(60);
+    await geoRestore();
+  });
+
+  test('gap-absorb: a trailing gap after a stop extends the stop forward to meet the next row', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 3011, employee_user_id: 'geo-park-user-1', source: 'stop',
+          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 3 * 3600000).toISOString() },
+        { id: 3012, employee_user_id: 'geo-park-user-1', source: 'place',
+          arrived_at: new Date(now - 3 * 3600000 + 300000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await gapCall();
+    expect(r.updates.length).toBe(1);
+    expect(r.updates[0].filters.id).toBe(3011);
+    expect(new Date(r.updates[0].patch.arrived_at).getTime(), 'the near edge is untouched').toBe(now - 4 * 3600000);
+    expect(new Date(r.updates[0].patch.departed_at).getTime(), 'stretches forward to meet the next row\'s own arrival').toBe(now - 3 * 3600000 + 300000);
+    await geoRestore();
+  });
+
+  test('gap-absorb: no gap at all (rows already touch), no update', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 3021, employee_user_id: 'geo-park-user-1', source: 'place',
+          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+        { id: 3022, employee_user_id: 'geo-park-user-1', source: 'stop',
+          arrived_at: new Date(now - 2 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await gapCall();
+    expect(r.changed).toBe(0);
+    await geoRestore();
+  });
+
+  test('gap-absorb: a paid (non-stop) row is never extended, even with a gap on either side', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 3031, employee_user_id: 'geo-park-user-1', source: 'place',
+          arrived_at: new Date(now - 6 * 3600000).toISOString(), departed_at: new Date(now - 4 * 3600000).toISOString() },
+        { id: 3032, employee_user_id: 'geo-park-user-1', source: 'place',
+          arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await gapCall();
+    expect(r.changed, 'a gap between two PAID rows is left alone, only a stop ever absorbs').toBe(0);
+    await geoRestore();
+  });
+
+  test('gap-absorb: a drive row filling the gap means there is nothing for the stop to absorb', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 3041, employee_user_id: 'geo-park-user-1', source: 'place',
+          arrived_at: new Date(now - 6 * 3600000).toISOString(), departed_at: new Date(now - 4 * 3600000).toISOString() },
+        { id: 3042, employee_user_id: 'geo-park-user-1', source: 'drive-unassigned',
+          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 3.9 * 3600000).toISOString() },
+        { id: 3043, employee_user_id: 'geo-park-user-1', source: 'stop',
+          arrived_at: new Date(now - 3.9 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await gapCall();
+    expect(r.changed, 'the drive row already sits between them, nothing left to absorb').toBe(0);
+    await geoRestore();
+  });
+
+  test('gap-absorb: two different stops each absorb their own adjacent gap independently', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 3051, employee_user_id: 'geo-park-user-1', source: 'stop',
+          arrived_at: new Date(now - 10 * 3600000).toISOString(), departed_at: new Date(now - 9 * 3600000).toISOString() },
+        { id: 3052, employee_user_id: 'geo-park-user-1', source: 'place',
+          arrived_at: new Date(now - 8 * 3600000).toISOString(), departed_at: new Date(now - 4 * 3600000).toISOString() },
+        { id: 3053, employee_user_id: 'geo-park-user-1', source: 'stop',
+          arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await gapCall();
+    expect(r.updates.length).toBe(2);
+    const byId = Object.fromEntries(r.updates.map(u => [u.filters.id, u.patch]));
+    expect(new Date(byId[3051].departed_at).getTime(), 'the first stop absorbs forward to the place row').toBe(now - 8 * 3600000);
+    expect(new Date(byId[3053].arrived_at).getTime(), 'the second stop absorbs backward from the place row').toBe(now - 4 * 3600000);
+    await geoRestore();
+  });
+
+  test('gap-absorb: different employees never absorb each other\'s gaps', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 3061, employee_user_id: 'crew-member-a', source: 'place',
+          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+        { id: 3062, employee_user_id: 'crew-member-b', source: 'stop',
+          arrived_at: new Date(now - 2 * 3600000 + 60000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await gapCall();
+    expect(r.changed, 'a different person\'s row is never a neighbor for this purpose').toBe(0);
+    await geoRestore();
+  });
+
+  test('gap-absorb: a single row, nothing to absorb, no throw', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 3071, employee_user_id: 'geo-park-user-1', source: 'stop',
+          arrived_at: new Date(now - 2 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await gapCall();
+    expect(r.changed).toBe(0);
+    await geoRestore();
+  });
+
+  test('gap-absorb: empty rows, no throw', async () => {
+    await geoReset();
+    await page.evaluate(() => { window.__selRows = []; });
+    const r = await gapCall();
+    expect(r.changed).toBe(0);
     await geoRestore();
   });
 

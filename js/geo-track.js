@@ -3001,6 +3001,11 @@ async function _geoReconcileFromMileage(){
   // trim/overlap writes just above to have landed before it looks for
   // adjacent rows to fold together, same reasoning as the dedup call itself.
   if(typeof _geoMergeAdjacentVisits==='function'){try{await _geoMergeAdjacentVisits();}catch(_e){}}
+  // Same settle point covers gap absorption (owner rule 2026-08-23,
+  // _geoAbsorbGapsIntoStops below): it needs merge's own writes to have
+  // landed so it sees each stop's real final neighbor, not a fragment
+  // merge is about to fold away.
+  if(typeof _geoAbsorbGapsIntoStops==='function'){try{await _geoAbsorbGapsIntoStops();}catch(_e){}}
   // Same settle point covers drive-time hygiene: this function's own writes
   // (and whatever _mileDedupTrips/_milePersonalStopSweep already did earlier
   // this session) are now on the server, so any drive row whose leg no
@@ -3358,6 +3363,92 @@ async function _geoMergeAdjacentVisits(){
     return updates.length+drop.size;
   }catch(_e){return 0;}
   finally{_geoMergeBusy=false;}
+}
+
+// ── Absorb untracked gaps into the adjacent unpaid stop (owner rule
+// 2026-08-23) ──────────────────────────────────────────────────────────────
+// A geofence departure (job_time_entries.departed_at on a job/place/client
+// row) is written the moment a GPS ping CONFIRMED the exit (see the
+// confirmation gating in the ping handler above), never the moment someone
+// actually walked out the door. Whatever elapses between that confirmed exit
+// and the next thing the app logs, an arrival somewhere business, or a stop
+// settling into 'Unpaid', is real elapsed time that was never written
+// anywhere at all: not paid, not unpaid, simply absent (owner screenshot
+// 2026-08-23: a clean 4m33s hole between "Clock Out 11:37 AM" on the John
+// Doe card and "Clock In 11:42 AM" on the Unpaid card next to it, no
+// mileage leg, no drive row, nothing on record for that stretch).
+//
+// Owner's call: the gap belongs to whichever side is already unpaid, never
+// silently invisible and never billed to a job. This runs AFTER dedup and
+// merge above (their writes must have landed, or this could read a stale
+// snapshot and stretch a stop across a row that's about to be dropped
+// anyway), and only ever extends a 'stop' row's own edges to meet its
+// immediate chronological neighbor, on either side. It never touches a
+// paid row's own boundaries.
+let _geoGapAbsorbBusy=false;
+async function _geoAbsorbGapsIntoStops(){
+  if(_geoGapAbsorbBusy||!_supa||!_supaUser)return 0;
+  _geoGapAbsorbBusy=true;
+  try{
+    const cutoff=new Date(Date.now()-90*86400000).toISOString();
+    const {data,error}=await _supa.from('job_time_entries')
+      .select('id,employee_user_id,source,arrived_at,departed_at')
+      .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
+    if(error||!Array.isArray(data)||data.length<2)return 0;
+    const rows=data.filter(r=>r&&r.id!=null&&r.arrived_at&&r.departed_at);
+    if(rows.length<2)return 0;
+    const byEmp={};
+    for(const r of rows){
+      const k=String(r.employee_user_id||'');
+      (byEmp[k]=byEmp[k]||[]).push(r);
+    }
+    const updates=[]; // {id, arrived_at, departed_at, minutes}
+    for(const emp of Object.keys(byEmp)){
+      // Every row this person has, any source, drive included: the gap this
+      // fixes is real only when NOTHING else already sits in it, and a short
+      // drive leg counts as something even if it isn't a stop.
+      const list=byEmp[emp].slice().sort((a,b)=>Date.parse(a.arrived_at)-Date.parse(b.arrived_at));
+      for(let i=0;i<list.length;i++){
+        const r=list[i];
+        if(String(r.source||'')!=='stop')continue;
+        let newStart=Date.parse(r.arrived_at),newEnd=Date.parse(r.departed_at);
+        let changed=false;
+        // Leading gap: the row immediately before this one in chronological
+        // order is the nearest thing on record, gap or not, anything that
+        // actually filled the space would already sort between them.
+        if(i>0){
+          const prevEnd=Date.parse(list[i-1].departed_at);
+          if(prevEnd<newStart){newStart=prevEnd;changed=true;}
+        }
+        // Trailing gap, the same idea, the other direction.
+        if(i<list.length-1){
+          const nextStart=Date.parse(list[i+1].arrived_at);
+          if(nextStart>newEnd){newEnd=nextStart;changed=true;}
+        }
+        if(!changed)continue;
+        updates.push({id:r.id,arrived_at:new Date(newStart).toISOString(),departed_at:new Date(newEnd).toISOString(),
+          minutes:Math.max(0,Math.round((newEnd-newStart)/60000))});
+      }
+    }
+    if(!updates.length)return 0;
+    for(const u of updates){
+      try{await _supa.from('job_time_entries').update({arrived_at:u.arrived_at,departed_at:u.departed_at,minutes:u.minutes}).eq('id',u.id);}catch(_e){}
+    }
+    _geoParkNote('gap-absorb','extended '+updates.length+' unpaid stops to close adjacent untracked gaps');
+    return updates.length;
+  }catch(_e){return 0;}
+  finally{_geoGapAbsorbBusy=false;}
+}
+
+// Shared chain for every js/cloud.js call site that used to fire just
+// _geoDedupTimeEntries() on its own: dedup, then merge, then gap-absorb, each
+// step awaiting the one before it so it never reads a stale snapshot the
+// prior step was about to change. One place to extend instead of three
+// hand-rolled .then() chains drifting apart (§7.3).
+async function _geoTimeEntriesSettleChain(){
+  try{if(typeof _geoDedupTimeEntries==='function')await _geoDedupTimeEntries();}catch(_e){}
+  try{if(typeof _geoMergeAdjacentVisits==='function')await _geoMergeAdjacentVisits();}catch(_e){}
+  try{if(typeof _geoAbsorbGapsIntoStops==='function')await _geoAbsorbGapsIntoStops();}catch(_e){}
 }
 
 // ── Drive-time hygiene: paid drive minutes must match a leg mileage itself
