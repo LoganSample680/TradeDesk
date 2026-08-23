@@ -23,10 +23,9 @@
 // gets a Me/Team toggle at the top: Team breaks hours out per employee
 // (avatar, on-site/drive/supply split bar, OT flag, your own row tagged
 // "(you)"); Me is the same plain "your own days" view everyone else gets,
-// plus a Share button. Owners default to Team (they already expect the
-// full picture); managers default to Me (owner report 2026-08-20: seeing
-// the whole crew by default was confusing for a manager who isn't the
-// owner). Either way, whatever the picker currently shows (a week or one
+// plus a Share button. Everyone defaults to Me, owner included (reversed
+// 2026-08-23; owners used to land on Team by default). Either way,
+// whatever the picker currently shows (a week or one
 // day) also opens into the exact same entries table this page always had,
 // Edit/Delete on manual rows, the only place an entry can still be fixed.
 // $ cost lives entirely in Crew Cost (js/finance.js _crewCostRender), which
@@ -597,10 +596,15 @@ async function renderTimeLog(){
   // own render and only showed up on the NEXT visit to this page.
   if(typeof _geoReconcileFromMileage==='function'){
     try{
+      // 150ms, not 350ms: three attempts at the old backoff held the skeleton
+      // on screen for up to ~1050ms in the worst case (owner report
+      // 2026-08-23: skeleton "way too long" specifically on this page). Still
+      // three tries, same protection against the mid-flight-ping race the
+      // retry exists for, just a shorter wait between them.
       for(let _i=0;_i<3;_i++){
         const ran=await _geoReconcileFromMileage();
         if(ran!==false)break;
-        await new Promise(res=>setTimeout(res,350));
+        await new Promise(res=>setTimeout(res,150));
       }
       if(typeof _geoDrainQueue==='function')await _geoDrainQueue();
     }catch(_e){}
@@ -617,14 +621,13 @@ async function renderTimeLog(){
   // folds under cid for aggregation, so this is the same identity key).
   const selfUid=isEmp?_supaUser.id:cid;
 
-  // Owners land on Team (they already expect the full crew picture);
-  // managers (payroll permission, but an employee) land on Me first, so a
-  // fuller view doesn't ambush someone expecting just their own hours
-  // (owner report 2026-08-20: "confusing for my brother in law"). Sticks
-  // once set, same as _tlYear. Clamped every render so a permission loss
-  // (dual-hat switch to a no-payroll crew hat) can never strand scope on
-  // 'team' with nothing to show.
-  if(_tlScope===null)_tlScope=canComp?(isEmp?'me':'team'):'me';
+  // Everyone lands on Me first, owner included (owner reversed 2026-08-23:
+  // the original "owners default to Team, they expect the full picture"
+  // call from 2026-08-20 flipped, own hours are what you want to check
+  // first regardless of role). Sticks once set, same as _tlYear. Clamped
+  // every render so a permission loss (dual-hat switch to a no-payroll crew
+  // hat) can never strand scope on 'team' with nothing to show.
+  if(_tlScope===null)_tlScope='me';
   const scope=(_tlScope==='team'&&canComp)?'team':'me';
   _tlScope=scope;
 

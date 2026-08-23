@@ -1017,9 +1017,16 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
     test('current year, shows this year\'s entries, not last year\'s', async () => {
       const r = await page.evaluate(async () => {
+        // Team scope, explicitly: this test is about YEAR filtering (both
+        // fixture people's entries land in this year), not about which scope
+        // an owner defaults to (owners default to Me since 2026-08-23) —
+        // pin the scope so a future default change can't break this one too.
+        setTimeLogScope('team');
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
-        return document.getElementById('tl-list').innerHTML;
+        const html = document.getElementById('tl-list').innerHTML;
+        _tlScope = null; // restore auto-detection for later tests
+        return html;
       });
       expect(r).toContain('Timelog Test Client');
       expect(r).toContain('Timelog No-Bid Client');
@@ -1132,6 +1139,10 @@ test.describe('timelog.js: exhaustive coverage', () => {
     test('owner sees hours broken out per employee (no $), an employee without payroll permission sees only their own hours (no $)', async () => {
       const r = await page.evaluate(async () => {
         setTimeLogYear(new Date().getFullYear());
+        // Owner defaults to Me since 2026-08-23; this test is about what TEAM
+        // scope shows (breakdown per employee), so switch explicitly rather
+        // than lean on a default that no longer lands there.
+        setTimeLogScope('team');
         await renderTimeLog();
         const ownerHtml = document.getElementById('tl-list').innerHTML;
         const origIsEmployee = window._isEmployee, origEmpRecord = window._employeeRecord, origSupaUser = window._supaUser;
@@ -1141,6 +1152,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         await renderTimeLog();
         const empHtml = document.getElementById('tl-list').innerHTML;
         window._isEmployee = origIsEmployee; window._employeeRecord = origEmpRecord; window._supaUser = origSupaUser;
+        _tlScope = null; // restore auto-detection for later tests
         await renderTimeLog();
         return {
           ownerHasBothPeople: ownerHtml.includes('Owner (me)') && ownerHtml.includes('Test Crew Member'),
@@ -1163,14 +1175,14 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r).toContain('data-lp-id=');
     });
 
-    // Really a Me/Team scope test now (see the Me/Team describe block below),
-    // not strictly role-based: an owner defaults to Team so this still holds,
-    // but a manager toggled to Team would hide it too, and a manager left on
-    // its own Me default would show it. Kept here since it's the one the
-    // original share-button work landed with.
-    test('"Share this week\'s hours" button shows for an individual, not for the owner', async () => {
+    // Really a Me/Team scope test (see the Me/Team describe block below), not
+    // strictly role-based: Share is a Me-scope-only button, hidden in Team.
+    // Owner defaults to Me since 2026-08-23, so this pins Team explicitly for
+    // the owner half rather than leaning on a default that changed.
+    test('"Share this week\'s hours" button shows for an individual, not for the owner in Team scope', async () => {
       const r = await page.evaluate(async () => {
         setTimeLogYear(new Date().getFullYear());
+        setTimeLogScope('team');
         await renderTimeLog();
         const ownerVisible = document.getElementById('tl-share').style.display !== 'none' && !!document.getElementById('tl-share').innerHTML;
         const origIsEmployee = window._isEmployee, origEmpRecord = window._employeeRecord, origSupaUser = window._supaUser;
@@ -1180,6 +1192,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         await renderTimeLog();
         const empVisible = document.getElementById('tl-share').style.display !== 'none' && !!document.querySelector('#tl-share button[onclick="_tlShareWeek()"]');
         window._isEmployee = origIsEmployee; window._employeeRecord = origEmpRecord; window._supaUser = origSupaUser;
+        _tlScope = null; // restore auto-detection for later tests
         await renderTimeLog();
         return { ownerVisible, empVisible };
       });
@@ -1275,14 +1288,20 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.hasOthers).toBe(false);
     });
 
-    test('owner (non-employee) always sees everyone', async () => {
+    // "Always" used to be literal (owners defaulted to Team). Since
+    // 2026-08-23 owners default to Me like everyone else; what's still true
+    // is an owner (unlike a non-payroll employee) CAN switch to Team and see
+    // everyone, which is what this now pins explicitly.
+    test('owner (non-employee) can see everyone in Team scope', async () => {
       const r = await page.evaluate(async () => {
         const origIsEmployee = window._isEmployee;
         window._isEmployee = false;
+        setTimeLogScope('team');
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
         const html = document.getElementById('tl-list').innerHTML;
         window._isEmployee = origIsEmployee;
+        _tlScope = null; // restore auto-detection for later tests
         return html.includes('Timelog Test Client') && html.includes('Timelog No-Bid Client');
       });
       expect(r).toBe(true);
@@ -1524,7 +1543,11 @@ test.describe('timelog.js: exhaustive coverage', () => {
   // "need the day picker to change what day we're looking at" / "confusing
   // for my brother in law" → managers default to Me, not the full crew).
   test.describe('Me/Team scope + day picker', () => {
-    test('owner defaults to Team, sees the toggle, own row tagged "(you)"', async () => {
+    // Reversed 2026-08-23: owners used to default to Team ("they already
+    // expect the full picture"); now everyone, owner included, lands on Me
+    // first. Switching to Team still works exactly as before, own row tagged
+    // "(you)", which this test also pins so that half doesn't quietly break.
+    test('owner defaults to Me, sees the toggle; switching to Team tags own row "(you)"', async () => {
       const r = await page.evaluate(async () => {
         // "(you)" needs a real self-identity to tag against (cid, resolved
         // from _contractorUserId/_supaUser.id): the offline harness's default
@@ -1536,19 +1559,22 @@ test.describe('timelog.js: exhaustive coverage', () => {
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
         const toggle = document.getElementById('tl-scope-toggle');
-        const result = {
+        const defaultResult = {
           visible: toggle.style.display !== 'none',
-          teamActive: !!toggle.querySelector('.tl-scope-btn.active')?.textContent.includes('Team'),
+          meActive: !!toggle.querySelector('.tl-scope-btn.active')?.textContent.includes('Me'),
           scope: _tlScope,
-          hasYouTag: document.getElementById('tl-list').innerHTML.includes('(you)'),
         };
-        window._supaUser = origUser;
+        setTimeLogScope('team');
         await renderTimeLog();
-        return result;
+        const hasYouTag = document.getElementById('tl-list').innerHTML.includes('(you)');
+        window._supaUser = origUser;
+        _tlScope = null; // restore auto-detection for later tests
+        await renderTimeLog();
+        return Object.assign(defaultResult, { hasYouTag });
       });
       expect(r.visible).toBe(true);
-      expect(r.teamActive).toBe(true);
-      expect(r.scope).toBe('team');
+      expect(r.meActive).toBe(true);
+      expect(r.scope).toBe('me');
       expect(r.hasYouTag).toBe(true);
     });
 
