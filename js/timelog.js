@@ -64,6 +64,7 @@ function _tlSourceLabel(source){
   if(/^drive/.test(s))return 'Driving'+(s.indexOf('rider')>=0?' (rider)':s.indexOf('personal')>=0?' (personal vehicle)':'');
   if(s==='place')return '';
   if(s==='manual')return 'GPS clock';
+  if(s==='stop')return 'Unpaid';
   return s;
 }
 // Still-running entries, clocked in, never closed. Separate from the history
@@ -101,11 +102,13 @@ async function _timeLogRows(sinceISO){
   const crew=(typeof _fetchCrewLabor==='function')?await _fetchCrewLabor(sinceISO):{name:{},entries:[]};
   (crew.entries||[]).forEach(e=>{
     if(!e.arrived_at)return;
-    // Off-job stops (lunch, an errand) are captured so the day reconciles, but
-    // this is the HOURS record: every row here feeds the weekly total and the
-    // 40+hr overtime flag, so a lunch break appearing would be paid time and
-    // could push someone into overtime they never worked.
-    if(typeof _geoIsOffJobSource==='function'&&_geoIsOffJobSource(e.source))return;
+    // Off-job stops (lunch, an errand) still get a row (owner request
+    // 2026-08-23: "needs logged as lunches or unaccounted for time", the day
+    // should read complete, not like a chunk is silently missing), but the
+    // `unpaid` flag keeps it OUT of the hours record: _tlComputeWeeklyRunning
+    // and _tlComputeOT both skip unpaid minutes, so a lunch break never
+    // becomes paid time or pushes someone into overtime they never worked.
+    const isUnpaid=typeof _geoIsOffJobSource==='function'&&_geoIsOffJobSource(e.source);
     const info=_tlJobClientInfo(e.job_id);
     // dest_place is the actual name behind a job_id:null row (a supply
     // house, a home office, an unscheduled client visit, or wherever a
@@ -117,7 +120,7 @@ async function _timeLogRows(sinceISO){
       id:'a'+e.job_id+'_'+e.employee_user_id+'_'+e.arrived_at,
       source:'auto',date:(typeof _ctDateStr==='function')?_ctDateStr(new Date(e.arrived_at)):e.arrived_at.slice(0,10),
       minutes:e.minutes||0,personName:crew.name[e.employee_user_id]||'Crew',personUid:e.employee_user_id,
-      clientName,addr:info.addr,jobName:info.jobName,clientKey:e.client_key||null,
+      clientName,addr:info.addr,jobName:info.jobName,clientKey:e.client_key||null,unpaid:isUnpaid,
       detail:(typeof _tlSourceLabel==='function')?_tlSourceLabel(e.source):(e.source||''),
       startTime:e.arrived_at||null,endTime:e.departed_at||null
     });
@@ -150,6 +153,7 @@ function _tlWeekKey(dateStr){
 function _tlComputeOT(rows){
   const byWeek={};
   rows.forEach(r=>{
+    if(r.unpaid)return;   // a lunch/off-job stop is tracked, never paid, never OT
     const key=(r.personUid||'owner')+'|'+_tlWeekKey(r.date);
     byWeek[key]=(byWeek[key]||0)+(r.minutes||0);
   });
@@ -168,6 +172,7 @@ function _tlComputeOT(rows){
 function _tlComputeWeeklyRunning(rows){
   const dayTotals={}; // 'person|date' -> minutes that day
   rows.forEach(r=>{
+    if(r.unpaid)return;   // a lunch/off-job stop never feeds the paid running total
     const k=(r.personUid||'owner')+'|'+r.date;
     dayTotals[k]=(dayTotals[k]||0)+(r.minutes||0);
   });
@@ -283,21 +288,28 @@ function _tlRow(r){
   // line along with the source tag, which used to be its own column. The
   // driving row's own detail text is dropped here, the amber badge below
   // already says it, so it is not repeated in plain gray right next to it.
-  const jobLine=[driveFromTo||r.clientName,(!driveFromTo&&r.jobName&&r.jobName!==r.clientName)?r.jobName:null,isAutoDrive?null:(r.detail||null)]
+  // A lunch/off-job stop's own detail text is already the "Unpaid" the badge
+  // says (owner request 2026-08-23), same not-repeated rule the driving row
+  // already follows for its own badge just below.
+  const jobLine=[driveFromTo||r.clientName,(!driveFromTo&&r.jobName&&r.jobName!==r.clientName)?r.jobName:null,(isAutoDrive||r.unpaid)?null:(r.detail||null)]
     .filter(Boolean).map(escHtml).join(' · ');
   // Amber (#9F5B00) is the SAME color drive time already gets in the Team
   // split bar/legend (_tlWeekOwnerHtml above), reused rather than invented
   // (§7.3) so "amber" means "driving" consistently everywhere on this page.
-  const sourceTag=r.source==='auto'
-    ?(isAutoDrive
-        ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:800;padding:1px 6px;border-radius:4px;background:#9F5B0022;color:#9F5B00">'+svgIcon('🚗',{size:9})+' Driving</span>'
-        :'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('📍',{size:9})+' On-site</span>')
-    :'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('▶',{size:9})+' Manual</span>';
+  const sourceTag=r.unpaid
+    ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('🍽',{size:9})+' Unpaid</span>'
+    :r.source==='auto'
+      ?(isAutoDrive
+          ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:800;padding:1px 6px;border-radius:4px;background:#9F5B0022;color:#9F5B00">'+svgIcon('🚗',{size:9})+' Driving</span>'
+          :'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('📍',{size:9})+' On-site</span>')
+      :'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('▶',{size:9})+' Manual</span>';
   // Left-edge accent on the whole row, same amber, so "this one's a drive"
   // reads at a glance without hunting for the badge text (a colored border
   // is the other option the ask named alongside a badge; doing both costs
-  // nothing and reads clearer on a fast scroll down a long day).
-  const rowAccent=isAutoDrive?' style="border-left:3px solid #9F5B00"':'';
+  // nothing and reads clearer on a fast scroll down a long day). Unpaid gets
+  // a neutral gray accent, same idea, so it never reads as ordinary paid time
+  // on a fast scroll down the day.
+  const rowAccent=isAutoDrive?' style="border-left:3px solid #9F5B00"':r.unpaid?' style="border-left:3px solid var(--border2)"':'';
   return '<tr'+lpAttrs+rowAccent+'>'+
     '<td class="bold" data-label="Person">'+escHtml(r.personName)+'</td>'+
     '<td data-label="Job site">'+
@@ -306,7 +318,7 @@ function _tlRow(r){
     '</td>'+
     '<td data-label="Clock In">'+(_tlFmtTime(r.startTime)||'-')+'</td>'+
     '<td data-label="Clock Out">'+(_tlFmtTime(r.endTime)||'-')+'</td>'+
-    '<td class="bold" data-label="Duration" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.minutes):r.minutes+'m')+
+    '<td class="'+(r.unpaid?'mute':'bold')+'" data-label="Duration" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.minutes):r.minutes+'m')+
       (r.weekOT?' <span title="'+escHtml(r.personName)+' logged 40+ hrs the week of '+_tlWeekKey(r.date)+', verify overtime eligibility with your state; not payroll advice" style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:4px;background:var(--c-amber-soft);color:var(--c-amber-deep);margin-left:4px;white-space:nowrap">OT WK</span>':'')+
     '</td>'+
     '<td data-label="Week total" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.weekRunningMin||0):(r.weekRunningMin||0)+'m')+'</td>'+

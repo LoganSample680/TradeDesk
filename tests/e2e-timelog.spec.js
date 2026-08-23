@@ -219,6 +219,47 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.startTime).toBeTruthy();
       expect(r.hasEndTime).toBe(true);
     });
+
+    // Owner request 2026-08-23: a 'stop' source crew row (lunch/off-job time,
+    // already flagged by the pre-existing _geoIsOffJobSource, the same
+    // function Crew Cost already excludes with) must carry unpaid:true so
+    // the row renders and everything downstream (_tlComputeOT,
+    // _tlComputeWeeklyRunning) knows to skip it.
+    test('a crew "stop" source row is tagged unpaid:true', async () => {
+      const r = await page.evaluate(async () => {
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({
+          name: { 'emp-test-uid': 'Test Crew Member' },
+          entries: [{
+            employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'Sonic Drive-In',
+            source: 'stop', minutes: 43, client_key: null,
+            arrived_at: '2026-08-21T11:42:00.000Z', departed_at: '2026-08-21T12:25:00.000Z',
+          }],
+        });
+        try { const rows = await _timeLogRows(null); return rows.find(x => x.clientName === 'Sonic Drive-In'); }
+        finally { window._fetchCrewLabor = orig; }
+      });
+      expect(r).toBeTruthy();
+      expect(r.unpaid).toBe(true);
+    });
+
+    test('a normal (non-stop) crew source row is not tagged unpaid', async () => {
+      const r = await page.evaluate(async () => {
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({
+          name: { 'emp-test-uid': 'Test Crew Member' },
+          entries: [{
+            employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'A Real Client Stop',
+            source: 'geofence-reconciled', minutes: 60, client_key: null,
+            arrived_at: '2026-08-21T09:00:00.000Z', departed_at: '2026-08-21T10:00:00.000Z',
+          }],
+        });
+        try { const rows = await _timeLogRows(null); return rows.find(x => x.clientName === 'A Real Client Stop'); }
+        finally { window._fetchCrewLabor = orig; }
+      });
+      expect(r).toBeTruthy();
+      expect(r.unpaid).toBe(false);
+    });
   });
 
   test.describe('_tlOpenEntries', () => {
@@ -396,6 +437,32 @@ test.describe('timelog.js: exhaustive coverage', () => {
       });
       expect(r).toBe(true);
     });
+
+    // Owner request 2026-08-23: unpaid (lunch/off-job stop) minutes must
+    // never push someone into overtime they never worked.
+    test('unpaid rows are excluded from the weekly total, never trigger the OT flag on their own', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [
+          { personUid: 'u1', date: '2026-07-13', minutes: 2350 },
+          { personUid: 'u1', date: '2026-07-13', minutes: 100, unpaid: true }, // would push total to 2450 if counted
+        ];
+        _tlComputeOT(rows);
+        return rows.map(r => r.weekOT);
+      });
+      expect(r).toEqual([false, false]);
+    });
+
+    test('an unpaid row on an otherwise-over-40-hours week still reads the flag (flag is per-week, not per-row-source)', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [
+          { personUid: 'u1', date: '2026-07-13', minutes: 2500 },
+          { personUid: 'u1', date: '2026-07-14', minutes: 60, unpaid: true },
+        ];
+        _tlComputeOT(rows);
+        return rows.map(r => r.weekOT);
+      });
+      expect(r).toEqual([true, true]);
+    });
   });
 
   test.describe('_tlComputeWeeklyRunning', () => {
@@ -479,6 +546,24 @@ test.describe('timelog.js: exhaustive coverage', () => {
         catch (e) { return false; }
       });
       expect(r).toBe(true);
+    });
+
+    // Owner request 2026-08-23: the 08/21 example, morning + lunch + afternoon.
+    // The running total after lunch must equal the running total before it,
+    // and the afternoon total must add only the afternoon's own minutes.
+    test('unpaid rows never feed the running weekly total, before or after they occur', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [
+          { personUid: 'u1', date: '2026-08-21', minutes: 222 },              // 7:55-11:37
+          { personUid: 'u1', date: '2026-08-21', minutes: 43, unpaid: true }, // 11:42-12:25 lunch
+          { personUid: 'u1', date: '2026-08-21', minutes: 282 },              // 12:25-5:07
+        ];
+        _tlComputeWeeklyRunning(rows);
+        return rows.map(r => r.weekRunningMin);
+      });
+      // All three rows share the same day, so the running total is the same
+      // day-total figure on every row: 222 + 282 = 504, the lunch's 43 never counted.
+      expect(r).toEqual([504, 504, 504]);
     });
   });
 
@@ -824,6 +909,48 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r).not.toContain('#9F5B00');
       expect(r).toContain('Manual');
       expect(r).toContain('Driving the crew to pick up materials');
+    });
+
+    // Owner request 2026-08-23: "the time away ... needs logged as lunches or
+    // unaccounted for time that needs to feed to the hour charts as unpaid
+    // time." The row must be visibly distinct (gray badge + gray accent,
+    // muted duration), never mistaken for ordinary paid on-site/driving time.
+    test('an unpaid row gets the gray Unpaid badge, gray left-border accent, and a muted (not bold) duration', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'a20', rawId: 20, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'Sonic Drive-In', addr: '', jobName: '', detail: 'Unpaid', minutes: 43, unpaid: true });
+      });
+      expect(r).toContain('Unpaid');
+      expect(r).toContain('border-left:3px solid var(--border2)');
+      expect(r).not.toContain('#9F5B00'); // never the amber driving color
+      expect(r).not.toContain('class="bold" data-label="Duration"');
+      expect(r).toContain('class="mute" data-label="Duration"');
+    });
+
+    test('an unpaid row does not repeat "Unpaid" in the muted detail line, same not-repeated rule as the Driving badge', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'a21', rawId: 21, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'Sonic Drive-In', addr: '', jobName: '', detail: 'Unpaid', minutes: 43, unpaid: true });
+      });
+      expect((r.match(/Unpaid/g) || []).length).toBe(1);
+    });
+
+    test('an unpaid row with a job name still shows the place name, just no plain-text detail duplicate', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'a22', rawId: 22, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'Sonic Drive-In', addr: '', jobName: 'Lunch', detail: 'Unpaid', minutes: 43, unpaid: true });
+      });
+      expect(r).toContain('Sonic Drive-In');
+    });
+
+    test('a normal (non-unpaid) on-site row never gets the unpaid badge or gray accent', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'a23', rawId: 23, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'John Doe', addr: '123 Main St', jobName: 'Repaint', detail: '', minutes: 200 });
+      });
+      expect(r).not.toContain('Unpaid');
+      expect(r).not.toContain('border-left:3px solid var(--border2)');
+      expect(r).toContain('class="bold" data-label="Duration"');
     });
 
     test('renders Clock In / Clock Out columns from startTime/endTime', async () => {
