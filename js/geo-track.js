@@ -3022,11 +3022,14 @@ async function _geoReconcileFromMileage(){
   // trim/overlap writes just above to have landed before it looks for
   // adjacent rows to fold together, same reasoning as the dedup call itself.
   if(typeof _geoMergeAdjacentVisits==='function'){try{await _geoMergeAdjacentVisits();}catch(_e){}}
-  // Same settle point covers gap absorption (owner rule 2026-08-23,
-  // _geoAbsorbGapsIntoStops below): it needs merge's own writes to have
-  // landed so it sees each stop's real final neighbor, not a fragment
-  // merge is about to fold away.
-  if(typeof _geoAbsorbGapsIntoStops==='function'){try{await _geoAbsorbGapsIntoStops();}catch(_e){}}
+  // DISABLED (owner report 2026-08-23, live device): the repeated heartbeat-
+  // triggered chain compounded this into multi-hour, even overnight-spanning
+  // "stop" rows (one grew to 1034 real minutes), corrupting live payroll
+  // data. Root cause not yet fully isolated; the function stays defined so
+  // the fix can be built and tested against it, but it must not run again
+  // until a bounded, verified replacement lands. See _geoAbsorbGapsIntoStops
+  // below.
+  // if(typeof _geoAbsorbGapsIntoStops==='function'){try{await _geoAbsorbGapsIntoStops();}catch(_e){}}
   // Same settle point covers drive-time hygiene: this function's own writes
   // (and whatever _mileDedupTrips/_milePersonalStopSweep already did earlier
   // this session) are now on the server, so any drive row whose leg no
@@ -3469,7 +3472,9 @@ async function _geoAbsorbGapsIntoStops(){
 async function _geoTimeEntriesSettleChain(){
   try{if(typeof _geoDedupTimeEntries==='function')await _geoDedupTimeEntries();}catch(_e){}
   try{if(typeof _geoMergeAdjacentVisits==='function')await _geoMergeAdjacentVisits();}catch(_e){}
-  try{if(typeof _geoAbsorbGapsIntoStops==='function')await _geoAbsorbGapsIntoStops();}catch(_e){}
+  // DISABLED (owner report 2026-08-23): see the matching note in
+  // _geoReconcileFromMileage above, same reason.
+  // try{if(typeof _geoAbsorbGapsIntoStops==='function')await _geoAbsorbGapsIntoStops();}catch(_e){}
 }
 
 // ── Drive-time hygiene: paid drive minutes must match a leg mileage itself
