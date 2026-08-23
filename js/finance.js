@@ -3051,7 +3051,12 @@ async function _fetchCrewLabor(sinceISO){
     // those rows (owner report, the JOB SITE line reading as unlabeled
     // noise). Additive column, every other _fetchCrewLabor consumer (Crew
     // Cost, Books) already ignores fields it doesn't use.
-    let q=_supa.from('job_time_entries').select('employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place').eq('contractor_user_id',cid);
+    // client_key: a drive-sourced row's own deterministic legKey (js/geo-track.js
+    // _geoDriveEntry stamps the SAME key on the mileage row and this one), the
+    // only way to look the leg back up and show its real from/to locations on
+    // the Time Log Job Site line (owner request 2026-08-23) instead of just the
+    // bare destination a drive row shows today.
+    let q=_supa.from('job_time_entries').select('employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,client_key').eq('contractor_user_id',cid);
     if(sinceISO)q=q.gte('arrived_at',sinceISO);
     const{data:te}=await q;
     out.entries=te||[];

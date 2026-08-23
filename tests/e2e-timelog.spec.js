@@ -744,6 +744,64 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r).toContain('border-left:3px solid #9F5B00');
     });
 
+    // Owner request 2026-08-23: "Time entry drive times should show from and
+    // to locations under job site." A drive row's job_time_entries.client_key
+    // is the SAME deterministic legKey _geoDriveEntry (js/geo-track.js) stamps
+    // on the matching mileage row, so the lookup is a straight local array
+    // find, never a network round trip.
+    test('a drive row with a matching mileage leg shows "From: X - To: Y" instead of just the destination', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        window.__origMileage = mileage.slice(); mileage.length = 0;
+        mileage.push({ id: 'ml-tl-1', legKey: 'tl-leg-1', from_name: 'Shop', to_name: 'John Doe' });
+        const html = _tlRow({ id: 'a5', rawId: 5, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'John Doe', addr: '', jobName: '', detail: 'Driving', minutes: 6, clientKey: 'tl-leg-1' });
+        mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
+        return html;
+      });
+      expect(r).toContain('From: Shop - To: John Doe');
+      // Not the old bare-destination text alongside the new from/to line.
+      expect((r.match(/John Doe/g) || []).length, 'the destination appears once, inside the from/to line, not repeated').toBe(1);
+    });
+
+    test('a drive row with no matching mileage leg falls back to the plain destination (old behavior)', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        window.__origMileage = mileage.slice(); mileage.length = 0;
+        // A leg exists, but for a DIFFERENT key: nothing here matches.
+        mileage.push({ id: 'ml-tl-2', legKey: 'some-other-leg', from_name: 'Shop', to_name: 'Riverside Remodel' });
+        const html = _tlRow({ id: 'a6', rawId: 6, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'DEV A shop', addr: '', jobName: '', detail: 'Driving', minutes: 6, clientKey: 'tl-leg-missing' });
+        mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
+        return html;
+      });
+      expect(r).toContain('DEV A shop');
+      expect(r).not.toContain('From:');
+    });
+
+    test('a drive row with no client_key at all (older row, written before client_key existed) falls back cleanly', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'a7', rawId: 7, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'DEV A shop', addr: '', jobName: '', detail: 'Driving', minutes: 6 });
+      });
+      expect(r).toContain('DEV A shop');
+      expect(r).not.toContain('From:');
+    });
+
+    // Only a driving row ever does the leg lookup: an on-site row's own
+    // client_key (if it happens to carry one at all) must never trigger a
+    // from/to line, on-site time was never a drive.
+    test('an on-site row is never shown as a from/to line, even if it happens to carry a client_key', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        window.__origMileage = mileage.slice(); mileage.length = 0;
+        mileage.push({ id: 'ml-tl-3', legKey: 'tl-leg-3', from_name: 'Shop', to_name: 'John Doe' });
+        const html = _tlRow({ id: 'a8', rawId: 8, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'John Doe', addr: '123 Main St', jobName: 'Repaint', detail: '', minutes: 200, clientKey: 'tl-leg-3' });
+        mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
+        return html;
+      });
+      expect(r).toContain('On-site');
+      expect(r).not.toContain('From:');
+    });
+
     test('an on-site (geofence) auto row gets NEITHER the amber badge nor the left-border accent', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = false;

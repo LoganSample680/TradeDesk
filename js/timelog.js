@@ -117,7 +117,7 @@ async function _timeLogRows(sinceISO){
       id:'a'+e.job_id+'_'+e.employee_user_id+'_'+e.arrived_at,
       source:'auto',date:(typeof _ctDateStr==='function')?_ctDateStr(new Date(e.arrived_at)):e.arrived_at.slice(0,10),
       minutes:e.minutes||0,personName:crew.name[e.employee_user_id]||'Crew',personUid:e.employee_user_id,
-      clientName,addr:info.addr,jobName:info.jobName,
+      clientName,addr:info.addr,jobName:info.jobName,clientKey:e.client_key||null,
       detail:(typeof _tlSourceLabel==='function')?_tlSourceLabel(e.source):(e.source||''),
       startTime:e.arrived_at||null,endTime:e.departed_at||null
     });
@@ -264,12 +264,26 @@ function _tlRow(r){
   // drive-sourced auto row, '' for a geofence/place row), so a driving row
   // is exactly one that starts with it.
   const isAutoDrive=r.source==='auto'&&/^Driving/.test(r.detail||'');
+  // Drive rows show FROM and TO locations under Job Site (owner request
+  // 2026-08-23: "Time entry drive times should show from and to locations"),
+  // not just the bare destination every drive row showed before this. The
+  // matching mileage leg is the only place the ORIGIN lives at all,
+  // job_time_entries itself never carried one: _geoDriveEntry (js/geo-track.js)
+  // stamps ONE deterministic legKey on both the mileage row (legKey) and this
+  // row (client_key) the moment the leg closes, so this is a straight lookup,
+  // never a re-derivation, same pairing _geoSyncDriveTimeEntries already
+  // trusts. Falls back to the plain destination name (the old behavior) when
+  // no leg survives locally: mileage not yet loaded for this viewer, or the
+  // leg was swept away by a mileage dedup/personal-stop pass.
+  const driveLeg=isAutoDrive&&r.clientKey&&typeof mileage!=='undefined'&&Array.isArray(mileage)
+    ?mileage.find(m=>m&&m.legKey===r.clientKey):null;
+  const driveFromTo=driveLeg?'From: '+(driveLeg.from_name||'—')+' - To: '+(driveLeg.to_name||r.clientName||'—'):null;
   // Job address is the primary line (owner request 2026-07-11: "show the day,
   // job address, person..."): client name/job/task fold into a muted second
   // line along with the source tag, which used to be its own column. The
   // driving row's own detail text is dropped here, the amber badge below
   // already says it, so it is not repeated in plain gray right next to it.
-  const jobLine=[r.clientName,(r.jobName&&r.jobName!==r.clientName)?r.jobName:null,isAutoDrive?null:(r.detail||null)]
+  const jobLine=[driveFromTo||r.clientName,(!driveFromTo&&r.jobName&&r.jobName!==r.clientName)?r.jobName:null,isAutoDrive?null:(r.detail||null)]
     .filter(Boolean).map(escHtml).join(' · ');
   // Amber (#9F5B00) is the SAME color drive time already gets in the Team
   // split bar/legend (_tlWeekOwnerHtml above), reused rather than invented
