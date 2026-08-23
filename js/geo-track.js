@@ -3003,6 +3003,10 @@ async function _geoReconcileFromMileage(){
   // awaits this whole chain before it ever reads a row, so a contractor
   // opening Time Log always sees the reconciled state, not the stale one.
   if(typeof _geoSyncDriveTimeEntries==='function'){try{await _geoSyncDriveTimeEntries();}catch(_e){}}
+  // Same settle point covers shop_time_entries duplicates, which
+  // _geoDedupTimeEntries and _geoSyncDriveTimeEntries never touch at all
+  // (see _geoDedupShopTimeEntries above).
+  if(typeof _geoDedupShopTimeEntries==='function'){try{await _geoDedupShopTimeEntries();}catch(_e){}}
   return true;
 }
 // Bounded wait for the durable queue to finish draining, so a caller that
@@ -3036,17 +3040,22 @@ async function _geoAwaitQueueDrained(maxMs){
 // own deterministic legKey and their own idempotency.
 //
 // RLS note: an employee's own device can only SELECT its own rows here
-// (policy "Employee reads own job time") and has no delete grant at all, so
-// a dup found on an employee's phone will fail its delete silently (caught
-// below) and simply wait for the owner's own device, which has full
-// contractor-scoped delete rights ("Contractor manages job time"), to run
-// this same sweep and clean up the whole team's duplicates.
+// (policy "Employee reads own job time") and has no delete, update, or
+// general insert grant at all, so a dup found on an employee's phone will
+// fail its delete/trim/split silently (caught below) and simply wait for
+// the owner's own device, which has full contractor-scoped rights
+// ("Contractor manages job time"), to run this same sweep and clean up the
+// whole team's duplicates.
+//
+// 90-day cutoff (widened from 7, owner audit 2026-08-23): 7 days was sized
+// for ONGOING hygiene against races that fire close to real time, not for
+// clearing a pre-existing backlog of reconciler duplicates going back weeks.
 let _geoTimeDedupBusy=false;
 async function _geoDedupTimeEntries(){
   if(_geoTimeDedupBusy||!_supa||!_supaUser)return 0;
   _geoTimeDedupBusy=true;
   try{
-    const cutoff=new Date(Date.now()-7*86400000).toISOString();
+    const cutoff=new Date(Date.now()-90*86400000).toISOString();
     const {data,error}=await _supa.from('job_time_entries')
       .select('id,employee_user_id,job_id,dest_place,source,arrived_at,departed_at')
       .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
@@ -3062,11 +3071,119 @@ async function _geoDedupTimeEntries(){
     // out when this was written for jobs first.
     const onSite=s=>/^(geofence|stop|manual|place)$/.test(String(s||''))||/^(geofence|place)-/.test(String(s||''));
     const rows=data.filter(r=>r&&r.id!=null&&r.arrived_at&&r.departed_at&&onSite(r.source));
+    // A -reconciled row is a GUESS anchored to mileage legs, not a live fence
+    // read: _geoReconcileFromMileage never checks for existing coverage
+    // before writing (its own doc comment delegates that entirely to this
+    // sweep), it just claims the WHOLE gap between two drive legs. So it can
+    // land a job-tagged 'geofence-reconciled' row squarely on top of a real,
+    // already-logged 'place' visit for the SAME person (owner screenshot
+    // 2026-08-23: a 3h43m geofence-reconciled row for job "John Doe, AE"
+    // sitting almost exactly on top of the real 3h42m 'place' visit). The
+    // strict sameTarget rule below never caught that pair: one is job-tagged,
+    // the other dest_place-tagged, different "targets" even though they're
+    // the same physical visit.
+    //
+    // A first version of this fix (2026-08-23) fixed the missed comparison
+    // but still fully DELETED the losing reconciled row, exactly like any
+    // other pairwise dup. That is correct only when the reconciled row is
+    // FULLY covered by what it overlaps. A window covering the whole
+    // drive-to-drive gap routinely overlaps only PART of itself with real
+    // rows (the owner's very next report: dropping the loser wholesale wiped
+    // out two genuinely uncovered stretches, 7:55-10:57am AND 12:25-4:16pm,
+    // that nothing else had ever recorded, because they happened to share a
+    // row with a correctly-covered stretch in between). A reconciled row is
+    // therefore never simply dropped for overlapping something: its claim is
+    // trimmed down to whatever part of its own window nothing else already
+    // covers, target match or not. Two LIVE detections still require
+    // sameTarget below (a real two-job day must survive) and are still
+    // resolved by straight delete, only a reconciled row's guess ever gets
+    // this trim treatment: nothing this function infers should ever erase,
+    // OR be trusted over, something the fence machine (or a human) actually
+    // observed.
+    const isReconciled=s=>/-reconciled$/.test(String(s||''));
+    // 15 minutes, not the 2-minute "insignificant visit" floor used
+    // elsewhere: that floor separates a real-but-short visit from nothing,
+    // this one separates a genuinely uncovered stretch from ordinary
+    // measurement jitter at the edge of an otherwise-matching pair (a
+    // reconciled window's boundary rarely lines up with a live one to the
+    // minute). The real gaps this fix exists for ran 3+ hours; a few
+    // minutes of edge slop spawning its own tiny fragment row would just be
+    // new noise of the same shape this fix is closing.
+    const _GEO_RECON_GAP_FLOOR_MS=15*60000;
     const drop=new Set();
-    for(let i=0;i<rows.length;i++){
-      const a=rows[i];if(drop.has(a.id))continue;
-      for(let j=i+1;j<rows.length;j++){
-        const b=rows[j];if(drop.has(b.id))continue;
+    const trims=[];     // {id, arrived_at, departed_at, minutes}
+    const inserts=[];   // extra surviving fragments when a gap sits on both sides
+
+    // Phase 1: every reconciled row's claim shrinks to whatever part of its
+    // own window nothing else already covers, for the SAME person, any
+    // target. _geoIntervalGaps does the interval math; see its own comment.
+    for(const a of rows){
+      if(!isReconciled(a.source))continue;
+      const aS=Date.parse(a.arrived_at),aE=Date.parse(a.departed_at);
+      const covering=[];
+      for(const b of rows){
+        if(b===a||String(b.employee_user_id||'')!==String(a.employee_user_id||''))continue;
+        const bS=Date.parse(b.arrived_at),bE=Date.parse(b.departed_at);
+        // Directional for a reconciled b: only a STRICTLY SHORTER reconciled
+        // row ever counts as coverage that shrinks a longer one, never the
+        // reverse. Without this, a resurrected full-span duplicate (the
+        // self-heal case right below) and the already-trimmed fragment it
+        // now overlaps would each see the OTHER as "this fully covers me"
+        // in the SAME pass off the SAME snapshot, and both could end up
+        // deleted, the correct trim along with the bad resurrection. A live
+        // row is always authoritative regardless of duration.
+        if(isReconciled(b.source)&&(bE-bS)>=(aE-aS))continue;
+        if(aS<bE&&bS<aE)covering.push([Math.max(aS,bS),Math.min(aE,bE)]);
+      }
+      if(!covering.length)continue;   // nothing overlaps this row at all
+      // Surviving fragments, chronological (they never overlap each other,
+      // so order only matters for which one updates the row already in hand
+      // vs which become new fragments below), each past the floor above.
+      const keep=_geoIntervalGaps(aS,aE,covering).filter(([s,e])=>e-s>=_GEO_RECON_GAP_FLOOR_MS);
+      if(!keep.length){drop.add(a.id);continue;}   // fully covered: a plain duplicate
+      const[k0S,k0E]=keep[0];
+      if(!(k0S===aS&&k0E===aE)){
+        // Re-keyed, not just re-timed: _geoDrainQueue's own duplicate-key
+        // fallback (owner rule 2026-08-21, "a duplicate on OUR OWN
+        // deterministic key means this is the SAME visit... overwrite it
+        // with the newer numbers") treats a fresh write landing on this
+        // row's ORIGINAL 'rec-'+legKey client_key as license to resurrect
+        // it back to the full untrimmed span, exactly what the reconciler
+        // re-proposes on every single re-run (every Time Log open, every
+        // Me/Team switch, nothing throttles it). That fallback exists for a
+        // real case, a still-open visit's window legitimately growing, and
+        // touching it would risk breaking that; the correction here is
+        // narrower: once THIS row has been trimmed by something real, it is
+        // no longer "the reconciler's own open guess," it is settled, so it
+        // moves to a key the reconciler can never collide with again. A
+        // stray resurrection under the OLD key still self-heals: the fresh
+        // full-span duplicate it creates gets fully covered by this trimmed
+        // row (still at its old, correct boundaries) plus whatever it
+        // overlaps, and this same sweep deletes it right back out next pass.
+        trims.push({id:a.id,arrived_at:new Date(k0S).toISOString(),departed_at:new Date(k0E).toISOString(),minutes:Math.max(0,Math.round((k0E-k0S)/60000)),client_key:String(a.id)+'-frag0'});
+      }
+      // A gap can sit on BOTH sides of what got covered (the owner's exact
+      // report: real visits landed in the MIDDLE of the reconciled window,
+      // leaving genuine uncovered time both before and after them). The
+      // first fragment updates the row already in hand; anything past that
+      // needs its own row, deterministic client_key so a re-run can never
+      // double-insert the same fragment twice.
+      for(let k=1;k<keep.length;k++){
+        const[gS,gE]=keep[k];
+        inserts.push({contractor_user_id:_geoCid(),employee_user_id:a.employee_user_id,
+          job_id:a.job_id||null,dest_place:a.dest_place||null,source:a.source,
+          arrived_at:new Date(gS).toISOString(),departed_at:new Date(gE).toISOString(),
+          minutes:Math.max(0,Math.round((gE-gS)/60000)),client_key:String(a.id)+'-frag'+k});
+      }
+    }
+
+    // Phase 2: same-target pairwise dedup for the rest (live rows only, and
+    // any reconciled row already fully resolved above never reaches here).
+    const rest=rows.filter(r=>!drop.has(r.id)&&!isReconciled(r.source));
+    for(let i=0;i<rest.length;i++){
+      const a=rest[i];if(drop.has(a.id))continue;
+      for(let j=i+1;j<rest.length;j++){
+        const b=rest[j];if(drop.has(b.id))continue;
         if(String(a.employee_user_id||'')!==String(b.employee_user_id||''))continue;
         // Same destination: same job, or (both jobless) the same named place.
         const sameTarget=a.job_id!=null&&b.job_id!=null
@@ -3084,14 +3201,42 @@ async function _geoDedupTimeEntries(){
         if(loser.id===a.id)break;
       }
     }
-    if(!drop.size)return 0;
+    if(!drop.size&&!trims.length&&!inserts.length)return 0;
     for(const id of drop){
       try{await _supa.from('job_time_entries').delete().eq('id',id);}catch(_e){}
     }
-    _geoParkNote('time-dedup','dropped '+drop.size+' duplicate row(s)');
-    return drop.size;
+    for(const t of trims){
+      try{await _supa.from('job_time_entries').update({arrived_at:t.arrived_at,departed_at:t.departed_at,minutes:t.minutes,client_key:t.client_key}).eq('id',t.id);}catch(_e){}
+    }
+    for(const row of inserts){
+      try{await _supa.from('job_time_entries').insert(row);}catch(_e){}
+    }
+    _geoParkNote('time-dedup','dropped '+drop.size+', trimmed '+trims.length+', split '+inserts.length);
+    return drop.size+trims.length+inserts.length;
   }catch(_e){return 0;}
   finally{_geoTimeDedupBusy=false;}
+}
+// Pure interval math for the reconciled-row trim above: given a row's own
+// [start,end) and a list of [start,end) ranges that overlap SOME part of it,
+// returns the sub-ranges of [start,end) that none of them cover. Merges the
+// covering ranges first so two overlapping/adjacent covering rows read as
+// one block, not a false gap between them.
+function _geoIntervalGaps(start,end,covering){
+  const merged=covering.slice().sort((a,b)=>a[0]-b[0]);
+  const out=[];
+  for(const iv of merged){
+    if(out.length&&iv[0]<=out[out.length-1][1])out[out.length-1][1]=Math.max(out[out.length-1][1],iv[1]);
+    else out.push(iv.slice());
+  }
+  const gaps=[];
+  let cursor=start;
+  for(const[s,e]of out){
+    const cs=Math.max(s,start),ce=Math.min(e,end);
+    if(cs>cursor)gaps.push([cursor,cs]);
+    cursor=Math.max(cursor,ce);
+  }
+  if(cursor<end)gaps.push([cursor,end]);
+  return gaps;
 }
 
 // ── Drive-time hygiene: paid drive minutes must match a leg mileage itself
@@ -3146,6 +3291,65 @@ async function _geoSyncDriveTimeEntries(){
     return drop.length;
   }catch(_e){return 0;}
   finally{_geoDriveSyncBusy=false;}
+}
+
+// ── shop_time_entries dedup (owner audit, 2026-08-23) ────────────────────
+// The twin-write race _geoTrackInit/_geoResumedOnce now block, and the
+// mileage-anchored reconciler's overlap gap _geoDedupTimeEntries's
+// sameTarget loosening (above) now closes, both had a job_time_entries-only
+// blast radius. shop_time_entries never had ANY dedup coverage of its own:
+// two rows for the same person overlapping by more than a few minutes are
+// the same office dwell logged twice, same race, different table. The
+// later-arriving of the pair is dropped.
+// 90-day cutoff, matching _geoDedupTimeEntries above: wide enough to clear a
+// pre-existing backlog, not just ongoing hygiene against a race close to
+// real time.
+// RLS note, same shape as _geoDedupTimeEntries above: an employee's device
+// can SELECT only its own rows and holds no delete grant on shop_time_entries
+// at all ("Contractor manages shop time" is contractor-only), so a drop
+// found on an employee's phone fails its delete silently (caught below) and
+// waits for the contractor's own device to run this sweep.
+let _geoShopDedupBusy=false;
+const _GEO_SHOP_DUP_OVERLAP_MS=240000; // 4 min: a real back-to-back handoff can drift a little
+async function _geoDedupShopTimeEntries(){
+  if(_geoShopDedupBusy||!_supa||!_supaUser)return 0;
+  _geoShopDedupBusy=true;
+  try{
+    const cutoff=new Date(Date.now()-90*86400000).toISOString();
+    const{data,error}=await _supa.from('shop_time_entries')
+      .select('id,arrived_at,departed_at,employee_user_id')
+      .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
+    if(error||!Array.isArray(data)||data.length<2)return 0;
+    const rows=data.filter(r=>r&&r.id!=null&&r.arrived_at&&r.departed_at);
+    const drop=new Set();
+    const groups={};
+    for(const r of rows){
+      const k=String(r.employee_user_id||'');
+      (groups[k]=groups[k]||[]).push(r);
+    }
+    for(const k in groups){
+      const g=groups[k];
+      for(let i=0;i<g.length;i++){
+        if(drop.has(g[i].id))continue;
+        for(let j=i+1;j<g.length;j++){
+          if(drop.has(g[j].id))continue;
+          const aS=Date.parse(g[i].arrived_at),aE=Date.parse(g[i].departed_at);
+          const bS=Date.parse(g[j].arrived_at),bE=Date.parse(g[j].departed_at);
+          const overlapMs=Math.min(aE,bE)-Math.max(aS,bS);
+          if(overlapMs>_GEO_SHOP_DUP_OVERLAP_MS){
+            drop.add(g[j].arrived_at>g[i].arrived_at?g[j].id:g[i].id);
+          }
+        }
+      }
+    }
+    if(!drop.size)return 0;
+    for(const id of drop){
+      try{await _supa.from('shop_time_entries').delete().eq('id',id);}catch(_e){}
+    }
+    _geoParkNote('shop-dedup','dropped '+drop.size+' duplicate shop row(s)');
+    return drop.size;
+  }catch(_e){return 0;}
+  finally{_geoShopDedupBusy=false;}
 }
 
 // ── Init + two-layer consent ───────────────────────────────────────────────────

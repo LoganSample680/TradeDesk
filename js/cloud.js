@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.22.26.19';
+const APP_VERSION='08.23.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1827,6 +1827,9 @@ function _bootSyncSettled(){
   // duplicate mileage leg it merged away has already lost its legKey by the
   // time this runs, and the matching paid drive-time row drops with it.
   try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
+  // And shop_time_entries duplicates (js/geo-track.js _geoDedupShopTimeEntries,
+  // owner audit 2026-08-23): no other sweep touches that table at all.
+  try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
 }
 function _removeBootOverlay(immediate){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
@@ -7889,6 +7892,9 @@ async function supaLoadFromCloud({silent=false}={}){
     // drive-time counterpart needs re-checking (js/geo-track.js
     // _geoSyncDriveTimeEntries, owner rule 2026-08-22).
     try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
+    // Same reconnect-triggered heal for shop_time_entries duplicates
+    // (js/geo-track.js _geoDedupShopTimeEntries, owner audit 2026-08-23).
+    try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
 
     // ── One-time fleet lift out of the settings blob (20260809_td_vehicles) ──
     // MUST run here, after the load: only now do we know whether this account
@@ -8410,6 +8416,7 @@ function _initRealtimeSubscriptions(uid){
         window._rtTimeDedupTimer=setTimeout(()=>{
           try{if(typeof _geoDedupTimeEntries==='function')_geoDedupTimeEntries();}catch(_e){}
           try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
+          try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
         },1500);
       })
       .subscribe(_sigFeedStatus);
@@ -8530,6 +8537,7 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
       // it dropped needs its paid drive-time counterpart re-checked (owner
       // rule 2026-08-22, js/geo-track.js _geoSyncDriveTimeEntries).
       try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
+      try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
     },1500);
   }
   if(fromRealtime&&Date.now()-_lastLocalSaveAt<5000)return;

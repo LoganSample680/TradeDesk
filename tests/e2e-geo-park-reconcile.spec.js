@@ -782,12 +782,20 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   // array like mileage has), so these seed window.__selRows as the server's
   // current rows and assert on window.__rec.deletes.
   const dedupCall = () => page.evaluate(async () => {
-    window.__rec.deletes.length = 0;
+    window.__rec.deletes.length = 0; window.__rec.updates.length = 0; window.__rec.inserts.length = 0;
     const dropped = await _geoDedupTimeEntries();
-    return { dropped, deletes: window.__rec.deletes.slice() };
+    return { dropped, deletes: window.__rec.deletes.slice(), updates: window.__rec.updates.slice(), inserts: window.__rec.inserts.slice() };
   });
 
-  test('dedup: the longer of two overlapping automatic rows on the same job survives', async () => {
+  // Old behavior (through 2026-08-22): "longest measured wins" whatever the
+  // two sources were, so a slightly-longer geofence-reconciled row (502)
+  // beat a shorter but directly-observed geofence row (501). That was wrong:
+  // 2026-08-23 owner screenshot, a mileage-anchored reconciled guess
+  // overlapping and outlasting a real visit. New rule: a live detection
+  // always beats an inferred reconciliation, regardless of duration, a
+  // reconciled row is a guess anchored to mileage legs, never something the
+  // fence machine (or a human) actually observed.
+  test('dedup: a live geofence row always beats an overlapping geofence-reconciled row, even if shorter', async () => {
     await geoReset();
     const now = Date.now();
     await page.evaluate((now) => {
@@ -801,7 +809,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     const r = await dedupCall();
     expect(r.dropped).toBe(1);
     expect(r.deletes.length).toBe(1);
-    expect(r.deletes[0].val, 'the shorter row (501) loses to the longer one (502)').toBe(501);
+    expect(r.deletes[0].val, 'the reconciled guess (502) loses to the live detection (501), even though 502 measured longer').toBe(502);
     await geoRestore();
   });
 
@@ -809,8 +817,10 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   // missing from the dedup sweep's onSite matcher entirely (owner report
   // 2026-08-21: a client visit reconciled twice by two passes never got
   // cleaned up, the exact bug this fix closes for job/geofence rows already,
-  // just never extended to clients when this was first written).
-  test('dedup: the longer of two overlapping client/place rows survives (the gap this fix closes)', async () => {
+  // just never extended to clients when this was first written). Same
+  // live-beats-reconciled rule as the geofence pair above (owner screenshot
+  // 2026-08-23): the live 'place' visit is never the one that drops.
+  test('dedup: a live place row always beats an overlapping place-reconciled row, even if shorter', async () => {
     await geoReset();
     const now = Date.now();
     await page.evaluate((now) => {
@@ -823,7 +833,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     }, now);
     const r = await dedupCall();
     expect(r.dropped).toBe(1);
-    expect(r.deletes[0].val, 'the shorter row (511) loses to the longer one (512)').toBe(511);
+    expect(r.deletes[0].val, 'the reconciled guess (512) loses to the live visit (511), even though 512 measured longer').toBe(512);
     await geoRestore();
   });
 
@@ -834,14 +844,26 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       window.__selRows = [
         { id: 601, employee_user_id: 'geo-park-user-1', job_id: '88', dest_place: null, source: 'manual',
           arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
-        // Longer than the manual row, but manual still must win.
+        // Longer than the manual row on both sides, manual wins the
+        // overlap, but the reconciled row's genuinely uncovered edges (30
+        // min before and after, same shape as the owner's 08/21 report)
+        // still survive: a human's clock record beats a guess for the time
+        // it actually covers, it does not erase time the guess claims that
+        // the human record never touched at all.
         { id: 602, employee_user_id: 'geo-park-user-1', job_id: '88', dest_place: null, source: 'geofence-reconciled',
           arrived_at: new Date(now - 4.5 * 3600000).toISOString(), departed_at: new Date(now - 0.5 * 3600000).toISOString() },
       ];
     }, now);
     const r = await dedupCall();
-    expect(r.dropped).toBe(1);
-    expect(r.deletes[0].val, "a human's clock record always wins, even over a longer automatic row").toBe(602);
+    expect(r.deletes.length, 'nothing is deleted outright, the reconciled row is trimmed instead').toBe(0);
+    expect(r.updates.length).toBe(1);
+    expect(r.updates[0].filters.id, 'the row already in hand updates to its first surviving fragment').toBe(602);
+    expect(new Date(r.updates[0].patch.arrived_at).getTime(), 'trimmed to the 30 min before the manual entry').toBe(now - 4.5 * 3600000);
+    expect(new Date(r.updates[0].patch.departed_at).getTime()).toBe(now - 4 * 3600000);
+    expect(r.inserts.length, 'the 30 min after the manual entry becomes its own fragment').toBe(1);
+    expect(r.inserts[0].row.job_id).toBe('88');
+    expect(new Date(r.inserts[0].row.arrived_at).getTime()).toBe(now - 1 * 3600000);
+    expect(new Date(r.inserts[0].row.departed_at).getTime()).toBe(now - 0.5 * 3600000);
     await geoRestore();
   });
 
@@ -874,6 +896,176 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     }, now);
     const r = await dedupCall();
     expect(r.dropped, 'identical windows at two different jobs are not the same visit').toBe(0);
+    await geoRestore();
+  });
+
+  // The exact owner screenshot shape (2026-08-23, 08/20 data): a job-tagged
+  // 'geofence-reconciled' row (job_id set, dest_place null) sitting almost
+  // exactly on top of the real, live 'place' visit for the same client
+  // (job_id null, dest_place set). Different "targets" by the strict rule
+  // above, so the OLD sameTarget check never even evaluated this pair for
+  // overlap, the reconciled row survived forever alongside the real one. A
+  // reconciled row is now a duplicate candidate against ANY overlapping
+  // on-site row for the same person, target match or not.
+  test('dedup: a job-tagged geofence-reconciled row is dropped against an overlapping live place visit, different targets', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 901, employee_user_id: 'geo-park-user-1', job_id: '1787004045294092', dest_place: null, source: 'geofence-reconciled',
+          arrived_at: new Date(now - 3.72 * 3600000).toISOString(), departed_at: new Date(now).toISOString() },
+        { id: 902, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
+          arrived_at: new Date(now - 3.7 * 3600000).toISOString(), departed_at: new Date(now).toISOString() },
+      ];
+    }, now);
+    const r = await dedupCall();
+    expect(r.dropped).toBe(1);
+    expect(r.deletes[0].val, 'the reconciled guess drops, the live visit underneath it survives, even though the targets never matched').toBe(901);
+    await geoRestore();
+  });
+
+  // Real gap on ONE side only: the reconciled row started reconciling
+  // before the live visit began, and both end at the same moment (the
+  // reconciler and the live visit agree on the departure, just not the
+  // arrival). Trimmed to the uncovered lead-in, nothing to insert.
+  test('dedup: a reconciled row with real uncovered time on only one side is trimmed, not deleted', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 1201, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence-reconciled',
+          arrived_at: new Date(now - 5 * 3600000).toISOString(), departed_at: new Date(now).toISOString() },
+        { id: 1202, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
+          arrived_at: new Date(now - 2 * 3600000).toISOString(), departed_at: new Date(now).toISOString() },
+      ];
+    }, now);
+    const r = await dedupCall();
+    expect(r.deletes.length).toBe(0);
+    expect(r.inserts.length, 'the whole window is one contiguous surviving fragment, nothing left over to split off').toBe(0);
+    expect(r.updates.length).toBe(1);
+    expect(r.updates[0].filters.id).toBe(1201);
+    expect(new Date(r.updates[0].patch.arrived_at).getTime()).toBe(now - 5 * 3600000);
+    expect(new Date(r.updates[0].patch.departed_at).getTime(), 'trimmed to right where the live visit picks up').toBe(now - 2 * 3600000);
+    // Re-keyed off its OWN row id, not the original 'rec-'+legKey it arrived
+    // with: the reconciler's own deterministic key is exactly what
+    // _geoDrainQueue's duplicate-key fallback treats as "same visit, take
+    // the newer numbers" and would resurrect this trim back to its full
+    // untrimmed span the next time the reconciler re-proposes the same
+    // mileage-leg gap (every Time Log open, nothing throttles it).
+    expect(r.updates[0].patch.client_key, "trimmed rows move off the reconciler's key so a future re-run can never resurrect them").toBe('1201-frag0');
+    await geoRestore();
+  });
+
+  // The exact 08/21 live shape (owner report 2026-08-23, the round after the
+  // first version of this fix shipped): a real visit landed in the MIDDLE of
+  // the reconciled window, not at either edge. A single delete-the-loser
+  // sweep had already wiped BOTH the 7:55-10:57am AND 12:25-4:16pm stretches
+  // just for overlapping the 10:57-11:37am visit in between, hours nothing
+  // else had ever recorded. Both edges must survive: one as the trimmed
+  // update, the other as a new fragment.
+  test('dedup: a reconciled row with real uncovered time on BOTH sides of a live visit keeps both (the 08/21 regression)', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 1301, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence-reconciled',
+          arrived_at: new Date(now - 9 * 3600000).toISOString(), departed_at: new Date(now).toISOString() },
+        { id: 1302, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
+          arrived_at: new Date(now - 6 * 3600000).toISOString(), departed_at: new Date(now - 5 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await dedupCall();
+    expect(r.deletes.length, 'neither uncovered edge is a plain duplicate, nothing is deleted outright').toBe(0);
+    expect(r.updates.length).toBe(1);
+    expect(r.updates[0].filters.id, 'the row already in hand becomes the first (earlier) fragment').toBe(1301);
+    expect(new Date(r.updates[0].patch.arrived_at).getTime()).toBe(now - 9 * 3600000);
+    expect(new Date(r.updates[0].patch.departed_at).getTime()).toBe(now - 6 * 3600000);
+    expect(r.updates[0].patch.client_key, 'moved off the reconciler\'s key, immune to resurrection on the next re-run').toBe('1301-frag0');
+    expect(r.inserts.length, 'the later fragment, after the live visit, becomes its own new row').toBe(1);
+    expect(r.inserts[0].row.job_id, 'the fragment keeps the original reconciled row\'s target and source').toBe('77');
+    expect(r.inserts[0].row.source).toBe('geofence-reconciled');
+    expect(r.inserts[0].row.employee_user_id).toBe('geo-park-user-1');
+    expect(new Date(r.inserts[0].row.arrived_at).getTime()).toBe(now - 5 * 3600000);
+    expect(new Date(r.inserts[0].row.departed_at).getTime()).toBe(now);
+    expect(r.inserts[0].row.client_key, 'deterministic per-fragment key, a re-run can never double-insert it').toBe('1301-frag1');
+    await geoRestore();
+  });
+
+  // The self-heal case the re-key exists for: the reconciler re-fires (every
+  // Time Log open, nothing throttles it) and re-proposes the SAME full-span
+  // window under its OWN deterministic key, landing as a genuinely NEW row
+  // since the original already moved off that key onto '<id>-frag0'/'-frag1'.
+  // This fresh, longer duplicate must be the one that gets deleted, never the
+  // shorter, already-correct trim/fragment sitting inside it, even though
+  // both are 'geofence-reconciled' and both technically overlap each other
+  // in the SAME pass off the SAME snapshot.
+  test('dedup: a resurrected full-span duplicate is deleted, the already-trimmed fragments inside it survive untouched', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        // Already settled: the front trim and the back fragment from an
+        // earlier pass, at their correct, final boundaries.
+        { id: 2001, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence-reconciled',
+          arrived_at: new Date(now - 9 * 3600000).toISOString(), departed_at: new Date(now - 6 * 3600000).toISOString() },
+        { id: 2002, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence-reconciled',
+          arrived_at: new Date(now - 5 * 3600000).toISOString(), departed_at: new Date(now).toISOString() },
+        // The live visit sitting between them.
+        { id: 2003, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
+          arrived_at: new Date(now - 6 * 3600000).toISOString(), departed_at: new Date(now - 5 * 3600000).toISOString() },
+        // The resurrection: a fresh full-span proposal under the reconciler's
+        // OWN key, covering all three of the rows above.
+        { id: 2004, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence-reconciled',
+          arrived_at: new Date(now - 9 * 3600000).toISOString(), departed_at: new Date(now).toISOString() },
+      ];
+    }, now);
+    const r = await dedupCall();
+    expect(r.deletes.length, 'only the resurrected duplicate is removed').toBe(1);
+    expect(r.deletes[0].val).toBe(2004);
+    expect(r.updates.length, 'the already-correct fragments are never touched again').toBe(0);
+    expect(r.inserts.length).toBe(0);
+    await geoRestore();
+  });
+
+  // Edge jitter under the floor (a reconciled window a few minutes wider
+  // than the live visit it's really the same visit as) must still collapse
+  // to a plain delete, not spawn tiny meaningless fragment rows.
+  test('dedup: edge jitter under the 15-minute floor still deletes outright, no fragment rows', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 1401, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence-reconciled',
+          arrived_at: new Date(now - 3.1 * 3600000).toISOString(), departed_at: new Date(now - 0.9 * 3600000).toISOString() },
+        { id: 1402, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
+          arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await dedupCall();
+    expect(r.deletes.length).toBe(1);
+    expect(r.deletes[0].val).toBe(1401);
+    expect(r.updates.length).toBe(0);
+    expect(r.inserts.length).toBe(0);
+    await geoRestore();
+  });
+
+  // Two crew members can each be mid-reconciliation on genuinely different
+  // jobs at the same moment: the cross-target rule above must not merge
+  // DIFFERENT people's reconciled rows into one, same guard as the live-row
+  // case (dedup: two DIFFERENT employees..., below).
+  test('dedup: two different employees each with a reconciled row at the same time are both kept', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 911, employee_user_id: 'crew-member-a', job_id: '111', dest_place: null, source: 'geofence-reconciled',
+          arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+        { id: 912, employee_user_id: 'crew-member-b', job_id: '222', dest_place: null, source: 'geofence-reconciled',
+          arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await dedupCall();
+    expect(r.dropped, 'two different people, cross-target merging never spans employees').toBe(0);
     await geoRestore();
   });
 
@@ -1055,6 +1247,96 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // ── _geoDedupShopTimeEntries (owner audit 2026-08-23) ────────────────────
+  // shop_time_entries never had ANY dedup coverage: same twin-write race as
+  // job_time_entries, just on the shop table, and no other sweep touches it.
+  const shopDedupCall = () => page.evaluate(async () => {
+    window.__rec.deletes.length = 0;
+    const dropped = await _geoDedupShopTimeEntries();
+    return { dropped, deletes: window.__rec.deletes.slice() };
+  });
+
+  test('shop-dedup: two overlapping rows for the same person collapse to one', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 4001, employee_user_id: 'geo-park-user-1',
+          arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+        // Arrived later, same dwell re-written by the twin-write race.
+        { id: 4002, employee_user_id: 'geo-park-user-1',
+          arrived_at: new Date(now - 2.95 * 3600000).toISOString(), departed_at: new Date(now - 0.95 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await shopDedupCall();
+    expect(r.dropped).toBe(1);
+    expect(r.deletes[0]).toEqual({ tbl: 'shop_time_entries', col: 'id', val: 4002 });
+    await geoRestore();
+  });
+
+  test('shop-dedup: two rows for DIFFERENT people at the same time are both kept', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 4101, employee_user_id: 'crew-member-a',
+          arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+        { id: 4102, employee_user_id: 'crew-member-b',
+          arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await shopDedupCall();
+    expect(r.dropped, 'two different people clocked in at the shop at once is not a duplicate').toBe(0);
+    await geoRestore();
+  });
+
+  test('shop-dedup: a brief, sub-floor overlap (real back-to-back handoff) is left alone', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        // Ends at now-1h; the next row starts 2 minutes before that (clock
+        // drift at a handoff), well under the 4-minute floor.
+        { id: 4201, employee_user_id: 'geo-park-user-1',
+          arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+        { id: 4202, employee_user_id: 'geo-park-user-1',
+          arrived_at: new Date(now - 1 * 3600000 - 120000).toISOString(), departed_at: new Date(now).toISOString() },
+      ];
+    }, now);
+    const r = await shopDedupCall();
+    expect(r.dropped, 'a 2-minute overlap at a handoff is under the floor, not the same dwell logged twice').toBe(0);
+    await geoRestore();
+  });
+
+  test('shop-dedup: a gap between visits (no overlap) is not a duplicate', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 4301, employee_user_id: 'geo-park-user-1',
+          arrived_at: new Date(now - 6 * 3600000).toISOString(), departed_at: new Date(now - 5 * 3600000).toISOString() },
+        { id: 4302, employee_user_id: 'geo-park-user-1',
+          arrived_at: new Date(now - 2 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await shopDedupCall();
+    expect(r.dropped).toBe(0);
+    await geoRestore();
+  });
+
+  test('shop-dedup: fewer than two rows is a clean no-op', async () => {
+    await geoReset();
+    await page.evaluate(() => {
+      window.__selRows = [
+        { id: 4401, employee_user_id: 'geo-park-user-1',
+          arrived_at: new Date().toISOString(), departed_at: new Date().toISOString() },
+      ];
+    });
+    const r = await shopDedupCall();
+    expect(r.dropped).toBe(0);
+    await geoRestore();
+  });
+
   // ── _milePersonalStopSweep: unnamed 'Stop' legs (owner report 2026-08-22) ──
   // A durable, on-load sweep pairing two adjacent completed mileage rows
   // (leg IN to a waypoint, leg OUT of the same waypoint) and deciding if the
@@ -1066,12 +1348,23 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   // exact live shape of the owner's report: a Shop -> Stop leg saved to
   // mileage that should have collapsed. This sweep is the only other thing
   // that ever re-examines a closed pair, so it must not skip unnamed ones.
+  // Seeds with the guard LOCKED (true), not cleared. js/cloud.js's own
+  // reconnect handler fires _milePersonalStopSweep() in the background (line
+  // ~7888), and this file boots the FULL app, so a stray reconnect landing
+  // anywhere between this seed and the test's own sweepCall() (across the
+  // real IPC round-trips of setLastFence, etc.) can find the freshly-seeded
+  // rows AND already-set fence vars, do the fix ITSELF, and leave sweepCall's
+  // own count at 0 with nothing left to find (CI flake 2026-08-23: resetting
+  // the guard only inside sweepCall wasn't enough, the mutation already
+  // happened by then). Locked here, unlocked only inside sweepCall's own
+  // evaluate in the same synchronous tick as the call it guards, so nothing
+  // else can ever run against this test's seeded state first.
   const stopSweepSeed = (rows) => page.evaluate((rows) => {
     window.__origMileage = mileage.slice(); mileage.length = 0;
     window.__origJobs = jobs.slice(); jobs.length = 0;
     window.__origClients = clients.slice(); clients.length = 0;
     window.__origExpenses = expenses.slice(); expenses.length = 0;
-    window._milePersonalSweepRan = false;
+    window._milePersonalSweepRan = true;
     rows.forEach(r => mileage.push(r));
   }, rows);
   const stopSweepRestore = () => page.evaluate(() => {
@@ -1080,10 +1373,27 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     if (window.__origClients) { clients.length = 0; window.__origClients.forEach(c => clients.push(c)); window.__origClients = null; }
     if (window.__origExpenses) { expenses.length = 0; window.__origExpenses.forEach(e => expenses.push(e)); window.__origExpenses = null; }
   });
-  const sweepCall = () => page.evaluate(async () => {
+  // Unlocks the guard stopSweepSeed locked, sets the fence position (when a
+  // pass-2 test needs one), then calls, ALL in one synchronous tick: no
+  // await separates any of these from the call below, so nothing else can
+  // interleave. A prior version set the fence via a separate setLastFence()
+  // round-trip before this call; that left a real await gap between "fence
+  // set" and "sweep runs" for something else (a live ping handler writing
+  // _geoLastFenceLoc, js/geo-track.js ~line 1310, this file boots the FULL
+  // app) to land in and change the fence out from under this call (CI flake
+  // 2026-08-23, round two: the seed-time guard lock fixed the first
+  // interference source, this closes a second, different one). Optional
+  // `fence` is {loc, atIso}; when passed, the ORIGINAL fence is saved for
+  // restoreLastFence() to put back, exactly like setLastFence used to.
+  const sweepCall = (fence) => page.evaluate(async (fence) => {
+    if (fence) {
+      window.__origLastFenceLoc = _geoLastFenceLoc; window.__origLastFenceAt = _geoLastFenceAt;
+      _geoLastFenceLoc = fence.loc; _geoLastFenceAt = fence.atIso;
+    }
+    window._milePersonalSweepRan = false;
     const fixed = await _milePersonalStopSweep();
     return { fixed, left: mileage.map(m => m.id) };
-  });
+  }, fence);
   const STOP = { lat: 9.10, lon: 9.10 };
   const SHOPX = { lat: 9.00, lon: 9.00 };
   const BIZX = { lat: 9.50, lon: 9.50 };
@@ -1108,10 +1418,6 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     fromCoord: { lat: BIZX.lat, lng: BIZX.lon }, toCoord: { lat: BIZX.lat + 0.5, lng: BIZX.lon + 0.5 },
     from_name: 'Ace Supply', to_name: 'Another Business', miles: 2.0, date: todayKeySafe(),
     startedIso: new Date(now() - 200000).toISOString(), endedIso: new Date(now() - 100000).toISOString() });
-  const setLastFence = (loc, atIso) => page.evaluate(({ loc, atIso }) => {
-    window.__origLastFenceLoc = _geoLastFenceLoc; window.__origLastFenceAt = _geoLastFenceAt;
-    _geoLastFenceLoc = loc; _geoLastFenceAt = atIso;
-  }, { loc, atIso });
   const restoreLastFence = () => page.evaluate(() => {
     _geoLastFenceLoc = window.__origLastFenceLoc; _geoLastFenceAt = window.__origLastFenceAt;
     window.__origLastFenceLoc = null; window.__origLastFenceAt = null;
@@ -1131,8 +1437,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoReset();
     const row = stopLegRows()[0]; // 'sw-inb' only, no outbound partner
     await stopSweepSeed([row, FILLER()]);
-    await setLastFence({ lat: SHOPX.lat, lng: SHOPX.lon, name: 'Shop' }, new Date(now() - 60000).toISOString());
-    const r = await sweepCall();
+    const r = await sweepCall({ loc: { lat: SHOPX.lat, lng: SHOPX.lon, name: 'Shop' }, atIso: new Date(now() - 60000).toISOString() });
     expect(r.fixed, 'the live guard already suppressed the return row, this durable pass covers the orphaned outbound leg').toBe(1);
     expect(r.left).toEqual(['sw-filler']);
     await restoreLastFence();
@@ -1145,8 +1450,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     const row = stopLegRows()[0];
     await stopSweepSeed([row, FILLER()]);
     // The last known fence arrival predates the leg's own end: still out there.
-    await setLastFence({ lat: SHOPX.lat, lng: SHOPX.lon, name: 'Shop' }, new Date(now() - 7200000).toISOString());
-    const r = await sweepCall();
+    const r = await sweepCall({ loc: { lat: SHOPX.lat, lng: SHOPX.lon, name: 'Shop' }, atIso: new Date(now() - 7200000).toISOString() });
     expect(r.fixed, 'a stale fence position from before departure proves nothing, the trip may still be in progress').toBe(0);
     expect(r.left.sort()).toEqual(['sw-filler', 'sw-inb']);
     await restoreLastFence();
@@ -1158,8 +1462,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoReset();
     const row = stopLegRows()[0];
     await stopSweepSeed([row, FILLER()]);
-    await setLastFence({ lat: BIZX.lat, lng: BIZX.lon, name: 'Ace Supply' }, new Date(now() - 60000).toISOString());
-    const r = await sweepCall();
+    const r = await sweepCall({ loc: { lat: BIZX.lat, lng: BIZX.lon, name: 'Ace Supply' }, atIso: new Date(now() - 60000).toISOString() });
     expect(r.fixed, 'back somewhere else is not proof this stop had nothing business in it').toBe(0);
     expect(r.left.sort()).toEqual(['sw-filler', 'sw-inb']);
     await restoreLastFence();
@@ -1171,12 +1474,11 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoReset();
     const row = stopLegRows()[0];
     await stopSweepSeed([row, FILLER()]);
-    await setLastFence({ lat: SHOPX.lat, lng: SHOPX.lon, name: 'Shop' }, new Date(now() - 60000).toISOString());
     await page.evaluate(() => {
       window.__origBizReceipt = _bizReceiptForStop;
       window._bizReceiptForStop = _bizReceiptForStop = () => ({ id: 998, vendor: 'Test' });
     });
-    const r = await sweepCall();
+    const r = await sweepCall({ loc: { lat: SHOPX.lat, lng: SHOPX.lon, name: 'Shop' }, atIso: new Date(now() - 60000).toISOString() });
     expect(r.fixed).toBe(0);
     expect(r.left.sort()).toEqual(['sw-filler', 'sw-inb']);
     await page.evaluate(() => { _bizReceiptForStop = window._bizReceiptForStop = window.__origBizReceipt; window.__origBizReceipt = null; });
