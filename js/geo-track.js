@@ -89,7 +89,9 @@ let _geoClientArrivedAt=null;// ISO arrival at that client, for the visit entry
 // job labor, which is better data than shop overhead anyway.
 const _GEO_IDLE_MS=5*60*1000;    // grace window after the last real interaction
 let _geoLastInteractAt=0;        // ms of the last pointer/key event
-let _geoHomeDwell=null;          // {activeMs,lastSampleMs} while inside a home office
+let _geoHomeDwell=null;          // {activeMs,lastSampleMs,closed?} while inside a home
+                                 // office; closed:true once a closer has read it, meaning
+                                 // the NEXT arrival must start a fresh object, not reuse it
 let _geoWasAtHome=false;         // was the PREVIOUS ping inside one? Keeps the tally
                                  // alive for exactly the ping that closes the visit.
 // Tighter than the 600ft place fence on purpose: at 600ft a slow crawl through
@@ -101,6 +103,10 @@ const _GEO_MAX_INFERRED_LEG_MS=4*60*60*1000;
 const _GEO_STOP_MS=5*60*1000;   // a stop, not a traffic light (matches PLACE_DWELL_MS)
 let _geoPingBusy=false;    // re-entrancy guard: _geoOnPing awaits geocodes, overlapping
                            // pings must never interleave the fence state machine
+let _geoResumedOnce=false; // _geoTrackInit can fire from more than one boot-completion
+                           // path in one page session (_removeBootOverlay has success,
+                           // retry-recovery, and timeout-fallback call sites); a second
+                           // firing must never re-restore/re-drain, see _geoTrackInit
 let _geoGapHiddenAt=null;  // ISO of the last hidden/suspend moment with an entry open,
                            // the last VERIFIED on-site time if the next ping lands outside
 let _geoWakeLockObj=null;  // screen wake lock held while inside a job fence
@@ -823,7 +829,14 @@ async function _geoOnPing(pos){
   // fall back to wall-clock: the whole night back again.
   const _atHome=_geoAtHomeOffice(here);
   if(_atHome){
-    if(!_geoHomeDwell)_geoHomeDwell={activeMs:0,lastSampleMs:nowMs};
+    // .closed (set by the closer once it has read this dwell, see
+    // _geoCloseShopEntry/_geoClosePlaceEntry) means the visit this object
+    // belonged to is already billed: a fresh arrival must start its own tally
+    // at zero rather than keep piling active-minutes onto a total some OTHER,
+    // already-closed visit already claimed. Without this check, returning
+    // home before the second away-ping (below) ever got a chance to null the
+    // object handed the new, unrelated dwell the old one's leftover minutes.
+    if(!_geoHomeDwell||_geoHomeDwell.closed)_geoHomeDwell={activeMs:0,lastSampleMs:nowMs};
     else{
       if(_geoAppActive(nowMs))_geoHomeDwell.activeMs+=Math.min(nowMs-_geoHomeDwell.lastSampleMs,_GEO_IDLE_MS);
       _geoHomeDwell.lastSampleMs=nowMs;
@@ -1443,6 +1456,12 @@ function _geoCloseShopEntry(arrivedAt,departedIso){
   const mins=_geoHomeDwell
     ? Math.floor(_geoHomeDwell.activeMs/60000)
     : Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrivedAt))/60000));
+  // Marked read, not nulled: the tally deliberately survives THIS ping (see
+  // the sampler comment above _geoAtHomeOffice's call site) in case anything
+  // downstream still expects it truthy for the ping that closed the visit.
+  // What it must never do is silently feed a LATER, unrelated dwell: the
+  // sampler's re-arm check treats .closed as "start a fresh one at zero."
+  if(_geoHomeDwell)_geoHomeDwell.closed=true;
   if(mins<2)return;
   if(!_supaUser)return;
   _geoEnqueue('shop_time_entries',{
@@ -1507,6 +1526,8 @@ function _geoClosePlaceEntry(placeId,arrivedAt,departedIso){
   const mins=_geoHomeDwell
     ? Math.floor(_geoHomeDwell.activeMs/60000)
     : Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrivedAt))/60000));
+  // Marked read, not nulled: see the matching comment in _geoCloseShopEntry.
+  if(_geoHomeDwell)_geoHomeDwell.closed=true;
   if(mins<2)return false;        // a pass-through, not a stop
   if(!_supaUser)return false;
   const pl=(typeof getPlaces==='function')?getPlaces().find(p=>String(p.id)===String(placeId)):null;
@@ -2706,6 +2727,19 @@ function stopGeoTracking(){
   _geoCurrentClient=null;_geoClientArrivedAt=null;_geoClientCacheMemo=null;
   _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;_geoLegAtShop=false;_geoHomeDwell=null;_geoWasAtHome=false;
   _geoLastFenceLoc=null;_geoLegOrigin=null;
+  // A real stop-then-restart (sign-out/in, account switch) must get a REAL
+  // restore/drain on the next _geoTrackInit(), unlike the twin-write case this
+  // guard exists to block: that is two firings racing on the SAME boot, not a
+  // deliberate new session. _geoRestoreOpen's OWN one-shot guard is a
+  // SEPARATE latch (window._geoOpenRestored, set the first time it actually
+  // runs) and has to be reset here too: without this line, resetting only
+  // _geoResumedOnce re-opens the OUTER gate in _geoTrackInit but the INNER
+  // one inside _geoRestoreOpen stays permanently shut from the first
+  // account's session, so a second account signing in on the same page never
+  // gets ITS persisted open entry restored, bug #39's scenario again, just
+  // one layer deeper.
+  _geoResumedOnce=false;
+  try{window._geoOpenRestored=false;}catch(_e){}
   // The job-coordinate cache goes too. It is the ONE piece of geofence state
   // this function used to leave behind, and sign-out is exactly when a second
   // account can sign in on the same device (bug #39's scenario). A job id from
@@ -3149,10 +3183,21 @@ function _geoTrackInit(){
   // An app kill / reload mid-shift: restore the persisted open entry so the
   // morning's arrival survives, the next ping resolves it exactly like a
   // background gap. A previous DAY's orphan closes at its last verified moment.
+  //
+  // TWIN-WRITE GUARD: this must run at most ONCE per page session. A second
+  // _geoTrackInit() call (from a second _removeBootOverlay() firing, e.g. a
+  // retry-recovery boot landing shortly after a timeout-fallback one already
+  // did) used to restore the SAME persisted snapshot into live state again,
+  // even while the first restore's ping handling had already moved that state
+  // forward. The result was two independent drive/geofence chains for the
+  // same real dwell, splitting the same window two different ways.
   _geoBindInteract();
-  _geoRestoreOpen();
-  _geoDrainQueue();
-  _geoPrunePings();
+  if(!_geoResumedOnce){
+    _geoResumedOnce=true;
+    _geoRestoreOpen();
+    _geoDrainQueue();
+    _geoPrunePings();
+  }
   // Ensure the shop/office geofence has coordinates. They are derived from the
   // business Address in Settings (S.baddr/bcity/state/bzip), geocoded once and
   // cached on S.officeLat/officeLon. Previously this only happened when the

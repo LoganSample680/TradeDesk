@@ -1292,6 +1292,90 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     await geoRestore();
   });
 
+  // _removeBootOverlay (js/cloud.js) has success, retry-recovery, and timeout-
+  // fallback call sites; each schedules its own _geoTrackInit(). Two firings in
+  // one page session used to re-restore the same persisted snapshot into live
+  // state twice, producing two divergent drive/geofence chains for one real
+  // dwell (owner audit, 2026-08-23: duplicate td_mileage legs and job_time_entries
+  // rows, timestamps ms apart, same real event split two different ways).
+  test('_geoTrackInit: a second firing in the same session does not re-restore/re-drain (twin-write guard)', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      if (typeof _geoTrackInit !== 'function' || typeof _geoRestoreOpen !== 'function') return { skip: true };
+      S.teamTracking = true;
+      _geoResumedOnce = false; // simulate a fresh page session
+      let restoreCalls = 0, drainCalls = 0;
+      const origRestore = _geoRestoreOpen, origDrain = _geoDrainQueue;
+      _geoRestoreOpen = function () { restoreCalls++; return origRestore.apply(this, arguments); };
+      _geoDrainQueue = function () { drainCalls++; return origDrain.apply(this, arguments); };
+      _geoTrackInit(); // 1st firing: e.g. the timeout-fallback boot path
+      _geoTrackInit(); // 2nd firing: e.g. the retry-recovery path landing moments later
+      _geoRestoreOpen = origRestore;
+      _geoDrainQueue = origDrain;
+      return { restoreCalls, drainCalls, resumedOnce: _geoResumedOnce };
+    });
+    if (!r.skip) {
+      expect(r.restoreCalls).toBe(1);
+      expect(r.drainCalls).toBe(1);
+      expect(r.resumedOnce).toBe(true);
+    }
+    await geoRestore();
+  });
+
+  // _geoRestoreOpen has its OWN one-shot latch (window._geoOpenRestored,
+  // set the first time it actually runs) separate from _geoResumedOnce, the
+  // guard around its call site in _geoTrackInit. Resetting only
+  // _geoResumedOnce re-opens the outer gate but leaves the inner one shut,
+  // so a second account signing in on the same page session (sign-out/in,
+  // exactly what stopGeoTracking is for) never got ITS persisted open entry
+  // restored — bug #39's scenario, one layer deeper. Both must reset together.
+  test('stopGeoTracking: resets both restore guards, so a real new session restores again', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      if (typeof stopGeoTracking !== 'function') return { skip: true };
+      _geoResumedOnce = true;          // as if a session already restored once
+      window._geoOpenRestored = true;  // as if _geoRestoreOpen already ran once
+      stopGeoTracking();
+      return { resumedOnce: _geoResumedOnce, openRestored: window._geoOpenRestored };
+    });
+    if (!r.skip) {
+      expect(r.resumedOnce).toBe(false);
+      expect(r.openRestored).toBe(false);
+    }
+    await geoRestore();
+  });
+
+  test('a second account signing in after stopGeoTracking gets ITS OWN persisted open entry restored', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      if (typeof stopGeoTracking !== 'function' || typeof _geoRestoreOpen !== 'function') return { skip: true };
+      // Account A's session already restored once.
+      window._geoOpenRestored = true;
+      stopGeoTracking(); // the sign-out boundary: also clears zp3_geo_open (A's leftover)
+      // Account B signs in on the same page afterward and has its own open
+      // job from earlier today, persisted under ITS uid by an earlier session
+      // on this device (written AFTER sign-out clears A's state, same as a
+      // real device: B's own entry was never A's to wipe).
+      _supaUser = { id: 'user-b' };
+      localStorage.setItem('zp3_geo_open', JSON.stringify({
+        job: 'job-b-1', arrivedAt: new Date(Date.now() - 10 * 60000).toISOString(),
+        uid: 'user-b', day: new Date().toISOString().slice(0, 10),
+      }));
+      _geoRestoreOpen();
+      return { currentJob: _geoCurrentJob, arrivedAt: _geoArrivedAt };
+    });
+    if (!r.skip) {
+      expect(String(r.currentJob)).toBe('job-b-1');
+      expect(r.arrivedAt).not.toBeNull();
+    }
+    await geoRestore();
+  });
+
+  // The home-dwell stale-minutes regression test lives in
+  // tests/e2e-geo-home-office.spec.js ("a quick return before the second
+  // away-ping does not inherit the closed dwell's minutes"), alongside the
+  // existing tests for this exact tally and its HOME/ROAD fixtures.
+
   test('manual bookends, Arrived opens, Done writes a source:manual entry through the queue; job-switch closes the previous', async () => {
     await geoReset();
     const r = await page.evaluate(async () => {
