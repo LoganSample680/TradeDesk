@@ -3017,11 +3017,18 @@ async function _geoReconcileFromMileage(){
   // drop, and the second pass repeated the whole cycle blind to the first.
   if(typeof _geoAwaitQueueDrained==='function')await _geoAwaitQueueDrained();
   if(typeof _geoDedupTimeEntries==='function'){try{await _geoDedupTimeEntries();}catch(_e){}}
-  // Same settle point covers the same-place visit merge (owner rule
-  // 2026-08-23, _geoMergeAdjacentVisits below): it needs dedup's own
-  // trim/overlap writes just above to have landed before it looks for
-  // adjacent rows to fold together, same reasoning as the dedup call itself.
-  if(typeof _geoMergeAdjacentVisits==='function'){try{await _geoMergeAdjacentVisits();}catch(_e){}}
+  // DISABLED (owner report 2026-08-23, live device, same incident as the
+  // gap-absorb disable just below): a job_time_entries row that should have
+  // been two separate visits with a real 48-minute lunch between them
+  // merged into one 551-minute span. The 2-minute floor should never allow
+  // that on a direct pair, so this either chained through several short-
+  // lived spurious rows (live GPS jitter re-triggering the same geofence
+  // repeatedly) or another mechanism not yet isolated. Staying off until
+  // both this and _geoAbsorbGapsIntoStops are root-caused and fixed
+  // together: they were touching the same live data at the same time, and
+  // fixing one without being sure about the other risks the same class of
+  // compounding bug shipping again.
+  // if(typeof _geoMergeAdjacentVisits==='function'){try{await _geoMergeAdjacentVisits();}catch(_e){}}
   // DISABLED (owner report 2026-08-23, live device): the repeated heartbeat-
   // triggered chain compounded this into multi-hour, even overnight-spanning
   // "stop" rows (one grew to 1034 real minutes), corrupting live payroll
@@ -3471,7 +3478,9 @@ async function _geoAbsorbGapsIntoStops(){
 // hand-rolled .then() chains drifting apart (§7.3).
 async function _geoTimeEntriesSettleChain(){
   try{if(typeof _geoDedupTimeEntries==='function')await _geoDedupTimeEntries();}catch(_e){}
-  try{if(typeof _geoMergeAdjacentVisits==='function')await _geoMergeAdjacentVisits();}catch(_e){}
+  // DISABLED (owner report 2026-08-23): see the matching note in
+  // _geoReconcileFromMileage above, same reason.
+  // try{if(typeof _geoMergeAdjacentVisits==='function')await _geoMergeAdjacentVisits();}catch(_e){}
   // DISABLED (owner report 2026-08-23): see the matching note in
   // _geoReconcileFromMileage above, same reason.
   // try{if(typeof _geoAbsorbGapsIntoStops==='function')await _geoAbsorbGapsIntoStops();}catch(_e){}
