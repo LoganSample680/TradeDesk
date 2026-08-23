@@ -2996,6 +2996,11 @@ async function _geoReconcileFromMileage(){
   // drop, and the second pass repeated the whole cycle blind to the first.
   if(typeof _geoAwaitQueueDrained==='function')await _geoAwaitQueueDrained();
   if(typeof _geoDedupTimeEntries==='function'){try{await _geoDedupTimeEntries();}catch(_e){}}
+  // Same settle point covers the same-place visit merge (owner rule
+  // 2026-08-23, _geoMergeAdjacentVisits below): it needs dedup's own
+  // trim/overlap writes just above to have landed before it looks for
+  // adjacent rows to fold together, same reasoning as the dedup call itself.
+  if(typeof _geoMergeAdjacentVisits==='function'){try{await _geoMergeAdjacentVisits();}catch(_e){}}
   // Same settle point covers drive-time hygiene: this function's own writes
   // (and whatever _mileDedupTrips/_milePersonalStopSweep already did earlier
   // this session) are now on the server, so any drive row whose leg no
@@ -3237,6 +3242,122 @@ function _geoIntervalGaps(start,end,covering){
   }
   if(cursor<end)gaps.push([cursor,end]);
   return gaps;
+}
+
+// ── Same-place visit merge (owner rule 2026-08-23: "see all the John Doe
+// stuff? From 7:55 am - 11:37 am those can all be merged... that's the
+// reconciliation I want") ──────────────────────────────────────────────
+// _geoDedupTimeEntries above only resolves OVERLAPPING rows for the exact
+// same job_id (or the exact same dest_place text); it never touches two
+// rows that are merely ADJACENT (a live geofence row picking back up
+// seconds after a fence blip, or a reconciled trim fragment sitting flush
+// against the live visit it was trimmed around), and it never compares a
+// job_id-tagged row against a dest_place-tagged row even when they resolve
+// to the same real place (a scheduled job's geofence row vs. a saved-place
+// row for the same client). Both show up as extra rows for what was really
+// one continuous visit. This pass merges both cases: same person, same
+// resolved place, gap at or under the true-back-to-back floor, folds into
+// ONE row spanning the earliest arrival to the latest departure.
+//
+// "Same resolved place" reuses _tlJobClientInfo (js/timelog.js, loaded by
+// the time this ever actually runs, guarded below), the exact function
+// Time Log already uses to turn a job_id into the client name shown on
+// screen, so "same place" here means the same thing it means on screen
+// (§7.3, don't hand-roll a parallel identity check).
+//
+// Owner's explicit choice (2026-08-23 clarifying question, rejected a
+// 15-minute floor): only TRUE back-to-back visits merge. _GEO_MERGE_GAP_MS
+// exists only to absorb a few minutes of timestamp rounding between two
+// rows that were really one continuous visit, never a real gap like a
+// lunch break, that's what the separate 'stop' source (never a merge
+// candidate below) and the reconciler's own 15-minute floor already exist
+// to protect.
+//
+// Manual and 'stop' rows are never merge candidates: a manual bookend is a
+// human's own clock record, never silently folded into an automatic row;
+// 'stop' is its own visible unpaid category (owner request 2026-08-23, see
+// _geoIsOffJobSource) and stays its own line even at the literal same GPS
+// spot, a lunch stop across the street from the job is still lunch.
+//
+// Deliberately re-fetches fresh from the server rather than reusing
+// another sweep's in-memory rows: merge candidates must already be
+// trim/overlap-resolved by _geoDedupTimeEntries, and every call site
+// (js/cloud.js) chains this off that sweep's own promise so it always
+// starts after those writes have actually landed.
+//
+// RLS note: same as _geoDedupTimeEntries above, an employee's own device
+// has no update/delete grant here, so a merge found on an employee's phone
+// fails silently (caught below) and waits for the owner's own device to
+// run this same sweep with full contractor-scoped rights.
+let _geoMergeBusy=false;
+async function _geoMergeAdjacentVisits(){
+  if(_geoMergeBusy||!_supa||!_supaUser)return 0;
+  _geoMergeBusy=true;
+  try{
+    const cutoff=new Date(Date.now()-90*86400000).toISOString();
+    const {data,error}=await _supa.from('job_time_entries')
+      .select('id,employee_user_id,job_id,dest_place,source,arrived_at,departed_at')
+      .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
+    if(error||!Array.isArray(data)||data.length<2)return 0;
+    const onSite=s=>/^(geofence|place)$/.test(String(s||''))||/^(geofence|place)-/.test(String(s||''));
+    const rows=data.filter(r=>r&&r.id!=null&&r.arrived_at&&r.departed_at&&onSite(r.source));
+    if(rows.length<2)return 0;
+    const isReconciled=s=>/-reconciled$/.test(String(s||''));
+    const _GEO_MERGE_GAP_MS=2*60000;
+    const placeKey=r=>{
+      if(r.job_id!=null){
+        const info=(typeof _tlJobClientInfo==='function')?_tlJobClientInfo(r.job_id):null;
+        const name=info&&info.clientName&&info.clientName!=='-'?info.clientName:null;
+        return name?'n:'+String(name).trim().toLowerCase():'j:'+String(r.job_id);
+      }
+      return r.dest_place?'n:'+String(r.dest_place).trim().toLowerCase():null;
+    };
+    const groups={};
+    for(const r of rows){
+      const key=placeKey(r);if(!key)continue;
+      const gk=String(r.employee_user_id||'')+'|'+key;
+      (groups[gk]=groups[gk]||[]).push(r);
+    }
+    const drop=new Set();
+    const updates=[]; // {id, arrived_at, departed_at, minutes, job_id, dest_place, source, client_key}
+    // A live detection always outranks a reconciler guess (same rule
+    // _geoDedupTimeEntries's own coverage check already applies), and among
+    // rows of the same tier, whichever carries a job_id keeps the
+    // structured reference rather than falling back to free-text dest_place.
+    const rank=r=>(isReconciled(r.source)?0:2)+(r.job_id!=null?1:0);
+    for(const gk of Object.keys(groups)){
+      const list=groups[gk].slice().sort((a,b)=>Date.parse(a.arrived_at)-Date.parse(b.arrived_at));
+      let cluster=[list[0]];
+      const flush=()=>{
+        if(cluster.length<2){cluster=[];return;}
+        const tpl=cluster.slice().sort((a,b)=>rank(b)-rank(a))[0];
+        const start=Math.min(...cluster.map(x=>Date.parse(x.arrived_at)));
+        const end=Math.max(...cluster.map(x=>Date.parse(x.departed_at)));
+        updates.push({id:tpl.id,arrived_at:new Date(start).toISOString(),departed_at:new Date(end).toISOString(),
+          minutes:Math.max(0,Math.round((end-start)/60000)),job_id:tpl.job_id||null,dest_place:tpl.dest_place||null,
+          source:tpl.source,client_key:'merge-'+tpl.id});
+        cluster.forEach(x=>{if(x.id!==tpl.id)drop.add(x.id);});
+        cluster=[];
+      };
+      for(let i=1;i<list.length;i++){
+        const prevEnd=Date.parse(cluster[cluster.length-1].departed_at);
+        const curStart=Date.parse(list[i].arrived_at);
+        if(curStart-prevEnd<=_GEO_MERGE_GAP_MS)cluster.push(list[i]);
+        else{flush();cluster=[list[i]];}
+      }
+      flush();
+    }
+    if(!updates.length&&!drop.size)return 0;
+    for(const u of updates){
+      try{await _supa.from('job_time_entries').update({arrived_at:u.arrived_at,departed_at:u.departed_at,minutes:u.minutes,job_id:u.job_id,dest_place:u.dest_place,source:u.source,client_key:u.client_key}).eq('id',u.id);}catch(_e){}
+    }
+    for(const id of drop){
+      try{await _supa.from('job_time_entries').delete().eq('id',id);}catch(_e){}
+    }
+    _geoParkNote('time-merge','merged '+updates.length+' clusters, removed '+drop.size+' rows');
+    return updates.length+drop.size;
+  }catch(_e){return 0;}
+  finally{_geoMergeBusy=false;}
 }
 
 // ── Drive-time hygiene: paid drive minutes must match a leg mileage itself

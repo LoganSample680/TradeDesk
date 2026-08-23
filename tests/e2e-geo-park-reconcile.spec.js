@@ -35,6 +35,19 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The app's own cross-device reconcile heartbeat (js/cloud.js
+    // _heartbeatTick, every ~5s once _cloudTimersStarted) self-reschedules
+    // forever after a signed-in boot and never stops on its own. It can call
+    // supaLoadFromCloud({silent:true}) at any later point in this file's
+    // ~150-test run, which now internally awaits _geoDedupTimeEntries then
+    // _geoMergeAdjacentVisits (owner rule 2026-08-23) using WHATEVER _supa
+    // mock and window.__selRows the CURRENTLY RUNNING test happens to have
+    // installed at that moment, not this file's own harness, corrupting an
+    // unrelated test's recording or racing its busy guard. This file's tests
+    // exercise those functions directly against a controlled mock; the live
+    // heartbeat has nothing to do with any of them, so it's neutralized once
+    // for the whole file rather than raced against every single test.
+    await page.evaluate(() => { window._scheduleReconcile = () => {}; });
   });
   test.afterAll(async () => { await page.context().close(); });
 
@@ -48,6 +61,19 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     while (typeof _geoDrainBusy !== 'undefined' && _geoDrainBusy && Date.now() - settleStart < 2000) {
       await new Promise(res => setTimeout(res, 10));
     }
+    // The one-time boot-settle chain (js/cloud.js _bootSyncSettled) fires
+    // _geoDedupTimeEntries().then(()=>_geoMergeAdjacentVisits()) once, using
+    // whatever _supa mock is CURRENT when its own promise finally resolves,
+    // not the mock installed when it was kicked off. If it's still in flight
+    // when the first test(s) here start, wait it out (same pattern as
+    // _geoDrainBusy above) rather than force-clearing the flag mid-run, which
+    // would let two concurrent sweeps interleave writes into window.__rec.
+    while (typeof _geoTimeDedupBusy !== 'undefined' && _geoTimeDedupBusy && Date.now() - settleStart < 2000) {
+      await new Promise(res => setTimeout(res, 10));
+    }
+    while (typeof _geoMergeBusy !== 'undefined' && _geoMergeBusy && Date.now() - settleStart < 2000) {
+      await new Promise(res => setTimeout(res, 10));
+    }
     localStorage.removeItem('zp3_geo_queue'); localStorage.removeItem('zp3_geo_open');
     localStorage.removeItem('zp3_geo_manual'); localStorage.removeItem('zp3_geo_prune_day');
     _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
@@ -59,6 +85,10 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     _geoSoftShop = null; _geoSoftShopSpeedRun = 0; _geoParkBackdate = null;
     _geoLastPingTs = 0; _geoPingBusy = false; _geoDriveReset();
     if (typeof _geoReconBusy !== 'undefined') _geoReconBusy = false;
+    // Fallback if the wait above timed out rather than settled naturally:
+    // force clear so a genuinely stuck flag can't wedge every later test.
+    if (typeof _geoMergeBusy !== 'undefined') _geoMergeBusy = false;
+    if (typeof _geoTimeDedupBusy !== 'undefined') _geoTimeDedupBusy = false;
     window._isEmployee = false;
     window._supaUser = { id: 'geo-park-user-1', email: 'p@t.com' };
     window.__rec = { upserts: [], inserts: [], deletes: [], updates: [] };
@@ -1121,6 +1151,253 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     }, now);
     const r = await dedupCall();
     expect(r.dropped, 'a single record has nothing to dedup against, the hours survive').toBe(0);
+    await geoRestore();
+  });
+
+  // ── _geoMergeAdjacentVisits (owner rule 2026-08-23) ──────────────────────
+  // "See all the John Doe stuff? From 7:55 am - 11:37 am those can all be
+  // merged... that's the reconciliation I want." Unlike _geoDedupTimeEntries
+  // above (which only fires on real time OVERLAP), this fires on ADJACENCY:
+  // same person, same resolved place (job_id resolved to its client name via
+  // _tlJobClientInfo, or the raw dest_place text), gap at or under the
+  // true-back-to-back floor. Same recording _supa/window.__selRows harness.
+  const mergeCall = () => page.evaluate(async () => {
+    window.__rec.deletes.length = 0; window.__rec.updates.length = 0;
+    const changed = await _geoMergeAdjacentVisits();
+    return { changed, deletes: window.__rec.deletes.slice(), updates: window.__rec.updates.slice() };
+  });
+
+  test('merge: two true back-to-back geofence rows at the same job fold into one', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 2001, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+        // Picks back up 45 seconds after the first row's departure, a fence
+        // blip, not a real gap.
+        { id: 2002, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 2 * 3600000 + 45000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await mergeCall();
+    expect(r.deletes.length).toBe(1);
+    expect(r.deletes[0].val, 'the earlier row survives, the later one folds into it').toBe(2002);
+    expect(r.updates.length).toBe(1);
+    expect(r.updates[0].filters.id).toBe(2001);
+    expect(new Date(r.updates[0].patch.arrived_at).getTime()).toBe(now - 4 * 3600000);
+    expect(new Date(r.updates[0].patch.departed_at).getTime(), 'spans through to the later row\'s own departure').toBe(now - 1 * 3600000);
+    expect(r.updates[0].patch.client_key, 're-keyed off its own id, immune to any future resurrection').toBe('merge-2001');
+    await geoRestore();
+  });
+
+  // Owner's explicit choice (clarifying question, 2026-08-23): only TRUE
+  // back-to-back visits merge, a generous 15-minute floor was rejected.
+  test('merge: a real 10-minute gap between two visits to the same job is NOT merged', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 2011, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+        { id: 2012, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 2 * 3600000 + 10 * 60000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await mergeCall();
+    expect(r.changed, 'a real 10-minute gap is left alone, both rows survive as separate visits').toBe(0);
+    await geoRestore();
+  });
+
+  test('merge: a gap right at the 2-minute tolerance edge still merges', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 2021, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
+          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+        { id: 2022, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
+          arrived_at: new Date(now - 2 * 3600000 + 120000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await mergeCall();
+    expect(r.deletes.length).toBe(1);
+    expect(r.updates.length).toBe(1);
+    await geoRestore();
+  });
+
+  test('merge: different employees at the same place, back-to-back, never merge into each other', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 2031, employee_user_id: 'crew-member-a', job_id: null, dest_place: 'John Doe', source: 'place',
+          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+        { id: 2032, employee_user_id: 'crew-member-b', job_id: null, dest_place: 'John Doe', source: 'place',
+          arrived_at: new Date(now - 2 * 3600000 + 5000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await mergeCall();
+    expect(r.changed, 'two different people at the same place is not one visit').toBe(0);
+    await geoRestore();
+  });
+
+  test('merge: different places, back-to-back, never merge', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 2041, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
+          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+        { id: 2042, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'Riverside Remodel', source: 'place',
+          arrived_at: new Date(now - 2 * 3600000 + 5000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await mergeCall();
+    expect(r.changed, 'a genuinely different place, however close in time, is not the same visit').toBe(0);
+    await geoRestore();
+  });
+
+  // A live detection outranks a reconciler guess (same rule the dedup sweep
+  // above already applies): the merged survivor keeps the LIVE row's source
+  // and identity, never the reconciled guess's, even though the reconciled
+  // fragment sorts first chronologically.
+  test('merge: a live row and an adjacent reconciled fragment merge, the survivor keeps the live row\'s source', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 2051, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence-reconciled',
+          arrived_at: new Date(now - 5 * 3600000).toISOString(), departed_at: new Date(now - 3 * 3600000).toISOString() },
+        { id: 2052, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 3 * 3600000 + 30000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await mergeCall();
+    expect(r.updates.length).toBe(1);
+    expect(r.updates[0].filters.id, 'the live row (2052) is the survivor, not the reconciled guess').toBe(2052);
+    expect(r.updates[0].patch.source).toBe('geofence');
+    expect(new Date(r.updates[0].patch.arrived_at).getTime(), 'still spans back to the reconciled row\'s own start').toBe(now - 5 * 3600000);
+    expect(r.deletes[0].val).toBe(2051);
+    await geoRestore();
+  });
+
+  // The actual bug class this closes: a job-tagged live row and a
+  // dest_place-tagged live row for the SAME real client never compared
+  // under the old same-target dedup rule at all (different "targets"). Once
+  // resolved through _tlJobClientInfo (job_id -> client name), they're the
+  // same place, and adjacency merges them, keeping the job_id (the
+  // structured reference) on the survivor.
+  test('merge: a job-tagged row and a dest_place-tagged row for the same real client merge, keeping the job_id', async () => {
+    await geoReset();
+    const now = Date.now();
+    const jid = 'geo-merge-job-1';
+    await page.evaluate(([jid]) => {
+      window.__origJobs = jobs.slice(); window.__origClients = clients.slice(); window.__origBids = bids.slice();
+      const cid = 990201;
+      clients.push({ id: cid, name: 'John Doe' });
+      jobs.push({ id: jid, name: 'John Doe job', client_id: cid, bid_id: null, start: _ctDateStr(new Date()), days: 1, status: 'upcoming', eventType: 'job' });
+    }, [jid]);
+    await page.evaluate(([jid, now]) => {
+      window.__selRows = [
+        { id: 2061, employee_user_id: 'geo-park-user-1', job_id: jid, dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+        { id: 2062, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
+          arrived_at: new Date(now - 2 * 3600000 + 30000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, [jid, now]);
+    const r = await mergeCall();
+    expect(r.updates.length, 'the job_id-tagged and dest_place-tagged rows resolve to the same client and merge').toBe(1);
+    expect(r.updates[0].filters.id, 'the job_id-tagged row wins the structured reference').toBe(2061);
+    expect(r.updates[0].patch.job_id).toBe(jid);
+    expect(r.updates[0].patch.dest_place).toBe(null);
+    expect(r.deletes[0].val).toBe(2062);
+    await page.evaluate(() => {
+      if (window.__origJobs) { jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null; }
+      if (window.__origClients) { clients.length = 0; window.__origClients.forEach(c => clients.push(c)); window.__origClients = null; }
+      if (window.__origBids) { bids.length = 0; window.__origBids.forEach(b => bids.push(b)); window.__origBids = null; }
+    });
+    await geoRestore();
+  });
+
+  test('merge: a manual bookend is never a merge candidate, even adjacent to a live row at the same job', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 2071, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'manual',
+          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+        { id: 2072, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 2 * 3600000 + 5000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await mergeCall();
+    expect(r.changed, 'a manual clock record never becomes a merge candidate, and with nothing else at 77 to merge, the live row is untouched too').toBe(0);
+    await geoRestore();
+  });
+
+  // Owner request 2026-08-23: an unpaid ('stop') stretch stays its own
+  // visible line even at the literal same GPS spot as the job before/after
+  // it, a lunch stop across the street from the job is still lunch.
+  test('merge: a "stop" (unpaid) row is never folded into an adjacent job visit at the same place', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 2081, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
+          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 3 * 3600000).toISOString() },
+        { id: 2082, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'stop',
+          arrived_at: new Date(now - 3 * 3600000 + 5000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await mergeCall();
+    expect(r.changed, 'the stop row is excluded from merge candidacy entirely, nothing to fold it into').toBe(0);
+    await geoRestore();
+  });
+
+  test('merge: a single row with nothing to merge against is left untouched, no throw', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 2091, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 2 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await mergeCall();
+    expect(r.changed).toBe(0);
+    await geoRestore();
+  });
+
+  test('merge: empty rows, no throw', async () => {
+    await geoReset();
+    await page.evaluate(() => { window.__selRows = []; });
+    const r = await mergeCall();
+    expect(r.changed).toBe(0);
+    await geoRestore();
+  });
+
+  // Owner-chosen threshold applies chronologically per group, so a THREE-row
+  // chain (7:55-11:37, gap, then two more true back-to-back segments) still
+  // collapses to one row across the whole run, not just pairwise.
+  test('merge: a three-row true back-to-back chain at the same job collapses into one row', async () => {
+    await geoReset();
+    const now = Date.now();
+    await page.evaluate((now) => {
+      window.__selRows = [
+        { id: 2101, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 6 * 3600000).toISOString(), departed_at: new Date(now - 4 * 3600000).toISOString() },
+        { id: 2102, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 4 * 3600000 + 20000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+        { id: 2103, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: new Date(now - 2 * 3600000 + 40000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+      ];
+    }, now);
+    const r = await mergeCall();
+    expect(r.updates.length, 'one surviving row for the whole chain').toBe(1);
+    expect(r.deletes.length).toBe(2);
+    expect(new Date(r.updates[0].patch.arrived_at).getTime()).toBe(now - 6 * 3600000);
+    expect(new Date(r.updates[0].patch.departed_at).getTime()).toBe(now - 1 * 3600000);
     await geoRestore();
   });
 
