@@ -305,6 +305,50 @@ test.describe('Home office: presence is not work', () => {
       expect(out.firstOut).toBe(true);
       expect(out.secondOut).toBe(false);
     });
+
+    // Owner audit finding, 2026-08-23: a live account showed a 9-second
+    // shop_time_entries dwell billed as 5 minutes. Root cause: returning home
+    // before the SECOND away-ping (above) ever got to null the old dwell
+    // object handed the new, unrelated visit the old one's already-billed
+    // activeMs. The closer marking the object `.closed` (instead of nulling
+    // it, which would have broken the "survives one ping" test above) and the
+    // sampler starting fresh on `.closed` is the fix; this proves it holds.
+    test('a quick return before the second away-ping does not inherit the closed dwell\'s minutes', async () => {
+      const out = await page.evaluate(async (d) => {
+        places.length = 0;
+        savePlace({ name: 'Home Office', kind: 'home_office', lat: d.HOME.lat, lon: d.HOME.lon, confirmedBy: 'manual' });
+        const realUser = _supaUser, realEnq = _geoEnqueue, realNow = Date.now;
+        _supaUser = { id: 'u-home' };
+        const rows = [];
+        _geoEnqueue = (tbl, row) => rows.push(Object.assign({ _tbl: tbl }, row));
+        let cursor = realNow.call(Date);
+        Date.now = () => cursor;
+        try {
+          _geoHomeDwell = null; _geoWasAtHome = false;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+          const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+          // Dwell #1: real paperwork, ~5 active minutes, tapping the whole time.
+          for (let i = 0; i < 5; i++) { _geoLastInteractAt = cursor; await ping(d.HOME); cursor += 60000; }
+          if (_geoPlaceArrivedAt) _geoPlaceArrivedAt = new Date(cursor - 5 * 60000).toISOString();
+          rows.length = 0;
+          await ping(d.ROAD);   // closes dwell #1
+          cursor += 1000;
+          const afterFirstClose = rows.slice();
+          rows.length = 0;
+          await ping(d.HOME);   // right back home, one ping, no tap this time
+          cursor += 1000;
+          await ping(d.ROAD);   // closes dwell #2 almost immediately
+          return { afterFirstClose, afterSecondClose: rows.slice() };
+        } finally { Date.now = realNow; _geoEnqueue = realEnq; _supaUser = realUser; }
+      }, { HOME, ROAD });
+      const firstMins = placeMins(out.afterFirstClose);
+      expect(firstMins).toBeGreaterThanOrEqual(4);
+      expect(firstMins).toBeLessThanOrEqual(5);
+      // Dwell #2 was one ping with no interaction: effectively zero active ms,
+      // under the 2-minute floor. It must bill NOTHING, not dwell #1's 5 minutes.
+      expect(placeMins(out.afterSecondClose)).toBe(0);
+      expect(out.afterSecondClose.filter(r => r._tbl === 'job_time_entries').length).toBe(0);
+    });
   });
 
   test('no console errors', async () => { await assertNoErrors(page); });

@@ -1247,6 +1247,53 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     await geoRestore();
   });
 
+  // _removeBootOverlay (js/cloud.js) has success, retry-recovery, and timeout-
+  // fallback call sites; each schedules its own _geoTrackInit(). Two firings in
+  // one page session used to re-restore the same persisted snapshot into live
+  // state twice, producing two divergent drive/geofence chains for one real
+  // dwell (owner audit, 2026-08-23: duplicate td_mileage legs and job_time_entries
+  // rows, timestamps ms apart, same real event split two different ways).
+  test('_geoTrackInit: a second firing in the same session does not re-restore/re-drain (twin-write guard)', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      if (typeof _geoTrackInit !== 'function' || typeof _geoRestoreOpen !== 'function') return { skip: true };
+      S.teamTracking = true;
+      _geoResumedOnce = false; // simulate a fresh page session
+      let restoreCalls = 0, drainCalls = 0;
+      const origRestore = _geoRestoreOpen, origDrain = _geoDrainQueue;
+      _geoRestoreOpen = function () { restoreCalls++; return origRestore.apply(this, arguments); };
+      _geoDrainQueue = function () { drainCalls++; return origDrain.apply(this, arguments); };
+      _geoTrackInit(); // 1st firing: e.g. the timeout-fallback boot path
+      _geoTrackInit(); // 2nd firing: e.g. the retry-recovery path landing moments later
+      _geoRestoreOpen = origRestore;
+      _geoDrainQueue = origDrain;
+      return { restoreCalls, drainCalls, resumedOnce: _geoResumedOnce };
+    });
+    if (!r.skip) {
+      expect(r.restoreCalls).toBe(1);
+      expect(r.drainCalls).toBe(1);
+      expect(r.resumedOnce).toBe(true);
+    }
+    await geoRestore();
+  });
+
+  test('stopGeoTracking: resets the twin-write guard, so a real new session restores again', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      if (typeof stopGeoTracking !== 'function') return { skip: true };
+      _geoResumedOnce = true; // as if a session already restored once
+      stopGeoTracking();
+      return { resumedOnce: _geoResumedOnce };
+    });
+    if (!r.skip) expect(r.resumedOnce).toBe(false);
+    await geoRestore();
+  });
+
+  // The home-dwell stale-minutes regression test lives in
+  // tests/e2e-geo-home-office.spec.js ("a quick return before the second
+  // away-ping does not inherit the closed dwell's minutes"), alongside the
+  // existing tests for this exact tally and its HOME/ROAD fixtures.
+
   test('manual bookends, Arrived opens, Done writes a source:manual entry through the queue; job-switch closes the previous', async () => {
     await geoReset();
     const r = await page.evaluate(async () => {
