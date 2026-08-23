@@ -486,6 +486,30 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // Owner ask 2026-08-23: the recon-win journal tag (the "08-21T12:55→22:07Z"
+  // shape pasted straight off a live device) showed raw UTC, confusing to
+  // read against a phone on Central time. _wTag now builds off _ctStamp/
+  // _ctHM instead of a raw ISO slice.
+  test('reconciliation: the recon-win journal tag shows Central time, not raw UTC', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886005);
+    await runRecon();
+    const r = await page.evaluate((seed) => {
+      const entry = _geoParkLog.slice().reverse().find(x => x.ev === 'recon-win' && x.x && x.x.indexOf('→') >= 0);
+      return {
+        entryText: entry ? entry.x : null,
+        expectedStart: _ctStamp(new Date(seed.A.endedIso)).slice(0, -3),
+        expectedEnd: _ctHM(new Date(seed.B.startedIso)),
+      };
+    }, seed);
+    expect(r.entryText, 'a window tag was journaled for this recon pass').toBeTruthy();
+    expect(r.entryText).not.toContain('Z');
+    expect(r.entryText).toContain(r.expectedStart);
+    expect(r.entryText).toContain(r.expectedEnd);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
   // Owner correction (2026-08-21): leg B's OWN logged origin must never be
   // required to match the job. If GPS was spotty leaving the site, the
   // departure leg is exactly as likely to carry a missing or wrong fromCoord

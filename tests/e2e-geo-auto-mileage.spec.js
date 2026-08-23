@@ -4624,6 +4624,68 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.notUnderCloud, 'and no longer beside Cloud sync').toBe(true);
     });
 
+    // Owner ask 2026-08-23: the diagnostics panel showed raw UTC event
+    // times, confusing to read against a phone that's on Central time.
+    // _geoParkNote now stores the full ISO instant; _geoDiagFmtT converts
+    // to Central at render time. August is CDT (UTC-5).
+    test('_ctStamp/_ctHM convert a UTC instant to Central time, DST-correct', async () => {
+      const r = await page.evaluate(() => ({
+        augStamp: _ctStamp(new Date('2026-08-23T20:58:31.000Z')),   // CDT, UTC-5
+        augHM: _ctHM(new Date('2026-08-21T22:07:00.000Z')),
+        janStamp: _ctStamp(new Date('2026-01-15T20:58:31.000Z')),   // CST, UTC-6
+      }));
+      expect(r.augStamp).toBe('08-23T15:58:31');
+      expect(r.augHM).toBe('17:07');
+      expect(r.janStamp, 'winter uses CST (UTC-6), not a fixed offset').toBe('01-15T14:58:31');
+    });
+
+    test('_geoDiagFmtT converts a full-ISO park-log entry to Central', async () => {
+      const r = await page.evaluate(() => _geoDiagFmtT(new Date('2026-08-23T20:58:31.123Z').toISOString()));
+      expect(r).toBe('08-23T15:58:31');
+    });
+
+    // Backward compatibility: entries already sitting in an on-device
+    // localStorage log from before this fix are the OLD sliced format
+    // (no year, implicitly UTC), and must still render correctly after an
+    // app update, not throw or show garbage.
+    test('_geoDiagFmtT still converts the old sliced (no-year) format for entries logged before this fix', async () => {
+      const r = await page.evaluate(() => _geoDiagFmtT('08-23T20:58:31'));
+      expect(r).toBe('08-23T15:58:31');
+    });
+
+    test('_geoDiagFmtT passes through empty/malformed input without throwing', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: [_geoDiagFmtT(''), _geoDiagFmtT(null), _geoDiagFmtT('not-a-date')] }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v[0]).toBe('');
+      expect(r.v[1]).toBe('');
+    });
+
+    test('the diagnostics panel renders park-log timestamps in Central time, not raw UTC', async () => {
+      const r = await page.evaluate(() => {
+        const realCap = window.Capacitor;
+        const realLog = _geoParkLog.slice();
+        try {
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          _geoParkLog.length = 0;
+          _geoParkLog.push({ t: '2026-08-23T20:58:31.000Z', ev: 'park-exit', x: '' });
+          _geoDiagPanel();
+          const ov = document.getElementById('_geo-diag-ov');
+          const text = ov ? ov.textContent : '';
+          ov && ov.remove();
+          return { text, copyText: window.__geoDiagText || '' };
+        } finally {
+          window.Capacitor = realCap;
+          _geoParkLog.length = 0; realLog.forEach(x => _geoParkLog.push(x));
+        }
+      });
+      expect(r.text).toContain('08-23T15:58:31');
+      expect(r.text, 'never the raw UTC hour').not.toContain('08-23T20:58:31');
+      expect(r.copyText, '"Copy everything" must carry the same converted time').toContain('08-23T15:58:31');
+    });
+
     // Owner report 2026-08-21: the Developer copy needs is_dev in the
     // database (their real account never had it) AND the native shell (they
     // were testing the plain UAT web link), so the panel they needed to

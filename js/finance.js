@@ -3027,6 +3027,32 @@ function _ctDateStr(d){
   try{return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);}
   catch(_e){return dateKey(d);}
 }
+// Central-time clock stamps, same purpose as _ctDateStr just above (owner
+// ask 2026-08-23: the on-device location diagnostics panel, js/geo-track.js
+// _geoDiagPanel, showed raw UTC event times, confusing to read against a
+// phone that's on Central time). America/Chicago carries CDT/CST itself, so
+// this stays correct across the DST boundary without a hand-maintained
+// offset. 'MM-DDTHH:MM:SS' is the same compact shape the diagnostics log
+// already used, just in the right timezone now.
+function _ctStamp(d){
+  try{
+    const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(d);
+    const g=t=>(parts.find(p=>p.type===t)||{}).value||'';
+    let hh=g('hour');if(hh==='24')hh='00'; // some engines return '24' at midnight under hour12:false
+    return g('month')+'-'+g('day')+'T'+hh+':'+g('minute')+':'+g('second');
+  }catch(_e){return dateKey(d)+'T??:??:??';}
+}
+// HH:MM only, for a window's END clock (the reconciler's own recon-win tags
+// show a full start stamp, then just the time on the other side of the
+// arrow when it's the same day, see _wTag in _geoReconcileFromMileage).
+function _ctHM(d){
+  try{
+    const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d);
+    const g=t=>(parts.find(p=>p.type===t)||{}).value||'';
+    let hh=g('hour');if(hh==='24')hh='00';
+    return hh+':'+g('minute');
+  }catch(_e){return '??:??';}
+}
 // Fetch pay rates (loaded + wage) and tracked time entries since an ISO instant.
 async function _fetchCrewLabor(sinceISO){
   const out={loaded:{},wage:{},name:{},entries:[],shopEntries:[]};

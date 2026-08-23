@@ -2354,12 +2354,29 @@ let _geoParkPrevFix=null;    // {lat,lng,atMs,acc} prior fix, derives speed when
 // through _geoDiagPanel(), so the next report comes with the reason attached.
 let _geoParkLog=[];
 try{_geoParkLog=JSON.parse(localStorage.getItem('td_geo_park_log')||'[]')||[];}catch(_e){}
+// Stores the FULL ISO instant, not a display format: _geoDiagPanel converts
+// to Central at render time (owner ask 2026-08-23), and keeping the raw
+// instant here means that conversion is always exact, never a guess at
+// which year an old, already-stored entry belonged to.
 function _geoParkNote(ev,extra){
   try{
-    _geoParkLog.push({t:new Date().toISOString().slice(5,19),ev:ev,x:extra?String(extra).slice(0,140):''});
+    _geoParkLog.push({t:new Date().toISOString(),ev:ev,x:extra?String(extra).slice(0,140):''});
     if(_geoParkLog.length>30)_geoParkLog.splice(0,_geoParkLog.length-30);
     localStorage.setItem('td_geo_park_log',JSON.stringify(_geoParkLog));
   }catch(_e){}
+}
+// Central-time display for one _geoParkLog entry (owner ask 2026-08-23: the
+// panel showed raw UTC, confusing against a phone that's on Central time).
+// Handles both shapes ever stored here: the old sliced 'MM-DDTHH:MM:SS' (no
+// year, implicitly UTC, from before this fix) and the current full ISO,
+// so an existing on-device log still reads correctly after an app update.
+function _geoDiagFmtT(raw){
+  if(!raw)return '';
+  try{
+    const iso=/^\d{4}-/.test(raw)?raw:(new Date().getFullYear()+'-'+raw+'Z');
+    const d=new Date(iso);
+    return isNaN(d.getTime())?raw:((typeof _ctStamp==='function')?_ctStamp(d):raw);
+  }catch(_e){return raw;}
 }
 function _geoTdPlugin(){
   try{
@@ -2507,7 +2524,7 @@ function _geoDiagPanel(){
     state.map(([k,v])=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">'+k+'</span><span style="font-weight:600">'+escHtml(String(v))+'</span></div>').join('')+
     '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:12px 0 4px">Recent events</div>'+
     '<div style="max-height:32vh;overflow-y:auto;font-size:11px;font-family:ui-monospace,monospace;line-height:1.6">'+
-      (_geoParkLog.length?_geoParkLog.slice().reverse().map(r=>'<div>'+escHtml(r.t)+' '+escHtml(r.ev)+(r.x?' · '+escHtml(r.x):'')+'</div>').join(''):'<div style="color:var(--text3)">Nothing yet.</div>')+
+      (_geoParkLog.length?_geoParkLog.slice().reverse().map(r=>'<div>'+escHtml(_geoDiagFmtT(r.t))+' '+escHtml(r.ev)+(r.x?' · '+escHtml(r.x):'')+'</div>').join(''):'<div style="color:var(--text3)">Nothing yet.</div>')+
     '</div>'+
     // A quiet record of every Locate this phone answered. Nobody is notified
     // when one happens (owner call 2026-08-09), so this exists for support and
@@ -2527,7 +2544,7 @@ function _geoDiagPanel(){
     '<button class="btn" style="width:100%;margin-top:14px;padding:12px" onclick="_geoDiagCopy()">Copy everything</button>'+
     '<button class="btn btn-p" style="width:100%;margin-top:8px;padding:12px" onclick="document.getElementById(\'_geo-diag-ov\').remove()">Close</button>';
   window.__geoDiagText=state.map(([k,v])=>k+': '+v).join('\n')+'\n\n'+
-    _geoParkLog.slice().reverse().map(r=>(r.t||'')+' '+(r.ev||'')+(r.x?' '+r.x:'')).join('\n');
+    _geoParkLog.slice().reverse().map(r=>_geoDiagFmtT(r.t)+' '+(r.ev||'')+(r.x?' '+r.x:'')).join('\n');
   ov.appendChild(m);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
@@ -2847,7 +2864,11 @@ async function _geoReconcileFromMileage(){
     for(let i=0;i<clusters.length-1;i++){
       const A=clusters[i],B=clusters[i+1];
       const t1=A.endMs,t2=Date.parse(B.startedIso)||0;
-      const _wTag=new Date(t1).toISOString().slice(5,16)+'→'+new Date(t2).toISOString().slice(11,16)+'Z '+Math.round((t2-t1)/60000)+'m';
+      // Central time (owner ask 2026-08-23), same shape as before: a full
+      // start stamp, then just the end clock across the arrow. No trailing
+      // 'Z': that marked UTC, and this is local now.
+      const _wTag=(typeof _ctStamp==='function'?_ctStamp(new Date(t1)).slice(0,-3):new Date(t1).toISOString().slice(5,16))+'→'+
+        (typeof _ctHM==='function'?_ctHM(new Date(t2)):new Date(t2).toISOString().slice(11,16))+' '+Math.round((t2-t1)/60000)+'m';
       if(!(t1>0&&t2>t1))continue;
       if(t2-t1<_GEO_RECON_MIN_GAP_MS)continue;
       // Unobserved hours are never claimed, but a real on-site stretch
