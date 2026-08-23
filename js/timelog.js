@@ -415,13 +415,17 @@ function _tlWeekDayDates(wkStart){
 // Manual clock entries are always on-site (that's what a manual clock
 // means); auto (GPS) entries classify via the same _geoIsDriveSource/
 // _geoIsPlaceSource helpers Crew Cost already uses, so the two reports
-// never disagree on what counts as drive time. Off-job stops never reach
-// here, _timeLogRows already drops them. Keyed by personUid, owner-logged
-// rows (personUid null) fold under `cid` so every owner entry lands in one
-// bucket instead of scattering under an undefined key.
+// never disagree on what counts as drive time. Off-job stops (owner
+// request 2026-08-23, r.unpaid) are explicitly skipped here: this comment
+// used to say _timeLogRows already dropped them, which stopped being true
+// the moment that row started carrying them through for the Unpaid line
+// instead. Keyed by personUid, owner-logged rows (personUid null) fold
+// under `cid` so every owner entry lands in one bucket instead of
+// scattering under an undefined key.
 function _tlEmpWeekAgg(rows,cid){
   const byEmp={};
   rows.forEach(r=>{
+    if(r.unpaid)return;
     const uid=r.personUid||cid;
     const e=byEmp[uid]||(byEmp[uid]={min:0,onsiteMin:0,driveMin:0,placeMin:0,weekOT:false,name:r.personName});
     e.min+=r.minutes||0;
@@ -487,6 +491,7 @@ function _tlWeekOwnerHtml(byEmp,selfUid){
 function _tlWeekMineHtml(rows){
   const byDay={};
   rows.forEach(r=>{
+    if(r.unpaid)return;   // off-job time never counts toward a worked day's total
     const d=r.date||'unknown';
     const e=byDay[d]||(byDay[d]={min:0,labels:new Set()});
     e.min+=r.minutes||0;
@@ -496,9 +501,20 @@ function _tlWeekMineHtml(rows){
   return days.map(d=>{
     const e=byDay[d];const labels=[...e.labels];
     const label=labels.length===1?labels[0]:(labels.length>1?labels.length+' stops':'');
+    // Owner report 2026-08-23: a reconciliation bug once summed one real
+    // calendar day to 47+ hours, and it rendered as a perfectly normal-
+    // looking number. One person cannot log more than 1440 minutes (24h)
+    // in one day; that is a physical fact, not a business rule, so it is
+    // never a "maybe" and never silently trusted. Flagged, not clamped:
+    // showing the raw wrong number (instead of a guessed-correct one)
+    // is what makes the underlying data bug findable and reportable.
+    const impossible=e.min>1440;
+    const amt=(typeof _fmtMin==='function'?_fmtMin(e.min):e.min+'m');
     return '<div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text3);padding:3px 0">'+
       '<span>'+_tlDayShort(d)+(label?' · '+escHtml(label):'')+'</span>'+
-      '<span style="font-weight:700;color:var(--text)">'+(typeof _fmtMin==='function'?_fmtMin(e.min):e.min+'m')+'</span>'+
+      (impossible
+        ?'<span style="font-weight:800;color:var(--c-red-deep)" title="'+escHtml(amt)+' in one day is not physically possible, this entry needs review">'+svgIcon('⚠',{size:11})+' Data error</span>'
+        :'<span style="font-weight:700;color:var(--text)">'+amt+'</span>')+
     '</div>';
   }).join('');
 }
@@ -561,10 +577,22 @@ function _tlRenderWeekBody(cacheKey){
   // whatever order they arrive, so the sort happens here rather than in that
   // shared helper (Income/Expenses/Client timeline all read it unchanged).
   const entryRows=scopeRows.slice().sort((a,b)=>(b.startTime||'').localeCompare(a.startTime||''));
+  // Same impossible-day guard as _tlWeekMineHtml, applied to this
+  // accordion's own per-day header (owner report 2026-08-23). Only in Me
+  // scope: a Team-scope day legitimately combines several people's hours
+  // and can exceed 24h with nobody's individual day being wrong, so the
+  // default dr.length+total meta stays untouched there.
   const entriesHtml=scopeRows.length?
     '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)">'+
       '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:0 2px 6px">Entries</div>'+
-      _bkRenderDays('tl',mo,entryRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,fm)+
+      _bkRenderDays('tl',mo,entryRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,fm,
+        scope==='team'?undefined:{metaFn:dr=>{
+          const min=dr.filter(r=>!r.unpaid).reduce((s,r)=>s+(r.minutes||0),0);
+          const amt=fm(min);
+          return min>1440
+            ?'<span style="font-weight:800;color:var(--c-red-deep)" title="'+escHtml(amt)+' in one day is not physically possible, this entry needs review">'+svgIcon('⚠',{size:11})+' Data error</span>'
+            :dr.length+' · '+amt;
+        }})+
     '</div>':'';
   return pickerHtml+scopeHdHtml+'<div style="padding:0 2px 4px">'+summaryHtml+'</div>'+entriesHtml;
 }

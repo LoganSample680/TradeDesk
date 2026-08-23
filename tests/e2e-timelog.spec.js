@@ -1693,6 +1693,118 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
   });
 
+  test.describe('_tlEmpWeekAgg', () => {
+    test('golden path: sums minutes and classifies on-site/drive/place per employee', async () => {
+      const r = await page.evaluate(() => _tlEmpWeekAgg([
+        { personUid: 'u1', personName: 'Mike Sample', minutes: 60, source: 'manual' },
+        // _geoIsDriveSource/_geoIsPlaceSource test a raw source string
+        // ('drive...'/'place'), and this function calls them against
+        // r.detail (the row's friendly label), so a lowercase raw-shaped
+        // value is what actually lands in driveMin here, not the
+        // capitalized "Driving" label _tlSourceLabel would produce.
+        { personUid: 'u1', personName: 'Mike Sample', minutes: 10, source: 'auto', detail: 'drive' },
+      ], 'cid1'));
+      expect(r.u1.min).toBe(70);
+      expect(r.u1.onsiteMin).toBe(60);
+      expect(r.u1.driveMin).toBe(10);
+      expect(r.u1.name).toBe('Mike Sample');
+    });
+
+    // Owner request 2026-08-23: a lunch/off-job stop must never count toward
+    // an employee's total here, same rule _tlComputeOT/_tlComputeWeeklyRunning
+    // already enforce. This function's own doc comment used to say
+    // _timeLogRows never even handed it an off-job row; that stopped being
+    // true the moment the Unpaid line started carrying those rows through.
+    test('unpaid rows are excluded from the total and from every split bucket', async () => {
+      const r = await page.evaluate(() => _tlEmpWeekAgg([
+        { personUid: 'u1', personName: 'Mike Sample', minutes: 480, source: 'auto', detail: '' },
+        { personUid: 'u1', personName: 'Mike Sample', minutes: 45, source: 'auto', detail: 'Unpaid', unpaid: true },
+      ], 'cid1'));
+      expect(r.u1.min, 'the unpaid 45 minutes never lands in the total').toBe(480);
+    });
+
+    test('owner-logged rows (personUid null) fold under the passed cid', async () => {
+      const r = await page.evaluate(() => _tlEmpWeekAgg([
+        { personUid: null, personName: 'Owner (me)', minutes: 60, source: 'manual' },
+      ], 'cid1'));
+      expect(Object.keys(r)).toEqual(['cid1']);
+      expect(r.cid1.min).toBe(60);
+    });
+
+    test('empty rows, returns an empty object, no throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _tlEmpWeekAgg([], 'cid1') }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toEqual({});
+    });
+  });
+
+  test.describe('_tlWeekMineHtml', () => {
+    test('golden path: one line per day, sorted chronologically, minutes formatted', async () => {
+      const r = await page.evaluate(() => _tlWeekMineHtml([
+        { date: '2026-08-18', minutes: 60, clientName: 'John Doe' },
+        { date: '2026-08-17', minutes: 30, clientName: 'John Doe' },
+      ]));
+      expect(r.indexOf('8/17')).toBeLessThan(r.indexOf('8/18'));
+      expect(r).toContain('1h');
+      expect(r).toContain('30m');
+    });
+
+    test('a single client name shows as the label; multiple distinct names collapse to "N stops"', async () => {
+      const r = await page.evaluate(() => ({
+        one: _tlWeekMineHtml([{ date: '2026-08-17', minutes: 60, clientName: 'John Doe' }]),
+        many: _tlWeekMineHtml([
+          { date: '2026-08-17', minutes: 30, clientName: 'John Doe' },
+          { date: '2026-08-17', minutes: 30, clientName: 'Ace Supply' },
+        ]),
+      }));
+      expect(r.one).toContain('John Doe');
+      expect(r.many).toContain('2 stops');
+    });
+
+    // Owner report 2026-08-23, live device: a reconciliation bug summed one
+    // real calendar day to 2848 minutes (47h28m) and it rendered as a
+    // perfectly normal-looking number. One person physically cannot log
+    // more than 1440 minutes in one day, so this is flagged, never trusted.
+    test('a day over 1440 minutes (24h) renders as a flagged data error, not a normal total', async () => {
+      const r = await page.evaluate(() => _tlWeekMineHtml([
+        { date: '2026-08-21', minutes: 2848, clientName: 'John Doe' },
+      ]));
+      expect(r).toContain('Data error');
+      expect(r).toContain('var(--c-red-deep)');
+      // The raw (wrong) figure still shows, in the tooltip: seeing exactly
+      // how wrong it is is what makes the underlying bug reportable.
+      expect(r).toContain('47h 28m');
+    });
+
+    test('a day at exactly 1440 minutes (24h) is NOT flagged, only strictly over is', async () => {
+      const r = await page.evaluate(() => _tlWeekMineHtml([
+        { date: '2026-08-21', minutes: 1440, clientName: 'John Doe' },
+      ]));
+      expect(r).not.toContain('Data error');
+    });
+
+    test('unpaid rows are excluded from the day total, including from tripping the 24h flag', async () => {
+      const r = await page.evaluate(() => _tlWeekMineHtml([
+        { date: '2026-08-21', minutes: 1400, clientName: 'John Doe', unpaid: false },
+        { date: '2026-08-21', minutes: 200, clientName: 'John Doe', unpaid: true },
+      ]));
+      expect(r).not.toContain('Data error');
+      expect(r).toContain('23h 20m'); // 1400 min, the unpaid 200 never counted
+    });
+
+    test('empty rows, returns empty string, no throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, html: _tlWeekMineHtml([]) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.html).toBe('');
+    });
+  });
+
   test.describe('_tlWeekDayDates / _tlDayFullLabel', () => {
     test('golden path: 7 dates, Sunday through Saturday, starting from the given Sunday', async () => {
       const r = await page.evaluate(() => _tlWeekDayDates('2026-08-16'));
