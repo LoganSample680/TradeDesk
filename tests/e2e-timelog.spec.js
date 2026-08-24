@@ -542,6 +542,40 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(shop[0].startTime, 'the row starts when the clock started').toBe('2026-08-20T12:10:00.000Z');
     });
 
+    // Owner, 2026-08-24, Wed 8/19 reading 12h42m against the 9h36m of work
+    // actually on it. Two 1-minute manual clocks at 7:51pm and 8:28pm (the
+    // clock button being tried out) held the day open three hours past the
+    // 5:22pm drive home and pulled 3h06m of yard dwell in behind them.
+    test('a one-minute manual tap does not reopen the day', async () => {
+      const rows = await page.evaluate(async ([shopEntries, entries]) => {
+        const origEnts = timeEntries.slice();
+        timeEntries.push({ id: 'tltap1', logged_by_uid: 'me', job_id: null, minutes: 1,
+          start_time: '2026-08-20T23:00:00Z', end_time: '2026-08-20T23:01:00Z', date: '2026-08-20' });
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries, shopEntries });
+        try { return await _timeLogRows(null); }
+        finally { window._fetchCrewLabor = orig; timeEntries.length = 0; timeEntries.push(...origEnts); }
+      }, [[YARD_PM], DAY]);
+      expect(rows.filter(r => r.source === 'shop').length,
+        'the evening yard dwell stays out, a stray tap is not a shift').toBe(0);
+      expect(rows.filter(r => r.rawId === 'tltap1').length, 'the tapped minute is still paid on its own').toBe(1);
+    });
+
+    test('a real manual shift still moves the day, floor or no floor', async () => {
+      const rows = await page.evaluate(async ([shopEntries]) => {
+        const origEnts = timeEntries.slice();
+        // Half an hour, comfortably over the floor: this is somebody saying
+        // they worked, and it closes the day at 5:30pm like any other event.
+        timeEntries.push({ id: 'tlreal1', logged_by_uid: 'me', job_id: null, minutes: 30,
+          start_time: '2026-08-20T22:00:00Z', end_time: '2026-08-20T22:30:00Z', date: '2026-08-20' });
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries: [], shopEntries });
+        try { return await _timeLogRows(null); }
+        finally { window._fetchCrewLabor = orig; timeEntries.length = 0; timeEntries.push(...origEnts); }
+      }, [[{ employee_user_id: 'me', minutes: 20, arrived_at: '2026-08-20T22:05:00Z', departed_at: '2026-08-20T22:25:00Z' }]]);
+      expect(rows.filter(r => r.source === 'shop').length, 'yard time inside a hand-logged shift still counts').toBe(1);
+    });
+
     test('a manual clock-out counts as the day\'s last work event', async () => {
       const rows = await page.evaluate(async ([shopEntries]) => {
         const origEnts = timeEntries.slice();

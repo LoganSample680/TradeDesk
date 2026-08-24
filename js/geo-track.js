@@ -1590,6 +1590,21 @@ function _geoShopPrepMs(){
 // is what separates it from the 5:19pm "John Doe to Shop" leg five minutes
 // earlier, which IS the ride home from the last job and does close the day.
 const _GEO_SHOP_CHAIN_MS=5*60000;
+// A hand-tapped clock is the contractor SAYING they are working, and a real one
+// moves the day's edges like any job visit. A one-minute one does not.
+//
+// Owner, 2026-08-24, Wed 8/19 reading 12h42m: two 1-minute manual entries at
+// 7:51pm and 8:28pm (the clock button being tried out) held the workday open
+// three hours past the 5:22pm drive home, and 3h06m of evening yard dwell came
+// in behind them. Two accidental minutes became three paid hours, which is the
+// exact failure the workday window exists to prevent, arriving through the one
+// door left open.
+//
+// So a manual entry under this floor is still PAID as its own row, it just does
+// not get to redefine when the day started or ended. GPS visits are never
+// floored: the tracker already refuses to write a visit under two minutes, so a
+// short one it did write is a real stop somebody actually made.
+const _GEO_ANCHOR_MIN_MS=5*60000;
 function _geoIsWorkAnchorSource(s){
   const t=String(s||'');
   if(/^drive/.test(t))return false;      // a leg, judged by what it chains to
@@ -1614,7 +1629,9 @@ function _geoShopCutoffs(entries){
     if(!e||!e.employee_user_id)return false;
     return (Date.parse(e.departed_at||'')||0)>0&&(Date.parse(e.arrived_at||'')||0)>0;
   });
-  const anchors=rows.filter(e=>_geoIsWorkAnchorSource(e.source));
+  const substantive=e=>String(e.source||'')!=='manual'||
+    (Date.parse(e.departed_at)-Date.parse(e.arrived_at))>=_GEO_ANCHOR_MIN_MS;
+  const anchors=rows.filter(e=>_geoIsWorkAnchorSource(e.source)&&substantive(e));
   const widen=(uid,ms)=>{
     const day=dstr(new Date(ms));
     const m=out[uid]=out[uid]||{};
