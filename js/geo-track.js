@@ -3518,6 +3518,42 @@ async function _geoRepairStopRows(){
     const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):d.toISOString().slice(0,10);
     const onSite=s=>{const t=String(s||'');return /^(geofence|manual|place)$/.test(t)||/^(geofence|place)-/.test(t);};
     const isMerge=r=>/^merge-/.test(String(r.client_key||''));
+    // Forensic corrections for Fri 8/21 BEFORE the generic fingerprints run
+    // (owner report 2026-08-24: "I had a lunch from like 11:37am to 12:25
+    // and it's gone"). The raw location_pings for that day show the truck
+    // parked away from the job from 11:42:09am (the stop row's own untouched
+    // arrival) until motion resumed at 12:31:46pm, back on site at
+    // 12:45:50pm, final exit 5:07:06pm. The merge survivor bridged that
+    // whole stretch into one 7:55am-5:07pm row (owner's own record: the
+    // morning visit ended at the 11:37am confirmed fence exit), and
+    // gap-absorb stretched the lunch stop's end to 5:07pm. Rebuilt here from
+    // the recorded fixes: morning visit, real lunch, afternoon visit. Keyed
+    // to the exact corrupted rows' client_keys so it can never touch
+    // anything else, and applied to the in-memory rows too so the
+    // fingerprints below judge the CORRECTED day (the trimmed lunch no
+    // longer overlaps anything, so fingerprint 3 keeps it).
+    const fixUpdates=[];const fixInserts=[];
+    for(const r of rows){
+      const key=String(r.client_key||'');
+      if(key==='merge-27962a20-be14-495b-b172-c0b4b8fccb22'){
+        r.arrived_at='2026-08-21T12:55:55.101Z';r.departed_at='2026-08-21T16:37:00.000Z';
+        r.client_key='repair-0821-am';
+        fixUpdates.push({id:r.id,patch:{arrived_at:r.arrived_at,departed_at:r.departed_at,minutes:221,client_key:'repair-0821-am'}});
+        if(!rows.some(x=>String(x.client_key||'')==='repair-0821-pm')){
+          const pm={contractor_user_id:_geoCid(),employee_user_id:r.employee_user_id,
+            job_id:null,dest_place:r.dest_place||'John Doe',source:'place',
+            arrived_at:'2026-08-21T17:45:50.000Z',departed_at:'2026-08-21T22:07:06.228Z',
+            minutes:261,client_key:'repair-0821-pm'};
+          fixInserts.push(pm);
+          rows.push({id:'__pm-0821',employee_user_id:pm.employee_user_id,job_id:null,
+            dest_place:pm.dest_place,source:'place',client_key:pm.client_key,
+            arrived_at:pm.arrived_at,departed_at:pm.departed_at});
+        }
+      }else if(key==='30a2b589-mt386omz-3bm8'){
+        r.arrived_at='2026-08-21T16:42:09.105Z';r.departed_at='2026-08-21T17:31:46.000Z';
+        fixUpdates.push({id:r.id,patch:{arrived_at:r.arrived_at,departed_at:r.departed_at,minutes:50}});
+      }
+    }
     const drop=new Set();
     // Fingerprint 1: a stop spanning Central midnight is an overnight park
     // gap-absorb swallowed (or the live tracker wrote before the
@@ -3562,14 +3598,22 @@ async function _geoRepairStopRows(){
       }
     }
     let ok=true;
+    for(const u of fixUpdates){
+      try{const res=await _supa.from('job_time_entries').update(u.patch).eq('id',u.id);if(res&&res.error)ok=false;}catch(_e){ok=false;}
+    }
+    // Inserts are best-effort: a re-run that already landed the row hits the
+    // contractor+client_key unique index, which is success, not failure.
+    for(const row of fixInserts){
+      try{await _supa.from('job_time_entries').insert(row);}catch(_e){}
+    }
     for(const id of drop){
       try{const res=await _supa.from('job_time_entries').delete().eq('id',id);if(res&&res.error)ok=false;}catch(_e){ok=false;}
     }
-    _geoParkNote('stop-repair','removed '+drop.size+' corrupted rows'+(ok?'':' (some deletes failed, will retry)'));
+    _geoParkNote('stop-repair','removed '+drop.size+', fixed '+fixUpdates.length+', rebuilt '+fixInserts.length+(ok?'':' (partial, will retry)'));
     // Done only when every delete landed: a partial pass (offline mid-sweep)
     // retries next boot instead of leaving survivors forever.
     if(ok){try{localStorage.setItem(_GEO_STOP_REPAIR_FLAG,new Date().toISOString());}catch(_e){}}
-    return drop.size;
+    return drop.size+fixUpdates.length+fixInserts.length;
   }catch(_e){return 0;}
   finally{_geoStopRepairBusy=false;}
 }

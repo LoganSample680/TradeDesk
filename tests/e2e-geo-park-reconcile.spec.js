@@ -2557,6 +2557,68 @@ test.describe('Geo park detection + mileage reconciliation', () => {
         await geoRestore();
       });
 
+      // The Fri 8/21 forensic rebuild: the merge survivor becomes the
+      // morning visit (7:55am-11:37am), the stretched lunch stop is trimmed
+      // back to what the raw GPS pings recorded (11:42am-12:31pm), and the
+      // afternoon visit (12:45pm-5:07pm) is re-inserted. Keyed to the exact
+      // live client_keys, so only the real corrupted rows ever match.
+      test('rebuilds Fri 8/21 from the ping record instead of deleting the lunch', async () => {
+        await geoReset();
+        const r = await page.evaluate(async () => {
+          localStorage.removeItem('td_geo_stop_repair_v1');
+          window.__selRows = [
+            { id: 'live-merge', employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place', client_key: 'merge-27962a20-be14-495b-b172-c0b4b8fccb22', arrived_at: '2026-08-21T12:55:55.101Z', departed_at: '2026-08-21T22:07:06.228Z' },
+            { id: 'live-stop', employee_user_id: 'geo-park-user-1', job_id: null, dest_place: null, source: 'stop', client_key: '30a2b589-mt386omz-3bm8', arrived_at: '2026-08-21T16:42:09.105Z', departed_at: '2026-08-21T22:07:06.228Z' },
+            { id: 'live-ov', employee_user_id: 'geo-park-user-1', job_id: null, dest_place: null, source: 'stop', client_key: '30a2b589-vis-stop-x-mt3oxudw', arrived_at: '2026-08-21T22:14:11.676Z', departed_at: '2026-08-22T15:28:29.104Z' },
+          ];
+          const n = await _geoRepairStopRows();
+          const upd = window.__rec.updates.filter(u => u.tbl === 'job_time_entries');
+          const ins = window.__rec.inserts.filter(i => i.tbl === 'job_time_entries');
+          const del = window.__rec.deletes.filter(d => d.tbl === 'job_time_entries').map(d => d.val);
+          return { n, upd, ins, del, flag: !!localStorage.getItem('td_geo_stop_repair_v1') };
+        });
+        // Morning: trimmed to the confirmed 11:37am fence exit, re-keyed.
+        const am = r.upd.find(u => u.filters.id === 'live-merge');
+        expect(am).toBeTruthy();
+        expect(am.patch.departed_at).toBe('2026-08-21T16:37:00.000Z');
+        expect(am.patch.minutes).toBe(221);
+        expect(am.patch.client_key).toBe('repair-0821-am');
+        // Lunch: kept, trimmed back to the ping-recorded departure.
+        const lunch = r.upd.find(u => u.filters.id === 'live-stop');
+        expect(lunch).toBeTruthy();
+        expect(lunch.patch.departed_at).toBe('2026-08-21T17:31:46.000Z');
+        expect(lunch.patch.minutes).toBe(50);
+        expect(r.del, 'the lunch stop is never deleted').not.toContain('live-stop');
+        // Afternoon: rebuilt.
+        expect(r.ins.length).toBe(1);
+        expect(r.ins[0].row.client_key).toBe('repair-0821-pm');
+        expect(r.ins[0].row.arrived_at).toBe('2026-08-21T17:45:50.000Z');
+        expect(r.ins[0].row.departed_at).toBe('2026-08-21T22:07:06.228Z');
+        // The overnight monster still dies.
+        expect(r.del).toContain('live-ov');
+        expect(r.flag).toBe(true);
+        await geoRestore();
+      });
+
+      test('a re-run after the rebuild already landed never double-inserts the afternoon row', async () => {
+        await geoReset();
+        const r = await page.evaluate(async () => {
+          localStorage.removeItem('td_geo_stop_repair_v1');
+          window.__selRows = [
+            { id: 'am', employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place', client_key: 'repair-0821-am', arrived_at: '2026-08-21T12:55:55.101Z', departed_at: '2026-08-21T16:37:00.000Z' },
+            { id: 'lunch', employee_user_id: 'geo-park-user-1', job_id: null, dest_place: null, source: 'stop', client_key: '30a2b589-mt386omz-3bm8', arrived_at: '2026-08-21T16:42:09.105Z', departed_at: '2026-08-21T17:31:46.000Z' },
+            { id: 'pm', employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place', client_key: 'repair-0821-pm', arrived_at: '2026-08-21T17:45:50.000Z', departed_at: '2026-08-21T22:07:06.228Z' },
+          ];
+          const n = await _geoRepairStopRows();
+          const ins = window.__rec.inserts.filter(i => i.tbl === 'job_time_entries');
+          const del = window.__rec.deletes.filter(d => d.tbl === 'job_time_entries');
+          return { n, inserts: ins.length, deletes: del.length };
+        });
+        expect(r.inserts, 'no duplicate afternoon insert').toBe(0);
+        expect(r.deletes, 'the corrected day has nothing left to delete').toBe(0);
+        await geoRestore();
+      });
+
       test('one-shot: once the flag is set, a second call touches nothing', async () => {
         await geoReset();
         const r = await page.evaluate(async (rows) => {
