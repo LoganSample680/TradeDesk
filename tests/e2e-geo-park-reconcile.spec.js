@@ -81,7 +81,15 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // opens the gate.
     await page.evaluate(() => {
       window.__sweepAllowed = false;
-      for (const fn of ['_milePersonalStopSweep', '_mileDedupTrips', '_mileMotionHealSweep']) {
+      // _geoCollapseDetours is the fourth, and the one that was still doing it
+      // after the other three were gated: it is the LIVE counterpart of the
+      // personal-stop sweep (js/geo-track.js), it splices `mileage` for any
+      // leg ending at the current 'stop' origin, and it rides the ping path,
+      // so a geocode resolving late from an earlier test in this shared page
+      // can fire it in the middle of an unrelated one. Its fingerprint was
+      // the seeded leg gone from `mileage` while the sweep under test
+      // reported zero: the collapse happened, something else did it.
+      for (const fn of ['_milePersonalStopSweep', '_mileDedupTrips', '_mileMotionHealSweep', '_geoCollapseDetours']) {
         const real = window[fn];
         if (typeof real !== 'function') continue;
         window['__real' + fn] = real;
