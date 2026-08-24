@@ -1197,7 +1197,15 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   // true-back-to-back floor. Same recording _supa/window.__selRows harness.
   const mergeCall = () => page.evaluate(async () => {
     window.__rec.deletes.length = 0; window.__rec.updates.length = 0;
-    const changed = await _geoMergeAdjacentVisits();
+    // The rewritten merge consults the live mileage array for gap evidence;
+    // park it empty for the call so unrelated suite data can never block or
+    // allow a merge. Tests that WANT a leg in the gap seed it themselves
+    // via window.__mergeTestLegs.
+    const saved = (typeof mileage !== 'undefined') ? mileage.slice() : null;
+    if (saved) { mileage.length = 0; (window.__mergeTestLegs || []).forEach(m => mileage.push(m)); }
+    let changed;
+    try { changed = await _geoMergeAdjacentVisits(); }
+    finally { if (saved) { mileage.length = 0; saved.forEach(m => mileage.push(m)); } window.__mergeTestLegs = null; }
     return { changed, deletes: window.__rec.deletes.slice(), updates: window.__rec.updates.slice() };
   });
 
@@ -1207,11 +1215,13 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await page.evaluate((now) => {
       window.__selRows = [
         { id: 2001, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
-          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+          arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:00:00.000Z' },
         // Picks back up 45 seconds after the first row's departure, a fence
-        // blip, not a real gap.
+        // blip, not a real gap. Fixed mid-day Central instants: the merged
+        // span must sit in one Central day, so now-relative times would
+        // flake around midnight.
         { id: 2002, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
-          arrived_at: new Date(now - 2 * 3600000 + 45000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+          arrived_at: '2026-08-21T16:00:45.000Z', departed_at: '2026-08-21T17:00:00.000Z' },
       ];
     }, now);
     const r = await mergeCall();
@@ -1219,27 +1229,102 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     expect(r.deletes[0].val, 'the earlier row survives, the later one folds into it').toBe(2002);
     expect(r.updates.length).toBe(1);
     expect(r.updates[0].filters.id).toBe(2001);
-    expect(new Date(r.updates[0].patch.arrived_at).getTime()).toBe(now - 4 * 3600000);
-    expect(new Date(r.updates[0].patch.departed_at).getTime(), 'spans through to the later row\'s own departure').toBe(now - 1 * 3600000);
+    expect(r.updates[0].patch.arrived_at).toBe('2026-08-21T14:00:00.000Z');
+    expect(r.updates[0].patch.departed_at, 'spans through to the later row\'s own departure').toBe('2026-08-21T17:00:00.000Z');
     expect(r.updates[0].patch.client_key, 're-keyed off its own id, immune to any future resurrection').toBe('merge-2001');
     await geoRestore();
   });
 
-  // Owner's explicit choice (clarifying question, 2026-08-23): only TRUE
-  // back-to-back visits merge, a generous 15-minute floor was rejected.
-  test('merge: a real 10-minute gap between two visits to the same job is NOT merged', async () => {
+  // Owner rule change 2026-08-24 (supersedes the 2026-08-23 "only true
+  // back-to-back" floor): a larger gap ALSO merges, but only when provably
+  // empty, "no real drive events picked up between them, just loss of gps
+  // geofence." Anything recorded in the gap blocks the merge instead.
+  test('merge: an empty GPS-loss gap between two visits to the same job merges', async () => {
     await geoReset();
-    const now = Date.now();
-    await page.evaluate((now) => {
+    await page.evaluate(() => {
       window.__selRows = [
         { id: 2011, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
-          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+          arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:00:00.000Z' },
+        // 4h10m later, nothing on record in between: GPS died on site.
         { id: 2012, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
-          arrived_at: new Date(now - 2 * 3600000 + 10 * 60000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+          arrived_at: '2026-08-21T20:10:00.000Z', departed_at: '2026-08-21T22:00:00.000Z' },
       ];
-    }, now);
+    });
     const r = await mergeCall();
-    expect(r.changed, 'a real 10-minute gap is left alone, both rows survive as separate visits').toBe(0);
+    expect(r.updates.length, 'an empty gap is lost GPS, one continuous visit').toBe(1);
+    expect(r.updates[0].patch.arrived_at).toBe('2026-08-21T14:00:00.000Z');
+    expect(r.updates[0].patch.departed_at).toBe('2026-08-21T22:00:00.000Z');
+    expect(r.deletes.length).toBe(1);
+    await geoRestore();
+  });
+
+  test('merge: a drive row recorded in the gap blocks the merge (they really left)', async () => {
+    await geoReset();
+    await page.evaluate(() => {
+      window.__selRows = [
+        { id: 2013, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:00:00.000Z' },
+        { id: 2014, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'DEV A shop', source: 'drive-unassigned',
+          arrived_at: '2026-08-21T16:05:00.000Z', departed_at: '2026-08-21T16:20:00.000Z' },
+        { id: 2015, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: '2026-08-21T20:10:00.000Z', departed_at: '2026-08-21T22:00:00.000Z' },
+      ];
+    });
+    const r = await mergeCall();
+    expect(r.changed, 'a recorded drive between them means two real visits').toBe(0);
+    await geoRestore();
+  });
+
+  test('merge: a mileage GPS leg in the gap blocks the merge', async () => {
+    await geoReset();
+    await page.evaluate(() => {
+      window.__selRows = [
+        { id: 2016, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:00:00.000Z' },
+        { id: 2017, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: '2026-08-21T20:10:00.000Z', departed_at: '2026-08-21T22:00:00.000Z' },
+      ];
+      // geo-park-user-1 IS the contractor in this harness (geoReset), so the
+      // owner's own legs carry logged_by_id null, same convention as live.
+      window.__mergeTestLegs = [{ gps: true, logged_by_id: null, legKey: 'x1',
+        startedIso: '2026-08-21T16:30:00.000Z', endedIso: '2026-08-21T16:45:00.000Z' }];
+    });
+    const r = await mergeCall();
+    expect(r.changed, 'the truck moved, per mileage: two real visits').toBe(0);
+    await geoRestore();
+  });
+
+  test('merge: a shop session in the gap blocks the merge', async () => {
+    await geoReset();
+    await page.evaluate(() => {
+      window.__selRows = [
+        { id: 2018, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:00:00.000Z' },
+        { id: 2019, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: '2026-08-21T20:10:00.000Z', departed_at: '2026-08-21T22:00:00.000Z' },
+      ];
+      window.__selShopRows = [{ employee_user_id: 'geo-park-user-1',
+        arrived_at: '2026-08-21T17:00:00.000Z', departed_at: '2026-08-21T18:00:00.000Z' }];
+    });
+    const r = await mergeCall();
+    expect(r.changed, 'they were at the shop mid-gap: two real visits').toBe(0);
+    await geoRestore();
+  });
+
+  test('merge: an empty gap crossing Central midnight never merges', async () => {
+    await geoReset();
+    await page.evaluate(() => {
+      window.__selRows = [
+        // 8pm CT one day, 8am CT the next, same UTC day: proves the bound is
+        // the Central day, not a UTC compare.
+        { id: 2010, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: '2026-08-21T00:30:00.000Z', departed_at: '2026-08-21T01:00:00.000Z' },
+        { id: 2020, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: '2026-08-21T13:00:00.000Z', departed_at: '2026-08-21T14:30:00.000Z' },
+      ];
+    });
+    const r = await mergeCall();
+    expect(r.changed, 'a day never absorbs the night before it').toBe(0);
     await geoRestore();
   });
 
@@ -1249,9 +1334,9 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await page.evaluate((now) => {
       window.__selRows = [
         { id: 2021, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
-          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+          arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:00:00.000Z' },
         { id: 2022, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
-          arrived_at: new Date(now - 2 * 3600000 + 120000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+          arrived_at: '2026-08-21T16:02:00.000Z', departed_at: '2026-08-21T17:00:00.000Z' },
       ];
     }, now);
     const r = await mergeCall();
@@ -1292,27 +1377,24 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
-  // A live detection outranks a reconciler guess (same rule the dedup sweep
-  // above already applies): the merged survivor keeps the LIVE row's source
-  // and identity, never the reconciled guess's, even though the reconciled
-  // fragment sorts first chronologically.
-  test('merge: a live row and an adjacent reconciled fragment merge, the survivor keeps the live row\'s source', async () => {
+  // INVERTED 2026-08-24 (this used to assert the opposite): a reconciled
+  // row is never a merge candidate anymore. On 2026-08-23 a reconciled
+  // full-day guess resolved to the same client as the live visits,
+  // overlapped both, and bridged a real 47-minute lunch into one 551-minute
+  // row on the owner's live account. Reconciled-vs-live overlap belongs to
+  // dedup's trim phase; merge is live detections only.
+  test('merge: a reconciled row is never a merge candidate, however adjacent', async () => {
     await geoReset();
-    const now = Date.now();
-    await page.evaluate((now) => {
+    await page.evaluate(() => {
       window.__selRows = [
         { id: 2051, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence-reconciled',
-          arrived_at: new Date(now - 5 * 3600000).toISOString(), departed_at: new Date(now - 3 * 3600000).toISOString() },
+          arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:00:00.000Z' },
         { id: 2052, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
-          arrived_at: new Date(now - 3 * 3600000 + 30000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+          arrived_at: '2026-08-21T16:00:30.000Z', departed_at: '2026-08-21T18:00:00.000Z' },
       ];
-    }, now);
+    });
     const r = await mergeCall();
-    expect(r.updates.length).toBe(1);
-    expect(r.updates[0].filters.id, 'the live row (2052) is the survivor, not the reconciled guess').toBe(2052);
-    expect(r.updates[0].patch.source).toBe('geofence');
-    expect(new Date(r.updates[0].patch.arrived_at).getTime(), 'still spans back to the reconciled row\'s own start').toBe(now - 5 * 3600000);
-    expect(r.deletes[0].val).toBe(2051);
+    expect(r.changed, 'the reconciled guess stays out of merge entirely').toBe(0);
     await geoRestore();
   });
 
@@ -1332,14 +1414,14 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       clients.push({ id: cid, name: 'John Doe' });
       jobs.push({ id: jid, name: 'John Doe job', client_id: cid, bid_id: null, start: _ctDateStr(new Date()), days: 1, status: 'upcoming', eventType: 'job' });
     }, [jid]);
-    await page.evaluate(([jid, now]) => {
+    await page.evaluate(([jid]) => {
       window.__selRows = [
         { id: 2061, employee_user_id: 'geo-park-user-1', job_id: jid, dest_place: null, source: 'geofence',
-          arrived_at: new Date(now - 4 * 3600000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+          arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:00:00.000Z' },
         { id: 2062, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
-          arrived_at: new Date(now - 2 * 3600000 + 30000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+          arrived_at: '2026-08-21T16:00:30.000Z', departed_at: '2026-08-21T17:00:00.000Z' },
       ];
-    }, [jid, now]);
+    }, [jid]);
     const r = await mergeCall();
     expect(r.updates.length, 'the job_id-tagged and dest_place-tagged rows resolve to the same client and merge').toBe(1);
     expect(r.updates[0].filters.id, 'the job_id-tagged row wins the structured reference').toBe(2061);
@@ -1420,18 +1502,18 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await page.evaluate((now) => {
       window.__selRows = [
         { id: 2101, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
-          arrived_at: new Date(now - 6 * 3600000).toISOString(), departed_at: new Date(now - 4 * 3600000).toISOString() },
+          arrived_at: '2026-08-21T13:00:00.000Z', departed_at: '2026-08-21T15:00:00.000Z' },
         { id: 2102, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
-          arrived_at: new Date(now - 4 * 3600000 + 20000).toISOString(), departed_at: new Date(now - 2 * 3600000).toISOString() },
+          arrived_at: '2026-08-21T15:00:20.000Z', departed_at: '2026-08-21T17:00:00.000Z' },
         { id: 2103, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
-          arrived_at: new Date(now - 2 * 3600000 + 40000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
+          arrived_at: '2026-08-21T17:00:40.000Z', departed_at: '2026-08-21T18:00:00.000Z' },
       ];
     }, now);
     const r = await mergeCall();
     expect(r.updates.length, 'one surviving row for the whole chain').toBe(1);
     expect(r.deletes.length).toBe(2);
-    expect(new Date(r.updates[0].patch.arrived_at).getTime()).toBe(now - 6 * 3600000);
-    expect(new Date(r.updates[0].patch.departed_at).getTime()).toBe(now - 1 * 3600000);
+    expect(r.updates[0].patch.arrived_at).toBe('2026-08-21T13:00:00.000Z');
+    expect(r.updates[0].patch.departed_at).toBe('2026-08-21T18:00:00.000Z');
     await geoRestore();
   });
 

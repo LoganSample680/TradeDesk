@@ -3032,18 +3032,15 @@ async function _geoReconcileFromMileage(){
   // drop, and the second pass repeated the whole cycle blind to the first.
   if(typeof _geoAwaitQueueDrained==='function')await _geoAwaitQueueDrained();
   if(typeof _geoDedupTimeEntries==='function'){try{await _geoDedupTimeEntries();}catch(_e){}}
-  // DISABLED (owner report 2026-08-23, live device, same incident as the
-  // gap-absorb disable just below): a job_time_entries row that should have
-  // been two separate visits with a real 48-minute lunch between them
-  // merged into one 551-minute span. The 2-minute floor should never allow
-  // that on a direct pair, so this either chained through several short-
-  // lived spurious rows (live GPS jitter re-triggering the same geofence
-  // repeatedly) or another mechanism not yet isolated. Staying off until
-  // both this and _geoAbsorbGapsIntoStops are root-caused and fixed
-  // together: they were touching the same live data at the same time, and
-  // fixing one without being sure about the other risks the same class of
-  // compounding bug shipping again.
-  // if(typeof _geoMergeAdjacentVisits==='function'){try{await _geoMergeAdjacentVisits();}catch(_e){}}
+  // RE-ENABLED 2026-08-24 after the root cause landed: the 2026-08-23
+  // incident was a reconciled full-day row bridging the owner's real lunch
+  // (it resolved to the same client name and overlapped both live visits).
+  // The rewritten merge excludes reconciled rows from candidacy entirely
+  // and only merges across a gap that is provably EMPTY (no mileage leg, no
+  // other row, no shop session, same Central day), per the owner's rule:
+  // "merge those two records, there were no real drive events between them,
+  // just loss of gps geofence."
+  if(typeof _geoMergeAdjacentVisits==='function'){try{await _geoMergeAdjacentVisits();}catch(_e){}}
   // DISABLED (owner report 2026-08-23, live device): the repeated heartbeat-
   // triggered chain compounded this into multi-hour, even overnight-spanning
   // "stop" rows (one grew to 1034 real minutes), corrupting live payroll
@@ -3316,13 +3313,20 @@ function _geoIntervalGaps(start,end,covering){
 // screen, so "same place" here means the same thing it means on screen
 // (§7.3, don't hand-roll a parallel identity check).
 //
-// Owner's explicit choice (2026-08-23 clarifying question, rejected a
-// 15-minute floor): only TRUE back-to-back visits merge. _GEO_MERGE_GAP_MS
-// exists only to absorb a few minutes of timestamp rounding between two
-// rows that were really one continuous visit, never a real gap like a
-// lunch break, that's what the separate 'stop' source (never a merge
-// candidate below) and the reconciler's own 15-minute floor already exist
-// to protect.
+// Owner's rule, restated 2026-08-24 after the live incident: two same-place
+// records merge when "there were no real drive events picked up between
+// them, just loss of gps geofence." So the old 2-minute floor is only the
+// fast path; a LARGER gap also merges, but only when it is provably EMPTY:
+// no mileage leg, no drive/stop/visit row, no shop session overlaps it, and
+// both sides sit in the same Central day. Anything recorded in the gap
+// BLOCKS the merge (the person demonstrably left), the exact inversion of
+// the disaster mode where transient rows CHAINED a merge across a real
+// lunch break. Reconciled rows are excluded from candidacy entirely: the
+// 2026-08-23 corruption happened because a reconciled full-day guess
+// resolved to the same client name as the live visits, overlapped both,
+// and bridged the owner's real 47-minute lunch into one 551-minute row.
+// Dedup's own trim phase already resolves reconciled-vs-live overlap; merge
+// is for live detections only.
 //
 // Manual and 'stop' rows are never merge candidates: a manual bookend is a
 // human's own clock record, never silently folded into an automatic row;
@@ -3350,11 +3354,56 @@ async function _geoMergeAdjacentVisits(){
       .select('id,employee_user_id,job_id,dest_place,source,arrived_at,departed_at')
       .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
     if(error||!Array.isArray(data)||data.length<2)return 0;
-    const onSite=s=>/^(geofence|place)$/.test(String(s||''))||/^(geofence|place)-/.test(String(s||''));
-    const rows=data.filter(r=>r&&r.id!=null&&r.arrived_at&&r.departed_at&&onSite(r.source));
+    const all=data.filter(r=>r&&r.id!=null&&r.arrived_at&&r.departed_at);
+    // Candidates: LIVE geofence/place detections only. Never reconciled
+    // guesses (see the doc comment above: they bridged the 8/21 lunch),
+    // never manual bookends, never stops, never drive rows.
+    const isCandidate=s=>/^(geofence|geofence-gap|place)$/.test(String(s||''));
+    const rows=all.filter(r=>isCandidate(r.source));
     if(rows.length<2)return 0;
-    const isReconciled=s=>/-reconciled$/.test(String(s||''));
+    // Shop sessions block a gap the same way any other recorded presence
+    // does. Best-effort: a failed fetch just means shop evidence is not
+    // checked this pass, and nothing merges ACROSS what we cannot see only
+    // when the gap is otherwise empty, so erring here can only under-merge.
+    let shopRows=[];
+    try{
+      const sr=await _supa.from('shop_time_entries')
+        .select('employee_user_id,arrived_at,departed_at')
+        .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
+      if(sr&&!sr.error&&Array.isArray(sr.data))shopRows=sr.data.filter(x=>x&&x.arrived_at&&x.departed_at);
+    }catch(_e){}
+    const P=x=>Date.parse(x)||0;
+    const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
     const _GEO_MERGE_GAP_MS=2*60000;
+    // GPS mileage legs for one person: owner rows carry employee_user_id =
+    // the contractor id but mileage stamps logged_by_id null for the owner
+    // (autoLogDriveTrip), same null convention the reconciler uses.
+    const legsFor=emp=>{
+      if(typeof mileage==='undefined'||!Array.isArray(mileage))return [];
+      const me=String(emp||'')===String(_geoCid())?null:String(emp||'');
+      return mileage.filter(m=>m&&m.gps&&m.startedIso&&m.endedIso&&
+        String((m.logged_by_id||null)||'')===String(me||''));
+    };
+    // A gap is EMPTY only when nothing on record overlaps it beyond edge
+    // slack: no other time row of any source, no shop session, no mileage
+    // leg, and it does not cross Central midnight.
+    const gapBlocked=(emp,g1,g2,skipIds)=>{
+      if(dstr(new Date(g1))!==dstr(new Date(g2)))return true;
+      const ov=(s1,e1)=>Math.min(e1,g2)-Math.max(s1,g1)>_GEO_MERGE_GAP_MS;
+      for(const b of all){
+        if(skipIds.has(b.id))continue;
+        if(String(b.employee_user_id||'')!==String(emp||''))continue;
+        if(ov(P(b.arrived_at),P(b.departed_at)))return true;
+      }
+      for(const b of shopRows){
+        if(String(b.employee_user_id||'')!==String(emp||''))continue;
+        if(ov(P(b.arrived_at),P(b.departed_at)))return true;
+      }
+      for(const m of legsFor(emp)){
+        if(ov(P(m.startedIso),P(m.endedIso)))return true;
+      }
+      return false;
+    };
     const placeKey=r=>{
       if(r.job_id!=null){
         const info=(typeof _tlJobClientInfo==='function')?_tlJobClientInfo(r.job_id):null;
@@ -3371,19 +3420,21 @@ async function _geoMergeAdjacentVisits(){
     }
     const drop=new Set();
     const updates=[]; // {id, arrived_at, departed_at, minutes, job_id, dest_place, source, client_key}
-    // A live detection always outranks a reconciler guess (same rule
-    // _geoDedupTimeEntries's own coverage check already applies), and among
-    // rows of the same tier, whichever carries a job_id keeps the
-    // structured reference rather than falling back to free-text dest_place.
-    const rank=r=>(isReconciled(r.source)?0:2)+(r.job_id!=null?1:0);
+    // Among live rows, whichever carries a job_id keeps the structured
+    // reference rather than falling back to free-text dest_place.
+    const rank=r=>r.job_id!=null?1:0;
     for(const gk of Object.keys(groups)){
-      const list=groups[gk].slice().sort((a,b)=>Date.parse(a.arrived_at)-Date.parse(b.arrived_at));
+      const emp=gk.slice(0,gk.indexOf('|'));
+      const list=groups[gk].slice().sort((a,b)=>P(a.arrived_at)-P(b.arrived_at));
       let cluster=[list[0]];
       const flush=()=>{
         if(cluster.length<2){cluster=[];return;}
+        const start=Math.min(...cluster.map(x=>P(x.arrived_at)));
+        const end=Math.max(...cluster.map(x=>P(x.departed_at)));
+        // The merged result must itself be one same-day span: a cluster
+        // that would cross Central midnight is left as-is.
+        if(dstr(new Date(start))!==dstr(new Date(end))){cluster=[];return;}
         const tpl=cluster.slice().sort((a,b)=>rank(b)-rank(a))[0];
-        const start=Math.min(...cluster.map(x=>Date.parse(x.arrived_at)));
-        const end=Math.max(...cluster.map(x=>Date.parse(x.departed_at)));
         updates.push({id:tpl.id,arrived_at:new Date(start).toISOString(),departed_at:new Date(end).toISOString(),
           minutes:Math.max(0,Math.round((end-start)/60000)),job_id:tpl.job_id||null,dest_place:tpl.dest_place||null,
           source:tpl.source,client_key:'merge-'+tpl.id});
@@ -3391,9 +3442,11 @@ async function _geoMergeAdjacentVisits(){
         cluster=[];
       };
       for(let i=1;i<list.length;i++){
-        const prevEnd=Date.parse(cluster[cluster.length-1].departed_at);
-        const curStart=Date.parse(list[i].arrived_at);
-        if(curStart-prevEnd<=_GEO_MERGE_GAP_MS)cluster.push(list[i]);
+        const prevEnd=Math.max(...cluster.map(x=>P(x.departed_at)));
+        const curStart=P(list[i].arrived_at);
+        const gap=curStart-prevEnd;
+        const skipIds=new Set(cluster.map(x=>x.id));skipIds.add(list[i].id);
+        if(gap<=_GEO_MERGE_GAP_MS||!gapBlocked(emp,prevEnd,curStart,skipIds))cluster.push(list[i]);
         else{flush();cluster=[list[i]];}
       }
       flush();
@@ -3666,11 +3719,14 @@ async function _geoRepairStopRows(){
 async function _geoTimeEntriesSettleChain(){
   try{if(typeof _geoRepairStopRows==='function')await _geoRepairStopRows();}catch(_e){}
   try{if(typeof _geoDedupTimeEntries==='function')await _geoDedupTimeEntries();}catch(_e){}
-  // DISABLED (owner report 2026-08-23): see the matching note in
-  // _geoReconcileFromMileage above, same reason.
-  // try{if(typeof _geoMergeAdjacentVisits==='function')await _geoMergeAdjacentVisits();}catch(_e){}
-  // DISABLED (owner report 2026-08-23): see the matching note in
-  // _geoReconcileFromMileage above, same reason.
+  // RE-ENABLED 2026-08-24: see the matching note in _geoReconcileFromMileage
+  // above (reconciled rows excluded, empty-gap rule, same-day bound).
+  try{if(typeof _geoMergeAdjacentVisits==='function')await _geoMergeAdjacentVisits();}catch(_e){}
+  // STILL DISABLED (owner report 2026-08-23): the repeated heartbeat-
+  // triggered chain compounded this into multi-hour, overnight-spanning
+  // "stop" rows, corrupting live payroll data. Its jobs are now covered
+  // differently: the midnight write guard stops overnight parks at the
+  // source and the Time Log's anchor rule decides what unpaid time renders.
   // try{if(typeof _geoAbsorbGapsIntoStops==='function')await _geoAbsorbGapsIntoStops();}catch(_e){}
 }
 
