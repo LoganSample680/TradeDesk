@@ -656,12 +656,19 @@ function _geoMyJobs(){
 // scoping matches _geoMyJobs.
 function _geoReconcilableJobs(){
   const mine=_isEmployee
-    ?jobs.filter(j=>String(j.assignedTo)===String(_employeeRecord?.id))
+    ?jobs.filter(j=>j&&String(j.assignedTo)===String(_employeeRecord?.id))
     :jobs;
   return mine.filter(j=>j&&!j.cancelled);
 }
 async function _geoJobLatLng(j){
-  const c0=clients.find(x=>x.id===j.client_id);
+  // Element-guarded (and array-guarded) on purpose: ONE bad element in
+  // clients used to throw straight out of here, and the reconciler's outer
+  // catch swallowed it, so a single malformed client row silently killed
+  // EVERY reconciliation pass with no error anywhere. Same class of bug as
+  // _tlJobClientInfo/getClientById (fixed 2026-08-24); a lookup miss must
+  // cost the one job its address, never the whole sweep.
+  const _cl=(typeof clients!=='undefined'&&Array.isArray(clients))?clients:[];
+  const c0=_cl.find(x=>x&&x.id===j.client_id);
   const addr=j.addr||(c0&&c0.addr)||'';
   // THE CACHE REMEMBERS WHERE IT GOT THE ANSWER. Keyed on the job id alone, a
   // cached coordinate outlived the address it came from: correcting a job's
@@ -704,7 +711,7 @@ function _geoLocOfJob(j){
   if(!j)return null;
   const c=_geoJobCoords[j.id];
   if(!c)return null;
-  const cl=(typeof clients!=='undefined')?clients.find(x=>x.id===j.client_id):null;
+  const cl=(typeof clients!=='undefined'&&Array.isArray(clients))?clients.find(x=>x&&x.id===j.client_id):null;
   return {lat:c.lat,lng:c.lng,name:(cl&&cl.name)||j.name||'Job',kind:'job',
           jobId:j.id,clientId:j.client_id||null,addr:j.addr||(cl&&cl.addr)||''};
 }
@@ -1837,7 +1844,10 @@ function _geoClosePlaceEntry(placeId,arrivedAt,departedIso){
   if(_geoHomeDwell)_geoHomeDwell.closed=true;
   if(mins<2)return false;        // a pass-through, not a stop
   if(!_supaUser)return false;
-  const pl=(typeof getPlaces==='function')?getPlaces().find(p=>String(p.id)===String(placeId)):null;
+  // Element-guarded for the same reason as _geoJobLatLng below: a hole in
+  // the array must cost this row its place NAME, never throw out of a visit
+  // close and lose the whole entry.
+  const pl=(typeof getPlaces==='function')?(getPlaces()||[]).find(p=>p&&String(p.id)===String(placeId)):null;
   _geoEnqueue('job_time_entries',{
     contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
     job_id:null,arrived_at:arrivedAt,departed_at:departed,minutes:mins,
@@ -1892,7 +1902,7 @@ function _geoClientAt(here){
 // both by construction: same three fields, same "any job at all" check.
 function _geoHasQueuedBid(clientId){
   if(!clientId||typeof bids==='undefined'||typeof jobs==='undefined')return false;
-  const hasJob=b=>jobs.some(j=>j.bid_id===b.id||(!j.bid_id&&j.client_id===b.client_id&&(j.name||'')===(b.name||'')));
+  const hasJob=b=>jobs.some(j=>j&&(j.bid_id===b.id||(!j.bid_id&&j.client_id===b.client_id&&(j.name||'')===(b.name||''))));
   return bids.some(b=>String(b.client_id)===String(clientId)&&b.status==='Closed Won'&&!b.completion_date&&!hasJob(b));
 }
 // The visit itself, closed on departure: same shape as a place visit (the
@@ -1906,7 +1916,7 @@ function _geoCloseClientEntry(clientId,arrivedAt,departedIso){
   const mins=Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrivedAt))/60000));
   if(mins<2)return false;         // a pass-through, not a visit
   if(!_supaUser)return false;
-  const c=(typeof clients!=='undefined')?clients.find(x=>String(x.id)===String(clientId)):null;
+  const c=(typeof clients!=='undefined'&&Array.isArray(clients))?clients.find(x=>x&&String(x.id)===String(clientId)):null;
   _geoEnqueue('job_time_entries',{
     contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
     job_id:null,arrived_at:arrivedAt,departed_at:departed,minutes:mins,
@@ -2498,7 +2508,7 @@ function _geoReportPermission(state){
   if(!_supa||!_supaUser||!_isEmployee)return;
   const patch={location_status:state||'prompt',location_checked_at:new Date().toISOString()};
   try{
-    const d=(typeof S!=='undefined'&&S.devices||[]).find(x=>x.id===(typeof _initDeviceId==='function'&&_initDeviceId()));
+    const d=(typeof S!=='undefined'&&S.devices||[]).find(x=>x&&x.id===(typeof _initDeviceId==='function'&&_initDeviceId()));
     if(d)patch.location_device=d.name||d.label||null;
   }catch(_e){}
   try{_supa.from('team_members').update(patch).eq('employee_user_id',_supaUser.id).then(()=>{},()=>{});}catch(_e){}
@@ -3313,7 +3323,7 @@ async function _geoReconcileFromMileage(){
       });
       _geoParkNote('recon-win','wrote '+mins+'m @'+(w.jobId?'job '+w.jobId:'client '+w.clientId));
     }
-  }catch(_e){}
+  }catch(_e){_geoParkNote('recon-err',(_e&&_e.message)||String(_e));}
   finally{_geoReconBusy=false;}
   // Wait for THIS pass's own writes to actually reach the server before
   // dedup reads it back (bounded, best-effort): _geoEnqueue's drain is

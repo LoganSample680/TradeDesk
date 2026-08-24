@@ -2588,6 +2588,58 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // Found by CI 2026-08-24, and it had been silently costing real
+  // reconciliation the whole time: _geoJobLatLng did clients.find(x=>x.id...)
+  // with no element guard, so ONE junk element in the live clients array
+  // (what a partial/malformed cloud row hydrates as) threw straight out of
+  // the job-match loop, and _geoReconcileFromMileage's outer catch swallowed
+  // it whole. The result was a pass that ran, wrote nothing, and left no
+  // error anywhere: on a device that means every missing on-site window
+  // stays missing forever with no way to tell why. Same class as the
+  // _tlJobClientInfo/getClientById holes fixed earlier the same day, and the
+  // same fix: a lookup miss costs that one job its client name, never the
+  // sweep.
+  test('reconciliation: one junk element in clients never kills the whole pass', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886030);
+    await page.evaluate(() => {
+      window.__origClientsJunk = clients.slice();
+      clients.length = 0;
+      clients.push(undefined, null, { id: 991, name: 'Real Client', addr: '1 Real St' });
+    });
+    const r = await runRecon();
+    expect(r.recRows.length, 'a junk client element must not stop reconciliation').toBe(1);
+    expect(r.recRows[0].job_id).toBe(seed.jid);
+    await page.evaluate(() => {
+      clients.length = 0;
+      (window.__origClientsJunk || []).forEach(c => clients.push(c));
+      window.__origClientsJunk = null;
+    });
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  // The other half of the same incident: the blanket catch is what made the
+  // bug invisible for weeks. It stays (a reconciliation pass must never take
+  // the app down), but it now leaves a breadcrumb in the same park log the
+  // Copy-everything button exports, so the NEXT throw is one paste away from
+  // a root cause instead of a silent no-op.
+  test('reconciliation: a throw inside the pass leaves a recon-err note instead of vanishing', async () => {
+    await geoReset();
+    await seedReconPair(886031);
+    await page.evaluate(() => {
+      window.__realJobLatLng = _geoJobLatLng;
+      window._geoJobLatLng = () => { throw new Error('boom-probe-886031'); };
+    });
+    await runRecon();
+    const noted = await page.evaluate(() => (typeof _geoParkLog !== 'undefined' ? _geoParkLog : [])
+      .some(r => r && r.ev === 'recon-err' && String(r.x || '').indexOf('boom-probe-886031') >= 0));
+    await page.evaluate(() => { window._geoJobLatLng = window.__realJobLatLng; window.__realJobLatLng = null; });
+    expect(noted, 'the swallowed throw is recorded as recon-err in the park log').toBe(true);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
   // Same shape, but the leg that sorts adjacent to B (legA2) has a GARBAGE
   // toCoord (spotty GPS on the way out of the cluster), while its sibling
   // (legA, only reachable via the invalid same-cluster pair under the old

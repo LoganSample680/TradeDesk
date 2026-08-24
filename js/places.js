@@ -97,7 +97,10 @@ function placeAt(coord){
   if(!coord||coord.lat==null)return null;
   let best=null,bestFt=Infinity;
   (places||[]).forEach(pl=>{
-    if(pl.lat==null||pl.lon==null)return;
+    // Element-guarded: one hole in the array used to throw straight out
+    // of here, and placeAt sits on the visit-close path, so a single
+    // malformed place row took a whole stop down with it.
+    if(!pl||pl.lat==null||pl.lon==null)return;
     const ft=_placeDistFt(coord,pl);
     if(ft<=(pl.fenceFt||PLACE_MATCH_FT)&&ft<bestFt){best=pl;bestFt=ft;}
   });
@@ -357,7 +360,7 @@ function geoFeed(opts){
   push(bids,'estimate',r=>r.client_name||'Estimate','date');
   push(payments,'payment',r=>r.client_name||'Payment','date');
   (places||[]).forEach(pl=>{
-    if(pl.lat==null||pl.lon==null)return;
+    if(!pl||pl.lat==null||pl.lon==null)return;
     out.push({type:'place',id:pl.id,lat:pl.lat,lon:pl.lon,label:pl.name,kind:pl.kind});
   });
   const types=o.types&&o.types.length?o.types:null;
