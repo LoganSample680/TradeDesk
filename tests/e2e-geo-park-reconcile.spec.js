@@ -2098,8 +2098,14 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       _geoLastFenceLoc = fence.loc; _geoLastFenceAt = fence.atIso;
     }
     window._milePersonalSweepRan = false;
+    // Captured BEFORE the call: this file boots the full app, so a background
+    // pass of the same sweep can collapse the seeded row first and leave this
+    // call with nothing to do. That reads as a bare "expected 1, got 0" with
+    // no hint why (seen once locally 2026-08-24 under five full-app spec files
+    // on one runner). The tests assert on `before` so a recurrence says so.
+    const before = mileage.map(m => m.id);
     const fixed = await _milePersonalStopSweep();
-    return { fixed, left: mileage.map(m => m.id) };
+    return { fixed, before, left: mileage.map(m => m.id) };
   }, fence);
   const STOP = { lat: 9.10, lon: 9.10 };
   const SHOPX = { lat: 9.00, lon: 9.00 };
@@ -2145,6 +2151,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     const row = stopLegRows()[0]; // 'sw-inb' only, no outbound partner
     await stopSweepSeed([row, FILLER()]);
     const r = await sweepCall({ loc: { lat: SHOPX.lat, lng: SHOPX.lon, name: 'Shop' }, atIso: new Date(now() - 60000).toISOString() });
+    expect(r.before, 'the seeded leg was still there when this sweep started').toEqual(['sw-inb', 'sw-filler']);
     expect(r.fixed, 'the live guard already suppressed the return row, this durable pass covers the orphaned outbound leg').toBe(1);
     expect(r.left).toEqual(['sw-filler']);
     await restoreLastFence();
