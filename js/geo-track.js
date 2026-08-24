@@ -3399,6 +3399,11 @@ async function _geoMergeAdjacentVisits(){
     const P=x=>Date.parse(x)||0;
     const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
     const _GEO_MERGE_GAP_MS=2*60000;
+    // Ceiling on an EMPTY gap this sweep will bridge (see gapBlocked below).
+    // 60 minutes: comfortably covers a fence blip or a short shop bounce
+    // (Mon 8/17's real one was 14 minutes) without ever folding away an
+    // unobserved absence.
+    const _GEO_MERGE_MAX_GAP_MS=60*60000;
     // GPS mileage legs for one person: owner rows carry employee_user_id =
     // the contractor id but mileage stamps logged_by_id null for the owner
     // (autoLogDriveTrip), same null convention the reconciler uses.
@@ -3413,6 +3418,18 @@ async function _geoMergeAdjacentVisits(){
     // leg, and it does not cross Central midnight.
     const gapBlocked=(emp,g1,g2,skipIds)=>{
       if(dstr(new Date(g1))!==dstr(new Date(g2)))return true;
+      // A SHORT empty gap is lost GPS; a long one is an unobserved absence.
+      // Both look identical to the checks below (nothing on record either
+      // way), so size is the only thing separating them. Found in review
+      // 2026-08-24: Mon 8/17 folded correctly ONLY because the repair had
+      // already filled 8:18am-4:23pm first; without it this would have
+      // blindly bridged 8h19m of nothing. That is the same over-reach that
+      // ate the owner's lunch on 8/21, just arrived at from the other side.
+      // The owner's rule was "no real drive events between them, just loss
+      // of gps geofence", which is a few minutes, not a workday. A genuinely
+      // long unobserved window is the mileage-anchored reconciler's job: it
+      // has drive legs as evidence, this has none.
+      if(g2-g1>_GEO_MERGE_MAX_GAP_MS)return true;
       const ov=(s1,e1)=>Math.min(e1,g2)-Math.max(s1,g1)>_GEO_MERGE_GAP_MS;
       for(const b of all){
         if(skipIds.has(b.id))continue;

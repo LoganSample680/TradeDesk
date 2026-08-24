@@ -1265,16 +1265,63 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       window.__selRows = [
         { id: 2011, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
           arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:00:00.000Z' },
-        // 4h10m later, nothing on record in between: GPS died on site.
+        // 14 minutes later, nothing on record in between: the real Mon 8/17
+        // shape, a shop bounce whose drive legs were both deleted as dups.
         { id: 2012, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
-          arrived_at: '2026-08-21T20:10:00.000Z', departed_at: '2026-08-21T22:00:00.000Z' },
+          arrived_at: '2026-08-21T16:14:00.000Z', departed_at: '2026-08-21T22:00:00.000Z' },
       ];
     });
     const r = await mergeCall();
-    expect(r.updates.length, 'an empty gap is lost GPS, one continuous visit').toBe(1);
+    expect(r.updates.length, 'a short empty gap is lost GPS, one continuous visit').toBe(1);
     expect(r.updates[0].patch.arrived_at).toBe('2026-08-21T14:00:00.000Z');
     expect(r.updates[0].patch.departed_at).toBe('2026-08-21T22:00:00.000Z');
     expect(r.deletes.length).toBe(1);
+    await geoRestore();
+  });
+
+  // Found in review 2026-08-24: an empty gap of ANY size used to merge, so
+  // Mon 8/17 folded correctly only because the repair had filled the middle
+  // first. A long unobserved window is an absence, not a fence blip, and
+  // belongs to the mileage-anchored reconciler which has real evidence.
+  test('merge: an empty gap longer than an hour is an absence, never bridged', async () => {
+    await geoReset();
+    await page.evaluate(() => {
+      window.__selRows = [
+        { id: 2201, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: '2026-08-21T13:00:00.000Z', departed_at: '2026-08-21T14:04:00.000Z' },
+        // 8h19m later, nothing on record: exactly Mon 8/17 WITHOUT the repair.
+        { id: 2202, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: '2026-08-21T22:23:00.000Z', departed_at: '2026-08-21T23:17:00.000Z' },
+      ];
+    });
+    const r = await mergeCall();
+    expect(r.changed, 'eight unobserved hours are never folded into one visit').toBe(0);
+    await geoRestore();
+  });
+
+  test('merge: right at the one-hour ceiling still merges, past it does not', async () => {
+    await geoReset();
+    const run = (gapMin) => page.evaluate(async (gapMin) => {
+      const start = Date.parse('2026-08-21T14:00:00.000Z');
+      const endA = start + 60 * 60000;
+      const startB = endA + gapMin * 60000;
+      window.__selRows = [
+        { id: 2301, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: new Date(start).toISOString(), departed_at: new Date(endA).toISOString() },
+        { id: 2302, employee_user_id: 'geo-park-user-1', job_id: '77', dest_place: null, source: 'geofence',
+          arrived_at: new Date(startB).toISOString(), departed_at: new Date(startB + 60 * 60000).toISOString() },
+      ];
+      window.__rec.deletes.length = 0; window.__rec.updates.length = 0;
+      const saved = (typeof mileage !== 'undefined') ? mileage.slice() : null;
+      if (saved) mileage.length = 0;
+      let changed;
+      try { changed = await _geoMergeAdjacentVisits(); }
+      finally { if (saved) { mileage.length = 0; saved.forEach(m => mileage.push(m)); } }
+      return changed;
+    }, gapMin);
+    expect(await run(60), 'exactly an hour still counts as a blip').toBeGreaterThan(0);
+    await geoReset();
+    expect(await run(61), 'a minute past the ceiling is an absence').toBe(0);
     await geoRestore();
   });
 
