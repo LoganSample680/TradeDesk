@@ -696,14 +696,35 @@ async function _milePersonalStopSweep(){
       }
     }
 
+    // Saving and repainting are REPORTING, not the work, and they must not sit
+    // inside the try that guards the work. They did, and the rows are already
+    // spliced out by the time they run, so any throw from saveAll, a repaint
+    // or the toast sent this function into its catch and returned 0 for a
+    // cleanup that had actually happened. The caller then cannot tell the
+    // difference between "nothing to do" and "done, then something unrelated
+    // blew up on the way out", which is exactly how this looked from CI: the
+    // leg gone from the log and the sweep reporting zero, two facts that
+    // could not both be true (traced 2026-08-24 by watching mileage.splice).
+    // A repaint depends on whatever is on screen, so this is a live hazard on
+    // a real device too, not just under test.
     if(fixed){
-      saveAll();
-      if(document.getElementById('mil-table'))renderAllMileage();
-      if(typeof renderDash==='function')renderDash();
-      try{if(typeof showToast==='function')showToast(fixed+' personal stop'+(fixed===1?'':'s')+' taken off the deduction','🧾');}catch(_e){}
+      try{
+        saveAll();
+        if(document.getElementById('mil-table'))renderAllMileage();
+        if(typeof renderDash==='function')renderDash();
+        if(typeof showToast==='function')showToast(fixed+' personal stop'+(fixed===1?'':'s')+' taken off the deduction','🧾');
+      }catch(_e){
+        try{if(typeof _geoParkNote==='function')_geoParkNote('stop-sweep-ui',(_e&&_e.message)||String(_e));}catch(_e2){}
+      }
     }
     return fixed;
-  }catch(_e){return 0;}
+  }
+  // Reached only when the WORK itself failed. Leaves a trail rather than
+  // returning a bare zero, same reason _geoMergeAdjacentVisits now does.
+  catch(_e){
+    try{if(typeof _geoParkNote==='function')_geoParkNote('stop-sweep-err',(_e&&_e.message)||String(_e));}catch(_e2){}
+    return 0;
+  }
 }
 async function _mileMotionHealSweep(){
   try{
