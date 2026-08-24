@@ -3514,6 +3514,19 @@ async function _geoRepairStopRows(){
     if(error)return 0;
     const rows=(data||[]).filter(r=>r&&r.id!=null&&r.arrived_at&&r.departed_at);
     if(!rows.length){try{localStorage.setItem(_GEO_STOP_REPAIR_FLAG,new Date().toISOString());}catch(_e){}return 0;}
+    // Shop sessions count as on-site coverage in fingerprint 3 below: the
+    // live dry run against the real data (2026-08-24) found a stop stretched
+    // squarely over hours of recorded shop presence, which the
+    // job_time_entries fetch alone can never see. Best-effort: a failed shop
+    // fetch just means shop overlap isn't checked this pass.
+    let shopRows=[];
+    try{
+      const sr=await _supa.from('shop_time_entries')
+        .select('employee_user_id,arrived_at,departed_at')
+        .eq('contractor_user_id',_geoCid()).gte('arrived_at','2026-08-10T00:00:00Z')
+        .lte('arrived_at','2026-08-25T00:00:00Z');
+      if(sr&&!sr.error&&Array.isArray(sr.data))shopRows=sr.data.filter(s=>s&&s.arrived_at&&s.departed_at);
+    }catch(_e){}
     const P=s=>Date.parse(s)||0;
     const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):d.toISOString().slice(0,10);
     const onSite=s=>{const t=String(s||'');return /^(geofence|manual|place)$/.test(t)||/^(geofence|place)-/.test(t);};
@@ -3595,6 +3608,14 @@ async function _geoRepairStopRows(){
         if(onSite(b.source)){drop.add(r.id);break;}
         if(String(b.source||'')==='stop'&&
            ((e-s)<(be-bs)||((e-s)===(be-bs)&&String(r.id)>String(b.id)))){drop.add(r.id);break;}
+      }
+      if(drop.has(r.id))continue;
+      // A shop session is on-site presence too; a stop lying over one is
+      // the same stretched-sideways artifact.
+      for(const b of shopRows){
+        if(String(b.employee_user_id||'')!==String(r.employee_user_id||''))continue;
+        const ov=Math.min(e,P(b.departed_at))-Math.max(s,P(b.arrived_at));
+        if(ov>2*60000){drop.add(r.id);break;}
       }
     }
     let ok=true;

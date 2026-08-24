@@ -104,6 +104,13 @@ function _tlStopAnchored(arrMs,depMs,anchors){
   const day=dstr(new Date(arrMs));
   if(day!==dstr(new Date(depMs)))return false;   // spans midnight: never shown
   const SLACK=2*60000;   // kerb-edge timestamp rounding, same floor the merge gap used
+  // Overlap veto first, against EVERY anchor: one covering more than the
+  // edge slack of the stop means the person was provably on site (or at the
+  // shop) during it, so the "unpaid" row is a stretched artifact, not time
+  // between fences, whatever its edges look like.
+  for(const a of anchors){
+    if(a&&Math.min(a.dep,depMs)-Math.max(a.arr,arrMs)>SLACK)return false;
+  }
   let before=false,after=false;
   for(const a of anchors){
     if(!a)continue;

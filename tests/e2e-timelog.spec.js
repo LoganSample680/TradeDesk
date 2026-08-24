@@ -413,6 +413,16 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // that's the on-site row's time, not a valid "before" edge.
       expect(r.pastSlack).toBe(false);
     });
+    test('an anchor OVERLAPPING the stop vetoes it, even with clean edges elsewhere', async () => {
+      const ok = await page.evaluate((c) => _tlStopAnchored(
+        Date.parse(c.stopArr), Date.parse(c.stopDep),
+        // Clean before + after edges, but a third anchor (a shop session)
+        // covers the middle of the stop: the person was provably somewhere
+        // known, so the unpaid row is an artifact.
+        [c.before, c.after,
+         { arr: Date.parse(c.stopArr) + 5 * 60000, dep: Date.parse(c.stopDep) - 5 * 60000 }]), CASES);
+      expect(ok).toBe(false);
+    });
     test('garbage in, false out: null anchors, NaN times, inverted spans', async () => {
       const r = await page.evaluate((c) => ({
         nullList: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), null),

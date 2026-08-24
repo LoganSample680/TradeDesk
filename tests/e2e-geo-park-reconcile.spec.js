@@ -98,11 +98,15 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     window._isEmployee = false;
     window._supaUser = { id: 'geo-park-user-1', email: 'p@t.com' };
     window.__rec = { upserts: [], inserts: [], deletes: [], updates: [] };
-    window.__selRows = []; window.__selErr = null;
+    // Table-aware seeding: shop_time_entries selects resolve __selShopRows,
+    // everything else resolves __selRows (the repair sweep reads BOTH tables
+    // in one pass, so one shared array would feed job rows in as shop rows).
+    window.__selRows = []; window.__selShopRows = []; window.__selErr = null;
     window.__origSupa = window.__origSupa || window._supa;
     window._supa = {
       from: (tbl) => ({
         select: () => {
+          const rowsFor = () => (tbl === 'shop_time_entries' ? (window.__selShopRows || []) : (window.__selRows || []));
           const q = {
             eq: () => q, neq: () => q, lt: () => q, gt: () => q, gte: () => q, lte: () => q,
             in: () => q, is: () => q, order: () => q, limit: () => q,
@@ -111,9 +115,9 @@ test.describe('Geo park detection + mileage reconciliation', () => {
             // unrelated to geo/mileage but it can fire mid-test since this
             // file boots the FULL app. Without these the TypeError is a real
             // console.error and fails assertNoErrors() (seen in CI 2026-08-21).
-            single: () => Promise.resolve({ data: (window.__selRows || [])[0] || null, error: (window.__selErr || null) }),
-            maybeSingle: () => Promise.resolve({ data: (window.__selRows || [])[0] || null, error: (window.__selErr || null) }),
-            then: (res, rej) => Promise.resolve({ data: (window.__selRows || []), error: (window.__selErr || null) }).then(res, rej),
+            single: () => Promise.resolve({ data: rowsFor()[0] || null, error: (window.__selErr || null) }),
+            maybeSingle: () => Promise.resolve({ data: rowsFor()[0] || null, error: (window.__selErr || null) }),
+            then: (res, rej) => Promise.resolve({ data: rowsFor(), error: (window.__selErr || null) }).then(res, rej),
           };
           return q;
         },
@@ -1731,7 +1735,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoReset();
     const now = Date.now();
     await page.evaluate((now) => {
-      window.__selRows = [
+      window.__selShopRows = [
         { id: 4001, employee_user_id: 'geo-park-user-1',
           arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
         // Arrived later, same dwell re-written by the twin-write race.
@@ -1749,7 +1753,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoReset();
     const now = Date.now();
     await page.evaluate((now) => {
-      window.__selRows = [
+      window.__selShopRows = [
         { id: 4101, employee_user_id: 'crew-member-a',
           arrived_at: new Date(now - 3 * 3600000).toISOString(), departed_at: new Date(now - 1 * 3600000).toISOString() },
         { id: 4102, employee_user_id: 'crew-member-b',
@@ -1765,7 +1769,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoReset();
     const now = Date.now();
     await page.evaluate((now) => {
-      window.__selRows = [
+      window.__selShopRows = [
         // Ends at now-1h; the next row starts 2 minutes before that (clock
         // drift at a handoff), well under the 4-minute floor.
         { id: 4201, employee_user_id: 'geo-park-user-1',
@@ -1783,7 +1787,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoReset();
     const now = Date.now();
     await page.evaluate((now) => {
-      window.__selRows = [
+      window.__selShopRows = [
         { id: 4301, employee_user_id: 'geo-park-user-1',
           arrived_at: new Date(now - 6 * 3600000).toISOString(), departed_at: new Date(now - 5 * 3600000).toISOString() },
         { id: 4302, employee_user_id: 'geo-park-user-1',
@@ -2597,6 +2601,29 @@ test.describe('Geo park detection + mileage reconciliation', () => {
         // The overnight monster still dies.
         expect(r.del).toContain('live-ov');
         expect(r.flag).toBe(true);
+        await geoRestore();
+      });
+
+      // Found by the read-only dry run against the live data (2026-08-24): a
+      // stop stretched over hours of recorded SHOP presence, invisible to
+      // the job_time_entries fetch alone.
+      test('a stop lying over a shop session is dropped', async () => {
+        await geoReset();
+        const r = await page.evaluate(async () => {
+          localStorage.removeItem('td_geo_stop_repair_v1');
+          window.__selRows = [
+            { id: 'shop-stop', employee_user_id: 'geo-park-user-1', job_id: null, dest_place: null, source: 'stop', client_key: 'k-shopstop', arrived_at: '2026-08-22T17:12:06.546Z', departed_at: '2026-08-22T21:05:13.027Z' },
+            { id: 'gap-stop', employee_user_id: 'geo-park-user-1', job_id: null, dest_place: null, source: 'stop', client_key: 'k-gapstop', arrived_at: '2026-08-22T21:05:13.027Z', departed_at: '2026-08-22T21:22:18.110Z' },
+          ];
+          window.__selShopRows = [
+            { employee_user_id: 'geo-park-user-1', arrived_at: '2026-08-22T17:48:36.614Z', departed_at: '2026-08-22T20:30:58.244Z' },
+          ];
+          const n = await _geoRepairStopRows();
+          const del = window.__rec.deletes.filter(d => d.tbl === 'job_time_entries').map(d => d.val);
+          return { n, del };
+        });
+        expect(r.del).toContain('shop-stop');
+        expect(r.del, 'the stop with no shop overlap survives').not.toContain('gap-stop');
         await geoRestore();
       });
 
