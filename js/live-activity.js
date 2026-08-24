@@ -52,7 +52,28 @@ async function _liveActReady(){
 
 // What the two cards look like. Colors match the app's own meaning: the denim
 // blue the drive banner already uses, the green the clock already uses.
-const _LIVE_TINT={drive:'#2D5DA8',clock:'#0E6B39'};
+// LOCK SCREEN colors, not the app's. #2D5DA8 and #0E6B39 are the brand navy
+// and forest green, and they are right inside the app, where they sit on cream
+// and white. On the lock screen they sit on a Material blur over whatever
+// wallpaper the person has, and the owner's own card (2026-08-24, over a dark
+// green wallpaper) read as almost black on black next to the Southwest Wallet
+// pass right above it: "so dark and hard to read on our end, can we brighten
+// the blue to match the southwest Apple wallet cards."
+//
+// The blue is not a guess: #0085E7 is the dominant accent sampled straight out
+// of the Southwest pass in the owner's own screenshot, which is the comparison
+// he made. Against a dark card it measures 4.46:1 where the brand navy managed
+// 2.63:1, so it clears AA for the bold numbers the card actually renders (3:1)
+// where the old one did not. The green is its counterpart, picked to sit at a
+// similar weight beside it rather than to match anything of Southwest's.
+//
+// The widget already carries a dark shadow behind every tinted glyph for the
+// light-wallpaper case (TdLiveWidget.swift, DualReadout's note), so brightening
+// only ever helps the dark one and the light case is unchanged.
+//
+// Lives in JS on purpose (§3.2): the Swift layer takes the tint off the payload
+// rather than owning a palette, so this is a UAT roll and never an iOS build.
+const _LIVE_TINT={drive:'#0085E7',clock:'#12A85C'};
 
 // Track what was last sent per channel so an unchanged ping is never spent.
 // ActivityKit budgets updates, and the geo engine pings far more often than the
@@ -88,7 +109,7 @@ async function _liveActSet(channel,state){
     // sane number instead of a stray zero.
     siteStartedAt:Number(state.siteStartedAt)||Number(state.startedAt)||Math.floor(Date.now()/1000),
     dualTimer:!!state.dualTimer,
-    tint:state.tint||_LIVE_TINT[channel]||'#2D5DA8',
+    tint:state.tint||_LIVE_TINT[channel]||_LIVE_TINT.drive,
     push:!!_LIVE_PUSH_CHANNELS[channel],
     // ── Lock-screen "Next" / "Clock out" button (owner 2026-08-19) ──────────
     // Everything the iOS 17 LiveActivityIntent needs to act with the app
