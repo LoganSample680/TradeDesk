@@ -3210,14 +3210,32 @@ async function _crewCostRender(range){
     }
     const day=_ctDateStr(new Date(en.arrived_at));e.dayMins[day]=(e.dayMins[day]||0)+m;
   });
+  // The day auto clocks out at its last real work event, so yard dwell after
+  // the last job or supply run (and yard dwell on a day with no work fence at
+  // all) is worth zero paid minutes: js/geo-track.js _geoShopCutoffs carries
+  // the full rule. Applied HERE as well as on the Time Log on purpose, Crew
+  // Cost is where those minutes turn into money, and two screens disagreeing
+  // about what a day paid is worse than either answer alone.
+  const shopCut=(typeof _geoShopCutoffs==='function')?_geoShopCutoffs(ents):{};
   shopEnts.forEach(en=>{
     const uid=en.employee_user_id;if(!uid)return;
-    const e=_emp(uid);const raw=en.minutes||0;
+    const raw=en.minutes||0;
     const a=Date.parse(en.arrived_at),b=en.departed_at?Date.parse(en.departed_at):a+raw*60000;
-    const overlapMin=Math.round(_ccOverlapMs(a,b,manualWindows[uid]||[])/60000);
-    const m=Math.max(0,raw-Math.min(raw,overlapMin));   // never below 0, never over raw
+    const day=_ctDateStr(new Date(en.arrived_at));
+    const cut=((shopCut[uid]||{})[day])||0;
+    const bEnd=(typeof _geoShopPaidEnd==='function')?_geoShopPaidEnd(en.arrived_at,new Date(b).toISOString(),cut):b;
+    const bounded=Math.max(0,Math.round((bEnd-a)/60000));
+    // Overlap is measured against the BOUNDED window, not the raw one: a
+    // manual clock outside the workday would otherwise be subtracted from
+    // minutes the clock-out already removed, double-docking the same time.
+    const overlapMin=Math.round(_ccOverlapMs(a,bEnd,manualWindows[uid]||[])/60000);
+    const m=Math.max(0,bounded-Math.min(bounded,overlapMin));   // never below 0, never over the bounded span
+    // Bucket created only once the session actually pays something, otherwise
+    // a person whose whole week was after-hours yard dwell renders as a 0.0h row.
+    if(m<1)return;
+    const e=_emp(uid);
     e.min+=m;e.shopMin+=m;
-    const day=_ctDateStr(new Date(en.arrived_at));e.dayMins[day]=(e.dayMins[day]||0)+m;
+    e.dayMins[day]=(e.dayMins[day]||0)+m;
   });
   // Revenue attribution + overtime per employee
   Object.keys(byEmp).forEach(uid=>{

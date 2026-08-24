@@ -128,6 +128,55 @@ function _tlStopAnchored(arrMs,depMs,anchors){
   }
   return before&&after&&workSide;
 }
+// A day should read as one continuous span, not a list of islands (owner
+// report 2026-08-24, Fri 8/21: on site until 11:37, unpaid lunch starting
+// 11:42, back on site at 12:45, so five minutes and then fourteen minutes of
+// the day belonged to no row at all). Those holes are the drive to and from
+// the stop: real minutes, but not deductible mileage (a lunch run is not a
+// business trip), so the mileage side correctly drops them and the time side
+// was left with nothing to show.
+//
+// The owner's own call on the first one, 2026-08-24: "the unpaid time leg
+// should absorb that 5 minutes." So an UNPAID row swallows the gap on either
+// side of it, door to door: leaving the job at 11:37 and being back at 12:45
+// is one 68-minute unpaid excursion.
+//
+// Only unpaid rows are ever stretched, which is what makes this safe: unpaid
+// minutes are excluded from every total, the OT flag, and the 24h day check,
+// so absorbing a gap changes what the day LOOKS like and can never change
+// what anyone is paid. Bounded at 30 minutes per gap for the same reason the
+// old data-side gap-absorb sweep is still disabled: an unexplained two-hour
+// hole is a missing record to investigate, not something to quietly swallow
+// (that is exactly how days grew past 24 hours). Anything bigger is left
+// visible. Display-only, nothing here writes.
+const _TL_GAP_ABSORB_MAX_MS=30*60000;
+function _tlAbsorbGaps(rows){
+  if(!Array.isArray(rows))return rows;
+  const byDay={};
+  rows.forEach(r=>{
+    if(!r||!r.startTime||!r.endTime||!r.date)return;
+    const a=Date.parse(r.startTime),b=Date.parse(r.endTime);
+    if(!(a>0&&b>=a))return;
+    ((byDay[(r.personUid||'owner')+'|'+r.date])=byDay[(r.personUid||'owner')+'|'+r.date]||[]).push(r);
+  });
+  Object.keys(byDay).forEach(k=>{
+    const day=byDay[k].sort((x,y)=>Date.parse(x.startTime)-Date.parse(y.startTime));
+    for(let i=1;i<day.length;i++){
+      const prev=day[i-1],next=day[i];
+      const pEnd=Date.parse(prev.endTime),nStart=Date.parse(next.startTime);
+      const gap=nStart-pEnd;
+      if(!(gap>0)||gap>_TL_GAP_ABSORB_MAX_MS)continue;
+      // The later row wins when both could take it: the travel that ends at a
+      // stop belongs to that stop, and a gap in front of a paid row is only
+      // ever absorbed by the unpaid row behind it.
+      const taker=next.unpaid?next:(prev.unpaid?prev:null);
+      if(!taker)continue;
+      if(taker===next)taker.startTime=prev.endTime;else taker.endTime=next.startTime;
+      taker.minutes=Math.max(0,Math.round((Date.parse(taker.endTime)-Date.parse(taker.startTime))/60000));
+    }
+  });
+  return rows;
+}
 async function _timeLogRows(sinceISO){
   const rows=[];
   timeEntries.forEach(e=>{
@@ -166,8 +215,22 @@ async function _timeLogRows(sinceISO){
   // hole in the day. Overlaying it closed nearly every gap in the owner's
   // week: Thu 8/20's 45-minute midday hole was the shop 12:33-1:18 exactly.
   //
-  // Paid, to match Crew Cost, and shown as its own kind so it never reads as
-  // job-site labor. dedupe/OT/running totals treat it like any paid row.
+  // PAID now, matching Crew Cost, but only inside the workday: the day auto
+  // clocks out at its last real work event (js/geo-track.js _geoShopCutoffs,
+  // see the rule comment there). Two owner reports on 2026-08-24 drove that,
+  // and one rule answers both: yard dwell AFTER the last job or supply run
+  // ("don't want shop time to calculate after the last job site or supply
+  // run of the day") and yard dwell on a day with NO job or supply fence at
+  // all both credit zero minutes, and a zero-credit session does not render.
+  // Nothing is being hidden, there is no gap to close after the day has
+  // ended, and a Saturday at the yard is not a shift.
+  const _shopCut=(typeof _geoShopCutoffs==='function')
+    ? _geoShopCutoffs((crew.entries||[]).concat(
+        timeEntries.filter(e=>!e.open&&e.start_time&&e.end_time).map(e=>({
+          employee_user_id:e.logged_by_uid||(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null,
+          departed_at:e.end_time,source:'manual'
+        }))))
+    : {};
   (crew.shopEntries||[]).forEach(e=>{
     if(!e||!e.arrived_at||!e.departed_at)return;
     const arr=Date.parse(e.arrived_at),dep=Date.parse(e.departed_at);
@@ -176,24 +239,25 @@ async function _timeLogRows(sinceISO){
     // that spans Central midnight is the truck sitting at the yard overnight,
     // not a shift, and must never land as paid time (owner rule 2026-08-24).
     const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
-    if(dstr(new Date(arr))!==dstr(new Date(dep)))return;
+    const day=dstr(new Date(arr));
+    if(day!==dstr(new Date(dep)))return;
+    const cut=((_shopCut[e.employee_user_id]||{})[day])||0;
+    const paidEnd=(typeof _geoShopPaidEnd==='function')?_geoShopPaidEnd(e.arrived_at,e.departed_at,cut):dep;
+    const mins=(typeof _geoShopPaidMin==='function')?_geoShopPaidMin(e.arrived_at,e.departed_at,cut):(e.minutes||0);
+    if(mins<1)return;   // after the auto clock-out, or a day with no work in it
+    // Trimmed by the clock-out rather than by the person leaving: show when
+    // the clock actually stopped and say why, so the rule is visible instead
+    // of quietly eating minutes. Exact edges (the common case) read plain.
+    const trimmed=paidEnd<dep-60000;
     rows.push({
       id:'s'+e.employee_user_id+'_'+e.arrived_at,
-      source:'shop',date:dstr(new Date(arr)),
-      minutes:e.minutes||Math.round((dep-arr)/60000),
+      source:'shop',date:day,minutes:mins,
       personName:crew.name[e.employee_user_id]||'Crew',personUid:e.employee_user_id,
       clientName:(typeof S!=='undefined'&&S&&S.bname)?S.bname:'Shop',
       addr:(typeof _geoShopAddr==='function'&&_geoShopAddr())||'',jobName:'',
-      // `unpaid` here means what it means everywhere in this file: tracked and
-      // shown, but OUT of the hours record. Deliberate default (owner review
-      // 2026-08-24): counting the raw dwell as paid would have added 19h38m to
-      // one week, including a 6h23m Monday-evening session ending 11:48pm and a
-      // 4h56m Wednesday one. That is the phone sitting at the yard after hours,
-      // not labor, and inflating payroll off presence is the exact failure this
-      // week was spent undoing. Crew Cost's own treatment is unchanged. Flip to
-      // false to pay it once after-hours dwell is bounded.
-      clientKey:null,unpaid:true,detail:'Shop',
-      startTime:e.arrived_at,endTime:e.departed_at,rawId:null,rawSource:'shop'
+      clientKey:null,unpaid:false,
+      detail:trimmed?'Shop · auto clock-out':'Shop',
+      startTime:e.arrived_at,endTime:new Date(paidEnd).toISOString(),rawId:null,rawSource:'shop'
     });
   });
   timeEntries.forEach(e=>{
@@ -236,7 +300,7 @@ async function _timeLogRows(sinceISO){
       rawId:e.id!=null?e.id:null,rawSource:e.source||''
     });
   });
-  return rows.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  return _tlAbsorbGaps(rows).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 }
 function _tlYears(rows){
   const years=[...new Set(rows.map(r=>(r.date||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort((a,b)=>b.localeCompare(a));
@@ -481,7 +545,10 @@ function _tlRow(r){
   // A lunch/off-job stop's own detail text is already the "Unpaid" the badge
   // says (owner request 2026-08-23), same not-repeated rule the driving row
   // already follows for its own badge just below.
-  const jobLine=[driveFromTo||r.clientName,(!driveFromTo&&r.jobName&&r.jobName!==r.clientName)?r.jobName:null,(isAutoDrive||r.unpaid)?null:(r.detail||null)]
+  // A plain shop row's detail is the literal word the Shop badge already
+  // shows, so it is dropped for the same not-repeated reason; the clock-out
+  // variant ('Shop · auto clock-out') carries new information and stays.
+  const jobLine=[driveFromTo||r.clientName,(!driveFromTo&&r.jobName&&r.jobName!==r.clientName)?r.jobName:null,(isAutoDrive||r.unpaid||r.detail==='Shop')?null:(r.detail||null)]
     .filter(Boolean).map(escHtml).join(' · ');
   // Amber (#9F5B00) is the SAME color drive time already gets in the Team
   // split bar/legend (_tlWeekOwnerHtml above), reused rather than invented

@@ -1542,6 +1542,67 @@ function _geoBindInteract(){
 // Time inside a known place's fence (a supply house). Paid work, but overhead
 // rather than labor on any one job, so it is grouped with drive time.
 function _geoIsPlaceSource(s){return String(s||'')==='place';}
+// ── Shop auto clock-out (owner rule 2026-08-24) ───────────────────────────
+// "Don't want shop time to calculate after the last job site or supply run
+// of the day", plus the matching report the same day that yard dwell on days
+// with NO job or supply fence at all was showing up on the log. Presence at
+// the yard is not a shift: the phone sits there after hours (one Monday
+// session ran to 11:48pm, 6h23m) and paying raw dwell would have added
+// 19h38m to a single week.
+//
+// So the day CLOCKS OUT by itself at the last verified work event of that
+// Central-time day: the last job-fence departure, saved-place (supply house)
+// departure, manual clock-out, or drive-leg end. Drive ends count on purpose,
+// the drive back from the last job ENDS at the yard, so it is what puts the
+// unload window on the clock rather than the job departure 30 minutes
+// earlier. An off-job stop (lunch) is not work and never extends the day.
+//
+// Shop dwell is then credited only up to that moment plus S.shopWrapMin, the
+// unload/paperwork allowance (default 0, the owner's ask was literally "not
+// after the last run"; set it to 15-30 to pay the unload). A day with NO work
+// event has no cutoff at all, so a Saturday spent at the yard credits zero,
+// the same anchor rule _tlStopAnchored (js/timelog.js) already applies to
+// unpaid stops.
+//
+// Read-time derivation on purpose: "the last event of the day" is unknowable
+// at the moment the row is written, and deriving it on read re-grades the
+// history already in the table instead of needing a repair sweep to rewrite
+// rows (§10, and the shared Supabase means a rewrite hits production).
+function _geoShopWrapMs(){
+  const n=Number((typeof S!=='undefined'&&S&&S.shopWrapMin)||0);
+  return (isFinite(n)&&n>0?Math.min(n,240):0)*60000;   // capped at 4h, never negative
+}
+// Last work moment per person per Central day, from job_time_entries-shaped
+// rows (manual clock entries mapped into the same shape count too).
+// Returns {uid:{'YYYY-MM-DD':ms}}.
+function _geoShopCutoffs(entries){
+  const out={};
+  const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
+  (Array.isArray(entries)?entries:[]).forEach(e=>{
+    if(!e||!e.employee_user_id)return;
+    if(typeof _geoIsOffJobSource==='function'&&_geoIsOffJobSource(e.source))return;
+    const end=Date.parse(e.departed_at||'')||0;
+    if(!(end>0))return;
+    const day=dstr(new Date(end));
+    const m=out[e.employee_user_id]=out[e.employee_user_id]||{};
+    if(!(m[day]>=end))m[day]=end;
+  });
+  return out;
+}
+// The instant a shop session stops earning. Never past the session's own
+// departure, never past the cutoff + allowance, and equal to the arrival
+// (zero credit) when the day had no work in it at all.
+function _geoShopPaidEnd(arrIso,depIso,cutoffMs){
+  const arr=Date.parse(arrIso||'')||0,dep=Date.parse(depIso||'')||0;
+  if(!(arr>0&&dep>arr))return arr;
+  if(!(cutoffMs>0))return arr;
+  return Math.max(arr,Math.min(dep,cutoffMs+_geoShopWrapMs()));
+}
+function _geoShopPaidMin(arrIso,depIso,cutoffMs){
+  const arr=Date.parse(arrIso||'')||0;
+  if(!(arr>0))return 0;
+  return Math.max(0,Math.round((_geoShopPaidEnd(arrIso,depIso,cutoffMs)-arr)/60000));
+}
 // Time at a known place, closed on departure. Bounded by a real fence at both
 // ends, so unlike an off-job stop this is verified work time.
 // Returns whether a row was actually enqueued, same contract as

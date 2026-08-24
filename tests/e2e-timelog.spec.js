@@ -390,6 +390,13 @@ test.describe('timelog.js: exhaustive coverage', () => {
   // Owner request 2026-08-24 ("why are there gaps between them"): shop/yard
   // dwell was tracked and paid in Crew Cost but never listed here, so every
   // hour at the yard read as a hole. It now renders as its own row kind.
+  //
+  // Two owner reports the same day then bounded it (js/geo-track.js
+  // _geoShopCutoffs): "don't want shop time to calculate after the last job
+  // site or supply run of the day", and yard dwell on days with no job or
+  // supply fence at all was showing. One rule answers both, the day auto
+  // clocks out at its last real work event, so both cases credit zero
+  // minutes and a zero-credit session never renders.
   test.describe('shop rows', () => {
     const withShop = (shopEntries, entries) => page.evaluate(async ([shopEntries, entries]) => {
       if (typeof timeEntries === 'undefined') window.timeEntries = [];
@@ -398,20 +405,81 @@ test.describe('timelog.js: exhaustive coverage', () => {
       try { return await _timeLogRows(null); } finally { window._fetchCrewLabor = orig; }
     }, [shopEntries, entries]);
 
-    test('a shop session renders as its own row, tracked but out of the hours record', async () => {
-      const rows = await withShop([{ employee_user_id: 'me', minutes: 44, arrived_at: '2026-08-20T17:33:52Z', departed_at: '2026-08-20T18:18:21Z' }]);
-      const shop = rows.find(r => r.source === 'shop');
-      expect(shop, 'the yard dwell is listed').toBeTruthy();
-      expect(shop.detail).toBe('Shop');
-      expect(shop.minutes).toBe(44);
-      expect(shop.unpaid, 'shown, but never silently added to paid hours').toBe(true);
+    // A full ordinary day in Central time (UTC-5 on this date):
+    //   06:30-07:30 load up at the yard   →  paid, it is inside the workday
+    //   08:00-16:00 on site at a job
+    //   16:00-16:30 drive back to the yard (this END is the auto clock-out)
+    //   16:30-23:48 phone sitting at the yard  →  zero, the day is over
+    const YARD_AM = { employee_user_id: 'me', minutes: 60, arrived_at: '2026-08-20T11:30:00Z', departed_at: '2026-08-20T12:30:00Z' };
+    const YARD_PM = { employee_user_id: 'me', minutes: 438, arrived_at: '2026-08-20T21:30:00Z', departed_at: '2026-08-21T04:48:00Z' };
+    const JOB = { employee_user_id: 'me', job_id: '9', minutes: 480, arrived_at: '2026-08-20T13:00:00Z', departed_at: '2026-08-20T21:00:00Z', source: 'geofence' };
+    const DRIVE_HOME = { employee_user_id: 'me', job_id: null, minutes: 30, arrived_at: '2026-08-20T21:00:00Z', departed_at: '2026-08-20T21:30:00Z', source: 'drive' };
+
+    test('yard time inside the workday is paid and listed', async () => {
+      const rows = await withShop([YARD_AM], [JOB, DRIVE_HOME]);
+      const shop = rows.filter(r => r.source === 'shop');
+      expect(shop.length, 'the morning load-up is listed').toBe(1);
+      expect(shop[0].detail).toBe('Shop');
+      expect(shop[0].minutes).toBe(60);
+      expect(shop[0].unpaid, 'inside the workday, so it counts').toBe(false);
+    });
+
+    test('yard time after the day\'s last job or supply run never renders', async () => {
+      const rows = await withShop([YARD_AM, YARD_PM], [JOB, DRIVE_HOME]);
+      const shop = rows.filter(r => r.source === 'shop');
+      expect(shop.length, 'the 7h18m evening sit at the yard is not a shift').toBe(1);
+      expect(shop[0].startTime).toBe(YARD_AM.arrived_at);
+      expect(shop.reduce((s, r) => s + r.minutes, 0), 'only the load-up pays').toBe(60);
+    });
+
+    test('a day with no job or supply fence at all shows no yard time', async () => {
+      const rows = await withShop([YARD_AM, YARD_PM], []);
+      expect(rows.filter(r => r.source === 'shop').length, 'a Saturday at the yard is not a shift').toBe(0);
+    });
+
+    test('a lunch stop is not work and never extends the day', async () => {
+      // The only non-shop row of the day is an off-job stop. It must not act
+      // as the day's last work event and drag the evening dwell into pay.
+      const rows = await withShop([YARD_PM], [
+        { employee_user_id: 'me', job_id: null, minutes: 45, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T17:45:00Z', source: 'stop' },
+      ]);
+      expect(rows.filter(r => r.source === 'shop').length).toBe(0);
+    });
+
+    test('the wrap-up allowance pays the unload and labels the clock-out', async () => {
+      const rows = await page.evaluate(async ([shopEntries, entries]) => {
+        if (typeof timeEntries === 'undefined') window.timeEntries = [];
+        const orig = window._fetchCrewLabor, prev = S.shopWrapMin;
+        window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries, shopEntries });
+        S.shopWrapMin = 30;
+        try { return await _timeLogRows(null); } finally { window._fetchCrewLabor = orig; S.shopWrapMin = prev; }
+      }, [[YARD_PM], [JOB, DRIVE_HOME]]);
+      const shop = rows.filter(r => r.source === 'shop');
+      expect(shop.length).toBe(1);
+      expect(shop[0].minutes, '30 minutes of unload, not the whole evening').toBe(30);
+      expect(shop[0].detail, 'the rule is visible, not silently eating minutes').toBe('Shop · auto clock-out');
+      expect(shop[0].endTime, 'the row ends when the clock stopped').toBe('2026-08-20T22:00:00.000Z');
+    });
+
+    test('a manual clock-out counts as the day\'s last work event', async () => {
+      const rows = await page.evaluate(async ([shopEntries]) => {
+        const origEnts = timeEntries.slice();
+        // logged_by_uid must name the same person as the shop session: in the
+        // app an owner's manual rows carry null and fall back to the
+        // contractor uid, which IS that person, but a fixture has to say so.
+        timeEntries.push({ id: 'tlman1', logged_by_uid: 'me', job_id: null, minutes: 60, start_time: '2026-08-20T13:00:00Z', end_time: '2026-08-20T21:35:00Z', date: '2026-08-20' });
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries: [], shopEntries });
+        try { return await _timeLogRows(null); } finally { window._fetchCrewLabor = orig; timeEntries.length = 0; timeEntries.push(...origEnts); }
+      }, [[YARD_AM]]);
+      expect(rows.filter(r => r.source === 'shop').length, 'a hand-logged day still bounds the yard').toBe(1);
     });
 
     test('a shop dwell spanning Central midnight never renders', async () => {
       const rows = await withShop([
         // 8:00pm CT to 7:00am CT the next day: the truck parked at the yard.
         { employee_user_id: 'me', minutes: 660, arrived_at: '2026-08-21T01:00:00Z', departed_at: '2026-08-21T12:00:00Z' },
-      ]);
+      ], [JOB, DRIVE_HOME]);
       expect(rows.filter(r => r.source === 'shop').length, 'an overnight park is not a shift').toBe(0);
     });
 
@@ -420,32 +488,170 @@ test.describe('timelog.js: exhaustive coverage', () => {
         { employee_user_id: 'me', minutes: 0, arrived_at: '2026-08-20T17:33:52Z', departed_at: '2026-08-20T17:33:52Z' },
         { employee_user_id: 'me', minutes: 5, arrived_at: null, departed_at: '2026-08-20T18:00:00Z' },
         { employee_user_id: 'me', minutes: 5, arrived_at: '2026-08-20T18:00:00Z', departed_at: null },
-      ]);
+      ], [JOB, DRIVE_HOME]);
       expect(rows.filter(r => r.source === 'shop').length).toBe(0);
+    });
+
+    test('cutoff helper: last work end per person per Central day, lunches excluded', async () => {
+      const r = await page.evaluate(() => _geoShopCutoffs([
+        { employee_user_id: 'me', departed_at: '2026-08-20T21:00:00Z', source: 'geofence' },
+        { employee_user_id: 'me', departed_at: '2026-08-20T21:30:00Z', source: 'drive' },
+        { employee_user_id: 'me', departed_at: '2026-08-21T02:00:00Z', source: 'stop' },
+        { employee_user_id: 'you', departed_at: '2026-08-20T19:00:00Z', source: 'place' },
+        { employee_user_id: 'me', departed_at: null, source: 'geofence' },
+      ]));
+      expect(r.me['2026-08-20'], 'the drive home, the latest real work moment').toBe(Date.parse('2026-08-20T21:30:00Z'));
+      expect(r.you['2026-08-20']).toBe(Date.parse('2026-08-20T19:00:00Z'));
+      expect(Object.keys(r).sort(), 'nobody invented, nothing from a null departure').toEqual(['me', 'you']);
+    });
+
+    test('paid-minute helper: bounded, never negative, zero without a cutoff', async () => {
+      const r = await page.evaluate(() => {
+        const cut = Date.parse('2026-08-20T21:30:00Z');
+        return {
+          inside: _geoShopPaidMin('2026-08-20T11:30:00Z', '2026-08-20T12:30:00Z', cut),
+          after: _geoShopPaidMin('2026-08-20T21:30:00Z', '2026-08-21T04:48:00Z', cut),
+          straddle: _geoShopPaidMin('2026-08-20T21:00:00Z', '2026-08-21T04:48:00Z', cut),
+          noCutoff: _geoShopPaidMin('2026-08-20T11:30:00Z', '2026-08-20T12:30:00Z', 0),
+          backwards: _geoShopPaidMin('2026-08-20T12:30:00Z', '2026-08-20T11:30:00Z', cut),
+          junk: _geoShopPaidMin(null, undefined, cut),
+        };
+      });
+      expect(r.inside).toBe(60);
+      expect(r.after, 'the day already clocked out').toBe(0);
+      expect(r.straddle, 'only the part inside the workday').toBe(30);
+      expect(r.noCutoff, 'no work that day, so no shift').toBe(0);
+      expect(r.backwards).toBe(0);
+      expect(r.junk).toBe(0);
+    });
+
+    test('the wrap-up allowance is clamped, never negative or unbounded', async () => {
+      const r = await page.evaluate(() => {
+        const prev = S.shopWrapMin, out = {};
+        for (const [k, v] of [['none', undefined], ['neg', -30], ['junk', 'abc'], ['big', 9999], ['ok', 20]]) {
+          S.shopWrapMin = v; out[k] = _geoShopWrapMs();
+        }
+        S.shopWrapMin = prev; return out;
+      });
+      expect(r.none).toBe(0);
+      expect(r.neg).toBe(0);
+      expect(r.junk).toBe(0);
+      expect(r.big, 'capped at 4 hours').toBe(240 * 60000);
+      expect(r.ok).toBe(20 * 60000);
     });
 
     test('shop minutes land in their own bucket, never inflating job-site labor', async () => {
       const agg = await page.evaluate(() => _tlEmpWeekAgg([
         { personUid: 'me', personName: 'Logan', source: 'auto', detail: '', minutes: 268 },
         { personUid: 'me', personName: 'Logan', source: 'auto', detail: 'drive', minutes: 9 },
-        { personUid: 'me', personName: 'Logan', source: 'shop', detail: 'Shop', minutes: 44, unpaid: true },
+        { personUid: 'me', personName: 'Logan', source: 'shop', detail: 'Shop', minutes: 44, unpaid: false },
       ], 'me'));
       const e = agg.me;
       expect(e.onsiteMin, 'shop time is not job-site time').toBe(268);
       expect(e.driveMin).toBe(9);
-      // The unpaid guard runs first, so an unpaid shop row contributes nothing
-      // to the paid total or to any bucket, exactly like a lunch stop.
-      expect(e.shopMin || 0).toBe(0);
-      expect(e.min).toBe(277);
+      expect(e.shopMin).toBe(44);
+      expect(e.min).toBe(321);
     });
 
-    test('a PAID shop row (if ever enabled) buckets as shop, not on-site', async () => {
+    test('an unpaid row of any kind still contributes nothing', async () => {
       const agg = await page.evaluate(() => _tlEmpWeekAgg([
         { personUid: 'me', personName: 'Logan', source: 'auto', detail: '', minutes: 268 },
-        { personUid: 'me', personName: 'Logan', source: 'shop', detail: 'Shop', minutes: 44, unpaid: false },
+        { personUid: 'me', personName: 'Logan', source: 'shop', detail: 'Shop', minutes: 44, unpaid: true },
       ], 'me'));
-      expect(agg.me.shopMin).toBe(44);
-      expect(agg.me.onsiteMin, 'never folded into job-site labor').toBe(268);
+      expect(agg.me.shopMin || 0).toBe(0);
+      expect(agg.me.min).toBe(268);
+    });
+  });
+
+  // Owner report 2026-08-24 (Fri 8/21 screenshot): on site to 11:37, unpaid
+  // lunch 11:42-12:31, back on site 12:45, so 5 then 14 minutes of the day
+  // belonged to no row. Those are the drives to and from the stop, dropped
+  // from mileage because a lunch run is not deductible, and the owner's call
+  // was "the unpaid time leg should absorb that 5 minutes."
+  test.describe('gap absorption', () => {
+    const FRI = () => ([
+      { id: 'a1', personUid: 'me', date: '2026-08-21', minutes: 222, unpaid: false, startTime: '2026-08-21T12:55:00Z', endTime: '2026-08-21T16:37:00Z' },
+      { id: 'a2', personUid: 'me', date: '2026-08-21', minutes: 49, unpaid: true, startTime: '2026-08-21T16:42:00Z', endTime: '2026-08-21T17:31:00Z' },
+      { id: 'a3', personUid: 'me', date: '2026-08-21', minutes: 262, unpaid: false, startTime: '2026-08-21T17:45:00Z', endTime: '2026-08-21T22:07:00Z' },
+    ]);
+    const absorb = rows => page.evaluate(r => _tlAbsorbGaps(r), rows);
+
+    test('the unpaid stop swallows the travel on both sides, door to door', async () => {
+      const r = await absorb(FRI());
+      const stop = r.find(x => x.id === 'a2');
+      expect(stop.startTime, 'starts when he left the job, not when he arrived at lunch').toBe('2026-08-21T16:37:00Z');
+      expect(stop.endTime, 'ends when he was back on site').toBe('2026-08-21T17:45:00Z');
+      expect(stop.minutes).toBe(68);
+    });
+
+    test('paid rows are never touched, so no total can move', async () => {
+      const before = FRI(), r = await absorb(FRI());
+      const paid = r.filter(x => !x.unpaid);
+      expect(paid.map(x => x.minutes)).toEqual(before.filter(x => !x.unpaid).map(x => x.minutes));
+      expect(paid.map(x => x.startTime + '|' + x.endTime))
+        .toEqual(before.filter(x => !x.unpaid).map(x => x.startTime + '|' + x.endTime));
+    });
+
+    test('a gap over 30 minutes stays visible: a missing record, not something to swallow', async () => {
+      const rows = FRI();
+      rows[2].startTime = '2026-08-21T18:20:00Z';   // 49 minutes after the stop ended
+      const r = await absorb(rows);
+      expect(r.find(x => x.id === 'a2').endTime, 'left alone to be investigated').toBe('2026-08-21T17:31:00Z');
+      expect(r.find(x => x.id === 'a2').startTime, 'the 5-minute side is still absorbed').toBe('2026-08-21T16:37:00Z');
+    });
+
+    test('a gap between two paid rows with no unpaid neighbor is left alone', async () => {
+      const r = await absorb([
+        { id: 'b1', personUid: 'me', date: '2026-08-21', minutes: 60, unpaid: false, startTime: '2026-08-21T12:00:00Z', endTime: '2026-08-21T13:00:00Z' },
+        { id: 'b2', personUid: 'me', date: '2026-08-21', minutes: 60, unpaid: false, startTime: '2026-08-21T13:10:00Z', endTime: '2026-08-21T14:10:00Z' },
+      ]);
+      expect(r.map(x => x.minutes), 'nothing to stretch without an unpaid row').toEqual([60, 60]);
+    });
+
+    test('overlapping rows are not stretched backwards', async () => {
+      const r = await absorb([
+        { id: 'c1', personUid: 'me', date: '2026-08-21', minutes: 60, unpaid: false, startTime: '2026-08-21T12:00:00Z', endTime: '2026-08-21T13:00:00Z' },
+        { id: 'c2', personUid: 'me', date: '2026-08-21', minutes: 30, unpaid: true, startTime: '2026-08-21T12:40:00Z', endTime: '2026-08-21T13:10:00Z' },
+      ]);
+      expect(r.find(x => x.id === 'c2').startTime).toBe('2026-08-21T12:40:00Z');
+      expect(r.find(x => x.id === 'c2').minutes).toBe(30);
+    });
+
+    test('never reaches across people or across days', async () => {
+      const r = await absorb([
+        { id: 'd1', personUid: 'me', date: '2026-08-21', minutes: 60, unpaid: false, startTime: '2026-08-21T12:00:00Z', endTime: '2026-08-21T13:00:00Z' },
+        { id: 'd2', personUid: 'you', date: '2026-08-21', minutes: 30, unpaid: true, startTime: '2026-08-21T13:05:00Z', endTime: '2026-08-21T13:35:00Z' },
+        { id: 'd3', personUid: 'me', date: '2026-08-22', minutes: 30, unpaid: true, startTime: '2026-08-21T13:05:00Z', endTime: '2026-08-21T13:35:00Z' },
+      ]);
+      expect(r.find(x => x.id === 'd2').minutes, 'another person is not the same timeline').toBe(30);
+      expect(r.find(x => x.id === 'd3').minutes, 'another day is not the same timeline').toBe(30);
+    });
+
+    test('malformed or open rows are skipped without throwing', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          return {
+            ok: true,
+            rows: _tlAbsorbGaps([
+              null,
+              { id: 'e1', personUid: 'me', date: '2026-08-21', minutes: 60, unpaid: false, startTime: '2026-08-21T12:00:00Z', endTime: null },
+              { id: 'e2', personUid: 'me', date: '2026-08-21', minutes: 30, unpaid: true, startTime: 'nope', endTime: 'nope' },
+              { id: 'e3', personUid: 'me', minutes: 30, unpaid: true, startTime: '2026-08-21T13:05:00Z', endTime: '2026-08-21T13:35:00Z' },
+            ]).length,
+          };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.rows, 'nothing dropped, only skipped').toBe(4);
+    });
+
+    test('empty and non-array input return without throwing', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, a: _tlAbsorbGaps([]).length, b: _tlAbsorbGaps(null), c: _tlAbsorbGaps(undefined) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.a).toBe(0);
     });
   });
 
