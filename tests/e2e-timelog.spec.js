@@ -387,6 +387,68 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
   });
 
+  // Owner request 2026-08-24 ("why are there gaps between them"): shop/yard
+  // dwell was tracked and paid in Crew Cost but never listed here, so every
+  // hour at the yard read as a hole. It now renders as its own row kind.
+  test.describe('shop rows', () => {
+    const withShop = (shopEntries, entries) => page.evaluate(async ([shopEntries, entries]) => {
+      if (typeof timeEntries === 'undefined') window.timeEntries = [];
+      const orig = window._fetchCrewLabor;
+      window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries: entries || [], shopEntries });
+      try { return await _timeLogRows(null); } finally { window._fetchCrewLabor = orig; }
+    }, [shopEntries, entries]);
+
+    test('a shop session renders as its own row, tracked but out of the hours record', async () => {
+      const rows = await withShop([{ employee_user_id: 'me', minutes: 44, arrived_at: '2026-08-20T17:33:52Z', departed_at: '2026-08-20T18:18:21Z' }]);
+      const shop = rows.find(r => r.source === 'shop');
+      expect(shop, 'the yard dwell is listed').toBeTruthy();
+      expect(shop.detail).toBe('Shop');
+      expect(shop.minutes).toBe(44);
+      expect(shop.unpaid, 'shown, but never silently added to paid hours').toBe(true);
+    });
+
+    test('a shop dwell spanning Central midnight never renders', async () => {
+      const rows = await withShop([
+        // 8:00pm CT to 7:00am CT the next day: the truck parked at the yard.
+        { employee_user_id: 'me', minutes: 660, arrived_at: '2026-08-21T01:00:00Z', departed_at: '2026-08-21T12:00:00Z' },
+      ]);
+      expect(rows.filter(r => r.source === 'shop').length, 'an overnight park is not a shift').toBe(0);
+    });
+
+    test('a zero-length or malformed shop session is skipped', async () => {
+      const rows = await withShop([
+        { employee_user_id: 'me', minutes: 0, arrived_at: '2026-08-20T17:33:52Z', departed_at: '2026-08-20T17:33:52Z' },
+        { employee_user_id: 'me', minutes: 5, arrived_at: null, departed_at: '2026-08-20T18:00:00Z' },
+        { employee_user_id: 'me', minutes: 5, arrived_at: '2026-08-20T18:00:00Z', departed_at: null },
+      ]);
+      expect(rows.filter(r => r.source === 'shop').length).toBe(0);
+    });
+
+    test('shop minutes land in their own bucket, never inflating job-site labor', async () => {
+      const agg = await page.evaluate(() => _tlEmpWeekAgg([
+        { personUid: 'me', personName: 'Logan', source: 'auto', detail: '', minutes: 268 },
+        { personUid: 'me', personName: 'Logan', source: 'auto', detail: 'drive', minutes: 9 },
+        { personUid: 'me', personName: 'Logan', source: 'shop', detail: 'Shop', minutes: 44, unpaid: true },
+      ], 'me'));
+      const e = agg.me;
+      expect(e.onsiteMin, 'shop time is not job-site time').toBe(268);
+      expect(e.driveMin).toBe(9);
+      // The unpaid guard runs first, so an unpaid shop row contributes nothing
+      // to the paid total or to any bucket, exactly like a lunch stop.
+      expect(e.shopMin || 0).toBe(0);
+      expect(e.min).toBe(277);
+    });
+
+    test('a PAID shop row (if ever enabled) buckets as shop, not on-site', async () => {
+      const agg = await page.evaluate(() => _tlEmpWeekAgg([
+        { personUid: 'me', personName: 'Logan', source: 'auto', detail: '', minutes: 268 },
+        { personUid: 'me', personName: 'Logan', source: 'shop', detail: 'Shop', minutes: 44, unpaid: false },
+      ], 'me'));
+      expect(agg.me.shopMin).toBe(44);
+      expect(agg.me.onsiteMin, 'never folded into job-site labor').toBe(268);
+    });
+  });
+
   // Pure anchor math for the owner's 2026-08-24 rule. All times below are
   // built from fixed UTC instants that sit mid-day Central, except the
   // midnight cases which exist to prove the Central-day boundary is the one

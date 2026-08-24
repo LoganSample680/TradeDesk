@@ -159,6 +159,43 @@ async function _timeLogRows(sinceISO){
   (crew.shopEntries||[]).forEach(e=>{
     if(e&&e.arrived_at&&e.departed_at)_anchorPush(e.employee_user_id,e.arrived_at,e.departed_at,true);
   });
+  // Shop/yard dwell as its own row (owner request 2026-08-24, "why are there
+  // gaps between them"): shop time was tracked and already PAID in Crew Cost
+  // (js/finance.js _openCrewCost adds it straight into e.min), but the Time
+  // Log listed only job and drive rows, so every hour at the yard read as a
+  // hole in the day. Overlaying it closed nearly every gap in the owner's
+  // week: Thu 8/20's 45-minute midday hole was the shop 12:33-1:18 exactly.
+  //
+  // Paid, to match Crew Cost, and shown as its own kind so it never reads as
+  // job-site labor. dedupe/OT/running totals treat it like any paid row.
+  (crew.shopEntries||[]).forEach(e=>{
+    if(!e||!e.arrived_at||!e.departed_at)return;
+    const arr=Date.parse(e.arrived_at),dep=Date.parse(e.departed_at);
+    if(!(arr>0&&dep>arr))return;
+    // Same physical-impossibility bound the rest of the log honors: a dwell
+    // that spans Central midnight is the truck sitting at the yard overnight,
+    // not a shift, and must never land as paid time (owner rule 2026-08-24).
+    const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
+    if(dstr(new Date(arr))!==dstr(new Date(dep)))return;
+    rows.push({
+      id:'s'+e.employee_user_id+'_'+e.arrived_at,
+      source:'shop',date:dstr(new Date(arr)),
+      minutes:e.minutes||Math.round((dep-arr)/60000),
+      personName:crew.name[e.employee_user_id]||'Crew',personUid:e.employee_user_id,
+      clientName:(typeof S!=='undefined'&&S&&S.bname)?S.bname:'Shop',
+      addr:(typeof _geoShopAddr==='function'&&_geoShopAddr())||'',jobName:'',
+      // `unpaid` here means what it means everywhere in this file: tracked and
+      // shown, but OUT of the hours record. Deliberate default (owner review
+      // 2026-08-24): counting the raw dwell as paid would have added 19h38m to
+      // one week, including a 6h23m Monday-evening session ending 11:48pm and a
+      // 4h56m Wednesday one. That is the phone sitting at the yard after hours,
+      // not labor, and inflating payroll off presence is the exact failure this
+      // week was spent undoing. Crew Cost's own treatment is unchanged. Flip to
+      // false to pay it once after-hours dwell is bounded.
+      clientKey:null,unpaid:true,detail:'Shop',
+      startTime:e.arrived_at,endTime:e.departed_at,rawId:null,rawSource:'shop'
+    });
+  });
   timeEntries.forEach(e=>{
     if(e.open||!e.start_time||!e.end_time)return;
     // null logged_by_uid means the owner, the same convention the geo/dedup
@@ -449,7 +486,9 @@ function _tlRow(r){
   // Amber (#9F5B00) is the SAME color drive time already gets in the Team
   // split bar/legend (_tlWeekOwnerHtml above), reused rather than invented
   // (§7.3) so "amber" means "driving" consistently everywhere on this page.
-  const sourceTag=r.unpaid
+  const sourceTag=r.source==='shop'
+    ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:#0E6B6B">'+svgIcon('🔧',{size:9})+' Shop</span>'
+    :r.unpaid
     ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('🍽',{size:9})+' Unpaid</span>'
     :r.source==='auto'
       ?(isAutoDrive
@@ -462,7 +501,7 @@ function _tlRow(r){
   // nothing and reads clearer on a fast scroll down a long day). Unpaid gets
   // a neutral gray accent, same idea, so it never reads as ordinary paid time
   // on a fast scroll down the day.
-  const rowAccent=isAutoDrive?' style="border-left:3px solid #9F5B00"':r.unpaid?' style="border-left:3px solid var(--border2)"':'';
+  const rowAccent=isAutoDrive?' style="border-left:3px solid #9F5B00"':r.source==='shop'?' style="border-left:3px solid #0E6B6B"':r.unpaid?' style="border-left:3px solid var(--border2)"':'';
   return '<tr'+lpAttrs+rowAccent+'>'+
     '<td class="bold" data-label="Person">'+escHtml(r.personName)+'</td>'+
     '<td data-label="Job site">'+
@@ -582,10 +621,14 @@ function _tlEmpWeekAgg(rows,cid){
   rows.forEach(r=>{
     if(r.unpaid)return;
     const uid=r.personUid||cid;
-    const e=byEmp[uid]||(byEmp[uid]={min:0,onsiteMin:0,driveMin:0,placeMin:0,weekOT:false,name:r.personName});
+    const e=byEmp[uid]||(byEmp[uid]={min:0,onsiteMin:0,driveMin:0,placeMin:0,shopMin:0,weekOT:false,name:r.personName});
     e.min+=r.minutes||0;
     if(r.weekOT)e.weekOT=true;
-    if(r.source==='manual')e.onsiteMin+=r.minutes||0;
+    // Shop/yard dwell is its own bucket (owner request 2026-08-24): it is paid
+    // like Crew Cost pays it, but it is NOT job-site labor and must never
+    // inflate that number on the split bar.
+    if(r.source==='shop')e.shopMin+=r.minutes||0;
+    else if(r.source==='manual')e.onsiteMin+=r.minutes||0;
     else if(typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(r.detail))e.driveMin+=r.minutes||0;
     else if(typeof _geoIsPlaceSource==='function'&&_geoIsPlaceSource(r.detail))e.placeMin+=r.minutes||0;
     else e.onsiteMin+=r.minutes||0;
@@ -628,14 +671,16 @@ function _tlWeekOwnerHtml(byEmp,selfUid){
     if(e.onsiteMin>3)parts.push('On-site '+fm(e.onsiteMin));
     if(e.driveMin>3)parts.push('Drive '+fm(e.driveMin));
     if(e.placeMin>3)parts.push('Supply/other '+fm(e.placeMin));
-    const total=(e.onsiteMin+e.driveMin+e.placeMin)||1;
-    const pOn=(e.onsiteMin/total*100).toFixed(1),pDr=(e.driveMin/total*100).toFixed(1),pPl=(e.placeMin/total*100).toFixed(1);
+    if((e.shopMin||0)>3)parts.push('Shop '+fm(e.shopMin));
+    const total=(e.onsiteMin+e.driveMin+e.placeMin+(e.shopMin||0))||1;
+    const pOn=(e.onsiteMin/total*100).toFixed(1),pDr=(e.driveMin/total*100).toFixed(1),pPl=(e.placeMin/total*100).toFixed(1),
+          pSh=((e.shopMin||0)/total*100).toFixed(1);
     const otBadge=e.weekOT?'<span class="tl-ot-badge" title="'+escHtml(name)+' logged 40+ hrs this week, verify overtime eligibility with your state; not payroll advice">OT</span>':'';
     const youTag=(selfUid&&String(uid)===String(selfUid))?' <span style="color:var(--text3);font-weight:600;font-size:11px">(you)</span>':'';
     return '<div class="tl-emp-row'+(e.weekOT?' ot':'')+'">'+
       '<div class="tl-avatar" style="background:'+pal.bg+';color:'+pal.fg+'">'+escHtml(_tlAvatarLabel(name))+'</div>'+
       '<div class="tl-emp-mid"><div class="tl-emp-name-row"><span class="tl-emp-name">'+escHtml(name)+'</span>'+youTag+otBadge+'</div>'+
-        '<div class="tl-split"><div class="tl-split-bar"><span style="width:'+pOn+'%;background:var(--blue)"></span><span style="width:'+pDr+'%;background:#9F5B00"></span><span style="width:'+pPl+'%;background:var(--text3)"></span></div>'+
+        '<div class="tl-split"><div class="tl-split-bar"><span style="width:'+pOn+'%;background:var(--blue)"></span><span style="width:'+pDr+'%;background:#9F5B00"></span><span style="width:'+pPl+'%;background:var(--text3)"></span><span style="width:'+pSh+'%;background:var(--c-teal,#0E6B6B)"></span></div>'+
         '<div class="tl-split-legend">'+parts.join(' · ')+'</div></div></div>'+
       '<div class="tl-emp-total">'+fm(e.min)+'</div>'+
     '</div>';
