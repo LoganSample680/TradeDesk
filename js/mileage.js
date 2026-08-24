@@ -943,6 +943,74 @@ async function _mileWorkdaySweep(){
     return 0;
   }
 }
+// ── Clear the flights already in the log (owner ask 2026-08-24, mid-air) ────
+// The ceiling in geo-track.js (_GEO_MAX_DRIVE_MPH) stops the NEXT flight from
+// booking itself as a drive. This clears the ones already logged, using the
+// same test on the row's own stored endpoints and wheel time, so nothing has
+// to be deleted by hand.
+//
+// Same conservative shape as _mileWorkdaySweep above: automatic GPS rows only
+// (a hand-typed trip is the contractor's own statement and is never touched),
+// never a row tied to a client, never a stop with a receipt against it, and
+// capped per session so a bad rule can't empty the log. Deleting the mileage
+// row is also what clears the flight's paid wheel time: _geoSyncDriveTimeEntries
+// drops any drive entry whose legKey no longer has a mileage row.
+const _MILE_FLIGHT_CAP=25;
+async function _mileFlightSweep(){
+  try{
+    if(window._mileFlightSweepRan)return 0;
+    if(typeof mileage==='undefined'||!Array.isArray(mileage)||!mileage.length)return 0;
+    if(typeof _geoLegIsImpossible!=='function')return 0;
+    window._mileFlightSweepRan=true;
+    const drop=[];
+    for(const m of mileage){
+      if(drop.length>=_MILE_FLIGHT_CAP)break;
+      if(!m||!m.gps)continue;
+      if(m.client_id!=null)continue;
+      const f=m.fromCoord,t=m.toCoord;
+      if(!f||!t||f.lat==null||t.lat==null)continue;
+      // The row's own wheel time, or the clock span it was logged across.
+      let mins=Number(m.mins)||0;
+      if(!(mins>0)){
+        const a=Date.parse(m.startedIso||'')||0,b=Date.parse(m.endedIso||'')||0;
+        if(a>0&&b>a)mins=(b-a)/60000;
+      }
+      if(!(mins>0))continue;                       // nothing to judge, leave it
+      if(!_geoLegIsImpossible({lat:f.lat,lng:f.lng},{lat:t.lat,lng:t.lng},mins))continue;
+      const day=m.date||((typeof _ctDateStr==='function')?_ctDateStr(new Date(Date.parse(m.startedIso||'')||Date.now())):todayKey());
+      const ends=[t,f].filter(c=>c&&c.lat!=null);
+      if(typeof _bizReceiptForStop==='function'&&
+         ends.some(c=>_bizReceiptForStop({lat:c.lat,lng:c.lng,name:m.to_name||'',day})))continue;
+      drop.push(m);
+    }
+    if(!drop.length)return 0;
+    for(const m of drop){
+      const i=mileage.indexOf(m);if(i<0)continue;
+      mileage.splice(i,1);
+      try{if(typeof _geoParkNote==='function')_geoParkNote('mile-not-a-drive',
+        (m.from_name||'?')+' to '+(m.to_name||'?')+' '+(m.miles||0)+'mi '+(m.startedIso||''));}catch(_e){}
+      if(m.id!=null){
+        if(typeof _recordLocalDelete==='function')_recordLocalDelete('td_mileage',m.id);
+        try{
+          const uid=(typeof _effectiveUid==='function'&&_effectiveUid())||(window._supaUser&&window._supaUser.id);
+          if(window._supa&&uid)_supa.from('td_mileage').delete().eq('id',String(m.id)).eq('user_id',uid).then(()=>{},()=>{});
+        }catch(_e){}
+      }
+    }
+    // Reporting is deliberately OUTSIDE the try that guards the decision, the
+    // same split _milePersonalStopSweep needed: a repaint that throws must not
+    // turn a completed cleanup into a reported zero.
+    try{
+      if(typeof saveAll==='function')saveAll();
+      if(document.getElementById('mil-table')&&typeof renderAllMileage==='function')renderAllMileage();
+      if(typeof renderDash==='function')renderDash();
+    }catch(_e){}
+    return drop.length;
+  }catch(_e){
+    try{if(typeof _geoParkNote==='function')_geoParkNote('mile-not-a-drive-err',(_e&&_e.message)||String(_e));}catch(_e2){}
+    return 0;
+  }
+}
 const _MILE_DEDUP_DEST_FT=1500;         // fence radius + GPS scatter
 const _MILE_DEDUP_SLACK_MS=10*60000;    // manual rows only: loggedAt is a tap, not a clock
 function _mileTripWindow(m){

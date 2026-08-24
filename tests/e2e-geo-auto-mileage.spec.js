@@ -6428,4 +6428,153 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // Owner report 2026-08-24, from the air: a flight was still tacking on
+  // mileage. A phone on a plane takes a fix at the gate, loses the sky, and
+  // takes another one several hundred miles later; the fence machine reads
+  // that as one leg and the router measures a DRIVING route between two
+  // airports. Nothing was checking whether a vehicle could have done it.
+  //
+  // The test is straight-line distance over the leg's own wheel time, which
+  // is a conservative floor (real roads are longer than the crow's route), so
+  // the ceiling never touches real driving.
+  test.describe('the flight ceiling', () => {
+    // 1 degree of latitude is about 69 miles, so these are comfortably clear
+    // of the 100mph line rather than sitting on it.
+    const impossible = (dLat, mins) => page.evaluate(([d, m]) =>
+      _geoLegIsImpossible({ lat: 38, lng: -94 }, { lat: 38 + d, lng: -94 }, m), [dLat, mins]);
+
+    test('a flight is refused', async () => {
+      expect(await impossible(0.80, 30), '55 miles in half an hour is not a drive').toBe(true);
+    });
+
+    test('a long highway haul is kept', async () => {
+      expect(await impossible(0.65, 30), '45 miles in half an hour is ordinary interstate').toBe(false);
+      expect(await impossible(3.0, 180), '207 miles in three hours is a real drive').toBe(false);
+    });
+
+    test('a GPS teleport is refused too, same shape', async () => {
+      expect(await impossible(6.0, 4), '414 miles in four minutes').toBe(true);
+    });
+
+    test('a short leg is never judged on a ratio', async () => {
+      expect(await impossible(0.40, 3), 'under the 30-mile floor, whatever the ratio').toBe(false);
+    });
+
+    test('no wheel time, no verdict: it fails open', async () => {
+      expect(await impossible(6.0, 0)).toBe(false);
+      expect(await impossible(6.0, 2), 'under three minutes there is nothing to divide by').toBe(false);
+    });
+
+    test('junk input never throws and never refuses a leg', async () => {
+      const out = await page.evaluate(() => ({
+        nulls: _geoLegIsImpossible(null, null, 60),
+        noFrom: _geoLegIsImpossible(null, { lat: 38, lng: -94 }, 60),
+        noLat: _geoLegIsImpossible({ lng: -94 }, { lat: 38, lng: -94 }, 60),
+        noArgs: _geoLegIsImpossible(),
+        strMins: _geoLegIsImpossible({ lat: 38, lng: -94 }, { lat: 45, lng: -94 }, 'sixty'),
+        negMins: _geoLegIsImpossible({ lat: 38, lng: -94 }, { lat: 45, lng: -94 }, -30),
+      }));
+      expect(Object.values(out).every(v => v === false), 'nothing here is evidence of a flight').toBe(true);
+    });
+  });
+
+  // The ceiling above stops the NEXT flight. This clears the ones already in
+  // the log, so the owner never has to delete them by hand.
+  test.describe('_mileFlightSweep', () => {
+    const fleg = (o) => Object.assign({ id: 'fl-' + Math.random().toString(36).slice(2), gps: true, legKey: 'fl-lg',
+      fromCoord: { lat: 38, lng: -94 }, toCoord: { lat: 38.8, lng: -94 },
+      from_name: 'Wichita', to_name: 'Denver', miles: 420, date: '2026-08-24' }, o);
+
+    const runF = (rows) => page.evaluate(async (rows) => {
+      const orig = { mileage: mileage.slice(), supa: window._supa, ran: window._mileFlightSweepRan,
+        expenses: expenses.slice(), user: window._supaUser };
+      mileage.length = 0; rows.forEach(r => mileage.push(r));
+      expenses.length = 0;
+      window._supaUser = { id: 'fl-user' };
+      window._mileFlightSweepRan = false;
+      window._supa = { from: () => ({ delete: () => ({ eq: () => ({ eq: () => ({ then: (res) => Promise.resolve({ error: null }).then(res) }) }) }) }) };
+      let dropped = 0, err = null;
+      try { dropped = await _mileFlightSweep(); } catch (e) { err = String(e && e.message || e); }
+      const left = mileage.map(m => m.to_name);
+      mileage.length = 0; orig.mileage.forEach(m => mileage.push(m));
+      expenses.length = 0; orig.expenses.forEach(e => expenses.push(e));
+      window._supa = orig.supa; window._mileFlightSweepRan = orig.ran; window._supaUser = orig.user;
+      return { dropped, left, err };
+    }, rows);
+
+    test('the flight already in the log is removed', async () => {
+      const r = await runF([fleg({ mins: 30 })]);
+      expect(r.err).toBe(null);
+      expect(r.dropped).toBe(1);
+      expect(r.left).toEqual([]);
+    });
+
+    test('it reads the clock span when the row carries no wheel time', async () => {
+      const r = await runF([fleg({ startedIso: '2026-08-24T14:00:00Z', endedIso: '2026-08-24T14:30:00Z' })]);
+      expect(r.dropped).toBe(1);
+    });
+
+    test('the drive either side of the flight is untouched', async () => {
+      const r = await runF([fleg({ mins: 30 }), fleg({ toCoord: { lat: 38.1, lng: -94 }, to_name: 'Job', miles: 7, mins: 12 })]);
+      expect(r.dropped).toBe(1);
+      expect(r.left, 'only the flight goes').toEqual(['Job']);
+    });
+
+    test('a hand-entered trip is never second-guessed', async () => {
+      const r = await runF([fleg({ gps: false, legKey: null, mins: 30 })]);
+      expect(r.dropped, "the contractor's own statement stands").toBe(0);
+    });
+
+    test('a leg carrying a client link is never removed', async () => {
+      const r = await runF([fleg({ client_id: 42, mins: 30 })]);
+      expect(r.dropped).toBe(0);
+    });
+
+    test('a row with nothing to judge is left alone', async () => {
+      const r = await runF([fleg({ mins: 0, startedIso: null, endedIso: null }), fleg({ fromCoord: null, mins: 30 })]);
+      expect(r.err).toBe(null);
+      expect(r.dropped).toBe(0);
+      expect(r.left.length).toBe(2);
+    });
+
+    test('malformed rows and an empty log never throw', async () => {
+      const r = await runF([{ id: 'x', gps: true }, { id: 'y', gps: true, startedIso: 'nope', endedIso: 'nope' }]);
+      expect(r.err).toBe(null);
+      expect(r.dropped).toBe(0);
+      const empty = await runF([]);
+      expect(empty.err).toBe(null);
+      expect(empty.dropped).toBe(0);
+    });
+
+    test('it runs once per session', async () => {
+      const first = await runF([fleg({ mins: 30 })]);
+      expect(first.dropped).toBe(1);
+      const again = await page.evaluate(async () => {
+        const prev = window._mileFlightSweepRan;
+        window._mileFlightSweepRan = true;
+        const n = await _mileFlightSweep();
+        window._mileFlightSweepRan = prev;
+        return n;
+      });
+      expect(again, 'a second pass in the same session is a no-op').toBe(0);
+    });
+
+    test('concurrent calls only let one pass through', async () => {
+      const out = await page.evaluate(async () => {
+        const orig = { mileage: mileage.slice(), supa: window._supa, ran: window._mileFlightSweepRan, user: window._supaUser };
+        mileage.length = 0;
+        mileage.push({ id: 'fl-c', gps: true, legKey: 'fl-c', mins: 30,
+          fromCoord: { lat: 38, lng: -94 }, toCoord: { lat: 38.8, lng: -94 }, to_name: 'Denver', miles: 420, date: '2026-08-24' });
+        window._supaUser = { id: 'fl-user' };
+        window._mileFlightSweepRan = false;
+        window._supa = { from: () => ({ delete: () => ({ eq: () => ({ eq: () => ({ then: (res) => Promise.resolve({ error: null }).then(res) }) }) }) }) };
+        const all = await Promise.all([1, 2, 3, 4, 5].map(() => _mileFlightSweep()));
+        mileage.length = 0; orig.mileage.forEach(m => mileage.push(m));
+        window._supa = orig.supa; window._mileFlightSweepRan = orig.ran; window._supaUser = orig.user;
+        return all;
+      });
+      expect(out.filter(n => n > 0).length, 'exactly one caller does the work').toBe(1);
+    });
+  });
+
 });

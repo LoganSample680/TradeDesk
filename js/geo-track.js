@@ -100,6 +100,27 @@ const _GEO_STOP_FT=350;
 // The longest gap that can still be read as ONE drive. Past this, an inferred
 // leg start is not evidence of anything: it is a phone that was asleep.
 const _GEO_MAX_INFERRED_LEG_MS=4*60*60*1000;
+// ── The flight ceiling (owner report 2026-08-24, mid-air) ─────────────────
+// A phone on a plane is still a phone: it takes a fix at the gate, loses the
+// sky, and takes another one 700 miles later. The fence machine reads that as
+// one leg and the router happily measures a DRIVING route between two
+// airports, so a flight books itself as several hundred deductible miles and
+// hours of paid wheel time. Nothing in the leg's own data said "impossible",
+// because nothing was ever checking.
+//
+// The check is straight-line distance over the leg's own wheel time, which is
+// a conservative floor: real roads are longer than the crow's route, so a leg
+// that already implies 100mph point-to-point was moving faster than that on
+// the ground. No truck sustains it. A genuinely long interstate haul lands
+// around 60-70mph straight-line even when the speedometer says 80, so the
+// ceiling never touches real driving. Flights come out at 300mph and up, and
+// a GPS teleport (another way this shape appears) comes out higher still.
+//
+// The floor distance exists so ordinary short legs are never judged on a
+// ratio: 30 miles at over 100mph is under 18 minutes of wheel time, which is
+// not a drive that happened.
+const _GEO_MAX_DRIVE_MPH=100;
+const _GEO_FLIGHT_MIN_MI=30;
 const _GEO_STOP_MS=5*60*1000;   // a stop, not a traffic light (matches PLACE_DWELL_MS)
 let _geoPingBusy=false;    // re-entrancy guard: _geoOnPing awaits geocodes, overlapping
                            // pings must never interleave the fence state machine
@@ -2246,6 +2267,15 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
     _geoParkNote('roundtrip-no-miles',destLoc&&(destLoc.name||destLoc.kind)||'');
     return;
   }
+  // ── NOT A DRIVE: a flight, or a GPS teleport ─────────────────────────────
+  // Same shape as the round trip above, and handled the same way: no mileage
+  // row is written, and the drive time already enqueued for this leg is
+  // removed afterwards by _geoSyncDriveTimeEntries, which drops any drive
+  // entry whose legKey never grew a mileage row. See _GEO_MAX_DRIVE_MPH.
+  if(_geoLegIsImpossible(_geoLegOrigin,destLoc,driveMins)){
+    _geoParkNote('not-a-drive',(destLoc&&(destLoc.name||destLoc.kind)||'?')+' '+Math.round(driveMins||0)+'m');
+    return;
+  }
   // The arrival stamp rides along so the row can show WHEN the trip ran, not
   // just how long: a stale leg passes nothing, its clock times are fiction.
   _geoAutoMileage(_geoLegOrigin,destLoc,legKey,stale?arrived:driveStartedAt,companyVeh,driveMins,stale?null:arrived,obsMiles);
@@ -2271,6 +2301,19 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
 // The row is written IMMEDIATELY at zero miles and filled in afterwards, the
 // same shape the manual trip log already uses. A dead spot at arrival is the
 // normal case on a rural site and must never cost the contractor the trip.
+// True when a leg's own numbers say a vehicle could not have done it. Fails
+// OPEN on purpose: missing coordinates or no wheel time means there is nothing
+// to judge, and a real leg must never be dropped on a guess.
+function _geoLegIsImpossible(from,to,driveMins){
+  try{
+    if(!from||!to||from.lat==null||to.lat==null)return false;
+    const mins=Number(driveMins)||0;
+    if(mins<3)return false;
+    const mi=_geoDistFt({lat:from.lat,lng:from.lng},{lat:to.lat,lng:to.lng})/5280;
+    if(!(mi>=_GEO_FLIGHT_MIN_MI))return false;
+    return (mi/(mins/60))>_GEO_MAX_DRIVE_MPH;
+  }catch(_e){return false;}
+}
 function _geoAutoMileage(from,to,legKey,startedIso,companyVeh,driveMins,endedIso,obsMiles){
   try{
     if(typeof autoLogDriveTrip!=='function')return;
