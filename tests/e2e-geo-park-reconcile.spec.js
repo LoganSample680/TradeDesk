@@ -48,6 +48,19 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // heartbeat has nothing to do with any of them, so it's neutralized once
     // for the whole file rather than raced against every single test.
     await page.evaluate(() => { window._scheduleReconcile = () => {}; });
+    // Same reasoning, one layer up: js/cloud.js fires
+    // _geoTimeEntriesSettleChain (repair, then dedup, then merge) from three
+    // separate places on cloud load and reconnect, so a background pass can
+    // be mid-flight against this file's mock whenever one of those paths
+    // happens to run. Every sweep in that chain is driven DIRECTLY and
+    // deliberately by the tests below against seeded rows, so a background
+    // copy contributes nothing but a race: it holds the re-entrancy guard a
+    // direct call then has to wait out, and on a loaded CI runner that wait
+    // is what expires. That is the shape of shard 6's intermittent zero on
+    // the merge test (2026-08-24, twice, green every time in isolation).
+    // Neutralized once for the whole file, exactly like the heartbeat above,
+    // rather than raced against in every individual test.
+    await page.evaluate(() => { window._geoTimeEntriesSettleChain = async () => {}; });
   });
   test.afterAll(async () => { await page.context().close(); });
 
@@ -165,6 +178,17 @@ test.describe('Geo park detection + mileage reconciliation', () => {
         }),
       }),
     };
+    // Remembered so a direct-call harness can re-assert it immediately before
+    // driving a sweep. This page lives for the whole ~150-test file and the
+    // app can rebuild its own client at any moment (supaInit runs on a
+    // realtime reconnect, among other paths), which silently swaps _supa out
+    // from under a test between its seeding step and its call. The sweep then
+    // reads the app's client instead of this harness, finds no rows, and
+    // returns 0 having done nothing wrong: the exact shape of CI shard 6's
+    // intermittent "Expected: 1, Received: 0" on the merge test (2026-08-24,
+    // twice, never reproducible in isolation). Re-asserting costs one
+    // assignment and removes the whole class.
+    window.__harnessSupa = window._supa;
   });
   const geoRestore = () => page.evaluate(() => { if (window.__origSupa) window._supa = window.__origSupa; });
 
@@ -1230,6 +1254,11 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       await new Promise(res => setTimeout(res, 10));
     }
     if (typeof _geoMergeBusy !== 'undefined') _geoMergeBusy = false;
+    // Re-assert the harness mock (see the note in geoReset): the wait above
+    // is an await point, so anything that rebuilds the app's Supabase client
+    // gets a window to swap it in right here, between seeding and the call.
+    const mockWasSwapped = !!window.__harnessSupa && window._supa !== window.__harnessSupa;
+    if (window.__harnessSupa) window._supa = window.__harnessSupa;
     // The rewritten merge consults the live mileage array for gap evidence;
     // park it empty for the call so unrelated suite data can never block or
     // allow a merge. Tests that WANT a leg in the gap seed it themselves
@@ -1239,7 +1268,10 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     let changed;
     try { changed = await _geoMergeAdjacentVisits(); }
     finally { if (saved) { mileage.length = 0; saved.forEach(m => mileage.push(m)); } window.__mergeTestLegs = null; }
-    return { changed, deletes: window.__rec.deletes.slice(), updates: window.__rec.updates.slice() };
+    // rowsSeen/mockWasSwapped ride along so a future failure names its own
+    // cause instead of only reporting a zero count.
+    return { changed, deletes: window.__rec.deletes.slice(), updates: window.__rec.updates.slice(),
+      rowsSeen: (window.__selRows || []).length, mockWasSwapped, selErr: window.__selErr || null };
   });
 
   test('merge: two true back-to-back geofence rows at the same job fold into one', async () => {
@@ -1258,6 +1290,12 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       ];
     }, now);
     const r = await mergeCall();
+    // Preconditions first, so an intermittent failure here names its own
+    // cause instead of only saying "expected 1, got 0" (CI shard 6 did
+    // exactly that twice on 2026-08-24 and neither run said why).
+    expect(r.rowsSeen, 'the sweep still reads the two rows this test seeded').toBe(2);
+    expect(r.mockWasSwapped, 'the harness Supabase mock was still installed').toBe(false);
+    expect(r.selErr, 'no stale simulated fetch error was left set').toBe(null);
     expect(r.deletes.length).toBe(1);
     expect(r.deletes[0].val, 'the earlier row survives, the later one folds into it').toBe(2002);
     expect(r.updates.length).toBe(1);
