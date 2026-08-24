@@ -4162,8 +4162,15 @@ test.describe('Workforce time intelligence', () => {
   // The other half of that rule: the two allowances (S.shopPrepMin for load-up
   // before the first move, S.shopWrapMin for unload after the last) are how a
   // contractor pays the ends of the day instead of losing them. Same fixture,
-  // 30 minutes on each side, and both stretches come back, proving the knobs
-  // actually reach Crew Cost and are not display-only.
+  // 30 minutes on each side, proving the knobs actually reach Crew Cost and
+  // are not display-only.
+  //
+  // 1.5h, not the 2.0h this asserted before the departure rule landed
+  // (js/geo-track.js, owner 2026-08-24). Nothing in this fixture follows the
+  // dwell, so nobody was ever observed leaving the yard, and a session like
+  // that is credited the wrap-up allowance and no more: 30 minutes of dwell
+  // plus the 60-minute manual clock. That is the allowance doing exactly its
+  // job. The double-pay guard the sibling test exists for is untouched.
   test('crew cost: the prep and wrap-up allowances pay the ends of the day', async () => {
     const r = await page.evaluate(async () => {
       if (typeof _crewCostRender !== 'function') return null;
@@ -4201,7 +4208,7 @@ test.describe('Workforce time intelligence', () => {
     });
     if (r && !r.error) {
       expect(r.hours, 'rendered hours, html=' + r.html).not.toBeNull();
-      expect(r.hours, '30 minutes each side restores the load-up and the unload').toBeCloseTo(2.0, 1);
+      expect(r.hours, 'the allowance pays the unload on a session nobody left').toBeCloseTo(1.5, 1);
     }
   });
 
