@@ -391,12 +391,18 @@ test.describe('timelog.js: exhaustive coverage', () => {
   // dwell was tracked and paid in Crew Cost but never listed here, so every
   // hour at the yard read as a hole. It now renders as its own row kind.
   //
-  // Two owner reports the same day then bounded it (js/geo-track.js
-  // _geoShopCutoffs): "don't want shop time to calculate after the last job
-  // site or supply run of the day", and yard dwell on days with no job or
-  // supply fence at all was showing. One rule answers both, the day auto
-  // clocks out at its last real work event, so both cases credit zero
-  // minutes and a zero-credit session never renders.
+  // Three owner reports the same day bounded it into a WORKDAY WINDOW
+  // (js/geo-track.js _geoShopCutoffs):
+  //   "don't want shop time to calculate after the last job site or supply
+  //    run of the day"                                  → the day clocks out
+  //   yard dwell on days with no job or supply fence at all was showing
+  //                                                     → no work, no shift
+  //   "08/21 shouldn't have shop at 6:05 am, why does it?"
+  //                                                     → the day clocks IN
+  // and one that decided what counts as work at either edge: a 6:26pm leg
+  // reading "Civitan Day Camp to Shop" was holding Tue 8/18 open to 7:44pm
+  // purely because it was a drive. Drives now count only when chained to a
+  // job or supply visit, the ride out or the ride back.
   test.describe('shop rows', () => {
     const withShop = (shopEntries, entries) => page.evaluate(async ([shopEntries, entries]) => {
       if (typeof timeEntries === 'undefined') window.timeEntries = [];
@@ -405,60 +411,135 @@ test.describe('timelog.js: exhaustive coverage', () => {
       try { return await _timeLogRows(null); } finally { window._fetchCrewLabor = orig; }
     }, [shopEntries, entries]);
 
-    // A full ordinary day in Central time (UTC-5 on this date):
-    //   06:30-07:30 load up at the yard   →  paid, it is inside the workday
-    //   08:00-16:00 on site at a job
-    //   16:00-16:30 drive back to the yard (this END is the auto clock-out)
-    //   16:30-23:48 phone sitting at the yard  →  zero, the day is over
+    // One ordinary day in Central time (UTC-5 on this date):
+    //   06:30-07:30  yard, before the day opens          → zero
+    //   07:30-08:00  drive out to the job (opens the day)
+    //   08:00-12:00  on site
+    //   12:00-13:00  yard, between two jobs              → paid
+    //   13:00-16:00  on site
+    //   16:00-16:30  drive back to the yard (closes the day)
+    //   16:30-23:48  phone sitting at the yard           → zero
     const YARD_AM = { employee_user_id: 'me', minutes: 60, arrived_at: '2026-08-20T11:30:00Z', departed_at: '2026-08-20T12:30:00Z' };
+    const YARD_MID = { employee_user_id: 'me', minutes: 60, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T18:00:00Z' };
     const YARD_PM = { employee_user_id: 'me', minutes: 438, arrived_at: '2026-08-20T21:30:00Z', departed_at: '2026-08-21T04:48:00Z' };
-    const JOB = { employee_user_id: 'me', job_id: '9', minutes: 480, arrived_at: '2026-08-20T13:00:00Z', departed_at: '2026-08-20T21:00:00Z', source: 'geofence' };
+    const DRIVE_OUT = { employee_user_id: 'me', job_id: null, minutes: 30, arrived_at: '2026-08-20T12:30:00Z', departed_at: '2026-08-20T13:00:00Z', source: 'drive' };
+    const JOB = { employee_user_id: 'me', job_id: '9', minutes: 240, arrived_at: '2026-08-20T13:00:00Z', departed_at: '2026-08-20T17:00:00Z', source: 'geofence' };
+    const JOB2 = { employee_user_id: 'me', job_id: '9', minutes: 180, arrived_at: '2026-08-20T18:00:00Z', departed_at: '2026-08-20T21:00:00Z', source: 'geofence' };
     const DRIVE_HOME = { employee_user_id: 'me', job_id: null, minutes: 30, arrived_at: '2026-08-20T21:00:00Z', departed_at: '2026-08-20T21:30:00Z', source: 'drive' };
+    const DAY = [DRIVE_OUT, JOB, JOB2, DRIVE_HOME];
 
     test('yard time inside the workday is paid and listed', async () => {
-      const rows = await withShop([YARD_AM], [JOB, DRIVE_HOME]);
+      const rows = await withShop([YARD_MID], DAY);
       const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length, 'the morning load-up is listed').toBe(1);
+      expect(shop.length, 'the midday yard stop is listed').toBe(1);
       expect(shop[0].detail).toBe('Shop');
       expect(shop[0].minutes).toBe(60);
       expect(shop[0].unpaid, 'inside the workday, so it counts').toBe(false);
     });
 
+    // Owner, 2026-08-24: "08/21 shouldn't have shop at 6:05 am, why does it?"
+    // It did because the rule only closed the day, never opened it.
+    test('yard time before the day\'s first job or supply move never renders', async () => {
+      const rows = await withShop([YARD_AM, YARD_MID], DAY);
+      const shop = rows.filter(r => r.source === 'shop');
+      expect(shop.length, 'sitting at the yard before the first move is not a shift').toBe(1);
+      expect(shop[0].startTime).toBe(YARD_MID.arrived_at);
+    });
+
     test('yard time after the day\'s last job or supply run never renders', async () => {
-      const rows = await withShop([YARD_AM, YARD_PM], [JOB, DRIVE_HOME]);
+      const rows = await withShop([YARD_MID, YARD_PM], DAY);
       const shop = rows.filter(r => r.source === 'shop');
       expect(shop.length, 'the 7h18m evening sit at the yard is not a shift').toBe(1);
-      expect(shop[0].startTime).toBe(YARD_AM.arrived_at);
-      expect(shop.reduce((s, r) => s + r.minutes, 0), 'only the load-up pays').toBe(60);
+      expect(shop[0].startTime).toBe(YARD_MID.arrived_at);
     });
 
     test('a day with no job or supply fence at all shows no yard time', async () => {
-      const rows = await withShop([YARD_AM, YARD_PM], []);
+      const rows = await withShop([YARD_AM, YARD_MID, YARD_PM], []);
       expect(rows.filter(r => r.source === 'shop').length, 'a Saturday at the yard is not a shift').toBe(0);
     });
 
     test('a lunch stop is not work and never extends the day', async () => {
-      // The only non-shop row of the day is an off-job stop. It must not act
-      // as the day's last work event and drag the evening dwell into pay.
       const rows = await withShop([YARD_PM], [
         { employee_user_id: 'me', job_id: null, minutes: 45, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T17:45:00Z', source: 'stop' },
       ]);
       expect(rows.filter(r => r.source === 'shop').length).toBe(0);
     });
 
-    test('the wrap-up allowance pays the unload and labels the clock-out', async () => {
+    // The Civitan Day Camp leg: a drive with no job or supply visit at either
+    // end of it, which used to hold the day open and pay the yard time under it.
+    test('a drive not chained to a job or supply visit never extends the day', async () => {
+      const LOOSE = { employee_user_id: 'me', job_id: null, minutes: 78, arrived_at: '2026-08-20T23:26:00Z', departed_at: '2026-08-21T00:44:00Z', source: 'drive' };
+      const rows = await withShop([YARD_PM], DAY.concat([LOOSE]));
+      expect(rows.filter(r => r.source === 'shop').length, 'an evening errand is not the last job of the day').toBe(0);
+    });
+
+    test('the drive back from the last job DOES close the day, an hour later', async () => {
+      // Same shape, but the leg pulls out exactly as the job ends, so it is
+      // the ride home and the yard time behind it is inside the workday.
+      const LATE_YARD = { employee_user_id: 'me', minutes: 20, arrived_at: '2026-08-20T21:30:00Z', departed_at: '2026-08-20T21:50:00Z' };
+      const rows = await withShop([LATE_YARD], DAY);
+      const shop = rows.filter(r => r.source === 'shop');
+      expect(shop.length, 'the ride back lands at the yard, so the yard is still open').toBe(0);
+      // Zero because the allowance is zero: the window closes AT the drive's
+      // end. The allowance test below is what pays this stretch.
+    });
+
+    // Owner, 2026-08-24, on the same 78-minute Tue 8/18 leg: "was a time we
+    // did family pictures and I'm not sure why it's there. It should be
+    // dropped." It was there because the tracker logs every leg between known
+    // points while tracking is on, with no notion of the day being over.
+    test('a drive leg outside the workday is dropped, not just unpaid', async () => {
+      const LOOSE = { employee_user_id: 'me', job_id: null, minutes: 78, dest_place: 'DEV A shop',
+        arrived_at: '2026-08-20T23:26:00Z', departed_at: '2026-08-21T00:44:00Z', source: 'drive-unassigned' };
+      const rows = await withShop([], DAY.concat([LOOSE]));
+      const drives = rows.filter(r => r.rawSource && /^drive/.test(r.rawSource));
+      expect(drives.length, 'the ride out and the ride back survive, the errand does not').toBe(2);
+      expect(drives.some(d => d.minutes === 78), 'the family-pictures run is gone').toBe(false);
+    });
+
+    test('a drive inside the workday is never dropped', async () => {
+      const MID = { employee_user_id: 'me', job_id: null, minutes: 7, dest_place: 'DEV A shop',
+        arrived_at: '2026-08-20T17:10:00Z', departed_at: '2026-08-20T17:17:00Z', source: 'drive-unassigned' };
+      const rows = await withShop([], DAY.concat([MID]));
+      const drives = rows.filter(r => r.rawSource && /^drive/.test(r.rawSource));
+      expect(drives.length, 'a leg between two jobs is ordinary work').toBe(3);
+    });
+
+    test('on a day with no work at all, no stray drive renders either', async () => {
+      const LOOSE = { employee_user_id: 'me', job_id: null, minutes: 78, dest_place: 'DEV A shop',
+        arrived_at: '2026-08-23T23:26:00Z', departed_at: '2026-08-24T00:44:00Z', source: 'drive-unassigned' };
+      const rows = await withShop([], [LOOSE]);
+      expect(rows.filter(r => r.rawSource && /^drive/.test(r.rawSource)).length,
+        'a Saturday errand is not a workday').toBe(0);
+    });
+
+    test('the wrap-up allowance pays the unload after the last job', async () => {
       const rows = await page.evaluate(async ([shopEntries, entries]) => {
         if (typeof timeEntries === 'undefined') window.timeEntries = [];
         const orig = window._fetchCrewLabor, prev = S.shopWrapMin;
         window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries, shopEntries });
         S.shopWrapMin = 30;
         try { return await _timeLogRows(null); } finally { window._fetchCrewLabor = orig; S.shopWrapMin = prev; }
-      }, [[YARD_PM], [JOB, DRIVE_HOME]]);
+      }, [[YARD_PM], DAY]);
       const shop = rows.filter(r => r.source === 'shop');
       expect(shop.length).toBe(1);
       expect(shop[0].minutes, '30 minutes of unload, not the whole evening').toBe(30);
       expect(shop[0].detail, 'the rule is visible, not silently eating minutes').toBe('Shop · auto clock-out');
       expect(shop[0].endTime, 'the row ends when the clock stopped').toBe('2026-08-20T22:00:00.000Z');
+    });
+
+    test('the prep allowance pays the load-up before the first move', async () => {
+      const rows = await page.evaluate(async ([shopEntries, entries]) => {
+        if (typeof timeEntries === 'undefined') window.timeEntries = [];
+        const orig = window._fetchCrewLabor, prev = S.shopPrepMin;
+        window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries, shopEntries });
+        S.shopPrepMin = 20;
+        try { return await _timeLogRows(null); } finally { window._fetchCrewLabor = orig; S.shopPrepMin = prev; }
+      }, [[YARD_AM], DAY]);
+      const shop = rows.filter(r => r.source === 'shop');
+      expect(shop.length).toBe(1);
+      expect(shop[0].minutes, 'the last 20 minutes of the load-up, not the whole hour').toBe(20);
+      expect(shop[0].startTime, 'the row starts when the clock started').toBe('2026-08-20T12:10:00.000Z');
     });
 
     test('a manual clock-out counts as the day\'s last work event', async () => {
@@ -471,7 +552,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         const orig = window._fetchCrewLabor;
         window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries: [], shopEntries });
         try { return await _timeLogRows(null); } finally { window._fetchCrewLabor = orig; timeEntries.length = 0; timeEntries.push(...origEnts); }
-      }, [[YARD_AM]]);
+      }, [[YARD_MID]]);
       expect(rows.filter(r => r.source === 'shop').length, 'a hand-logged day still bounds the yard').toBe(1);
     });
 
@@ -479,7 +560,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       const rows = await withShop([
         // 8:00pm CT to 7:00am CT the next day: the truck parked at the yard.
         { employee_user_id: 'me', minutes: 660, arrived_at: '2026-08-21T01:00:00Z', departed_at: '2026-08-21T12:00:00Z' },
-      ], [JOB, DRIVE_HOME]);
+      ], DAY);
       expect(rows.filter(r => r.source === 'shop').length, 'an overnight park is not a shift').toBe(0);
     });
 
@@ -488,100 +569,159 @@ test.describe('timelog.js: exhaustive coverage', () => {
         { employee_user_id: 'me', minutes: 0, arrived_at: '2026-08-20T17:33:52Z', departed_at: '2026-08-20T17:33:52Z' },
         { employee_user_id: 'me', minutes: 5, arrived_at: null, departed_at: '2026-08-20T18:00:00Z' },
         { employee_user_id: 'me', minutes: 5, arrived_at: '2026-08-20T18:00:00Z', departed_at: null },
-      ], [JOB, DRIVE_HOME]);
+      ], DAY);
       expect(rows.filter(r => r.source === 'shop').length).toBe(0);
     });
 
-    test('cutoff helper: last work end per person per Central day, lunches excluded', async () => {
-      const r = await page.evaluate(() => _geoShopCutoffs([
-        { employee_user_id: 'me', departed_at: '2026-08-20T21:00:00Z', source: 'geofence' },
-        { employee_user_id: 'me', departed_at: '2026-08-20T21:30:00Z', source: 'drive' },
-        { employee_user_id: 'me', departed_at: '2026-08-21T02:00:00Z', source: 'stop' },
-        { employee_user_id: 'you', departed_at: '2026-08-20T19:00:00Z', source: 'place' },
-        { employee_user_id: 'me', departed_at: null, source: 'geofence' },
-      ]));
-      expect(r.me['2026-08-20'], 'the drive home, the latest real work moment').toBe(Date.parse('2026-08-20T21:30:00Z'));
-      expect(r.you['2026-08-20']).toBe(Date.parse('2026-08-20T19:00:00Z'));
-      expect(Object.keys(r).sort(), 'nobody invented, nothing from a null departure').toEqual(['me', 'you']);
+    test('workday window: opens at the ride out, closes at the ride back, lunches ignored', async () => {
+      const r = await page.evaluate(([DAY]) => {
+        const w = _geoShopCutoffs(DAY.concat([
+          { employee_user_id: 'me', arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T17:45:00Z', source: 'stop' },
+          { employee_user_id: 'you', arrived_at: '2026-08-20T18:00:00Z', departed_at: '2026-08-20T19:00:00Z', source: 'place' },
+        ]));
+        return { meIn: w.me['2026-08-20'].inMs, meOut: w.me['2026-08-20'].outMs,
+          youIn: w.you['2026-08-20'].inMs, youOut: w.you['2026-08-20'].outMs, who: Object.keys(w).sort() };
+      }, [DAY]);
+      expect(r.meIn, 'the drive out, chained to the job it leads to').toBe(Date.parse('2026-08-20T12:30:00Z'));
+      expect(r.meOut, 'the drive back, chained to the job it leaves').toBe(Date.parse('2026-08-20T21:30:00Z'));
+      expect(r.youIn).toBe(Date.parse('2026-08-20T18:00:00Z'));
+      expect(r.youOut).toBe(Date.parse('2026-08-20T19:00:00Z'));
+      expect(r.who, 'each person gets their own day').toEqual(['me', 'you']);
     });
 
-    test('paid-minute helper: bounded, never negative, zero without a cutoff', async () => {
+    test('paid-minute helper: bounded at both ends, never negative, zero without a window', async () => {
       const r = await page.evaluate(() => {
-        const cut = Date.parse('2026-08-20T21:30:00Z');
+        const win = { inMs: Date.parse('2026-08-20T12:30:00Z'), outMs: Date.parse('2026-08-20T21:30:00Z') };
         return {
-          inside: _geoShopPaidMin('2026-08-20T11:30:00Z', '2026-08-20T12:30:00Z', cut),
-          after: _geoShopPaidMin('2026-08-20T21:30:00Z', '2026-08-21T04:48:00Z', cut),
-          straddle: _geoShopPaidMin('2026-08-20T21:00:00Z', '2026-08-21T04:48:00Z', cut),
-          noCutoff: _geoShopPaidMin('2026-08-20T11:30:00Z', '2026-08-20T12:30:00Z', 0),
-          backwards: _geoShopPaidMin('2026-08-20T12:30:00Z', '2026-08-20T11:30:00Z', cut),
-          junk: _geoShopPaidMin(null, undefined, cut),
+          inside: _geoShopPaidMin('2026-08-20T17:00:00Z', '2026-08-20T18:00:00Z', win),
+          before: _geoShopPaidMin('2026-08-20T11:30:00Z', '2026-08-20T12:30:00Z', win),
+          after: _geoShopPaidMin('2026-08-20T21:30:00Z', '2026-08-21T04:48:00Z', win),
+          straddleEnd: _geoShopPaidMin('2026-08-20T21:00:00Z', '2026-08-21T04:48:00Z', win),
+          straddleStart: _geoShopPaidMin('2026-08-20T12:00:00Z', '2026-08-20T13:00:00Z', win),
+          noWindow: _geoShopPaidMin('2026-08-20T17:00:00Z', '2026-08-20T18:00:00Z', null),
+          backwards: _geoShopPaidMin('2026-08-20T18:00:00Z', '2026-08-20T17:00:00Z', win),
+          junk: _geoShopPaidMin(null, undefined, win),
         };
       });
       expect(r.inside).toBe(60);
+      expect(r.before, 'the day had not started').toBe(0);
       expect(r.after, 'the day already clocked out').toBe(0);
-      expect(r.straddle, 'only the part inside the workday').toBe(30);
-      expect(r.noCutoff, 'no work that day, so no shift').toBe(0);
+      expect(r.straddleEnd, 'only the part inside the workday').toBe(30);
+      expect(r.straddleStart, 'only the part inside the workday').toBe(30);
+      expect(r.noWindow, 'no work that day, so no shift').toBe(0);
       expect(r.backwards).toBe(0);
       expect(r.junk).toBe(0);
     });
 
-    // _GEO_SHOP_DUP_OVERLAP_MS tolerates up to 4 minutes of drift before two
-    // shop rows count as duplicates, so a genuine back-to-back pair can overlap
-    // slightly. Free while yard dwell was only displayed, not free now that it
-    // is paid: those minutes would be paid twice.
+    // A yard visit split by a fence blip is one visit, not two lines.
+    test('a blip-split yard visit folds into one row', async () => {
+      const rows = await withShop([
+        { employee_user_id: 'me', minutes: 3, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T17:03:00Z' },
+        { employee_user_id: 'me', minutes: 36, arrived_at: '2026-08-20T17:02:00Z', departed_at: '2026-08-20T17:39:00Z' },
+      ], DAY);
+      const shop = rows.filter(r => r.source === 'shop');
+      expect(shop.length, 'one stretch at the yard, one line').toBe(1);
+      expect(shop[0].startTime).toBe('2026-08-20T17:00:00Z');
+      expect(shop[0].minutes, '5:00 to 5:39 is 39 minutes, not 3 + 36').toBe(39);
+    });
+
+    // The other Tue 8/18 pair looks identical to the eye but is not one visit:
+    // he left the yard for the job in between, so folding them would swallow
+    // that drive.
+    test('a merge that would swallow a drive is refused', async () => {
+      // The leg pulls out as the first session ends and lands as the second
+      // begins, so the two yard stretches are five minutes apart (inside the
+      // blip window) but genuinely separated by a trip.
+      const OUT = { employee_user_id: 'me', job_id: null, minutes: 5, arrived_at: '2026-08-20T18:39:00Z', departed_at: '2026-08-20T18:44:00Z', source: 'drive' };
+      const rows = await withShop([
+        { employee_user_id: 'me', minutes: 39, arrived_at: '2026-08-20T18:00:00Z', departed_at: '2026-08-20T18:39:00Z' },
+        { employee_user_id: 'me', minutes: 11, arrived_at: '2026-08-20T18:44:00Z', departed_at: '2026-08-20T18:55:00Z' },
+      ], [DRIVE_OUT, JOB, OUT, JOB2, DRIVE_HOME]);
+      const shop = rows.filter(r => r.source === 'shop').sort((a, b) => a.startTime.localeCompare(b.startTime));
+      expect(shop.length, 'two visits with a drive between them stay two rows').toBe(2);
+      expect(shop.map(r => r.minutes), 'and neither is stretched over the leg').toEqual([39, 11]);
+    });
+
+    // Nobody is at the yard and driving at the same instant; the fence lags
+    // the ignition. Owner's Tue 8/18 had a 1:29-1:34pm yard row against a
+    // 1:29-1:36pm drive out to the job.
+    test('yard time overlapping a drive leg yields to the drive', async () => {
+      const OUT = { employee_user_id: 'me', job_id: null, minutes: 7, arrived_at: '2026-08-20T18:29:00Z', departed_at: '2026-08-20T18:36:00Z', source: 'drive-unassigned' };
+      const rows = await withShop([
+        { employee_user_id: 'me', minutes: 5, arrived_at: '2026-08-20T18:29:00Z', departed_at: '2026-08-20T18:34:00Z' },
+      ], [DRIVE_OUT, JOB, OUT, JOB2, DRIVE_HOME]);
+      expect(rows.filter(r => r.source === 'shop').length, 'fully covered by the leg, nothing left to pay').toBe(0);
+    });
+
+    test('yard time only partly overlapping a drive keeps the part that is real', async () => {
+      const OUT = { employee_user_id: 'me', job_id: null, minutes: 7, arrived_at: '2026-08-20T18:30:00Z', departed_at: '2026-08-20T18:37:00Z', source: 'drive-unassigned' };
+      const rows = await withShop([
+        { employee_user_id: 'me', minutes: 30, arrived_at: '2026-08-20T18:07:00Z', departed_at: '2026-08-20T18:37:00Z' },
+      ], [DRIVE_OUT, JOB, OUT, JOB2, DRIVE_HOME]);
+      const shop = rows.filter(r => r.source === 'shop');
+      expect(shop.length).toBe(1);
+      expect(shop[0].minutes, 'the 23 minutes at the yard before the ignition').toBe(23);
+    });
+
     test('overlapping shop sessions never pay the same minute twice', async () => {
       const rows = await withShop([
-        { employee_user_id: 'me', minutes: 60, arrived_at: '2026-08-20T11:00:00Z', departed_at: '2026-08-20T12:00:00Z' },
-        { employee_user_id: 'me', minutes: 63, arrived_at: '2026-08-20T11:57:00Z', departed_at: '2026-08-20T13:00:00Z' },
-      ], [JOB, DRIVE_HOME]);
-      const shop = rows.filter(r => r.source === 'shop').sort((a, b) => a.startTime.localeCompare(b.startTime));
-      expect(shop.length, 'both are real sessions, neither is dropped').toBe(2);
-      expect(shop[1].startTime, 'the second starts where the first stopped paying').toBe('2026-08-20T12:00:00.000Z');
-      expect(shop.reduce((s, r) => s + r.minutes, 0), '11:00 to 13:00 is 120 minutes, not 123').toBe(120);
+        { employee_user_id: 'me', minutes: 60, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T18:00:00Z' },
+        { employee_user_id: 'me', minutes: 63, arrived_at: '2026-08-20T17:57:00Z', departed_at: '2026-08-20T19:00:00Z' },
+      ], DAY);
+      const shop = rows.filter(r => r.source === 'shop');
+      expect(shop.reduce((s, r) => s + r.minutes, 0), '5:00 to 7:00 is 120 minutes, not 123').toBe(120);
     });
 
     test('a shop session fully inside another pays nothing extra', async () => {
       const rows = await withShop([
-        { employee_user_id: 'me', minutes: 120, arrived_at: '2026-08-20T11:00:00Z', departed_at: '2026-08-20T13:00:00Z' },
-        { employee_user_id: 'me', minutes: 30, arrived_at: '2026-08-20T11:30:00Z', departed_at: '2026-08-20T12:00:00Z' },
-      ], [JOB, DRIVE_HOME]);
+        { employee_user_id: 'me', minutes: 120, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T19:00:00Z' },
+        { employee_user_id: 'me', minutes: 30, arrived_at: '2026-08-20T17:30:00Z', departed_at: '2026-08-20T18:00:00Z' },
+      ], DAY);
       const shop = rows.filter(r => r.source === 'shop');
       expect(shop.reduce((s, r) => s + r.minutes, 0), 'the nested one adds nothing').toBe(120);
     });
 
-    test('back-to-back sessions that do not overlap are both paid in full', async () => {
+    test('two yard visits a real break apart stay two rows, both paid in full', async () => {
       const rows = await withShop([
-        { employee_user_id: 'me', minutes: 60, arrived_at: '2026-08-20T11:00:00Z', departed_at: '2026-08-20T12:00:00Z' },
-        { employee_user_id: 'me', minutes: 30, arrived_at: '2026-08-20T12:10:00Z', departed_at: '2026-08-20T12:40:00Z' },
-      ], [JOB, DRIVE_HOME]);
+        { employee_user_id: 'me', minutes: 30, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T17:30:00Z' },
+        { employee_user_id: 'me', minutes: 20, arrived_at: '2026-08-20T17:40:00Z', departed_at: '2026-08-20T18:00:00Z' },
+      ], DAY);
       const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.reduce((s, r) => s + r.minutes, 0), 'a real gap between them is not clipped away').toBe(90);
+      expect(shop.length, 'a ten-minute break is longer than a fence blip').toBe(2);
+      expect(shop.reduce((s, r) => s + r.minutes, 0)).toBe(50);
     });
 
     test('span helper: input order preserved, malformed rows return a zero span', async () => {
       const r = await page.evaluate(() => _geoShopPaidSpans([
-        { arrived_at: '2026-08-20T12:00:00Z', departed_at: '2026-08-20T13:00:00Z' },
-        { arrived_at: null, departed_at: '2026-08-20T13:00:00Z' },
-        { arrived_at: '2026-08-20T11:00:00Z', departed_at: '2026-08-20T12:30:00Z' },
-      ], { '2026-08-20': Date.parse('2026-08-20T20:00:00Z') }).map(x => x.minutes));
-      // Sorted by start the third row runs first (11:00-12:30), so the first
-      // row is clipped to 12:30-13:00 even though it is listed ahead of it.
-      expect(r, 'returned in INPUT order, not sorted order').toEqual([30, 0, 90]);
+        { arrived_at: '2026-08-20T18:00:00Z', departed_at: '2026-08-20T19:00:00Z' },
+        { arrived_at: null, departed_at: '2026-08-20T19:00:00Z' },
+        { arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T18:30:00Z' },
+      ], { '2026-08-20': { inMs: Date.parse('2026-08-20T12:00:00Z'), outMs: Date.parse('2026-08-20T22:00:00Z') } }, [])
+        .map(x => x.minutes));
+      // Sorted by start the third row runs first (5:00-6:30) and the first row
+      // (6:00-7:00) overlaps it, so it folds in: 5:00-7:00 on the third, zero
+      // on the first, and the result still comes back in INPUT order.
+      expect(r).toEqual([0, 0, 120]);
     });
 
-    test('the wrap-up allowance is clamped, never negative or unbounded', async () => {
+    test('the allowances are clamped, never negative or unbounded', async () => {
       const r = await page.evaluate(() => {
-        const prev = S.shopWrapMin, out = {};
+        const pw = S.shopWrapMin, pp = S.shopPrepMin, out = {};
         for (const [k, v] of [['none', undefined], ['neg', -30], ['junk', 'abc'], ['big', 9999], ['ok', 20]]) {
-          S.shopWrapMin = v; out[k] = _geoShopWrapMs();
+          S.shopWrapMin = v; S.shopPrepMin = v;
+          out[k] = _geoShopWrapMs(); out[k + 'Prep'] = _geoShopPrepMs();
         }
-        S.shopWrapMin = prev; return out;
+        S.shopWrapMin = pw; S.shopPrepMin = pp; return out;
       });
       expect(r.none).toBe(0);
       expect(r.neg).toBe(0);
       expect(r.junk).toBe(0);
       expect(r.big, 'capped at 4 hours').toBe(240 * 60000);
       expect(r.ok).toBe(20 * 60000);
+      expect(r.nonePrep).toBe(0);
+      expect(r.negPrep).toBe(0);
+      expect(r.bigPrep).toBe(240 * 60000);
+      expect(r.okPrep).toBe(20 * 60000);
     });
 
     test('shop minutes land in their own bucket, never inflating job-site labor', async () => {

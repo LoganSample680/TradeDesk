@@ -4142,29 +4142,32 @@ test.describe('Workforce time intelligence', () => {
     });
     if (r && !r.error) {
       expect(r.hours, 'rendered hours, html=' + r.html).not.toBeNull();
-      // Was 2.0h until the shop auto clock-out landed (owner rule 2026-08-24,
-      // js/geo-track.js _geoShopCutoffs). Both numbers are correct for their
-      // own rule set, and this fixture sits exactly on the seam:
+      // Was 2.0h before the workday window landed (owner rules 2026-08-24,
+      // js/geo-track.js _geoShopCutoffs). Both numbers are right for their own
+      // rule set, and this fixture sits exactly on the seam:
       //   old: 120m dwell - 60m manual overlap = 60m shop + 60m manual = 2.0h
-      //   new: the day's last work event is that manual clock-out at T0+90m,
-      //        so dwell pays only T0..T0+90m; minus the same 60m overlap =
-      //        30m shop + 60m manual = 1.5h.
-      // The 30 minutes that changed are dwell AFTER the last work event of the
-      // day, which is precisely what the owner asked to stop paying. The 1h
-      // double-pay guard this test exists for is untouched and still proves
-      // itself: without the overlap subtraction the same fixture reads 2.5h.
-      expect(r.hours).toBeCloseTo(1.5, 1);
+      //   new: the day's ONLY work anchor is that manual clock, T0+30m to
+      //        T0+90m, so the workday is that hour. Dwell outside it is not a
+      //        shift, and inside it the manual clock already covers every
+      //        minute, so shop adds 0 and the day is the 60m manual = 1.0h.
+      // The 60 minutes that changed are dwell before the day's first move and
+      // after its last, which is precisely what the owner asked to stop
+      // paying. The 1h double-pay guard this test exists for is untouched and
+      // still proves itself: without the overlap subtraction it reads 2.0h.
+      // The companion test below pays that hour back with the allowances.
+      expect(r.hours).toBeCloseTo(1.0, 1);
     }
   });
 
-  // The other half of that rule: the wrap-up allowance (S.shopWrapMin) is how
-  // a contractor pays the unload/cleanup after the last job instead of losing
-  // it. Same fixture, 30 minutes of allowance, and the trailing dwell comes
-  // back, proving the knob actually reaches Crew Cost and is not display-only.
-  test('crew cost: the wrap-up allowance pays dwell after the last work event', async () => {
+  // The other half of that rule: the two allowances (S.shopPrepMin for load-up
+  // before the first move, S.shopWrapMin for unload after the last) are how a
+  // contractor pays the ends of the day instead of losing them. Same fixture,
+  // 30 minutes on each side, and both stretches come back, proving the knobs
+  // actually reach Crew Cost and are not display-only.
+  test('crew cost: the prep and wrap-up allowances pay the ends of the day', async () => {
     const r = await page.evaluate(async () => {
       if (typeof _crewCostRender !== 'function') return null;
-      const orig = { timeEntries, supa: window._supa, supaEnabled: window.supaEnabled, supaUser: window._supaUser, wrap: S.shopWrapMin };
+      const orig = { timeEntries, supa: window._supa, supaEnabled: window.supaEnabled, supaUser: window._supaUser, wrap: S.shopWrapMin, prep: S.shopPrepMin };
       const T0 = Date.now() - 3 * 3600000;
       const EMP = 'emp-shopwrap-1';
       const shopRow = { employee_user_id: EMP, minutes: 120, arrived_at: new Date(T0).toISOString() };
@@ -4184,7 +4187,7 @@ test.describe('Workforce time intelligence', () => {
       };
       window.supaEnabled = () => true;
       window._supaUser = window._supaUser || { id: 'owner-test' };
-      S.shopWrapMin = 30;
+      S.shopWrapMin = 30; S.shopPrepMin = 30;
       document.getElementById('_crew-cost-ov')?.remove();
       let html = '';
       try {
@@ -4192,13 +4195,13 @@ test.describe('Workforce time intelligence', () => {
         html = document.getElementById('_crew-cost-body')?.innerHTML || '';
       } catch (e) { return { error: e.message }; }
       document.getElementById('_crew-cost-ov')?.remove();
-      timeEntries = orig.timeEntries; window._supa = orig.supa; window.supaEnabled = orig.supaEnabled; window._supaUser = orig.supaUser; S.shopWrapMin = orig.wrap;
+      timeEntries = orig.timeEntries; window._supa = orig.supa; window.supaEnabled = orig.supaEnabled; window._supaUser = orig.supaUser; S.shopWrapMin = orig.wrap; S.shopPrepMin = orig.prep;
       const hoursMatch = html.match(/(\d+(?:\.\d+)?)h/);
       return { html, hours: hoursMatch ? parseFloat(hoursMatch[1]) : null };
     });
     if (r && !r.error) {
       expect(r.hours, 'rendered hours, html=' + r.html).not.toBeNull();
-      expect(r.hours, '30 minutes of allowance restores the trailing dwell').toBeCloseTo(2.0, 1);
+      expect(r.hours, '30 minutes each side restores the load-up and the unload').toBeCloseTo(2.0, 1);
     }
   });
 

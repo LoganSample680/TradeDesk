@@ -3183,8 +3183,19 @@ async function _crewCostRender(range){
   });
   const _ccOverlapMs=(aStart,aEnd,windows)=>windows.reduce((sum,[bStart,bEnd])=>
     sum+Math.max(0,Math.min(aEnd,bEnd)-Math.max(aStart,bStart)),0);
+  // Computed before anything is aggregated: both the drive filter just below
+  // and the shop spans further down need the day's workday window.
+  const shopCut=(typeof _geoShopCutoffs==='function')?_geoShopCutoffs(ents):{};
   ents.forEach(en=>{
     const uid=en.employee_user_id;if(!uid)return;
+    // Same workday bound the Time Log applies: a drive leg outside the day's
+    // first and last real job/supply activity is a personal trip the tracker
+    // caught, never paid labor (js/geo-track.js _geoRowInWorkday). Applied
+    // here too so Crew Cost and the Time Log cannot disagree about a day.
+    if(_geoIsDriveSource(en.source)&&typeof _geoRowInWorkday==='function'&&en.arrived_at){
+      const dd=_ctDateStr(new Date(en.arrived_at));
+      if(!_geoRowInWorkday(en.arrived_at,en.departed_at,((shopCut[uid]||{})[dd])||null))return;
+    }
     const e=_emp(uid);let m=en.minutes||0;
     // Off-job time (lunch, an errand) is shown but never PAID: it stays out of
     // e.min, which drives loaded cost and wage, and out of dayMins, which drives
@@ -3216,7 +3227,6 @@ async function _crewCostRender(range){
   // the full rule. Applied HERE as well as on the Time Log on purpose, Crew
   // Cost is where those minutes turn into money, and two screens disagreeing
   // about what a day paid is worse than either answer alone.
-  const shopCut=(typeof _geoShopCutoffs==='function')?_geoShopCutoffs(ents):{};
   // Per person, in order: the clock-out bound AND the no-minute-paid-twice
   // clip between overlapping sessions both live in _geoShopPaidSpans
   // (js/geo-track.js), so this screen and the Time Log cannot drift apart.
@@ -3229,7 +3239,8 @@ async function _crewCostRender(range){
       .push({arrived_at:en.arrived_at,departed_at:new Date(b).toISOString()});
   });
   Object.keys(shopByUid).forEach(uid=>{
-    const spans=(typeof _geoShopPaidSpans==='function')?_geoShopPaidSpans(shopByUid[uid],shopCut[uid]||{}):[];
+    const mine=ents.filter(x=>x&&String(x.employee_user_id)===String(uid));
+    const spans=(typeof _geoShopPaidSpans==='function')?_geoShopPaidSpans(shopByUid[uid],shopCut[uid]||{},mine):[];
     shopByUid[uid].forEach((en,i)=>{
       const sp=spans[i];if(!sp)return;
       const bounded=sp.minutes||0;

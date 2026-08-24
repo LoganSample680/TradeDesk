@@ -228,7 +228,7 @@ async function _timeLogRows(sinceISO){
     ? _geoShopCutoffs((crew.entries||[]).concat(
         timeEntries.filter(e=>!e.open&&e.start_time&&e.end_time).map(e=>({
           employee_user_id:e.logged_by_uid||(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null,
-          departed_at:e.end_time,source:'manual'
+          arrived_at:e.start_time,departed_at:e.end_time,source:'manual'
         }))))
     : {};
   // Grouped per person because the paid spans are computed in ORDER for one
@@ -241,7 +241,8 @@ async function _timeLogRows(sinceISO){
   });
   Object.keys(_shopByUid).forEach(uid=>{
     const list=_shopByUid[uid];
-    const spans=(typeof _geoShopPaidSpans==='function')?_geoShopPaidSpans(list,_shopCut[uid]||{}):[];
+    const mine=(crew.entries||[]).filter(x=>x&&String(x.employee_user_id)===String(uid));
+    const spans=(typeof _geoShopPaidSpans==='function')?_geoShopPaidSpans(list,_shopCut[uid]||{},mine):[];
     list.forEach((e,i)=>{
       const arr=Date.parse(e.arrived_at),dep=Date.parse(e.departed_at);
       if(!(arr>0&&dep>arr))return;
@@ -251,12 +252,17 @@ async function _timeLogRows(sinceISO){
       const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
       const day=dstr(new Date(arr));
       if(day!==dstr(new Date(dep)))return;
+      // (the span builder folds a blip-split visit into its first row, so a
+      // merged-away row simply reports zero minutes below)
       const sp=spans[i]||{startMs:arr,endMs:dep,minutes:e.minutes||0,clipped:false};
-      if((sp.minutes||0)<1)return;   // after the auto clock-out, or a day with no work in it
+      // Zero paid minutes means outside the workday window, or folded into an
+      // earlier session that already carries this stretch. Either way there is
+      // no second row to draw.
+      if((sp.minutes||0)<1)return;
       // Trimmed by the clock-out rather than by the person leaving: show when
       // the clock actually stopped and say why, so the rule is visible instead
       // of quietly eating minutes. Exact edges (the common case) read plain.
-      const trimmed=sp.endMs<dep-60000;
+      const trimmed=sp.endMs<(sp.rawEndMs||dep)-60000;
       rows.push({
         id:'s'+uid+'_'+e.arrived_at,
         source:'shop',date:day,minutes:sp.minutes,
@@ -269,6 +275,7 @@ async function _timeLogRows(sinceISO){
         // clock-out or the overlap clip actually moved is re-stamped.
         startTime:sp.clipped?new Date(sp.startMs).toISOString():e.arrived_at,
         endTime:sp.endMs===dep?e.departed_at:new Date(sp.endMs).toISOString(),
+        mergedCount:sp.mergedCount||1,
         rawId:null,rawSource:'shop'
       });
     });
@@ -289,6 +296,16 @@ async function _timeLogRows(sinceISO){
     // and _tlComputeOT both skip unpaid minutes, so a lunch break never
     // becomes paid time or pushes someone into overtime they never worked.
     const isUnpaid=typeof _geoIsOffJobSource==='function'&&_geoIsOffJobSource(e.source);
+    // A drive leg outside the workday window is a personal trip the tracker
+    // happened to catch, not work (owner 2026-08-24, the Tue 8/18 family
+    // pictures run: "it should be dropped"). Only drives can land outside the
+    // window, since job and place visits are what define it, so this can never
+    // hide on-site time. js/geo-track.js _geoRowInWorkday carries the rule.
+    if(typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(e.source)&&
+       typeof _geoRowInWorkday==='function'){
+      const _dday=(typeof _ctDateStr==='function')?_ctDateStr(new Date(e.arrived_at)):dateKey(new Date(e.arrived_at));
+      if(!_geoRowInWorkday(e.arrived_at,e.departed_at,((_shopCut[e.employee_user_id]||{})[_dday])||null))return;
+    }
     // The anchor rule (owner 2026-08-24, see _tlStopAnchored above): an
     // unpaid stop with no real location event on both sides of it that same
     // Central day never renders at all.

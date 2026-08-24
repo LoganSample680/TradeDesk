@@ -1572,74 +1572,203 @@ function _geoShopWrapMs(){
   const n=Number((typeof S!=='undefined'&&S&&S.shopWrapMin)||0);
   return (isFinite(n)&&n>0?Math.min(n,240):0)*60000;   // capped at 4h, never negative
 }
-// Last work moment per person per Central day, from job_time_entries-shaped
-// rows (manual clock entries mapped into the same shape count too).
-// Returns {uid:{'YYYY-MM-DD':ms}}.
+// The head-end twin of the wrap-up allowance: load-up/prep time before the
+// first move of the day. Same clamp, same default of zero.
+function _geoShopPrepMs(){
+  const n=Number((typeof S!=='undefined'&&S&&S.shopPrepMin)||0);
+  return (isFinite(n)&&n>0?Math.min(n,240):0)*60000;
+}
+// A drive leg is not, by itself, evidence of a workday. The owner's rule names
+// job sites and supply runs, so those visits are the anchors and a drive
+// counts only when it is CHAINED to one: it pulls out as a visit ends (the
+// ride back to the yard) or pulls in as one begins (the ride out).
+//
+// Found by the owner 2026-08-24 on Tue 8/18: a 6:26pm leg reading "Civitan Day
+// Camp to Shop" was treated as the day's last work event purely because it was
+// a drive, which held the workday open until 7:44pm and paid the yard time
+// sitting under it. Nothing about that trip is a job or a supply run. Chaining
+// is what separates it from the 5:19pm "John Doe to Shop" leg five minutes
+// earlier, which IS the ride home from the last job and does close the day.
+const _GEO_SHOP_CHAIN_MS=5*60000;
+function _geoIsWorkAnchorSource(s){
+  const t=String(s||'');
+  if(/^drive/.test(t))return false;      // a leg, judged by what it chains to
+  if(t==='stop')return false;            // lunch or an errand is not work
+  return true;                           // job fence, place, reconciled, manual
+}
+// The workday WINDOW per person per Central day: {inMs, outMs}.
+//
+// Opens at the first job/supply visit of the day (or the drive that leads
+// straight into it) and closes at the last one (or the drive straight out of
+// it). Anything outside is not the workday, so yard dwell there earns nothing.
+// Both edges matter: the clock-out alone left the morning unbounded, and the
+// owner's Fri 8/21 report was exactly that, 6:05am to 7:48am at the yard being
+// paid because the day had no clock-IN to sit behind.
+//
+// `entries` are job_time_entries-shaped rows; manual clock entries mapped into
+// the same shape count as anchors too. Returns {uid:{'YYYY-MM-DD':{inMs,outMs}}}.
 function _geoShopCutoffs(entries){
   const out={};
   const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
-  (Array.isArray(entries)?entries:[]).forEach(e=>{
-    if(!e||!e.employee_user_id)return;
+  const rows=(Array.isArray(entries)?entries:[]).filter(e=>{
+    if(!e||!e.employee_user_id)return false;
+    return (Date.parse(e.departed_at||'')||0)>0&&(Date.parse(e.arrived_at||'')||0)>0;
+  });
+  const anchors=rows.filter(e=>_geoIsWorkAnchorSource(e.source));
+  const widen=(uid,ms)=>{
+    const day=dstr(new Date(ms));
+    const m=out[uid]=out[uid]||{};
+    const w=m[day]=m[day]||{inMs:ms,outMs:ms};
+    if(ms<w.inMs)w.inMs=ms;
+    if(ms>w.outMs)w.outMs=ms;
+  };
+  anchors.forEach(e=>{
+    widen(e.employee_user_id,Date.parse(e.arrived_at));
+    widen(e.employee_user_id,Date.parse(e.departed_at));
+  });
+  // Second pass so every anchor is already on record: a leg chained to ANY of
+  // them widens the window, not just to one seen earlier in the array.
+  rows.forEach(e=>{
+    if(_geoIsWorkAnchorSource(e.source))return;
     if(typeof _geoIsOffJobSource==='function'&&_geoIsOffJobSource(e.source))return;
-    const end=Date.parse(e.departed_at||'')||0;
-    if(!(end>0))return;
-    const day=dstr(new Date(end));
-    const m=out[e.employee_user_id]=out[e.employee_user_id]||{};
-    if(!(m[day]>=end))m[day]=end;
+    const a=Date.parse(e.arrived_at),d=Date.parse(e.departed_at);
+    const chained=anchors.some(x=>{
+      if(String(x.employee_user_id)!==String(e.employee_user_id))return false;
+      const xa=Date.parse(x.arrived_at),xd=Date.parse(x.departed_at);
+      return Math.abs(a-xd)<=_GEO_SHOP_CHAIN_MS||Math.abs(d-xa)<=_GEO_SHOP_CHAIN_MS;
+    });
+    if(!chained)return;
+    widen(e.employee_user_id,a);
+    widen(e.employee_user_id,d);
   });
   return out;
 }
-// The instant a shop session stops earning. Never past the session's own
-// departure, never past the cutoff + allowance, and equal to the arrival
-// (zero credit) when the day had no work in it at all.
-function _geoShopPaidEnd(arrIso,depIso,cutoffMs){
+// Does a row fall inside the workday at all? Only DRIVE legs can land outside
+// it: job and place visits (and manual clocks) are what define the window, and
+// an off-job stop is already gated by the Time Log's own anchor rule.
+//
+// Owner, 2026-08-24, on a 78-minute Tue 8/18 leg the mileage table names
+// "Civitan Day Camp to Shop": "was a time we did family pictures and I'm not
+// sure why it's there." It is there because the tracker logs every leg between
+// known points while tracking is on and had no notion of the day being over,
+// so a personal round trip that happened to END at the yard was written with
+// the yard as its purpose and paid like any other leg. The workday window is
+// that missing notion.
+function _geoRowInWorkday(arrIso,depIso,win){
+  const a=Date.parse(arrIso||'')||0,d=Date.parse(depIso||'')||a;
+  if(!(a>0))return true;                 // unparseable: never hide it
+  if(!win||!(win.outMs>0))return false;  // no work that day, so nothing is on the clock
+  return Math.min(d,win.outMs)>=Math.max(a,win.inMs);
+}
+// The paid slice of one shop session against a day's workday window, as
+// [startMs,endMs]. Empty (start===end) when the day had no work in it, or the
+// session sits entirely outside the window.
+function _geoShopPaidRange(arrIso,depIso,win){
   const arr=Date.parse(arrIso||'')||0,dep=Date.parse(depIso||'')||0;
-  if(!(arr>0&&dep>arr))return arr;
-  if(!(cutoffMs>0))return arr;
-  return Math.max(arr,Math.min(dep,cutoffMs+_geoShopWrapMs()));
+  if(!(arr>0&&dep>arr))return [arr,arr];
+  if(!win||!(win.outMs>0))return [arr,arr];
+  const lo=win.inMs-_geoShopPrepMs(),hi=win.outMs+_geoShopWrapMs();
+  const s=Math.max(arr,lo),e=Math.min(dep,hi);
+  return e>s?[s,e]:[arr,arr];
 }
-function _geoShopPaidMin(arrIso,depIso,cutoffMs){
-  const arr=Date.parse(arrIso||'')||0;
-  if(!(arr>0))return 0;
-  return Math.max(0,Math.round((_geoShopPaidEnd(arrIso,depIso,cutoffMs)-arr)/60000));
+function _geoShopPaidMin(arrIso,depIso,win){
+  const [s,e]=_geoShopPaidRange(arrIso,depIso,win);
+  return Math.max(0,Math.round((e-s)/60000));
 }
-// The paid window of every shop session for one person, in order, with each
-// session's start pushed past the previous one's end.
+// Every shop session for one person as paid spans, in input order.
 //
-// Two shop rows for the same person can overlap by a few minutes and still be
-// two real sessions: _GEO_SHOP_DUP_OVERLAP_MS below deliberately tolerates up
-// to four minutes of drift before calling them duplicates, because a genuine
-// back-to-back arrival does drift. That was free while yard dwell was only
-// displayed. It is not free now that it is paid: an overlapping minute would
-// be paid twice, the same error the manual-clock trim in Crew Cost already
-// exists to prevent (js/finance.js _ccOverlapMs). Walking in order and
-// clipping each start to the running end costs nothing and makes double
-// payment structurally impossible rather than a threshold away.
+// Three things happen here, in this order, and all three are payroll rules
+// rather than display polish, which is why one function owns them and both the
+// Time Log and Crew Cost call it.
 //
-// `entries` are shop_time_entries-shaped rows; `cutoffs` is one person's day
-// map from _geoShopCutoffs. Returns one entry per input row, in input order,
-// so a caller can zip it back to its own row objects.
-function _geoShopPaidSpans(entries,cutoffs){
+// 1. SESSIONS THAT ARE ONE VISIT ARE MERGED. A yard visit interrupted by a
+//    fence blip lands as two rows a minute or two apart (owner report
+//    2026-08-24, Tue 8/18: 5:24-5:27pm and 5:26-6:03pm are one stretch at the
+//    yard shown as two lines). They fold into one, but ONLY when nothing else
+//    on record sits inside the merged span: on the same day 12:49-1:28pm and
+//    1:29-1:34pm look identical, and merging those would swallow the 1:29pm
+//    drive out to the job, so they correctly stay apart.
+// 2. THE WORKDAY WINDOW CLIPS THEM. Outside the day's first and last real
+//    job/supply activity there is no shift to be on (see _geoShopCutoffs).
+// 3. OVERLAPS ARE CLIPPED. _GEO_SHOP_DUP_OVERLAP_MS tolerates up to four
+//    minutes of drift before two rows count as duplicates, so a surviving
+//    overlap would otherwise pay the same minute twice.
+//
+// `entries` are shop_time_entries-shaped rows for ONE person; `win` is that
+// person's day map from _geoShopCutoffs; `others` are their job_time_entries
+// rows, used only to veto a merge that would swallow one.
+function _geoShopPaidSpans(entries,win,others){
   const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
   const rows=(Array.isArray(entries)?entries:[]).map((e,i)=>{
     const arr=Date.parse((e&&e.arrived_at)||'')||0;
     const dep=Date.parse((e&&e.departed_at)||'')||0;
     return {i,arr,dep,ok:arr>0&&dep>arr};
   });
+  const out=rows.map(r=>({startMs:r.arr,endMs:r.arr,minutes:0,clipped:false,mergedInto:null}));
   const order=rows.filter(r=>r.ok).sort((a,b)=>a.arr-b.arr||a.dep-b.dep);
-  let runningEnd=0;
-  const out=rows.map(r=>({startMs:r.arr,endMs:r.arr,minutes:0,clipped:false}));
+  const otherRows=(Array.isArray(others)?others:[])
+    .map(e=>[Date.parse((e&&e.arrived_at)||'')||0,Date.parse((e&&e.departed_at)||'')||0])
+    .filter(x=>x[0]>0&&x[1]>x[0]);
+  // Something else overlapping the widened span by more than the edge slack
+  // means the person was provably elsewhere inside it, so it is not one visit.
+  const SLACK=60000;
+  const swallowsSomething=(s,e)=>otherRows.some(x=>Math.min(x[1],e)-Math.max(x[0],s)>SLACK);
+  const clusters=[];
   for(const r of order){
-    const day=dstr(new Date(r.arr));
-    const cut=((cutoffs||{})[day])||0;
-    const end=_geoShopPaidEnd(new Date(r.arr).toISOString(),new Date(r.dep).toISOString(),cut);
-    const start=Math.max(r.arr,runningEnd);
-    const o=out[r.i];
-    o.startMs=start;
-    o.endMs=Math.max(start,end);
-    o.minutes=Math.max(0,Math.round((o.endMs-start)/60000));
-    o.clipped=start>r.arr;
-    if(o.endMs>runningEnd)runningEnd=o.endMs;
+    const cur=clusters[clusters.length-1];
+    if(cur&&r.arr-cur.dep<=_GEO_SHOP_CHAIN_MS&&
+       dstr(new Date(cur.arr))===dstr(new Date(r.dep))&&
+       !swallowsSomething(cur.arr,Math.max(cur.dep,r.dep))){
+      cur.dep=Math.max(cur.dep,r.dep);cur.members.push(r.i);
+    }else{
+      clusters.push({arr:r.arr,dep:r.dep,members:[r.i]});
+    }
+  }
+  // Nobody is at the yard and behind the wheel at the same instant, but the
+  // fence lags the ignition, so a session and the leg pulling out of it can
+  // report overlapping minutes (owner's Tue 8/18: yard 1:29-1:34pm against a
+  // 1:29-1:36pm drive to the job). The leg is the one that means something,
+  // so the yard side yields. Only DRIVE rows are clipped here: a manual clock
+  // covering the same window is already trimmed off the shop side in Crew
+  // Cost (js/finance.js _ccOverlapMs), and clipping it twice would dock those
+  // minutes twice.
+  const driveRows=(Array.isArray(others)?others:[])
+    .filter(e=>e&&typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(e.source))
+    .map(e=>[Date.parse(e.arrived_at||'')||0,Date.parse(e.departed_at||'')||0])
+    .filter(x=>x[0]>0&&x[1]>x[0]);
+  const clipToDrives=(s,e)=>{
+    let a=s,b=e;
+    driveRows.forEach(x=>{
+      if(x[1]<=a||x[0]>=b)return;              // no overlap
+      if(x[0]<=a&&x[1]>=b){b=a;return;}        // fully covered: nothing left
+      if(x[0]<=a){a=Math.max(a,x[1]);return;}  // eats the front
+      if(x[1]>=b){b=Math.min(b,x[0]);}         // eats the back
+      // A leg strictly inside a yard session is a fence artifact, not a real
+      // split; leaving the session whole is closer to the truth than carving
+      // it into two rows over a few minutes.
+    });
+    return [a,Math.max(a,b)];
+  };
+  let runningEnd=0;
+  for(const c of clusters){
+    const day=dstr(new Date(c.arr));
+    const pr0=_geoShopPaidRange(new Date(c.arr).toISOString(),new Date(c.dep).toISOString(),((win||{})[day])||null);
+    const pr=pr0[1]>pr0[0]?clipToDrives(pr0[0],pr0[1]):pr0;
+    const start=Math.max(pr[0],runningEnd);
+    const keep=out[c.members[0]];
+    keep.startMs=start;
+    keep.endMs=Math.max(start,pr[1]);
+    keep.minutes=Math.max(0,Math.round((keep.endMs-start)/60000));
+    keep.clipped=start>c.arr;
+    keep.mergedCount=c.members.length;
+    keep.rawEndMs=c.dep;
+    if(keep.endMs>runningEnd)runningEnd=keep.endMs;
+    // Folded-away members keep a zero span and a pointer to the survivor, so a
+    // caller renders one row per real visit and can still tell why.
+    for(let k=1;k<c.members.length;k++){
+      const m=out[c.members[k]];
+      m.startMs=m.endMs=start;m.minutes=0;m.mergedInto=c.members[0];
+    }
   }
   return out;
 }
