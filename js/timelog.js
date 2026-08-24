@@ -231,33 +231,46 @@ async function _timeLogRows(sinceISO){
           departed_at:e.end_time,source:'manual'
         }))))
     : {};
+  // Grouped per person because the paid spans are computed in ORDER for one
+  // person at a time: overlapping sessions clip against each other so no
+  // minute is ever paid twice (js/geo-track.js _geoShopPaidSpans).
+  const _shopByUid={};
   (crew.shopEntries||[]).forEach(e=>{
     if(!e||!e.arrived_at||!e.departed_at)return;
-    const arr=Date.parse(e.arrived_at),dep=Date.parse(e.departed_at);
-    if(!(arr>0&&dep>arr))return;
-    // Same physical-impossibility bound the rest of the log honors: a dwell
-    // that spans Central midnight is the truck sitting at the yard overnight,
-    // not a shift, and must never land as paid time (owner rule 2026-08-24).
-    const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
-    const day=dstr(new Date(arr));
-    if(day!==dstr(new Date(dep)))return;
-    const cut=((_shopCut[e.employee_user_id]||{})[day])||0;
-    const paidEnd=(typeof _geoShopPaidEnd==='function')?_geoShopPaidEnd(e.arrived_at,e.departed_at,cut):dep;
-    const mins=(typeof _geoShopPaidMin==='function')?_geoShopPaidMin(e.arrived_at,e.departed_at,cut):(e.minutes||0);
-    if(mins<1)return;   // after the auto clock-out, or a day with no work in it
-    // Trimmed by the clock-out rather than by the person leaving: show when
-    // the clock actually stopped and say why, so the rule is visible instead
-    // of quietly eating minutes. Exact edges (the common case) read plain.
-    const trimmed=paidEnd<dep-60000;
-    rows.push({
-      id:'s'+e.employee_user_id+'_'+e.arrived_at,
-      source:'shop',date:day,minutes:mins,
-      personName:crew.name[e.employee_user_id]||'Crew',personUid:e.employee_user_id,
-      clientName:(typeof S!=='undefined'&&S&&S.bname)?S.bname:'Shop',
-      addr:(typeof _geoShopAddr==='function'&&_geoShopAddr())||'',jobName:'',
-      clientKey:null,unpaid:false,
-      detail:trimmed?'Shop · auto clock-out':'Shop',
-      startTime:e.arrived_at,endTime:new Date(paidEnd).toISOString(),rawId:null,rawSource:'shop'
+    (_shopByUid[e.employee_user_id]=_shopByUid[e.employee_user_id]||[]).push(e);
+  });
+  Object.keys(_shopByUid).forEach(uid=>{
+    const list=_shopByUid[uid];
+    const spans=(typeof _geoShopPaidSpans==='function')?_geoShopPaidSpans(list,_shopCut[uid]||{}):[];
+    list.forEach((e,i)=>{
+      const arr=Date.parse(e.arrived_at),dep=Date.parse(e.departed_at);
+      if(!(arr>0&&dep>arr))return;
+      // Same physical-impossibility bound the rest of the log honors: a dwell
+      // that spans Central midnight is the truck sitting at the yard overnight,
+      // not a shift, and must never land as paid time (owner rule 2026-08-24).
+      const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
+      const day=dstr(new Date(arr));
+      if(day!==dstr(new Date(dep)))return;
+      const sp=spans[i]||{startMs:arr,endMs:dep,minutes:e.minutes||0,clipped:false};
+      if((sp.minutes||0)<1)return;   // after the auto clock-out, or a day with no work in it
+      // Trimmed by the clock-out rather than by the person leaving: show when
+      // the clock actually stopped and say why, so the rule is visible instead
+      // of quietly eating minutes. Exact edges (the common case) read plain.
+      const trimmed=sp.endMs<dep-60000;
+      rows.push({
+        id:'s'+uid+'_'+e.arrived_at,
+        source:'shop',date:day,minutes:sp.minutes,
+        personName:crew.name[uid]||'Crew',personUid:uid,
+        clientName:(typeof S!=='undefined'&&S&&S.bname)?S.bname:'Shop',
+        addr:(typeof _geoShopAddr==='function'&&_geoShopAddr())||'',jobName:'',
+        clientKey:null,unpaid:false,
+        detail:trimmed?'Shop · auto clock-out':'Shop',
+        // Unchanged edges keep the source string exactly: only an edge the
+        // clock-out or the overlap clip actually moved is re-stamped.
+        startTime:sp.clipped?new Date(sp.startMs).toISOString():e.arrived_at,
+        endTime:sp.endMs===dep?e.departed_at:new Date(sp.endMs).toISOString(),
+        rawId:null,rawSource:'shop'
+      });
     });
   });
   timeEntries.forEach(e=>{

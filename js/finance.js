@@ -3217,25 +3217,35 @@ async function _crewCostRender(range){
   // Cost is where those minutes turn into money, and two screens disagreeing
   // about what a day paid is worse than either answer alone.
   const shopCut=(typeof _geoShopCutoffs==='function')?_geoShopCutoffs(ents):{};
+  // Per person, in order: the clock-out bound AND the no-minute-paid-twice
+  // clip between overlapping sessions both live in _geoShopPaidSpans
+  // (js/geo-track.js), so this screen and the Time Log cannot drift apart.
+  const shopByUid={};
   shopEnts.forEach(en=>{
-    const uid=en.employee_user_id;if(!uid)return;
-    const raw=en.minutes||0;
-    const a=Date.parse(en.arrived_at),b=en.departed_at?Date.parse(en.departed_at):a+raw*60000;
-    const day=_ctDateStr(new Date(en.arrived_at));
-    const cut=((shopCut[uid]||{})[day])||0;
-    const bEnd=(typeof _geoShopPaidEnd==='function')?_geoShopPaidEnd(en.arrived_at,new Date(b).toISOString(),cut):b;
-    const bounded=Math.max(0,Math.round((bEnd-a)/60000));
-    // Overlap is measured against the BOUNDED window, not the raw one: a
-    // manual clock outside the workday would otherwise be subtracted from
-    // minutes the clock-out already removed, double-docking the same time.
-    const overlapMin=Math.round(_ccOverlapMs(a,bEnd,manualWindows[uid]||[])/60000);
-    const m=Math.max(0,bounded-Math.min(bounded,overlapMin));   // never below 0, never over the bounded span
-    // Bucket created only once the session actually pays something, otherwise
-    // a person whose whole week was after-hours yard dwell renders as a 0.0h row.
-    if(m<1)return;
-    const e=_emp(uid);
-    e.min+=m;e.shopMin+=m;
-    e.dayMins[day]=(e.dayMins[day]||0)+m;
+    if(!en||!en.employee_user_id||!en.arrived_at)return;
+    const a=Date.parse(en.arrived_at);
+    const b=en.departed_at?Date.parse(en.departed_at):a+(en.minutes||0)*60000;
+    (shopByUid[en.employee_user_id]=shopByUid[en.employee_user_id]||[])
+      .push({arrived_at:en.arrived_at,departed_at:new Date(b).toISOString()});
+  });
+  Object.keys(shopByUid).forEach(uid=>{
+    const spans=(typeof _geoShopPaidSpans==='function')?_geoShopPaidSpans(shopByUid[uid],shopCut[uid]||{}):[];
+    shopByUid[uid].forEach((en,i)=>{
+      const sp=spans[i];if(!sp)return;
+      const bounded=sp.minutes||0;
+      // Overlap is measured against the BOUNDED window, not the raw one: a
+      // manual clock outside the workday would otherwise be subtracted from
+      // minutes the clock-out already removed, double-docking the same time.
+      const overlapMin=Math.round(_ccOverlapMs(sp.startMs,sp.endMs,manualWindows[uid]||[])/60000);
+      const m=Math.max(0,bounded-Math.min(bounded,overlapMin));   // never below 0, never over the bounded span
+      // Bucket created only once the session actually pays something, otherwise
+      // a person whose whole week was after-hours yard dwell renders as a 0.0h row.
+      if(m<1)return;
+      const e=_emp(uid);
+      const day=_ctDateStr(new Date(sp.startMs));
+      e.min+=m;e.shopMin+=m;
+      e.dayMins[day]=(e.dayMins[day]||0)+m;
+    });
   });
   // Revenue attribution + overtime per employee
   Object.keys(byEmp).forEach(uid=>{

@@ -1603,6 +1603,46 @@ function _geoShopPaidMin(arrIso,depIso,cutoffMs){
   if(!(arr>0))return 0;
   return Math.max(0,Math.round((_geoShopPaidEnd(arrIso,depIso,cutoffMs)-arr)/60000));
 }
+// The paid window of every shop session for one person, in order, with each
+// session's start pushed past the previous one's end.
+//
+// Two shop rows for the same person can overlap by a few minutes and still be
+// two real sessions: _GEO_SHOP_DUP_OVERLAP_MS below deliberately tolerates up
+// to four minutes of drift before calling them duplicates, because a genuine
+// back-to-back arrival does drift. That was free while yard dwell was only
+// displayed. It is not free now that it is paid: an overlapping minute would
+// be paid twice, the same error the manual-clock trim in Crew Cost already
+// exists to prevent (js/finance.js _ccOverlapMs). Walking in order and
+// clipping each start to the running end costs nothing and makes double
+// payment structurally impossible rather than a threshold away.
+//
+// `entries` are shop_time_entries-shaped rows; `cutoffs` is one person's day
+// map from _geoShopCutoffs. Returns one entry per input row, in input order,
+// so a caller can zip it back to its own row objects.
+function _geoShopPaidSpans(entries,cutoffs){
+  const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
+  const rows=(Array.isArray(entries)?entries:[]).map((e,i)=>{
+    const arr=Date.parse((e&&e.arrived_at)||'')||0;
+    const dep=Date.parse((e&&e.departed_at)||'')||0;
+    return {i,arr,dep,ok:arr>0&&dep>arr};
+  });
+  const order=rows.filter(r=>r.ok).sort((a,b)=>a.arr-b.arr||a.dep-b.dep);
+  let runningEnd=0;
+  const out=rows.map(r=>({startMs:r.arr,endMs:r.arr,minutes:0,clipped:false}));
+  for(const r of order){
+    const day=dstr(new Date(r.arr));
+    const cut=((cutoffs||{})[day])||0;
+    const end=_geoShopPaidEnd(new Date(r.arr).toISOString(),new Date(r.dep).toISOString(),cut);
+    const start=Math.max(r.arr,runningEnd);
+    const o=out[r.i];
+    o.startMs=start;
+    o.endMs=Math.max(start,end);
+    o.minutes=Math.max(0,Math.round((o.endMs-start)/60000));
+    o.clipped=start>r.arr;
+    if(o.endMs>runningEnd)runningEnd=o.endMs;
+  }
+  return out;
+}
 // Time at a known place, closed on departure. Bounded by a real fence at both
 // ends, so unlike an off-job stop this is verified work time.
 // Returns whether a row was actually enqueued, same contract as

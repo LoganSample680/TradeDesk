@@ -525,6 +525,50 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.junk).toBe(0);
     });
 
+    // _GEO_SHOP_DUP_OVERLAP_MS tolerates up to 4 minutes of drift before two
+    // shop rows count as duplicates, so a genuine back-to-back pair can overlap
+    // slightly. Free while yard dwell was only displayed, not free now that it
+    // is paid: those minutes would be paid twice.
+    test('overlapping shop sessions never pay the same minute twice', async () => {
+      const rows = await withShop([
+        { employee_user_id: 'me', minutes: 60, arrived_at: '2026-08-20T11:00:00Z', departed_at: '2026-08-20T12:00:00Z' },
+        { employee_user_id: 'me', minutes: 63, arrived_at: '2026-08-20T11:57:00Z', departed_at: '2026-08-20T13:00:00Z' },
+      ], [JOB, DRIVE_HOME]);
+      const shop = rows.filter(r => r.source === 'shop').sort((a, b) => a.startTime.localeCompare(b.startTime));
+      expect(shop.length, 'both are real sessions, neither is dropped').toBe(2);
+      expect(shop[1].startTime, 'the second starts where the first stopped paying').toBe('2026-08-20T12:00:00.000Z');
+      expect(shop.reduce((s, r) => s + r.minutes, 0), '11:00 to 13:00 is 120 minutes, not 123').toBe(120);
+    });
+
+    test('a shop session fully inside another pays nothing extra', async () => {
+      const rows = await withShop([
+        { employee_user_id: 'me', minutes: 120, arrived_at: '2026-08-20T11:00:00Z', departed_at: '2026-08-20T13:00:00Z' },
+        { employee_user_id: 'me', minutes: 30, arrived_at: '2026-08-20T11:30:00Z', departed_at: '2026-08-20T12:00:00Z' },
+      ], [JOB, DRIVE_HOME]);
+      const shop = rows.filter(r => r.source === 'shop');
+      expect(shop.reduce((s, r) => s + r.minutes, 0), 'the nested one adds nothing').toBe(120);
+    });
+
+    test('back-to-back sessions that do not overlap are both paid in full', async () => {
+      const rows = await withShop([
+        { employee_user_id: 'me', minutes: 60, arrived_at: '2026-08-20T11:00:00Z', departed_at: '2026-08-20T12:00:00Z' },
+        { employee_user_id: 'me', minutes: 30, arrived_at: '2026-08-20T12:10:00Z', departed_at: '2026-08-20T12:40:00Z' },
+      ], [JOB, DRIVE_HOME]);
+      const shop = rows.filter(r => r.source === 'shop');
+      expect(shop.reduce((s, r) => s + r.minutes, 0), 'a real gap between them is not clipped away').toBe(90);
+    });
+
+    test('span helper: input order preserved, malformed rows return a zero span', async () => {
+      const r = await page.evaluate(() => _geoShopPaidSpans([
+        { arrived_at: '2026-08-20T12:00:00Z', departed_at: '2026-08-20T13:00:00Z' },
+        { arrived_at: null, departed_at: '2026-08-20T13:00:00Z' },
+        { arrived_at: '2026-08-20T11:00:00Z', departed_at: '2026-08-20T12:30:00Z' },
+      ], { '2026-08-20': Date.parse('2026-08-20T20:00:00Z') }).map(x => x.minutes));
+      // Sorted by start the third row runs first (11:00-12:30), so the first
+      // row is clipped to 12:30-13:00 even though it is listed ahead of it.
+      expect(r, 'returned in INPUT order, not sorted order').toEqual([30, 0, 90]);
+    });
+
     test('the wrap-up allowance is clamped, never negative or unbounded', async () => {
       const r = await page.evaluate(() => {
         const prev = S.shopWrapMin, out = {};
