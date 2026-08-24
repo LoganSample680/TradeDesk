@@ -85,8 +85,16 @@ test.describe('Geo park detection + mileage reconciliation', () => {
         const real = window[fn];
         if (typeof real !== 'function') continue;
         window['__real' + fn] = real;
+        // Consumed synchronously ON ENTRY, not held for the duration of the
+        // call. A flag left true across the harness's own await is a gate
+        // standing open: a background caller landing in that window runs the
+        // REAL sweep alongside it, does the collapse, and the harness's call
+        // then correctly reports zero on work that already happened. That is
+        // the same failure the gate was added to stop, one level down, and it
+        // is why gating all three sweeps did not fix it on its own.
         window[fn] = function () {
           if (!window.__sweepAllowed) return 0;
+          window.__sweepAllowed = false;
           return window['__real' + fn].apply(null, arguments);
         };
       }
