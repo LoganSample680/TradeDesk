@@ -6325,4 +6325,107 @@ test.describe('Automatic mileage from drive legs', () => {
   });
 
   test('no console errors', async () => { await assertNoErrors(page); });
+
+  // ── _mileWorkdaySweep: personal legs outside the workday ────────────────
+  // Owner 2026-08-24, on a 6:26pm "Civitan Day Camp to Shop" leg in his IRS
+  // log: "was a time we did family pictures and I'm not sure why it's there.
+  // It should be dropped." Plus a Saturday "Shop to Stop" on a day with no
+  // work in it at all. Same workday window the Time Log and Crew Cost use, so
+  // a day cannot be one length for payroll and another for the deduction.
+  test.describe('_mileWorkdaySweep', () => {
+    // 8:00am to 4:00pm Central on 2026-08-20 (UTC-5), from one job visit and
+    // the legs chained to it.
+    const ENTS = [
+      { employee_user_id: 'wd-user', arrived_at: '2026-08-20T12:30:00Z', departed_at: '2026-08-20T13:00:00Z', source: 'drive' },
+      { employee_user_id: 'wd-user', arrived_at: '2026-08-20T13:00:00Z', departed_at: '2026-08-20T21:00:00Z', source: 'geofence' },
+      { employee_user_id: 'wd-user', arrived_at: '2026-08-20T21:00:00Z', departed_at: '2026-08-20T21:30:00Z', source: 'drive' },
+    ];
+    const leg = (o) => Object.assign({ id: 'wd-' + Math.random().toString(36).slice(2), gps: true, legKey: 'wd-lg',
+      fromCoord: { lat: 9, lng: 9 }, toCoord: { lat: 9.1, lng: 9.1 }, from_name: 'Shop', to_name: 'Stop',
+      miles: 3.2, date: '2026-08-20' }, o);
+
+    const run = (rows, ents) => page.evaluate(async ([rows, ents]) => {
+      const orig = { mileage: mileage.slice(), supa: window._supa, ran: window._mileWorkdaySweepRan,
+        expenses: expenses.slice(), user: window._supaUser };
+      mileage.length = 0; rows.forEach(r => mileage.push(r));
+      expenses.length = 0;
+      window._supaUser = { id: 'wd-user' };
+      window._mileWorkdaySweepRan = false;
+      const q = { data: ents, error: null };
+      window._supa = { from: () => ({ select: () => { const c = { eq: () => c, gte: () => c, then: (res, rej) => Promise.resolve(q).then(res, rej) }; return c; },
+        delete: () => ({ eq: () => ({ eq: () => ({ then: (res) => Promise.resolve({ error: null }).then(res) }) }) }) }) };
+      let dropped = 0, err = null;
+      try { dropped = await window.__real_mileWorkdaySweep ? await window.__real_mileWorkdaySweep() : await _mileWorkdaySweep(); }
+      catch (e) { err = String(e && e.message || e); }
+      const left = mileage.map(m => m.to_name + '@' + m.startedIso);
+      mileage.length = 0; orig.mileage.forEach(m => mileage.push(m));
+      expenses.length = 0; orig.expenses.forEach(e => expenses.push(e));
+      window._supa = orig.supa; window._mileWorkdaySweepRan = orig.ran; window._supaUser = orig.user;
+      return { dropped, left, err };
+    }, [rows, ents]);
+
+    test('a leg driven after the day clocked out is removed', async () => {
+      // 6:26pm to 7:44pm, well past the 4:00pm close.
+      const r = await run([leg({ startedIso: '2026-08-20T23:26:00Z', endedIso: '2026-08-21T00:44:00Z', to_name: 'Shop', from_name: 'Civitan Day Camp' })], ENTS);
+      expect(r.err).toBe(null);
+      expect(r.dropped, 'the family-pictures run is not a business trip').toBe(1);
+      expect(r.left).toEqual([]);
+    });
+
+    test('a leg inside the workday is never touched', async () => {
+      const r = await run([leg({ startedIso: '2026-08-20T13:30:00Z', endedIso: '2026-08-20T13:40:00Z' })], ENTS);
+      expect(r.dropped).toBe(0);
+      expect(r.left.length).toBe(1);
+    });
+
+    test('a leg straddling the edge of the workday is kept, not trimmed', async () => {
+      // Pulls out at 3:50pm, lands at 4:10pm: it overlaps the day, so it stays
+      // whole. This sweep only ever removes, it never rewrites a distance.
+      const r = await run([leg({ startedIso: '2026-08-20T20:50:00Z', endedIso: '2026-08-20T21:10:00Z' })], ENTS);
+      expect(r.dropped).toBe(0);
+      expect(r.left.length).toBe(1);
+    });
+
+    test('every leg on a day with no work at all is removed', async () => {
+      const r = await run([leg({ date: '2026-08-22', startedIso: '2026-08-22T16:47:00Z', endedIso: '2026-08-22T16:57:00Z' })], ENTS);
+      expect(r.dropped, 'a Saturday errand is not a deduction').toBe(1);
+    });
+
+    test('a hand-entered trip is never second-guessed', async () => {
+      const r = await run([leg({ gps: false, legKey: null, startedIso: '2026-08-20T23:26:00Z', endedIso: '2026-08-21T00:44:00Z' })], ENTS);
+      expect(r.dropped, "the contractor's own statement stands").toBe(0);
+    });
+
+    test('a leg carrying a client link is never removed', async () => {
+      const r = await run([leg({ client_id: 42, startedIso: '2026-08-20T23:26:00Z', endedIso: '2026-08-21T00:44:00Z' })], ENTS);
+      expect(r.dropped).toBe(0);
+    });
+
+    test('with no time entries at all it deletes nothing, absence is not evidence', async () => {
+      const r = await run([leg({ startedIso: '2026-08-20T23:26:00Z', endedIso: '2026-08-21T00:44:00Z' })], []);
+      expect(r.dropped).toBe(0);
+      expect(r.left.length).toBe(1);
+    });
+
+    test('it runs once per session', async () => {
+      const rows = [leg({ startedIso: '2026-08-20T23:26:00Z', endedIso: '2026-08-21T00:44:00Z' })];
+      const first = await run(rows, ENTS);
+      expect(first.dropped).toBe(1);
+      const again = await page.evaluate(async () => {
+        const prev = window._mileWorkdaySweepRan;
+        window._mileWorkdaySweepRan = true;
+        const n = await (window.__real_mileWorkdaySweep || _mileWorkdaySweep)();
+        window._mileWorkdaySweepRan = prev;
+        return n;
+      });
+      expect(again, 'a second pass in the same session is a no-op').toBe(0);
+    });
+
+    test('malformed rows and an empty log never throw', async () => {
+      const r = await run([{ id: 'x', gps: true }, { id: 'y', gps: true, startedIso: 'nope', endedIso: 'nope' }], ENTS);
+      expect(r.err).toBe(null);
+      expect(r.dropped).toBe(0);
+    });
+  });
+
 });

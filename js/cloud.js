@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.24.26.12';
+const APP_VERSION='08.24.26.13';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2289,7 +2289,7 @@ async function supaInit(){
         // dashboard render holds the FULL shimmer (every widget + greeting),
         // one swap + one waterfall when the load below fully settles, exactly
         // like a fresh boot. _bootCascadeRan resets so this load gets its pour.
-        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;window._mileMotionHealRan=false;window._milePersonalSweepRan=false;window._geoOpenRestored=false;window._bootChecklistHoldUntil=null;window._bootChecklistPending=0;
+        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;window._mileMotionHealRan=false;window._milePersonalSweepRan=false;window._mileWorkdaySweepRan=false;window._geoOpenRestored=false;window._bootChecklistHoldUntil=null;window._bootChecklistPending=0;
         goPg('pg-dash');
         try{
         const hasAccount=await loadAccountData();
@@ -7888,6 +7888,14 @@ async function supaLoadFromCloud({silent=false}={}){
     // runs once when Apple names the stop, so a day the app died through, or
     // a day judged under an older rule, never gets a second look without this.
     try{if(typeof _milePersonalStopSweep==='function')_milePersonalStopSweep();}catch(_e){}
+    // Same reductions-only, once-per-session shape as its sibling above, but
+    // judged against the day's WORKDAY WINDOW rather than the destination
+    // (js/mileage.js _mileWorkdaySweep): a leg driven outside the day's first
+    // and last real job or supply activity is a personal trip the tracker
+    // happened to catch, and it has no business in an IRS log. Ordered after
+    // the personal-stop sweep so a leg that one already collapsed is never
+    // re-judged here.
+    try{if(typeof _mileWorkdaySweep==='function')_mileWorkdaySweep();}catch(_e){}
     // Drive-time hygiene last, after every mileage sweep above has had its
     // turn: a leg the personal-stop sweep just collapsed away, or the motion
     // heal just corrected, is exactly the kind of change whose paid

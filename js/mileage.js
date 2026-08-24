@@ -829,6 +829,99 @@ async function _retryPendingTrips(){
 // real deduction money: same person, time windows that overlap, and the same
 // destination. Two genuine trips by one person to one place can never overlap
 // in time: you cannot drive to somewhere you are already driving to.
+// ── Personal legs outside the workday (owner rule 2026-08-24) ─────────────
+// The tracker logs every drive between two known points while tracking is on.
+// It has no idea whether anyone is working, so a personal trip that happens to
+// end at a business point is written as a business trip and lands in the IRS
+// log. The owner's own week had two: a 6:26pm "Civitan Day Camp to Shop" leg
+// ("was a time we did family pictures and I'm not sure why it's there") and a
+// Saturday 11:47am "Shop to Stop" on a day with no work in it at all.
+//
+// The workday window is the missing notion, and it already decides this
+// question for TIME on the Time Log and in Crew Cost (js/geo-track.js
+// _geoShopCutoffs): the day opens at its first job or supply activity and
+// closes at its last, and a drive counts as an edge only when chained to one.
+// The same window decides it for MILES here, so a day cannot be one length for
+// payroll and another for the deduction.
+//
+// Deliberately conservative, because this deletes tax records:
+//   - GPS legs only. A hand-entered trip is the contractor's own statement and
+//     is never second-guessed.
+//   - Never a leg carrying a client link.
+//   - Never a leg with a same-day business receipt at either end, the same
+//     protection _milePersonalStopSweep already honours.
+//   - Never a day the window covers, only legs that fall wholly outside it.
+//   - Capped per pass, once per session, and every removal is announced in the
+//     park log with its route and clock, so nothing vanishes unexplained.
+// Reductions only, and it uses the same tombstone + cloud delete every other
+// real deletion here uses (§7.3), or the row simply comes back on next load.
+const _MILE_WORKDAY_CAP=25;
+async function _mileWorkdaySweep(){
+  try{
+    if(window._mileWorkdaySweepRan)return 0;
+    if(typeof mileage==='undefined'||!Array.isArray(mileage)||!mileage.length)return 0;
+    if(typeof _geoShopCutoffs!=='function'||typeof _supa==='undefined'||!_supa||!_supaUser)return 0;
+    const cutoff=new Date(Date.now()-14*86400000).toISOString();
+    const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
+    let ents=[];
+    try{
+      const{data,error}=await _supa.from('job_time_entries')
+        .select('employee_user_id,arrived_at,departed_at,source')
+        .eq('contractor_user_id',cid).gte('arrived_at',cutoff);
+      if(error||!Array.isArray(data))return 0;   // no evidence, no deletions
+      ents=data;
+    }catch(_e){return 0;}
+    if(!ents.length)return 0;
+    window._mileWorkdaySweepRan=true;
+    const wins=_geoShopCutoffs(ents);
+    const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
+    // Owner rows carry logged_by_id null and their time entries carry the
+    // contractor id, the same null convention the reconciler uses.
+    const winFor=(m,ms)=>{
+      const uid=String(m.logged_by_id||cid);
+      return ((wins[uid]||{})[dstr(new Date(ms))])||null;
+    };
+    const drop=[];
+    for(const m of mileage){
+      if(drop.length>=_MILE_WORKDAY_CAP)break;
+      if(!m||!m.gps||!m.startedIso||!m.endedIso)continue;
+      if(m.client_id!=null)continue;
+      const a=Date.parse(m.startedIso)||0,b=Date.parse(m.endedIso)||0;
+      if(!(a>0&&b>=a))continue;
+      if(Date.parse(cutoff)>a)continue;             // outside the window we fetched evidence for
+      const win=winFor(m,a);
+      // A day with no work at all has no window: every leg on it is personal.
+      // A day with one: only legs entirely outside it.
+      if(win&&Math.min(b,win.outMs)>=Math.max(a,win.inMs))continue;
+      const day=m.date||dstr(new Date(a));
+      const ends=[m.toCoord,m.fromCoord].filter(c=>c&&c.lat!=null);
+      if(typeof _bizReceiptForStop==='function'&&
+         ends.some(c=>_bizReceiptForStop({lat:c.lat,lng:c.lng,name:m.to_name||'',day})))continue;
+      drop.push(m);
+    }
+    if(!drop.length)return 0;
+    for(const m of drop){
+      const i=mileage.indexOf(m);if(i<0)continue;
+      mileage.splice(i,1);
+      try{if(typeof _geoParkNote==='function')_geoParkNote('mile-offday',
+        (m.from_name||'?')+' to '+(m.to_name||'?')+' '+(m.miles||0)+'mi '+(m.startedIso||''));}catch(_e){}
+      if(m.id!=null){
+        if(typeof _recordLocalDelete==='function')_recordLocalDelete('td_mileage',m.id);
+        try{
+          const uid=(typeof _effectiveUid==='function'&&_effectiveUid())||(window._supaUser&&window._supaUser.id);
+          if(window._supa&&uid)_supa.from('td_mileage').delete().eq('id',String(m.id)).eq('user_id',uid).then(()=>{},()=>{});
+        }catch(_e){}
+      }
+    }
+    if(typeof saveAll==='function')saveAll();
+    if(document.getElementById('mil-table')&&typeof renderAllMileage==='function')renderAllMileage();
+    if(typeof renderDash==='function')renderDash();
+    return drop.length;
+  }catch(_e){
+    try{if(typeof _geoParkNote==='function')_geoParkNote('mile-offday-err',(_e&&_e.message)||String(_e));}catch(_e2){}
+    return 0;
+  }
+}
 const _MILE_DEDUP_DEST_FT=1500;         // fence radius + GPS scatter
 const _MILE_DEDUP_SLACK_MS=10*60000;    // manual rows only: loggedAt is a tap, not a clock
 function _mileTripWindow(m){

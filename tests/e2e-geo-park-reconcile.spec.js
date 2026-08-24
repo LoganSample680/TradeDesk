@@ -89,7 +89,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       // can fire it in the middle of an unrelated one. Its fingerprint was
       // the seeded leg gone from `mileage` while the sweep under test
       // reported zero: the collapse happened, something else did it.
-      for (const fn of ['_milePersonalStopSweep', '_mileDedupTrips', '_mileMotionHealSweep', '_geoCollapseDetours']) {
+      for (const fn of ['_milePersonalStopSweep', '_mileDedupTrips', '_mileMotionHealSweep', '_geoCollapseDetours', '_mileWorkdaySweep']) {
         const real = window[fn];
         if (typeof real !== 'function') continue;
         window['__real' + fn] = real;
@@ -2210,9 +2210,19 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // afterwards to prove nothing moved it mid-sweep.
     const noteSeen = window.__noteSnap();
     const fenceBefore = JSON.stringify([_geoLastFenceLoc, _geoLastFenceAt]);
+    // Who actually removes the row: five separate gates later the fingerprint
+    // was unchanged, so stop inferring and watch the array. Records a stack
+    // for every splice that happens while this call is in flight.
+    const splices = [];
+    const realSplice = mileage.splice;
+    mileage.splice = function () {
+      try { splices.push(String(new Error('splice').stack || '').split('\n').slice(1, 6).join(' | ')); } catch (e) {}
+      return realSplice.apply(this, arguments);
+    };
     window.__sweepAllowed = true;
     let fixed;
-    try { fixed = await _milePersonalStopSweep(); } finally { window.__sweepAllowed = false; }
+    try { fixed = await _milePersonalStopSweep(); }
+    finally { window.__sweepAllowed = false; mileage.splice = realSplice; }
     const fenceAfter = JSON.stringify([_geoLastFenceLoc, _geoLastFenceAt]);
     const notes = window.__noteSince(noteSeen);
     // Every pass-2 condition, evaluated for the seeded leg exactly as the sweep
@@ -2246,7 +2256,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       }
     } catch (e) { why.probeError = String(e && e.message || e); }
     return { fixed, before, left: mileage.map(m => m.id), notes, fenceBefore, fenceAfter,
-      fenceMoved: fenceBefore !== fenceAfter, why };
+      fenceMoved: fenceBefore !== fenceAfter, why, splices };
   }, fence);
   const STOP = { lat: 9.10, lon: 9.10 };
   const SHOPX = { lat: 9.00, lon: 9.00 };
@@ -2296,7 +2306,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     expect(r.fenceMoved, 'nothing rewrote the fence evidence mid-sweep, notes=' + JSON.stringify(r.notes) +
       ' fence=' + r.fenceBefore + ' -> ' + r.fenceAfter).toBe(false);
     expect(r.notes.join('|'), 'the sweep considered both seeded rows').toContain('rows=2');
-    expect(r.fixed, 'the live guard already suppressed the return row, this durable pass covers the orphaned outbound leg; pass-2 state was ' + JSON.stringify(r.why)).toBe(1);
+    expect(r.fixed, 'the live guard already suppressed the return row, this durable pass covers the orphaned outbound leg; pass-2 state was ' + JSON.stringify(r.why) + ' splices=' + JSON.stringify(r.splices)).toBe(1);
     expect(r.left).toEqual(['sw-filler']);
     await restoreLastFence();
     await stopSweepRestore();
