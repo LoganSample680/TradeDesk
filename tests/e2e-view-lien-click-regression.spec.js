@@ -43,10 +43,14 @@ test.describe('dashboard unpaid popup "View lien" → opens the lien, not the cl
       liens = [{ bid_id: bidId, status: 'filed', county: 'Sedgwick County', amount: 5000, date: '2015-02-01' }];
 
       // checkUnpaidOnLoad DEFERS itself (no modal, setTimeout retry) while the
-      // boot cascade or an update overlay is on screen, and this test reads
-      // the modal synchronously. Clear those gates first or the assertion
-      // races the boot animation: it lost that race on WebKit once the suite
-      // grew (CI 2026-08-10). The gate is not what this test guards.
+      // boot overlay, boot cascade, or an update overlay is on screen, and
+      // this test reads the modal synchronously. Clear ALL THREE gates first
+      // or the assertion races the boot animation: it lost that race on
+      // WebKit once when the suite grew (CI 2026-08-10, boot-cascade), and
+      // again when the boot settle chain grew (CI 2026-08-24,
+      // supa-boot-overlay still fading out). The gate is not what this test
+      // guards.
+      document.getElementById('supa-boot-overlay')?.remove();
       document.getElementById('pg-dash')?.classList.remove('boot-cascade');
       document.getElementById('_update-ov')?.remove();
       window._collOnLoadShown = false;
