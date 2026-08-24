@@ -94,6 +94,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     if (typeof _geoMergeBusy !== 'undefined') _geoMergeBusy = false;
     if (typeof _geoTimeDedupBusy !== 'undefined') _geoTimeDedupBusy = false;
     if (typeof _geoGapAbsorbBusy !== 'undefined') _geoGapAbsorbBusy = false;
+    if (typeof _geoStopRepairBusy !== 'undefined') _geoStopRepairBusy = false;
     window._isEmployee = false;
     window._supaUser = { id: 'geo-park-user-1', email: 'p@t.com' };
     window.__rec = { upserts: [], inserts: [], deletes: [], updates: [] };
@@ -2462,8 +2463,12 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       await geoReset();
       const r = await page.evaluate(async () => {
         window.__rec.upserts.length = 0;
-        const at = new Date(Date.now() - 20 * 60000).toISOString();
-        const lastAt = new Date(Date.now() - 13 * 60000).toISOString(); // 7 min, clears _GEO_STOP_MS
+        // Fixed mid-day Central timestamps, not now-relative ones: a relative
+        // pair straddles Central midnight when CI happens to run in that
+        // window, and the midnight guard below would then (correctly) refuse
+        // the row and flake this test.
+        const at = '2026-08-21T15:00:00.000Z';       // 10:00am CT
+        const lastAt = '2026-08-21T15:07:00.000Z';   // 7 min, clears _GEO_STOP_MS
         _geoCloseStop({ at, lastAt, lat: 37.7, lng: -97.3, legClosed: true });
         _geoCloseStop({ at, lastAt, lat: 37.7, lng: -97.3, legClosed: true });
         await new Promise(res => setTimeout(res, 60));
@@ -2474,6 +2479,154 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       expect(r.rows[0]).toBeTruthy();
       expect(r.rows[0]).toBe(r.rows[1]);
       await geoRestore();
+    });
+
+    // Owner rule 2026-08-24: a stop spanning Central midnight is an
+    // end-of-day park (truck home for the night), never an unpaid leg of a
+    // workday. Writing those rows is what let one calendar day total more
+    // than 24 hours once gap-absorb stretched them further.
+    test('_geoCloseStop: a stop spanning Central midnight writes NO unpaid row', async () => {
+      await geoReset();
+      const r = await page.evaluate(async () => {
+        window.__rec.upserts.length = 0;
+        // 01:00Z -> 13:00Z is the SAME UTC day but 8:00pm -> 8:00am across
+        // Central midnight: proves the guard uses the app's Central-day
+        // convention, not a UTC date compare.
+        _geoCloseStop({ at: '2026-08-21T01:00:00.000Z', lastAt: '2026-08-21T13:00:00.000Z', lat: 37.7, lng: -97.3, legClosed: true });
+        // Same thing through the not-yet-settled branch.
+        _geoCloseStop({ at: '2026-08-21T01:00:00.000Z', lastAt: '2026-08-21T13:00:00.000Z', lat: 37.7, lng: -97.3, legClosed: false });
+        await new Promise(res => setTimeout(res, 60));
+        const stops = window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && u.row.source === 'stop');
+        return { stops: stops.length, skipped: (_geoParkLog || []).some(e => e.ev === 'stop-skip') };
+      });
+      expect(r.stops, 'no stop row on either branch').toBe(0);
+      expect(r.skipped, 'the skip is journaled for the diagnostics panel').toBe(true);
+      await geoRestore();
+    });
+
+    test('_geoStopCrossesMidnight: same Central day false, across false-midnight (UTC) true', async () => {
+      const r = await page.evaluate(() => ({
+        sameDay: _geoStopCrossesMidnight('2026-08-21T15:00:00.000Z', '2026-08-21T22:00:00.000Z'),   // 10am->5pm CT
+        overnight: _geoStopCrossesMidnight('2026-08-22T00:30:00.000Z', '2026-08-22T13:00:00.000Z'), // 7:30pm CT 8/21 -> 8am CT 8/22
+        utcOnly: _geoStopCrossesMidnight('2026-08-21T20:00:00.000Z', '2026-08-22T01:00:00.000Z'),   // 3pm->8pm CT, same CT day, different UTC days
+      }));
+      expect(r.sameDay).toBe(false);
+      expect(r.overnight).toBe(true);
+      expect(r.utcOnly, 'a UTC date change inside one Central day is NOT midnight').toBe(false);
+    });
+
+    // ── _geoRepairStopRows: the one-shot 2026-08 incident repair ────────────
+    // Seed rows modeled on the ACTUAL corruption polled from the live
+    // database 2026-08-24: a merge- survivor exactly duplicating the
+    // reconciled work row it bridged, stops stretched across midnight, and a
+    // stop stretched sideways on top of real on-site time.
+    test.describe('_geoRepairStopRows', () => {
+      const EMP = 'geo-park-user-1';
+      const seedIncident = () => ([
+        // The real 8/21 shape: reconciled full-day work row (KEEP)...
+        { id: 'rec1', employee_user_id: EMP, job_id: 'j1', dest_place: null, source: 'geofence-reconciled', client_key: 'rec-abc', arrived_at: '2026-08-21T12:55:00.000Z', departed_at: '2026-08-21T22:07:00.000Z' },
+        // ...its merge- duplicate spanning the identical window (DROP: double-count)...
+        { id: 'mrg1', employee_user_id: EMP, job_id: null, dest_place: 'John Doe', source: 'place', client_key: 'merge-mrg1', arrived_at: '2026-08-21T12:55:00.000Z', departed_at: '2026-08-21T22:07:00.000Z' },
+        // ...a stop stretched over the same work window (DROP: on-site wins)...
+        { id: 'st1', employee_user_id: EMP, job_id: null, dest_place: null, source: 'stop', client_key: 'k-st1', arrived_at: '2026-08-21T16:42:00.000Z', departed_at: '2026-08-21T22:07:00.000Z' },
+        // ...and the overnight monster crossing Central midnight (DROP).
+        { id: 'ov1', employee_user_id: EMP, job_id: null, dest_place: null, source: 'stop', client_key: 'k-ov1', arrived_at: '2026-08-21T22:14:00.000Z', departed_at: '2026-08-22T15:28:00.000Z' },
+        // A legit same-day lunch stop in open air (KEEP).
+        { id: 'ok1', employee_user_id: EMP, job_id: null, dest_place: null, source: 'stop', client_key: 'k-ok1', arrived_at: '2026-08-22T17:00:00.000Z', departed_at: '2026-08-22T17:45:00.000Z' },
+        // Two stops claiming the same window: the shorter is the artifact
+        // (DROP ss2, KEEP ss1).
+        { id: 'ss1', employee_user_id: EMP, job_id: null, dest_place: null, source: 'stop', client_key: 'k-ss1', arrived_at: '2026-08-22T20:00:00.000Z', departed_at: '2026-08-22T23:53:00.000Z' },
+        { id: 'ss2', employee_user_id: EMP, job_id: null, dest_place: null, source: 'stop', client_key: 'k-ss2', arrived_at: '2026-08-22T20:15:00.000Z', departed_at: '2026-08-22T21:53:00.000Z' },
+        // A merge- row NOTHING else covers (the real 8/14 335m case): kept,
+        // deleting it would erase hours no other row ever recorded.
+        { id: 'mrg2', employee_user_id: EMP, job_id: null, dest_place: 'John Doe', source: 'place', client_key: 'merge-mrg2', arrived_at: '2026-08-14T16:58:00.000Z', departed_at: '2026-08-14T22:33:00.000Z' },
+      ]);
+
+      test('deletes exactly the incident fingerprints, keeps everything real, then marks itself done', async () => {
+        await geoReset();
+        const r = await page.evaluate(async (rows) => {
+          localStorage.removeItem('td_geo_stop_repair_v1');
+          window.__selRows = rows;
+          const n = await _geoRepairStopRows();
+          const deleted = window.__rec.deletes.filter(d => d.tbl === 'job_time_entries' && d.col === 'id').map(d => d.val).sort();
+          return { n, deleted, flag: !!localStorage.getItem('td_geo_stop_repair_v1') };
+        }, seedIncident());
+        expect(r.deleted).toEqual(['mrg1', 'ov1', 'ss2', 'st1']);
+        expect(r.n).toBe(4);
+        expect(r.flag, 'one-shot flag set after a clean pass').toBe(true);
+        await geoRestore();
+      });
+
+      test('one-shot: once the flag is set, a second call touches nothing', async () => {
+        await geoReset();
+        const r = await page.evaluate(async (rows) => {
+          localStorage.setItem('td_geo_stop_repair_v1', new Date().toISOString());
+          window.__selRows = rows;
+          const n = await _geoRepairStopRows();
+          return { n, deletes: window.__rec.deletes.length };
+        }, seedIncident());
+        expect(r.n).toBe(0);
+        expect(r.deletes).toBe(0);
+        await geoRestore();
+      });
+
+      test('an employee device never runs the repair (RLS: no delete grant)', async () => {
+        await geoReset();
+        const r = await page.evaluate(async (rows) => {
+          localStorage.removeItem('td_geo_stop_repair_v1');
+          window._isEmployee = true;
+          window.__selRows = rows;
+          const n = await _geoRepairStopRows();
+          const out = { n, deletes: window.__rec.deletes.length, flag: !!localStorage.getItem('td_geo_stop_repair_v1') };
+          window._isEmployee = false;
+          return out;
+        }, seedIncident());
+        expect(r.n).toBe(0);
+        expect(r.deletes).toBe(0);
+        expect(r.flag, 'flag stays unset so the OWNER device still repairs').toBe(false);
+        await geoRestore();
+      });
+
+      test('a fetch error leaves the flag unset so the next boot retries', async () => {
+        await geoReset();
+        const r = await page.evaluate(async () => {
+          localStorage.removeItem('td_geo_stop_repair_v1');
+          window.__selRows = []; window.__selErr = { message: 'network down' };
+          const n = await _geoRepairStopRows();
+          window.__selErr = null;
+          return { n, flag: !!localStorage.getItem('td_geo_stop_repair_v1') };
+        });
+        expect(r.n).toBe(0);
+        expect(r.flag).toBe(false);
+        await geoRestore();
+      });
+
+      test('an already-clean window (no rows) marks itself done without deleting', async () => {
+        await geoReset();
+        const r = await page.evaluate(async () => {
+          localStorage.removeItem('td_geo_stop_repair_v1');
+          window.__selRows = [];
+          const n = await _geoRepairStopRows();
+          return { n, deletes: window.__rec.deletes.length, flag: !!localStorage.getItem('td_geo_stop_repair_v1') };
+        });
+        expect(r.n).toBe(0);
+        expect(r.deletes).toBe(0);
+        expect(r.flag).toBe(true);
+        await geoRestore();
+      });
+
+      test('concurrent calls: the busy guard lets exactly one pass run', async () => {
+        await geoReset();
+        const r = await page.evaluate(async (rows) => {
+          localStorage.removeItem('td_geo_stop_repair_v1');
+          window.__selRows = rows;
+          const results = await Promise.all([_geoRepairStopRows(), _geoRepairStopRows(), _geoRepairStopRows()]);
+          const deleted = window.__rec.deletes.filter(d => d.tbl === 'job_time_entries').map(d => d.val);
+          return { results, deleted: deleted.sort() };
+        }, seedIncident());
+        expect(r.deleted, 'no double-deletes from overlapping passes').toEqual(['mrg1', 'ov1', 'ss2', 'st1']);
+        await geoRestore();
+      });
     });
 
     test('_geoVisitKey: different kinds and ids never collide even at the same instant', async () => {

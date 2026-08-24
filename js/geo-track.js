@@ -1483,6 +1483,18 @@ function _geoIsDriveSource(s){return /^drive/.test(String(s||''));}
 // Time outside every fence that is not driving: lunch, an errand, waiting on a
 // gate. Neither job labor nor drive time, and never silently folded into either.
 function _geoIsOffJobSource(s){return String(s||'')==='stop';}
+// A stop that spans Central midnight is an END-OF-DAY PARK (truck home for
+// the night), never an unpaid leg of a workday, and writing it is exactly
+// what let single days total more than 24 hours (owner rule 2026-08-24: "it's
+// not humanely possible for any day to have more than 24 hours"). Central
+// time is the app's day convention everywhere (_ctDateStr, js/finance.js);
+// the UTC fallback only exists so this never throws if load order changes.
+function _geoStopCrossesMidnight(arrIso,depIso){
+  const a=new Date(Date.parse(arrIso)||0),d=new Date(Date.parse(depIso)||0);
+  return (typeof _ctDateStr==='function')
+    ? _ctDateStr(a)!==_ctDateStr(d)
+    : a.toISOString().slice(0,10)!==d.toISOString().slice(0,10);
+}
 // Has the contractor marked THIS coordinate as their own home office? Their
 // call, never inferred: places.js is explicit that a qualifying home office
 // changes the tax answer and is a decision for them and their CPA.
@@ -1667,6 +1679,7 @@ function _geoCloseStop(a){
     _geoDriveReset();
     if(typeof recordUnknownStop==='function')recordUnknownStop({lat:a.lat,lng:a.lng},ms);
     if(!_supaUser)return;
+    if(_geoStopCrossesMidnight(a.at,a.lastAt)){_geoParkNote('stop-skip','overnight park, no unpaid row');return;}
     _geoEnqueue('job_time_entries',{
       contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
       job_id:null,arrived_at:a.at,departed_at:a.lastAt,minutes:mins,
@@ -1703,6 +1716,7 @@ function _geoCloseStop(a){
   // which is how an un-named supply yard eventually gets offered to them.
   if(typeof recordUnknownStop==='function')recordUnknownStop({lat:a.lat,lng:a.lng},ms);
   if(!_supaUser)return;
+  if(_geoStopCrossesMidnight(a.at,a.lastAt)){_geoParkNote('stop-skip','overnight park, no unpaid row');return;}
   // Logged, and logged as ITSELF. Off-job time is neither job labor nor drive
   // time; folding it into either is what made a lunch break bill to a job.
   _geoEnqueue('job_time_entries',{
@@ -3471,12 +3485,102 @@ async function _geoAbsorbGapsIntoStops(){
   finally{_geoGapAbsorbBusy=false;}
 }
 
+// ── One-shot repair for the 2026-08 merge/gap-absorb incident (owner order
+// 2026-08-24) ──────────────────────────────────────────────────────────────
+// _geoMergeAdjacentVisits and _geoAbsorbGapsIntoStops (both disabled above)
+// ran repeatedly against live data and left corrupted job_time_entries rows
+// behind: 'merge-' survivor rows exactly duplicating the reconciled work row
+// they bridged (one 9h11m day counted twice), and 'stop' rows stretched
+// across midnight or on top of real on-site time (one reached 27h42m). This
+// deletes exactly those fingerprints, once, in the incident window only, and
+// never touches a job-tagged row beyond the literal duplicate case. Runs on
+// the OWNER's device only (an employee session has no delete grant, RLS
+// note on _geoDedupTimeEntries above) and marks itself done in localStorage
+// so it can never become another recurring sweep, which is the exact failure
+// mode that caused the damage it repairs.
+let _geoStopRepairBusy=false;
+const _GEO_STOP_REPAIR_FLAG='td_geo_stop_repair_v1';
+async function _geoRepairStopRows(){
+  if(_geoStopRepairBusy||!_supa||!_supaUser)return 0;
+  if(typeof _isEmployee!=='undefined'&&_isEmployee)return 0;
+  let done=null;try{done=localStorage.getItem(_GEO_STOP_REPAIR_FLAG);}catch(_e){}
+  if(done)return 0;
+  _geoStopRepairBusy=true;
+  try{
+    const {data,error}=await _supa.from('job_time_entries')
+      .select('id,employee_user_id,job_id,dest_place,source,client_key,arrived_at,departed_at')
+      .eq('contractor_user_id',_geoCid()).gte('arrived_at','2026-08-10T00:00:00Z')
+      .lte('arrived_at','2026-08-25T00:00:00Z');
+    if(error)return 0;
+    const rows=(data||[]).filter(r=>r&&r.id!=null&&r.arrived_at&&r.departed_at);
+    if(!rows.length){try{localStorage.setItem(_GEO_STOP_REPAIR_FLAG,new Date().toISOString());}catch(_e){}return 0;}
+    const P=s=>Date.parse(s)||0;
+    const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):d.toISOString().slice(0,10);
+    const onSite=s=>{const t=String(s||'');return /^(geofence|manual|place)$/.test(t)||/^(geofence|place)-/.test(t);};
+    const isMerge=r=>/^merge-/.test(String(r.client_key||''));
+    const drop=new Set();
+    // Fingerprint 1: a stop spanning Central midnight is an overnight park
+    // gap-absorb swallowed (or the live tracker wrote before the
+    // _geoStopCrossesMidnight guard existed), never a real unpaid leg.
+    for(const r of rows){
+      if(String(r.source||'')!=='stop')continue;
+      if(dstr(new Date(P(r.arrived_at)))!==dstr(new Date(P(r.departed_at))))drop.add(r.id);
+    }
+    // Fingerprint 2: a merge survivor whose span is already (>=90%) covered
+    // by real on-site rows is pure double-count, the reconciled/live rows it
+    // bridged still tell the true story. A merge row NOT covered stays: the
+    // originals it replaced are gone, and keeping plausible on-site time
+    // beats deleting hours nothing else recorded.
+    for(const r of rows){
+      if(!isMerge(r))continue;
+      const s=P(r.arrived_at),e=P(r.departed_at);
+      if(!(e>s))continue;
+      const cov=rows.filter(b=>b!==r&&!drop.has(b.id)&&!isMerge(b)&&onSite(b.source)&&
+        String(b.employee_user_id||'')===String(r.employee_user_id||'')&&
+        P(b.arrived_at)<e&&P(b.departed_at)>s)
+        .map(b=>[Math.max(s,P(b.arrived_at)),Math.min(e,P(b.departed_at))]);
+      if(!cov.length)continue;
+      const uncovered=_geoIntervalGaps(s,e,cov).reduce((t,g)=>t+(g[1]-g[0]),0);
+      if(uncovered<=(e-s)*0.1)drop.add(r.id);
+    }
+    // Fingerprint 3: a stop sitting on top of real on-site time (gap-absorb
+    // stretched it sideways into a work window), or two stops claiming the
+    // same window (repeated runs stretched both): the on-site row always
+    // wins, and of two stops the shorter is the artifact.
+    for(const r of rows){
+      if(String(r.source||'')!=='stop'||drop.has(r.id))continue;
+      const s=P(r.arrived_at),e=P(r.departed_at);
+      for(const b of rows){
+        if(b===r||drop.has(b.id))continue;
+        if(String(b.employee_user_id||'')!==String(r.employee_user_id||''))continue;
+        const bs=P(b.arrived_at),be=P(b.departed_at);
+        const ov=Math.min(e,be)-Math.max(s,bs);
+        if(ov<=2*60000)continue;
+        if(onSite(b.source)){drop.add(r.id);break;}
+        if(String(b.source||'')==='stop'&&
+           ((e-s)<(be-bs)||((e-s)===(be-bs)&&String(r.id)>String(b.id)))){drop.add(r.id);break;}
+      }
+    }
+    let ok=true;
+    for(const id of drop){
+      try{const res=await _supa.from('job_time_entries').delete().eq('id',id);if(res&&res.error)ok=false;}catch(_e){ok=false;}
+    }
+    _geoParkNote('stop-repair','removed '+drop.size+' corrupted rows'+(ok?'':' (some deletes failed, will retry)'));
+    // Done only when every delete landed: a partial pass (offline mid-sweep)
+    // retries next boot instead of leaving survivors forever.
+    if(ok){try{localStorage.setItem(_GEO_STOP_REPAIR_FLAG,new Date().toISOString());}catch(_e){}}
+    return drop.size;
+  }catch(_e){return 0;}
+  finally{_geoStopRepairBusy=false;}
+}
+
 // Shared chain for every js/cloud.js call site that used to fire just
 // _geoDedupTimeEntries() on its own: dedup, then merge, then gap-absorb, each
 // step awaiting the one before it so it never reads a stale snapshot the
 // prior step was about to change. One place to extend instead of three
 // hand-rolled .then() chains drifting apart (§7.3).
 async function _geoTimeEntriesSettleChain(){
+  try{if(typeof _geoRepairStopRows==='function')await _geoRepairStopRows();}catch(_e){}
   try{if(typeof _geoDedupTimeEntries==='function')await _geoDedupTimeEntries();}catch(_e){}
   // DISABLED (owner report 2026-08-23): see the matching note in
   // _geoReconcileFromMileage above, same reason.

@@ -85,6 +85,34 @@ function _tlOpenEntries(){
   });
   return rows.sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
 }
+// An unpaid stop only exists BETWEEN work (owner rule 2026-08-24): it earns a
+// line on the log only when the same person has a real location event, a job
+// or client geofence (live, gap, or reconciled), a saved place/supply house,
+// a manual clock record, or a shop session, both BEFORE it and AFTER it on
+// the same Central-time calendar day. Left one fence, stopped, arrived at
+// another: that stop is real unaccounted time. A stop floating on its own,
+// before the first fence of the day, after the last one, or spanning
+// midnight, is an overnight park or tracker noise, and rendering those is
+// what filled the log with random unpaid lines (and, stretched by the
+// disabled gap-absorb sweep, impossible 24h+ days). Display-level on
+// purpose: nothing here mutates data, an unanchored row simply never
+// renders, so a later fence event landing from another device can still
+// promote it back into view on the next open.
+function _tlStopAnchored(arrMs,depMs,anchors){
+  if(!(arrMs>0&&depMs>=arrMs)||!Array.isArray(anchors))return false;
+  const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):d.toISOString().slice(0,10);
+  const day=dstr(new Date(arrMs));
+  if(day!==dstr(new Date(depMs)))return false;   // spans midnight: never shown
+  const SLACK=2*60000;   // kerb-edge timestamp rounding, same floor the merge gap used
+  let before=false,after=false;
+  for(const a of anchors){
+    if(!a)continue;
+    if(!before&&a.dep<=arrMs+SLACK&&dstr(new Date(a.dep))===day)before=true;
+    if(!after&&a.arr>=depMs-SLACK&&dstr(new Date(a.arr))===day)after=true;
+    if(before&&after)return true;
+  }
+  return false;
+}
 async function _timeLogRows(sinceISO){
   const rows=[];
   timeEntries.forEach(e=>{
@@ -100,6 +128,29 @@ async function _timeLogRows(sinceISO){
     });
   });
   const crew=(typeof _fetchCrewLabor==='function')?await _fetchCrewLabor(sinceISO):{name:{},entries:[]};
+  // Anchor windows per person for _tlStopAnchored above: every on-site record
+  // that isn't itself a stop or wheel time, plus shop sessions (their own
+  // table) and the person's manual clock entries.
+  const anchorsByUid={};
+  const _anchorPush=(uid,arrIso,depIso)=>{
+    const arr=Date.parse(arrIso),dep=Date.parse(depIso);
+    if(!(arr>0&&dep>0))return;
+    (anchorsByUid[uid]=anchorsByUid[uid]||[]).push({arr,dep});
+  };
+  const _anchorSrc=s=>{const t=String(s||'');return /^(geofence|manual|place)$/.test(t)||/^(geofence|place)-/.test(t);};
+  (crew.entries||[]).forEach(e=>{
+    if(e&&e.arrived_at&&e.departed_at&&_anchorSrc(e.source))_anchorPush(e.employee_user_id,e.arrived_at,e.departed_at);
+  });
+  (crew.shopEntries||[]).forEach(e=>{
+    if(e&&e.arrived_at&&e.departed_at)_anchorPush(e.employee_user_id,e.arrived_at,e.departed_at);
+  });
+  timeEntries.forEach(e=>{
+    if(e.open||!e.start_time||!e.end_time)return;
+    // null logged_by_uid means the owner, the same convention the geo/dedup
+    // code uses; the owner's crew rows carry the contractor uid.
+    const uid=e.logged_by_uid||(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
+    if(uid)_anchorPush(uid,e.start_time,e.end_time);
+  });
   (crew.entries||[]).forEach(e=>{
     if(!e.arrived_at)return;
     // Off-job stops (lunch, an errand) still get a row (owner request
@@ -109,6 +160,10 @@ async function _timeLogRows(sinceISO){
     // and _tlComputeOT both skip unpaid minutes, so a lunch break never
     // becomes paid time or pushes someone into overtime they never worked.
     const isUnpaid=typeof _geoIsOffJobSource==='function'&&_geoIsOffJobSource(e.source);
+    // The anchor rule (owner 2026-08-24, see _tlStopAnchored above): an
+    // unpaid stop with no real location event on both sides of it that same
+    // Central day never renders at all.
+    if(isUnpaid&&!_tlStopAnchored(Date.parse(e.arrived_at),Date.parse(e.departed_at||e.arrived_at),anchorsByUid[e.employee_user_id]||[]))return;
     const info=_tlJobClientInfo(e.job_id);
     // dest_place is the actual name behind a job_id:null row (a supply
     // house, a home office, an unscheduled client visit, or wherever a

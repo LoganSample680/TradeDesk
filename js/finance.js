@@ -3086,7 +3086,11 @@ async function _fetchCrewLabor(sinceISO){
     if(sinceISO)q=q.gte('arrived_at',sinceISO);
     const{data:te}=await q;
     out.entries=te||[];
-    let sq=_supa.from('shop_time_entries').select('employee_user_id,minutes,arrived_at').eq('contractor_user_id',cid);
+    // departed_at rides along for the Time Log's stop-anchor rule
+    // (js/timelog.js _tlStopAnchored): a shop session is one of the "real
+    // location events" an unpaid stop must sit between. Additive, every
+    // other consumer ignores it.
+    let sq=_supa.from('shop_time_entries').select('employee_user_id,minutes,arrived_at,departed_at').eq('contractor_user_id',cid);
     if(sinceISO)sq=sq.gte('arrived_at',sinceISO);
     const{data:se}=await sq;
     out.shopEntries=se||[];

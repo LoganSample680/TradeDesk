@@ -225,15 +225,26 @@ test.describe('timelog.js: exhaustive coverage', () => {
     // function Crew Cost already excludes with) must carry unpaid:true so
     // the row renders and everything downstream (_tlComputeOT,
     // _tlComputeWeeklyRunning) knows to skip it.
+    // The stop sits between two same-day geofence visits (the anchor rule,
+    // owner 2026-08-24: an unpaid stop only renders when it's provably
+    // BETWEEN work): unanchored variants are covered separately below.
     test('a crew "stop" source row is tagged unpaid:true', async () => {
       const r = await page.evaluate(async () => {
         const orig = window._fetchCrewLabor;
         window._fetchCrewLabor = async () => ({
           name: { 'emp-test-uid': 'Test Crew Member' },
           entries: [{
+            employee_user_id: 'emp-test-uid', job_id: 'anchor-job', dest_place: null,
+            source: 'geofence', minutes: 160, client_key: null,
+            arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:40:00.000Z',
+          }, {
             employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'Sonic Drive-In',
             source: 'stop', minutes: 43, client_key: null,
-            arrived_at: '2026-08-21T11:42:00.000Z', departed_at: '2026-08-21T12:25:00.000Z',
+            arrived_at: '2026-08-21T16:42:00.000Z', departed_at: '2026-08-21T17:25:00.000Z',
+          }, {
+            employee_user_id: 'emp-test-uid', job_id: 'anchor-job', dest_place: null,
+            source: 'geofence', minutes: 150, client_key: null,
+            arrived_at: '2026-08-21T17:30:00.000Z', departed_at: '2026-08-21T20:00:00.000Z',
           }],
         });
         try { const rows = await _timeLogRows(null); return rows.find(x => x.clientName === 'Sonic Drive-In'); }
@@ -241,6 +252,93 @@ test.describe('timelog.js: exhaustive coverage', () => {
       });
       expect(r).toBeTruthy();
       expect(r.unpaid).toBe(true);
+    });
+
+    // Owner rule 2026-08-24: "get the random unpaid time logs to go away
+    // except for the ones that are in between geofences." A stop with no
+    // same-Central-day location event on both sides never renders.
+    test('an unanchored stop row never renders at all', async () => {
+      const r = await page.evaluate(async () => {
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({
+          name: { 'emp-test-uid': 'Test Crew Member' },
+          entries: [{
+            employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'Sonic Drive-In',
+            source: 'stop', minutes: 43, client_key: null,
+            arrived_at: '2026-08-21T16:42:00.000Z', departed_at: '2026-08-21T17:25:00.000Z',
+          }],
+        });
+        try { const rows = await _timeLogRows(null); return { hit: !!rows.find(x => x.clientName === 'Sonic Drive-In') }; }
+        finally { window._fetchCrewLabor = orig; }
+      });
+      expect(r.hit).toBe(false);
+    });
+
+    test('a stop with work before but nothing after (end-of-day park) never renders', async () => {
+      const r = await page.evaluate(async () => {
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({
+          name: { 'emp-test-uid': 'Test Crew Member' },
+          entries: [{
+            employee_user_id: 'emp-test-uid', job_id: 'anchor-job', dest_place: null,
+            source: 'geofence', minutes: 160, client_key: null,
+            arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:40:00.000Z',
+          }, {
+            employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'Sonic Drive-In',
+            source: 'stop', minutes: 43, client_key: null,
+            arrived_at: '2026-08-21T16:42:00.000Z', departed_at: '2026-08-21T17:25:00.000Z',
+          }],
+        });
+        try { const rows = await _timeLogRows(null); return { hit: !!rows.find(x => x.clientName === 'Sonic Drive-In') }; }
+        finally { window._fetchCrewLabor = orig; }
+      });
+      expect(r.hit).toBe(false);
+    });
+
+    test('shop sessions anchor a stop (shop -> supply run -> shop)', async () => {
+      const r = await page.evaluate(async () => {
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({
+          name: { 'emp-test-uid': 'Test Crew Member' },
+          entries: [{
+            employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'Sonic Drive-In',
+            source: 'stop', minutes: 43, client_key: null,
+            arrived_at: '2026-08-21T16:42:00.000Z', departed_at: '2026-08-21T17:25:00.000Z',
+          }],
+          shopEntries: [
+            { employee_user_id: 'emp-test-uid', minutes: 60, arrived_at: '2026-08-21T15:30:00.000Z', departed_at: '2026-08-21T16:30:00.000Z' },
+            { employee_user_id: 'emp-test-uid', minutes: 60, arrived_at: '2026-08-21T17:40:00.000Z', departed_at: '2026-08-21T18:40:00.000Z' },
+          ],
+        });
+        try { const rows = await _timeLogRows(null); return { hit: !!rows.find(x => x.clientName === 'Sonic Drive-In') }; }
+        finally { window._fetchCrewLabor = orig; }
+      });
+      expect(r.hit).toBe(true);
+    });
+
+    test('another person\'s anchors never validate my stop', async () => {
+      const r = await page.evaluate(async () => {
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({
+          name: { 'emp-test-uid': 'Test Crew Member', 'emp-other': 'Somebody Else' },
+          entries: [{
+            employee_user_id: 'emp-other', job_id: 'anchor-job', dest_place: null,
+            source: 'geofence', minutes: 160, client_key: null,
+            arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:40:00.000Z',
+          }, {
+            employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'Sonic Drive-In',
+            source: 'stop', minutes: 43, client_key: null,
+            arrived_at: '2026-08-21T16:42:00.000Z', departed_at: '2026-08-21T17:25:00.000Z',
+          }, {
+            employee_user_id: 'emp-other', job_id: 'anchor-job', dest_place: null,
+            source: 'geofence', minutes: 150, client_key: null,
+            arrived_at: '2026-08-21T17:30:00.000Z', departed_at: '2026-08-21T20:00:00.000Z',
+          }],
+        });
+        try { const rows = await _timeLogRows(null); return { hit: !!rows.find(x => x.clientName === 'Sonic Drive-In') }; }
+        finally { window._fetchCrewLabor = orig; }
+      });
+      expect(r.hit).toBe(false);
     });
 
     test('a normal (non-stop) crew source row is not tagged unpaid', async () => {
@@ -259,6 +357,75 @@ test.describe('timelog.js: exhaustive coverage', () => {
       });
       expect(r).toBeTruthy();
       expect(r.unpaid).toBe(false);
+    });
+  });
+
+  // Pure anchor math for the owner's 2026-08-24 rule. All times below are
+  // built from fixed UTC instants that sit mid-day Central, except the
+  // midnight cases which exist to prove the Central-day boundary is the one
+  // that matters.
+  test.describe('_tlStopAnchored', () => {
+    const T = (iso) => Date.parse(iso);
+    const CASES = {
+      stopArr: '2026-08-21T16:42:00.000Z',   // 11:42am CT
+      stopDep: '2026-08-21T17:25:00.000Z',   // 12:25pm CT
+      before: { arr: T('2026-08-21T14:00:00.000Z'), dep: T('2026-08-21T16:40:00.000Z') },
+      after: { arr: T('2026-08-21T17:30:00.000Z'), dep: T('2026-08-21T20:00:00.000Z') },
+    };
+    test('anchored on both sides same Central day: true', async () => {
+      const ok = await page.evaluate((c) => _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), [c.before, c.after]), CASES);
+      expect(ok).toBe(true);
+    });
+    test('missing either side: false', async () => {
+      const r = await page.evaluate((c) => ({
+        noBefore: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), [c.after]),
+        noAfter: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), [c.before]),
+        none: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), []),
+      }), CASES);
+      expect(r.noBefore).toBe(false);
+      expect(r.noAfter).toBe(false);
+      expect(r.none).toBe(false);
+    });
+    test('a stop spanning Central midnight is never anchored, whatever surrounds it', async () => {
+      const ok = await page.evaluate(() => _tlStopAnchored(
+        Date.parse('2026-08-22T04:50:00.000Z'),   // 11:50pm CT 8/21
+        Date.parse('2026-08-22T05:20:00.000Z'),   // 12:20am CT 8/22
+        [{ arr: Date.parse('2026-08-22T02:00:00.000Z'), dep: Date.parse('2026-08-22T04:45:00.000Z') },
+         { arr: Date.parse('2026-08-22T05:25:00.000Z'), dep: Date.parse('2026-08-22T06:00:00.000Z') }]));
+      expect(ok).toBe(false);
+    });
+    test('an anchor from a different Central day never counts', async () => {
+      const ok = await page.evaluate((c) => _tlStopAnchored(
+        Date.parse(c.stopArr), Date.parse(c.stopDep),
+        [{ arr: Date.parse('2026-08-20T14:00:00.000Z'), dep: Date.parse('2026-08-20T16:40:00.000Z') },
+         { arr: Date.parse('2026-08-22T17:30:00.000Z'), dep: Date.parse('2026-08-22T20:00:00.000Z') }]), CASES);
+      expect(ok).toBe(false);
+    });
+    test('kerb-edge slack: an anchor ending up to 2 minutes AFTER the stop starts still counts', async () => {
+      const r = await page.evaluate((c) => ({
+        inSlack: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep),
+          [{ arr: Date.parse('2026-08-21T14:00:00.000Z'), dep: Date.parse(c.stopArr) + 90 * 1000 }, c.after]),
+        pastSlack: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep),
+          [{ arr: Date.parse('2026-08-21T14:00:00.000Z'), dep: Date.parse(c.stopArr) + 3 * 60000 }, c.after]),
+      }), CASES);
+      expect(r.inSlack).toBe(true);
+      // An anchor still on-site 3 minutes into the stop overlaps it for real:
+      // that's the on-site row's time, not a valid "before" edge.
+      expect(r.pastSlack).toBe(false);
+    });
+    test('garbage in, false out: null anchors, NaN times, inverted spans', async () => {
+      const r = await page.evaluate((c) => ({
+        nullList: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), null),
+        nullEntries: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), [null, undefined, c.before, c.after]),
+        nanArr: _tlStopAnchored(NaN, Date.parse(c.stopDep), [c.before, c.after]),
+        inverted: _tlStopAnchored(Date.parse(c.stopDep), Date.parse(c.stopArr), [c.before, c.after]),
+        zero: _tlStopAnchored(0, 0, [c.before, c.after]),
+      }), CASES);
+      expect(r.nullList).toBe(false);
+      expect(r.nullEntries, 'null entries are skipped, real ones still anchor').toBe(true);
+      expect(r.nanArr).toBe(false);
+      expect(r.inverted).toBe(false);
+      expect(r.zero).toBe(false);
     });
   });
 
