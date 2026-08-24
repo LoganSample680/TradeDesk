@@ -1845,7 +1845,7 @@ function renderCDTimeline(){
   const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
   const _tlItems=evts=>'<div class="timeline">'+evts.map(e=>{
     const isBid=e.type==='bid';
-    const tstr=(e.ts&&!/^\d{4}-\d{2}-\d{2}$/.test(String(e.ts)))?new Date(e.ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'';
+    const tstr=(e.ts&&!/^\d{4}-\d{2}-\d{2}$/.test(String(e.ts)))?bizTime(e.ts):'';
     const metaFull=(tstr?'<span style="color:var(--text3);font-weight:700">'+tstr+'</span>'+(e.meta?' · ':''):'')+(e.meta||'');
     const inner='<div class="tl-dot '+e.color+'">'+svgIcon(_cdEventIcon(e),{size:13})+'</div><div class="tl-label">'+e.label+'</div><div class="tl-meta">'+metaFull+(isBid?' · <span style="font-size:10px;color:var(--blue)">tap to edit</span>':'')+' </div>';
     if(isBid)return '<div class="tl-item" onclick="viewBidFromTimeline('+e.id+')" style="cursor:pointer">'+inner+'</div>';
@@ -2189,7 +2189,7 @@ function renderCDBids(){
                 const m=Math.floor((Date.now()-d)/60000);
                 if(m<2)return'just now';
                 if(m<60)return m+'m ago';
-                const t=d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+                const t=bizTime(d);
                 const today=new Date();today.setHours(0,0,0,0);
                 const yest=new Date(today-86400000);
                 if(d>=today)return'Today at '+t;

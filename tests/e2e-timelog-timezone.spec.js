@@ -19,6 +19,11 @@ test.describe('Time Log: business clock, not device clock', () => {
     await mockAllExternal(page);
     await page.goto('/index.html');
     await waitForAppBoot(page);
+    // A Kansas business, which is what the zone is DERIVED from now. Without
+    // this the app correctly falls back to the device's zone, which is the
+    // right behaviour for an account with no address yet and the wrong
+    // fixture for testing a business that has one.
+    await page.evaluate(() => { S.state = 'KS'; S.bizTz = ''; });
   });
   test.afterAll(async () => { await page.context().close(); });
 
@@ -67,18 +72,59 @@ test.describe('Time Log: business clock, not device clock', () => {
     expect(r.winter, 'CST, UTC-6').toBe('2026-01-15T14:00:00.000Z');
   });
 
-  test('a business in another state can set its own zone', async () => {
+  test('the zone comes from the business address, not from anyone asking', async () => {
     const r = await page.evaluate((iso) => {
-      const prev = S.bizTz;
-      S.bizTz = 'America/Phoenix';           // no DST at all
-      const shown = _tlFmtTime(iso);
-      S.bizTz = 'not/a/zone';                // garbage never breaks the log
-      const fallback = _tlFmtTime(iso);
-      S.bizTz = prev;
-      return { shown, fallback };
+      const prevS = S.state, prevTz = S.bizTz;
+      const at = (state) => { S.state = state; S.bizTz = ''; return { tz: bizTz(), shown: _tlFmtTime(iso) }; };
+      const ks = at('KS'), az = at('AZ'), co = at('CO');
+      S.state = prevS; S.bizTz = prevTz;
+      return { ks, az, co };
     }, IN_ISO);
-    expect(r.shown, 'Phoenix is UTC-7 year round').toBe('6:00 AM');
-    expect(r.fallback, 'an unusable zone falls back to the business default').toBe('8:00 AM');
+    expect(r.ks.tz).toBe('America/Chicago');
+    expect(r.ks.shown).toBe('8:00 AM');
+    expect(r.az.tz, 'Phoenix keeps its own time all year').toBe('America/Phoenix');
+    expect(r.az.shown).toBe('6:00 AM');
+    expect(r.co.tz).toBe('America/Denver');
+    expect(r.co.shown).toBe('7:00 AM');
+  });
+
+  test('a split state is decided by the shop\'s own longitude', async () => {
+    const r = await page.evaluate(() => ({
+      topeka: tzForBusiness('KS', -95.71, 39.03),
+      farWest: tzForBusiness('KS', -101.9, 38.9),
+      nashville: tzForBusiness('TN', -86.78, 36.16),
+      knoxville: tzForBusiness('TN', -84.28, 35.96),
+      pensacola: tzForBusiness('FL', -87.2, 30.42),
+      miami: tzForBusiness('FL', -80.19, 25.76),
+      panhandle: tzForBusiness('ID', -116.8, 47.7),
+      boise: tzForBusiness('ID', -116.2, 43.6),
+      noState: tzForBusiness('', null, null),
+      junk: tzForBusiness('ZZ', 0, 0),
+    }));
+    expect(r.topeka).toBe('America/Chicago');
+    expect(r.farWest, 'the four western KS counties are Mountain').toBe('America/Denver');
+    expect(r.nashville).toBe('America/Chicago');
+    expect(r.knoxville, 'east Tennessee is Eastern').toBe('America/New_York');
+    expect(r.pensacola, 'the panhandle is Central').toBe('America/Chicago');
+    expect(r.miami).toBe('America/New_York');
+    expect(r.panhandle, 'north Idaho is Pacific').toBe('America/Los_Angeles');
+    expect(r.boise).toBe('America/Boise');
+    expect(r.noState, 'nothing to go on means say so, never guess a zone').toBe(null);
+    expect(r.junk).toBe(null);
+  });
+
+  test('an account with no address yet uses the device, and a bad saved zone never breaks it', async () => {
+    const r = await page.evaluate((iso) => {
+      const prevS = S.state, prevTz = S.bizTz;
+      S.state = ''; S.bizTz = '';
+      const noAddress = bizTz();
+      S.state = 'KS'; S.bizTz = 'not/a/zone';
+      const corrupt = _tlFmtTime(iso);
+      S.state = prevS; S.bizTz = prevTz;
+      return { noAddress, corrupt };
+    }, IN_ISO);
+    expect(r.noAddress, 'mid-onboarding, the phone is the best guess there is').toBe('America/Denver');
+    expect(r.corrupt, 'an unusable saved zone re-derives from the address').toBe('8:00 AM');
   });
 
   test('malformed input never throws', async () => {

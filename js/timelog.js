@@ -434,9 +434,12 @@ function _tlComputeWeeklyRunning(rows){
 // Reads S.bizTz so this stops being a Kansas assumption the day a contractor in
 // another state signs up, and falls back to the same Central zone _ctDateStr
 // already hardcodes so the two can never disagree today.
+// Derived from the business ADDRESS, once, and shared with every other screen
+// (bizTz in js/utils.js). This used to hold its own copy of the rule, which is
+// how the Time Log and the dashboard could have ended up disagreeing about the
+// same drive.
 function _tlBizTz(){
-  const t=(typeof S!=='undefined'&&S&&S.bizTz)||'';
-  if(t){try{new Intl.DateTimeFormat('en-US',{timeZone:t});return t;}catch(_e){}}
+  if(typeof bizTz==='function')return bizTz();
   return 'America/Chicago';
 }
 // Formats an ISO timestamp as a plain clock time ("8:02 AM"). Used for both
@@ -446,6 +449,7 @@ function _tlFmtTime(iso){
   if(!iso)return '';
   const d=new Date(iso);
   if(isNaN(d.getTime()))return '';
+  if(typeof bizTime==='function')return bizTime(d);
   try{return d.toLocaleTimeString('en-US',{timeZone:_tlBizTz(),hour:'numeric',minute:'2-digit'});}
   catch(_e){return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
 }

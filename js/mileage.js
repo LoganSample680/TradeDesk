@@ -2978,7 +2978,7 @@ function _milRenderTripList(shown,yr){
       // End falls back to start+wheel-time for rows written before endedIso
       // existed. Stale/manual rows show neither, their clock was never
       // observed.
-      const _fmtClk=(t)=>{try{return new Date(t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
+      const _fmtClk=(t)=>{try{return bizTime(t).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
       let clockLine='';
       if(r.startedIso&&(r.endedIso||r.mins>0)){
         const _s=_fmtClk(r.startedIso);

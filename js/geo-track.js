@@ -2843,7 +2843,7 @@ function _geoDiagPanel(){
     '<div style="max-height:20vh;overflow-y:auto;font-size:11px;line-height:1.6">'+
       (_geoLocateHistory().length
         ?_geoLocateHistory().slice().reverse().map(r=>{
-            let when='';try{when=new Date(r.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});}catch(_e){when=String(r.at||'');}
+            let when='';try{when=bizTime(r.at);}catch(_e){when=String(r.at||'');}
             return '<div>'+escHtml(when)+' · '+escHtml(r.by||'A manager')+' · '+escHtml(r.answered?'shared':'not shared ('+(r.reason||'')+')')+'</div>';
           }).join('')
         :'<div style="color:var(--text3)">None.</div>')+

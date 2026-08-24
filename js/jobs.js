@@ -2105,7 +2105,7 @@ function _renderJobTasks(jobId){
   }).join('');
 }
 function _fmtTaskTime(iso){
-  try{const d=new Date(iso);return d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}catch(e){return'';}
+  try{const d=new Date(iso);return d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' '+bizTime(d);}catch(e){return'';}
 }
 function _contractorToggleTask(jobId,taskId){
   const j=jobs.find(x=>x.id===jobId);if(!j||!j.tasks)return;

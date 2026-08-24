@@ -482,3 +482,100 @@ function _tdSkelRows(n,h){
   }
   return out;
 }
+
+// ── The business's clock (owner rule 2026-08-24) ──────────────────────────────
+// "It needs fixed to contractor time zone when setup off the shop business
+// address, that should solve it permanently."
+//
+// Every time-of-day the app shows a contractor is a fact about THEIR business:
+// when the crew clocked in, when the truck rolled, when the trip was logged.
+// None of it is a fact about where the phone happens to be right now. Reading
+// the device clock meant the owner's Monday redrew itself from 8:00-10:30 to
+// 7:00-9:30 the moment he landed in Denver, and the CSV export moved with him.
+//
+// So the zone is derived once from the business ADDRESS, not asked for and not
+// taken from whatever device did the setup. State plus the shop's longitude is
+// enough: most states sit in one zone, and the dozen that do not are split on a
+// line the shop's own coordinates land cleanly on either side of.
+//
+// Known ragged edge, stated rather than hidden: Indiana and a handful of single
+// counties elsewhere follow county lines no longitude can trace. Those resolve
+// to their state's majority zone, which is right for almost everyone in them
+// and wrong for a few. S.bizTz is writable, so a contractor in one of those
+// counties can be corrected once and it sticks.
+const _TZ_BY_STATE={
+  AL:'America/Chicago',AK:'America/Anchorage',AZ:'America/Phoenix',AR:'America/Chicago',
+  CA:'America/Los_Angeles',CO:'America/Denver',CT:'America/New_York',DE:'America/New_York',
+  DC:'America/New_York',FL:'America/New_York',GA:'America/New_York',HI:'Pacific/Honolulu',
+  ID:'America/Boise',IL:'America/Chicago',IN:'America/Indiana/Indianapolis',IA:'America/Chicago',
+  KS:'America/Chicago',KY:'America/New_York',LA:'America/Chicago',ME:'America/New_York',
+  MD:'America/New_York',MA:'America/New_York',MI:'America/Detroit',MN:'America/Chicago',
+  MS:'America/Chicago',MO:'America/Chicago',MT:'America/Denver',NE:'America/Chicago',
+  NV:'America/Los_Angeles',NH:'America/New_York',NJ:'America/New_York',NM:'America/Denver',
+  NY:'America/New_York',NC:'America/New_York',ND:'America/Chicago',OH:'America/New_York',
+  OK:'America/Chicago',OR:'America/Los_Angeles',PA:'America/New_York',RI:'America/New_York',
+  SC:'America/New_York',SD:'America/Chicago',TN:'America/Chicago',TX:'America/Chicago',
+  UT:'America/Denver',VT:'America/New_York',VA:'America/New_York',WA:'America/Los_Angeles',
+  WV:'America/New_York',WI:'America/Chicago',WY:'America/Denver'
+};
+// States a longitude actually splits, with the line and what lies west of it.
+// (Idaho splits on LATITUDE instead: the panhandle is Pacific.)
+const _TZ_SPLIT={
+  KS:{lon:-101.5,west:'America/Denver'},   NE:{lon:-101.5,west:'America/Denver'},
+  ND:{lon:-100.6,west:'America/Denver'},   SD:{lon:-100.3,west:'America/Denver'},
+  TX:{lon:-104.9,west:'America/Denver'},   FL:{lon:-85.0, west:'America/Chicago'},
+  MI:{lon:-87.3, west:'America/Chicago'},  KY:{lon:-85.4, west:'America/Chicago'},
+  TN:{lon:-85.3, west:'America/Chicago',east:'America/New_York'}
+};
+function _tzUsable(tz){
+  if(!tz)return false;
+  try{new Intl.DateTimeFormat('en-US',{timeZone:tz});return true;}catch(_e){return false;}
+}
+// state: two-letter code. lon/lat: the shop's own coordinates when known, which
+// is what decides a split state. Returns null when there is nothing to go on,
+// so the caller can fall back rather than guess a zone off nothing.
+function tzForBusiness(state,lon,lat){
+  const st=String(state||'').trim().toUpperCase().slice(0,2);
+  if(!_TZ_BY_STATE[st])return null;
+  if(st==='ID'&&typeof lat==='number'&&lat>45.5)return 'America/Los_Angeles';
+  const sp=_TZ_SPLIT[st];
+  if(sp&&typeof lon==='number'&&isFinite(lon)){
+    if(lon<sp.lon)return sp.west;
+    if(sp.east)return sp.east;
+  }
+  return _TZ_BY_STATE[st];
+}
+// The zone every clock time in the app is rendered in. Resolved once and kept
+// on S so it survives a trip, a new device, and a contractor who set the
+// business up while visiting somewhere else.
+function bizTz(){
+  if(typeof S==='undefined'||!S)return 'America/Chicago';
+  if(_tzUsable(S.bizTz))return S.bizTz;
+  let lon=null,lat=null;
+  try{
+    const shop=(typeof places!=='undefined'&&Array.isArray(places))
+      ? places.find(p=>p&&p.kind==='shop'&&p.lon!=null&&p.lat!=null) : null;
+    if(shop){lon=Number(shop.lon);lat=Number(shop.lat);}
+  }catch(_e){}
+  const derived=tzForBusiness(S.state,lon,lat);
+  if(derived){
+    // Cached, not recomputed per render: the address is not going to move, and
+    // this is called from every row of every list that shows a time.
+    S.bizTz=derived;
+    return derived;
+  }
+  // Nothing on record yet (mid-onboarding, or an account older than the
+  // business address). The device's own zone is the best available guess and
+  // is right for the overwhelming majority, who set up where they work.
+  try{const dev=Intl.DateTimeFormat().resolvedOptions().timeZone;if(_tzUsable(dev))return dev;}catch(_e){}
+  return 'America/Chicago';
+}
+// One formatter for every clock time the contractor reads, so no two screens
+// can ever disagree about when something happened.
+function bizTime(iso){
+  if(!iso)return '';
+  const d=iso instanceof Date?iso:new Date(iso);
+  if(isNaN(d.getTime()))return '';
+  try{return d.toLocaleTimeString('en-US',{timeZone:bizTz(),hour:'numeric',minute:'2-digit'});}
+  catch(_e){return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
+}

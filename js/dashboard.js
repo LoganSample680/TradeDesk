@@ -53,7 +53,7 @@ function _showNewLeadsPicker(){
     // the relative label for older/fixture ids that predate this or aren't real timestamps.
     const _cts=Number(c.id);
     const hasRealTs=_cts>1e12;
-    const stamp=hasRealTs?(new Date(_cts).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' · '+new Date(_cts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})):'';
+    const stamp=hasRealTs?(new Date(_cts).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' · '+bizTime(_cts)):'';
     const subLabel=stamp?ageLabel+' · '+stamp:ageLabel;
     const initial=escHtml((c.name||'?').trim().charAt(0).toUpperCase()||'?');
     return '<button onclick="_pickLeadForEstimate('+c.id+')" onmouseover="this.style.background=\'var(--bg2)\'" onmouseout="this.style.background=\'none\'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 8px;border:none;border-radius:var(--r);background:none;cursor:pointer;font-family:inherit;margin-bottom:4px;transition:background .12s ease">'+
@@ -283,7 +283,7 @@ function _renderDashSupplyHold(){
     }catch(_e){}
     if(run.at){
       try{
-        const _t=new Date(run.at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p');
+        const _t=bizTime(run.at).replace(/\s/g,'').replace('AM','a').replace('PM','p');
         if(_t)w+=' · '+_t;
       }catch(_e){}
     }
@@ -809,7 +809,7 @@ function renderDash(){
     // for this card to fade into anymore.
     {
       const _svgPin=(c,sz)=>'<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+'" fill="none" stroke="'+c+'" stroke-width="2"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
-      const _fmtClk=(t)=>{try{return new Date(t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
+      const _fmtClk=(t)=>{try{return bizTime(t).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
       const _fmtDur=(ms)=>{const s=Math.max(0,Math.floor((Date.now()-ms)/1000));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return (h?h+'h ':'')+m+'m';};
       const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
       let _usedSnap=false; // set true only by the no-rich-state branch below, when it painted a boot snapshot instead of the manual card
@@ -1162,7 +1162,7 @@ function _empConfirmDone(jobId){
 
 function _fmtEmpTaskTime(iso){
   if(!iso)return'';
-  try{const d=new Date(iso);if(isNaN(d.getTime()))return'';return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}catch(e){return'';}
+  try{const d=new Date(iso);if(isNaN(d.getTime()))return'';return bizTime(d);}catch(e){return'';}
 }
 function _empToggleTask(jobId,taskId){
   const j=jobs.find(x=>x.id===jobId);if(!j||!j.tasks)return;
@@ -2420,7 +2420,7 @@ function renderTodayFeed(){
       const m=Math.floor((Date.now()-d)/60000);
       if(m<2)return'just now';
       if(m<60)return m+'m ago';
-      const t=d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+      const t=bizTime(d);
       const today=new Date();today.setHours(0,0,0,0);
       const yest=new Date(today-86400000);
       if(d>=today)return'Today at '+t;
@@ -3121,7 +3121,7 @@ function openBidDetail(bidId,view){
     if(!b.signedAt||!sigUrl)return '';
     const sigDate=new Date(b.signedAt);
     const dateStr=sigDate.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
-    const timeStr=sigDate.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
+    const timeStr=bizTime(sigDate);
     return '<div style="margin-top:20px;padding:16px 18px;border-top:2px solid #e2e8f0;background:#f8fafc">'+
       '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:10px">Client Signature</div>'+
       '<img src="'+sigUrl+'" alt="Client signature" style="display:block;max-width:240px;height:auto;border:1px solid #e2e8f0;border-radius:4px;background:#fff;margin-bottom:10px">'+
