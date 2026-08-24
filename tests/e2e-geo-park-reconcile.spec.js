@@ -1217,6 +1217,19 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   // true-back-to-back floor. Same recording _supa/window.__selRows harness.
   const mergeCall = () => page.evaluate(async () => {
     window.__rec.deletes.length = 0; window.__rec.updates.length = 0;
+    // Merge is live again in the boot settle chain (js/geo-track.js
+    // _geoTimeEntriesSettleChain), so a background pass can be mid-flight
+    // holding _geoMergeBusy when a test drives the function directly, and
+    // the re-entrancy guard then returns 0 without doing anything (CI shard
+    // 6, 2026-08-24: zero deletes on a pair that merges every time in
+    // isolation). While it was disabled no competing pass existed, which is
+    // why this only started flaking now. Wait it out, then force-clear:
+    // same wait-then-clear shape geoReset already uses for these flags.
+    const t0 = Date.now();
+    while (typeof _geoMergeBusy !== 'undefined' && _geoMergeBusy && Date.now() - t0 < 2000) {
+      await new Promise(res => setTimeout(res, 10));
+    }
+    if (typeof _geoMergeBusy !== 'undefined') _geoMergeBusy = false;
     // The rewritten merge consults the live mileage array for gap evidence;
     // park it empty for the call so unrelated suite data can never block or
     // allow a merge. Tests that WANT a leg in the gap seed it themselves
