@@ -3568,6 +3568,26 @@ async function _geoRepairStopRows(){
         fixUpdates.push({id:r.id,patch:{arrived_at:r.arrived_at,departed_at:r.departed_at,minutes:50}});
       }
     }
+    // Second forensic fill, Mon 8/17 (owner report 2026-08-24: "should have
+    // another John Doe fence, arriving back around 8:20am"). The deleted
+    // mileage legs show shop -> John Doe ending 8:18:28am, the raw pings
+    // show the truck still at the site at 12:20pm and again from 4:23pm,
+    // and no leg leaves until 5:17pm: GPS parked minutes after arrival, so
+    // the fence never logged the visit. Filled up to the surviving 4:23pm
+    // live row. Gated on that live row's own client_key so this can only
+    // ever fire on the one account whose data was damaged, and takes its
+    // employee id from it rather than assuming.
+    const monAnchor=rows.find(x=>String(x.client_key||'')==='30a2b589-msxzqfrk-e7xe');
+    if(monAnchor&&!rows.some(x=>String(x.client_key||'')==='repair-0817-day')){
+      const fill={contractor_user_id:_geoCid(),employee_user_id:monAnchor.employee_user_id,
+        job_id:null,dest_place:'John Doe',source:'place',
+        arrived_at:'2026-08-17T13:18:28.100Z',departed_at:'2026-08-17T21:23:25.093Z',
+        minutes:485,client_key:'repair-0817-day'};
+      fixInserts.push(fill);
+      rows.push({id:'__day-0817',employee_user_id:fill.employee_user_id,job_id:null,
+        dest_place:fill.dest_place,source:'place',client_key:fill.client_key,
+        arrived_at:fill.arrived_at,departed_at:fill.departed_at});
+    }
     const drop=new Set();
     // Fingerprint 1: a stop spanning Central midnight is an overnight park
     // gap-absorb swallowed (or the live tracker wrote before the

@@ -2604,6 +2604,41 @@ test.describe('Geo park detection + mileage reconciliation', () => {
         await geoRestore();
       });
 
+      // Mon 8/17 fill: gated on the account's own 4:23pm live row, so it can
+      // never fire anywhere else, and idempotent once landed.
+      test('fills the missed Mon 8/17 John Doe visit when its anchor row is present', async () => {
+        await geoReset();
+        const r = await page.evaluate(async () => {
+          localStorage.removeItem('td_geo_stop_repair_v1');
+          window.__selRows = [
+            { id: 'mon-live', employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place', client_key: '30a2b589-msxzqfrk-e7xe', arrived_at: '2026-08-17T21:23:25.093Z', departed_at: '2026-08-17T22:17:14.161Z' },
+          ];
+          const n = await _geoRepairStopRows();
+          const ins = window.__rec.inserts.filter(i => i.tbl === 'job_time_entries').map(i => i.row);
+          return { n, ins };
+        });
+        expect(r.ins.length).toBe(1);
+        expect(r.ins[0].client_key).toBe('repair-0817-day');
+        expect(r.ins[0].arrived_at).toBe('2026-08-17T13:18:28.100Z');
+        expect(r.ins[0].departed_at).toBe('2026-08-17T21:23:25.093Z');
+        expect(r.ins[0].employee_user_id, 'employee comes from the anchor row, never assumed').toBe('geo-park-user-1');
+        await geoRestore();
+      });
+
+      test('no Mon 8/17 anchor row (any other account): nothing is inserted', async () => {
+        await geoReset();
+        const r = await page.evaluate(async () => {
+          localStorage.removeItem('td_geo_stop_repair_v1');
+          window.__selRows = [
+            { id: 'other', employee_user_id: 'someone-else', job_id: null, dest_place: 'Elsewhere', source: 'place', client_key: 'unrelated-key', arrived_at: '2026-08-17T15:00:00.000Z', departed_at: '2026-08-17T16:00:00.000Z' },
+          ];
+          const n = await _geoRepairStopRows();
+          return { inserts: window.__rec.inserts.filter(i => i.tbl === 'job_time_entries').length };
+        });
+        expect(r.inserts).toBe(0);
+        await geoRestore();
+      });
+
       // Found by the read-only dry run against the live data (2026-08-24): a
       // stop stretched over hours of recorded SHOP presence, invisible to
       // the job_time_entries fetch alone.
