@@ -995,8 +995,17 @@ test.describe('Cloud sync core, uncovered function coverage', () => {
   test('silent supaLoadFromCloud DEFERS (not wedges) behind a hung save, releases the lock and queues a retry', async () => {
     test.setTimeout(20000);
     const r = await page.evaluate(async () => {
-      const saved = { supa: _supa, user: window._supaUser, pend: _pendingSavePromise };
+      const saved = { supa: _supa, user: window._supaUser, pend: _pendingSavePromise,
+                      cursor: window._cursorCheckReconcile };
       try {
+        // A heartbeat-triggered load already in flight makes this call
+        // return _activeLoadPromise immediately (cloud.js "AWAIT the
+        // in-flight load" guard), bypassing the hung-save wait this test
+        // measures (seen in CI 2026-08-24: tookMs 123 instead of ~4s).
+        // Park the heartbeat entry point and drain any in-flight load
+        // FIRST, so the timed call below is always the one holding the lock.
+        if (saved.cursor) window._cursorCheckReconcile = () => {};
+        if (_activeLoadPromise) { try { await _activeLoadPromise; } catch (_e) {} }
         _supa = _supa || { from: () => ({}) };
         window._supaUser = window._supaUser || { id: 'wedge-u' };
         _pendingSavePromise = new Promise(() => {}); // a save that never settles (stalled fetch)
@@ -1012,6 +1021,7 @@ test.describe('Cloud sync core, uncovered function coverage', () => {
         if (_reconcileTimer) { clearTimeout(_reconcileTimer); _reconcileTimer = null; }
         _loadInProgress = false; _activeLoadPromise = null;
         _supa = saved.supa; window._supaUser = saved.user;
+        if (saved.cursor) window._cursorCheckReconcile = saved.cursor;
       }
     });
     expect(r.tookMs).toBeGreaterThanOrEqual(3900); // waited the bounded window…
