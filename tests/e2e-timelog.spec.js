@@ -295,7 +295,10 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.hit).toBe(false);
     });
 
-    test('shop sessions anchor a stop (shop -> supply run -> shop)', async () => {
+    // Owner clarification 2026-08-24: "one from shop, one at a job site or
+    // supply house." Shop out, stop, shop back on a day with no work is an
+    // errand from the yard, not a work-trip leg, and never renders.
+    test('shop-to-shop anchors alone never validate a stop (a no-work Saturday shows nothing)', async () => {
       const r = await page.evaluate(async () => {
         const orig = window._fetchCrewLabor;
         window._fetchCrewLabor = async () => ({
@@ -308,6 +311,30 @@ test.describe('timelog.js: exhaustive coverage', () => {
           shopEntries: [
             { employee_user_id: 'emp-test-uid', minutes: 60, arrived_at: '2026-08-21T15:30:00.000Z', departed_at: '2026-08-21T16:30:00.000Z' },
             { employee_user_id: 'emp-test-uid', minutes: 60, arrived_at: '2026-08-21T17:40:00.000Z', departed_at: '2026-08-21T18:40:00.000Z' },
+          ],
+        });
+        try { const rows = await _timeLogRows(null); return { hit: !!rows.find(x => x.clientName === 'Sonic Drive-In') }; }
+        finally { window._fetchCrewLabor = orig; }
+      });
+      expect(r.hit).toBe(false);
+    });
+
+    test('shop before + supply house after renders (the real supply-run shape)', async () => {
+      const r = await page.evaluate(async () => {
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({
+          name: { 'emp-test-uid': 'Test Crew Member' },
+          entries: [{
+            employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'Sonic Drive-In',
+            source: 'stop', minutes: 43, client_key: null,
+            arrived_at: '2026-08-21T16:42:00.000Z', departed_at: '2026-08-21T17:25:00.000Z',
+          }, {
+            employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'The Home Depot',
+            source: 'place', minutes: 20, client_key: null,
+            arrived_at: '2026-08-21T17:30:00.000Z', departed_at: '2026-08-21T17:50:00.000Z',
+          }],
+          shopEntries: [
+            { employee_user_id: 'emp-test-uid', minutes: 60, arrived_at: '2026-08-21T15:30:00.000Z', departed_at: '2026-08-21T16:30:00.000Z' },
           ],
         });
         try { const rows = await _timeLogRows(null); return { hit: !!rows.find(x => x.clientName === 'Sonic Drive-In') }; }
@@ -412,6 +439,19 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // An anchor still on-site 3 minutes into the stop overlaps it for real:
       // that's the on-site row's time, not a valid "before" edge.
       expect(r.pastSlack).toBe(false);
+    });
+    test('shop-only anchors on both sides: false; one work side: true', async () => {
+      const r = await page.evaluate((c) => ({
+        shopBoth: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep),
+          [{ ...c.before, shop: true }, { ...c.after, shop: true }]),
+        shopThenWork: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep),
+          [{ ...c.before, shop: true }, c.after]),
+        workThenShop: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep),
+          [c.before, { ...c.after, shop: true }]),
+      }), CASES);
+      expect(r.shopBoth, 'shop out, stop, shop back is an errand, not a work leg').toBe(false);
+      expect(r.shopThenWork).toBe(true);
+      expect(r.workThenShop).toBe(true);
     });
     test('an anchor OVERLAPPING the stop vetoes it, even with clean edges elsewhere', async () => {
       const ok = await page.evaluate((c) => _tlStopAnchored(

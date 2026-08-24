@@ -89,15 +89,19 @@ function _tlOpenEntries(){
 // line on the log only when the same person has a real location event, a job
 // or client geofence (live, gap, or reconciled), a saved place/supply house,
 // a manual clock record, or a shop session, both BEFORE it and AFTER it on
-// the same Central-time calendar day. Left one fence, stopped, arrived at
-// another: that stop is real unaccounted time. A stop floating on its own,
-// before the first fence of the day, after the last one, or spanning
-// midnight, is an overnight park or tracker noise, and rendering those is
-// what filled the log with random unpaid lines (and, stretched by the
-// disabled gap-absorb sweep, impossible 24h+ days). Display-level on
-// purpose: nothing here mutates data, an unanchored row simply never
-// renders, so a later fence event landing from another device can still
-// promote it back into view on the next open.
+// the same Central-time calendar day, AND at least one of those sides is a
+// job/place/manual event, never shop-to-shop alone. The owner's exact spec:
+// "at least two geofence events, one from shop, one at a job site or supply
+// house and back." Shop out, stop, shop back is an errand from the yard on a
+// day with no work in it, not a leg of a work trip (owner report 2026-08-24:
+// a no-work Saturday still showed an unpaid stop bracketed by two shop
+// sessions). A stop floating on its own, before the first fence of the day,
+// after the last one, or spanning midnight, is an overnight park or tracker
+// noise, and rendering those is what filled the log with random unpaid
+// lines (and, stretched by the disabled gap-absorb sweep, impossible 24h+
+// days). Display-level on purpose: nothing here mutates data, a
+// non-qualifying row simply never renders, so a later fence event landing
+// from another device can still promote it back into view on the next open.
 function _tlStopAnchored(arrMs,depMs,anchors){
   if(!(arrMs>0&&depMs>=arrMs)||!Array.isArray(anchors))return false;
   const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
@@ -111,14 +115,18 @@ function _tlStopAnchored(arrMs,depMs,anchors){
   for(const a of anchors){
     if(a&&Math.min(a.dep,depMs)-Math.max(a.arr,arrMs)>SLACK)return false;
   }
-  let before=false,after=false;
+  let before=false,after=false,workSide=false;
   for(const a of anchors){
     if(!a)continue;
-    if(!before&&a.dep<=arrMs+SLACK&&dstr(new Date(a.dep))===day)before=true;
-    if(!after&&a.arr>=depMs-SLACK&&dstr(new Date(a.arr))===day)after=true;
-    if(before&&after)return true;
+    const bOk=a.dep<=arrMs+SLACK&&dstr(new Date(a.dep))===day;
+    const aOk=a.arr>=depMs-SLACK&&dstr(new Date(a.arr))===day;
+    if(bOk)before=true;
+    if(aOk)after=true;
+    // a.shop marks a shop session; anything else (job fence, place, manual
+    // clock) is work, and at least one qualifying side must be work.
+    if((bOk||aOk)&&!a.shop)workSide=true;
   }
-  return false;
+  return before&&after&&workSide;
 }
 async function _timeLogRows(sinceISO){
   const rows=[];
@@ -139,17 +147,17 @@ async function _timeLogRows(sinceISO){
   // that isn't itself a stop or wheel time, plus shop sessions (their own
   // table) and the person's manual clock entries.
   const anchorsByUid={};
-  const _anchorPush=(uid,arrIso,depIso)=>{
+  const _anchorPush=(uid,arrIso,depIso,isShop)=>{
     const arr=Date.parse(arrIso),dep=Date.parse(depIso);
     if(!(arr>0&&dep>0))return;
-    (anchorsByUid[uid]=anchorsByUid[uid]||[]).push({arr,dep});
+    (anchorsByUid[uid]=anchorsByUid[uid]||[]).push({arr,dep,shop:!!isShop});
   };
   const _anchorSrc=s=>{const t=String(s||'');return /^(geofence|manual|place)$/.test(t)||/^(geofence|place)-/.test(t);};
   (crew.entries||[]).forEach(e=>{
     if(e&&e.arrived_at&&e.departed_at&&_anchorSrc(e.source))_anchorPush(e.employee_user_id,e.arrived_at,e.departed_at);
   });
   (crew.shopEntries||[]).forEach(e=>{
-    if(e&&e.arrived_at&&e.departed_at)_anchorPush(e.employee_user_id,e.arrived_at,e.departed_at);
+    if(e&&e.arrived_at&&e.departed_at)_anchorPush(e.employee_user_id,e.arrived_at,e.departed_at,true);
   });
   timeEntries.forEach(e=>{
     if(e.open||!e.start_time||!e.end_time)return;
