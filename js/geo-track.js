@@ -3763,7 +3763,13 @@ async function _geoSyncDriveTimeEntries(){
   if(typeof mileage==='undefined'||!Array.isArray(mileage))return 0;
   _geoDriveSyncBusy=true;
   try{
-    const cutoff=new Date(Date.now()-7*86400000).toISOString();
+    // 90-day cutoff (widened from 7, owner audit 2026-08-24): 7 days was
+    // sized for ongoing hygiene, but twin drive rows whose duplicate legs
+    // died later than a week after the drive aged OUT of this sweep's reach
+    // and sat as double-paid drive time forever. Same widening, same reason
+    // as _geoDedupTimeEntries (2026-08-23). Mileage is the IRS log and is
+    // never pruned, so an old drive row with a real leg is never at risk.
+    const cutoff=new Date(Date.now()-90*86400000).toISOString();
     const {data,error}=await _supa.from('job_time_entries')
       .select('id,source,client_key')
       .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);

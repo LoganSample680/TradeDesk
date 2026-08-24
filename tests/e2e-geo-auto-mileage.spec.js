@@ -1154,6 +1154,41 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.liveLeft).toBe(2);
     });
 
+    // Owner audit 2026-08-24: the 8/21 twin pair survived in the CLOUD days
+    // after every boot's heal pass spliced one away locally, because a cloud
+    // reload restored it before any save swept it. A dropped twin must be a
+    // REAL deletion: tombstoned and deleted from td_mileage directly.
+    test('a dropped auto twin is deleted from the cloud, not just spliced locally', async () => {
+      const out = await page.evaluate(() => {
+        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
+        const keep = mileage.splice(0);
+        const savedSupa = window._supa, savedUser = window._supaUser;
+        const cloudDeletes = [];
+        window._supaUser = window._supaUser || { id: 'twin-del-u' };
+        window._supa = { from: (tbl) => ({
+          delete: () => ({ eq: (c1, v1) => ({ eq: () => ({ then: (res, rej) => { cloudDeletes.push({ tbl, id: v1 }); return Promise.resolve({ error: null }).then(res, rej); } }) }) }),
+          select: () => { const q = { eq: () => q, gte: () => q, then: (res, rej) => Promise.resolve({ data: [], error: null }).then(res, rej) }; return q; },
+        }) };
+        try {
+          mileage.push(
+            { id: 9301, gps: true, legKey: 'twin-w', calc_method: 'auto_route', miles: 3.2, client_id: 77,
+              to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
+              startedIso: '2026-08-21T12:48:53.281Z', endedIso: '2026-08-21T12:55:55.101Z', loggedAt: '2026-08-21T12:55:55.106Z', date: '2026-08-21' },
+            { id: 9302, gps: true, legKey: 'twin-l', calc_method: 'auto_route', miles: 3.2, client_id: 77,
+              to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
+              startedIso: '2026-08-21T12:48:53.275Z', endedIso: '2026-08-21T12:58:34.983Z', loggedAt: '2026-08-21T14:52:11.874Z', date: '2026-08-21' });
+          const healed = _mileDedupTrips(true);
+          return { healed, left: mileage.map(m => m.id), cloudDeletes };
+        } finally {
+          mileage.length = 0; keep.forEach(m => mileage.push(m));
+          window._supa = savedSupa; window._supaUser = savedUser;
+        }
+      });
+      expect(out.healed).toBe(1);
+      expect(out.left, 'the contemporaneous close survives, the replay dies').toEqual([9301]);
+      expect(out.cloudDeletes, 'the loser is deleted from td_mileage directly, so no reload can resurrect it').toEqual([{ tbl: 'td_mileage', id: '9302' }]);
+    });
+
     test('a backdated manual trip to the same client is never eaten', async () => {
       // Arrive at John Doe at 7:57, remember at 8:03 that YESTERDAY'S trip
       // there was never logged, type it in with yesterday's date. The entry's

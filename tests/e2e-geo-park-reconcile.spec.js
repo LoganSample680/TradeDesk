@@ -1732,6 +1732,21 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // Owner audit 2026-08-24: dup drive rows from 8/9-8/14 sat as double-paid
+  // time forever because the old 7-day fetch window aged them out of this
+  // sweep's reach before their duplicate legs died. The window is 90 days
+  // now (same widening, same reason as _geoDedupTimeEntries). The mock
+  // ignores query filters, so this guards the SOURCE, the same way the
+  // heal-wiring test in e2e-geo-auto-mileage does.
+  test('drive-sync: fetch window is 90 days, not 7 (old dup drive rows must stay reachable)', async () => {
+    const src = await page.evaluate(async () => (await (await fetch('/js/geo-track.js')).text()));
+    const fnStart = src.indexOf('async function _geoSyncDriveTimeEntries');
+    const fnBody = src.slice(fnStart, fnStart + 1500);
+    expect(fnStart).toBeGreaterThan(0);
+    expect(fnBody).toContain('90*86400000');
+    expect(fnBody).not.toContain('7*86400000');
+  });
+
   // The other half of the same live diagnostic: one physical drive, two
   // near-duplicate mileage legs (6ms apart), each with its own paid
   // job_time_entries row. Once only ONE of the two legs survives locally

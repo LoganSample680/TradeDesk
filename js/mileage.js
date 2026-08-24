@@ -969,7 +969,23 @@ function _mileDedupTrips(heal){
     }
   }
   if(!drop.size)return 0;
-  for(const m of drop){const i=mileage.indexOf(m);if(i>=0)mileage.splice(i,1);}
+  for(const m of drop){
+    const i=mileage.indexOf(m);if(i>=0)mileage.splice(i,1);
+    // The splice alone never outlives the next cloud reload: the twin comes
+    // back from the server before any save sweeps it away, so on a device
+    // that loads more often than it saves, the pair resurrects forever
+    // (owner audit 2026-08-24: the 8/21 morning leg pair still live in the
+    // cloud days after every boot's heal pass "removed" it locally).
+    // Register the drop as a REAL deletion, the same tombstone + direct
+    // cloud delete every explicit delete path uses (_devHardPurge, §7.3).
+    if(m&&m.id!=null){
+      if(typeof _recordLocalDelete==='function')_recordLocalDelete('td_mileage',m.id);
+      try{
+        const uid=(typeof _effectiveUid==='function'&&_effectiveUid())||(window._supaUser&&window._supaUser.id);
+        if(window._supa&&uid)_supa.from('td_mileage').delete().eq('id',String(m.id)).eq('user_id',uid).then(()=>{},()=>{});
+      }catch(_e){}
+    }
+  }
   if(typeof saveAll==='function')saveAll();
   if(document.getElementById('mil-table'))renderAllMileage();
   if(typeof renderDash==='function')renderDash();
