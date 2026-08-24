@@ -3731,7 +3731,19 @@ async function _geoMergeAdjacentVisits(){
     }
     _geoParkNote('time-merge','merged '+updates.length+' clusters, removed '+drop.size+' rows');
     return updates.length+drop.size;
-  }catch(_e){return 0;}
+  }
+  // A swallowed throw here is indistinguishable from "nothing to merge": both
+  // return 0 quietly, and the whole body runs inside this try, including
+  // placeKey's call out to _tlJobClientInfo (js/timelog.js), which reads the
+  // live jobs/bids/clients arrays and is not this file's code. That is how CI
+  // shard 6 produced three separate zero-merge failures whose diagnostics all
+  // came back clean (2026-08-24). It now leaves a trail in the park log, which
+  // is also the panel the owner reads on a live device, so the next one says
+  // what actually happened instead of looking like an empty day.
+  catch(_e){
+    try{_geoParkNote('time-merge-err',(_e&&_e.message)||String(_e));}catch(_e2){}
+    return 0;
+  }
   finally{_geoMergeBusy=false;}
 }
 

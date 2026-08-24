@@ -39,8 +39,20 @@ function _tlJobClientInfo(jobId){
   // rest of the app already uses at the Supabase boundary, js/geo-track.js:1042,
   // js/cloud.js and js/dashboard.js's job_id lookups (§7.3, don't hand-roll a
   // parallel comparison here).
-  const j=jobs.find(x=>String(x.id)===String(jobId));
-  const bid=j&&j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  // Every element guarded, and the arrays themselves too. A single hole in
+  // `jobs` throws "Cannot read properties of undefined (reading 'id')" out of
+  // this callback, and this function is called from inside other people's try
+  // blocks: js/geo-track.js _geoMergeAdjacentVisits routes its whole grouping
+  // key through here, so one bad element silently aborted an entire merge
+  // sweep and made it look like a day with nothing to merge (CI shard 6,
+  // three separate zero-merge failures, 2026-08-24, found only once that
+  // sweep stopped swallowing its own throw). These arrays are globals that
+  // sync, restore and a dozen call sites all write, so a hole is a question
+  // of when, not whether, and no lookup should die on one.
+  const _jl=Array.isArray(jobs)?jobs:[];
+  const _bl=Array.isArray(bids)?bids:[];
+  const j=_jl.find(x=>x&&String(x.id)===String(jobId))||null;
+  const bid=(j&&j.bid_id)?(_bl.find(b=>b&&b.id===j.bid_id)||null):null;
   const c=bid?getClientById(bid.client_id):(j?getClientById(j.client_id):null);
   // Job-site address, not billing address, a bid's own addr (when set) is the
   // actual property being worked, which can differ from the client's address

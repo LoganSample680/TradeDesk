@@ -363,7 +363,14 @@ function loadAll(){
   try{['zp3_clients','zp3_bids','zp3_jobs','zp3_inc','zp3_exp','zp3_mil','zp3_pay','zp3_lien','zp3_te'].forEach(k=>localStorage.removeItem(k));}catch(e){}
 }
 
-function getClientById(id){return clients.find(c=>c.id===id);}
+// Element-guarded: `clients` is a global that sync, restore and a dozen call
+// sites write, and one hole in it throws "Cannot read properties of undefined
+// (reading 'id')" out of this callback. That lands wherever the caller happens
+// to be, including inside other people's try blocks, where it reads as "no
+// result" rather than as a crash (js/geo-track.js _geoMergeAdjacentVisits
+// reaches here through _tlJobClientInfo and had an entire merge sweep aborted
+// by it, 2026-08-24). A lookup should return nothing for a bad row, not die.
+function getClientById(id){return (Array.isArray(clients)?clients:[]).find(c=>c&&c.id===id)||null;}
 // ── Per-property internal site notes ──────────────────────────────────────
 // Gate code, dog, parking, lockbox: crew-only, never on the client's proposal.
 // Keyed by PROPERTY address (street line) on client.siteNotes{}, so a client

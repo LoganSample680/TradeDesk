@@ -61,6 +61,40 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // Neutralized once for the whole file, exactly like the heartbeat above,
     // rather than raced against in every individual test.
     await page.evaluate(() => { window._geoTimeEntriesSettleChain = async () => {}; });
+    // js/cloud.js fires _milePersonalStopSweep() in the background on its
+    // reconnect path (line ~7890), and the guard that normally keeps two
+    // passes apart is a single global boolean this file's harness has to
+    // CLEAR to drive its own call. Clearing it also lets a background pass in,
+    // and then both walk the same `mileage`: whichever gets there first does
+    // the collapse and the other correctly reports zero, which is a test
+    // failing on work that actually happened (locally 2026-08-24, roughly one
+    // run in four). Every sweep here is driven deliberately, so the background
+    // caller is gated out entirely and only the harness can open the gate.
+    // All three, not just the personal-stop one: js/cloud.js fires
+    // _mileDedupTrips, _mileMotionHealSweep and _milePersonalStopSweep from
+    // the same reconnect path, and every one of them SPLICES `mileage`. A
+    // seeded fixture row disappearing mid-test then reads as "the sweep under
+    // test did nothing", when in fact the collapse happened and a different
+    // sweep did it (locally 2026-08-24: the leg was gone, the result was zero,
+    // and the two facts contradicted each other). None of them is ever wanted
+    // here in the background, so all three are gated and only the harness
+    // opens the gate.
+    await page.evaluate(() => {
+      window.__sweepAllowed = false;
+      for (const fn of ['_milePersonalStopSweep', '_mileDedupTrips', '_mileMotionHealSweep']) {
+        const real = window[fn];
+        if (typeof real !== 'function') continue;
+        window['__real' + fn] = real;
+        window[fn] = function () {
+          if (!window.__sweepAllowed) return 0;
+          return window['__real' + fn].apply(null, arguments);
+        };
+      }
+    });
+    await page.evaluate(([snap, since]) => {
+      window.__noteSnap = new Function('return ' + snap);
+      window.__noteSince = new Function('return ' + since)();
+    }, [NOTE_SNAP, NOTE_SINCE]);
   });
   test.afterAll(async () => { await page.context().close(); });
 
@@ -191,6 +225,14 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     window.__harnessSupa = window._supa;
   });
   const geoRestore = () => page.evaluate(() => { if (window.__origSupa) window._supa = window.__origSupa; });
+  // _geoParkLog is a 30-entry RING: _geoParkNote pushes then trims back to 30,
+  // so a "remember the length, slice from it afterwards" capture sees NOTHING
+  // once the log is full, because the push and the trim cancel out. That is
+  // not a subtle failure mode, it silently reports an empty note list and any
+  // assertion built on it becomes vacuous (which is exactly what it did to the
+  // first version of these diagnostics, 2026-08-24). Diff by content instead.
+  const NOTE_SNAP = `(function(){try{return (typeof _geoParkLog!=='undefined'&&Array.isArray(_geoParkLog))?_geoParkLog.map(function(n){return n.t+'|'+n.ev+'|'+n.x;}):[];}catch(e){return [];}})()`;
+  const NOTE_SINCE = `(function(seen){try{if(typeof _geoParkLog==='undefined'||!Array.isArray(_geoParkLog))return [];var s=new Set(seen);return _geoParkLog.filter(function(n){return !s.has(n.t+'|'+n.ev+'|'+n.x);}).map(function(n){return n.ev+(n.x?': '+n.x:'');});}catch(e){return [];}})`;
 
   // ── Park detection ──────────────────────────────────────────────────────────
 
@@ -1239,7 +1281,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   // same person, same resolved place (job_id resolved to its client name via
   // _tlJobClientInfo, or the raw dest_place text), gap at or under the
   // true-back-to-back floor. Same recording _supa/window.__selRows harness.
-  const mergeCall = () => page.evaluate(async () => {
+  const mergeCallRaw = () => page.evaluate(async () => {
     window.__rec.deletes.length = 0; window.__rec.updates.length = 0;
     // Merge is live again in the boot settle chain (js/geo-track.js
     // _geoTimeEntriesSettleChain), so a background pass can be mid-flight
@@ -1265,14 +1307,45 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // via window.__mergeTestLegs.
     const saved = (typeof mileage !== 'undefined') ? mileage.slice() : null;
     if (saved) { mileage.length = 0; (window.__mergeTestLegs || []).forEach(m => mileage.push(m)); }
+    // The last two unknowns, captured at the moment of the call rather than
+    // inferred afterwards: whether the re-entrancy guard was actually clear,
+    // and how many rows the harness mock hands back for the very select the
+    // sweep is about to make.
+    const busyAtCall = (typeof _geoMergeBusy !== 'undefined') ? _geoMergeBusy : null;
+    let mockRows = null;
+    try { const probe = await _supa.from('job_time_entries').select('id').eq('contractor_user_id', 'x').gte('arrived_at', 'x');
+      mockRows = (probe && Array.isArray(probe.data)) ? probe.data.length : -1; } catch (e) { mockRows = -2; }
+    const noteSeen = window.__noteSnap();
     let changed;
     try { changed = await _geoMergeAdjacentVisits(); }
     finally { if (saved) { mileage.length = 0; saved.forEach(m => mileage.push(m)); } window.__mergeTestLegs = null; }
+    // A throw inside the sweep used to vanish into its catch and read exactly
+    // like an empty result; it now records 'time-merge-err' and this surfaces it.
+    const notes = window.__noteSince(noteSeen);
     // rowsSeen/mockWasSwapped ride along so a future failure names its own
     // cause instead of only reporting a zero count.
     return { changed, deletes: window.__rec.deletes.slice(), updates: window.__rec.updates.slice(),
-      rowsSeen: (window.__selRows || []).length, mockWasSwapped, selErr: window.__selErr || null };
+      rowsSeen: (window.__selRows || []).length, mockWasSwapped, selErr: window.__selErr || null,
+      busyAtCall, mockRows, notes };
   });
+  // Preconditions belong to the HARNESS, not copy-pasted into ten merge tests:
+  // whichever one happens to be running when interference lands is the one that
+  // fails, so every call has to be able to explain itself. Throws with the
+  // whole picture rather than letting the test report a bare zero.
+  const mergeCall = async () => {
+    const r = await mergeCallRaw();
+    const bad = [];
+    if (r.mockWasSwapped) bad.push('the harness Supabase mock was swapped out before the call');
+    if (r.selErr) bad.push('a simulated fetch error was still set: ' + JSON.stringify(r.selErr));
+    if (r.busyAtCall) bad.push('the re-entrancy guard was still held at call time');
+    if (r.mockRows !== r.rowsSeen) bad.push('the mock returned ' + r.mockRows + ' rows for its own select but __selRows holds ' + r.rowsSeen);
+    const errs = (r.notes || []).filter(n => /err/.test(n));
+    if (errs.length) bad.push('the sweep swallowed a throw: ' + errs.join(' | '));
+    if (bad.length) throw new Error('merge harness precondition failed: ' + bad.join('; ') +
+      ' [rowsSeen=' + r.rowsSeen + ' mockRows=' + r.mockRows + ' busy=' + r.busyAtCall +
+      ' changed=' + r.changed + ' notes=' + JSON.stringify(r.notes) + ']');
+    return r;
+  };
 
   test('merge: two true back-to-back geofence rows at the same job fold into one', async () => {
     await geoReset();
@@ -1294,8 +1367,6 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // cause instead of only saying "expected 1, got 0" (CI shard 6 did
     // exactly that twice on 2026-08-24 and neither run said why).
     expect(r.rowsSeen, 'the sweep still reads the two rows this test seeded').toBe(2);
-    expect(r.mockWasSwapped, 'the harness Supabase mock was still installed').toBe(false);
-    expect(r.selErr, 'no stale simulated fetch error was left set').toBe(null);
     expect(r.deletes.length).toBe(1);
     expect(r.deletes[0].val, 'the earlier row survives, the later one folds into it').toBe(2002);
     expect(r.updates.length).toBe(1);
@@ -2066,11 +2137,23 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   // happened by then). Locked here, unlocked only inside sweepCall's own
   // evaluate in the same synchronous tick as the call it guards, so nothing
   // else can ever run against this test's seeded state first.
+  // Everything _milePersonalStopSweep's "is this actually business" test can
+  // consult has to be emptied, or a leftover from an earlier test in this
+  // shared page decides the verdict. `places` was the one missing: the sweep
+  // protects a stop sitting on a saved BUSINESS place (placeAt, js/places.js),
+  // `places` is a global this file's place-visit tests write, and nothing here
+  // was putting it back. A saved place near the fixture pin then made the
+  // sweep correctly refuse to collapse a leg the test had every reason to
+  // expect collapsed, intermittently, depending on which tests ran first
+  // (CI shard 6 and locally, 2026-08-24). `bids` rides along because a job's
+  // own bid address is part of the same business test.
   const stopSweepSeed = (rows) => page.evaluate((rows) => {
     window.__origMileage = mileage.slice(); mileage.length = 0;
     window.__origJobs = jobs.slice(); jobs.length = 0;
     window.__origClients = clients.slice(); clients.length = 0;
     window.__origExpenses = expenses.slice(); expenses.length = 0;
+    window.__origPlaces = places.slice(); places.length = 0;
+    window.__origBids = bids.slice(); bids.length = 0;
     window._milePersonalSweepRan = true;
     rows.forEach(r => mileage.push(r));
   }, rows);
@@ -2079,6 +2162,8 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     if (window.__origJobs) { jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null; }
     if (window.__origClients) { clients.length = 0; window.__origClients.forEach(c => clients.push(c)); window.__origClients = null; }
     if (window.__origExpenses) { expenses.length = 0; window.__origExpenses.forEach(e => expenses.push(e)); window.__origExpenses = null; }
+    if (window.__origPlaces) { places.length = 0; window.__origPlaces.forEach(p => places.push(p)); window.__origPlaces = null; }
+    if (window.__origBids) { bids.length = 0; window.__origBids.forEach(b => bids.push(b)); window.__origBids = null; }
   });
   // Unlocks the guard stopSweepSeed locked, sets the fence position (when a
   // pass-2 test needs one), then calls, ALL in one synchronous tick: no
@@ -2101,11 +2186,51 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // Captured BEFORE the call: this file boots the full app, so a background
     // pass of the same sweep can collapse the seeded row first and leave this
     // call with nothing to do. That reads as a bare "expected 1, got 0" with
-    // no hint why (seen once locally 2026-08-24 under five full-app spec files
-    // on one runner). The tests assert on `before` so a recurrence says so.
+    // no hint why (seen locally 2026-08-24). The tests assert on `before`.
     const before = mileage.map(m => m.id);
-    const fixed = await _milePersonalStopSweep();
-    return { fixed, before, left: mileage.map(m => m.id) };
+    // The sweep's own trail ('stop-sweep rows=N') says how many rows it even
+    // considered, which separates "returned at the floor" from "considered
+    // them and declined". The fence pair is the pass-2 evidence, read back
+    // afterwards to prove nothing moved it mid-sweep.
+    const noteSeen = window.__noteSnap();
+    const fenceBefore = JSON.stringify([_geoLastFenceLoc, _geoLastFenceAt]);
+    window.__sweepAllowed = true;
+    let fixed;
+    try { fixed = await _milePersonalStopSweep(); } finally { window.__sweepAllowed = false; }
+    const fenceAfter = JSON.stringify([_geoLastFenceLoc, _geoLastFenceAt]);
+    const notes = window.__noteSince(noteSeen);
+    // Every pass-2 condition, evaluated for the seeded leg exactly as the sweep
+    // evaluates it, so a refusal names the clause that refused instead of
+    // leaving the next reader to re-derive the whole function.
+    // Every pass-2 condition, evaluated for the seeded leg exactly as the sweep
+    // evaluates it, plus the surrounding array state, so a refusal names the
+    // clause that refused instead of leaving the next reader to re-derive the
+    // whole function. Populated even when the leg has vanished, because "it is
+    // not in `mileage` any more and nothing here removed it" is itself the
+    // answer on a shared page.
+    let why = { mileageIds: mileage.map(m => m && m.id), sweepRan: !!window._milePersonalSweepRan,
+      placeCount: Array.isArray(places) ? places.length : -1, jobCount: Array.isArray(jobs) ? jobs.length : -1,
+      clientCount: Array.isArray(clients) ? clients.length : -1,
+      expenseCount: Array.isArray(expenses) ? expenses.length : -1 };
+    try {
+      const inb = mileage.find(m => m && m.id === 'sw-inb');
+      if (inb && fence) {
+        const _n = (c1, c2) => !!(c1 && c2 && c1.lat != null && c2.lat != null &&
+          _geoDistFt({ lat: c1.lat, lng: c1.lng }, { lat: c2.lat, lng: c2.lng }) <= _MILE_DEDUP_DEST_FT);
+        const endedMs = Date.parse(inb.endedIso || inb.loggedAt || '') || 0;
+        Object.assign(why, {
+          hasPartner: mileage.some(r => r !== inb && _n(inb.toCoord, r.fromCoord)),
+          fenceAfterEnd: (Date.parse(_geoLastFenceAt) || 0) > endedMs,
+          backAtOrigin: _n(_geoLastFenceLoc, inb.fromCoord),
+          name: String(inb.to_name || '').trim(),
+          atJob: Array.isArray(jobs) && jobs.some(j => j && j.lat != null && _n({ lat: j.lat, lng: j.lon }, inb.toCoord)),
+          atClient: Array.isArray(clients) && clients.some(c => c && c.lat != null && _n({ lat: c.lat, lng: c.lng != null ? c.lng : c.lon }, inb.toCoord)),
+          savedPlace: (typeof placeAt === 'function' ? (placeAt({ lat: inb.toCoord.lat, lon: inb.toCoord.lng }) || null) : null),
+        });
+      }
+    } catch (e) { why.probeError = String(e && e.message || e); }
+    return { fixed, before, left: mileage.map(m => m.id), notes, fenceBefore, fenceAfter,
+      fenceMoved: fenceBefore !== fenceAfter, why };
   }, fence);
   const STOP = { lat: 9.10, lon: 9.10 };
   const SHOPX = { lat: 9.00, lon: 9.00 };
@@ -2152,7 +2277,10 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await stopSweepSeed([row, FILLER()]);
     const r = await sweepCall({ loc: { lat: SHOPX.lat, lng: SHOPX.lon, name: 'Shop' }, atIso: new Date(now() - 60000).toISOString() });
     expect(r.before, 'the seeded leg was still there when this sweep started').toEqual(['sw-inb', 'sw-filler']);
-    expect(r.fixed, 'the live guard already suppressed the return row, this durable pass covers the orphaned outbound leg').toBe(1);
+    expect(r.fenceMoved, 'nothing rewrote the fence evidence mid-sweep, notes=' + JSON.stringify(r.notes) +
+      ' fence=' + r.fenceBefore + ' -> ' + r.fenceAfter).toBe(false);
+    expect(r.notes.join('|'), 'the sweep considered both seeded rows').toContain('rows=2');
+    expect(r.fixed, 'the live guard already suppressed the return row, this durable pass covers the orphaned outbound leg; pass-2 state was ' + JSON.stringify(r.why)).toBe(1);
     expect(r.left).toEqual(['sw-filler']);
     await restoreLastFence();
     await stopSweepRestore();
