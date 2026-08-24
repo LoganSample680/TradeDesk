@@ -1590,21 +1590,25 @@ function _geoShopPrepMs(){
 // is what separates it from the 5:19pm "John Doe to Shop" leg five minutes
 // earlier, which IS the ride home from the last job and does close the day.
 const _GEO_SHOP_CHAIN_MS=5*60000;
-// A hand-tapped clock is the contractor SAYING they are working, and a real one
-// moves the day's edges like any job visit. A one-minute one does not.
+// How close a departure has to sit to the end of a yard session to count as
+// LEAVING it. Same slack the chain rule above uses.
 //
-// Owner, 2026-08-24, Wed 8/19 reading 12h42m: two 1-minute manual entries at
-// 7:51pm and 8:28pm (the clock button being tried out) held the workday open
-// three hours past the 5:22pm drive home, and 3h06m of evening yard dwell came
-// in behind them. Two accidental minutes became three paid hours, which is the
-// exact failure the workday window exists to prevent, arriving through the one
-// door left open.
+// Owner, 2026-08-24, Wed 8/19 reading 12h42m against 9h36m of actual work: a
+// manual clock at 8:28pm moved the day's close from 5:22pm out to 8:28pm, and
+// 3h06m of phone-at-the-yard walked in behind it. The first attempt at this
+// blamed the manual entries for being one minute long and floored them, which
+// produced the right number for the wrong reason: the owner's answer was
+// "those manuals are right." They are real work, and real work should move the
+// day's edges. The mistake was mine, one layer down: being INSIDE the workday
+// was treated as enough for yard time to count.
 //
-// So a manual entry under this floor is still PAID as its own row, it just does
-// not get to redefine when the day started or ended. GPS visits are never
-// floored: the tracker already refuses to write a visit under two minutes, so a
-// short one it did write is a real stop somebody actually made.
-const _GEO_ANCHOR_MIN_MS=5*60000;
+// It is not. Sitting at the yard is work when you then LEFT to do something,
+// or came back from doing something and left again. If nothing follows the
+// session except the phone going quiet, nobody observed anyone leave, and that
+// is a truck parked. So dwell past the wrap-up allowance is credited only when
+// a departure lands on the end of it, which is a fact about the day rather
+// than a threshold on somebody's tap.
+const _GEO_LEAVE_SLACK_MS=5*60000;
 function _geoIsWorkAnchorSource(s){
   const t=String(s||'');
   if(/^drive/.test(t))return false;      // a leg, judged by what it chains to
@@ -1629,9 +1633,7 @@ function _geoShopCutoffs(entries){
     if(!e||!e.employee_user_id)return false;
     return (Date.parse(e.departed_at||'')||0)>0&&(Date.parse(e.arrived_at||'')||0)>0;
   });
-  const substantive=e=>String(e.source||'')!=='manual'||
-    (Date.parse(e.departed_at)-Date.parse(e.arrived_at))>=_GEO_ANCHOR_MIN_MS;
-  const anchors=rows.filter(e=>_geoIsWorkAnchorSource(e.source)&&substantive(e));
+  const anchors=rows.filter(e=>_geoIsWorkAnchorSource(e.source));
   const widen=(uid,ms)=>{
     const day=dstr(new Date(ms));
     const m=out[uid]=out[uid]||{};
@@ -1766,11 +1768,41 @@ function _geoShopPaidSpans(entries,win,others){
     });
     return [a,Math.max(a,b)];
   };
+  // Did anything on record start as this session ended? A drive pulling out, a
+  // visit beginning: proof the person LEFT rather than the phone going quiet
+  // where it sat. Only 'others' can supply it, since another yard session
+  // ending where this one does is the same standing still.
+  // AFTER the session ends, not merely somewhere in the day. That distinction
+  // is the whole rule: on the owner's Wed 8/19 the two manual clocks sit
+  // INSIDE the 5:22-10:18pm yard session, which is somebody at the yard
+  // clocking something while there, not somebody leaving. The next drive out
+  // or visit starting once the session is over is what proves they left, and
+  // it does not have to be instant: a 20-minute hole between the yard and the
+  // next job is a drive the tracker did not write down, not a reason to
+  // refuse the whole session.
+  // Bounded, and same Central day. `others` carries the person's whole fetched
+  // history, so an unbounded "anything after this" matched tomorrow morning's
+  // drive and quietly proved every session was left (caught on the owner's own
+  // week, 2026-08-24: Wed went straight back to 12h42m). An hour is the same
+  // ceiling the visit merge uses for an unobserved gap.
+  const leftAfter=endMs=>(Array.isArray(others)?others:[]).some(e=>{
+    const a=Date.parse((e&&e.arrived_at)||'')||0;
+    if(!(a>0))return false;
+    if(a<endMs-_GEO_LEAVE_SLACK_MS)return false;      // happened before, not after
+    if(a-endMs>60*60000)return false;                 // too far away to be this departure
+    return dstr(new Date(a))===dstr(new Date(endMs));
+  });
   let runningEnd=0;
   for(const c of clusters){
     const day=dstr(new Date(c.arr));
     const pr0=_geoShopPaidRange(new Date(c.arr).toISOString(),new Date(c.dep).toISOString(),((win||{})[day])||null);
-    const pr=pr0[1]>pr0[0]?clipToDrives(pr0[0],pr0[1]):pr0;
+    // A session nobody was seen leaving is a parked truck, whatever the
+    // workday window says about the hours around it. It still gets the
+    // wrap-up allowance, which is exactly what that allowance is for.
+    const pr1=(pr0[1]>pr0[0]&&!leftAfter(c.dep))
+      ? [pr0[0],Math.min(pr0[1],pr0[0]+_geoShopWrapMs())]
+      : pr0;
+    const pr=pr1[1]>pr1[0]?clipToDrives(pr1[0],pr1[1]):pr1;
     const start=Math.max(pr[0],runningEnd);
     const keep=out[c.members[0]];
     keep.startMs=start;

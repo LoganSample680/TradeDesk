@@ -427,6 +427,11 @@ test.describe('timelog.js: exhaustive coverage', () => {
     const JOB2 = { employee_user_id: 'me', job_id: '9', minutes: 180, arrived_at: '2026-08-20T18:00:00Z', departed_at: '2026-08-20T21:00:00Z', source: 'geofence' };
     const DRIVE_HOME = { employee_user_id: 'me', job_id: null, minutes: 30, arrived_at: '2026-08-20T21:00:00Z', departed_at: '2026-08-20T21:30:00Z', source: 'drive' };
     const DAY = [DRIVE_OUT, JOB, JOB2, DRIVE_HOME];
+    // Yard time counts only when a departure closes it, so the arithmetic
+    // tests below (merge, overlap, clip) need somebody leaving afterwards or
+    // they are measuring a parked truck. EXIT(iso) is that departure.
+    const EXIT = (iso) => ({ employee_user_id: 'me', job_id: null, minutes: 10, arrived_at: iso,
+      departed_at: new Date(Date.parse(iso) + 600000).toISOString(), source: 'drive' });
 
     test('yard time inside the workday is paid and listed', async () => {
       const rows = await withShop([YARD_MID], DAY);
@@ -543,51 +548,63 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
 
     // Owner, 2026-08-24, Wed 8/19 reading 12h42m against the 9h36m of work
-    // actually on it. Two 1-minute manual clocks at 7:51pm and 8:28pm (the
-    // clock button being tried out) held the day open three hours past the
-    // 5:22pm drive home and pulled 3h06m of yard dwell in behind them.
-    test('a one-minute manual tap does not reopen the day', async () => {
+    // actually on it. A manual clock at 8:28pm moved the day's close out from
+    // the 5:22pm drive home, and 3h06m of phone-at-the-yard came in behind it.
+    // The first fix blamed the manual entries for being a minute long; the
+    // owner's answer was "those manuals are right", and they are. Being INSIDE
+    // the workday was never enough. You have to have LEFT.
+    test('yard time nobody was seen leaving is not paid, even inside the day', async () => {
       const rows = await page.evaluate(async ([shopEntries, entries]) => {
         const origEnts = timeEntries.slice();
-        timeEntries.push({ id: 'tltap1', logged_by_uid: 'me', job_id: null, minutes: 1,
-          start_time: '2026-08-20T23:00:00Z', end_time: '2026-08-20T23:01:00Z', date: '2026-08-20' });
+        // A real hand-logged clock at 6:00pm, well after the yard session
+        // starts, holding the workday open exactly as it should.
+        timeEntries.push({ id: 'tlman9', logged_by_uid: 'me', job_id: null, minutes: 10,
+          start_time: '2026-08-20T23:00:00Z', end_time: '2026-08-20T23:10:00Z', date: '2026-08-20' });
         const orig = window._fetchCrewLabor;
         window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries, shopEntries });
         try { return await _timeLogRows(null); }
         finally { window._fetchCrewLabor = orig; timeEntries.length = 0; timeEntries.push(...origEnts); }
       }, [[YARD_PM], DAY]);
       expect(rows.filter(r => r.source === 'shop').length,
-        'the evening yard dwell stays out, a stray tap is not a shift').toBe(0);
-      expect(rows.filter(r => r.rawId === 'tltap1').length, 'the tapped minute is still paid on its own').toBe(1);
+        'the phone sat at the yard and nothing followed it: a parked truck').toBe(0);
+      expect(rows.filter(r => r.rawId === 'tlman9').length, 'the hand-logged minutes are still paid in full').toBe(1);
     });
 
-    test('a real manual shift still moves the day, floor or no floor', async () => {
-      const rows = await page.evaluate(async ([shopEntries]) => {
-        const origEnts = timeEntries.slice();
-        // Half an hour, comfortably over the floor: this is somebody saying
-        // they worked, and it closes the day at 5:30pm like any other event.
-        timeEntries.push({ id: 'tlreal1', logged_by_uid: 'me', job_id: null, minutes: 30,
-          start_time: '2026-08-20T22:00:00Z', end_time: '2026-08-20T22:30:00Z', date: '2026-08-20' });
-        const orig = window._fetchCrewLabor;
-        window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries: [], shopEntries });
-        try { return await _timeLogRows(null); }
-        finally { window._fetchCrewLabor = orig; timeEntries.length = 0; timeEntries.push(...origEnts); }
-      }, [[{ employee_user_id: 'me', minutes: 20, arrived_at: '2026-08-20T22:05:00Z', departed_at: '2026-08-20T22:25:00Z' }]]);
-      expect(rows.filter(r => r.source === 'shop').length, 'yard time inside a hand-logged shift still counts').toBe(1);
+    test('yard time a departure closes IS paid, however long the gap', async () => {
+      // Pulls out 20 minutes after the yard session ends: the drive itself was
+      // never written, but the next job starting is proof the person left.
+      const LATE = { employee_user_id: 'me', job_id: '9', minutes: 60,
+        arrived_at: '2026-08-20T19:20:00Z', departed_at: '2026-08-20T20:20:00Z', source: 'geofence' };
+      const rows = await withShop([
+        { employee_user_id: 'me', minutes: 60, arrived_at: '2026-08-20T18:00:00Z', departed_at: '2026-08-20T19:00:00Z' },
+      ], [DRIVE_OUT, JOB, LATE, JOB2, DRIVE_HOME]);
+      const shop = rows.filter(r => r.source === 'shop');
+      expect(shop.length, 'left for the next job, so the yard hour counts').toBe(1);
+      expect(shop[0].minutes).toBe(60);
     });
 
-    test('a manual clock-out counts as the day\'s last work event', async () => {
-      const rows = await page.evaluate(async ([shopEntries]) => {
-        const origEnts = timeEntries.slice();
-        // logged_by_uid must name the same person as the shop session: in the
-        // app an owner's manual rows carry null and fall back to the
-        // contractor uid, which IS that person, but a fixture has to say so.
-        timeEntries.push({ id: 'tlman1', logged_by_uid: 'me', job_id: null, minutes: 60, start_time: '2026-08-20T13:00:00Z', end_time: '2026-08-20T21:35:00Z', date: '2026-08-20' });
-        const orig = window._fetchCrewLabor;
-        window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries: [], shopEntries });
-        try { return await _timeLogRows(null); } finally { window._fetchCrewLabor = orig; timeEntries.length = 0; timeEntries.push(...origEnts); }
-      }, [[YARD_MID]]);
-      expect(rows.filter(r => r.source === 'shop').length, 'a hand-logged day still bounds the yard').toBe(1);
+    test('a departure the NEXT day never counts as leaving today', async () => {
+      // The person's fetched history runs past midnight; tomorrow's first
+      // drive must not retroactively prove they left the yard tonight.
+      const TOMORROW = { employee_user_id: 'me', job_id: '9', minutes: 30,
+        arrived_at: '2026-08-21T13:00:00Z', departed_at: '2026-08-21T13:30:00Z', source: 'geofence' };
+      const rows = await withShop([YARD_PM], DAY.concat([TOMORROW]));
+      expect(rows.filter(r => r.source === 'shop' && r.date === '2026-08-20').length,
+        'a new day is not a departure from last night').toBe(0);
+    });
+
+    // A hand-logged shift defines a day exactly like a GPS visit does. Asserted
+    // on the WINDOW rather than a rendered yard row: on a manual-only day, yard
+    // time before the shift is outside the window and yard time inside it is
+    // the same hour counted twice, so no row can prove this either way.
+    test('a manual clock sets the day\'s edges like any other work event', async () => {
+      const r = await page.evaluate(() => {
+        const w = _geoShopCutoffs([{ employee_user_id: 'me', source: 'manual',
+          arrived_at: '2026-08-20T13:00:00Z', departed_at: '2026-08-20T21:35:00Z' }]).me['2026-08-20'];
+        return { inMs: w.inMs, outMs: w.outMs };
+      });
+      expect(r.inMs).toBe(Date.parse('2026-08-20T13:00:00Z'));
+      expect(r.outMs, 'the hand-logged clock-out closes the day').toBe(Date.parse('2026-08-20T21:35:00Z'));
     });
 
     test('a shop dwell spanning Central midnight never renders', async () => {
@@ -670,7 +687,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       const rows = await withShop([
         { employee_user_id: 'me', minutes: 39, arrived_at: '2026-08-20T18:00:00Z', departed_at: '2026-08-20T18:39:00Z' },
         { employee_user_id: 'me', minutes: 11, arrived_at: '2026-08-20T18:44:00Z', departed_at: '2026-08-20T18:55:00Z' },
-      ], [DRIVE_OUT, JOB, OUT, JOB2, DRIVE_HOME]);
+      ], [DRIVE_OUT, JOB, OUT, EXIT('2026-08-20T18:55:00Z'), JOB2, DRIVE_HOME]);
       const shop = rows.filter(r => r.source === 'shop').sort((a, b) => a.startTime.localeCompare(b.startTime));
       expect(shop.length, 'two visits with a drive between them stay two rows').toBe(2);
       expect(shop.map(r => r.minutes), 'and neither is stretched over the leg').toEqual([39, 11]);
@@ -688,10 +705,13 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
 
     test('yard time only partly overlapping a drive keeps the part that is real', async () => {
+      // The fence lags the ignition, so the yard row runs seven minutes past
+      // the moment the truck actually pulled out. The drive starting at 18:30
+      // is both the overlap AND the proof the person left.
       const OUT = { employee_user_id: 'me', job_id: null, minutes: 7, arrived_at: '2026-08-20T18:30:00Z', departed_at: '2026-08-20T18:37:00Z', source: 'drive-unassigned' };
       const rows = await withShop([
         { employee_user_id: 'me', minutes: 30, arrived_at: '2026-08-20T18:07:00Z', departed_at: '2026-08-20T18:37:00Z' },
-      ], [DRIVE_OUT, JOB, OUT, JOB2, DRIVE_HOME]);
+      ], [DRIVE_OUT, JOB, OUT, EXIT('2026-08-20T18:37:00Z'), JOB2, DRIVE_HOME]);
       const shop = rows.filter(r => r.source === 'shop');
       expect(shop.length).toBe(1);
       expect(shop[0].minutes, 'the 23 minutes at the yard before the ignition').toBe(23);
@@ -701,7 +721,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       const rows = await withShop([
         { employee_user_id: 'me', minutes: 60, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T18:00:00Z' },
         { employee_user_id: 'me', minutes: 63, arrived_at: '2026-08-20T17:57:00Z', departed_at: '2026-08-20T19:00:00Z' },
-      ], DAY);
+      ], DAY.concat([EXIT('2026-08-20T19:00:00Z')]));
       const shop = rows.filter(r => r.source === 'shop');
       expect(shop.reduce((s, r) => s + r.minutes, 0), '5:00 to 7:00 is 120 minutes, not 123').toBe(120);
     });
@@ -710,7 +730,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       const rows = await withShop([
         { employee_user_id: 'me', minutes: 120, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T19:00:00Z' },
         { employee_user_id: 'me', minutes: 30, arrived_at: '2026-08-20T17:30:00Z', departed_at: '2026-08-20T18:00:00Z' },
-      ], DAY);
+      ], DAY.concat([EXIT('2026-08-20T19:00:00Z')]));
       const shop = rows.filter(r => r.source === 'shop');
       expect(shop.reduce((s, r) => s + r.minutes, 0), 'the nested one adds nothing').toBe(120);
     });
@@ -730,7 +750,8 @@ test.describe('timelog.js: exhaustive coverage', () => {
         { arrived_at: '2026-08-20T18:00:00Z', departed_at: '2026-08-20T19:00:00Z' },
         { arrived_at: null, departed_at: '2026-08-20T19:00:00Z' },
         { arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T18:30:00Z' },
-      ], { '2026-08-20': { inMs: Date.parse('2026-08-20T12:00:00Z'), outMs: Date.parse('2026-08-20T22:00:00Z') } }, [])
+      ], { '2026-08-20': { inMs: Date.parse('2026-08-20T12:00:00Z'), outMs: Date.parse('2026-08-20T22:00:00Z') } },
+         [{ arrived_at: '2026-08-20T19:00:00Z', departed_at: '2026-08-20T19:10:00Z', source: 'drive' }])
         .map(x => x.minutes));
       // Sorted by start the third row runs first (5:00-6:30) and the first row
       // (6:00-7:00) overlaps it, so it folds in: 5:00-7:00 on the third, zero
