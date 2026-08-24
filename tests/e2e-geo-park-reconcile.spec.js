@@ -1113,6 +1113,26 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // A hand-fixed row counts as a human clock record in dedup too: it must
+  // never lose to the longer automatic guess it was written to correct
+  // (owner rule 2026-08-24, when GPS rows became editable).
+  test('dedup: a hand-fixed row beats a longer overlapping automatic row', async () => {
+    await geoReset();
+    await page.evaluate(() => {
+      window.__selRows = [
+        { id: 1501, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
+          client_key: 'fixed-1501', arrived_at: '2026-08-12T18:06:57.587Z', departed_at: '2026-08-12T22:15:00.000Z' },
+        // The original, still claiming the flush-stamped 9:37pm close.
+        { id: 1502, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
+          client_key: 'live-1502', arrived_at: '2026-08-12T18:06:57.587Z', departed_at: '2026-08-13T02:37:29.394Z' },
+      ];
+    });
+    const r = await dedupCall();
+    expect(r.deletes.length).toBe(1);
+    expect(r.deletes[0].val, 'the longer automatic row loses to the human correction').toBe(1502);
+    await geoRestore();
+  });
+
   // Two crew members can each be mid-reconciliation on genuinely different
   // jobs at the same moment: the cross-target rule above must not merge
   // DIFFERENT people's reconciled rows into one, same guard as the live-row
@@ -1308,6 +1328,23 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     });
     const r = await mergeCall();
     expect(r.changed, 'they were at the shop mid-gap: two real visits').toBe(0);
+    await geoRestore();
+  });
+
+  // A row the owner corrected by hand is a human clock record: no sweep may
+  // widen it again (owner rule 2026-08-24, when GPS rows became editable).
+  test('merge: a hand-fixed row is never a merge candidate', async () => {
+    await geoReset();
+    await page.evaluate(() => {
+      window.__selRows = [
+        { id: 3001, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
+          client_key: 'fixed-3001', arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:00:00.000Z' },
+        { id: 3002, employee_user_id: 'geo-park-user-1', job_id: null, dest_place: 'John Doe', source: 'place',
+          client_key: 'live-3002', arrived_at: '2026-08-21T16:00:30.000Z', departed_at: '2026-08-21T18:00:00.000Z' },
+      ];
+    });
+    const r = await mergeCall();
+    expect(r.changed, 'the hand-set boundary stands, nothing folds into it').toBe(0);
     await geoRestore();
   });
 
@@ -2601,6 +2638,45 @@ test.describe('Geo park detection + mileage reconciliation', () => {
         return { stops: stops.length, skipped: (_geoParkLog || []).some(e => e.ev === 'stop-skip') };
       });
       expect(r.stops, 'no stop row on either branch').toBe(0);
+      expect(r.skipped, 'the skip is journaled for the diagnostics panel').toBe(true);
+      await geoRestore();
+    });
+
+    // Owner report 2026-08-24 (Wed 8/12): a visit read 1:06pm to 9:37pm
+    // because the app woke at 9:37pm and flushed the whole day's queue at
+    // once, five records inside 21ms, and the shutdown close stamped `now`.
+    // A close with no verified departure must use the last OBSERVED in-fence
+    // ping instead, and write nothing at all when there isn't one.
+    test('_geoCloseEntry with no departure closes at the last VERIFIED ping, never now', async () => {
+      await geoReset();
+      const r = await page.evaluate(async () => {
+        window.__rec.upserts.length = 0;
+        _geoArrivedAt = '2026-08-12T18:06:57.587Z';
+        _geoLastFenceAt = '2026-08-12T22:15:00.000Z';   // last ping seen on site
+        await _geoCloseEntry('job-8-12');
+        await new Promise(res => setTimeout(res, 60));
+        const row = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries') || {}).row || null;
+        return { row };
+      });
+      expect(r.row, 'the visit is written').toBeTruthy();
+      expect(r.row.departed_at, 'the observed ping, not the flush instant').toBe('2026-08-12T22:15:00.000Z');
+      expect(r.row.minutes, '18:06:57.587Z to 22:15Z, rounded').toBe(248);
+      await geoRestore();
+    });
+
+    test('_geoCloseEntry with no departure and no verified ping writes nothing', async () => {
+      await geoReset();
+      const r = await page.evaluate(async () => {
+        window.__rec.upserts.length = 0;
+        _geoArrivedAt = new Date(Date.now() - 9 * 3600000).toISOString();
+        _geoLastFenceAt = null;
+        const wrote = await _geoCloseEntry('job-no-ping');
+        await new Promise(res => setTimeout(res, 60));
+        return { wrote, rows: window.__rec.upserts.filter(u => u.tbl === 'job_time_entries').length,
+                 skipped: (_geoParkLog || []).some(e => e.ev === 'close-skip') };
+      });
+      expect(r.wrote).toBe(false);
+      expect(r.rows, 'an unobserved span is never invented').toBe(0);
       expect(r.skipped, 'the skip is journaled for the diagnostics panel').toBe(true);
       await geoRestore();
     });

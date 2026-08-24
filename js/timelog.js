@@ -192,7 +192,11 @@ async function _timeLogRows(sinceISO){
       minutes:e.minutes||0,personName:crew.name[e.employee_user_id]||'Crew',personUid:e.employee_user_id,
       clientName,addr:info.addr,jobName:info.jobName,clientKey:e.client_key||null,unpaid:isUnpaid,
       detail:(typeof _tlSourceLabel==='function')?_tlSourceLabel(e.source):(e.source||''),
-      startTime:e.arrived_at||null,endTime:e.departed_at||null
+      startTime:e.arrived_at||null,endTime:e.departed_at||null,
+      // The server row id and its raw source, so a wrong GPS clock can be
+      // corrected in place (owner rule 2026-08-24). rawSource is the raw
+      // column, unlike `detail` which is the friendly label.
+      rawId:e.id!=null?e.id:null,rawSource:e.source||''
     });
   });
   return rows.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
@@ -324,6 +328,85 @@ function _tlCanEdit(r){
   const myUid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
   return r.personUid===myUid;
 }
+// A GPS row's clock can be wrong, and until now nothing in the app could fix
+// it (owner report 2026-08-24: a visit read "1:06pm to 9:37pm" because the
+// app woke at 9:37 and stamped the close with `now`, and the owner had no
+// way to correct it, every fix had to be hand-written into a one-off repair
+// keyed to that exact row id, which does not scale for him).
+//
+// ON-SITE rows only. A drive row's minutes are tied to a mileage leg that
+// _geoSyncDriveTimeEntries checks against (and the IRS log is measured, not
+// typed), and an unpaid stop is not payroll, so neither is editable here.
+// Payroll permission is required, same gate the Team view already uses:
+// correcting a clock is a money decision, never a field worker's own call.
+function _tlCanFixAuto(r){
+  if(r.source!=='auto'||r.rawId==null||r.unpaid)return false;
+  const s=String(r.rawSource||'');
+  if(!(/^(geofence|place)$/.test(s)||/^(geofence|place)-/.test(s)))return false;
+  return !!(typeof _canViewComp==='function'&&_canViewComp());
+}
+// Correct a GPS row's clock. Same modal shape and the same validation as
+// _openEditTimeEntry (js/jobs.js) for manual rows (§7.3, one edit experience,
+// not two), but this row lives in job_time_entries on the server rather than
+// in the local timeEntries array, so it is read and written directly.
+// Values are re-read from the server on open rather than trusted from the
+// rendered table, which may be a sweep behind.
+async function _openFixAutoEntry(rowId){
+  if(!(typeof _canViewComp==='function'&&_canViewComp()))return;
+  if(!window._supa||!window._supaUser)return;
+  let row=null;
+  try{
+    const{data,error}=await _supa.from('job_time_entries')
+      .select('id,arrived_at,departed_at,job_id,dest_place').eq('id',String(rowId)).maybeSingle();
+    if(!error)row=data;
+  }catch(_e){}
+  if(!row||!row.arrived_at){if(typeof showToast==='function')showToast('Could not load that entry');return;}
+  const info=(typeof _tlJobClientInfo==='function')?_tlJobClientInfo(row.job_id):{clientName:'-'};
+  const who=(info&&info.clientName&&info.clientName!=='-')?info.clientName:(row.dest_place||'this visit');
+  document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
+  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  const toLocalInput=iso=>{try{const d=new Date(iso);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16);}catch(_e){return'';}};
+  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('✏',{size:18})+' Fix clock times</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(who)+', tracked by GPS</div>'+
+    '<div class="f" style="margin-bottom:12px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Clock in</label>'+
+      '<input type="datetime-local" id="tlf-start" value="'+toLocalInput(row.arrived_at)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
+    '<div class="f" style="margin-bottom:16px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Clock out</label>'+
+      '<input type="datetime-local" id="tlf-end" value="'+toLocalInput(row.departed_at||row.arrived_at)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
+    '<div id="tlf-err" style="display:none;font-size:11px;color:#A32D2D;margin-bottom:10px">End must be after start.</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
+      '<button onclick="_saveFixedAutoEntry(\''+escHtml(String(rowId))+'\')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
+    '</div>';
+  overlay.appendChild(box);document.body.appendChild(overlay);
+  overlay.addEventListener('click',ev=>{if(ev.target===overlay)overlay.remove();});
+}
+async function _saveFixedAutoEntry(rowId){
+  const startEl=document.getElementById('tlf-start'),endEl=document.getElementById('tlf-end');
+  const errEl=document.getElementById('tlf-err');
+  const start=startEl?new Date(startEl.value):null,end=endEl?new Date(endEl.value):null;
+  const bad=m=>{if(errEl){errEl.textContent=m;errEl.style.display='block';}};
+  if(!start||!end||isNaN(start.getTime())||isNaN(end.getTime())||end<=start)return bad('End must be after start.');
+  // The same physical-impossibility rule the Time Log already flags days by
+  // (owner rule 2026-08-24): a hand-typed correction must not be able to
+  // create the very thing the flag exists to catch.
+  const mins=Math.round((end.getTime()-start.getTime())/60000);
+  if(mins>1440)return bad('One entry cannot be longer than 24 hours.');
+  if(typeof _ctDateStr==='function'&&_ctDateStr(start)!==_ctDateStr(end))return bad('An entry has to start and end on the same day.');
+  if(!window._supa||!window._supaUser)return bad('Not connected.');
+  try{
+    // client_key moves to a 'fixed-' key: that is what tells every sweep
+    // (dedup, merge) this row is a human clock record now and must never be
+    // widened, trimmed, or folded into a neighbor again.
+    const{error}=await _supa.from('job_time_entries')
+      .update({arrived_at:start.toISOString(),departed_at:end.toISOString(),minutes:mins,client_key:'fixed-'+rowId})
+      .eq('id',String(rowId));
+    if(error)return bad('Could not save, try again.');
+  }catch(_e){return bad('Could not save, try again.');}
+  closeTopModal();
+  if(typeof showToast==='function')showToast('Clock times updated');
+  if(typeof renderTimeLog==='function')renderTimeLog();
+}
 function _tlRow(r){
   const canEdit=_tlCanEdit(r);
   // Delete isn't a button here, it's the same 3s hold-to-confirm gesture used
@@ -394,6 +477,8 @@ function _tlRow(r){
     '<td data-label="Week total" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.weekRunningMin||0):(r.weekRunningMin||0)+'m')+'</td>'+
     '<td data-label="">'+(canEdit?
       '<button onclick="_openEditTimeEntry('+r.rawId+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Edit</button>'
+      :_tlCanFixAuto(r)?
+      '<button onclick="_openFixAutoEntry(\''+escHtml(String(r.rawId))+'\')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Fix</button>'
       :'')+'</td>'+
   '</tr>';
 }

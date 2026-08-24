@@ -1435,7 +1435,22 @@ async function _geoCloseEntry(jobId,departedIso,gap){
   const arrived=_geoArrivedAt; _geoArrivedAt=null;
   _geoClearOpen();
   if(!arrived)return false;
-  const departed=departedIso||new Date().toISOString();
+  // NEVER `now` (owner report 2026-08-24, Wed 8/12: a visit read 1:06pm to
+  // 9:37pm, and 9:37:29pm turned out to be the instant the app woke up and
+  // flushed the whole day's queue at once, five records inside 21ms,
+  // including drive legs that had ended 13 hours earlier). The shutdown
+  // path (_geoStopTracking) calls this with no departedIso, and `now` then
+  // claimed every unobserved hour since the app died as time on site.
+  // The rule this file already states for both edges of a stop applies here
+  // too: close at a VERIFIED moment, never claim time nobody observed.
+  // _geoLastFenceAt is the last ping actually processed inside the fence
+  // (set in the ping handler, restored with the open visit on reload), so
+  // it is the last instant the person was OBSERVED here.
+  const departed=departedIso||_geoLastFenceAt||null;
+  // No verified observation at all: write nothing rather than invent a span.
+  // The mileage-anchored reconciler still recovers the visit later if real
+  // drive legs bound it, which is exactly the evidence this lacks.
+  if(!departed){_geoParkNote('close-skip','no verified departure, visit not written');return false;}
   const mins=Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrived))/60000));
   if(mins<2)return false;      // ignore brief pass-throughs
   if(!_supaUser)return false;
@@ -3110,7 +3125,7 @@ async function _geoDedupTimeEntries(){
   try{
     const cutoff=new Date(Date.now()-90*86400000).toISOString();
     const {data,error}=await _supa.from('job_time_entries')
-      .select('id,employee_user_id,job_id,dest_place,source,arrived_at,departed_at')
+      .select('id,employee_user_id,job_id,dest_place,source,client_key,arrived_at,departed_at')
       .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
     if(error||!Array.isArray(data)||data.length<2)return 0;
     // Only ON-SITE presence dedupes: geofence, geofence-gap, geofence-
@@ -3246,7 +3261,11 @@ async function _geoDedupTimeEntries(){
         const aS=Date.parse(a.arrived_at),aE=Date.parse(a.departed_at);
         const bS=Date.parse(b.arrived_at),bE=Date.parse(b.departed_at);
         if(!(aS<bE&&bS<aE))continue;   // no real overlap: two genuinely separate visits
-        const aMan=a.source==='manual',bMan=b.source==='manual';
+        // A row the owner corrected by hand counts as a human clock record
+        // here too (owner rule 2026-08-24): a hand-set boundary must never
+        // lose to a longer automatic guess it was written to correct.
+        const human=r=>r.source==='manual'||/^fixed-/.test(String(r.client_key||''));
+        const aMan=human(a),bMan=human(b);
         let loser;
         if(aMan!==bMan)loser=aMan?b:a;               // a human's clock record always wins
         else loser=(aE-aS)>=(bE-bS)?b:a;              // otherwise the longest measured wins
@@ -3351,7 +3370,7 @@ async function _geoMergeAdjacentVisits(){
   try{
     const cutoff=new Date(Date.now()-90*86400000).toISOString();
     const {data,error}=await _supa.from('job_time_entries')
-      .select('id,employee_user_id,job_id,dest_place,source,arrived_at,departed_at')
+      .select('id,employee_user_id,job_id,dest_place,source,client_key,arrived_at,departed_at')
       .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
     if(error||!Array.isArray(data)||data.length<2)return 0;
     const all=data.filter(r=>r&&r.id!=null&&r.arrived_at&&r.departed_at);
@@ -3359,7 +3378,12 @@ async function _geoMergeAdjacentVisits(){
     // guesses (see the doc comment above: they bridged the 8/21 lunch),
     // never manual bookends, never stops, never drive rows.
     const isCandidate=s=>/^(geofence|geofence-gap|place)$/.test(String(s||''));
-    const rows=all.filter(r=>isCandidate(r.source));
+    // A row a HUMAN corrected by hand is never a merge candidate, the same
+    // protection 'manual' already gets everywhere in this file: the owner
+    // set those boundaries on purpose and no sweep may widen them again
+    // (owner rule 2026-08-24, when GPS rows became editable).
+    const isHumanFixed=r=>/^fixed-/.test(String(r.client_key||''));
+    const rows=all.filter(r=>isCandidate(r.source)&&!isHumanFixed(r));
     if(rows.length<2)return 0;
     // Shop sessions block a gap the same way any other recorded presence
     // does. Best-effort: a failed fetch just means shop evidence is not

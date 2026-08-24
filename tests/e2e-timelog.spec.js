@@ -479,6 +479,108 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
   });
 
+  // Owner report 2026-08-24: a GPS visit read "1:06pm to 9:37pm" because the
+  // app woke at 9:37 and stamped the close with `now`, and nothing in the app
+  // could correct it. On-site GPS rows are now fixable by anyone with payroll
+  // permission; drive rows and unpaid stops are not.
+  test.describe('_tlCanFixAuto / _openFixAutoEntry', () => {
+    const withComp = (fn) => page.evaluate(async (body) => {
+      const saved = window._canViewComp;
+      window._canViewComp = () => true;
+      try { return await eval('(' + body + ')')(); } finally { window._canViewComp = saved; }
+    }, fn.toString());
+
+    test('on-site GPS rows are fixable, drive rows and stops are not', async () => {
+      const r = await withComp(() => {
+        const R = (o) => Object.assign({ source: 'auto', rawId: 'x1', rawSource: 'place', unpaid: false }, o);
+        return {
+          place: _tlCanFixAuto(R({})),
+          geofence: _tlCanFixAuto(R({ rawSource: 'geofence' })),
+          reconciled: _tlCanFixAuto(R({ rawSource: 'geofence-reconciled' })),
+          drive: _tlCanFixAuto(R({ rawSource: 'drive-unassigned' })),
+          stop: _tlCanFixAuto(R({ rawSource: 'stop', unpaid: true })),
+          manualRow: _tlCanFixAuto(R({ source: 'manual' })),
+          noServerId: _tlCanFixAuto(R({ rawId: null })),
+        };
+      });
+      expect(r.place).toBe(true);
+      expect(r.geofence).toBe(true);
+      expect(r.reconciled).toBe(true);
+      expect(r.drive, 'drive minutes follow the mileage leg, never a typed number').toBe(false);
+      expect(r.stop, 'an unpaid stop is not payroll').toBe(false);
+      expect(r.manualRow, 'manual rows use the existing edit path').toBe(false);
+      expect(r.noServerId).toBe(false);
+    });
+
+    test('without payroll permission nothing is fixable', async () => {
+      const r = await page.evaluate(() => {
+        const saved = window._canViewComp;
+        window._canViewComp = () => false;
+        try { return _tlCanFixAuto({ source: 'auto', rawId: 'x1', rawSource: 'place', unpaid: false }); }
+        finally { window._canViewComp = saved; }
+      });
+      expect(r, 'correcting a clock is a money decision').toBe(false);
+    });
+
+    // The real 8/12 row: 1:06pm arrival, flush-stamped 9:37pm close.
+    const REAL = { id: 'af7136c6', arrived_at: '2026-08-12T18:06:57.587Z', departed_at: '2026-08-13T02:37:29.394Z', job_id: null, dest_place: 'John Doe' };
+    const drive = (row, endIso) => page.evaluate(async ([row, endIso]) => {
+      const saved = { cvc: window._canViewComp, supa: window._supa, user: window._supaUser, toast: window.showToast, render: window.renderTimeLog };
+      const updates = [];
+      window._canViewComp = () => true;
+      window._supaUser = { id: 'u' };
+      window._supa = { from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: row, error: null }) }) }),
+        update: (patch) => ({ eq: (c, v) => { updates.push({ patch, id: v }); return Promise.resolve({ error: null }); } }),
+      }) };
+      window.showToast = () => {}; window.renderTimeLog = () => {};
+      try {
+        await _openFixAutoEntry(row.id);
+        const opened = !!document.getElementById('tlf-start');
+        if (endIso) {
+          const d = new Date(endIso); d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+          document.getElementById('tlf-end').value = d.toISOString().slice(0, 16);
+        }
+        await _saveFixedAutoEntry(row.id);
+        const err = document.getElementById('tlf-err');
+        const out = { opened, updates, errShown: !!(err && err.style.display === 'block'), errMsg: err ? err.textContent : '' };
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        return out;
+      } finally {
+        window._canViewComp = saved.cvc; window._supa = saved.supa; window._supaUser = saved.user;
+        window.showToast = saved.toast; window.renderTimeLog = saved.render;
+      }
+    }, [row, endIso]);
+
+    test('correcting the clock-out writes the new span and re-keys it as human-set', async () => {
+      const r = await drive(REAL, '2026-08-12T22:15:00Z');
+      expect(r.opened).toBe(true);
+      expect(r.updates.length).toBe(1);
+      expect(r.updates[0].id).toBe('af7136c6');
+      expect(r.updates[0].patch.departed_at).toBe('2026-08-12T22:15:00.000Z');
+      expect(r.updates[0].patch.minutes).toBe(249);
+      expect(r.updates[0].patch.client_key, 'the fixed- key is what stops every sweep from widening it again').toBe('fixed-af7136c6');
+    });
+
+    test('a correction can never create a 24h+ entry or cross midnight', async () => {
+      const tooLong = await drive(REAL, '2026-08-14T22:15:00Z');
+      expect(tooLong.updates.length, 'refused, nothing written').toBe(0);
+      expect(tooLong.errShown).toBe(true);
+      expect(tooLong.errMsg).toContain('24 hours');
+      // Same UTC day, but 1:06pm -> 11:30pm CT is still same Central day; use
+      // a genuinely next-Central-day end to prove the day rule.
+      const crosses = await drive(REAL, '2026-08-13T13:00:00Z');
+      expect(crosses.updates.length).toBe(0);
+      expect(crosses.errMsg).toContain('same day');
+    });
+
+    test('an end at or before the start is refused', async () => {
+      const r = await drive(REAL, '2026-08-12T18:06:57Z');
+      expect(r.updates.length).toBe(0);
+      expect(r.errMsg).toContain('End must be after start');
+    });
+  });
+
   test.describe('_tlOpenEntries', () => {
     const OPEN_ID = 8990010;
     test.afterEach(async () => {
