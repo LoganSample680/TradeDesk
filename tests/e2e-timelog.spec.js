@@ -2302,6 +2302,15 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window._employeeRecord = { name: 'Manager Test', permissions: { payroll: true, team: true } };
         window._supaUser = { id: 'emp-test-uid' };
         setTimeLogYear(new Date().getFullYear());
+        // Establish Me scope explicitly. _tlScope is module state that earlier
+        // tests in this file legitimately leave on 'team', and this test used
+        // to rely on the preceding no-permission test having clamped it back
+        // as a side effect. That held until the file grew and the ordering
+        // shifted (CI shard 6, 2026-08-24: Share read hidden because the page
+        // was still in Team scope). The product rule under test, Share follows
+        // scope, is unchanged; only the precondition is now stated rather
+        // than inherited.
+        setTimeLogScope('me');
         await renderTimeLog();
         const meShare = document.getElementById('tl-share').style.display !== 'none';
         const meHtml = document.getElementById('tl-list').innerHTML;
