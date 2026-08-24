@@ -370,7 +370,7 @@ function loadAll(){
 // result" rather than as a crash (js/geo-track.js _geoMergeAdjacentVisits
 // reaches here through _tlJobClientInfo and had an entire merge sweep aborted
 // by it, 2026-08-24). A lookup should return nothing for a bad row, not die.
-function getClientById(id){return (Array.isArray(clients)?clients:[]).find(c=>c&&c.id===id)||null;}
+function getClientById(id){return (Array.isArray(clients)?clients:[]).find(c=>c&&c.id===id);}
 // ── Per-property internal site notes ──────────────────────────────────────
 // Gate code, dog, parking, lockbox: crew-only, never on the client's proposal.
 // Keyed by PROPERTY address (street line) on client.siteNotes{}, so a client
