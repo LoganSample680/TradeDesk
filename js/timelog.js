@@ -100,7 +100,7 @@ function _tlOpenEntries(){
 // promote it back into view on the next open.
 function _tlStopAnchored(arrMs,depMs,anchors){
   if(!(arrMs>0&&depMs>=arrMs)||!Array.isArray(anchors))return false;
-  const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):d.toISOString().slice(0,10);
+  const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
   const day=dstr(new Date(arrMs));
   if(day!==dstr(new Date(depMs)))return false;   // spans midnight: never shown
   const SLACK=2*60000;   // kerb-edge timestamp rounding, same floor the merge gap used

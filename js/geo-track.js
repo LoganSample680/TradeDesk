@@ -1488,12 +1488,13 @@ function _geoIsOffJobSource(s){return String(s||'')==='stop';}
 // what let single days total more than 24 hours (owner rule 2026-08-24: "it's
 // not humanely possible for any day to have more than 24 hours"). Central
 // time is the app's day convention everywhere (_ctDateStr, js/finance.js);
-// the UTC fallback only exists so this never throws if load order changes.
+// dateKey (js/utils.js, always loaded first) is the local-day fallback if
+// load order ever changes, never a UTC slice (the day-key lint bans those).
 function _geoStopCrossesMidnight(arrIso,depIso){
   const a=new Date(Date.parse(arrIso)||0),d=new Date(Date.parse(depIso)||0);
   return (typeof _ctDateStr==='function')
     ? _ctDateStr(a)!==_ctDateStr(d)
-    : a.toISOString().slice(0,10)!==d.toISOString().slice(0,10);
+    : dateKey(a)!==dateKey(d);
 }
 // Has the contractor marked THIS coordinate as their own home office? Their
 // call, never inferred: places.js is explicit that a qualifying home office
@@ -3528,7 +3529,7 @@ async function _geoRepairStopRows(){
       if(sr&&!sr.error&&Array.isArray(sr.data))shopRows=sr.data.filter(s=>s&&s.arrived_at&&s.departed_at);
     }catch(_e){}
     const P=s=>Date.parse(s)||0;
-    const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):d.toISOString().slice(0,10);
+    const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
     const onSite=s=>{const t=String(s||'');return /^(geofence|manual|place)$/.test(t)||/^(geofence|place)-/.test(t);};
     const isMerge=r=>/^merge-/.test(String(r.client_key||''));
     // Forensic corrections for Fri 8/21 BEFORE the generic fingerprints run
