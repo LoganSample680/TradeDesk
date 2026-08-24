@@ -415,6 +415,30 @@ function _tlComputeWeeklyRunning(rows){
     r.weekRunningMin=runningThroughDay[k]||0;
   });
 }
+// ── The timesheet runs on the BUSINESS's clock, never the phone's ──────────
+// Owner, 2026-08-24, from a plane seat: "I'm traveling right now and went back
+// an hour so my times went from 8 and 10:30 to 7 and 9:30, how do we prevent
+// that?" He worked 8:00-10:30 in Topeka; his phone landed in Denver and every
+// clock time on the log slid an hour earlier.
+//
+// This was device-local formatting, so the same day's work read differently
+// depending on where the person happened to be standing when they opened the
+// app, and the CSV export used the same function, so a payroll record changed
+// with the exporter's location. The DAY grouping was already pinned to Central
+// (_ctDateStr, js/finance.js), so travel also split the log against itself:
+// days in one zone, times in another, and near midnight they disagree outright.
+//
+// Hours are a fact about when work happened, not about where the phone is now.
+// One zone for the whole log: display, the Fix dialog, and the export.
+//
+// Reads S.bizTz so this stops being a Kansas assumption the day a contractor in
+// another state signs up, and falls back to the same Central zone _ctDateStr
+// already hardcodes so the two can never disagree today.
+function _tlBizTz(){
+  const t=(typeof S!=='undefined'&&S&&S.bizTz)||'';
+  if(t){try{new Intl.DateTimeFormat('en-US',{timeZone:t});return t;}catch(_e){}}
+  return 'America/Chicago';
+}
 // Formats an ISO timestamp as a plain clock time ("8:02 AM"). Used for both
 // the Clock In/Clock Out columns and the CSV export, one place so the two
 // never drift out of format with each other.
@@ -422,7 +446,36 @@ function _tlFmtTime(iso){
   if(!iso)return '';
   const d=new Date(iso);
   if(isNaN(d.getTime()))return '';
-  return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+  try{return d.toLocaleTimeString('en-US',{timeZone:_tlBizTz(),hour:'numeric',minute:'2-digit'});}
+  catch(_e){return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
+}
+// 'YYYY-MM-DDTHH:MM' in business time, for a datetime-local input's value.
+function _tlBizInputValue(iso){
+  try{
+    const parts=new Intl.DateTimeFormat('en-CA',{timeZone:_tlBizTz(),hour12:false,
+      year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).formatToParts(new Date(iso));
+    const g=t=>(parts.find(p=>p.type===t)||{}).value;
+    let hh=g('hour'); if(hh==='24')hh='00';
+    return g('year')+'-'+g('month')+'-'+g('day')+'T'+hh+':'+g('minute');
+  }catch(_e){return '';}
+}
+// The inverse: a wall-clock string the person TYPED, read as business time,
+// back to the actual instant. Formatting the naive guess back through the zone
+// and measuring how far it drifted is what finds the offset, so this carries
+// CDT/CST itself rather than a hand-maintained number.
+function _tlBizInputToIso(local){
+  const m=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(local||''));
+  if(!m)return null;
+  const naive=Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5]);
+  try{
+    const parts=new Intl.DateTimeFormat('en-CA',{timeZone:_tlBizTz(),hour12:false,
+      year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'})
+      .formatToParts(new Date(naive));
+    const g=t=>+((parts.find(p=>p.type===t)||{}).value);
+    let hh=g('hour'); if(hh===24)hh=0;
+    const back=Date.UTC(g('year'),g('month')-1,g('day'),hh,g('minute'),g('second'));
+    return new Date(naive+(naive-back)).toISOString();
+  }catch(_e){return new Date(naive).toISOString();}
 }
 let _tlLastRows=[];
 // Split from the actual CSV build below so the build logic stays independently
@@ -509,7 +562,9 @@ async function _openFixAutoEntry(rowId){
   document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
-  const toLocalInput=iso=>{try{const d=new Date(iso);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16);}catch(_e){return'';}};
+  // Business time, not the phone's: prefilling in the device's zone would hand
+  // someone a wrong baseline to "correct" from the moment they left the state.
+  const toLocalInput=iso=>_tlBizInputValue(iso);
   box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('✏',{size:18})+' Fix clock times</div>'+
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(who)+', tracked by GPS</div>'+
     '<div class="f" style="margin-bottom:12px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Clock in</label>'+
@@ -527,7 +582,10 @@ async function _openFixAutoEntry(rowId){
 async function _saveFixedAutoEntry(rowId){
   const startEl=document.getElementById('tlf-start'),endEl=document.getElementById('tlf-end');
   const errEl=document.getElementById('tlf-err');
-  const start=startEl?new Date(startEl.value):null,end=endEl?new Date(endEl.value):null;
+  // Read as business time. new Date('...T17:00') parses in the DEVICE's zone,
+  // so a correction typed in Denver would have landed an hour off in Topeka.
+  const sIso=startEl?_tlBizInputToIso(startEl.value):null,eIso=endEl?_tlBizInputToIso(endEl.value):null;
+  const start=sIso?new Date(sIso):null,end=eIso?new Date(eIso):null;
   const bad=m=>{if(errEl){errEl.textContent=m;errEl.style.display='block';}};
   if(!start||!end||isNaN(start.getTime())||isNaN(end.getTime())||end<=start)return bad('End must be after start.');
   // The same physical-impossibility rule the Time Log already flags days by
@@ -653,7 +711,7 @@ function _tlRenderOpenBanner(){
         '<div style="min-width:0">'+
           '<div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.personName)+(r.elapsedMin>600?' <span title="Clocked in 10+ hours, likely a forgotten clock-out" style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:4px;background:var(--c-red-soft);color:var(--c-red-deep);margin-left:4px">LONG SHIFT</span>':'')+'</div>'+
           '<div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.clientName)+(r.jobName?' · '+escHtml(r.jobName):'')+'</div>'+
-          '<div style="font-size:11px;color:var(--text3)">since '+new Date(r.startTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})+'</div>'+
+          '<div style="font-size:11px;color:var(--text3)">since '+_tlFmtTime(r.startTime)+'</div>'+
         '</div>'+
         '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+
           '<div style="font-size:13px;font-weight:800'+(r.elapsedMin>600?';color:var(--c-red-deep)':'')+'">'+(typeof _fmtMin==='function'?_fmtMin(r.elapsedMin):r.elapsedMin+'m')+'</div>'+

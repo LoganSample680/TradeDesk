@@ -1044,10 +1044,11 @@ test.describe('timelog.js: exhaustive coverage', () => {
       try {
         await _openFixAutoEntry(row.id);
         const opened = !!document.getElementById('tlf-start');
-        if (endIso) {
-          const d = new Date(endIso); d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-          document.getElementById('tlf-end').value = d.toISOString().slice(0, 16);
-        }
+        // Typed in BUSINESS time, which is what the dialog reads now and what
+        // a person sitting in the truck actually types. Filling the field via
+        // the runner's own zone was the same assumption that shifted the
+        // owner's log an hour when he flew to Denver.
+        if (endIso) document.getElementById('tlf-end').value = _tlBizInputValue(endIso);
         await _saveFixedAutoEntry(row.id);
         const err = document.getElementById('tlf-err');
         const out = { opened, updates, errShown: !!(err && err.style.display === 'block'), errMsg: err ? err.textContent : '' };
@@ -1082,7 +1083,8 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
 
     test('an end at or before the start is refused', async () => {
-      const r = await drive(REAL, '2026-08-12T18:06:57Z');
+      // One minute BEFORE the 1:06pm Central arrival, in business time.
+      const r = await drive(REAL, '2026-08-12T18:05:00Z');
       expect(r.updates.length).toBe(0);
       expect(r.errMsg).toContain('End must be after start');
     });
