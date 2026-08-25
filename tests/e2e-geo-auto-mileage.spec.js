@@ -6596,6 +6596,59 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.dropped, 'a Saturday errand is not a deduction').toBe(1);
     });
 
+    // ── The cascade that ate real deductible miles (owner, 2026-08-25) ──────
+    //
+    // His live diagnostic log at 18:39 that day:
+    //   mile-offday - John Doe to Shop 3.2mi 2026-08-19T22:18:05.091Z
+    //   mile-offday - John Doe to Shop 3.2mi 2026-08-18T22:19:15.091Z
+    //
+    // Two real 4:18pm drives home from a client, deleted from the IRS log. The
+    // chain: a bad reconciler trim removed those days' on-site rows, so the day
+    // had no work event, so the workday window collapsed, so "a day with no
+    // work at all means every leg on it is personal" judged both drives
+    // personal and swept them. Absence of a time entry is evidence the TIME
+    // side failed, never evidence the DRIVING was personal.
+    //
+    // The owner's original rule is unchanged and still tested just above: an
+    // anonymous Stop on a no-work day is an errand and goes.
+    test('a named business leg on a day with no time entries is NOT removed', async () => {
+      const r = await run([leg({ date: '2026-08-22', from_name: 'John Doe', to_name: 'Shop',
+        startedIso: '2026-08-22T22:18:05.091Z', endedIso: '2026-08-22T22:25:00.000Z' })], ENTS);
+      expect(r.err).toBe(null);
+      expect(r.dropped, 'the exact leg his log shows being destroyed').toBe(0);
+      expect(r.left).toEqual(['Shop@2026-08-22T22:18:05.091Z']);
+    });
+
+    test('one anonymous end is enough to drop it on a no-work day', async () => {
+      for (const ends of [{ from_name: 'Stop', to_name: 'John Doe' },
+                          { from_name: 'John Doe', to_name: 'Stop' },
+                          { from_name: '', to_name: 'Shop' },
+                          { from_name: 'Shop', to_name: '' },
+                          { from_name: '?', to_name: 'Shop' }]) {
+        const r = await run([leg(Object.assign({ date: '2026-08-22',
+          startedIso: '2026-08-22T16:47:00Z', endedIso: '2026-08-22T16:57:00Z' }, ends))], ENTS);
+        expect(r.dropped, 'half-anonymous is still an errand: ' + JSON.stringify(ends)).toBe(1);
+      }
+    });
+
+    test('a leg OUTSIDE a real workday window is still removed, named ends or not', async () => {
+      // 08-20 HAS a window, so the named-ends reprieve must not reach it or the
+      // family-pictures run comes back from the dead.
+      const r = await run([leg({ startedIso: '2026-08-20T23:26:00Z', endedIso: '2026-08-21T00:44:00Z',
+        from_name: 'Civitan Day Camp', to_name: 'Shop' })], ENTS);
+      expect(r.dropped, 'evidence of that day exists, and this leg sits outside it').toBe(1);
+    });
+
+    test('_mileNamedEnd: only a real resolved place counts', async () => {
+      const r = await page.evaluate(() => ({
+        named: ['John Doe', 'Shop', 'The Home Depot', 'Caseys'].map(_mileNamedEnd),
+        anon: ['Stop', 'stop', 'STOP', '?', '', '   ', null, undefined].map(_mileNamedEnd),
+      }));
+      expect(r.named, 'a resolved place is business').toEqual([true, true, true, true]);
+      expect(r.anon, 'anything anonymous or missing is not').toEqual(
+        [false, false, false, false, false, false, false, false]);
+    });
+
     test('a hand-entered trip is never second-guessed', async () => {
       const r = await run([leg({ gps: false, legKey: null, startedIso: '2026-08-20T23:26:00Z', endedIso: '2026-08-21T00:44:00Z' })], ENTS);
       expect(r.dropped, "the contractor's own statement stands").toBe(0);

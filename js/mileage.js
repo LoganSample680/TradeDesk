@@ -876,6 +876,14 @@ async function _retryPendingTrips(){
 //     park log with its route and clock, so nothing vanishes unexplained.
 // Reductions only, and it uses the same tombstone + cloud delete every other
 // real deletion here uses (§7.3), or the row simply comes back on next load.
+// A leg endpoint that resolved to a real place (a client, a job, the shop, a
+// supply house) rather than an anonymous roadside stop. The fence machine
+// writes the resolved name at the time it logs the leg, so this is a recorded
+// fact about the drive, not a re-derivation.
+function _mileNamedEnd(n){
+  const t=String(n==null?'':n).trim();
+  return !!t&&t!=='?'&&!/^stop$/i.test(t);
+}
 const _MILE_WORKDAY_CAP=25;
 async function _mileWorkdaySweep(){
   try{
@@ -911,9 +919,26 @@ async function _mileWorkdaySweep(){
       if(!(a>0&&b>=a))continue;
       if(Date.parse(cutoff)>a)continue;             // outside the window we fetched evidence for
       const win=winFor(m,a);
-      // A day with no work at all has no window: every leg on it is personal.
-      // A day with one: only legs entirely outside it.
+      // A day with a window: only legs entirely outside it.
       if(win&&Math.min(b,win.outMs)>=Math.max(a,win.inMs))continue;
+      // A day with NO window used to mean "every leg on it is personal", and
+      // that rule destroyed real deductible mileage (owner's live log,
+      // 2026-08-25 18:39: two 3.2-mile "John Doe to Shop" legs from 08-18 and
+      // 08-19 deleted as mile-offday). The cascade: a bad reconciler trim
+      // removed those days' on-site rows, the day then had no work event, so
+      // the window collapsed, so every drive on it was judged personal, so the
+      // deduction went with it. Absence of a time entry is not evidence of a
+      // personal trip; it is evidence the TIME side failed, and the same
+      // principle applies here as to the ping tape: silence must never delete.
+      //
+      // The owner's rule still stands, because his own example survives it: a
+      // Saturday "Shop to Stop" is dropped, since an anonymous Stop is exactly
+      // what an errand looks like. A leg with a real business name at BOTH
+      // ends is a business drive by its own endpoints, whatever the time log
+      // did or did not record, so it stays.
+      if(!win||!(win.outMs>0)){
+        if(_mileNamedEnd(m.from_name)&&_mileNamedEnd(m.to_name))continue;
+      }
       const day=m.date||dstr(new Date(a));
       const ends=[m.toCoord,m.fromCoord].filter(c=>c&&c.lat!=null);
       if(typeof _bizReceiptForStop==='function'&&
