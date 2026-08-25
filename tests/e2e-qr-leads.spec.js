@@ -351,8 +351,28 @@ test.describe('QR lead tracking: js/qr-leads.js', () => {
         window._supaUser = { id: 'auth-uid-not-the-account-id', email: 'q@t.com' };
         _account = { id: 'acct-row-uuid-0001' };
         let captured = null;
+        // Proxied for the SAME reason the beforeAll mock above is, and it was
+        // the one place that never got the treatment: the periodic
+        // whole-account cloud save (js/cloud.js supaSaveToCloud) can fire
+        // while this narrow stub is installed and calls
+        // _supa.from('zj_data').upsert(...).select(...).single(). A stub with
+        // no upsert throws a real TypeError, which lands as a console error
+        // and fails this file's own unrelated "zero console errors" test.
+        // Caught on webkit CI 2026-08-25.
+        //
+        // The asserted path (select().in()) keeps its exact behavior; every
+        // other call resolves to an inert chainable, so nothing this stub was
+        // never designed to answer can throw.
+        const inert = () => {
+          const g = new Proxy({
+            then: (res) => Promise.resolve({ data: [], error: null }).then(res),
+            single: () => Promise.resolve({ data: null, error: null }),
+            maybeSingle: () => Promise.resolve({ data: null, error: null }),
+          }, { get(t, prop) { return (prop in t) ? t[prop] : () => g; } });
+          return g;
+        };
         window._supa = {
-          from: (tbl) => ({
+          from: (tbl) => new Proxy({
             select: () => ({
               in: (col, ids) => {
                 captured = { tbl, col, ids };
@@ -361,7 +381,7 @@ test.describe('QR lead tracking: js/qr-leads.js', () => {
                 ] }) }) };
               },
             }),
-          }),
+          }, { get(t, prop) { return (prop in t) ? t[prop] : () => inert(); } }),
         };
         _pendingInbound = [];
         await _loadPendingInbound();
