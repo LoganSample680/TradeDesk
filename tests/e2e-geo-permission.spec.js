@@ -849,14 +849,30 @@ test.describe('Crew location permission', () => {
             }) };
             const settle = () => new Promise(res => setTimeout(res, 80));
             _geoRefreshPermCache(); await settle();            // 1: wheninuse
+            // Measure the identical repeat in ISOLATION. Counting total rows
+            // instead would fold in any write the live app makes on its own
+            // during these settles (this page boots the FULL app, and the
+            // foreground reporter fires on its own schedule), which is a real
+            // write against the same mock but has nothing to do with the gate
+            // under test. CI caught exactly that: an extra 'wheninuse' row.
+            const before = rows.length;
             _geoRefreshPermCache(); await settle();            // 2: identical, must NOT re-send
+            const afterRepeat = rows.length - before;
             answer = { status: 'always', accuracy: 'full', precise: true, servicesEnabled: true };
             _geoRefreshPermCache(); await settle();            // 3: upgraded, still flattens to granted
             answer = { status: 'always', accuracy: 'reduced', precise: false, servicesEnabled: true };
             _geoRefreshPermCache(); await settle();            // 4: Precise off
             answer = { status: 'always', accuracy: 'reduced', precise: false, servicesEnabled: false };
             _geoRefreshPermCache(); await settle();            // 5: master switch off
-            return rows.map(x => [x.location_status, x.location_accuracy, x.location_services_enabled]);
+            // Consecutive duplicates collapsed: what matters is that every real
+            // change appears, in order, and no state is skipped.
+            const seq = [];
+            for (const x of rows) {
+              const t = [x.location_status, x.location_accuracy, x.location_services_enabled];
+              const last = seq[seq.length - 1];
+              if (!last || last.join('|') !== t.join('|')) seq.push(t);
+            }
+            return { seq, afterRepeat };
           } finally {
             window.Capacitor = saved.cap; window._supa = saved.supa; window._supaUser = saved.user;
             if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
@@ -864,11 +880,12 @@ test.describe('Crew location permission', () => {
             if (typeof _geoPermSig !== 'undefined') _geoPermSig = saved.sig;
           }
         });
-        expect(r, 'four real changes, and the identical repeat is not re-sent').toEqual([
+        expect(r.afterRepeat, 'an identical answer sends nothing').toBe(0);
+        expect(r.seq, 'every real change reaches the row, in order, none skipped').toEqual([
           ['wheninuse', 'full', true],
-          ['always', 'full', true],
-          ['always', 'reduced', true],
-          ['always', 'reduced', false],
+          ['always', 'full', true],     // flattens to granted, would have been invisible before
+          ['always', 'reduced', true],  // Precise Location off
+          ['always', 'reduced', false], // device-wide Location Services off
         ]);
       });
     });
