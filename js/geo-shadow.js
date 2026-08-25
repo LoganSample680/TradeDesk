@@ -53,6 +53,10 @@ function _shadowNote(kind,data){
 }
 function _shadowClear(){
   _shadowLog=[];_liveGpsOnMs=0;_liveGpsSinceMs=null;
+  // Reset counters means reset counters: with the armed signature left
+  // standing, the next start would recognise it, skip, and journal nothing,
+  // so a freshly cleared log would sit empty looking like a dead engine.
+  _shadowArmedSig=null;_shadowArmedCount=0;
   try{
     localStorage.removeItem(_GEO_SHADOW_KEY);
     localStorage.removeItem('td_geo_live_gps_ms');
@@ -90,6 +94,21 @@ function _shadowRegions(){
 
 // ── Start / stop ─────────────────────────────────────────────────────────────
 function shadowEngineOn(){return _shadowOn;}
+// What is armed right now, so a re-arm that would change nothing can be
+// skipped and a re-arm that would make things WORSE can be refused.
+let _shadowArmedSig=null;
+let _shadowArmedCount=0;
+// True once this account's own records are in memory. An empty jobs AND
+// places pair is not a contractor with nothing on the books, it is a boot
+// that has not finished loading yet.
+function _shadowHasData(){
+  try{
+    if(typeof jobs!=='undefined'&&Array.isArray(jobs)&&jobs.length)return true;
+    const pl=(typeof getPlaces==='function')?getPlaces():null;
+    if(Array.isArray(pl)&&pl.length)return true;
+  }catch(_e){}
+  return false;
+}
 async function startShadowEngine(){
   const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
   // No plugin means no engine, and it must SAY so: a stale `on` flag from an
@@ -97,9 +116,42 @@ async function startShadowEngine(){
   // that cannot possibly be collecting anything.
   if(!Td||typeof Td.startEvents!=='function'){_shadowOn=false;return false;}
   const regions=_shadowRegions();
+  const sig=regions.map(r=>r.id).slice().sort().join('|');
+  // ── DON'T LET A COLD BOOT DISARM THE FENCES (owner journal, 2026-08-25) ──
+  // This runs every time the location watcher starts, which on the owner's
+  // phone was 12 times in one morning, and it arms from whatever happens to
+  // be in memory at that instant. His journal caught the consequence exactly:
+  //
+  //   15:23  engine on · 18 fences
+  //   16:20  engine on · 18 fences
+  //   16:23  engine on ·  1 fences     <- a start before the account loaded
+  //   16:47  engine on ·  3 fences
+  //
+  // and it never climbed back, because nothing ever re-armed with the full
+  // set again. Three fences instead of eighteen is why so many of his stops
+  // had no fence to trip and fell back on iOS visit reports, which is the
+  // slow path the backdate fix above exists to survive.
+  //
+  // A genuinely smaller set is legitimate (a job finished, a place deleted),
+  // so this refuses a SHRINK only while the account's own arrays are still
+  // empty, which is the one case that is never a real change.
+  if(_shadowArmedSig!==null&&regions.length<_shadowArmedCount&&!_shadowHasData()){
+    _shadowNote('arm-skip',{had:_shadowArmedCount,would:regions.length});
+    return _shadowOn;
+  }
+  // Nothing changed: no native call, no journal line. Re-arming an identical
+  // region set is a no-op natively, and journalling it buried the engine's
+  // ACTUAL conclusions (the whole point of this log) under hundreds of
+  // "engine on" lines: 400-entry ring, and the owner's copy of it came back
+  // with barely seventy real visits in it.
+  if(_shadowArmedSig===sig&&_shadowOn){
+    if(typeof _geoNativeWatcherId!=='undefined'&&_geoNativeWatcherId!=null)_shadowLiveGpsStart();
+    return true;
+  }
   try{
     const r=await Td.startEvents({regions});
     _shadowOn=true;
+    _shadowArmedSig=sig;_shadowArmedCount=regions.length;
     _shadowNote('start',{armed:(r&&r.armed)||0,visits:!!(r&&r.visits)});
     // The live engine keeps its own watcher; note when it is running so its
     // radio seconds can be tallied against the shadow's bursts.
@@ -109,6 +161,9 @@ async function startShadowEngine(){
 }
 function stopShadowEngine(){
   _shadowOn=false;_shadowLiveGpsStop();
+  // Forget what was armed: the next start must actually re-arm rather than
+  // recognise its own stale signature and skip.
+  _shadowArmedSig=null;_shadowArmedCount=0;
   _shadowNote('stop');
 }
 

@@ -100,6 +100,12 @@ const _GEO_STOP_FT=350;
 // The longest gap that can still be read as ONE drive. Past this, an inferred
 // leg start is not evidence of anything: it is a phone that was asleep.
 const _GEO_MAX_INFERRED_LEG_MS=4*60*60*1000;
+// How stale an iOS visit report may be and still be allowed to backdate the
+// arrival it describes. Sized off the observed delivery lag (worst measured:
+// 45 minutes) with generous headroom, and deliberately NOT open-ended: past
+// this the report describes a visit that is already history, and re-opening
+// it now would invent a shift rather than correct a stamp.
+const _GEO_VISIT_BACKDATE_MAX_MS=2*60*60*1000;
 // ── The flight ceiling (owner report 2026-08-24, mid-air) ─────────────────
 // A phone on a plane is still a phone: it takes a fix at the gate, loses the
 // sky, and takes another one 700 miles later. The fence machine reads that as
@@ -2965,11 +2971,55 @@ async function _geoTdEvent(ev,replay){
     if(out)_geoExitParkMode();
   }
   if(!hasFix)return;
-  return _geoOnPing({
-    coords:{latitude:ev.lat,longitude:ev.lng,accuracy:ev.acc||0,
-            speed:(typeof ev.speed==='number'&&ev.speed>=0)?ev.speed:null},
-    __tdTs:typeof ev.ts==='number'?ev.ts:undefined
-  });
+  // ── THE VISIT REPORT ALREADY KNOWS WHEN THEY GOT THERE ───────────────────
+  // Owner report 2026-08-25, with two weeks of his own journal behind it: a
+  // stop the app has a FENCE for is stamped within a minute, because crossing
+  // the line fires immediately. A stop with no fence has nothing to trip, so
+  // it waits for iOS to volunteer a visit report, and iOS deliberately sits
+  // on those until it is confident. Measured across 27 of his unfenced stops:
+  // median 4 minutes late, worst 45.
+  //
+  // The whole fix is that the late report is not vague about WHEN. It carries
+  // arrivalDate (TdGeoPlugin.swift didVisit -> arrivalTs), and that is the
+  // real moment. "visit · Stop · in 10:28" delivered at 11:13 knew, in the
+  // same message, that the truck arrived at 10:28. This engine was reading
+  // the envelope's postmark and throwing away the letter.
+  //
+  // Handled through _geoParkBackdate rather than by rewinding the ping's own
+  // clock: that is the mechanism this file already uses for exactly this
+  // shape ("the transition happened earlier than the ping that noticed it",
+  // see the park resolver above), and it touches ONLY the arrival stamp.
+  // Rewinding __tdTs instead would drag every drive clock, park timer and
+  // fence stamp backwards with it for one ping, which is a far bigger blast
+  // radius for no extra accuracy.
+  let _backdated=null;
+  if(ev.type==='visit'&&!_geoParkBackdate){
+    const a=Number(ev.arrivalTs);
+    const nowMs=(typeof ev.ts==='number'?ev.ts:Date.now());
+    // Never invent time, and never re-open a visit that is already history:
+    // it must be in the PAST, inside the delivery-lag window this exists to
+    // close, and on the same Central day (the reconciler's own honesty rule,
+    // so a report delivered after midnight can't backdate into yesterday).
+    if(isFinite(a)&&a>0&&a<nowMs&&(nowMs-a)<=_GEO_VISIT_BACKDATE_MAX_MS&&
+       _ctDateStr(new Date(a))===_ctDateStr(new Date(nowMs))){
+      _backdated=new Date(a).toISOString();
+      _geoParkBackdate=_backdated;
+      _geoParkNote('visit-backdate',(typeof _ctHM==='function'?_ctHM(new Date(a)):_backdated.slice(11,16))+' ('+Math.round((nowMs-a)/60000)+'m late)');
+    }
+  }
+  try{
+    return await _geoOnPing({
+      coords:{latitude:ev.lat,longitude:ev.lng,accuracy:ev.acc||0,
+              speed:(typeof ev.speed==='number'&&ev.speed>=0)?ev.speed:null},
+      __tdTs:typeof ev.ts==='number'?ev.ts:undefined
+    });
+  }finally{
+    // One-shot means one-shot. The transition consumes it (see arriveIso
+    // above); if this ping produced no transition, or was dropped by the
+    // re-entrancy guard, it must NOT sit here waiting to stamp an unrelated
+    // arrival minutes later with a time that had nothing to do with it.
+    if(_backdated&&_geoParkBackdate===_backdated)_geoParkBackdate=null;
+  }
 }
 function _geoTdInit(){
   if(window._geoTdBound)return;

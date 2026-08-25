@@ -5484,6 +5484,117 @@ test.describe('Automatic mileage from drive legs', () => {
   // buffered twin, replayed later, clocked off the true capture time. Two
   // derivations of ONE physical exit/arrival, seconds apart, mint two
   // different legKeys.
+  // Owner report 2026-08-25, off two weeks of his own engine journal: a stop
+  // the app has a FENCE for is stamped within a minute; a stop with no fence
+  // waits on iOS to volunteer a visit report, and iOS sits on those (measured
+  // across 27 of his unfenced stops: median 4 minutes late, worst 45). The
+  // late report is not vague about WHEN though: it carries iOS's own
+  // arrivalDate. "visit · Stop · in 10:28" delivered at 11:13 knew, in the
+  // same message, that he arrived at 10:28. The engine was reading the
+  // postmark and throwing away the letter.
+  test.describe('an iOS visit report stamps the arrival it actually reports', () => {
+    // Park the machine outside everything, then hand it ONE event.
+    const deliver = (ev, pre) => page.evaluate(async ([d, ev, pre]) => {
+      const realUser = _supaUser, realEnq = window._geoEnqueue, realNow = Date.now;
+      const notesBefore = _geoParkLog.slice();
+      _supaUser = { id: 'u-visit-clock' };
+      window._geoEnqueue = () => {};
+      try {
+        __seedGeo();
+        _geoPingBusy = false;
+        _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoDriveReset();
+        _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+        _geoCurrentClient = null; _geoClientArrivedAt = null; _geoLegOrigin = null;
+        _geoExitPending = null; _geoFlickerCandidate = null; _geoParkModeOn = false;
+        _geoParkCluster = null; _geoSoftJob = null; _geoSoftShop = null;
+        _geoWasInShop = false; _geoLegAtShop = false; _geoShopArrivedAt = null;
+        _geoLastFenceAt = null; _geoLastFenceLoc = null;
+        _geoParkBackdate = pre && pre.backdate ? pre.backdate : null;
+        Date.now = () => d.now;
+        await _geoTdEvent(ev, false);
+        Date.now = realNow;
+        const fresh = _geoParkLog.slice(notesBefore.length >= 30 ? 0 : notesBefore.length)
+          .filter(n => !notesBefore.some(o => o.t === n.t && o.ev === n.ev && o.x === n.x));
+        return {
+          jobArrived: _geoArrivedAt, shopArrived: _geoShopArrivedAt,
+          leftover: _geoParkBackdate,
+          noted: fresh.filter(n => n.ev === 'visit-backdate').map(n => n.x),
+        };
+      } finally { _supaUser = realUser; window._geoEnqueue = realEnq; Date.now = realNow; }
+    }, [{ now: NOW, job: JOB, shop: SHOP }, ev, pre || null]);
+
+    // Fixed clock so "same Central day" is never a race against real midnight.
+    const NOW = Date.parse('2026-08-25T18:13:00.000Z');   // 13:13 Central
+    const AGO = (min) => NOW - min * 60000;
+    const visitAt = (lat, lon, arrivalTs) => ({ type: 'visit', lat, lng: lon, acc: 30, ts: NOW,
+      ...(arrivalTs == null ? {} : { arrivalTs }) });
+
+    test('a job arrival is stamped when he got there, not when the report landed', async () => {
+      const r = await deliver(visitAt(JOB.lat, JOB.lon, AGO(45)));
+      expect(r.jobArrived, 'the 45-minute-late report still knows the real arrival')
+        .toBe(new Date(AGO(45)).toISOString());
+      expect(r.noted[0]).toContain('45m late');
+    });
+
+    test('a shop arrival gets the same treatment', async () => {
+      const r = await deliver(visitAt(SHOP.lat, SHOP.lon, AGO(18)));
+      expect(r.shopArrived).toBe(new Date(AGO(18)).toISOString());
+    });
+
+    test('with no arrival time in the report, nothing is backdated', async () => {
+      const r = await deliver(visitAt(JOB.lat, JOB.lon, null));
+      expect(r.jobArrived, 'it stamps the delivery moment, exactly as before')
+        .toBe(new Date(NOW).toISOString());
+      expect(r.noted.length).toBe(0);
+    });
+
+    test('a plain fix carrying an arrival time is never backdated: visits only', async () => {
+      const r = await deliver({ type: 'fix', lat: JOB.lat, lng: JOB.lon, acc: 8, ts: NOW, arrivalTs: AGO(20) });
+      expect(r.jobArrived).toBe(new Date(NOW).toISOString());
+      expect(r.noted.length).toBe(0);
+    });
+
+    test('time is never invented: future, ancient, and yesterday are all refused', async () => {
+      const future = await deliver(visitAt(JOB.lat, JOB.lon, NOW + 5 * 60000));
+      expect(future.jobArrived, 'an arrival that has not happened yet').toBe(new Date(NOW).toISOString());
+
+      const ancient = await deliver(visitAt(JOB.lat, JOB.lon, AGO(3 * 60)));
+      expect(ancient.jobArrived, 'past the two-hour ceiling it is history, not a late stamp')
+        .toBe(new Date(NOW).toISOString());
+
+      const yesterday = await deliver(visitAt(JOB.lat, JOB.lon, Date.parse('2026-08-24T23:00:00.000Z')));
+      expect(yesterday.jobArrived, 'a report delivered after midnight never reaches back a day')
+        .toBe(new Date(NOW).toISOString());
+    });
+
+    test('junk arrival times never throw and never stamp', async () => {
+      for (const bad of [0, -1, NaN, 'noon', null, undefined, {}]) {
+        const r = await deliver(visitAt(JOB.lat, JOB.lon, bad));
+        expect(r.jobArrived, String(bad) + ' is not a timestamp').toBe(new Date(NOW).toISOString());
+      }
+    });
+
+    test('a backdate the park resolver already set is never stomped', async () => {
+      const parked = new Date(AGO(6)).toISOString();
+      const r = await deliver(visitAt(JOB.lat, JOB.lon, AGO(40)), { backdate: parked });
+      expect(r.jobArrived, "the resolver's own stop moment wins, it observed the truck stop")
+        .toBe(parked);
+    });
+
+    // The leak this guard exists for: set a backdate, produce no transition,
+    // and it would sit there waiting to stamp an unrelated arrival minutes
+    // later with a time that had nothing to do with it.
+    test('a visit that lands nowhere leaves no backdate behind', async () => {
+      const r = await deliver(visitAt(41.9, -80.4, AGO(30)));   // open country, no fence
+      expect(r.leftover, 'one-shot means one-shot').toBe(null);
+    });
+
+    test('the backdate never survives the ping that carried it', async () => {
+      const r = await deliver(visitAt(JOB.lat, JOB.lon, AGO(30)));
+      expect(r.leftover).toBe(null);
+    });
+  });
+
   test.describe('TdGeo live delivery vs buffer replay (owner video 2026-08-21)', () => {
     // One physical drive, told to _geoTdEvent twice: once "live" (a JS-side
     // processing lag simulated via a stubbed Date.now, standing in for the

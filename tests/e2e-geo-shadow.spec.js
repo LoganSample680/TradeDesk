@@ -342,6 +342,118 @@ test.describe('shadow tracking engine', () => {
     });
   });
 
+  // Owner journal, 2026-08-25. This function runs every time the location
+  // watcher starts (12 times in one morning on his phone) and armed from
+  // whatever was in memory at that instant:
+  //
+  //   15:23  engine on · 18 fences
+  //   16:20  engine on · 18 fences
+  //   16:23  engine on ·  1 fences     <- a start before the account loaded
+  //   16:47  engine on ·  3 fences
+  //
+  // and it never climbed back. Three fences instead of eighteen is why so
+  // many of his stops had no fence to trip and fell back on iOS visit
+  // reports, which are the slow path.
+  test.describe('arming the fences', () => {
+    const setup = (fn) => withShell(async (body) => {
+      _shadowClear();
+      S.officeLat = 39.0; S.officeLon = -95.7;
+      places.length = 0;
+      jobs.length = 0;
+      const place = (n, lat, lon) => savePlace({ name: n, kind: 'supply', lat, lon, confirmedBy: 'manual' });
+      const armedCounts = () => _shadowLog.filter(e => e.k === 'start').map(e => e.armed);
+      const skips = () => _shadowLog.filter(e => e.k === 'arm-skip').length;
+      return await (new Function('h', 'return (' + body + ')(h)'))({ place, armedCounts, skips,
+        calls: () => window.__tdCalls.startEvents.length });
+    }, fn.toString());
+
+    test('re-arming an identical set is a no-op: no native call, no journal line', async () => {
+      const r = await setup(async (h) => {
+        h.place('A', 39.1, -95.8); h.place('B', 39.2, -95.9);
+        await startShadowEngine();
+        const first = { calls: h.calls(), armed: h.armedCounts() };
+        await startShadowEngine();
+        await startShadowEngine();
+        return { first, after: { calls: h.calls(), armed: h.armedCounts() } };
+      });
+      expect(r.first.calls).toBe(1);
+      expect(r.first.armed).toEqual([3]);
+      expect(r.after.calls, 'nothing changed, so nothing was re-armed').toBe(1);
+      expect(r.after.armed, 'and the journal is not buried under it').toEqual([3]);
+    });
+
+    test('a cold boot with no account data loaded can never disarm the fences', async () => {
+      const r = await setup(async (h) => {
+        h.place('A', 39.1, -95.8); h.place('B', 39.2, -95.9);
+        await startShadowEngine();
+        const armed = h.armedCounts();
+        // The 16:23 moment: watcher starts again, account not loaded yet.
+        places.length = 0; jobs.length = 0;
+        const ret = await startShadowEngine();
+        return { armed, ret, on: shadowEngineOn(), calls: h.calls(), skips: h.skips(), after: h.armedCounts() };
+      });
+      expect(r.armed).toEqual([3]);
+      expect(r.calls, 'the shrink never reached the plugin').toBe(1);
+      expect(r.after, 'and never reached the journal as a start').toEqual([3]);
+      expect(r.skips, 'it is recorded as a refusal instead').toBe(1);
+      expect(r.on, 'the engine stays up on the fences it already had').toBe(true);
+      expect(r.ret).toBe(true);
+    });
+
+    test('a genuinely smaller set still arms, once the account is actually loaded', async () => {
+      const r = await setup(async (h) => {
+        h.place('A', 39.1, -95.8); h.place('B', 39.2, -95.9); h.place('C', 39.3, -96.0);
+        await startShadowEngine();
+        const before = h.armedCounts();
+        // A place was deleted. Data IS loaded, two places remain, so this is
+        // a real change and not a half-booted read.
+        places.length = 0;
+        h.place('A', 39.1, -95.8); h.place('B', 39.2, -95.9);
+        await startShadowEngine();
+        return { before, after: h.armedCounts(), calls: h.calls(), skips: h.skips() };
+      });
+      expect(r.before).toEqual([4]);
+      expect(r.after, 'four fences down to three, deliberately').toEqual([4, 3]);
+      expect(r.calls).toBe(2);
+      expect(r.skips).toBe(0);
+    });
+
+    test('a bigger set always arms', async () => {
+      const r = await setup(async (h) => {
+        h.place('A', 39.1, -95.8);
+        await startShadowEngine();
+        h.place('B', 39.2, -95.9); h.place('C', 39.3, -96.0);
+        await startShadowEngine();
+        return { armed: h.armedCounts(), calls: h.calls() };
+      });
+      expect(r.armed).toEqual([2, 4]);
+      expect(r.calls).toBe(2);
+    });
+
+    test('stopping forgets what was armed, so the next start really re-arms', async () => {
+      const r = await setup(async (h) => {
+        h.place('A', 39.1, -95.8); h.place('B', 39.2, -95.9);
+        await startShadowEngine();
+        stopShadowEngine();
+        await startShadowEngine();
+        return { armed: h.armedCounts(), calls: h.calls() };
+      });
+      expect(r.armed).toEqual([3, 3]);
+      expect(r.calls, 'a stopped engine is not still armed').toBe(2);
+    });
+
+    test('resetting the counters leaves a fresh log that fills again', async () => {
+      const r = await setup(async (h) => {
+        h.place('A', 39.1, -95.8);
+        await startShadowEngine();
+        _shadowClear();
+        await startShadowEngine();
+        return { armed: h.armedCounts() };
+      });
+      expect(r.armed, 'never an empty log looking like a dead engine').toEqual([2]);
+    });
+  });
+
   test('in a plain browser the shadow engine is completely inert', async () => {
     const r = await page.evaluate(async () => {
       const realCap = window.Capacitor;
