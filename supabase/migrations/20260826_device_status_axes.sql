@@ -1,0 +1,51 @@
+-- The two axes device_status was missing: Precise Location, and the
+-- device-wide Location Services switch.
+--
+-- FILENAME NOTE, and the reason this is one file instead of two. Supabase
+-- derives a migration's VERSION from the leading digits of its filename, so
+-- every file sharing a date prefix claims the same version and `supabase db
+-- push` dies on a schema_migrations primary-key violation. 20260825 was
+-- already taken by 20260825_device_status.sql (live). Both columns therefore
+-- land together under the next free version rather than as two same-day files.
+-- tests/e2e-flow-coverage.spec.js enforces this; it is what caught it.
+--
+-- ── location_accuracy ───────────────────────────────────────────────────────
+-- Since iOS 14 a user can grant Always and still switch Precise Location off,
+-- which downgrades every fix to reducedAccuracy: kilometres, against fences
+-- measured in hundreds of feet. That phone is authorized and completely unable
+-- to do the job, and with only location_status the two are indistinguishable.
+-- Values: 'full' | 'reduced' | null (unknown).
+--
+-- ── location_services_enabled ───────────────────────────────────────────────
+-- Owner, 2026-08-25: "device wide location services ... why do we need it?"
+--
+-- Because the per-app grant and the global switch move independently. Turning
+-- off Settings > Privacy & Security > Location Services leaves this app's own
+-- authorizationStatus reporting .authorizedAlways completely untouched, while
+-- not a single fix will ever arrive again. Without this column a phone in that
+-- state is indistinguishable from a healthy one: location_status says 'always',
+-- location_accuracy says 'full', and the pings are simply absent with nothing
+-- anywhere saying why.
+--
+-- Three-valued on purpose:
+--   true   Location Services is on device-wide, iOS said so
+--   false  the master switch is off, iOS said so
+--   null   the shell could not answer (a build older than this one, or the
+--          plain web app, which has no such concept at all)
+--
+-- null must never be read as false. "We do not know" and "the switch is off"
+-- are different diagnoses and send the crew member to different screens.
+--
+-- Source: CLLocationManager.locationServicesEnabled(), read off the main thread
+-- in TdGeoPlugin.locationPermStatus. Not deprecated, contrary to an earlier note
+-- in that file: what Apple added is a main-thread runtime warning, because it is
+-- a synchronous cross-process lookup that blocks the caller. iOS 18's
+-- CLServiceSession diagnostics expose the same fact as authorizationDeniedGlobally
+-- without blocking, but that is iOS 18+ against a 15.0 deployment target, and
+-- constructing a session takes an authorization requirement, so a plain status
+-- query could raise a permission prompt.
+--
+-- Additive only (CLAUDE.md 3.1). Existing rows keep null on both, which is
+-- honest: they were written by a shell that could not answer either question.
+alter table device_status add column if not exists location_accuracy text;
+alter table device_status add column if not exists location_services_enabled boolean;
