@@ -3588,6 +3588,90 @@ function _geoReconcileSoon(){
 // couple of times on false: on a phone with live tracking, opening Time Log
 // right after a drive lands exactly when pings are flowing, and a silently
 // dropped one-shot call meant the repair never happened for that visit.
+// ── The reconciler checks its guess against the breadcrumbs we already keep ──
+//
+// Owner, 2026-08-25: "I thought you already have shit built to reconcile
+// versus actual gps points and geofences arrival and departure, why can't we
+// use what we have already versus more ai slop code."
+//
+// Correct, and the gap was real: location_pings has held a throttled lat/lon
+// breadcrumb for every fix for 90 days (_geoWritePing, _geoPrunePings), and
+// the reconciler never once read it. It matched a job by how close ONE mileage
+// leg's endpoint landed, then claimed the ENTIRE gap to the next leg as time
+// on site, with nothing checking whether the person was still there.
+//
+// What that produced, on the owner's own account, 2026-08-24: 541 minutes
+// billed to one job across three rows, while 217 recorded pings that same day
+// walk from Topeka, to Kansas City, to Colorado, to Salt Lake City. The
+// evidence sat in our own table the whole time.
+//
+// The fix needs no new threshold and no new concept. It is the SAME geofence
+// test the live machine already runs (_geoFenceFt, plus the park-wander
+// margin), applied to the recorded fixes instead of only to live ones: a
+// window is on-site time for exactly as long as the breadcrumbs say the
+// person was on site.
+//
+// It also makes the hardcoded forensic block in _geoRepairStretchedStops
+// deletable. That block hand-patches specific client_keys with literal
+// timestamps that were read out of location_pings BY HAND, which is the same
+// bug one layer up: the pings had the answer and the code was told it instead
+// of taught to look.
+//
+// Fails OPEN on purpose. A fetch that errors, or a window with no pings in it
+// at all, leaves the claim exactly as it is today: no breadcrumbs is precisely
+// the case this whole feature was built for (live fence detection missed the
+// arrival because the phone was not reporting), so absence of evidence must
+// never delete a real visit.
+async function _geoReconPings(fromMs,toMs){
+  try{
+    if(!_supa||!_supaUser)return null;
+    if(!(fromMs>0&&toMs>fromMs))return null;
+    const{data,error}=await _supa.from('location_pings')
+      .select('lat,lon,accuracy,ts')
+      .eq('contractor_user_id',_geoCid())
+      .eq('employee_user_id',_supaUser.id)
+      .gte('ts',new Date(fromMs).toISOString())
+      .lte('ts',new Date(toMs).toISOString());
+    if(error||!Array.isArray(data))return null;
+    return data.map(r=>({ms:Date.parse(r&&r.ts)||0,lat:r&&r.lat,lng:r&&r.lon,acc:Number(r&&r.accuracy)||0}))
+               .filter(r=>r.ms>0&&r.lat!=null&&r.lng!=null)
+               .sort((a,b)=>a.ms-b.ms);
+  }catch(_e){return null;}
+}
+// Trim a claimed window to the stretch its own breadcrumbs support.
+//
+// t1 and t2 are trustworthy anchors already: mileage proves the truck parked
+// at t1 and pulled away at t2. What is being tested is the middle. Walking
+// forward from t1, the claim survives until the first fix that is provably
+// somewhere else, and ends at the last fix that was still on site. A person
+// who leaves and comes back gets the first stretch only, which is the honest
+// reading: the second stretch has no arrival anchor of its own and the live
+// machine, not this guesser, is what is supposed to catch it.
+//
+// `margin` is the caller's own fence-plus-wander figure, widened per fix by
+// that fix's reported accuracy so a poor reading can never eject someone who
+// never moved. Capped, because a 5km accuracy circle would swallow the test.
+const _GEO_PING_ACC_CAP_FT=1500;
+function _geoPingTrim(pings,t1,t2,coord,margin){
+  const out={t1:t1,t2:t2,checked:false,seen:0,left:false};
+  try{
+    if(!Array.isArray(pings)||!coord||coord.lat==null)return out;
+    const inWin=pings.filter(p=>p.ms>=t1&&p.ms<=t2);
+    if(!inWin.length)return out;           // nothing recorded: claim stands
+    out.checked=true;out.seen=inWin.length;
+    let lastInside=null;
+    for(const p of inWin){
+      const slack=Math.min(Math.max(p.acc*3.28084,0),_GEO_PING_ACC_CAP_FT);
+      if(_geoDistFt({lat:p.lat,lng:p.lng},coord)<=margin+slack){lastInside=p.ms;continue;}
+      // Provably somewhere else. The claim ends at the last fix that still
+      // put them on site; if there never was one, they were never there.
+      out.left=true;
+      out.t2=lastInside==null?t1:lastInside;
+      return out;
+    }
+    return out;                            // every fix on site: unchanged
+  }catch(_e){return out;}
+}
 async function _geoReconcileFromMileage(){
   if(_geoReconBusy)return false;
   // Never interleave with a ping in flight: this function awaits (geocodes,
@@ -3648,6 +3732,14 @@ async function _geoReconcileFromMileage(){
     // Computed once: no date filter to vary per window anymore (see
     // _geoReconcilableJobs), so the same list serves every window below.
     const _myJobs=_geoReconcilableJobs();
+    // ONE fetch for the whole pass, covering every window it will consider.
+    // Per-window queries would be one round trip per gap on a slow truck
+    // connection, and the answer is the same tape either way (same call the
+    // shop-walking trim already makes once per render, not once per span).
+    const _pingTape=await _geoReconPings(
+      clusters.length?clusters[0].endMs:0,
+      clusters.length?Date.parse(clusters[clusters.length-1].endedIso)||0:0);
+    _geoParkNote('recon-scan',_pingTape?(_pingTape.length+' pings on tape'):'no ping tape (claims unverified)');
     const wins=[];
     for(let i=0;i<clusters.length-1;i++){
       const A=clusters[i],B=clusters[i+1];
@@ -3678,7 +3770,7 @@ async function _geoReconcileFromMileage(){
       // every member (not just A's last leg) is what lets a good fix inside
       // a messy cluster still prove the arrival, even when a sibling blip in
       // the same cluster has a missing or garbage toCoord.
-      let jb=null,jbFt=Infinity,jbLeg=null,_minFt=Infinity;
+      let jb=null,jbFt=Infinity,jbLeg=null,_minFt=Infinity,jbCoord=null;
       // Which job were they at: proximity only, no date filter (see
       // _geoReconcilableJobs, owner's own diagnostic paste 2026-08-21: a job
       // that overran its scheduled span still needs its overrun day
@@ -3691,7 +3783,7 @@ async function _geoReconcileFromMileage(){
           if(!c)continue;
           const ft=_geoDistFt({lat:memberLeg.toCoord.lat,lng:memberLeg.toCoord.lng},c);
           if(ft<_minFt)_minFt=ft;
-          if(ft<=margin&&ft<jbFt){jb=j;jbFt=ft;jbLeg=memberLeg;}
+          if(ft<=margin&&ft<jbFt){jb=j;jbFt=ft;jbLeg=memberLeg;jbCoord=c;}
         }
       }
       // CLIENT FALLBACK (owner report 2026-08-21: a client visit reset to
@@ -3705,7 +3797,7 @@ async function _geoReconcileFromMileage(){
       // NOTHING scheduled explains the window does a client get a turn,
       // matched the exact same cache-only way a live ping resolves one
       // (_geoClientAt): reconciliation must never burn a live geocode either.
-      let cb=null,cbFt=Infinity,cbLeg=null;
+      let cb=null,cbFt=Infinity,cbLeg=null,cbCoord=null;
       if(!jb&&typeof clients!=='undefined'&&clients.length){
         const _cache=(typeof _nearbyGeoCache==='function')?_nearbyGeoCache():{};
         for(const memberLeg of A.legs){
@@ -3716,7 +3808,7 @@ async function _geoReconcileFromMileage(){
             if(!hit||hit.addr!==cl.addr)continue;
             const ft=_geoDistFt({lat:memberLeg.toCoord.lat,lng:memberLeg.toCoord.lng},{lat:hit.lat,lng:hit.lon});
             if(ft<_minFt)_minFt=ft;
-            if(ft<=margin&&ft<cbFt){cb=cl;cbFt=ft;cbLeg=memberLeg;}
+            if(ft<=margin&&ft<cbFt){cb=cl;cbFt=ft;cbLeg=memberLeg;cbCoord={lat:hit.lat,lng:hit.lon};}
           }
         }
       }
@@ -3742,12 +3834,27 @@ async function _geoReconcileFromMileage(){
            Date.parse(e.start_time)<t2&&(!e.end_time||Date.parse(e.end_time)>t1))){
         _geoParkNote('recon-win',_wTag+': manual entry wins');continue;
       }
+      // THE BREADCRUMB CHECK. Everything above decides WHERE they were when
+      // the drive ended; this decides how long they actually stayed, using
+      // the fixes already recorded for that stretch rather than assuming the
+      // whole gap. See _geoPingTrim. No tape, or no fixes inside this
+      // window, leaves the claim untouched: that is the missed-arrival case
+      // this feature exists for.
+      const _tr=_geoPingTrim(_pingTape,t1,t2,jb?jbCoord:cbCoord,margin);
+      if(_tr.checked&&_tr.left){
+        const kept=Math.max(0,Math.round((_tr.t2-t1)/60000));
+        _geoParkNote('recon-win',_wTag+': pings show they left, '+_tr.seen+' fixes, trimmed to '+kept+'m');
+      }
+      if(_tr.t2-t1<_GEO_RECON_MIN_GAP_MS){
+        _geoParkNote('recon-win',_wTag+': nothing left after the pings were checked');
+        continue;
+      }
       if(jb){
         _geoParkNote('recon-win',_wTag+': candidate @'+(jb.name||jb.id));
-        wins.push({A,B,t1,t2,jobId:String(jb.id),legKey:jbLeg.legKey});
+        wins.push({A,B,t1,t2:_tr.t2,jobId:String(jb.id),legKey:jbLeg.legKey});
       }else{
         _geoParkNote('recon-win',_wTag+': candidate @'+(cb.name||cb.id)+' (client)');
-        wins.push({A,B,t1,t2,clientId:String(cb.id),clientName:cb.name||null,legKey:cbLeg.legKey});
+        wins.push({A,B,t1,t2:_tr.t2,clientId:String(cb.id),clientName:cb.name||null,legKey:cbLeg.legKey});
       }
     }
     // No early return on an empty `wins` (owner report 2026-08-25: "still not
@@ -3793,12 +3900,16 @@ async function _geoReconcileFromMileage(){
       // becomes its own second, unmatched category of row.
       _geoEnqueue('job_time_entries',w.jobId?{
         contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
-        job_id:w.jobId,arrived_at:w.A.endedIso,departed_at:w.B.startedIso,
+        // From the WINDOW, not from the raw leg stamps. Those were the same
+        // value until the breadcrumb trim above could move t2, and reading
+        // B.startedIso here would have silently written the untrimmed span
+        // while `minutes` reported the trimmed one.
+        job_id:w.jobId,arrived_at:new Date(w.t1).toISOString(),departed_at:new Date(w.t2).toISOString(),
         minutes:mins,dest_place:null,
         client_key:'rec-'+w.legKey,source:'geofence-reconciled'
       }:{
         contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
-        job_id:null,arrived_at:w.A.endedIso,departed_at:w.B.startedIso,
+        job_id:null,arrived_at:new Date(w.t1).toISOString(),departed_at:new Date(w.t2).toISOString(),
         minutes:mins,dest_place:w.clientName,
         client_key:'rec-'+w.legKey,source:'place-reconciled'
       });

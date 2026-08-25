@@ -167,14 +167,18 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     window._supaUser = { id: 'geo-park-user-1', email: 'p@t.com' };
     window.__rec = { upserts: [], inserts: [], deletes: [], updates: [] };
     // Table-aware seeding: shop_time_entries selects resolve __selShopRows,
-    // everything else resolves __selRows (the repair sweep reads BOTH tables
-    // in one pass, so one shared array would feed job rows in as shop rows).
-    window.__selRows = []; window.__selShopRows = []; window.__selErr = null;
+    // location_pings resolve __selPings (the reconciler now checks its claim
+    // against the recorded breadcrumbs, owner 2026-08-25), everything else
+    // resolves __selRows. One shared array would feed job rows in as shop
+    // rows, or worse, as GPS fixes with no lat/lon at all.
+    window.__selRows = []; window.__selShopRows = []; window.__selPings = []; window.__selErr = null;
     window.__origSupa = window.__origSupa || window._supa;
     window._supa = {
       from: (tbl) => ({
         select: () => {
-          const rowsFor = () => (tbl === 'shop_time_entries' ? (window.__selShopRows || []) : (window.__selRows || []));
+          const rowsFor = () => (tbl === 'shop_time_entries' ? (window.__selShopRows || [])
+                              : tbl === 'location_pings' ? (window.__selPings || [])
+                              : (window.__selRows || []));
           const q = {
             eq: () => q, neq: () => q, lt: () => q, gt: () => q, gte: () => q, lte: () => q,
             in: () => q, is: () => q, order: () => q, limit: () => q,
@@ -560,6 +564,166 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       recRows: window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && (u.row.source || '') === 'geofence-reconciled').map(u => u.row),
       updates: window.__rec.updates.slice(),
     };
+  });
+
+  // ── The claim is checked against the breadcrumbs we already keep ──────────
+  //
+  // Owner, 2026-08-25: "I thought you already have shit built to reconcile
+  // versus actual gps points and geofences arrival and departure, why can't we
+  // use what we have already versus more ai slop code."
+  //
+  // Right, and the gap was real. location_pings has held a lat/lon breadcrumb
+  // for every fix for 90 days and the reconciler never read it: it matched a
+  // job by where ONE mileage leg ended, then claimed the whole gap to the next
+  // leg as time on site. On 2026-08-24 that billed 541 minutes to one job while
+  // 217 recorded pings walk Topeka to Kansas City to Colorado to Salt Lake.
+  //
+  // Fence margin here is _geoFenceFt() 600 + _GEO_PARK_JOB_EXTRA_FT 350 = 950ft,
+  // the same figure the live machine uses. Offsets below are in degrees of
+  // latitude, roughly 364,000ft per degree.
+  const JOB_AT = { lat: 37.6872, lng: -97.3301 };
+  const seedPings = (list) => page.evaluate((l) => { window.__selPings = l; }, list);
+  // Fixes evenly spread across the window, so a test can say "on site for the
+  // first quarter, then gone" without hand-computing timestamps.
+  const pingsAcross = (seed, specs) => {
+    const t1 = Date.parse(seed.A.endedIso), t2 = Date.parse(seed.B.startedIso);
+    return specs.map((sp, i) => ({
+      ts: new Date(t1 + Math.round((t2 - t1) * ((i + 1) / (specs.length + 1)))).toISOString(),
+      lat: JOB_AT.lat + (sp.dLat || 0), lon: JOB_AT.lng + (sp.dLng || 0),
+      accuracy: sp.acc == null ? 8 : sp.acc,
+    }));
+  };
+
+  test('breadcrumbs: no ping tape at all leaves the claim exactly as it was', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886101);
+    await page.evaluate(() => { window.__selErr = { message: 'offline' }; });
+    const r = await runRecon();
+    await page.evaluate(() => { window.__selErr = null; });
+    expect(r.recRows.length, 'fails open: a dead fetch never deletes a real visit').toBe(1);
+    expect(r.recRows[0].minutes).toBe(120);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  test('breadcrumbs: a window with no fixes recorded in it is still claimed whole', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886102);
+    // Fixes exist, but all of them land outside this window. That IS the case
+    // the reconciler was built for: the phone was not reporting, which is why
+    // live fence detection missed the arrival in the first place.
+    await seedPings([{ ts: new Date(Date.parse(seed.A.endedIso) - 6 * 3600000).toISOString(),
+                       lat: 38.9, lon: -96.9, accuracy: 10 }]);
+    const r = await runRecon();
+    expect(r.recRows.length).toBe(1);
+    expect(r.recRows[0].minutes, 'absence of evidence is not evidence they left').toBe(120);
+    await seedPings([]);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  test('breadcrumbs: every fix on site leaves the full window intact', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886103);
+    await seedPings(pingsAcross(seed, [{}, {}, {}, {}, {}]));   // all at the job
+    const r = await runRecon();
+    expect(r.recRows.length).toBe(1);
+    expect(r.recRows[0].minutes, 'a normal shift is untouched by this check').toBe(120);
+    await seedPings([]);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  // THE 2026-08-24 regression, in miniature.
+  test('breadcrumbs: fixes that walk away cut the claim at the last one on site', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886104);
+    // Two fixes at the job, then three that are hundreds of miles away.
+    await seedPings(pingsAcross(seed, [{}, {}, { dLat: 1.2 }, { dLat: 2.4 }, { dLat: 3.1 }]));
+    const r = await runRecon();
+    expect(r.recRows.length, 'the visit is real, just shorter than claimed').toBe(1);
+    const row = r.recRows[0];
+    // Fixes sit at 1/6, 2/6 ... of the window, so the last on-site one is at
+    // 2/6 of 120 minutes.
+    expect(row.minutes, 'trimmed to the last fix that still put them on site').toBe(40);
+    expect(row.minutes).toBeLessThan(120);
+    expect(row.arrived_at, 'the arrival anchor is mileage, untouched').toBe(seed.A.endedIso);
+    expect(row.departed_at, 'the departure now comes from the breadcrumbs')
+      .not.toBe(seed.B.startedIso);
+    await seedPings([]);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  test('breadcrumbs: never on site at any recorded fix means no row at all', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886105);
+    await seedPings(pingsAcross(seed, [{ dLat: 1.2 }, { dLat: 2.4 }, { dLat: 3.1 }]));
+    const r = await runRecon();
+    expect(r.recRows.length, 'nothing supports this claim, so nothing is written').toBe(0);
+    await seedPings([]);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  test('breadcrumbs: a poor fix never ejects someone who never moved', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886106);
+    // ~1100ft off the job, which is outside the 950ft margin on its own, but
+    // the fix itself reports 300m of uncertainty. Someone sitting still under
+    // a metal roof must not lose their afternoon to that.
+    await seedPings(pingsAcross(seed, [{}, { dLat: 0.003, acc: 300 }, {}]));
+    const r = await runRecon();
+    expect(r.recRows.length).toBe(1);
+    expect(r.recRows[0].minutes, 'accuracy widens the fence, it does not eject').toBe(120);
+    await seedPings([]);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  test('breadcrumbs: the accuracy allowance is capped, a wild reading cannot excuse a state line', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886107);
+    // 3000m of claimed uncertainty is ~9800ft, which would swallow the test
+    // entirely if it were honoured in full. Capped at 1500ft, so a fix 400
+    // miles away is still a fix 400 miles away.
+    await seedPings(pingsAcross(seed, [{}, { dLat: 5.8, acc: 3000 }, {}]));
+    const r = await runRecon();
+    expect(r.recRows.length).toBe(1);
+    expect(r.recRows[0].minutes, 'trimmed at the first fix that is genuinely elsewhere').toBe(30);
+    await seedPings([]);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  test('breadcrumbs: a trim that leaves less than the minimum gap writes nothing', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886108);
+    // Gone by the first recorded fix at 1/6 of the window (20 min), and the
+    // last on-site moment is the arrival itself, so nothing survives the
+    // 5-minute floor.
+    await seedPings(pingsAcross(seed, [{ dLat: 2.0 }, { dLat: 2.4 }]));
+    const r = await runRecon();
+    expect(r.recRows.length).toBe(0);
+    await seedPings([]);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  test('breadcrumbs: a fix with no coordinates is ignored rather than treated as elsewhere', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886109);
+    const good = pingsAcross(seed, [{}, {}, {}]);
+    const junk = [{ ts: good[1].ts, lat: null, lon: null, accuracy: 5 },
+                  { ts: good[1].ts, lat: undefined, lon: -97.3301, accuracy: 5 },
+                  { ts: 'not-a-date', lat: JOB_AT.lat, lon: JOB_AT.lng, accuracy: 5 }];
+    await seedPings(good.concat(junk));
+    const r = await runRecon();
+    expect(r.recRows.length).toBe(1);
+    expect(r.recRows[0].minutes, 'a malformed row proves nothing either way').toBe(120);
+    await seedPings([]);
+    await restoreReconSeed();
+    await geoRestore();
   });
 
   test('reconciliation: an uncovered job-anchored window between two legs is inserted whole', async () => {
