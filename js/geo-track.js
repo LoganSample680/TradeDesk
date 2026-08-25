@@ -2703,7 +2703,52 @@ function _stampGeo(rec,done,fieldPrefix){
 // permission from their own phone, so this row is the only thing Fleet & Team can
 // render, and it is a heartbeat: without location_checked_at a member who
 // revoked permission last week would show green forever.
+// What iOS actually granted, in iOS's own words, when the shell can answer.
+// Cached because _geoReadPermission is called on every checklist render and
+// this is a bridge round trip, not a memory read.
+//
+// Owner, 2026-08-25: "shouldn't location and motion say always, while using
+// app or declined in alliance with how iOS saves and asks for permissions?"
+// Right, and the inference below never could: it reads whether the watcher is
+// delivering, which is true for whenInUse as well, so the one distinction that
+// decides whether this product works was invisible.
+let _geoNativeAuth=null;      // {status,accuracy,precise} or null when unknown
+function _geoNativeAuthPeek(){return _geoNativeAuth;}
+async function _geoRefreshNativeAuth(){
+  // CLEARED, not left standing, whenever an answer cannot be had. Caught by
+  // its own test: without this the last known authorization survives forever,
+  // so a phone whose plugin stops answering (an upgrade, a rejection, a shell
+  // swap) keeps reporting a stale 'always / reduced' as though it were current.
+  // Stale permission data on a row that explains payroll is worse than none:
+  // 'we do not know right now' is honest, a remembered grant is not.
+  try{
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    if(!Td||typeof Td.locationPermStatus!=='function'){_geoNativeAuth=null;return null;}
+    const r=await Td.locationPermStatus();
+    if(!r||!r.status){_geoNativeAuth=null;return null;}
+    _geoNativeAuth={status:String(r.status),
+                    accuracy:r.accuracy?String(r.accuracy):null,
+                    precise:r.precise!==false};
+    return _geoNativeAuth;
+  }catch(_e){_geoNativeAuth=null;return null;}
+}
 async function _geoReadPermission(){
+  // iOS's own answer wins whenever the shell is new enough to give one. An
+  // older TestFlight build has no such method, and then the inference below
+  // still runs exactly as it did: this degrades, it does not break.
+  const nat=await _geoRefreshNativeAuth();
+  if(nat&&nat.status){
+    // The checklist and every existing caller reason in done/not-done, so the
+    // two authorized states both answer 'granted' THERE. The precise state is
+    // carried separately (_geoNativeAuthPeek) for the row that gets reported,
+    // rather than being flattened away at the only place it still exists.
+    if(nat.status==='always'||nat.status==='wheninuse')return 'granted';
+    if(nat.status==='denied'||nat.status==='restricted')return 'denied';
+    return 'prompt';
+  }
+  return _geoReadPermissionInferred();
+}
+async function _geoReadPermissionInferred(){
   // Native shell: the WebView's per-origin permission is meaningless here,
   // the geolocation shim intentionally never grants it (owner report
   // 2026-08-08: "Turn on location" never cleared even with the watcher
@@ -2774,7 +2819,15 @@ function _geoReportPermission(state){
         device_id:devId,
         device_label:devLabel||null,
         contractor_user_id:(typeof _geoCid==='function')?_geoCid():_supaUser.id,
-        location_status:state||'prompt',
+        // iOS's own word when the shell can give one: always / wheninuse /
+        // denied / restricted / notdetermined. Falls back to the flattened
+        // granted/denied/prompt on a shell too old to answer, which is why the
+        // column is free text and not an enum.
+        location_status:((typeof _geoNativeAuthPeek==='function'&&_geoNativeAuthPeek()||{}).status)||state||'prompt',
+        // Precise Location is a SEPARATE switch. Always plus reduced accuracy
+        // is granted and useless at the same time against a 600ft fence, and
+        // folding it into the status above would hide exactly that.
+        location_accuracy:((typeof _geoNativeAuthPeek==='function'&&_geoNativeAuthPeek()||{}).accuracy)||null,
         // Read from the same cache the checklist renders off, so the row and
         // the screen can never disagree. Undefined (never checked) stays null
         // rather than being written as a guess.

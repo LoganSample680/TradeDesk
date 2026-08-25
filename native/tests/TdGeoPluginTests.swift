@@ -263,6 +263,71 @@ final class TdGeoPluginTests: XCTestCase {
         wait(for: [exp], timeout: 30)
     }
 
+    // MARK: - locationPermStatus: iOS's own vocabulary, never collapsed
+
+    // The distinction this whole method exists for: whenInUse and always are
+    // NOT the same grant. whenInUse logs nothing from a pocket, and the old JS
+    // inference reported both as a flat "granted", so a phone that tracked
+    // nothing looked identical to one that worked.
+    func testLocationPermStatus_reportsOneOfTheFiveRealAuthorizationStates() {
+        let exp = expectation(description: "locationPermStatus")
+        plugin.locationPermStatus(makeCall(method: "locationPermStatus", onSuccess: { data in
+            let status = data?["status"] as? String
+            XCTAssertNotNil(status, "must always report a status string")
+            XCTAssertTrue(["notdetermined", "restricted", "denied", "wheninuse", "always"].contains(status ?? ""),
+                          "status must be one of iOS's five real states, got \(status ?? "nil")")
+            XCTAssertNotEqual(status, "granted", "the flattened web vocabulary must never reappear here")
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 30)
+    }
+
+    // Precise Location is a separate switch: a user can be `always` and still
+    // have downgraded to reducedAccuracy, which is granted and useless at once
+    // against fences measured in hundreds of feet. It must never be folded into
+    // status, and it must always be present.
+    func testLocationPermStatus_reportsAccuracySeparatelyFromAuthorization() {
+        let exp = expectation(description: "locationPermStatus accuracy")
+        plugin.locationPermStatus(makeCall(method: "locationPermStatus", onSuccess: { data in
+            let accuracy = data?["accuracy"] as? String
+            XCTAssertNotNil(accuracy, "accuracy must always be reported, never omitted")
+            XCTAssertTrue(["full", "reduced"].contains(accuracy ?? ""),
+                          "accuracy must be full or reduced, got \(accuracy ?? "nil")")
+            XCTAssertNotNil(data?["precise"] as? Bool, "precise must be a real boolean for a JS caller to test directly")
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 30)
+    }
+
+    // Read-only and argument-free: a caller that passes junk, or nothing, gets
+    // the same answer rather than a rejection. Same contract as motionPermStatus.
+    func testLocationPermStatus_ignoresJunkArgumentsAndNeverRejects() {
+        let exp = expectation(description: "locationPermStatus junk args")
+        plugin.locationPermStatus(makeCall(method: "locationPermStatus",
+                                           options: ["sinceMs": "not-a-number", "seconds": -5],
+                                           onSuccess: { data in
+            XCTAssertNotNil(data?["status"], "junk arguments must not change the answer")
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 30)
+    }
+
+    // Called repeatedly the way a foreground re-check will call it, with no
+    // start/stop in between: it must stay consistent and never crash.
+    func testLocationPermStatus_repeatedCallsAgreeAndNeverCrash() {
+        var seen: [String] = []
+        for i in 0..<5 {
+            let exp = expectation(description: "locationPermStatus repeat \(i)")
+            plugin.locationPermStatus(makeCall(method: "locationPermStatus", onSuccess: { data in
+                if let s = data?["status"] as? String { seen.append(s) }
+                exp.fulfill()
+            }))
+            wait(for: [exp], timeout: 30)
+        }
+        XCTAssertEqual(seen.count, 5, "every call must resolve")
+        XCTAssertEqual(Set(seen).count, 1, "nothing changed in between, so the answer must not wobble")
+    }
+
     // MARK: - motionPermStatus: read-only, never crashes, no arguments needed
 
     func testMotionPermStatus_resolvesWithStatusAndAvailability() {

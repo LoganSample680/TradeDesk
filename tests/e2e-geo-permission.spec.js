@@ -611,6 +611,89 @@ test.describe('Crew location permission', () => {
       });
     });
 
+    // Owner, 2026-08-25: "shouldn't location and motion say always, while using
+    // app or declined in alliance with how iOS saves and asks for permissions?"
+    // The old inference read whether the watcher was delivering, which is true
+    // for whenInUse too, so the one distinction that decides whether this
+    // product works at all was invisible.
+    test.describe("iOS's own vocabulary, not a flattened granted", () => {
+      const withAuth = (auth) => page.evaluate(async (a) => {
+        const saved = { cap: window.Capacitor, supa: window._supa, user: window._supaUser };
+        const rec = [];
+        try {
+          window._supaUser = { id: 'auth-probe' };
+          window._supa = { from: () => ({
+            upsert: (row) => { rec.push(row); return { then: (r) => Promise.resolve({}).then(r) }; },
+            update: () => ({ eq: () => ({ then: (r) => Promise.resolve({}).then(r) }) }),
+          }) };
+          window.Capacitor = { isNativePlatform: () => true,
+            registerPlugin: () => (a === null ? {} : { locationPermStatus: () => Promise.resolve(a) }) };
+          const state = await _geoReadPermission();
+          _geoReportPermission(state);
+          await new Promise(r => setTimeout(r, 20));
+          return { state, row: rec[0] || null, peek: _geoNativeAuthPeek() };
+        } finally {
+          window.Capacitor = saved.cap; window._supa = saved.supa; window._supaUser = saved.user;
+        }
+      }, auth);
+
+      test('always and wheninuse are stored apart, never both as granted', async () => {
+        const always = await withAuth({ status: 'always', accuracy: 'full', precise: true });
+        const inUse = await withAuth({ status: 'wheninuse', accuracy: 'full', precise: true });
+        expect(always.row.location_status).toBe('always');
+        expect(inUse.row.location_status, 'the distinction the whole feature exists for').toBe('wheninuse');
+        expect(inUse.row.location_status).not.toBe('granted');
+      });
+
+      test('the checklist still reasons in done/not-done, so both read granted THERE', async () => {
+        expect((await withAuth({ status: 'always', accuracy: 'full' })).state).toBe('granted');
+        expect((await withAuth({ status: 'wheninuse', accuracy: 'full' })).state).toBe('granted');
+      });
+
+      test('denied and restricted are both refusals, notdetermined is not', async () => {
+        expect((await withAuth({ status: 'denied' })).state).toBe('denied');
+        expect((await withAuth({ status: 'restricted' })).state).toBe('denied');
+        expect((await withAuth({ status: 'notdetermined' })).state).toBe('prompt');
+      });
+
+      test('restricted survives to the row as itself, not as denied', async () => {
+        const r = await withAuth({ status: 'restricted' });
+        expect(r.row.location_status, 'Screen Time or MDM is not the same as saying no').toBe('restricted');
+      });
+
+      // Always plus Precise off is granted and useless at the same time.
+      test('accuracy is its own column, never folded into status', async () => {
+        const r = await withAuth({ status: 'always', accuracy: 'reduced', precise: false });
+        expect(r.row.location_status).toBe('always');
+        expect(r.row.location_accuracy, 'a 600ft fence cannot work on kilometres').toBe('reduced');
+      });
+
+      test('a shell too old to answer degrades to the old inference, never breaks', async () => {
+        const r = await withAuth(null);
+        expect(['granted', 'denied', 'prompt']).toContain(r.state);
+        expect(r.row.location_accuracy, 'nothing known means null, not a guess').toBe(null);
+      });
+
+      test('a plugin that rejects is treated as unknown, not as denied', async () => {
+        const r = await page.evaluate(async () => {
+          const saved = window.Capacitor;
+          try {
+            window.Capacitor = { isNativePlatform: () => true,
+              registerPlugin: () => ({ locationPermStatus: () => Promise.reject(new Error('nope')) }) };
+            return { state: await _geoReadPermission(), peek: _geoNativeAuthPeek() };
+          } finally { window.Capacitor = saved; }
+        });
+        expect(['granted', 'denied', 'prompt'], 'falls through to the inference').toContain(r.state);
+      });
+
+      test('a junk status never invents an authorization', async () => {
+        for (const bad of [{ status: '' }, { status: 'banana' }, {}, { status: null }]) {
+          const r = await withAuth(bad);
+          expect(['granted', 'denied', 'prompt']).toContain(r.state);
+        }
+      });
+    });
+
     test('a write that fails never throws at the caller', async () => {
       const threw = await page.evaluate(async () => {
         const saved = { supa: window._supa, user: window._supaUser };

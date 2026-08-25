@@ -1,0 +1,16 @@
+-- Precise Location is a second axis, not a shade of the first.
+--
+-- Owner, 2026-08-25: the status column should speak iOS's vocabulary, always /
+-- wheninuse / denied / restricted / notdetermined, rather than a flattened
+-- web-shaped "granted". That needed no schema change, since location_status is
+-- free text precisely so the vocabulary could widen.
+--
+-- Accuracy did need one. Since iOS 14 a user can grant Always and still switch
+-- Precise Location off, which downgrades every fix to reducedAccuracy:
+-- kilometres, against fences measured in hundreds of feet. That phone is
+-- authorized and completely unable to do the job, and with only one column the
+-- two are indistinguishable. Separate column so it can never be folded away.
+--
+-- Additive only (CLAUDE.md 3.1). Existing rows keep a null, which is honest:
+-- they were written by a shell that could not answer this.
+alter table device_status add column if not exists location_accuracy text;

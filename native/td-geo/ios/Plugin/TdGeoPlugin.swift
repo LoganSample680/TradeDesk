@@ -30,7 +30,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         CAPPluginMethod(name: "motionSince", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stats", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "motionPermStatus", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "motionPermStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "locationPermStatus", returnType: CAPPluginReturnPromise)
     ]
 
     private var locationManager: CLLocationManager?
@@ -261,6 +262,55 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         @unknown default: status = "prompt"
         }
         call.resolve(["status": status, "available": CMMotionActivityManager.isActivityAvailable()])
+    }
+
+    // locationPermStatus() : what iOS ACTUALLY granted, in iOS's own vocabulary.
+    //
+    // Owner, 2026-08-25: "shouldn't location and motion say always, while using
+    // app or declined in alliance with how iOS saves and asks for permissions?"
+    // Yes, and until now nothing here could answer it. The JS layer inferred a
+    // web-shaped granted/denied/prompt from whether the watcher was delivering,
+    // which collapses the single distinction this app lives or dies on:
+    //
+    //   whenInUse : works only while the app is on screen. No background pings,
+    //               no region wakes, no drive logged from a pocket. Reads as
+    //               "granted" everywhere and silently tracks nothing.
+    //   always    : the only state where this product does its job.
+    //
+    // ACCURACY IS THE SECOND AXIS, and it is just as fatal. Since iOS 14 a user
+    // can grant Always and still switch Precise Location off, which downgrades
+    // fixes to reducedAccuracy: kilometres, against fences measured in hundreds
+    // of feet. Geofencing is simply dead in that state with nothing anywhere
+    // saying why, so it is reported alongside rather than buried.
+    //
+    // NOT reported: whether Location Services is on device-wide. That would be
+    // a genuinely useful distinction (a global toggle nowhere near this app
+    // looks identical to somebody denying TradeDesk), but the only API for it
+    // is deprecated in iOS 17 and blocks the main thread, and iOS already
+    // reports .denied in that case. A warning-generating call for a nuance we
+    // can live without is a bad trade.
+    //
+    // Raw capability only, per the keep-native-dumb rule: this reports what iOS
+    // says and decides nothing. Every threshold and consequence stays in JS.
+    @objc func locationPermStatus(_ call: CAPPluginCall) {
+        let m = self.mgr()
+        let status: String
+        switch m.authorizationStatus {
+        case .notDetermined:       status = "notdetermined"
+        case .restricted:          status = "restricted"
+        case .denied:              status = "denied"
+        case .authorizedWhenInUse: status = "wheninuse"
+        case .authorizedAlways:    status = "always"
+        @unknown default:          status = "notdetermined"
+        }
+        var out: [String: Any] = [
+            "status": status,
+            // Deliberately NOT folded into status: a user can be `always` and
+            // reduced, which is granted and useless at the same time.
+            "accuracy": m.accuracyAuthorization == .fullAccuracy ? "full" : "reduced",
+            "precise": m.accuracyAuthorization == .fullAccuracy
+        ]
+        call.resolve(out)
     }
 
     @objc func stopAll(_ call: CAPPluginCall) {
