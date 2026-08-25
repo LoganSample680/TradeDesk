@@ -472,13 +472,42 @@ function _tdHaptic(kind){
 // ── Shimmer skeleton rows (§8.4) ──────────────────────────────────────────────
 // The app-wide loading treatment: any async surface renders these instead of a
 // "Loading..." string, and real content replaces them in ONE swap when data
-// lands, never a second stacked reveal. Widths vary so a list of them reads
-// like content, not stripes.
+// lands, never a second stacked reveal.
+//
+// Row widths (owner report 2026-08-25: the old 88/72/56 sawtooth "reads as a
+// machine placeholder"). Facebook, YouTube and X all sell the same illusion the
+// same way: no two neighbouring placeholder lines are the same length, the
+// lengths do not march up or down in an even step, and the final line of a
+// block is noticeably short, because that is what the last line of a real
+// sentence looks like when it stops mid-column.
+//
+// So: a fixed 5-width cycle, DELIBERATELY not random. Math.random() would
+// reshuffle every single repaint (a skeleton that redraws while it shimmers
+// flickers), and it would make the widths untestable. A fixed cycle indexed by
+// row number is stable across repaints for free: the same row always gets the
+// same width, so a re-render is pixel-identical to the paint before it.
+// Length 5 (coprime with the 2-5 row counts every real caller uses) means a
+// normal skeleton never shows the cycle repeat, and the values are non-monotonic
+// with uneven gaps so no run of rows reads as a staircase.
+const _TD_SKEL_W=[94,71,86,62,79];
+// The last row is the tell. Real text ends short, so the closing row gets a
+// stub width well under anything in the cycle. Only when there IS a row above
+// it: a lone skeleton row is not the end of a paragraph, it is the whole thing,
+// so a single row uses the full cycle width instead of looking truncated.
+const _TD_SKEL_W_LAST=42;
 function _tdSkelRows(n,h){
   let out='';
-  const count=n||3,ht=h||12;
+  // Defensive count: no args / non-numeric → 3 (the historic default), 0 or a
+  // negative → no rows at all, never a thrown error or an infinite loop. And a
+  // nonsense count out of a bad computation is capped, so a skeleton can never
+  // lock the main thread building a million nodes nobody will ever see.
+  const bad=(n==null||typeof n!=='number'||!isFinite(n));
+  const count=bad?3:Math.max(0,Math.min(200,Math.floor(n)));
+  const ht=h||12;
   for(let i=0;i<count;i++){
-    out+='<div class="td-skel" style="height:'+ht+'px;width:'+(88-(i%3)*16)+'%;margin:10px 0"></div>';
+    const last=(count>1&&i===count-1);
+    const w=last?_TD_SKEL_W_LAST:_TD_SKEL_W[i%_TD_SKEL_W.length];
+    out+='<div class="td-skel" style="height:'+ht+'px;width:'+w+'%;margin:10px 0"></div>';
   }
   return out;
 }

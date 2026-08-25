@@ -1982,6 +1982,147 @@ test.describe('utils.js: exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // _tdSkelRows, varied row widths (§8.4)
+  // Owner report 2026-08-25: every skeleton row rendered the same handful of
+  // widths in an even descending sawtooth, so it read as a machine placeholder
+  // instead of text that has not loaded yet. Widths now come from a fixed,
+  // deterministic 5-value cycle with a deliberately short final row.
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_tdSkelRows', () => {
+    // Node-side width parser so the assertions never re-use the implementation.
+    const widths = (html) => (html.match(/width:(\d+)%/g) || []).map(m => parseInt(m.slice(6), 10));
+
+    test('no args: renders the historic 3 rows with the shared class', async () => {
+      const html = await page.evaluate(() => _tdSkelRows());
+      expect((html.match(/class="td-skel"/g) || []).length).toBe(3);
+      expect(widths(html).length).toBe(3);
+    });
+
+    test('widths differ across rows: no two adjacent rows share a width', async () => {
+      const html = await page.evaluate(() => _tdSkelRows(6, 12));
+      const w = widths(html);
+      expect(w.length).toBe(6);
+      for (let i = 1; i < w.length; i++) {
+        expect(w[i], 'row ' + i + ' must not match row ' + (i - 1)).not.toBe(w[i - 1]);
+      }
+      // And the set as a whole is genuinely varied, not two values alternating.
+      expect(new Set(w).size, 'a 6-row skeleton uses several distinct widths').toBeGreaterThanOrEqual(4);
+    });
+
+    test('widths are not an even staircase: gaps between rows vary', async () => {
+      const w = widths(await page.evaluate(() => _tdSkelRows(5, 12)));
+      const gaps = w.slice(1).map((x, i) => x - w[i]);
+      expect(new Set(gaps.map(Math.abs)).size, 'uneven steps, not a sawtooth').toBeGreaterThan(1);
+    });
+
+    test('deterministic: the same call renders byte-identical markup every time', async () => {
+      const r = await page.evaluate(() => {
+        const a = _tdSkelRows(5, 12), b = _tdSkelRows(5, 12), c = _tdSkelRows(5, 12);
+        return { same: a === b && b === c, a };
+      });
+      expect(r.same, 'a repaint must not reshuffle the widths').toBe(true);
+      expect(widths(r.a).length).toBe(5);
+    });
+
+    test('deterministic: a given row index always yields the same width, whatever the total', async () => {
+      const r = await page.evaluate(() => ({
+        five: _tdSkelRows(5, 12), eight: _tdSkelRows(8, 12), twelve: _tdSkelRows(12, 12),
+      }));
+      const five = widths(r.five), eight = widths(r.eight), twelve = widths(r.twelve);
+      // Every non-final row of the shorter list matches the same index in the longer ones.
+      for (let i = 0; i < five.length - 1; i++) {
+        expect(eight[i], 'index ' + i + ' stable across counts').toBe(five[i]);
+        expect(twelve[i], 'index ' + i + ' stable across counts').toBe(five[i]);
+      }
+      // No Math.random(): the cycle repeats exactly every 5 rows in the middle.
+      expect(twelve[5]).toBe(twelve[0]);
+      expect(twelve[6]).toBe(twelve[1]);
+    });
+
+    test('the final row is short: that is what sells "text that has not loaded"', async () => {
+      const w = widths(await page.evaluate(() => _tdSkelRows(4, 12)));
+      const last = w[w.length - 1];
+      for (let i = 0; i < w.length - 1; i++) {
+        expect(last, 'the closing row is shorter than row ' + i).toBeLessThan(w[i]);
+      }
+    });
+
+    test('1 row: renders one row, and it is NOT the short stub', async () => {
+      const r = await page.evaluate(() => ({ one: _tdSkelRows(1, 12), four: _tdSkelRows(4, 12) }));
+      const one = widths(r.one), four = widths(r.four);
+      expect((r.one.match(/class="td-skel"/g) || []).length, 'exactly one row').toBe(1);
+      expect(one.length).toBe(1);
+      // A lone row is the whole content, not the end of a paragraph.
+      expect(one[0], 'a single row is not truncated').toBeGreaterThan(four[four.length - 1]);
+      expect(one[0], 'a single row uses the first cycle width').toBe(four[0]);
+    });
+
+    test('0 rows: empty string, no throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, html: _tdSkelRows(0, 12) }; } catch (e) { return { ok: false, html: String(e) }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.html).toBe('');
+    });
+
+    test('silly-large row count: capped, does not blow up the page', async () => {
+      const r = await page.evaluate(() => {
+        const t0 = performance.now();
+        let html = '', threw = false;
+        try { html = _tdSkelRows(1000000, 12); } catch (e) { threw = true; }
+        return { threw, rows: (html.match(/class="td-skel"/g) || []).length, ms: performance.now() - t0 };
+      });
+      expect(r.threw, 'a nonsense count must never throw').toBe(false);
+      expect(r.rows, 'capped well below a million nodes').toBeLessThanOrEqual(200);
+      expect(r.rows, 'still renders something').toBeGreaterThan(0);
+      expect(r.ms, 'never locks the main thread').toBeLessThan(2000);
+    });
+
+    test('null/NaN/negative/type-mismatch input degrades, never throws', async () => {
+      const r = await page.evaluate(() => {
+        const call = (a, b) => { try { return { ok: true, rows: (_tdSkelRows(a, b).match(/class="td-skel"/g) || []).length }; } catch (e) { return { ok: false, rows: -1 }; } };
+        return {
+          nul: call(null), undef: call(undefined), nan: call(NaN), neg: call(-5),
+          str: call('4'), obj: call({}), inf: call(Infinity), frac: call(3.7),
+        };
+      });
+      for (const k of Object.keys(r)) expect(r[k].ok, k + ' must not throw').toBe(true);
+      expect(r.nul.rows, 'null falls back to the default 3').toBe(3);
+      expect(r.undef.rows).toBe(3);
+      expect(r.nan.rows).toBe(3);
+      expect(r.str.rows, 'a non-number falls back to the default').toBe(3);
+      expect(r.obj.rows).toBe(3);
+      expect(r.neg.rows, 'a negative count renders nothing').toBe(0);
+      expect(r.inf.rows, 'Infinity falls back, never loops forever').toBe(3);
+      expect(r.frac.rows, 'a fractional count floors').toBe(3);
+    });
+
+    test('the shimmer itself is untouched: same class, same live animation', async () => {
+      const r = await page.evaluate(() => {
+        const host = document.createElement('div');
+        host.style.cssText = 'position:absolute;left:-9999px;top:0;width:300px';
+        host.innerHTML = _tdSkelRows(4, 14);
+        document.body.appendChild(host);
+        const rows = [...host.querySelectorAll('.td-skel')];
+        const cs = getComputedStyle(rows[0]);
+        const out = {
+          anim: cs.animationName, dur: cs.animationDuration, timing: cs.animationTimingFunction,
+          heights: rows.map(el => el.style.height),
+          pxWidths: rows.map(el => Math.round(el.getBoundingClientRect().width)),
+        };
+        host.remove();
+        return out;
+      });
+      expect(r.anim, 'the shared shimmer keyframe').toBe('td-skel');
+      expect(r.dur, 'timing unchanged').toBe('1.1s');
+      expect(r.timing, 'easing unchanged').toBe('linear');
+      expect(r.heights, 'the height arg is still honored').toEqual(['14px', '14px', '14px', '14px']);
+      // The variation is real on screen, not just in the markup string.
+      expect(new Set(r.pxWidths).size).toBeGreaterThanOrEqual(4);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // No console errors
   // ═══════════════════════════════════════════════════════════════════════════
   test('no console errors, utils.js', async () => {
