@@ -1057,6 +1057,18 @@ async function renderTimeLog(){
       if(typeof _geoDrainQueue==='function')await _geoDrainQueue();
     }catch(_e){}
   }
+  // The cleanup sweeps are NOT the reconciler's business (owner report
+  // 2026-08-25: "still not seeing time log clear the shit that doesn't
+  // matter"). The reconciler skips its own tail on three exits that say
+  // nothing about whether there is junk to clear (a ping mid-flight, a pass
+  // already running, or simply no window to repair), and on a phone with
+  // live tracking the ping exit is the common case: the three retries above
+  // can all come back false and the log then renders whatever stale
+  // duplicates and orphaned drive rows were already there. Run the sweeps
+  // here directly, every open. _geoCleanupSweeps carries its own busy flag
+  // and a 10s recency skip, so when the reconciler above DID run to
+  // completion this is a cheap no-op rather than a second round of queries.
+  if(typeof _geoCleanupSweeps==='function'){try{await _geoCleanupSweeps();}catch(_e){}}
   let allRows;
   try{allRows=await _timeLogRows(null);}
   catch(_e){el.innerHTML='<div class="empty">Couldn\'t load time entries.</div>';return;}

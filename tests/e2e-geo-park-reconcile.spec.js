@@ -158,6 +158,11 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     if (typeof _geoTimeDedupBusy !== 'undefined') _geoTimeDedupBusy = false;
     if (typeof _geoGapAbsorbBusy !== 'undefined') _geoGapAbsorbBusy = false;
     if (typeof _geoStopRepairBusy !== 'undefined') _geoStopRepairBusy = false;
+    // The extracted cleanup chain carries its own busy flag AND a 10s
+    // recency skip, so without clearing both here the SECOND test in this
+    // file would silently no-op on a chain the first one just ran.
+    if (typeof _geoCleanupBusy !== 'undefined') _geoCleanupBusy = false;
+    if (typeof _geoCleanupAt !== 'undefined') _geoCleanupAt = 0;
     window._isEmployee = false;
     window._supaUser = { id: 'geo-park-user-1', email: 'p@t.com' };
     window.__rec = { upserts: [], inserts: [], deletes: [], updates: [] };
@@ -3257,6 +3262,225 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       expect(r.jobVsShop, 'kind is part of the key').toBe(false);
       expect(r.jobIdMatters, 'id is part of the key').toBe(false);
       expect(r.sameEverything, 'identical inputs are deterministic').toBe(true);
+    });
+  });
+
+  // ── The cleanup chain is not the reconciler's business ──────────────────
+  //
+  // Owner report 2026-08-25: "still not seeing time log clear the shit that
+  // doesn't matter out of the time logs like we used to have before your
+  // changes to the flight code."
+  //
+  // Root cause: dedup, same-place merge, drive-time hygiene and shop dedup
+  // lived at the tail of _geoReconcileFromMileage, and that function has
+  // exits that skip its own tail: `if(!wins.length)return;` returns from
+  // INSIDE the try, so the finally cleared the busy flag and the function
+  // left before the tail ever ran. Nothing to reconcile is exactly a flight
+  // day (the impossible-leg guard refuses the mileage row, so there is no leg
+  // to pair a window from), and a flight day is precisely when the cleanup
+  // matters: the guard deliberately leaves an orphaned paid drive-time row
+  // for _geoSyncDriveTimeEntries to remove. On the owner's own account that
+  // left a 132-minute 'drive-unassigned' row for a flight, and a duplicate
+  // 16-minute stop pair written 6ms apart, both sitting uncleaned.
+  //
+  // These tests pin BOTH halves permanently: the chain exists on its own and
+  // is individually fault-tolerant, and a reconcile pass with zero windows
+  // still runs every sweep in it.
+  test.describe('cleanup sweeps run independently of the reconciler', () => {
+    // Swap in counting stubs for the four sweeps plus the queue drain, so a
+    // test can see exactly which ones the chain reached without doing any
+    // real work. Returns nothing; call restoreSweepStubs() to undo.
+    const stubSweeps = (throwOn) => page.evaluate((throwOn) => {
+      window.__sweepCalls = [];
+      window.__sweepOrig = {};
+      const names = ['_geoAwaitQueueDrained', '_geoDedupTimeEntries', '_geoMergeAdjacentVisits',
+                     '_geoSyncDriveTimeEntries', '_geoDedupShopTimeEntries'];
+      for (const n of names) {
+        window.__sweepOrig[n] = window[n];
+        window[n] = async function () {
+          window.__sweepCalls.push(n);
+          if (throwOn && throwOn.indexOf(n) >= 0) throw new Error('boom:' + n);
+          return 0;
+        };
+      }
+    }, throwOn || null);
+
+    const restoreSweepStubs = () => page.evaluate(() => {
+      for (const n in (window.__sweepOrig || {})) window[n] = window.__sweepOrig[n];
+      window.__sweepOrig = null;
+    });
+
+    test('_geoCleanupSweeps runs all four sweeps, in order, after draining the queue', async () => {
+      await geoReset();
+      await stubSweeps();
+      const r = await page.evaluate(async () => {
+        const ok = await _geoCleanupSweeps();
+        return { ok, calls: window.__sweepCalls.slice() };
+      });
+      expect(r.ok, 'a pass that actually ran reports true').toBe(true);
+      expect(r.calls).toEqual([
+        '_geoAwaitQueueDrained',      // drain FIRST: dedup must read back this pass's own writes
+        '_geoDedupTimeEntries',
+        '_geoMergeAdjacentVisits',
+        '_geoSyncDriveTimeEntries',
+        '_geoDedupShopTimeEntries',
+      ]);
+      await restoreSweepStubs();
+      await geoRestore();
+    });
+
+    test('one sweep throwing never stops the ones after it', async () => {
+      await geoReset();
+      await stubSweeps(['_geoDedupTimeEntries', '_geoSyncDriveTimeEntries']);
+      const r = await page.evaluate(async () => {
+        const ok = await _geoCleanupSweeps();
+        return { ok, calls: window.__sweepCalls.slice() };
+      });
+      expect(r.ok, 'the chain still completes').toBe(true);
+      expect(r.calls, 'every sweep was still reached').toEqual([
+        '_geoAwaitQueueDrained', '_geoDedupTimeEntries', '_geoMergeAdjacentVisits',
+        '_geoSyncDriveTimeEntries', '_geoDedupShopTimeEntries',
+      ]);
+      await restoreSweepStubs();
+      await geoRestore();
+    });
+
+    test('recency skip: a second call inside the window is a no-op, force overrides it', async () => {
+      await geoReset();
+      await stubSweeps();
+      const r = await page.evaluate(async () => {
+        const first = await _geoCleanupSweeps();
+        const afterFirst = window.__sweepCalls.length;
+        const second = await _geoCleanupSweeps();          // immediately after: skipped
+        const afterSecond = window.__sweepCalls.length;
+        const forced = await _geoCleanupSweeps(true);      // force runs it anyway
+        const afterForced = window.__sweepCalls.length;
+        return { first, second, forced, afterFirst, afterSecond, afterForced };
+      });
+      expect(r.first).toBe(true);
+      expect(r.second, 'skipped, not run').toBe(false);
+      expect(r.afterSecond, 'no sweep ran on the skipped call').toBe(r.afterFirst);
+      expect(r.forced, 'force bypasses the recency skip').toBe(true);
+      expect(r.afterForced).toBe(r.afterFirst * 2);
+      await restoreSweepStubs();
+      await geoRestore();
+    });
+
+    test('busy guard: a concurrent call bails instead of interleaving', async () => {
+      await geoReset();
+      await page.evaluate(() => {
+        window.__sweepCalls = [];
+        window.__sweepOrig = { _geoDedupTimeEntries: window._geoDedupTimeEntries,
+                               _geoAwaitQueueDrained: window._geoAwaitQueueDrained,
+                               _geoMergeAdjacentVisits: window._geoMergeAdjacentVisits,
+                               _geoSyncDriveTimeEntries: window._geoSyncDriveTimeEntries,
+                               _geoDedupShopTimeEntries: window._geoDedupShopTimeEntries };
+        window._geoAwaitQueueDrained = async () => true;
+        window._geoMergeAdjacentVisits = async () => 0;
+        window._geoSyncDriveTimeEntries = async () => 0;
+        window._geoDedupShopTimeEntries = async () => 0;
+        // Slow enough that the second call below is guaranteed to land while
+        // the first is still inside the chain.
+        window._geoDedupTimeEntries = async () => {
+          window.__sweepCalls.push('dedup');
+          await new Promise(res => setTimeout(res, 150));
+          return 0;
+        };
+      });
+      const r = await page.evaluate(async () => {
+        const p1 = _geoCleanupSweeps();
+        const second = await _geoCleanupSweeps();   // lands mid-chain
+        const first = await p1;
+        return { first, second, dedupRuns: window.__sweepCalls.length };
+      });
+      expect(r.first).toBe(true);
+      expect(r.second, 'the concurrent call bails').toBe(false);
+      expect(r.dedupRuns, 'the chain ran exactly once').toBe(1);
+      await restoreSweepStubs();
+      await geoRestore();
+    });
+
+    // THE regression. Before the fix the reconciler returned from inside its
+    // try the moment `wins` was empty, so not one of these sweeps ran.
+    test('a reconcile pass with nothing to reconcile still runs the whole cleanup chain', async () => {
+      await geoReset();
+      await stubSweeps();
+      const r = await page.evaluate(async () => {
+        // No jobs, no clients, no legs: the reconciler finds zero windows.
+        window.__origMileage = mileage.slice(); mileage.length = 0;
+        window.__origJobs = jobs.slice(); jobs.length = 0;
+        const ran = await _geoReconcileFromMileage();
+        return { ran, calls: window.__sweepCalls.slice() };
+      });
+      expect(r.ran, 'the pass reports it ran').toBe(true);
+      expect(r.calls, 'every cleanup sweep still fired').toEqual([
+        '_geoAwaitQueueDrained', '_geoDedupTimeEntries', '_geoMergeAdjacentVisits',
+        '_geoSyncDriveTimeEntries', '_geoDedupShopTimeEntries',
+      ]);
+      await restoreSweepStubs();
+      await restoreReconSeed();
+      await geoRestore();
+    });
+
+    // End to end on the exact live shape: the flight guard refused the
+    // mileage row, so the paid drive-time row it left behind has no surviving
+    // leg. Real _geoSyncDriveTimeEntries, reached through a zero-window
+    // reconcile pass, has to delete it.
+    test('the orphaned drive row a refused flight leg leaves behind is deleted on a zero-window pass', async () => {
+      await geoReset();
+      const r = await page.evaluate(async () => {
+        window.__origMileage = mileage.slice(); mileage.length = 0;
+        window.__origJobs = jobs.slice(); jobs.length = 0;
+        // One real leg survives, the flight leg does not (the guard refused
+        // to write it), same shape as the owner's account on 2026-08-25.
+        mileage.push({ id: 'ml-keep', gps: true, legKey: 'u1-leg-keepme',
+                       startedIso: new Date(Date.now() - 3600000).toISOString(),
+                       endedIso: new Date(Date.now() - 3000000).toISOString(), miles: 6 });
+        window.__selRows = [
+          { id: 'te-keep',   source: 'drive-unassigned', client_key: 'u1-leg-keepme' },
+          { id: 'te-flight', source: 'drive-unassigned', client_key: 'u1-leg-mt8j5dta' },
+          { id: 'te-visit',  source: 'geofence',         client_key: 'u1-vis-1' },
+        ];
+        // Only the drive sweep is real here; the rest are stubbed so this
+        // test measures one thing.
+        window.__sweepOrig = { _geoAwaitQueueDrained: window._geoAwaitQueueDrained,
+                               _geoDedupTimeEntries: window._geoDedupTimeEntries,
+                               _geoMergeAdjacentVisits: window._geoMergeAdjacentVisits,
+                               _geoDedupShopTimeEntries: window._geoDedupShopTimeEntries };
+        window._geoAwaitQueueDrained = async () => true;
+        window._geoDedupTimeEntries = async () => 0;
+        window._geoMergeAdjacentVisits = async () => 0;
+        window._geoDedupShopTimeEntries = async () => 0;
+        await _geoReconcileFromMileage();
+        return { deletes: window.__rec.deletes.filter(d => d.tbl === 'job_time_entries').map(d => d.val) };
+      });
+      expect(r.deletes, 'only the leg-less flight drive row goes').toEqual(['te-flight']);
+      await restoreSweepStubs();
+      await restoreReconSeed();
+      await geoRestore();
+    });
+
+    test('a leg-less drive row is dropped, a live visit row with no leg is never touched', async () => {
+      await geoReset();
+      const r = await page.evaluate(async () => {
+        window.__origMileage = mileage.slice(); mileage.length = 0;
+        // Nothing survives in mileage at all: every drive row is an orphan,
+        // and every on-site row must still be left alone (they never carried
+        // a legKey to compare in the first place).
+        window.__selRows = [
+          { id: 'd1', source: 'drive',            client_key: 'u1-leg-a' },
+          { id: 'd2', source: 'drive-unassigned', client_key: null },
+          { id: 'v1', source: 'geofence',         client_key: 'u1-vis-a' },
+          { id: 'v2', source: 'stop',             client_key: 'u1-vis-stop-b' },
+          { id: 'v3', source: 'geofence-reconciled', client_key: 'rec-u1-leg-a' },
+        ];
+        const n = await _geoSyncDriveTimeEntries();
+        return { n, deletes: window.__rec.deletes.filter(d => d.tbl === 'job_time_entries').map(d => d.val) };
+      });
+      expect(r.n).toBe(2);
+      expect(r.deletes.sort(), 'drive rows only, never an on-site row').toEqual(['d1', 'd2']);
+      await restoreReconSeed();
+      await geoRestore();
     });
   });
 

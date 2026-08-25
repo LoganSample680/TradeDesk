@@ -3704,7 +3704,19 @@ async function _geoReconcileFromMileage(){
         wins.push({A,B,t1,t2,clientId:String(cb.id),clientName:cb.name||null,legKey:cbLeg.legKey});
       }
     }
-    if(!wins.length)return;
+    // No early return on an empty `wins` (owner report 2026-08-25: "still not
+    // seeing time log clear the shit that doesn't matter"). This used to be
+    // `if(!wins.length)return;`, which returns from INSIDE the try, so the
+    // finally cleared the busy flag and the function exited before the
+    // cleanup chain below it ever ran. On a day with nothing to reconcile,
+    // which is exactly a flight day (the impossible-leg guard refuses the
+    // mileage row, so there is no leg to pair a window from), that skipped
+    // the very sweep the guard depends on: _geoSyncDriveTimeEntries is what
+    // removes the orphaned paid drive-time row the guard deliberately leaves
+    // behind. Result on the owner's account: a 132-minute 'drive-unassigned'
+    // row for a flight, and a duplicate 16-minute stop pair written 6ms
+    // apart, both sitting uncleaned. The loop below is a no-op on an empty
+    // array anyway, so the guard bought nothing and cost the cleanup.
     // No coverage query here anymore (owner 2026-08-21: "why is this so
     // complicated, follow the way mileage does it"). This used to fetch the
     // server's existing rows and decide skip/extend/insert before writing,
@@ -3748,46 +3760,77 @@ async function _geoReconcileFromMileage(){
     }
   }catch(_e){_geoParkNote('recon-err',(_e&&_e.message)||String(_e));}
   finally{_geoReconBusy=false;}
-  // Wait for THIS pass's own writes to actually reach the server before
-  // dedup reads it back (bounded, best-effort): _geoEnqueue's drain is
-  // fire-and-forget by design (a write must never block on network), so
-  // calling dedup immediately after enqueueing races those exact writes and
-  // reads a database snapshot that doesn't include them yet. That race is
-  // why the SAME window got written twice, 90 seconds apart, with no dedup
-  // event between (owner's own diagnostic paste 2026-08-21): the first
-  // pass's dedup ran before its own insert had landed, found nothing to
-  // drop, and the second pass repeated the whole cycle blind to the first.
-  if(typeof _geoAwaitQueueDrained==='function')await _geoAwaitQueueDrained();
-  if(typeof _geoDedupTimeEntries==='function'){try{await _geoDedupTimeEntries();}catch(_e){}}
-  // RE-ENABLED 2026-08-24 after the root cause landed: the 2026-08-23
-  // incident was a reconciled full-day row bridging the owner's real lunch
-  // (it resolved to the same client name and overlapped both live visits).
-  // The rewritten merge excludes reconciled rows from candidacy entirely
-  // and only merges across a gap that is provably EMPTY (no mileage leg, no
-  // other row, no shop session, same Central day), per the owner's rule:
-  // "merge those two records, there were no real drive events between them,
-  // just loss of gps geofence."
-  if(typeof _geoMergeAdjacentVisits==='function'){try{await _geoMergeAdjacentVisits();}catch(_e){}}
-  // DISABLED (owner report 2026-08-23, live device): the repeated heartbeat-
-  // triggered chain compounded this into multi-hour, even overnight-spanning
-  // "stop" rows (one grew to 1034 real minutes), corrupting live payroll
-  // data. Root cause not yet fully isolated; the function stays defined so
-  // the fix can be built and tested against it, but it must not run again
-  // until a bounded, verified replacement lands. See _geoAbsorbGapsIntoStops
-  // below.
-  // if(typeof _geoAbsorbGapsIntoStops==='function'){try{await _geoAbsorbGapsIntoStops();}catch(_e){}}
-  // Same settle point covers drive-time hygiene: this function's own writes
-  // (and whatever _mileDedupTrips/_milePersonalStopSweep already did earlier
-  // this session) are now on the server, so any drive row whose leg no
-  // longer survives in mileage is safe to drop here too. renderTimeLog
-  // awaits this whole chain before it ever reads a row, so a contractor
-  // opening Time Log always sees the reconciled state, not the stale one.
-  if(typeof _geoSyncDriveTimeEntries==='function'){try{await _geoSyncDriveTimeEntries();}catch(_e){}}
-  // Same settle point covers shop_time_entries duplicates, which
-  // _geoDedupTimeEntries and _geoSyncDriveTimeEntries never touch at all
-  // (see _geoDedupShopTimeEntries above).
-  if(typeof _geoDedupShopTimeEntries==='function'){try{await _geoDedupShopTimeEntries();}catch(_e){}}
+  await _geoCleanupSweeps();
   return true;
+}
+// ── The cleanup sweeps, no longer hostage to the reconciler ──────────────
+// (owner report 2026-08-25: "still not seeing time log clear the shit that
+// doesn't matter out of the time logs like we used to have before your
+// changes to the flight code".)
+//
+// Dedup, same-place merge, drive-time hygiene and shop dedup used to live
+// inline at the tail of _geoReconcileFromMileage, which meant they only ever
+// ran when that function ran to completion. It has three exits that skip
+// them: _geoReconBusy, _geoPingBusy (both `return false`, and a phone with
+// live tracking hits the ping one constantly, renderTimeLog gives up after
+// three 150ms retries), and the empty-`wins` return removed above. None of
+// those exits has anything to do with whether there is junk to clear:
+// cleaning up a duplicate row or an orphaned drive leg does not require the
+// reconciler to have found a single window. Pulled out here so renderTimeLog
+// can call it directly, every open, whatever the reconciler did or didn't do.
+//
+// Own busy flag, plus a short recency skip so the reconciler's own call and
+// renderTimeLog's call right after it don't run the same four queries twice
+// in a row. Pass force=true to bypass the recency skip.
+let _geoCleanupBusy=false;
+let _geoCleanupAt=0;
+const _GEO_CLEANUP_MIN_GAP_MS=10000;
+async function _geoCleanupSweeps(force){
+  if(_geoCleanupBusy)return false;
+  if(!force&&_geoCleanupAt&&Date.now()-_geoCleanupAt<_GEO_CLEANUP_MIN_GAP_MS)return false;
+  _geoCleanupBusy=true;
+  try{
+    // Wait for THIS pass's own writes to actually reach the server before
+    // dedup reads it back (bounded, best-effort): _geoEnqueue's drain is
+    // fire-and-forget by design (a write must never block on network), so
+    // calling dedup immediately after enqueueing races those exact writes and
+    // reads a database snapshot that doesn't include them yet. That race is
+    // why the SAME window got written twice, 90 seconds apart, with no dedup
+    // event between (owner's own diagnostic paste 2026-08-21): the first
+    // pass's dedup ran before its own insert had landed, found nothing to
+    // drop, and the second pass repeated the whole cycle blind to the first.
+    if(typeof _geoAwaitQueueDrained==='function')await _geoAwaitQueueDrained();
+    if(typeof _geoDedupTimeEntries==='function'){try{await _geoDedupTimeEntries();}catch(_e){}}
+    // RE-ENABLED 2026-08-24 after the root cause landed: the 2026-08-23
+    // incident was a reconciled full-day row bridging the owner's real lunch
+    // (it resolved to the same client name and overlapped both live visits).
+    // The rewritten merge excludes reconciled rows from candidacy entirely
+    // and only merges across a gap that is provably EMPTY (no mileage leg, no
+    // other row, no shop session, same Central day), per the owner's rule:
+    // "merge those two records, there were no real drive events between them,
+    // just loss of gps geofence."
+    if(typeof _geoMergeAdjacentVisits==='function'){try{await _geoMergeAdjacentVisits();}catch(_e){}}
+    // DISABLED (owner report 2026-08-23, live device): the repeated heartbeat-
+    // triggered chain compounded this into multi-hour, even overnight-spanning
+    // "stop" rows (one grew to 1034 real minutes), corrupting live payroll
+    // data. Root cause not yet fully isolated; the function stays defined so
+    // the fix can be built and tested against it, but it must not run again
+    // until a bounded, verified replacement lands. See _geoAbsorbGapsIntoStops
+    // below.
+    // if(typeof _geoAbsorbGapsIntoStops==='function'){try{await _geoAbsorbGapsIntoStops();}catch(_e){}}
+    // Same settle point covers drive-time hygiene: this function's own writes
+    // (and whatever _mileDedupTrips/_milePersonalStopSweep already did earlier
+    // this session) are now on the server, so any drive row whose leg no
+    // longer survives in mileage is safe to drop here too. renderTimeLog
+    // awaits this whole chain before it ever reads a row, so a contractor
+    // opening Time Log always sees the reconciled state, not the stale one.
+    if(typeof _geoSyncDriveTimeEntries==='function'){try{await _geoSyncDriveTimeEntries();}catch(_e){}}
+    // Same settle point covers shop_time_entries duplicates, which
+    // _geoDedupTimeEntries and _geoSyncDriveTimeEntries never touch at all
+    // (see _geoDedupShopTimeEntries above).
+    if(typeof _geoDedupShopTimeEntries==='function'){try{await _geoDedupShopTimeEntries();}catch(_e){}}
+    return true;
+  }finally{_geoCleanupBusy=false;_geoCleanupAt=Date.now();}
 }
 // Bounded wait for the durable queue to finish draining, so a caller that
 // needs to read back what it just enqueued (the dedup sweep) sees a database
