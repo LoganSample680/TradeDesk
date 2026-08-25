@@ -588,6 +588,16 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   // latitude, roughly 364,000ft per degree.
   const JOB_AT = { lat: 37.6872, lng: -97.3301 };
   const seedPings = (list) => page.evaluate((l) => { window.__selPings = l; }, list);
+  // Fixes at EXACT minute offsets from the arrival, which pingsAcross cannot
+  // express. Needed because the rule now ignores anything within 10 minutes of
+  // either anchor, and the real-world tape puts its only fixes right there.
+  const pingsAt = (seed, specs) => {
+    const t1 = Date.parse(seed.A.endedIso);
+    return specs.map(sp => ({
+      ts: new Date(t1 + sp.min * 60000).toISOString(),
+      lat: JOB_AT.lat + (sp.dLat || 0), lon: JOB_AT.lng, accuracy: sp.acc == null ? 8 : sp.acc,
+    }));
+  };
   // Fixes evenly spread across the window, so a test can say "on site for the
   // first quarter, then gone" without hand-computing timestamps.
   const pingsAcross = (seed, specs) => {
@@ -686,17 +696,119 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // ASSERTION CHANGED 2026-08-25 (CLAUDE.md 10.4). The fixture used to put the
+  // wild reading in the MIDDLE and expect the claim cut to 30 minutes. Under
+  // the rewritten rule a middle off-site fix is a lunch run they came back
+  // from and never moves an anchor, so that fixture now proves nothing about
+  // the cap. Moved to the END, where evidence is allowed to shorten the claim,
+  // which tests the cap AND the edge rule in one go.
   test('breadcrumbs: the accuracy allowance is capped, a wild reading cannot excuse a state line', async () => {
     await geoReset();
     const seed = await seedReconPair(886107);
     // 3000m of claimed uncertainty is ~9800ft, which would swallow the test
-    // entirely if it were honoured in full. Capped at 1500ft, so a fix 400
-    // miles away is still a fix 400 miles away.
-    await seedPings(pingsAcross(seed, [{}, { dLat: 5.8, acc: 3000 }, {}]));
+    // entirely if honoured in full. Capped at 1500ft, so a fix 400 miles away
+    // is still a fix 400 miles away.
+    await seedPings(pingsAcross(seed, [{}, {}, { dLat: 5.8, acc: 3000 }]));
     const r = await runRecon();
     expect(r.recRows.length).toBe(1);
-    expect(r.recRows[0].minutes, 'trimmed at the first fix that is genuinely elsewhere').toBe(30);
+    expect(r.recRows[0].minutes, 'the trailing off-site fix pulls the departure in').toBe(60);
     await seedPings([]);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  // ── THE 08-19 REGRESSION ──────────────────────────────────────────────────
+  //
+  // The first version of this rule destroyed real days, and this is the exact
+  // shape that did it. A 561-minute visit on the live account held FIVE fixes:
+  // two on site at 06:57 and 06:59, nothing at all for nine hours, then three
+  // at 16:17 as the truck drove off 10,499ft away. Park mode powers the GPS
+  // down when the truck stops, so silence is the signature of being parked,
+  // not of being absent, and the trailing fixes are the departure itself.
+  test('breadcrumbs: a sparse tape whose only off-site fixes are the departure leaves the day whole', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886110);
+    await seedPings(pingsAt(seed, [
+      { min: 0 }, { min: 2 },                       // arrival, on site
+      // then nine hours of nothing, scaled into this 120-minute window
+      { min: 119, dLat: 2.9 }, { min: 119, dLat: 1.6 }, { min: 119, dLat: 0.03 },
+    ]));
+    const r = await runRecon();
+    expect(r.recRows.length, 'the visit is real and must survive').toBe(1);
+    expect(r.recRows[0].minutes, 'silence is being parked, not being absent').toBe(120);
+    await seedPings([]);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  test('breadcrumbs: an off-site run in the MIDDLE is a lunch run, and never moves an anchor', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886111);
+    // Out at 50, still out at 60, back on site by 80. One row cannot carry a
+    // hole, and the live 'stop' row already covers the gap.
+    await seedPings(pingsAt(seed, [
+      { min: 20 }, { min: 50, dLat: 0.4 }, { min: 60, dLat: 0.4 }, { min: 80 }, { min: 100 },
+    ]));
+    const r = await runRecon();
+    expect(r.recRows.length).toBe(1);
+    expect(r.recRows[0].minutes, 'they came back, so the claim stands').toBe(120);
+    await seedPings([]);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  test('breadcrumbs: an off-site run at the START pulls the arrival forward', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886112);
+    await seedPings(pingsAt(seed, [
+      { min: 20, dLat: 0.9 }, { min: 40, dLat: 0.9 }, { min: 60 }, { min: 90 },
+    ]));
+    const r = await runRecon();
+    expect(r.recRows.length).toBe(1);
+    expect(r.recRows[0].minutes, 'on site from the first fix that says so, 60 to 120').toBe(60);
+    expect(r.recRows[0].arrived_at, 'the arrival anchor moved, which mileage alone could not do')
+      .not.toBe(seed.A.endedIso);
+    await seedPings([]);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  test('breadcrumbs: fixes hugging both anchors are the drives, and prove nothing either way', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886113);
+    // Every fix within 10 minutes of an anchor, all of them far away: this is
+    // pulling in and pulling out, and the middle is unobserved.
+    await seedPings(pingsAt(seed, [
+      { min: 1, dLat: 3.0 }, { min: 5, dLat: 2.0 }, { min: 115, dLat: 2.0 }, { min: 119, dLat: 3.0 },
+    ]));
+    const r = await runRecon();
+    expect(r.recRows.length, 'nothing in the middle was ever recorded').toBe(1);
+    expect(r.recRows[0].minutes).toBe(120);
+    await seedPings([]);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  test('breadcrumbs: the reconciler REASSERTS its own row rather than letting a bad trim stand', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886114);
+    const r = await page.evaluate(async () => {
+      await _geoReconcileFromMileage();
+      await new Promise(res => setTimeout(res, 200));
+      const q = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]');
+      const rec = window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' &&
+        /-reconciled$/.test(u.row.source || ''));
+      return {
+        opts: rec.map(u => u.opts || null),
+        queued: q.filter(i => i && i.row && /-reconciled$/.test(i.row.source || '')).map(i => !!i.overwrite),
+      };
+    });
+    // Whether it is still queued or already drained, the row must carry the
+    // overwrite intent: without it the re-insert is dropped as a duplicate and
+    // a wrong trim becomes permanent data loss with nothing able to undo it.
+    const sawOverwrite = r.queued.some(Boolean) ||
+      r.opts.some(o => o && o.ignoreDuplicates === false);
+    expect(sawOverwrite, 'reconciled rows are corrected on every pass, never insert-ignored').toBe(true);
     await restoreReconSeed();
     await geoRestore();
   });
@@ -3705,6 +3817,33 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       expect(r.updates[0].patch.minutes, 'trimmed to what the fixes support').toBe(60);
       expect(r.updates[0].filters.id).toBe('v-frag');
       expect(r.deletes.length, 'a real partial visit is trimmed, never dropped').toBe(0);
+      await restoreRow();
+      await geoRestore();
+    });
+
+    // THE 08-19 REGRESSION, on the sweep side. This is the shape that erased a
+    // real 561-minute day: on site at the start, silence through the middle
+    // because park mode powers the GPS down, then the departure fixes.
+    test('a sparse tape whose only off-site fixes are the departure changes nothing', async () => {
+      await geoReset();
+      await page.evaluate(() => {
+        window.__origJobs = jobs.slice(); jobs.length = 0;
+        _geoJobCoords = {};
+        jobs.push({ id: 990001, name: 'Verify Job', lat: 37.6872, lon: -97.3301,
+                    start: _ctDateStr(new Date()), days: 1, status: 'upcoming', eventType: 'job' });
+        const t1 = Date.now() - 5 * 3600000, t2 = t1 + 4 * 3600000;   // 240 minutes
+        window.__selRows = [{
+          id: 'v-sparse', employee_user_id: _supaUser.id, job_id: '990001', dest_place: null,
+          source: 'geofence-reconciled', client_key: 'rec-lg-sparse',
+          arrived_at: new Date(t1).toISOString(), departed_at: new Date(t2).toISOString(),
+        }];
+        const at = (min, dLat) => ({ ts: new Date(t1 + min * 60000).toISOString(),
+                                     lat: 37.6872 + (dLat || 0), lon: -97.3301, accuracy: 8 });
+        window.__selPings = [at(0), at(2), at(239, 2.9), at(239, 1.6), at(239, 0.03)];
+      });
+      const r = await runVerify();
+      expect(r.n, 'the day must survive').toBe(0);
+      expect(r.updates.length + r.deletes.length, 'not one write against a real day').toBe(0);
       await restoreRow();
       await geoRestore();
     });

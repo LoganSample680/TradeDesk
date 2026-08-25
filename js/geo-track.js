@@ -345,10 +345,18 @@ function _geoVisitKey(kind,id,arrivedIso){
 }
 function _geoQueueRead(){try{return JSON.parse(localStorage.getItem(_GEO_QUEUE_KEY)||'[]');}catch(_e){return[];}}
 function _geoQueueWrite(q){try{localStorage.setItem(_GEO_QUEUE_KEY,JSON.stringify(q));}catch(_e){}}
-function _geoEnqueue(tbl,row){
+// `opts.overwrite` lets a writer that OWNS a deterministic key correct its own
+// past row instead of being ignored as a duplicate (added 2026-08-25). The
+// drain's default is ignoreDuplicates, which is right for every writer whose
+// key is minted once per event and must never be rewritten. It is wrong for
+// the reconciler: its key is rec-<legKey>, it recomputes that window from
+// scratch on every pass, and without this a single bad trim became permanent
+// data loss with nothing able to put it back. Old queue entries written before
+// this option existed have no flag, so they keep the ignore behaviour.
+function _geoEnqueue(tbl,row,opts){
   try{
     row.client_key=row.client_key||_geoClientKey();
-    const q=_geoQueueRead();q.push({tbl,row});
+    const q=_geoQueueRead();q.push({tbl,row,overwrite:!!(opts&&opts.overwrite)});
     if(q.length>500){
       const dropped=q.length-500;
       q.splice(0,dropped); // hard cap, the queue can never grow unbounded
@@ -385,7 +393,7 @@ async function _geoDrainQueue(){
       const item=q[0];
       let error=null;
       try{
-        ({error}=await _supa.from(item.tbl).upsert(item.row,{onConflict:'contractor_user_id,client_key',ignoreDuplicates:true}));
+        ({error}=await _supa.from(item.tbl).upsert(item.row,{onConflict:'contractor_user_id,client_key',ignoreDuplicates:!item.overwrite}));
         // Hosted DB predating the geo-hardening migration: no unique index → retry as
         // a plain insert; no client_key column at all → retry without the key. Either
         // way the entry lands, durability beats idempotency when the schema lags.
@@ -3638,38 +3646,60 @@ async function _geoReconPings(fromMs,toMs){
                .sort((a,b)=>a.ms-b.ms);
   }catch(_e){return null;}
 }
-// Trim a claimed window to the stretch its own breadcrumbs support.
+// Trim a claimed window to the stretch its own breadcrumbs actually contradict.
 //
-// t1 and t2 are trustworthy anchors already: mileage proves the truck parked
-// at t1 and pulled away at t2. What is being tested is the middle. Walking
-// forward from t1, the claim survives until the first fix that is provably
-// somewhere else, and ends at the last fix that was still on site. A person
-// who leaves and comes back gets the first stretch only, which is the honest
-// reading: the second stretch has no arrival anchor of its own and the live
-// machine, not this guesser, is what is supposed to catch it.
+// REWRITTEN 2026-08-25 after the first version destroyed real days. Owner:
+// "it cleaned it up but cleaned up too much, now we got days where we are
+// missing time." Correct, and the evidence is 08-19 on the live account: a
+// 561-minute visit whose whole window holds FIVE fixes. Two at 06:57 and 06:59
+// on site, then nothing for nine hours, then three at 16:17 as the truck drove
+// off, 10,499ft away. The first rule walked forward, hit the 16:17 fix, and cut
+// the day to two minutes.
 //
-// `margin` is the caller's own fence-plus-wander figure, widened per fix by
-// that fix's reported accuracy so a poor reading can never eject someone who
-// never moved. Capped, because a 5km accuracy circle would swallow the test.
+// The mistake was treating this tape like a continuous one. It is not, and by
+// design: park mode powers the GPS down when the truck stops, so a person
+// standing still at a job produces NO fixes at all. Silence is the signature of
+// being parked somewhere, not of being absent. Compare 08-24, the day this
+// check was built for: fixes every few minutes, continuously, walking across
+// four states. Those two shapes have to be read differently.
+//
+// So the rule is now subtractive and edge-bounded:
+//
+//   * Fixes within _GEO_PING_EDGE_MS of either anchor are IGNORED. t1 is the
+//     moment a mileage leg parked here and t2 is the moment the next one
+//     pulled away, so a fix sitting on either edge is that drive itself. The
+//     16:17 fixes on 08-19 are the departure, not a contradiction. This alone
+//     is what makes a sparse tape safe.
+//   * Every remaining fix off site means they were never here: the claim goes.
+//     That is 08-24, and only 08-24.
+//   * An off-site run touching the FIRST or LAST remaining fix moves that
+//     anchor in to the nearest on-site fix. Evidence at an end can shorten
+//     from that end.
+//   * An off-site run strictly in the MIDDLE is a lunch or supply run they
+//     came back from. One row cannot carry a hole, and the live 'stop' row
+//     already covers that gap, so the claim stands untouched.
+//   * Silence still proves nothing, anywhere.
 const _GEO_PING_ACC_CAP_FT=1500;
+const _GEO_PING_EDGE_MS=10*60000;
 function _geoPingTrim(pings,t1,t2,coord,margin){
-  const out={t1:t1,t2:t2,checked:false,seen:0,left:false};
+  const out={t1:t1,t2:t2,checked:false,seen:0,left:false,gone:false};
   try{
     if(!Array.isArray(pings)||!coord||coord.lat==null)return out;
-    const inWin=pings.filter(p=>p.ms>=t1&&p.ms<=t2);
-    if(!inWin.length)return out;           // nothing recorded: claim stands
-    out.checked=true;out.seen=inWin.length;
-    let lastInside=null;
-    for(const p of inWin){
+    const mid=pings.filter(p=>p.ms>t1+_GEO_PING_EDGE_MS&&p.ms<t2-_GEO_PING_EDGE_MS);
+    if(!mid.length)return out;                       // only the drives at the edges: says nothing
+    out.checked=true;out.seen=mid.length;
+    const inside=p=>{
       const slack=Math.min(Math.max(p.acc*3.28084,0),_GEO_PING_ACC_CAP_FT);
-      if(_geoDistFt({lat:p.lat,lng:p.lng},coord)<=margin+slack){lastInside=p.ms;continue;}
-      // Provably somewhere else. The claim ends at the last fix that still
-      // put them on site; if there never was one, they were never there.
-      out.left=true;
-      out.t2=lastInside==null?t1:lastInside;
-      return out;
-    }
-    return out;                            // every fix on site: unchanged
+      return _geoDistFt({lat:p.lat,lng:p.lng},coord)<=margin+slack;
+    };
+    const flags=mid.map(inside);
+    if(flags.every(f=>!f)){out.gone=true;out.left=true;out.t2=t1;return out;}
+    if(flags.every(f=>f))return out;
+    let i=0;while(i<flags.length&&!flags[i])i++;
+    let j=flags.length-1;while(j>=0&&!flags[j])j--;
+    if(i>0){out.t1=mid[i].ms;out.left=true;}
+    if(j<flags.length-1){out.t2=mid[j].ms;out.left=true;}
+    return out;
   }catch(_e){return out;}
 }
 async function _geoReconcileFromMileage(){
@@ -3842,19 +3872,19 @@ async function _geoReconcileFromMileage(){
       // this feature exists for.
       const _tr=_geoPingTrim(_pingTape,t1,t2,jb?jbCoord:cbCoord,margin);
       if(_tr.checked&&_tr.left){
-        const kept=Math.max(0,Math.round((_tr.t2-t1)/60000));
-        _geoParkNote('recon-win',_wTag+': pings show they left, '+_tr.seen+' fixes, trimmed to '+kept+'m');
+        const kept=Math.max(0,Math.round((_tr.t2-_tr.t1)/60000));
+        _geoParkNote('recon-win',_wTag+': '+_tr.seen+' mid-window fixes disagree, '+kept+'m survives');
       }
-      if(_tr.t2-t1<_GEO_RECON_MIN_GAP_MS){
+      if(_tr.t2-_tr.t1<_GEO_RECON_MIN_GAP_MS){
         _geoParkNote('recon-win',_wTag+': nothing left after the pings were checked');
         continue;
       }
       if(jb){
         _geoParkNote('recon-win',_wTag+': candidate @'+(jb.name||jb.id));
-        wins.push({A,B,t1,t2:_tr.t2,jobId:String(jb.id),legKey:jbLeg.legKey});
+        wins.push({A,B,t1:_tr.t1,t2:_tr.t2,jobId:String(jb.id),legKey:jbLeg.legKey});
       }else{
         _geoParkNote('recon-win',_wTag+': candidate @'+(cb.name||cb.id)+' (client)');
-        wins.push({A,B,t1,t2:_tr.t2,clientId:String(cb.id),clientName:cb.name||null,legKey:cbLeg.legKey});
+        wins.push({A,B,t1:_tr.t1,t2:_tr.t2,clientId:String(cb.id),clientName:cb.name||null,legKey:cbLeg.legKey});
       }
     }
     // No early return on an empty `wins` (owner report 2026-08-25: "still not
@@ -3898,6 +3928,14 @@ async function _geoReconcileFromMileage(){
       // a reconciled client window has to read identically to a live one
       // everywhere downstream (finance.js, the dedup sweep below) or it
       // becomes its own second, unmatched category of row.
+      // OVERWRITE, not insert-ignore. This window is recomputed from the
+      // mileage legs and re-tested against the pings on every pass, so the
+      // value written here is the current best answer and it must replace
+      // whatever is there. That is what makes a wrong trim self-healing: the
+      // 08-19 rule bug shortened a real 561-minute day and nothing could undo
+      // it, because the re-insert was silently dropped as a duplicate. It also
+      // means the verify sweep and this cannot oscillate: both run the same
+      // _geoPingTrim over the same fixes, so both land on the same window.
       _geoEnqueue('job_time_entries',w.jobId?{
         contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
         // From the WINDOW, not from the raw leg stamps. Those were the same
@@ -3912,7 +3950,7 @@ async function _geoReconcileFromMileage(){
         job_id:null,arrived_at:new Date(w.t1).toISOString(),departed_at:new Date(w.t2).toISOString(),
         minutes:mins,dest_place:w.clientName,
         client_key:'rec-'+w.legKey,source:'place-reconciled'
-      });
+      },{overwrite:true});
       _geoParkNote('recon-win','wrote '+mins+'m @'+(w.jobId?'job '+w.jobId:'client '+w.clientId));
     }
   }catch(_e){_geoParkNote('recon-err',(_e&&_e.message)||String(_e));}
@@ -4861,18 +4899,26 @@ async function _geoVerifyReconciled(){
       const tape=await _geoReconPings(t1,t2);
       if(!tape)continue;                       // fetch failed: leave it alone
       const tr=_geoPingTrim(tape,t1,t2,coord,margin);
-      if(!tr.checked||!tr.left)continue;       // no fixes, or every fix on site
-      const kept=Math.max(0,Math.round((tr.t2-t1)/60000));
+      if(!tr.checked||!tr.left)continue;       // no mid-window fixes, or all on site
+      const kept=Math.max(0,Math.round((tr.t2-tr.t1)/60000));
       const was=Math.round((t2-t1)/60000);
       try{
-        if(tr.t2-t1<_GEO_RECON_MIN_GAP_MS){
+        // Deleting is reserved for `gone`: EVERY mid-window fix somewhere
+        // else, which is the flight case and nothing else. A merely short
+        // survivor is trimmed, never dropped, because a sparse tape plus a
+        // 5-minute floor is exactly how a real day got erased once already.
+        if(tr.gone){
           await _supa.from('job_time_entries').delete().eq('id',r.id);
-          _geoParkNote('recon-verify','dropped '+was+'m claim, '+tr.seen+' fixes say they were never there');
-        }else{
+          _geoParkNote('recon-verify','dropped '+was+'m claim, all '+tr.seen+' mid-window fixes are elsewhere');
+        }else if(tr.t2-tr.t1>=_GEO_RECON_MIN_GAP_MS){
           await _supa.from('job_time_entries').update({
+            arrived_at:new Date(tr.t1).toISOString(),
             departed_at:new Date(tr.t2).toISOString(),minutes:kept
           }).eq('id',r.id);
           _geoParkNote('recon-verify','trimmed '+was+'m to '+kept+'m, '+tr.seen+' fixes');
+        }else{
+          _geoParkNote('recon-verify','left '+was+'m alone: trim would leave under the floor');
+          continue;
         }
         fixed++;
       }catch(_e){}
