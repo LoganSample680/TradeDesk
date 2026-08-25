@@ -162,6 +162,23 @@ function _tlStopAnchored(arrMs,depMs,anchors){
 // (that is exactly how days grew past 24 hours). Anything bigger is left
 // visible. Display-only, nothing here writes.
 const _TL_GAP_ABSORB_MAX_MS=30*60000;
+// The motion history covering every shop session on screen, or null when
+// there is none to read. One query for the whole range rather than one per
+// session: the coprocessor keeps about a week and the answer is the same
+// tape either way.
+async function _tlShopTape(byUid){
+  try{
+    if(typeof _geoMotionTape!=='function')return null;
+    let lo=0,hi=0;
+    Object.keys(byUid||{}).forEach(uid=>(byUid[uid]||[]).forEach(e=>{
+      const a=Date.parse((e&&e.arrived_at)||'')||0,b=Date.parse((e&&e.departed_at)||'')||0;
+      if(a>0&&(!lo||a<lo))lo=a;
+      if(b>hi)hi=b;
+    }));
+    if(!(lo>0&&hi>lo))return null;
+    return await _geoMotionTape(lo,hi);
+  }catch(_e){return null;}
+}
 function _tlAbsorbGaps(rows){
   if(!Array.isArray(rows))return rows;
   const byDay={};
@@ -251,10 +268,16 @@ async function _timeLogRows(sinceISO){
     if(!e||!e.arrived_at||!e.departed_at)return;
     (_shopByUid[e.employee_user_id]=_shopByUid[e.employee_user_id]||[]).push(e);
   });
+  // The motion tape for the whole rendered range, fetched ONCE and handed
+  // down: at a shop that is also the house it trims each session to the part
+  // where somebody was actually walking (js/geo-track.js _geoActiveTrim).
+  // Null on every non-iPhone build and whenever the coprocessor has nothing,
+  // and then _geoShopPaidSpans bills the dwell exactly as it did before.
+  const _shopTape=await _tlShopTape(_shopByUid);
   Object.keys(_shopByUid).forEach(uid=>{
     const list=_shopByUid[uid];
     const mine=(crew.entries||[]).filter(x=>x&&String(x.employee_user_id)===String(uid));
-    const spans=(typeof _geoShopPaidSpans==='function')?_geoShopPaidSpans(list,_shopCut[uid]||{},mine):[];
+    const spans=(typeof _geoShopPaidSpans==='function')?_geoShopPaidSpans(list,_shopCut[uid]||{},mine,_shopTape):[];
     list.forEach((e,i)=>{
       const arr=Date.parse(e.arrived_at),dep=Date.parse(e.departed_at);
       if(!(arr>0&&dep>arr))return;

@@ -1728,6 +1728,93 @@ function _geoShopPaidMin(arrIso,depIso,win){
   const [s,e]=_geoShopPaidRange(arrIso,depIso,win);
   return Math.max(0,Math.round((e-s)/60000));
 }
+// ── The shop clock runs while you are WORKING, not while you are home ───────
+// Owner question 2026-08-25: "in shop how do we track time loading truck?"
+//
+// At a yard, dwell is the honest answer: sitting in the shop office writing
+// quotes is work. At a shop that IS the house, dwell cannot tell loading the
+// truck from eating breakfast, which is the whole reason the home_office kind
+// bills active app time instead. But that rule counts phone-in-hand minutes
+// (_geoAppActive), so a man loading a truck for forty minutes with the phone
+// in his pocket earns nothing. Neither rule describes the work.
+//
+// The motion coprocessor does. It has been classifying onFoot/still/driving
+// around the clock at no battery cost and keeps about a week of history
+// (TdGeoPlugin.motionSince, already read by _mileTapeHadPause for errands).
+// Loading a truck is walking: house to truck, truck to shelf, back again.
+// Sitting at the kitchen table is still. The chip already separated them.
+//
+// TWO RULES, and they do all of it:
+//   1. Still time BETWEEN two walks is paid, up to _GEO_SHOP_IDLE_CAP_MS.
+//      That is a bench cut between two trips to the shelf.
+//   2. Still time before the first walk and after the last walk is NEVER
+//      paid. That is the couch, and it is also the geofence firing late.
+//
+// Rule 2 is why this matters beyond the loading question: the session now
+// ends at the last movement rather than at the fence, so the departure lag
+// this app has been chasing stops moving the shop number at all.
+//
+// Sensor limit, stated plainly: the chip needs a gait to say onFoot, so
+// standing at a bench reads as still. Bracketed by walks the cap covers it;
+// a long motionless bench session with no walking either side is not seen.
+const _GEO_SHOP_IDLE_CAP_MS=20*60000;
+// Normalized motion transitions covering a window, or null when there is no
+// tape to read (browser build, permission refused, no coprocessor). Null is
+// "no signal" and every caller must fall back, never "nothing happened".
+async function _geoMotionTape(sinceMs,untilMs){
+  try{
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    if(!Td||typeof Td.motionSince!=='function')return null;
+    const s=Number(sinceMs)||0;
+    if(!(s>0))return null;
+    const r=await Td.motionSince({sinceMs:s-120000});
+    if(!r||!r.available||!Array.isArray(r.transitions))return null;
+    const lim=Number(untilMs)||0;
+    return r.transitions
+      .filter(t=>t&&typeof t.ts==='number'&&t.kind&&(!lim||t.ts<=lim+120000))
+      .slice().sort((a,b)=>a.ts-b.ts);
+  }catch(_e){return null;}
+}
+// True when the shop and the house are the same place, which is the only case
+// this trim applies to. Deliberately generous: the owner's own two pins sit
+// about twenty feet apart, and anything inside a fence radius is one property.
+function _geoShopIsHome(){
+  try{
+    if(typeof S==='undefined'||!S||S.officeLat==null||S.officeLon==null)return false;
+    const pl=(typeof getPlaces==='function')?(getPlaces()||[]):[];
+    return pl.some(p=>p&&p.kind==='home_office'&&p.lat!=null&&p.lon!=null&&
+      _geoDistFt({lat:S.officeLat,lng:S.officeLon},{lat:p.lat,lng:p.lon})<=_geoFenceFt());
+  }catch(_e){return false;}
+}
+// Trim [s,e] to the walking part of it, per the two rules above.
+// Returns {startMs,endMs,idleMs}; idleMs is interior still time OVER the cap,
+// reported rather than hidden so a caller can explain the number it shows.
+// Falls through unchanged (idleMs 0) whenever the tape proves nothing: no
+// transitions, no walking on record, or no tape at all.
+function _geoActiveTrim(tape,s,e,capMs){
+  const out={startMs:s,endMs:e,idleMs:0};
+  if(!Array.isArray(tape)||!tape.length||!(e>s))return out;
+  const cap=(capMs==null)?_GEO_SHOP_IDLE_CAP_MS:capMs;
+  // Every transition as a span running to the next one, clipped to the window.
+  const spans=[];
+  for(let i=0;i<tape.length;i++){
+    const a=tape[i].ts,b=(i+1<tape.length)?tape[i+1].ts:e;
+    const lo=Math.max(a,s),hi=Math.min(b,e);
+    if(hi>lo)spans.push({kind:tape[i].kind,a:lo,b:hi});
+  }
+  const walks=spans.filter(x=>x.kind==='onFoot');
+  // No walking on the tape is not evidence of idleness: the phone may have
+  // been left inside while the work happened. Nothing is trimmed.
+  if(!walks.length)return out;
+  out.startMs=walks[0].a;
+  out.endMs=walks[walks.length-1].b;
+  // Interior stretches with no walking in them, charged only up to the cap.
+  for(let i=0;i+1<walks.length;i++){
+    const gap=walks[i+1].a-walks[i].b;
+    if(gap>cap)out.idleMs+=gap-cap;
+  }
+  return out;
+}
 // Every shop session for one person as paid spans, in input order.
 //
 // Three things happen here, in this order, and all three are payroll rules
@@ -1747,17 +1834,23 @@ function _geoShopPaidMin(arrIso,depIso,win){
 //    minutes of drift before two rows count as duplicates, so a surviving
 //    overlap would otherwise pay the same minute twice.
 //
+// 4. AT A HOME SHOP, THE WALKING PART IS TRIMMED OUT of what is left (see
+//    _geoActiveTrim). Optional and last: it only ever narrows a span that the
+//    three rules above already agreed to pay, and it is skipped entirely
+//    without a motion tape, so every other build keeps today's behavior.
+//
 // `entries` are shop_time_entries-shaped rows for ONE person; `win` is that
 // person's day map from _geoShopCutoffs; `others` are their job_time_entries
-// rows, used only to veto a merge that would swallow one.
-function _geoShopPaidSpans(entries,win,others){
+// rows, used only to veto a merge that would swallow one; `tape` is the
+// motion history from _geoMotionTape, or null/absent for dwell as before.
+function _geoShopPaidSpans(entries,win,others,tape){
   const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
   const rows=(Array.isArray(entries)?entries:[]).map((e,i)=>{
     const arr=Date.parse((e&&e.arrived_at)||'')||0;
     const dep=Date.parse((e&&e.departed_at)||'')||0;
     return {i,arr,dep,ok:arr>0&&dep>arr};
   });
-  const out=rows.map(r=>({startMs:r.arr,endMs:r.arr,minutes:0,clipped:false,mergedInto:null}));
+  const out=rows.map(r=>({startMs:r.arr,endMs:r.arr,minutes:0,idleMs:0,clipped:false,mergedInto:null}));
   const order=rows.filter(r=>r.ok).sort((a,b)=>a.arr-b.arr||a.dep-b.dep);
   const otherRows=(Array.isArray(others)?others:[])
     .map(e=>[Date.parse((e&&e.arrived_at)||'')||0,Date.parse((e&&e.departed_at)||'')||0])
@@ -1836,12 +1929,18 @@ function _geoShopPaidSpans(entries,win,others){
     const pr1=(pr0[1]>pr0[0]&&!leftAfter(c.dep))
       ? [pr0[0],Math.min(pr0[1],pr0[0]+_geoShopWrapMs())]
       : pr0;
-    const pr=pr1[1]>pr1[0]?clipToDrives(pr1[0],pr1[1]):pr1;
+    const pr2=pr1[1]>pr1[0]?clipToDrives(pr1[0],pr1[1]):pr1;
+    // Last, and only where the shop is the house: keep the walking part.
+    const trim=(tape&&pr2[1]>pr2[0]&&_geoShopIsHome())
+      ? _geoActiveTrim(tape,pr2[0],pr2[1])
+      : {startMs:pr2[0],endMs:pr2[1],idleMs:0};
+    const pr=[trim.startMs,trim.endMs];
     const start=Math.max(pr[0],runningEnd);
     const keep=out[c.members[0]];
     keep.startMs=start;
     keep.endMs=Math.max(start,pr[1]);
-    keep.minutes=Math.max(0,Math.round((keep.endMs-start)/60000));
+    keep.idleMs=trim.idleMs||0;
+    keep.minutes=Math.max(0,Math.round((keep.endMs-start-keep.idleMs)/60000));
     keep.clipped=start>c.arr;
     keep.mergedCount=c.members.length;
     keep.rawEndMs=c.dep;

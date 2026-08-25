@@ -3128,6 +3128,23 @@ async function _openCrewCost(){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   _crewCostRender('week');
 }
+// The motion history covering every shop session in the range, or null when
+// there is none. Mirrors _tlShopTape (js/timelog.js) deliberately: Crew Cost
+// and the Time Log must never disagree about a paid minute, so both read the
+// same tape and both hand it to the one function that owns the rule.
+async function _ccShopTape(byUid){
+  try{
+    if(typeof _geoMotionTape!=='function')return null;
+    let lo=0,hi=0;
+    Object.keys(byUid||{}).forEach(uid=>(byUid[uid]||[]).forEach(e=>{
+      const a=Date.parse((e&&e.arrived_at)||'')||0,b=Date.parse((e&&e.departed_at)||'')||0;
+      if(a>0&&(!lo||a<lo))lo=a;
+      if(b>hi)hi=b;
+    }));
+    if(!(lo>0&&hi>lo))return null;
+    return await _geoMotionTape(lo,hi);
+  }catch(_e){return null;}
+}
 async function _crewCostRender(range){
   const body=document.getElementById('_crew-cost-body');if(!body)return;
   ['today','week','month','quarter','ytd'].forEach(r=>{const b=document.getElementById('_cc-'+r);if(b){const on=r===range;b.style.background=on?'var(--blue)':'var(--bg2)';b.style.color=on?'#fff':'var(--text)';b.style.borderColor=on?'var(--blue)':'var(--border2)';}});
@@ -3238,9 +3255,14 @@ async function _crewCostRender(range){
     (shopByUid[en.employee_user_id]=shopByUid[en.employee_user_id]||[])
       .push({arrived_at:en.arrived_at,departed_at:new Date(b).toISOString()});
   });
-  Object.keys(shopByUid).forEach(uid=>{
+  // Same tape the Time Log reads, for the same reason: at a home shop the
+  // paid span is the walking part (js/geo-track.js _geoActiveTrim). Crew Cost
+  // and the Time Log must never disagree about a number, so both fetch it and
+  // both hand it to the one function that owns the rule.
+  const shopTape=await _ccShopTape(shopByUid);
+  for(const uid of Object.keys(shopByUid)){
     const mine=ents.filter(x=>x&&String(x.employee_user_id)===String(uid));
-    const spans=(typeof _geoShopPaidSpans==='function')?_geoShopPaidSpans(shopByUid[uid],shopCut[uid]||{},mine):[];
+    const spans=(typeof _geoShopPaidSpans==='function')?_geoShopPaidSpans(shopByUid[uid],shopCut[uid]||{},mine,shopTape):[];
     shopByUid[uid].forEach((en,i)=>{
       const sp=spans[i];if(!sp)return;
       const bounded=sp.minutes||0;
@@ -3257,7 +3279,7 @@ async function _crewCostRender(range){
       e.min+=m;e.shopMin+=m;
       e.dayMins[day]=(e.dayMins[day]||0)+m;
     });
-  });
+  }
   // Revenue attribution + overtime per employee
   Object.keys(byEmp).forEach(uid=>{
     const bidsSeen=new Set(Object.keys(byEmp[uid].jobs).filter(k=>k!=='unknown'));

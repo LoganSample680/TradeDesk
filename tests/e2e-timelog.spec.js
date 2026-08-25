@@ -759,6 +759,130 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r).toEqual([0, 0, 120]);
     });
 
+    // Owner question 2026-08-25: "in shop how do we track time loading truck?"
+    // At a yard, dwell is right: sitting in the office writing quotes is work.
+    // At a shop that IS the house, dwell cannot tell loading the truck from
+    // eating breakfast, and the home_office rule counts phone-in-hand minutes,
+    // which pays a man with his phone in his pocket nothing. The motion
+    // coprocessor already separated walking from sitting, all day, for free.
+    test.describe('the walking part of a home-shop session', () => {
+      const T = (hhmm) => Date.parse('2026-08-20T' + hhmm + ':00Z');
+      const tape = (...pairs) => pairs.map(([kind, hhmm]) => ({ kind, ts: T(hhmm) }));
+
+      // The trim is a pure function of the tape: exercised directly here, then
+      // through the real span builder below.
+      const trim = (tp, from, to, cap) => page.evaluate(([tp, a, b, c]) =>
+        _geoActiveTrim(tp, a, b, c), [tp, T(from), T(to), cap === undefined ? null : cap]);
+
+      test('the morning in the house before the first walk is never paid', async () => {
+        const r = await trim(tape(['still', '11:00'], ['onFoot', '11:34'], ['driving', '11:52']), '11:00', '11:52');
+        expect(r.startMs, 'the clock starts when he walks out to the truck').toBe(T('11:34'));
+        expect(r.endMs).toBe(T('11:52'));
+        expect(r.idleMs).toBe(0);
+      });
+
+      // The exact shape the owner described: loading, then sitting down, then
+      // the fence eventually noticing. Both tails go.
+      test('sitting down after the last walk is never paid, and neither is the fence lag', async () => {
+        const r = await trim(tape(['onFoot', '12:10'], ['still', '12:25'], ['driving', '12:58']), '12:10', '13:03');
+        expect(r.endMs, 'the session ends at the last movement, not at the fence').toBe(T('12:25'));
+        expect(Math.round((r.endMs - r.startMs) / 60000)).toBe(15);
+      });
+
+      test('a sit BETWEEN two walks is paid: that is bench work', async () => {
+        const r = await trim(tape(['onFoot', '11:34'], ['still', '11:41'], ['onFoot', '11:44'], ['driving', '11:52']), '11:34', '11:52');
+        expect(r.startMs).toBe(T('11:34'));
+        expect(r.endMs).toBe(T('11:52'));
+        expect(r.idleMs, 'three minutes is well under the cap').toBe(0);
+      });
+
+      test('a long sit between two walks is paid only up to the cap', async () => {
+        // 45 minutes of nothing between two loading trips: 20 paid, 25 not.
+        const r = await trim(tape(['onFoot', '11:00'], ['still', '11:10'], ['onFoot', '11:55'], ['driving', '12:00']), '11:00', '12:00');
+        expect(r.startMs).toBe(T('11:00'));
+        expect(r.endMs).toBe(T('12:00'));
+        expect(Math.round(r.idleMs / 60000), 'the lunch over the cap comes off').toBe(25);
+      });
+
+      test('the cap is a parameter, so the rule can be tuned without a rewrite', async () => {
+        const tp = tape(['onFoot', '11:00'], ['still', '11:10'], ['onFoot', '11:55'], ['driving', '12:00']);
+        expect(Math.round((await trim(tp, '11:00', '12:00', 0)).idleMs / 60000), 'no bridge at all').toBe(45);
+        expect((await trim(tp, '11:00', '12:00', 60 * 60000)).idleMs, 'a generous bridge pays it whole').toBe(0);
+      });
+
+      test('no walking on the tape trims nothing: a quiet phone is not evidence', async () => {
+        const r = await trim(tape(['still', '11:00'], ['driving', '12:00']), '11:00', '12:00');
+        expect(r.startMs, 'the phone may have been left inside while the work happened').toBe(T('11:00'));
+        expect(r.endMs).toBe(T('12:00'));
+        expect(r.idleMs).toBe(0);
+      });
+
+      test('an absent, empty or junk tape trims nothing', async () => {
+        for (const tp of [null, undefined, [], 'nope', 42, {}]) {
+          const r = await page.evaluate(([tp, a, b]) => _geoActiveTrim(tp, a, b), [tp, T('11:00'), T('12:00')]);
+          expect(r.startMs, String(tp)).toBe(T('11:00'));
+          expect(r.endMs).toBe(T('12:00'));
+          expect(r.idleMs).toBe(0);
+        }
+      });
+
+      test('a zero-length or inverted window is returned untouched', async () => {
+        const tp = tape(['onFoot', '11:34']);
+        const same = await page.evaluate(([tp, a]) => _geoActiveTrim(tp, a, a), [tp, T('11:00')]);
+        expect(same.startMs).toBe(same.endMs);
+        const back = await page.evaluate(([tp, a, b]) => _geoActiveTrim(tp, a, b), [tp, T('12:00'), T('11:00')]);
+        expect(back.startMs).toBe(T('12:00'));
+        expect(back.endMs).toBe(T('11:00'));
+      });
+
+      // Now through the real span builder, which is what actually pays people.
+      const paid = (tp, homeShop) => page.evaluate(([tp, homeShop]) => {
+        const prevLat = S.officeLat, prevLon = S.officeLon, prevPlaces = places.slice();
+        S.officeLat = 39.0; S.officeLon = -95.7;
+        places.length = 0;
+        if (homeShop) places.push({ id: 'p-home', kind: 'home_office', lat: 39.0, lon: -95.7 });
+        else places.push({ id: 'p-far', kind: 'home_office', lat: 40.5, lon: -97.9 });
+        const out = _geoShopPaidSpans(
+          [{ employee_user_id: 'me', arrived_at: '2026-08-20T11:00:00Z', departed_at: '2026-08-20T13:03:00Z' }],
+          { '2026-08-20': { inMs: Date.parse('2026-08-20T10:00:00Z'), outMs: Date.parse('2026-08-20T22:00:00Z') } },
+          [{ arrived_at: '2026-08-20T13:30:00Z', departed_at: '2026-08-20T14:00:00Z', source: 'geofence' }],
+          tp);
+        S.officeLat = prevLat; S.officeLon = prevLon;
+        places.length = 0; prevPlaces.forEach(p => places.push(p));
+        return out[0];
+      }, [tp, homeShop]);
+
+      const MORNING = () => tape(['still', '11:00'], ['onFoot', '11:34'], ['still', '12:25'], ['driving', '12:58']);
+
+      test('at a home shop the session is the walking part', async () => {
+        const r = await paid(MORNING(), true);
+        expect(new Date(r.startMs).toISOString()).toBe('2026-08-20T11:34:00.000Z');
+        expect(new Date(r.endMs).toISOString()).toBe('2026-08-20T12:25:00.000Z');
+        expect(r.minutes, '34 minutes of house and 38 of couch both drop').toBe(51);
+      });
+
+      test('at a shop that is NOT the house, dwell still rules', async () => {
+        const r = await paid(MORNING(), false);
+        expect(r.minutes, 'sitting in the shop office is work').toBe(123);
+      });
+
+      test('with no tape at all, a home shop bills the dwell exactly as before', async () => {
+        const r = await paid(null, true);
+        expect(r.minutes).toBe(123);
+      });
+
+      test('the idle over the cap is reported, not hidden inside the number', async () => {
+        const r = await paid(tape(['onFoot', '11:00'], ['still', '11:10'], ['onFoot', '12:55'], ['driving', '13:00']), true);
+        expect(Math.round(r.idleMs / 60000), 'a caller can explain the number it shows').toBe(85);
+        expect(r.minutes, '120 minutes of span less 85 idle').toBe(35);
+      });
+
+      test('minutes can never go negative however the tape reads', async () => {
+        const r = await paid(tape(['onFoot', '11:00'], ['still', '11:01'], ['onFoot', '13:02'], ['driving', '13:03']), true);
+        expect(r.minutes).toBeGreaterThanOrEqual(0);
+      });
+    });
+
     test('the allowances are clamped, never negative or unbounded', async () => {
       const r = await page.evaluate(() => {
         const pw = S.shopWrapMin, pp = S.shopPrepMin, out = {};
