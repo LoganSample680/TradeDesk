@@ -163,6 +163,11 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // file would silently no-op on a chain the first one just ran.
     if (typeof _geoCleanupBusy !== 'undefined') _geoCleanupBusy = false;
     if (typeof _geoCleanupAt !== 'undefined') _geoCleanupAt = 0;
+    // The retroactive verifier skips a row it already judged TODAY, kept in
+    // localStorage. Without clearing it, the second test that seeds a row
+    // would silently verify nothing and read as a passing no-op.
+    if (typeof _geoVerifyBusy !== 'undefined') _geoVerifyBusy = false;
+    localStorage.removeItem('zp3_geo_recon_seen');
     window._isEmployee = false;
     window._supaUser = { id: 'geo-park-user-1', email: 'p@t.com' };
     window.__rec = { upserts: [], inserts: [], deletes: [], updates: [] };
@@ -3644,6 +3649,202 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       expect(r.n).toBe(2);
       expect(r.deletes.sort(), 'drive rows only, never an on-site row').toEqual(['d1', 'd2']);
       await restoreReconSeed();
+      await geoRestore();
+    });
+  });
+
+  // ── Rows already on the books get re-tested, not just new ones ────────────
+  //
+  // Owner, 2026-08-25: "It should fix all time logs, why doesn't it?" The
+  // write-time ping check is a gate: it decides what gets created and never
+  // looks again, so every bad row that predates it stays exactly as wrong.
+  // _geoVerifyReconciled is that same check as a sweep.
+  test.describe('reconciled rows are re-tested against the breadcrumbs', () => {
+    const JOB2 = { lat: 37.6872, lng: -97.3301 };
+    // A reconciled row already sitting on the server, plus the job it claims.
+    const seedRow = (opts) => page.evaluate((o) => {
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      _geoJobCoords = {};
+      jobs.push({ id: 990001, name: 'Verify Job', lat: 37.6872, lon: -97.3301,
+                  start: _ctDateStr(new Date()), days: 1, status: 'upcoming', eventType: 'job' });
+      const t1 = Date.now() - 5 * 3600000, t2 = t1 + 4 * 3600000;   // a 4h claim
+      window.__selRows = [{
+        id: o.id, employee_user_id: _supaUser.id,
+        job_id: o.jobless ? null : '990001', dest_place: o.jobless ? (o.place || null) : null,
+        source: o.source || 'geofence-reconciled', client_key: o.key || (o.id + '-frag0'),
+        arrived_at: new Date(t1).toISOString(), departed_at: new Date(t2).toISOString(),
+      }];
+      window.__selPings = (o.specs || []).map((sp, i) => ({
+        ts: new Date(t1 + Math.round((t2 - t1) * ((i + 1) / ((o.specs || []).length + 1)))).toISOString(),
+        lat: 37.6872 + (sp.dLat || 0), lon: -97.3301, accuracy: sp.acc == null ? 8 : sp.acc,
+      }));
+      return { t1, t2 };
+    }, opts);
+
+    const runVerify = () => page.evaluate(async () => {
+      const n = await _geoVerifyReconciled();
+      return { n, updates: window.__rec.updates.slice(), deletes: window.__rec.deletes.slice() };
+    });
+
+    const restoreRow = () => page.evaluate(() => {
+      if (window.__origJobs) { jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null; }
+      window.__selRows = []; window.__selPings = []; _geoJobCoords = {};
+      localStorage.removeItem('zp3_geo_recon_seen');
+    });
+
+    // THE 08-24 rows, in miniature: a fragment with no legKey left, claiming
+    // hours at a job while the fixes walk out of state.
+    test('a fragment with no legKey at all is still judged, and trimmed', async () => {
+      await geoReset();
+      await seedRow({ id: 'v-frag', specs: [{}, { dLat: 1.2 }, { dLat: 2.4 }] });
+      const r = await runVerify();
+      expect(r.n, 'one row corrected').toBe(1);
+      expect(r.updates.length).toBe(1);
+      // Fixes at 1/4, 2/4, 3/4 of a 240-minute claim, so the last on-site one
+      // is at 60 minutes.
+      expect(r.updates[0].patch.minutes, 'trimmed to what the fixes support').toBe(60);
+      expect(r.updates[0].filters.id).toBe('v-frag');
+      expect(r.deletes.length, 'a real partial visit is trimmed, never dropped').toBe(0);
+      await restoreRow();
+      await geoRestore();
+    });
+
+    test('a claim no fix ever supports is deleted outright', async () => {
+      await geoReset();
+      await seedRow({ id: 'v-never', specs: [{ dLat: 1.2 }, { dLat: 2.4 }] });
+      const r = await runVerify();
+      expect(r.n).toBe(1);
+      expect(r.deletes.map(d => d.val), 'nothing survives, so nothing stays').toEqual(['v-never']);
+      expect(r.updates.length).toBe(0);
+      await restoreRow();
+      await geoRestore();
+    });
+
+    test('a row whose fixes all agree is left completely alone', async () => {
+      await geoReset();
+      await seedRow({ id: 'v-good', specs: [{}, {}, {}, {}] });
+      const r = await runVerify();
+      expect(r.n).toBe(0);
+      expect(r.updates.length + r.deletes.length, 'no write at all when nothing is wrong').toBe(0);
+      await restoreRow();
+      await geoRestore();
+    });
+
+    test('a row with no fixes recorded in its window is left alone: fails open', async () => {
+      await geoReset();
+      await seedRow({ id: 'v-blind', specs: [] });
+      const r = await runVerify();
+      expect(r.n, 'a phone that was not reporting is the case this feature exists for').toBe(0);
+      expect(r.updates.length + r.deletes.length).toBe(0);
+      await restoreRow();
+      await geoRestore();
+    });
+
+    // The rule this file already holds: nothing inferred may erase, or be
+    // trusted over, something the fence machine actually observed.
+    test('live observed rows are never re-judged, only guesses are', async () => {
+      await geoReset();
+      for (const src of ['geofence', 'place', 'stop', 'manual', 'drive-unassigned']) {
+        await seedRow({ id: 'v-live-' + src, source: src, specs: [{ dLat: 2.4 }, { dLat: 3.1 }] });
+        const r = await runVerify();
+        expect(r.n, src + ' was observed, not guessed').toBe(0);
+        expect(r.updates.length + r.deletes.length, 'no write against ' + src).toBe(0);
+        await restoreRow();
+      }
+      await geoRestore();
+    });
+
+    test('place-reconciled rows are judged too, resolved by name through the geocode cache', async () => {
+      await geoReset();
+      await page.evaluate(() => {
+        window.__origClients = clients.slice();
+        clients.push({ id: 'vc-1', name: 'Verify Client', addr: '1 Test St' });
+        localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 'vc-1': { addr: '1 Test St', lat: 37.6872, lon: -97.3301 } }));
+      });
+      await seedRow({ id: 'v-place', jobless: true, place: 'Verify Client',
+                      source: 'place-reconciled', specs: [{}, { dLat: 1.2 }, { dLat: 2.4 }] });
+      const r = await runVerify();
+      expect(r.n).toBe(1);
+      expect(r.updates[0].patch.minutes).toBe(60);
+      await page.evaluate(() => {
+        if (window.__origClients) { clients.length = 0; window.__origClients.forEach(c => clients.push(c)); window.__origClients = null; }
+        localStorage.removeItem('zp3_nearby_geo');
+      });
+      await restoreRow();
+      await geoRestore();
+    });
+
+    test('a claim whose target cannot be resolved is left alone, never guessed at', async () => {
+      await geoReset();
+      // job_id points at a job this device does not have.
+      await page.evaluate(() => { window.__selRows = []; });
+      await seedRow({ id: 'v-nojob', specs: [{ dLat: 2.4 }] });
+      await page.evaluate(() => { window.__selRows[0].job_id = '999999'; });
+      const r = await runVerify();
+      expect(r.n, 'no coordinates means no verdict').toBe(0);
+      expect(r.updates.length + r.deletes.length).toBe(0);
+      await restoreRow();
+      await geoRestore();
+    });
+
+    test('another person\'s rows are never touched by this device', async () => {
+      await geoReset();
+      await seedRow({ id: 'v-other', specs: [{ dLat: 2.4 }, { dLat: 3.1 }] });
+      await page.evaluate(() => { window.__selRows[0].employee_user_id = 'somebody-else'; });
+      const r = await runVerify();
+      expect(r.n).toBe(0);
+      expect(r.deletes.length, 'a crew member cannot rewrite a peer\'s hours').toBe(0);
+      await restoreRow();
+      await geoRestore();
+    });
+
+    test('a row judged today is not re-queried on the next pass', async () => {
+      await geoReset();
+      await seedRow({ id: 'v-once', specs: [{}, {}, {}] });
+      const first = await runVerify();
+      const second = await runVerify();
+      expect(first.n + second.n).toBe(0);          // nothing was wrong either way
+      const marked = await page.evaluate(() => {
+        try { return JSON.parse(localStorage.getItem('zp3_geo_recon_seen') || '{}'); } catch (e) { return null; }
+      });
+      expect(marked && marked.ids, 'the row is marked so Time Log opens stop re-querying it').toContain('v-once');
+      await restoreRow();
+      await geoRestore();
+    });
+
+    test('the sweep is bounded and re-entrant-safe', async () => {
+      await geoReset();
+      const r = await page.evaluate(async () => {
+        window.__origJobs = jobs.slice();
+        window.__selRows = Array.from({ length: 120 }, (_, i) => ({
+          id: 'bulk-' + i, employee_user_id: _supaUser.id, job_id: '990001', dest_place: null,
+          source: 'geofence-reconciled', client_key: 'bulk-' + i + '-frag0',
+          arrived_at: new Date(Date.now() - 3600000).toISOString(),
+          departed_at: new Date().toISOString(),
+        }));
+        window.__selPings = [];
+        const both = await Promise.all([_geoVerifyReconciled(), _geoVerifyReconciled()]);
+        const seen = JSON.parse(localStorage.getItem('zp3_geo_recon_seen') || '{}');
+        return { both, marked: (seen.ids || []).length };
+      });
+      expect(r.marked, 'at most one pass worth of rows, never all 120').toBeLessThanOrEqual(40);
+      expect(r.both[1], 'the second concurrent call bails instead of doubling up').toBe(0);
+      await restoreRow();
+      await geoRestore();
+    });
+
+    test('an offline device corrects nothing at all', async () => {
+      await geoReset();
+      await seedRow({ id: 'v-offline', specs: [{ dLat: 2.4 }] });
+      const r = await page.evaluate(async () => {
+        window.__selErr = { message: 'offline' };
+        const n = await _geoVerifyReconciled();
+        window.__selErr = null;
+        return { n, writes: window.__rec.updates.length + window.__rec.deletes.length };
+      });
+      expect(r.n).toBe(0);
+      expect(r.writes).toBe(0);
+      await restoreRow();
       await geoRestore();
     });
   });

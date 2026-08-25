@@ -3986,6 +3986,9 @@ async function _geoCleanupSweeps(force){
     // _geoDedupTimeEntries and _geoSyncDriveTimeEntries never touch at all
     // (see _geoDedupShopTimeEntries above).
     if(typeof _geoDedupShopTimeEntries==='function'){try{await _geoDedupShopTimeEntries();}catch(_e){}}
+    // And the same breadcrumb test the reconciler now applies at write time,
+    // applied to rows already on the books (see _geoVerifyReconciled).
+    if(typeof _geoVerifyReconciled==='function'){try{await _geoVerifyReconciled();}catch(_e){}}
     return true;
   }finally{_geoCleanupBusy=false;_geoCleanupAt=Date.now();}
 }
@@ -4753,6 +4756,131 @@ async function _geoSyncDriveTimeEntries(){
     return drop.length;
   }catch(_e){return 0;}
   finally{_geoDriveSyncBusy=false;}
+}
+
+// ── Reconciled rows are re-tested against the breadcrumbs, forever ──────────
+//
+// Owner, 2026-08-25: "It should fix all time logs, why doesn't it?"
+//
+// It didn't, because the ping check added to _geoReconcileFromMileage is a
+// GATE, not a sweep: it decides what gets written and never looks again. Every
+// bad row already on the books predates it and stays exactly as wrong as it
+// was. On the owner's account that is 541 minutes billed to one job on
+// 2026-08-24 while the recorded fixes walk Topeka, Kansas City, Colorado, Salt
+// Lake City.
+//
+// This is that same check as a sweep. Same helper (_geoPingTrim), same fence
+// figure the live machine uses, run over every reconciled row in the window on
+// every cleanup pass. A row whose own breadcrumbs contradict it is trimmed to
+// what they support, or deleted when nothing is left.
+//
+// It also replaces the three-part scaffold that looked necessary an hour ago:
+// re-key the trim's fragments to preserve legKey provenance, extend the drive
+// sweep to on-site rows, then a one-time pass to clear the backlog. None of
+// that is needed. Provenance only mattered for tracing a row back to a mileage
+// leg that might have been swept; the pings are ground truth directly, so the
+// legKey is irrelevant and a fragment with no legKey at all (which is exactly
+// what the 08-24 rows are) is checked the same as any other row. No one-time
+// script, no hardcoded dates, and it keeps working on days nobody has seen yet.
+//
+// SCOPE: '-reconciled' sources only. A live 'geofence'/'place'/'stop' row is
+// something the fence machine OBSERVED, and the rule this file already holds
+// stands: nothing inferred may ever erase, or be trusted over, something that
+// was actually observed. Only a guess is re-judged.
+//
+// FAILS OPEN, same as the write-time gate: no pings in a row's window leaves it
+// untouched. A phone that was not reporting is the case this whole feature
+// exists for, so silence must never delete a real visit.
+//
+// RLS note, same shape as the sweeps above: an employee's device can read its
+// own rows but holds no delete/update grant, so a correction found there fails
+// silently and waits for the contractor's own device to run this.
+let _geoVerifyBusy=false;
+const _GEO_VERIFY_DAYS=30;        // far enough back to clear a real backlog
+const _GEO_VERIFY_MAX_ROWS=40;    // bounded work per pass, one small query each
+// Re-checked once per Central day per row, not once per Time Log open: pings
+// arrive late from a phone that was offline, so the answer can genuinely change
+// tomorrow, but it cannot change three times while somebody scrolls.
+function _geoVerifySeen(){
+  try{
+    const raw=JSON.parse(localStorage.getItem('zp3_geo_recon_seen')||'{}');
+    const day=(typeof _ctDateStr==='function')?_ctDateStr(new Date()):todayKey();
+    if(raw&&raw.day===day&&Array.isArray(raw.ids))return{day,ids:new Set(raw.ids)};
+    return{day,ids:new Set()};
+  }catch(_e){return{day:'',ids:new Set()};}
+}
+function _geoVerifyMark(state){
+  try{localStorage.setItem('zp3_geo_recon_seen',JSON.stringify({day:state.day,ids:Array.from(state.ids).slice(-500)}));}catch(_e){}
+}
+// Where a reconciled row CLAIMS the person was. A job row carries job_id; a
+// client/place row carries only the name it was written with, resolved the same
+// cache-only way the reconciler itself resolves one, so this never burns a live
+// geocode. Null means we cannot tell, and an unresolvable claim is left alone.
+async function _geoVerifyTarget(row){
+  try{
+    if(row.job_id!=null&&typeof jobs!=='undefined'&&Array.isArray(jobs)){
+      const j=jobs.find(x=>x&&String(x.id)===String(row.job_id));
+      if(j)return await _geoJobLatLng(j);
+      return null;
+    }
+    const nm=String(row.dest_place||'').trim();
+    if(!nm||typeof clients==='undefined'||!Array.isArray(clients))return null;
+    const cl=clients.find(c=>c&&String(c.name||'').trim()===nm);
+    if(!cl)return null;
+    const hit=((typeof _nearbyGeoCache==='function')?_nearbyGeoCache():{})[cl.id];
+    if(!hit||hit.lat==null)return null;
+    return{lat:hit.lat,lng:hit.lon};
+  }catch(_e){return null;}
+}
+async function _geoVerifyReconciled(){
+  if(_geoVerifyBusy||!_supa||!_supaUser)return 0;
+  _geoVerifyBusy=true;
+  try{
+    const cutoff=new Date(Date.now()-_GEO_VERIFY_DAYS*86400000).toISOString();
+    const{data,error}=await _supa.from('job_time_entries')
+      .select('id,employee_user_id,job_id,dest_place,source,client_key,arrived_at,departed_at')
+      .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
+    if(error||!Array.isArray(data)||!data.length)return 0;
+    const seen=_geoVerifySeen();
+    const rows=data.filter(r=>r&&r.id!=null&&r.arrived_at&&r.departed_at&&
+      /-reconciled$/.test(String(r.source||''))&&
+      // Only rows this device is entitled to correct. An employee sees only
+      // its own; the owner's rows carry the owner's id.
+      String(r.employee_user_id||'')===String(_supaUser.id)&&
+      !seen.ids.has(String(r.id)))
+      .slice(0,_GEO_VERIFY_MAX_ROWS);
+    if(!rows.length)return 0;
+    const margin=_geoFenceFt()+_GEO_PARK_JOB_EXTRA_FT;
+    let fixed=0;
+    for(const r of rows){
+      seen.ids.add(String(r.id));
+      const t1=Date.parse(r.arrived_at)||0,t2=Date.parse(r.departed_at)||0;
+      if(!(t1>0&&t2>t1))continue;
+      const coord=await _geoVerifyTarget(r);
+      if(!coord){_geoParkNote('recon-verify','no coords for '+(r.job_id||r.dest_place||r.id));continue;}
+      const tape=await _geoReconPings(t1,t2);
+      if(!tape)continue;                       // fetch failed: leave it alone
+      const tr=_geoPingTrim(tape,t1,t2,coord,margin);
+      if(!tr.checked||!tr.left)continue;       // no fixes, or every fix on site
+      const kept=Math.max(0,Math.round((tr.t2-t1)/60000));
+      const was=Math.round((t2-t1)/60000);
+      try{
+        if(tr.t2-t1<_GEO_RECON_MIN_GAP_MS){
+          await _supa.from('job_time_entries').delete().eq('id',r.id);
+          _geoParkNote('recon-verify','dropped '+was+'m claim, '+tr.seen+' fixes say they were never there');
+        }else{
+          await _supa.from('job_time_entries').update({
+            departed_at:new Date(tr.t2).toISOString(),minutes:kept
+          }).eq('id',r.id);
+          _geoParkNote('recon-verify','trimmed '+was+'m to '+kept+'m, '+tr.seen+' fixes');
+        }
+        fixed++;
+      }catch(_e){}
+    }
+    _geoVerifyMark(seen);
+    return fixed;
+  }catch(_e){return 0;}
+  finally{_geoVerifyBusy=false;}
 }
 
 // ── shop_time_entries dedup (owner audit, 2026-08-23) ────────────────────
