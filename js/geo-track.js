@@ -2839,16 +2839,33 @@ function _geoLocateHistory(){
 }
 // On-device diagnostics: state + the park journal, in a standard zmodal.
 // Reachable from Settings (the button unhides only inside the shell).
-function _geoDiagCopy(){
-  const txt=window.__geoDiagText||'';
+// ONE clipboard path for every on-device diagnostic (the location panel here,
+// the engine comparison in js/geo-shadow.js). A diagnostic you cannot get OFF
+// the phone is only half a diagnostic, and there is no reason for two of them
+// to carry two different fallbacks that drift apart.
+//
+// Also fixes a real hole in the original: on a WebView with no
+// navigator.clipboard at all, reading .writeText off undefined threw, the
+// outer catch swallowed it, and the button did nothing with no toast to say
+// so. The textarea path is now the fallback for BOTH a missing API and a
+// rejected write.
+function _geoCopyText(txt){
+  const str=String(txt||'');
   const done=()=>{try{if(typeof showToast==='function')showToast('Copied. Paste it in a message.','\ud83d\udccb');}catch(_e){}};
+  const fallback=()=>{
+    try{
+      const ta=document.createElement('textarea');ta.value=str;ta.style.cssText='position:fixed;top:-1000px';
+      document.body.appendChild(ta);ta.select();try{document.execCommand('copy');}catch(_e){}ta.remove();
+    }catch(_e){}
+    done();
+  };
   try{
-    navigator.clipboard.writeText(txt).then(done,()=>{
-      const ta=document.createElement('textarea');ta.value=txt;ta.style.cssText='position:fixed;top:-1000px';
-      document.body.appendChild(ta);ta.select();try{document.execCommand('copy');}catch(_e){}ta.remove();done();
-    });
-  }catch(_e){}
+    if(navigator&&navigator.clipboard&&typeof navigator.clipboard.writeText==='function'){
+      navigator.clipboard.writeText(str).then(done,fallback);
+    }else fallback();
+  }catch(_e){fallback();}
 }
+function _geoDiagCopy(){_geoCopyText(window.__geoDiagText||'');}
 function _geoDiagPanel(){
   if(document.getElementById('_geo-diag-ov'))return;
   const dwellMin=_geoFenceEnteredAtMs?Math.round((Date.now()-_geoFenceEnteredAtMs)/60000):null;

@@ -197,6 +197,61 @@ async function _shadowDriveStart(aroundMs){
 }
 
 // ── The comparison screen ────────────────────────────────────────────────────
+// ── Clock ────────────────────────────────────────────────────────────────────
+// Timestamps STORE as ISO (UTC, sortable) and DISPLAY on the BUSINESS clock,
+// the same one every other screen now reads (bizTz, js/utils.js). This panel
+// used to build its own from getHours(), which is the device's zone: correct
+// while the owner is home, an hour out the moment they travel, and it would
+// have made a copied journal disagree with the Time Log it is meant to be
+// compared against. 24-hour is kept exactly as it was, only the zone is now
+// pinned. (Supersedes the 2026-08-10 "device local central time" ask, which
+// was asking for Central rather than the UTC it showed then.)
+function _shadowTz(){
+  try{ if(typeof bizTz==='function')return bizTz(); }catch(_e){}
+  try{ return Intl.DateTimeFormat().resolvedOptions().timeZone; }catch(_e){}
+  return undefined;
+}
+function _shadowHM(iso){
+  if(!iso)return '';
+  const d=iso instanceof Date?iso:new Date(iso);
+  if(isNaN(d.getTime()))return '';
+  const o={hour:'2-digit',minute:'2-digit',hourCycle:'h23'};
+  const tz=_shadowTz(); if(tz)o.timeZone=tz;
+  try{return d.toLocaleTimeString('en-GB',o);}catch(_e){
+    return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  }
+}
+// The copy carries the DATE too. On screen the rows are read top-down in one
+// sitting so the day is obvious; pasted into a message, a bare 20:45 sitting
+// under an 04:36 is unreadable.
+function _shadowStamp(iso){
+  if(!iso)return '';
+  const d=iso instanceof Date?iso:new Date(iso);
+  if(isNaN(d.getTime()))return '';
+  const o={month:'2-digit',day:'2-digit'};
+  const tz=_shadowTz(); if(tz)o.timeZone=tz;
+  let day='';
+  try{day=d.toLocaleDateString('en-US',o);}catch(_e){day='';}
+  return (day?day+' ':'')+_shadowHM(iso);
+}
+// One journal entry as a line. `stamp` decides whether it carries the date,
+// so the panel and the copy can never describe the same entry differently.
+function _shadowLine(e,stamp){
+  const t=stamp?_shadowStamp(e.t):_shadowHM(e.t);
+  if(e.k==='visit')return t+'  visit \u00b7 '+(e.name||'')+(e.mins!=null?(' \u00b7 '+e.mins+' min'):'')+(e.arrived?(' \u00b7 in '+_shadowHM(e.arrived)):'')+(e.departed?(' out '+_shadowHM(e.departed)):'');
+  if(e.k==='leg')return t+'  leg \u00b7 '+e.from+' \u2192 '+e.to+' \u00b7 '+e.mins+' min';
+  if(e.k==='arrive')return t+'  arrive \u00b7 '+e.name;
+  if(e.k==='depart')return t+'  depart \u00b7 '+e.name+' ('+(e.src||'')+')';
+  if(e.k==='start')return t+'  engine on \u00b7 '+(e.armed||0)+' fences'+(e.visits?' + visits':'');
+  return t+'  '+e.k+(e.err?(' \u00b7 '+e.err):'');
+}
+// Copy, for the same reason the location diagnostics panel has one: the owner
+// reads this in a truck and pastes it into a message. The screen shows the
+// most recent 40 entries because that is what fits; the COPY carries the whole
+// journal, which is the entire point of getting it off the phone.
+function _shadowCopy(){
+  if(typeof _geoCopyText==='function')_geoCopyText(window.__shadowDiagText||'');
+}
 async function _shadowPanel(){
   if(document.getElementById('_geo-shadow-ov'))return;
   const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
@@ -216,16 +271,7 @@ async function _shadowPanel(){
   // Only the shadow's OWN conclusions, newest first. Timestamps STORE as ISO
   // (UTC, sortable) but DISPLAY in the device's local time (owner 2026-08-10:
   // "engine comparison is forcing UTC, I want device local central time").
-  const hm=iso=>{const d=new Date(iso);return isNaN(d)?'':String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
-  const rows=_shadowLog.slice().reverse().slice(0,40).map(e=>{
-    const time=hm(e.t);
-    if(e.k==='visit')return time+'  visit · '+(e.name||'')+(e.mins!=null?(' · '+e.mins+' min'):'')+(e.arrived?(' · in '+hm(e.arrived)):'')+(e.departed?(' out '+hm(e.departed)):'');
-    if(e.k==='leg')return time+'  leg · '+e.from+' → '+e.to+' · '+e.mins+' min';
-    if(e.k==='arrive')return time+'  arrive · '+e.name;
-    if(e.k==='depart')return time+'  depart · '+e.name+' ('+(e.src||'')+')';
-    if(e.k==='start')return time+'  engine on · '+(e.armed||0)+' fences'+(e.visits?' + visits':'');
-    return time+'  '+e.k+(e.err?(' · '+e.err):'');
-  }).join('\n');
+  const rows=_shadowLog.slice().reverse().slice(0,40).map(e=>_shadowLine(e,false)).join('\n');
   const ov=document.createElement('div');ov.id='_geo-shadow-ov';ov.className='zmodal-overlay';
   const m=document.createElement('div');m.className='zmodal';m.style.maxWidth='560px';
   const col=(label,val,sub)=>'<div style="flex:1"><div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">'+label+'</div>'+
@@ -248,10 +294,33 @@ async function _shadowPanel(){
     '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:12px 0 4px">What the new engine concluded</div>'+
     '<div style="max-height:34vh;overflow-y:auto;font-size:11px;font-family:ui-monospace,monospace;line-height:1.6;white-space:pre-wrap">'+
       (rows?escHtml(rows):'<span style="color:var(--text3)">Nothing yet. Drive somewhere and come back.</span>')+'</div>'+
-    '<div style="display:flex;gap:8px;margin-top:14px">'+
+    // Same shape the location diagnostics panel uses (js/geo-track.js
+    // _geoDiagPanel): Copy full width on its own line, so the destructive
+    // Reset is never the button beside it that a thumb finds first.
+    '<button class="btn" style="width:100%;margin-top:14px;padding:12px" onclick="_shadowCopy()">Copy everything</button>'+
+    '<div style="display:flex;gap:8px;margin-top:8px">'+
       '<button class="btn" style="flex:1;padding:11px" onclick="_shadowClear();document.getElementById(\'_geo-shadow-ov\').remove();_shadowPanel()">Reset counters</button>'+
       '<button class="btn btn-p" style="flex:1;padding:11px" onclick="document.getElementById(\'_geo-shadow-ov\').remove()">Close</button>'+
     '</div>';
+  // Built from the SAME values the panel just rendered, and the same line
+  // builder, so a pasted log can never disagree with the screen it came off.
+  // The journal goes out WHOLE (the panel shows the newest 40 that fit).
+  const _all=_shadowLog.slice().reverse();
+  window.__shadowDiagText=[
+    'Engine comparison \u00b7 '+_shadowStamp(new Date().toISOString()),
+    'Times: '+(_shadowTz()||'device'),
+    '',
+    'Current engine: '+fmtMs(liveMs)+' (continuous GPS)',
+    'New engine: '+fmtMs(shadowMs)+' (bursts only)',
+    'Shadow engine: '+(_shadowOn?'running':'off'),
+    'Wakes: '+wakeStr,
+    'Fences armed: '+(st.monitoredRegions!=null?st.monitoredRegions:'?'),
+    'Motion history: '+(st.motionAvailable?'available':'off'),
+    'Battery: '+batt,
+    '',
+    'What the new engine concluded ('+_all.length+' entries)',
+    (_all.length?_all.map(e=>_shadowLine(e,true)).join('\n'):'Nothing yet.')
+  ].join('\n');
   ov.appendChild(m);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
