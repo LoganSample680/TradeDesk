@@ -379,6 +379,11 @@ function _motionRefreshPermCache(){
       if(st===_motionPermCache)return;
       _motionPermCache=st;
       _renderDashSetupTodo();
+      // Motion changed, so the handset's row on the server is now stale in a
+      // field only this function ever learns about. The location reporter
+      // carries both, so re-report through it rather than growing a second
+      // writer that could disagree with the first.
+      try{if(typeof _geoReportPermission==='function')_geoReportPermission(_geoPermState());}catch(_e){}
     }).catch(()=>{});
   }catch(_e){}
 }

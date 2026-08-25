@@ -456,6 +456,125 @@ test.describe('Crew location permission', () => {
     expect(out.reloads).toBe(false);
   });
 
+  // Owner, 2026-08-25: "it should write for all users." The reporter used to
+  // begin `if(!_isEmployee)return`, so an owner, which is most of the customer
+  // base, could never report anything even in principle. Permission lived only
+  // in localStorage and nothing on the server could answer why a brand-new
+  // account was logging no drives.
+  test.describe('every handset reports what it can do', () => {
+    // Capture the writes without a real Supabase.
+    const report = (opts) => page.evaluate(async (o) => {
+      const saved = { supa: window._supa, user: window._supaUser, emp: window._isEmployee,
+                      motion: (typeof _motionPermCache !== 'undefined' ? _motionPermCache : undefined),
+                      devices: (typeof S !== 'undefined' && S.devices) ? S.devices.slice() : null };
+      const rec = { upserts: [], updates: [] };
+      try {
+        window._supaUser = { id: o.uid };
+        window._isEmployee = !!o.isEmp;
+        if (typeof _motionPermCache !== 'undefined') _motionPermCache = o.motion === undefined ? null : o.motion;
+        if (o.devices !== undefined) { S.devices = o.devices; }
+        window._supa = { from: (tbl) => ({
+          upsert: (row, cfg) => { rec.upserts.push({ tbl, row, cfg }); return { then: (r) => Promise.resolve({}).then(r) }; },
+          update: (patch) => ({ eq: (col, val) => { rec.updates.push({ tbl, patch, col, val }); return { then: (r) => Promise.resolve({}).then(r) }; } }),
+        }) };
+        _geoReportPermission(o.state);
+        await new Promise(r => setTimeout(r, 20));
+      } finally {
+        window._supa = saved.supa; window._supaUser = saved.user; window._isEmployee = saved.emp;
+        if (typeof _motionPermCache !== 'undefined') _motionPermCache = saved.motion;
+        if (saved.devices) S.devices = saved.devices;
+      }
+      return rec;
+    }, opts);
+
+    test('an OWNER reports, which was the whole hole', async () => {
+      const r = await report({ uid: 'owner-1', isEmp: false, state: 'granted' });
+      const ds = r.upserts.find(u => u.tbl === 'device_status');
+      expect(ds, 'device_status row written for an owner').toBeTruthy();
+      expect(ds.row.location_status).toBe('granted');
+      expect(ds.row.user_id).toBe('owner-1');
+      expect(ds.row.derived, 'reported by the handset, not inferred').toBe(false);
+      expect(r.updates.length, 'and no team_members write: an owner has no row there').toBe(0);
+    });
+
+    test('an EMPLOYEE reports to BOTH, so the crew screens keep working', async () => {
+      const r = await report({ uid: 'emp-1', isEmp: true, state: 'denied' });
+      expect(r.upserts.some(u => u.tbl === 'device_status')).toBe(true);
+      const tm = r.updates.find(u => u.tbl === 'team_members');
+      expect(tm, 'the existing crew path is untouched').toBeTruthy();
+      expect(tm.patch.location_status).toBe('denied');
+      expect(tm.col).toBe('employee_user_id');
+    });
+
+    test('motion rides along, from the same cache the checklist renders', async () => {
+      const r = await report({ uid: 'owner-2', isEmp: false, state: 'granted', motion: 'denied' });
+      expect(r.upserts[0].row.motion_status).toBe('denied');
+    });
+
+    test('a motion state never checked is null, never a guess', async () => {
+      const r = await report({ uid: 'owner-3', isEmp: false, state: 'granted', motion: null });
+      expect(r.upserts[0].row.motion_status).toBe(null);
+    });
+
+    test('the row is keyed per handset so a second boot updates, never duplicates', async () => {
+      const r = await report({ uid: 'owner-4', isEmp: false, state: 'granted' });
+      expect(r.upserts[0].cfg && r.upserts[0].cfg.onConflict).toBe('user_id,device_id');
+      expect(typeof r.upserts[0].row.device_id).toBe('string');
+      expect(r.upserts[0].row.device_id.length).toBeGreaterThan(0);
+    });
+
+    test('no signed-in user writes nothing at all', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = { supa: window._supa, user: window._supaUser };
+        const rec = [];
+        try {
+          window._supaUser = null;
+          window._supa = { from: () => ({ upsert: (row) => { rec.push(row); return { then: (r2) => Promise.resolve({}).then(r2) }; } }) };
+          _geoReportPermission('granted');
+          await new Promise(r2 => setTimeout(r2, 20));
+        } finally { window._supa = saved.supa; window._supaUser = saved.user; }
+        return rec.length;
+      });
+      expect(r).toBe(0);
+    });
+
+    test('a write that fails never throws at the caller', async () => {
+      const threw = await page.evaluate(async () => {
+        const saved = { supa: window._supa, user: window._supaUser };
+        let t = null;
+        try {
+          window._supaUser = { id: 'boom-1' };
+          window._supa = { from: () => { throw new Error('network gone'); } };
+          try { _geoReportPermission('granted'); } catch (e) { t = String(e && e.message || e); }
+          await new Promise(r => setTimeout(r, 20));
+        } finally { window._supa = saved.supa; window._supaUser = saved.user; }
+        return t;
+      });
+      expect(threw, 'permission reporting is never allowed to break a render').toBe(null);
+    });
+
+    // The live gap: change a permission in the iOS Settings app, come back,
+    // and nothing re-checked. The checklist kept nagging and the server row
+    // stayed stale, because the only refresh ran when the dashboard rendered.
+    test('coming back to the foreground re-reads both permissions', async () => {
+      const r = await page.evaluate(async () => {
+        const calls = { geo: 0, motion: 0 };
+        const realGeo = window._geoRefreshPermCache, realMotion = window._motionRefreshPermCache;
+        try {
+          window._geoRefreshPermCache = () => { calls.geo++; };
+          window._motionRefreshPermCache = () => { calls.motion++; };
+          document.dispatchEvent(new Event('visibilitychange'));
+          await new Promise(res => setTimeout(res, 20));
+        } finally {
+          window._geoRefreshPermCache = realGeo; window._motionRefreshPermCache = realMotion;
+        }
+        return calls;
+      });
+      expect(r.geo, 'location re-read on return').toBeGreaterThanOrEqual(1);
+      expect(r.motion, 'motion re-read on return').toBeGreaterThanOrEqual(1);
+    });
+  });
+
   test('zero console errors across the crew location suite', async () => {
     assertNoErrors(page, 'crew location permission');
   });

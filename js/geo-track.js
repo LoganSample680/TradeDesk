@@ -2738,15 +2738,90 @@ async function _geoReadPermission(){
   // ping recency, which is the more reliable signal anyway.
   return 'unsupported';
 }
+// ── What this handset can actually do, on the server ────────────────────────
+// Owner, 2026-08-25: "it should write for all users."
+//
+// This used to begin `if(!_isEmployee)return`, so an OWNER, which is most of
+// the customer base, could never report anything even in principle. The state
+// lived only in localStorage, nothing synced it, and the honest answer to
+// "what does the database say about this contractor's location permission"
+// was: nothing, we never asked. That is why a brand-new signup logging no
+// drives could not be diagnosed from here at all.
+//
+// Two destinations on purpose, and they are not duplicates:
+//   • device_status  , EVERY user, one row per handset. The real record.
+//   • team_members   , employees only, unchanged. The crew screens already
+//     read location_status off that row, and quietly moving it would break
+//     them for a rename nobody asked for.
+//
+// Motion rides along because the plugin could always answer it
+// (TdGeo.motionPermStatus) and there was nowhere to put the answer.
 function _geoReportPermission(state){
-  if(!_supa||!_supaUser||!_isEmployee)return;
-  const patch={location_status:state||'prompt',location_checked_at:new Date().toISOString()};
+  if(!_supa||!_supaUser)return;
+  const now=new Date().toISOString();
+  let devId=null,devLabel=null;
   try{
-    const d=(typeof S!=='undefined'&&S.devices||[]).find(x=>x&&x.id===(typeof _initDeviceId==='function'&&_initDeviceId()));
-    if(d)patch.location_device=d.name||d.label||null;
+    devId=(typeof _initDeviceId==='function')?_initDeviceId():null;
+    const d=(typeof S!=='undefined'&&S.devices||[]).find(x=>x&&x.id===devId);
+    devLabel=(d&&(d.name||d.label))||((typeof _deviceLabel==='function')?_deviceLabel():null);
   }catch(_e){}
+  // No device id means no stable key, and a row keyed on a guess would
+  // multiply on every boot. Skip rather than pollute.
+  if(devId){
+    try{
+      _supa.from('device_status').upsert({
+        user_id:_supaUser.id,
+        device_id:devId,
+        device_label:devLabel||null,
+        contractor_user_id:(typeof _geoCid==='function')?_geoCid():_supaUser.id,
+        location_status:state||'prompt',
+        // Read from the same cache the checklist renders off, so the row and
+        // the screen can never disagree. Undefined (never checked) stays null
+        // rather than being written as a guess.
+        motion_status:(typeof _motionPermCache!=='undefined'&&_motionPermCache)?_motionPermCache:null,
+        derived:false,
+        app_version:(typeof APP_VERSION!=='undefined')?APP_VERSION:null,
+        checked_at:now
+      },{onConflict:'user_id,device_id'}).then(()=>{},()=>{});
+    }catch(_e){}
+  }
+  if(!_isEmployee)return;
+  const patch={location_status:state||'prompt',location_checked_at:now};
+  if(devLabel)patch.location_device=devLabel;
   try{_supa.from('team_members').update(patch).eq('employee_user_id',_supaUser.id).then(()=>{},()=>{});}catch(_e){}
 }
+
+// ── Re-read permission every time the app comes back to the front ───────────
+// The gap this closes, reported live 2026-08-25: change a permission in the
+// iOS Settings app and come back, and nothing re-checked. The app kept
+// rendering the old answer, the setup checklist kept nagging, and the server
+// row (above) stayed stale, all because the only refresh ran when the
+// dashboard happened to render.
+//
+// Bound at load rather than inside _geoTrackInit, which returns early when
+// team tracking is off: whether a phone CAN track is worth knowing even on an
+// account that currently does not.
+//
+// Reporting itself is still change-gated inside _geoRefreshPermCache, so a
+// foreground that finds nothing new writes nothing. The heartbeat below is the
+// exception: past _GEO_PERM_STALE_MS the row is refreshed anyway, so
+// checked_at means "this was true recently" instead of "this was true once".
+const _GEO_PERM_STALE_MS=6*60*60*1000;
+let _geoPermReportedAt=0;
+function _geoPermForeground(){
+  try{if(typeof _geoRefreshPermCache==='function')_geoRefreshPermCache();}catch(_e){}
+  try{if(typeof _motionRefreshPermCache==='function')_motionRefreshPermCache();}catch(_e){}
+  const now=Date.now();
+  if(now-_geoPermReportedAt<_GEO_PERM_STALE_MS)return;
+  _geoPermReportedAt=now;
+  try{if(typeof _geoReportPermission==='function')_geoReportPermission(_geoPermState());}catch(_e){}
+}
+try{
+  if(typeof document!=='undefined'&&!window._geoPermVisBound){
+    window._geoPermVisBound=true;
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)_geoPermForeground();});
+  }
+}catch(_e){}
 
 // ── The acknowledgment: the ONLY thing that records agreement ─────────────────
 // Written exclusively from a user gesture on the setup action, never inferred and
