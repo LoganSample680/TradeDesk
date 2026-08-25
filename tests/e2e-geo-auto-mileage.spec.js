@@ -4643,12 +4643,27 @@ test.describe('Automatic mileage from drive legs', () => {
           const grp = document.getElementById('dev-geo-tools');
           const btn = document.getElementById('set-geo-diag-btn');
           const shadowBtn = document.getElementById('set-geo-shadow-btn');
+          // §7.1: the ungated Cloud sync copy (set-geo-diag-btn2, added
+          // 2026-08-21 so the panel stayed reachable on the plain UAT web
+          // link) was removed 2026-08-25 on owner instruction: "put it under
+          // the advanced developer tools section, it needs to be there."
+          // Prove the DELETION, not just that the Developer copy works, or a
+          // future change re-adds it citing the 08-21 note and nothing catches
+          // it. Two nets: the exact id is gone document-wide, and no control
+          // under #setd-cloud reaches the panel by any route.
+          const cloud = document.getElementById('setd-cloud');
+          const cloudCtrls = cloud ? Array.from(cloud.querySelectorAll('button,a,[onclick]')) : [];
           return {
             opened,
             hasState: /Park mode/.test(text) && /GPS watcher/.test(text),
             grpHiddenInBrowser: grp ? grp.style.display === 'none' : null,
             underDev: !!(btn && btn.closest('#setd-dev')) && !!(shadowBtn && shadowBtn.closest('#setd-dev')),
             notUnderCloud: !(btn && btn.closest('#setd-cloud')),
+            cloudSectionExists: !!cloud,
+            oldIdGone: !document.getElementById('set-geo-diag-btn2'),
+            noDiagRouteInCloud: !cloudCtrls.some(el =>
+              /_geoDiagPanel/.test(el.getAttribute('onclick') || '') ||
+              /location diagnostics/i.test(el.textContent || '')),
           };
         } finally { window.Capacitor = realCap; }
       });
@@ -4657,6 +4672,9 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.grpHiddenInBrowser, 'no location engine tools outside the shell').toBe(true);
       expect(r.underDev, 'both tools sit under Settings → Developer').toBe(true);
       expect(r.notUnderCloud, 'and no longer beside Cloud sync').toBe(true);
+      expect(r.cloudSectionExists, 'the Cloud sync section itself is still there to check').toBe(true);
+      expect(r.oldIdGone, 'the ungated Cloud sync copy set-geo-diag-btn2 is deleted, not hidden').toBe(true);
+      expect(r.noDiagRouteInCloud, 'nothing under Cloud sync opens the diagnostics panel any more').toBe(true);
     });
 
     // Owner ask 2026-08-23: the diagnostics panel showed raw UTC event
@@ -4721,25 +4739,42 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.copyText, '"Copy everything" must carry the same converted time').toContain('08-23T15:58:31');
     });
 
-    // Owner report 2026-08-21: the Developer copy needs is_dev in the
-    // database (their real account never had it) AND the native shell (they
-    // were testing the plain UAT web link), so the panel they needed to
-    // unblock a live reconciliation bug was invisible on both counts. This
-    // second copy under Cloud sync needs neither: no display:none in the
-    // HTML, no reveal script gating it, reachable on every platform and
-    // account the moment index.html renders.
-    test('the second diagnostics button, under Cloud sync, is visible with no gating at all', async () => {
+    // HISTORY, kept deliberately (§10.4), because this test's assertions were
+    // inverted by an owner decision and the reasoning on BOTH sides matters.
+    //
+    // 2026-08-21, why the Cloud sync copy existed: the Developer copy needs
+    // is_dev in the database (the owner's real account never had it) AND the
+    // native shell (they were testing the plain UAT web link), so the panel
+    // they needed to unblock a live reconciliation bug was invisible on both
+    // counts. A second copy under Cloud sync (set-geo-diag-btn2) needed
+    // neither, so this test asserted it existed and was ungated. Correct then.
+    //
+    // 2026-08-25, why it no longer does: the owner asked for diagnostics to
+    // live under the developer tools only. The downside was put to him first,
+    // in these terms: deleting the Cloud sync copy makes the panel unreachable
+    // on the plain UAT web link and on any non-dev account. His answer: "No,
+    // put it under the advanced developer tools section, it needs to be there."
+    // So Developer-only is the INTENDED state now, and this test flips to
+    // proving the deletion (§7.1): the old entry point is gone, not hidden.
+    test('the ungated Cloud sync diagnostics button is gone, diagnostics is Developer-only now', async () => {
       const r = await page.evaluate(() => {
         const btn = document.getElementById('set-geo-diag-btn2');
+        const cloud = document.getElementById('setd-cloud');
+        const devBtn = document.getElementById('set-geo-diag-btn');
+        // The Cloud sync section must still render its other controls, this
+        // was a surgical button removal, not a section that lost its contents.
+        const survivors = cloud ? cloud.querySelectorAll('button').length : 0;
         return {
-          exists: !!btn,
-          visible: !!btn && btn.style.display !== 'none' && getComputedStyle(btn).display !== 'none',
-          underCloud: !!(btn && btn.closest('#setd-cloud')),
+          gone: !btn,
+          cloudStillThere: !!cloud,
+          survivors,
+          stillReachableUnderDev: !!(devBtn && devBtn.closest('#setd-dev')),
         };
       });
-      expect(r.exists).toBe(true);
-      expect(r.visible, 'no is_dev flag or native shell required to see this one').toBe(true);
-      expect(r.underCloud).toBe(true);
+      expect(r.gone, 'set-geo-diag-btn2 is deleted from the DOM, not display:none (§7)').toBe(true);
+      expect(r.cloudStillThere, 'the Cloud sync section survived the removal').toBe(true);
+      expect(r.survivors, 'its other buttons are untouched').toBeGreaterThanOrEqual(3);
+      expect(r.stillReachableUnderDev, 'the Developer copy is the one remaining route').toBe(true);
     });
 
     // Owner report (2026-08-09, second sighting): arrow still on after four

@@ -4662,3 +4662,14 @@ try{
 // shell; this copy needs neither, plain HTML with no display:none, so it is
 // reachable on every platform and every account the moment this button
 // exists in the page, index.html.
+//
+// SUPERSEDED 2026-08-25: that second copy (set-geo-diag-btn2) was REMOVED from
+// Settings → Cloud sync by owner decision, made with the downside above stated
+// back to him in full: "No, put it under the advanced developer tools section,
+// it needs to be there." So the panel is once again reachable ONLY through the
+// double-gated group unhidden right above, is_dev in the database AND the
+// native shell, and is NOT reachable from the plain UAT web link. That is the
+// intended state now, not an oversight. The 08-21 paragraph is kept for history
+// so the reasoning is not lost, but do not re-add the Cloud sync copy citing it.
+// e2e-geo-auto-mileage.spec.js asserts no Location diagnostics button survives
+// anywhere under #setd-cloud, so a re-add fails CI (§7.1).
