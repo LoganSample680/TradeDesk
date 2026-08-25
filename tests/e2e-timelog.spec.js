@@ -877,6 +877,121 @@ test.describe('timelog.js: exhaustive coverage', () => {
         expect(r.minutes, '120 minutes of span less 85 idle').toBe(35);
       });
 
+      // Owner, 2026-08-25: "I can't make the call on time, it's all going to
+      // differ based on every office so need something that fits today." So
+      // the bridge is read off the contractor's own gaps rather than picked.
+      test.describe('the bridge learns itself', () => {
+        const learn = (tp, windows) => page.evaluate(([tp, w]) => ({
+          cap: _geoLearnIdleCap(tp, w),
+          gaps: _geoIdleGaps(tp, w).slice().sort((a, b) => a - b).map(g => Math.round(g / 60000)),
+        }), [tp, windows]);
+        // A day of walk, sit, walk, sit... with the sits given in minutes.
+        const dayOf = (startHH, sits) => {
+          let t = T(startHH + ':00'), out = [];
+          sits.forEach((sit, i) => {
+            out.push({ kind: 'onFoot', ts: t }); t += 4 * 60000;
+            out.push({ kind: 'still', ts: t }); t += sit * 60000;
+          });
+          out.push({ kind: 'onFoot', ts: t }); t += 4 * 60000;
+          return { tape: out, win: [T(startHH + ':00'), t] };
+        };
+
+        test('it finds the split between working sits and a real break', async () => {
+          // Six quick sits around the shop, then lunch. Nobody had to say
+          // which is which: 3,4,4,5,6 then 50 has one obvious jump in it.
+          const d = dayOf('11', [3, 4, 4, 5, 6, 50]);
+          const r = await learn(d.tape, [d.win]);
+          expect(r.gaps).toEqual([3, 4, 4, 5, 6, 50]);
+          expect(Math.round(r.cap / 60000), 'the last sit that is still work').toBe(6);
+        });
+
+        test('a different office learns a different number, off the same code', async () => {
+          // Longer set-ups between moves, and a shorter break.
+          const d = dayOf('11', [12, 14, 15, 16, 18, 40]);
+          const r = await learn(d.tape, [d.win]);
+          expect(Math.round(r.cap / 60000)).toBe(18);
+        });
+
+        test('too few gaps to have an opinion returns null, and the default stands', async () => {
+          const d = dayOf('11', [3, 4, 50]);
+          expect((await learn(d.tape, [d.win])).cap).toBe(null);
+        });
+
+        test('a day of nothing but quick load-outs says nothing about lunch', async () => {
+          const d = dayOf('11', [2, 3, 3, 4, 4, 5]);
+          expect((await learn(d.tape, [d.win])).cap, 'no long gap on record, no edge to find').toBe(null);
+        });
+
+        test('one tight cluster is never split down the middle', async () => {
+          // 10,11,12,13,14,15: no gap here is twice the one below it.
+          const d = dayOf('11', [10, 11, 12, 13, 14, 15]);
+          expect((await learn(d.tape, [d.win])).cap).toBe(null);
+        });
+
+        test('the answer is clamped at both ends, whatever the tape says', async () => {
+          const low = dayOf('11', [1, 1, 1, 2, 2, 60]);
+          expect(Math.round((await learn(low.tape, [low.win])).cap / 60000),
+            'never below five minutes').toBe(5);
+          const high = dayOf('11', [50, 55, 60, 65, 70, 400]);
+          expect(Math.round((await learn(high.tape, [high.win])).cap / 60000),
+            'never above forty-five').toBe(45);
+        });
+
+        test('gaps are gathered across days, not just the one on screen', async () => {
+          const a = dayOf('11', [3, 4, 4]);
+          const b = dayOf('15', [5, 6, 50]);
+          const r = await learn(a.tape.concat(b.tape), [a.win, b.win]);
+          expect(r.gaps.length, 'both days contribute').toBe(6);
+          expect(Math.round(r.cap / 60000)).toBe(6);
+        });
+
+        test('junk input never throws and never invents a number', async () => {
+          for (const [tp, w] of [[null, null], [[], []], ['x', 'y'], [[{ kind: 'onFoot' }], [[0, 0]]], [[], [[NaN, NaN]]]]) {
+            const r = await page.evaluate(([tp, w]) => ({ cap: _geoLearnIdleCap(tp, w), gaps: _geoIdleGaps(tp, w) }), [tp, w]);
+            expect(r.cap).toBe(null);
+            expect(Array.isArray(r.gaps)).toBe(true);
+          }
+        });
+
+        test('the span builder uses what it learned, and says that it did', async () => {
+          const r = await page.evaluate(() => {
+            const prevLat = S.officeLat, prevLon = S.officeLon, prevPlaces = places.slice();
+            S.officeLat = 39.0; S.officeLon = -95.7;
+            places.length = 0;
+            places.push({ id: 'p-home', kind: 'home_office', lat: 39.0, lon: -95.7 });
+            const D = (hhmm) => Date.parse('2026-08-20T' + hhmm + ':00Z');
+            let t = D('11:00'); const tape = [];
+            [3, 4, 4, 5, 6, 50].forEach(sit => {
+              tape.push({ kind: 'onFoot', ts: t }); t += 4 * 60000;
+              tape.push({ kind: 'still', ts: t }); t += sit * 60000;
+            });
+            tape.push({ kind: 'onFoot', ts: t }); t += 4 * 60000;
+            const out = _geoShopPaidSpans(
+              [{ employee_user_id: 'me', arrived_at: '2026-08-20T11:00:00Z', departed_at: new Date(t).toISOString() }],
+              { '2026-08-20': { inMs: D('10:00'), outMs: D('23:00') } },
+              // Something starting once the session ends, so the "nobody saw
+              // them leave" rule does not collapse it to the wrap allowance
+              // (which is zero by default). Same reason the paid() helper
+              // above carries one.
+              [{ arrived_at: new Date(t + 60000).toISOString(), departed_at: new Date(t + 20 * 60000).toISOString(), source: 'geofence' }],
+              tape);
+            S.officeLat = prevLat; S.officeLon = prevLon;
+            places.length = 0; prevPlaces.forEach(p => places.push(p));
+            return out[0];
+          });
+          expect(r.idleCapLearned, 'not the fallback').toBe(true);
+          expect(Math.round(r.idleCapMs / 60000)).toBe(6);
+          // Only the 50-minute lunch is over the learned 6, so 44 comes off.
+          expect(Math.round(r.idleMs / 60000)).toBe(44);
+        });
+
+        test('a standalone yard is never judged on movement at all', async () => {
+          const r = await paid(MORNING(), false);
+          expect(r.idleCapMs, 'no cap, no trim, plain dwell').toBe(0);
+          expect(r.idleCapLearned).toBe(false);
+        });
+      });
+
       test('minutes can never go negative however the tape reads', async () => {
         const r = await paid(tape(['onFoot', '11:00'], ['still', '11:01'], ['onFoot', '13:02'], ['driving', '13:03']), true);
         expect(r.minutes).toBeGreaterThanOrEqual(0);

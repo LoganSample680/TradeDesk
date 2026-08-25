@@ -1745,8 +1745,10 @@ function _geoShopPaidMin(arrIso,depIso,win){
 // Sitting at the kitchen table is still. The chip already separated them.
 //
 // TWO RULES, and they do all of it:
-//   1. Still time BETWEEN two walks is paid, up to _GEO_SHOP_IDLE_CAP_MS.
-//      That is a bench cut between two trips to the shelf.
+//   1. Still time BETWEEN two walks is paid, up to a bridge LEARNED from this
+//      contractor's own tape (_geoLearnIdleCap). That is a bench cut between
+//      two trips to the shelf, and where the bench ends and lunch begins is
+//      read off how they actually work rather than picked by us.
 //   2. Still time before the first walk and after the last walk is NEVER
 //      paid. That is the couch, and it is also the geofence firing late.
 //
@@ -1757,7 +1759,78 @@ function _geoShopPaidMin(arrIso,depIso,win){
 // Sensor limit, stated plainly: the chip needs a gait to say onFoot, so
 // standing at a bench reads as still. Bracketed by walks the cap covers it;
 // a long motionless bench session with no walking either side is not seen.
-const _GEO_SHOP_IDLE_CAP_MS=20*60000;
+// ── THE BRIDGE IS LEARNED, NOT CHOSEN ────────────────────────────────────────
+// Owner, 2026-08-25: "I can't make the call on time, it's all going to differ
+// based on every office so need something that fits today."
+//
+// He is right, and a hardcoded twenty minutes was me guessing on behalf of
+// every contractor who will ever use this. A painter loading a van, an
+// electrician pulling wire across a shop and a landscaper hooking a trailer
+// do not share a number, and nobody should be asked to pick one at signup
+// about a rule they cannot see working.
+//
+// So the number comes from the person's own tape. Inside their shop sessions
+// the still-gaps between two walks fall into two obvious populations: the
+// short ones are the work (setting a box down, reaching for a fitting) and
+// the long ones are the break (went inside, sat down to eat). Real shop days
+// leave a wide empty middle between the two, so the split is simply THE
+// BIGGEST JUMP in their own sorted numbers. No model, no tuning, and it can
+// be explained to a contractor in one sentence.
+//
+// Guard rails, because payroll: it needs enough gaps to have an opinion, it
+// needs to actually see a long one (a morning of nothing but quick load-outs
+// says nothing about where lunch begins), the jump has to be a real
+// separation rather than a step inside one tight cluster, and the answer is
+// clamped either way. Anything short of that falls back to the default, so a
+// thin week can never invent a number.
+const _GEO_SHOP_IDLE_CAP_MS=20*60000;       // the fallback, never a target
+const _GEO_IDLE_LEARN_MIN_MS=5*60000;       // below this nobody would call it a break
+const _GEO_IDLE_LEARN_MAX_MS=45*60000;      // above this nobody would call it work
+const _GEO_IDLE_LEARN_MIN_GAPS=6;           // fewer than this is not a pattern
+// Every still-gap that sits BETWEEN two walks, across the given windows.
+// Exported separately from the learner so a test (and, later, a settings
+// screen) can show the contractor the very numbers the split was made from.
+function _geoIdleGaps(tape,windows){
+  const out=[];
+  if(!Array.isArray(tape)||!tape.length||!Array.isArray(windows))return out;
+  for(const w of windows){
+    const s=w&&w[0],e=w&&w[1];
+    if(!(s>0&&e>s))continue;
+    const walks=[];
+    for(let i=0;i<tape.length;i++){
+      if(tape[i].kind!=='onFoot')continue;
+      const a=tape[i].ts,b=(i+1<tape.length)?tape[i+1].ts:e;
+      const lo=Math.max(a,s),hi=Math.min(b,e);
+      if(hi>lo)walks.push([lo,hi]);
+    }
+    for(let i=0;i+1<walks.length;i++){
+      const gap=walks[i+1][0]-walks[i][1];
+      if(gap>0)out.push(gap);
+    }
+  }
+  return out;
+}
+// The split between "still working" and "on a break", read off those gaps.
+// Returns null when the tape has not earned an opinion yet.
+function _geoLearnIdleCap(tape,windows){
+  const gaps=_geoIdleGaps(tape,windows).slice().sort((a,b)=>a-b);
+  if(gaps.length<_GEO_IDLE_LEARN_MIN_GAPS)return null;
+  // Without a single long gap on record there is no break to find the edge of.
+  if(gaps[gaps.length-1]<_GEO_IDLE_LEARN_MIN_MS*2)return null;
+  let bestAt=-1,bestJump=0;
+  for(let i=0;i+1<gaps.length;i++){
+    const lo=gaps[i],hi=gaps[i+1];
+    // A real separation, not a step inside one tight cluster.
+    if(hi<lo*2)continue;
+    const jump=hi-lo;
+    if(jump>bestJump){bestJump=jump;bestAt=i;}
+  }
+  if(bestAt<0)return null;
+  // The threshold sits ON the last short gap: that one is still work, the one
+  // across the jump is not. Clamped so a strange week cannot pay a lunch.
+  const learned=gaps[bestAt];
+  return Math.max(_GEO_IDLE_LEARN_MIN_MS,Math.min(_GEO_IDLE_LEARN_MAX_MS,learned));
+}
 // Normalized motion transitions covering a window, or null when there is no
 // tape to read (browser build, permission refused, no coprocessor). Null is
 // "no signal" and every caller must fall back, never "nothing happened".
@@ -1850,7 +1923,7 @@ function _geoShopPaidSpans(entries,win,others,tape){
     const dep=Date.parse((e&&e.departed_at)||'')||0;
     return {i,arr,dep,ok:arr>0&&dep>arr};
   });
-  const out=rows.map(r=>({startMs:r.arr,endMs:r.arr,minutes:0,idleMs:0,clipped:false,mergedInto:null}));
+  const out=rows.map(r=>({startMs:r.arr,endMs:r.arr,minutes:0,idleMs:0,idleCapMs:0,idleCapLearned:false,clipped:false,mergedInto:null}));
   const order=rows.filter(r=>r.ok).sort((a,b)=>a.arr-b.arr||a.dep-b.dep);
   const otherRows=(Array.isArray(others)?others:[])
     .map(e=>[Date.parse((e&&e.arrived_at)||'')||0,Date.parse((e&&e.departed_at)||'')||0])
@@ -1919,6 +1992,14 @@ function _geoShopPaidSpans(entries,win,others,tape){
     if(a-endMs>60*60000)return false;                 // too far away to be this departure
     return dstr(new Date(a))===dstr(new Date(endMs));
   });
+  // Resolved ONCE per render, not per session: the split is a property of how
+  // this contractor works, and reading it per row would let two sessions on
+  // one screen be judged by two different rules. Learned from every session
+  // on screen (their own last week or two), with the default standing in
+  // until the tape has earned an opinion.
+  const homeShop=!!(tape&&_geoShopIsHome());
+  const learned=homeShop?_geoLearnIdleCap(tape,clusters.map(c=>[c.arr,c.dep])):null;
+  const idleCap=(learned==null)?_GEO_SHOP_IDLE_CAP_MS:learned;
   let runningEnd=0;
   for(const c of clusters){
     const day=dstr(new Date(c.arr));
@@ -1931,8 +2012,8 @@ function _geoShopPaidSpans(entries,win,others,tape){
       : pr0;
     const pr2=pr1[1]>pr1[0]?clipToDrives(pr1[0],pr1[1]):pr1;
     // Last, and only where the shop is the house: keep the walking part.
-    const trim=(tape&&pr2[1]>pr2[0]&&_geoShopIsHome())
-      ? _geoActiveTrim(tape,pr2[0],pr2[1])
+    const trim=(tape&&pr2[1]>pr2[0]&&homeShop)
+      ? _geoActiveTrim(tape,pr2[0],pr2[1],idleCap)
       : {startMs:pr2[0],endMs:pr2[1],idleMs:0};
     const pr=[trim.startMs,trim.endMs];
     const start=Math.max(pr[0],runningEnd);
@@ -1940,6 +2021,11 @@ function _geoShopPaidSpans(entries,win,others,tape){
     keep.startMs=start;
     keep.endMs=Math.max(start,pr[1]);
     keep.idleMs=trim.idleMs||0;
+    // Carried so the Time Log can say WHERE the number came from. Payroll a
+    // contractor cannot account for is worse than payroll that is slightly
+    // wrong, and 'learned' vs 'default' is the whole explanation.
+    keep.idleCapMs=homeShop?idleCap:0;
+    keep.idleCapLearned=learned!=null;
     keep.minutes=Math.max(0,Math.round((keep.endMs-start-keep.idleMs)/60000));
     keep.clipped=start>c.arr;
     keep.mergedCount=c.members.length;
