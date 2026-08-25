@@ -50,7 +50,24 @@ test.describe('Crew location permission', () => {
   }, s);
 
   let snap;
-  test.beforeEach(async () => { snap = await snapshot(); });
+  // The notice sheet is DOM, and restore() only ever put the state variables
+  // back, so a test that opened the sheet left it standing in the page for
+  // whoever ran next. That is what turned "an employee who already
+  // acknowledged is tracked without re-prompting" red on webkit CI
+  // 2026-08-25: it asserts no sheet is present, and it was reading the sheet
+  // the un-acknowledged test above it had opened and never cleared.
+  //
+  // Cleared in beforeEach, NOT afterEach, and that distinction is the whole
+  // fix. The sheet renders ASYNCHRONOUSLY: measured in this app, it is absent
+  // the instant _geoTrackInit() returns and present ~600ms later. So the test
+  // that opens it never sees it, and an afterEach would just as easily run
+  // before it landed and miss it too. By the next test's beforeEach it has
+  // long since arrived, so that is the only point where removing it is
+  // reliable. Chromium hid the leak by being slower to paint; webkit is not.
+  test.beforeEach(async () => {
+    await page.evaluate(() => document.getElementById('_geo-notice-ov')?.remove());
+    snap = await snapshot();
+  });
   test.afterEach(async () => { await restore(snap); });
 
   // ── 1. The fabricated-consent write is gone ────────────────────────────────
