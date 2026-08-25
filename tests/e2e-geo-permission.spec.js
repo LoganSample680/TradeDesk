@@ -767,6 +767,112 @@ test.describe('Crew location permission', () => {
       });
     });
 
+    // ── The row the owner's own handset produced the hour build 36 landed ────
+    //
+    // location_status 'prompt', derived true, accuracy null, servicesEnabled
+    // null, while motion_status from the SAME plugin said 'granted'. Two
+    // separate bugs produced that, and both are pinned here.
+    test.describe('the native answer actually reaches the row', () => {
+      // Bug 1: _geoPermForeground kicked off an ASYNC refresh and then reported
+      // from a SYNCHRONOUS cache in the same tick, so it wrote a derived row
+      // before its own read had landed, and the upsert clobbered any good row.
+      test('the foreground re-report waits for the native read instead of racing it', async () => {
+        const r = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, supa: window._supa, user: window._supaUser,
+                          at: (typeof _geoPermReportedAt !== 'undefined') ? _geoPermReportedAt : undefined,
+                          nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined,
+                          cache: (typeof _geoPermCache !== 'undefined') ? _geoPermCache : undefined };
+          const rows = [];
+          try {
+            window._supaUser = { id: 'fg-race' };
+            window._supa = { from: () => ({
+              upsert: (row) => { rows.push(row); return { then: (f) => Promise.resolve({}).then(f) }; },
+              update: () => ({ eq: () => ({ then: (f) => Promise.resolve({}).then(f) }) }),
+            }) };
+            // Cold start: nothing cached, exactly the state a fresh boot is in.
+            if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = null;
+            if (typeof _geoPermCache !== 'undefined') _geoPermCache = null;
+            if (typeof _geoPermReportedAt !== 'undefined') _geoPermReportedAt = 0;
+            // The plugin answers, but only after a tick, like a real bridge.
+            window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({
+              locationPermStatus: () => new Promise(res => setTimeout(() => res(
+                { status: 'always', accuracy: 'full', precise: true, servicesEnabled: true }), 30)),
+              motionPermStatus: () => Promise.resolve({ status: 'granted', available: true }),
+            }) };
+            _geoPermForeground();
+            await new Promise(res => setTimeout(res, 250));
+            return rows.map(x => ({ st: x.location_status, acc: x.location_accuracy,
+                                    svc: x.location_services_enabled, derived: x.derived }));
+          } finally {
+            window.Capacitor = saved.cap; window._supa = saved.supa; window._supaUser = saved.user;
+            if (typeof _geoPermReportedAt !== 'undefined') _geoPermReportedAt = saved.at;
+            if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+            if (typeof _geoPermCache !== 'undefined') _geoPermCache = saved.cache;
+          }
+        });
+        expect(r.length, 'the foreground return reports').toBeGreaterThan(0);
+        // EVERY row it wrote must carry iOS's answer. One derived row in the
+        // set is not harmless: the upsert key is (user_id, device_id), so a
+        // late derived write overwrites a good one.
+        for (const row of r) {
+          expect(row.derived, 'no row may be a guess once the plugin answers').toBe(false);
+          expect(row.st).toBe('always');
+          expect(row.acc).toBe('full');
+          expect(row.svc).toBe(true);
+        }
+      });
+
+      // Bug 2: reporting was gated on the FLATTENED state, which cannot change
+      // when a phone goes wheninuse -> always, loses Precise Location, or has
+      // device-wide Location Services switched off. All three still flatten to
+      // 'granted', so the three fields that decide whether this product works
+      // were learned and then never sent.
+      test('a change iOS reports is sent even when the flattened state is identical', async () => {
+        const r = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, supa: window._supa, user: window._supaUser,
+                          nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined,
+                          cache: (typeof _geoPermCache !== 'undefined') ? _geoPermCache : undefined,
+                          sig: (typeof _geoPermSig !== 'undefined') ? _geoPermSig : undefined };
+          const rows = [];
+          let answer = { status: 'wheninuse', accuracy: 'full', precise: true, servicesEnabled: true };
+          try {
+            window._supaUser = { id: 'sig-gate' };
+            window._supa = { from: () => ({
+              upsert: (row) => { rows.push(row); return { then: (f) => Promise.resolve({}).then(f) }; },
+              update: () => ({ eq: () => ({ then: (f) => Promise.resolve({}).then(f) }) }),
+            }) };
+            if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = null;
+            if (typeof _geoPermCache !== 'undefined') _geoPermCache = null;
+            if (typeof _geoPermSig !== 'undefined') _geoPermSig = null;
+            window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({
+              locationPermStatus: () => Promise.resolve(answer),
+            }) };
+            const settle = () => new Promise(res => setTimeout(res, 80));
+            _geoRefreshPermCache(); await settle();            // 1: wheninuse
+            _geoRefreshPermCache(); await settle();            // 2: identical, must NOT re-send
+            answer = { status: 'always', accuracy: 'full', precise: true, servicesEnabled: true };
+            _geoRefreshPermCache(); await settle();            // 3: upgraded, still flattens to granted
+            answer = { status: 'always', accuracy: 'reduced', precise: false, servicesEnabled: true };
+            _geoRefreshPermCache(); await settle();            // 4: Precise off
+            answer = { status: 'always', accuracy: 'reduced', precise: false, servicesEnabled: false };
+            _geoRefreshPermCache(); await settle();            // 5: master switch off
+            return rows.map(x => [x.location_status, x.location_accuracy, x.location_services_enabled]);
+          } finally {
+            window.Capacitor = saved.cap; window._supa = saved.supa; window._supaUser = saved.user;
+            if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+            if (typeof _geoPermCache !== 'undefined') _geoPermCache = saved.cache;
+            if (typeof _geoPermSig !== 'undefined') _geoPermSig = saved.sig;
+          }
+        });
+        expect(r, 'four real changes, and the identical repeat is not re-sent').toEqual([
+          ['wheninuse', 'full', true],
+          ['always', 'full', true],
+          ['always', 'reduced', true],
+          ['always', 'reduced', false],
+        ]);
+      });
+    });
+
     test('a write that fails never throws at the caller', async () => {
       const threw = await page.evaluate(async () => {
         const saved = { supa: window._supa, user: window._supaUser };

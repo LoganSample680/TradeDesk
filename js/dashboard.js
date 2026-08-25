@@ -341,14 +341,32 @@ function _supplyStoreTog(btn){
 // would reintroduce exactly the show-then-hide flash the Stripe cache above
 // exists to prevent.
 let _geoPermCache=null;
+// A fingerprint of what iOS itself said, kept alongside the flattened state.
+// Reporting used to be gated on `st!==_geoPermCache` alone, and that state is
+// the FLATTENED granted/denied/prompt: it cannot change when a phone goes from
+// wheninuse to always, or loses Precise Location, or has device-wide Location
+// Services switched off, because all of those still flatten to 'granted'. So
+// the three fields that actually decide whether this product works were learned
+// and then never sent (owner's own handset, 08.25.26.18: the plugin was
+// answering motion fine while the location row sat at 'prompt' with every
+// native field null). Gate on either changing.
+let _geoPermSig=null;
 function _geoPermState(){return _geoPermCache||'prompt';}
 function _geoPermDone(){const s=_geoPermState();return s==='granted'||s==='unsupported';}
+function _geoNatSig(){
+  try{
+    const n=(typeof _geoNativeAuthPeek==='function')?_geoNativeAuthPeek():null;
+    return n?[n.status,n.accuracy,n.servicesEnabled].join('|'):'';
+  }catch(_e){return '';}
+}
 function _geoRefreshPermCache(){
   if(typeof _geoReadPermission!=='function')return;
   try{
     _geoReadPermission().then(st=>{
-      if(st===_geoPermCache)return;
-      _geoPermCache=st;
+      const sig=_geoNatSig();
+      const changed=(st!==_geoPermCache)||(sig!==_geoPermSig);
+      _geoPermCache=st;_geoPermSig=sig;
+      if(!changed)return;
       if(typeof _geoReportPermission==='function')_geoReportPermission(st);
       _renderDashSetupTodo();
     }).catch(()=>{});

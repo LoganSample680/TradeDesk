@@ -2903,7 +2903,22 @@ function _geoPermForeground(){
   const now=Date.now();
   if(now-_geoPermReportedAt<_GEO_PERM_STALE_MS)return;
   _geoPermReportedAt=now;
-  try{if(typeof _geoReportPermission==='function')_geoReportPermission(_geoPermState());}catch(_e){}
+  // READ NATIVE, THEN REPORT. This used to kick off _geoRefreshPermCache()
+  // above, which is ASYNC, and then immediately report _geoPermState(), which
+  // reads a cache SYNCHRONOUSLY. On a fresh boot that cache is still empty and
+  // _geoNativeAuth has not been filled either, so the row written here said
+  // 'prompt' with derived:true and every native field null, and because the
+  // write is an upsert on (user_id, device_id) it CLOBBERED any good row a
+  // previous pass had produced. Then the 6-hour staleness gate above locked
+  // that bad row in until tomorrow. Observed on the owner's own handset the
+  // hour build 36 landed: motion reported 'granted' from the same plugin while
+  // location reported nothing at all.
+  try{
+    if(typeof _geoReadPermission!=='function')return;
+    _geoReadPermission().then(st=>{
+      try{if(typeof _geoReportPermission==='function')_geoReportPermission(st);}catch(_e){}
+    }).catch(()=>{});
+  }catch(_e){}
 }
 try{
   if(typeof document!=='undefined'&&!window._geoPermVisBound){
