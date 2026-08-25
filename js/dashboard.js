@@ -361,6 +361,21 @@ function _geoRefreshPermCache(){
 let _motionPermCache=null;
 function _motionPermState(){return _motionPermCache||'prompt';}
 function _motionPermDone(){const s=_motionPermState();return s==='granted'||s==='unsupported';}
+// Motion resolved, so the handset's row on the server is now stale in a field
+// only this function ever learns about. The location reporter carries both, so
+// re-report through it rather than growing a second writer that could disagree.
+//
+// SHIPPED BROKEN 08.25.26.9, caught on the owner's own phone within the hour:
+// this call lived ONLY in the plugin-answered branch, so on the two paths that
+// actually resolve most often, a shell whose plugin predates motionPermStatus
+// and a query that rejects, the location row was written with motion null and
+// nothing ever went back to fill it. The very first row this feature produced
+// had motion null for exactly that reason. Every branch that settles the cache
+// reports now, including 'unsupported', which is a real answer and not an
+// absence of one.
+function _motionReport(){
+  try{if(typeof _geoReportPermission==='function')_geoReportPermission(_geoPermState());}catch(_e){}
+}
 function _motionRefreshPermCache(){
   const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
   if(!Td||typeof Td.motionPermStatus!=='function'){
@@ -369,7 +384,10 @@ function _motionRefreshPermCache(){
     // the same tick (a test, or _renderDashSetupTodo's own top-of-function call)
     // sees its value honored for that render, not immediately overwritten.
     Promise.resolve().then(()=>{
-      if(_motionPermCache!=='unsupported'){_motionPermCache='unsupported';_renderDashSetupTodo();}
+      if(_motionPermCache==='unsupported')return;
+      _motionPermCache='unsupported';
+      _renderDashSetupTodo();
+      _motionReport();
     });
     return;
   }
@@ -379,11 +397,7 @@ function _motionRefreshPermCache(){
       if(st===_motionPermCache)return;
       _motionPermCache=st;
       _renderDashSetupTodo();
-      // Motion changed, so the handset's row on the server is now stale in a
-      // field only this function ever learns about. The location reporter
-      // carries both, so re-report through it rather than growing a second
-      // writer that could disagree with the first.
-      try{if(typeof _geoReportPermission==='function')_geoReportPermission(_geoPermState());}catch(_e){}
+      _motionReport();
     }).catch(()=>{});
   }catch(_e){}
 }

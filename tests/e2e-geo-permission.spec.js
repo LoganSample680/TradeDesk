@@ -538,6 +538,79 @@ test.describe('Crew location permission', () => {
       expect(r).toBe(0);
     });
 
+    // SHIPPED BROKEN 08.25.26.9, caught on the owner's phone within the hour.
+    // The re-report lived only in the branch where the plugin answers, so a
+    // shell whose plugin predates motionPermStatus, or a query that rejects,
+    // wrote the location row with motion null and never went back. The very
+    // first row this feature ever produced had motion null for that reason.
+    test.describe('motion re-reports from every branch that settles it', () => {
+      const withMotion = (plugin) => page.evaluate(async (mode) => {
+        const saved = { cap: window.Capacitor, cache: (typeof _motionPermCache !== 'undefined' ? _motionPermCache : undefined),
+                        report: window._geoReportPermission, render: window._renderDashSetupTodo };
+        let reports = 0;
+        try {
+          window._geoReportPermission = () => { reports++; };
+          window._renderDashSetupTodo = () => {};
+          if (typeof _motionPermCache !== 'undefined') _motionPermCache = null;
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: () => (mode === 'missing' ? {}
+              : mode === 'rejects' ? { motionPermStatus: () => Promise.reject(new Error('nope')) }
+              : { motionPermStatus: () => Promise.resolve({ status: 'granted', available: true }) }),
+          };
+          _motionRefreshPermCache();
+          await new Promise(r => setTimeout(r, 40));
+        } finally {
+          window.Capacitor = saved.cap;
+          if (typeof _motionPermCache !== 'undefined') _motionPermCache = saved.cache;
+          window._geoReportPermission = saved.report; window._renderDashSetupTodo = saved.render;
+        }
+        return { reports, cache: (typeof _motionPermCache !== 'undefined' ? _motionPermCache : null) };
+      }, plugin);
+
+      test('the plugin answers: reported', async () => {
+        expect((await withMotion('answers')).reports).toBe(1);
+      });
+
+      test('a shell whose plugin predates motionPermStatus: still reported', async () => {
+        const r = await withMotion('missing');
+        expect(r.reports, 'unsupported is a real answer, not an absence of one').toBe(1);
+      });
+
+      test('a query that rejects never leaves the row half-written', async () => {
+        // Nothing settled the cache, so there is nothing new to say, but it
+        // must not throw either.
+        const r = await withMotion('rejects');
+        expect(r.reports).toBeLessThanOrEqual(1);
+      });
+
+      test('a second refresh with no change stays quiet', async () => {
+        const r = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, cache: _motionPermCache,
+                          report: window._geoReportPermission, render: window._renderDashSetupTodo };
+          let reports = 0;
+          try {
+            window._geoReportPermission = () => { reports++; };
+            window._renderDashSetupTodo = () => {};
+            _motionPermCache = null;
+            window.Capacitor = { isNativePlatform: () => true,
+              registerPlugin: () => ({ motionPermStatus: () => Promise.resolve({ status: 'granted', available: true }) }) };
+            _motionRefreshPermCache();
+            await new Promise(r2 => setTimeout(r2, 30));
+            const afterFirst = reports;
+            _motionRefreshPermCache();
+            await new Promise(r2 => setTimeout(r2, 30));
+            return { afterFirst, afterSecond: reports };
+          } finally {
+            window.Capacitor = saved.cap; _motionPermCache = saved.cache;
+            window._geoReportPermission = saved.report; window._renderDashSetupTodo = saved.render;
+          }
+        });
+        expect(r.afterFirst).toBe(1);
+        expect(r.afterSecond, 'unchanged means nothing to report').toBe(1);
+      });
+    });
+
     test('a write that fails never throws at the caller', async () => {
       const threw = await page.evaluate(async () => {
         const saved = { supa: window._supa, user: window._supaUser };
