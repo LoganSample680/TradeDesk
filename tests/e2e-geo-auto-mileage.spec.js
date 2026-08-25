@@ -4677,6 +4677,65 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.noDiagRouteInCloud, 'nothing under Cloud sync opens the diagnostics panel any more').toBe(true);
     });
 
+    // Owner 2026-08-25: "don't keep inferring, build explicitly off what iOS
+    // reports", and "device wide location services ... why do we need it?"
+    // The panel showed Consent and OS-denied, both app-side readings, and
+    // nothing iOS actually said. It now shows all three independent axes,
+    // because any one of them being wrong stops every ping while the other
+    // two keep looking healthy.
+    test('the diagnostics panel shows all three location axes straight off iOS', async () => {
+      const r = await page.evaluate(async () => {
+        const realCap = window.Capacitor;
+        const savedNat = (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined;
+        const read = () => {
+          _geoDiagPanel();
+          const ov = document.getElementById('_geo-diag-ov');
+          const text = ov ? ov.textContent : '';
+          ov && ov.remove();
+          return text;
+        };
+        try {
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          if (typeof _geoNativeAuth !== 'undefined') {
+            _geoNativeAuth = { status: 'always', accuracy: 'full', precise: true, servicesEnabled: true };
+          }
+          const on = read();
+          // The trap this row exists for: iOS still says `always` with the
+          // master switch off, so the grant line alone reads as healthy.
+          if (typeof _geoNativeAuth !== 'undefined') {
+            _geoNativeAuth = { status: 'always', accuracy: 'full', precise: true, servicesEnabled: false };
+          }
+          const off = read();
+          // An older shell cannot answer at all, and 'unknown' must not be
+          // rendered as OFF: telling someone to fix a switch that is already
+          // on is how the whole panel loses credibility.
+          if (typeof _geoNativeAuth !== 'undefined') {
+            _geoNativeAuth = { status: 'always', accuracy: 'full', precise: true, servicesEnabled: null };
+          }
+          const unknown = read();
+          if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = null;
+          const none = read();
+          return { on, off, unknown, none };
+        } finally {
+          window.Capacitor = realCap;
+          if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = savedNat;
+        }
+      });
+      expect(r.on).toContain('Location Services (device)');
+      expect(r.on).toContain('iOS location');
+      expect(r.on).toContain('Precise Location');
+      // Label and value render as adjacent spans, so match the pair rather
+      // than a bare 'ON' that would pass on almost any text in the panel.
+      expect(r.on, 'the master switch is on').toContain('Location Services (device)ON');
+      expect(r.off, 'and the panel says plainly that nothing can arrive')
+        .toContain('Location Services (device)OFF, nothing can arrive');
+      expect(r.off, 'while iOS still reports the app grant as always').toContain('always');
+      expect(r.unknown, 'an old shell reads unknown, never OFF').toContain('unknown (old build)');
+      expect(r.unknown).not.toContain('OFF, nothing can arrive');
+      expect(r.none, 'no plugin at all is its own honest answer').toContain('unknown (no plugin)');
+      expect(r.none, 'and the grant line says not reported rather than guessing').toContain('not reported');
+    });
+
     // Owner ask 2026-08-23: the diagnostics panel showed raw UTC event
     // times, confusing to read against a phone that's on Central time.
     // _geoParkNote now stores the full ISO instant; _geoDiagFmtT converts

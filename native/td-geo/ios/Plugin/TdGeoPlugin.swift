@@ -283,12 +283,38 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // of feet. Geofencing is simply dead in that state with nothing anywhere
     // saying why, so it is reported alongside rather than buried.
     //
-    // NOT reported: whether Location Services is on device-wide. That would be
-    // a genuinely useful distinction (a global toggle nowhere near this app
-    // looks identical to somebody denying TradeDesk), but the only API for it
-    // is deprecated in iOS 17 and blocks the main thread, and iOS already
-    // reports .denied in that case. A warning-generating call for a nuance we
-    // can live without is a bad trade.
+    // DEVICE-WIDE LOCATION SERVICES IS THE THIRD AXIS, and it is reported now.
+    // An earlier note here claimed the only API for it was "deprecated in iOS
+    // 17". That was wrong, and the correction matters because the nuance it
+    // waved away is the exact silent failure this app keeps hitting:
+    //
+    //   CLLocationManager.locationServicesEnabled() is NOT deprecated. What
+    //   Apple added (Xcode 14.1 onward) is a runtime warning when it is called
+    //   ON THE MAIN THREAD, because it is a synchronous cross-process lookup
+    //   that blocks the caller and has been seen to hang outright. The fix for
+    //   the warning is to move the call off the main thread, which is what the
+    //   dispatch below does, not to stop asking the question.
+    //
+    // Why the question has to be asked at all: the per-app grant and the global
+    // switch are INDEPENDENT. Turning off Settings > Privacy & Security >
+    // Location Services leaves authorizationStatus reporting .authorizedAlways
+    // untouched, so without this the app reports "always" to the server while
+    // not a single fix will ever arrive, which is precisely the shape of a live
+    // account showing always and zero pings. Waiting for a .denied delegate
+    // error instead is inference, and inference is what put the wrong answer in
+    // the database in the first place.
+    //
+    // What iOS 18 added, and why it is not used here: CLServiceSession exposes
+    // a diagnostics async sequence carrying authorizationDeniedGlobally ("the
+    // session will be suspended while the user has disabled Location Services
+    // system-wide") plus fullAccuracyDenied, alwaysAuthorizationDenied,
+    // insufficientlyInUse and serviceSessionRequired. It is push-based, so no
+    // blocking, and it is strictly richer. Two reasons it is not the answer
+    // today: it is iOS 18 and up while this ships at a 15.0 deployment target,
+    // and constructing a session takes an authorization requirement, so on a
+    // notDetermined device a plain status query would raise a permission
+    // prompt. The call below answers the same question on every version we
+    // ship to, with no prompt and no side effect.
     //
     // Raw capability only, per the keep-native-dumb rule: this reports what iOS
     // says and decides nothing. Every threshold and consequence stays in JS.
@@ -303,14 +329,22 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         case .authorizedAlways:    status = "always"
         @unknown default:          status = "notdetermined"
         }
-        var out: [String: Any] = [
+        let out: [String: Any] = [
             "status": status,
             // Deliberately NOT folded into status: a user can be `always` and
             // reduced, which is granted and useless at the same time.
             "accuracy": m.accuracyAuthorization == .fullAccuracy ? "full" : "reduced",
             "precise": m.accuracyAuthorization == .fullAccuracy
         ]
-        call.resolve(out)
+        // Off the main thread, always, for the reason in the note above. The
+        // whole method resolves from here so servicesEnabled is never absent
+        // from a successful answer: a caller that has to guess whether a key
+        // is missing or false is back to inferring.
+        DispatchQueue.global(qos: .userInitiated).async {
+            var out2 = out
+            out2["servicesEnabled"] = CLLocationManager.locationServicesEnabled()
+            call.resolve(out2)
+        }
     }
 
     @objc func stopAll(_ call: CAPPluginCall) {

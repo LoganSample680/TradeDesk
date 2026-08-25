@@ -468,6 +468,12 @@ test.describe('Crew location permission', () => {
                       motion: (typeof _motionPermCache !== 'undefined' ? _motionPermCache : undefined),
                       devices: (typeof S !== 'undefined' && S.devices) ? S.devices.slice() : null };
       const rec = { upserts: [], updates: [] };
+      // _geoNativeAuth is module state that outlives a test. Without pinning
+      // it here, `derived` (and location_status/accuracy with it) depends on
+      // whichever test ran last, which is exactly the kind of order coupling
+      // that shows up as a shard-dependent failure months later.
+      saved.nat = (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined;
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = o.nat === undefined ? null : o.nat;
       try {
         window._supaUser = { id: o.uid };
         window._isEmployee = !!o.isEmp;
@@ -483,6 +489,7 @@ test.describe('Crew location permission', () => {
         window._supa = saved.supa; window._supaUser = saved.user; window._isEmployee = saved.emp;
         if (typeof _motionPermCache !== 'undefined') _motionPermCache = saved.motion;
         if (saved.devices) S.devices = saved.devices;
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
       }
       return rec;
     }, opts);
@@ -493,7 +500,16 @@ test.describe('Crew location permission', () => {
       expect(ds, 'device_status row written for an owner').toBeTruthy();
       expect(ds.row.location_status).toBe('granted');
       expect(ds.row.user_id).toBe('owner-1');
-      expect(ds.row.derived, 'reported by the handset, not inferred').toBe(false);
+      // ASSERTION CHANGED 2026-08-25 (CLAUDE.md 10.4). This used to expect
+      // false with the comment "reported by the handset, not inferred", and it
+      // passed because `derived` was hardcoded false, not because anything had
+      // been reported: no plugin answers in this test, so the state here came
+      // from the web-shaped inference. The column was therefore stamping every
+      // guess as iOS's own word. Owner 2026-08-25: "don't keep inferring,
+      // build explicitly off what iOS reports." Nothing native answered, so
+      // the honest value is true, and the case the old comment described is
+      // now covered for real by the iOS-vocabulary block below.
+      expect(ds.row.derived, 'nothing native answered, so this row IS a guess').toBe(true);
       expect(r.updates.length, 'and no team_members write: an owner has no row there').toBe(0);
     });
 
@@ -684,6 +700,63 @@ test.describe('Crew location permission', () => {
           } finally { window.Capacitor = saved; }
         });
         expect(['granted', 'denied', 'prompt'], 'falls through to the inference').toContain(r.state);
+      });
+
+      // ── The third axis: device-wide Location Services ────────────────────
+      //
+      // Owner 2026-08-25: "device wide location services ... why do we need
+      // it?" Because the per-app grant and the global switch move
+      // independently. Flip Settings > Privacy & Security > Location Services
+      // off and this app's authorizationStatus still reads .authorizedAlways
+      // while no fix ever arrives again, so without this a dead phone and a
+      // healthy one produce byte-identical rows.
+      test('the global switch is stored apart from the app grant', async () => {
+        const on = await withAuth({ status: 'always', accuracy: 'full', precise: true, servicesEnabled: true });
+        const off = await withAuth({ status: 'always', accuracy: 'full', precise: true, servicesEnabled: false });
+        expect(on.row.location_services_enabled).toBe(true);
+        expect(off.row.location_services_enabled).toBe(false);
+        expect(off.row.location_status, 'iOS keeps saying always, which is the whole trap').toBe('always');
+        expect(off.row.location_accuracy).toBe('full');
+      });
+
+      test("a shell that cannot answer stores null, never false", async () => {
+        // The difference matters more than it looks: false means "the master
+        // switch is off, go turn it on", null means "we do not know yet".
+        // Telling a crew member to fix a switch that is already on is how you
+        // lose their trust in the whole feature.
+        for (const a of [{ status: 'always', accuracy: 'full' },
+                         { status: 'always', accuracy: 'full', servicesEnabled: undefined },
+                         { status: 'always', accuracy: 'full', servicesEnabled: null },
+                         { status: 'always', accuracy: 'full', servicesEnabled: 'yes' },
+                         { status: 'always', accuracy: 'full', servicesEnabled: 0 },
+                         { status: 'always', accuracy: 'full', servicesEnabled: 1 }]) {
+          const r = await withAuth(a);
+          expect(r.row.location_services_enabled,
+            'only a real boolean off the bridge counts: ' + JSON.stringify(a)).toBe(null);
+        }
+      });
+
+      test('the peek carries the switch too, so the row and the screen agree', async () => {
+        const r = await withAuth({ status: 'wheninuse', accuracy: 'reduced', precise: false, servicesEnabled: false });
+        expect(r.peek.servicesEnabled).toBe(false);
+        expect(r.peek.status).toBe('wheninuse');
+        expect(r.peek.precise).toBe(false);
+      });
+
+      test('the switch being off never gets flattened into the status', async () => {
+        // Tempting shortcut, deliberately not taken: reporting 'denied'
+        // because nothing can arrive would erase the fact that this app IS
+        // authorized, and send the user to the wrong settings screen.
+        const r = await withAuth({ status: 'always', accuracy: 'full', precise: true, servicesEnabled: false });
+        expect(r.state, 'the app grant is genuinely granted').toBe('granted');
+        expect(r.row.location_status).not.toBe('denied');
+      });
+
+      test('derived says which rows are iOS speaking and which are a guess', async () => {
+        const real = await withAuth({ status: 'always', accuracy: 'full', servicesEnabled: true });
+        expect(real.row.derived, "iOS answered, so this is not inferred").toBe(false);
+        const guess = await withAuth(null);   // no locationPermStatus on this shell
+        expect(guess.row.derived, 'inferred, and the row now admits it').toBe(true);
       });
 
       test('a junk status never invents an authorization', async () => {

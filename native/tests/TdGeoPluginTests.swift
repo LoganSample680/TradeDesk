@@ -328,6 +328,103 @@ final class TdGeoPluginTests: XCTestCase {
         XCTAssertEqual(Set(seen).count, 1, "nothing changed in between, so the answer must not wobble")
     }
 
+    // ── The third axis: device-wide Location Services ───────────────────────
+    //
+    // The per-app grant and the global switch in Settings > Privacy & Security
+    // are independent. With Location Services off system-wide, authorizationStatus
+    // still reports .authorizedAlways and not one fix will ever arrive, so
+    // without this key a dead handset and a working one return identical
+    // dictionaries. Reported as a real Bool, never as a string or a truthy
+    // number, because the JS side stores a strict boolean and turns anything
+    // else into null (unknown) on purpose.
+    func testLocationPermStatus_reportsDeviceWideServicesAsARealBoolean() {
+        let exp = expectation(description: "locationPermStatus servicesEnabled")
+        plugin.locationPermStatus(makeCall(method: "locationPermStatus", onSuccess: { data in
+            XCTAssertNotNil(data?["servicesEnabled"], "the device-wide switch must always be present in a successful answer")
+            XCTAssertTrue(data?["servicesEnabled"] is Bool, "must be a real Bool: the JS side stores anything else as unknown")
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 30)
+    }
+
+    // Every axis in ONE answer. A caller that has to make a second round trip
+    // for the global switch can observe the two halves out of step, which is
+    // the same class of bug as reading the native cache three times while a
+    // refresh lands in the middle.
+    func testLocationPermStatus_carriesAllThreeAxesInASingleResolve() {
+        let exp = expectation(description: "locationPermStatus all axes")
+        plugin.locationPermStatus(makeCall(method: "locationPermStatus", onSuccess: { data in
+            XCTAssertNotNil(data?["status"] as? String, "axis 1: this app's own grant")
+            XCTAssertNotNil(data?["accuracy"] as? String, "axis 2: Precise Location")
+            XCTAssertNotNil(data?["servicesEnabled"] as? Bool, "axis 3: device-wide Location Services")
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 30)
+    }
+
+    // The global switch is read with CLLocationManager.locationServicesEnabled(),
+    // which is NOT deprecated but DOES block the calling thread (Apple added a
+    // main-thread runtime warning for exactly that reason, and it has been seen
+    // to hang outright). The implementation dispatches it to a global queue.
+    // Two things follow, and both are pinned here: the resolve must not arrive
+    // on the main thread, and a call made FROM the main thread must still come
+    // back rather than deadlock.
+    func testLocationPermStatus_resolvesOffTheMainThread() {
+        let exp = expectation(description: "locationPermStatus off-main")
+        var wasMain = true
+        plugin.locationPermStatus(makeCall(method: "locationPermStatus", onSuccess: { _ in
+            wasMain = Thread.isMainThread
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 30)
+        XCTAssertFalse(wasMain, "the blocking services lookup must not run on, or resolve to, the main thread")
+    }
+
+    func testLocationPermStatus_calledFromTheMainThreadStillReturns() {
+        let exp = expectation(description: "locationPermStatus from main")
+        DispatchQueue.main.async {
+            self.plugin.locationPermStatus(self.makeCall(method: "locationPermStatus", onSuccess: { data in
+                XCTAssertNotNil(data?["servicesEnabled"], "a main-thread caller must still get the full answer")
+                exp.fulfill()
+            }))
+        }
+        wait(for: [exp], timeout: 30)
+    }
+
+    // The global switch cannot flip between two back-to-back reads in a test,
+    // so the answer must not wobble either. Same guarantee the status axis
+    // already carries, applied to the axis that was just added.
+    func testLocationPermStatus_deviceWideSwitchDoesNotWobbleAcrossCalls() {
+        var seen: [Bool] = []
+        for i in 0..<5 {
+            let exp = expectation(description: "servicesEnabled repeat \(i)")
+            plugin.locationPermStatus(makeCall(method: "locationPermStatus", onSuccess: { data in
+                if let b = data?["servicesEnabled"] as? Bool { seen.append(b) }
+                exp.fulfill()
+            }))
+            wait(for: [exp], timeout: 30)
+        }
+        XCTAssertEqual(seen.count, 5, "every call must resolve with the switch present")
+        XCTAssertEqual(Set(seen).count, 1, "nothing changed in between, so the answer must not wobble")
+    }
+
+    // Concurrency, per the input-class table: the dispatch means several calls
+    // can be in flight at once, each holding its own CAPPluginCall. Every one
+    // has to resolve exactly once, with a complete answer.
+    func testLocationPermStatus_concurrentCallsAllResolveExactlyOnce() {
+        var exps: [XCTestExpectation] = []
+        for i in 0..<8 {
+            let exp = expectation(description: "concurrent locationPermStatus \(i)")
+            exps.append(exp)
+            plugin.locationPermStatus(makeCall(method: "locationPermStatus", onSuccess: { data in
+                XCTAssertNotNil(data?["status"])
+                XCTAssertNotNil(data?["servicesEnabled"])
+                exp.fulfill()
+            }))
+        }
+        wait(for: exps, timeout: 60)
+    }
+
     // MARK: - motionPermStatus: read-only, never crashes, no arguments needed
 
     func testMotionPermStatus_resolvesWithStatusAndAvailability() {

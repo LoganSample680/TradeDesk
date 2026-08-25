@@ -2712,7 +2712,7 @@ function _stampGeo(rec,done,fieldPrefix){
 // Right, and the inference below never could: it reads whether the watcher is
 // delivering, which is true for whenInUse as well, so the one distinction that
 // decides whether this product works was invisible.
-let _geoNativeAuth=null;      // {status,accuracy,precise} or null when unknown
+let _geoNativeAuth=null;      // {status,accuracy,precise,servicesEnabled} or null when unknown
 function _geoNativeAuthPeek(){return _geoNativeAuth;}
 async function _geoRefreshNativeAuth(){
   // CLEARED, not left standing, whenever an answer cannot be had. Caught by
@@ -2728,7 +2728,19 @@ async function _geoRefreshNativeAuth(){
     if(!r||!r.status){_geoNativeAuth=null;return null;}
     _geoNativeAuth={status:String(r.status),
                     accuracy:r.accuracy?String(r.accuracy):null,
-                    precise:r.precise!==false};
+                    precise:r.precise!==false,
+                    // The device-wide Location Services switch, a THIRD axis
+                    // independent of both of the above (owner 2026-08-25,
+                    // "device wide location services ... why do we need it?").
+                    // Turning it off in Settings leaves this app's own grant
+                    // reading 'always' untouched while no fix will ever
+                    // arrive again, which is exactly what a live account
+                    // showing always and zero pings looks like. Strict
+                    // boolean check, never a truthiness coercion: a shell too
+                    // old to send the key at all must land as null (unknown),
+                    // not as false (switched off), because those two mean
+                    // opposite things to whoever reads the row.
+                    servicesEnabled:(typeof r.servicesEnabled==='boolean')?r.servicesEnabled:null};
     return _geoNativeAuth;
   }catch(_e){_geoNativeAuth=null;return null;}
 }
@@ -2810,6 +2822,10 @@ function _geoReportPermission(state){
     const d=(typeof S!=='undefined'&&S.devices||[]).find(x=>x&&x.id===devId);
     devLabel=(d&&(d.name||d.label))||((typeof _deviceLabel==='function')?_deviceLabel():null);
   }catch(_e){}
+  // ONE read of the native cache for the whole row: three separate
+  // _geoNativeAuthPeek() calls could each see a different refresh landing
+  // between them, and a row that mixes two answers is worse than either.
+  const _natPerm=((typeof _geoNativeAuthPeek==='function')?_geoNativeAuthPeek():null)||{};
   // No device id means no stable key, and a row keyed on a guess would
   // multiply on every boot. Skip rather than pollute.
   if(devId){
@@ -2823,16 +2839,28 @@ function _geoReportPermission(state){
         // denied / restricted / notdetermined. Falls back to the flattened
         // granted/denied/prompt on a shell too old to answer, which is why the
         // column is free text and not an enum.
-        location_status:((typeof _geoNativeAuthPeek==='function'&&_geoNativeAuthPeek()||{}).status)||state||'prompt',
+        location_status:_natPerm.status||state||'prompt',
         // Precise Location is a SEPARATE switch. Always plus reduced accuracy
         // is granted and useless at the same time against a 600ft fence, and
         // folding it into the status above would hide exactly that.
-        location_accuracy:((typeof _geoNativeAuthPeek==='function'&&_geoNativeAuthPeek()||{}).accuracy)||null,
+        location_accuracy:_natPerm.accuracy||null,
+        // Device-wide Location Services, straight off iOS
+        // (CLLocationManager.locationServicesEnabled, read off the main
+        // thread in TdGeoPlugin). null means the shell could not answer, and
+        // it has to stay distinguishable from false: 'we do not know' and
+        // 'the master switch is off' are different diagnoses.
+        location_services_enabled:_natPerm.servicesEnabled===true?true:(_natPerm.servicesEnabled===false?false:null),
         // Read from the same cache the checklist renders off, so the row and
         // the screen can never disagree. Undefined (never checked) stays null
         // rather than being written as a guess.
         motion_status:(typeof _motionPermCache!=='undefined'&&_motionPermCache)?_motionPermCache:null,
-        derived:false,
+        // TRUE when this row is a guess rather than iOS's own word (owner
+        // 2026-08-25: "don't keep inferring, build explicitly off what iOS
+        // reports"). It was hardcoded false, which quietly presented the
+        // web-shaped inference in _geoReadPermissionInferred as though iOS
+        // had said it. The inference still runs, because a plain browser has
+        // nothing else, but the row now says which kind of answer it holds.
+        derived:!(_natPerm&&_natPerm.status),
         app_version:(typeof APP_VERSION!=='undefined')?APP_VERSION:null,
         checked_at:now
       },{onConflict:'user_id,device_id'}).then(()=>{},()=>{});
@@ -3188,6 +3216,11 @@ function _geoDiagCopy(){_geoCopyText(window.__geoDiagText||'');}
 function _geoDiagPanel(){
   if(document.getElementById('_geo-diag-ov'))return;
   const dwellMin=_geoFenceEnteredAtMs?Math.round((Date.now()-_geoFenceEnteredAtMs)/60000):null;
+  // Straight off iOS, never the app's own reading of its own behaviour
+  // (owner 2026-08-25: "don't keep inferring, build explicitly off what iOS
+  // reports"). Null when the shell has no plugin to ask, and the rows below
+  // say so in those words rather than printing a plausible-looking guess.
+  const _nat=((typeof _geoNativeAuthPeek==='function')?_geoNativeAuthPeek():null)||null;
   const state=[
     ['Shell',(_geoTdPlugin()?'yes':'no')],
     // The one thing the whole park/dedup/reconcile chain was missing: a
@@ -3207,6 +3240,19 @@ function _geoDiagPanel(){
     ['Below drive speed',_geoQuietSinceMs?Math.round((Date.now()-_geoQuietSinceMs)/60000)+' min':'no (moving)'],
     ['Consent',localStorage.getItem('geo_owner_consent')||'unset'],
     ['OS denied',localStorage.getItem('td_geo_os_denied')==='1'?'yes':'no'],
+    // The three axes, side by side, because any ONE of them being wrong stops
+    // every ping and the other two keep looking healthy.
+    ['iOS location',_nat&&_nat.status?_nat.status:'not reported'],
+    ['Precise Location',_nat&&_nat.accuracy?_nat.accuracy:'not reported'],
+    // The one this panel was missing entirely. A global switch nowhere near
+    // this app leaves the grant above reading 'always' while nothing can
+    // arrive, and that is indistinguishable from a healthy phone without
+    // this row. 'unknown' is a real answer here, not a failure: an older
+    // shell genuinely cannot tell us.
+    ['Location Services (device)',
+      !_nat?'unknown (no plugin)':
+      (_nat.servicesEnabled===true?'ON':
+      (_nat.servicesEnabled===false?'OFF, nothing can arrive':'unknown (old build)'))],
     // The mileage side of the same story: a sweep that never ran is the
     // difference between "the rule is wrong" and "the rule never executed",
     // and that distinction cost four rounds of guessing (owner 2026-08-15).
