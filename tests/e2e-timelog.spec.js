@@ -3288,6 +3288,35 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(order.indexOf('sweep')).toBeGreaterThan(0);
     });
 
+    // THE REGRESSION THIS EXISTS FOR. The repair hook first went at the bottom
+    // of renderTimeLog, which quietly made it conditional on already having
+    // rows: the no-hours branch returns early, so the one case where the
+    // reconciler matters most (it exists to backfill hours that are MISSING)
+    // was the one case it never ran. The test above passed anyway because its
+    // stub happened to return rows.
+    test('an empty log still repairs, which is when it matters most', async () => {
+      const seq = await page.evaluate(async () => {
+        const saved = { rec: window._geoReconcileFromMileage, sweep: window._geoCleanupSweeps,
+                        drain: window._geoDrainQueue, rows: window._timeLogRows };
+        const calls = [];
+        try {
+          window._geoReconcileFromMileage = async () => { calls.push('reconcile'); return true; };
+          window._geoCleanupSweeps = async () => { calls.push('sweep'); return false; };
+          window._geoDrainQueue = async () => {};
+          window._timeLogRows = async () => [];      // nothing logged at all
+          await renderTimeLog();
+          for (let i = 0; i < 8; i++) await new Promise(r => setTimeout(r, 0));
+          return calls;
+        } finally {
+          window._geoReconcileFromMileage = saved.rec; window._geoCleanupSweeps = saved.sweep;
+          window._geoDrainQueue = saved.drain; window._timeLogRows = saved.rows;
+        }
+      });
+      expect(seq, 'no rows is the reason to repair, not the reason to skip it')
+        .toContain('reconcile');
+      expect(seq).toContain('sweep');
+    });
+
     test('noRepair skips the pass entirely, so a repaint cannot recurse', async () => {
       const seq = await page.evaluate(async () => {
         const saved = { rec: window._geoReconcileFromMileage, sweep: window._geoCleanupSweeps,

@@ -190,7 +190,14 @@ test.describe('Share inbox', () => {
 
   test('the prompt offers the receipt path before the job list', async () => {
     const r = await page.evaluate(() => {
+      // Jobs must exist or there IS no job list to be ahead of: the empty
+      // state renders a tip instead of rows, indexOf returns -1, and the
+      // ordering assertion becomes meaningless. (CI caught exactly that.)
+      const savedJobs = window.jobs, savedClients = window.clients;
       try {
+        window.clients = [{ id: 1, name: 'Marcy Feldman' }];
+        window.jobs = [{ id: 11, name: 'Kitchen repaint', client_id: 1, addr: '412 Oak St',
+                         start: (typeof todayKey === 'function' ? todayKey() : '') }];
         _shareInPrompt([{ path: '/x/a.jpg' }]);
         const ov = document.getElementById('_sharein-ov');
         const html = ov ? ov.innerHTML : '';
@@ -199,9 +206,14 @@ test.describe('Share inbox', () => {
         const rcIdx = html.indexOf('_si-receipt');
         return { has: !!btn, rcIdx, jobIdx,
                  text: btn ? btn.textContent : '' };
-      } finally { document.getElementById('_sharein-ov')?.remove(); }
+      } finally {
+        document.getElementById('_sharein-ov')?.remove();
+        window.jobs = savedJobs; window.clients = savedClients;
+      }
     });
     expect(r.has, 'a receipt must not be forced into being a job photo').toBe(true);
+    expect(r.jobIdx, 'the job list has to actually render, or the next assertion proves nothing')
+      .toBeGreaterThan(-1);
     expect(r.rcIdx, 'the receipt is what someone went out of their way to share').toBeLessThan(r.jobIdx);
     expect(r.text).toMatch(/receipt/i);
   });

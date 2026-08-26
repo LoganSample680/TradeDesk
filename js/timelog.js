@@ -1127,6 +1127,19 @@ async function renderTimeLog(opts){
   let allRows;
   try{allRows=await _timeLogRows(null);}
   catch(_e){el.innerHTML='<div class="empty">Couldn\'t load time entries.</div>';return;}
+  // Scheduled HERE, not at the end of this function, because the render has
+  // several early returns after this point and the empty-hours one is the case
+  // that matters most: the reconciler exists to backfill hours that are
+  // missing, so "no rows to show" is precisely when it must run, not when it
+  // should be skipped. Hooking the bottom of the function quietly made the
+  // repair conditional on already having data (caught by CI, shard 6, on the
+  // very commit that moved it).
+  //
+  // Not awaited, and it opens with an await of its own, so this yields
+  // immediately and the synchronous render below still paints first.
+  if(!(opts&&opts.noRepair)){
+    try{_tlRepairAfterPaint(allRows);}catch(_e){}
+  }
   const canComp=typeof _canViewComp==='function'&&_canViewComp();
   const isEmp=typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser;
   const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
@@ -1244,11 +1257,5 @@ async function renderTimeLog(opts){
     }else{
       shareEl.style.display='none';shareEl.innerHTML='';
     }
-  }
-  // The hours are on screen. NOW do the housekeeping, and repaint only if it
-  // found something. Deliberately not awaited: this function's job is done,
-  // and awaiting it here would put the wait straight back where it was.
-  if(!(opts&&opts.noRepair)){
-    try{_tlRepairAfterPaint(allRows);}catch(_e){}
   }
 }
