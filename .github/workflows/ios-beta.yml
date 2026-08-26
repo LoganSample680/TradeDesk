@@ -235,11 +235,30 @@ jobs:
         # reads) do not ship either. Accepted deliberately: the alternative
         # guarantees two builds, this has a real chance of needing one.
         #
-        # IF IT FAILS: set this back to '1', rebuild to ship the rest, and the
-        # portal genuinely is not right yet.
+        # ATTEMPT 3 FAILED, 2026-08-26, build 37. Same pair as attempts 1 and 2:
+        # "Authentication failed" plus "No profiles for 'app.tradedesk.beta.share'
+        # were found", three export retries, all identical.
+        #
+        # NEW EVIDENCE from this run, which narrows it: the log shows
+        # IDEProvisioningRepair(ShareExt.appex) finding "1 certificates on
+        # portal for purpose distribution" and "is managed and has a portal
+        # certificate". So the CERTIFICATE resolves fine for the extension. What
+        # fails is creating a PROFILE for that bundle id, and the App Store
+        # Connect API returns 401.
+        #
+        # That leaves exactly two causes, and they need different fixes:
+        #   1. app.tradedesk.beta.share still does not exist as its own App ID
+        #      in the portal (registering the App Group does NOT create it).
+        #   2. It exists, but the App Store Connect API key lacks the role to
+        #      create identifiers/profiles. Automatic signing tries to REGISTER
+        #      the id, and a key without App Manager (or Admin) gets 401. The
+        #      main app and LiveExt sign fine because their profiles already
+        #      exist, so a working key is not proof it can create a new one.
+        #
+        # Back to skipped so the rest of the build ships.
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          SKIP_SHARE_EXT: '0'
+          SKIP_SHARE_EXT: '1'
         run: |
           if [ "$SKIP_SHARE_EXT" = "1" ]; then
             echo "::notice::share extension SKIPPED for signing isolation (see step comment)"
