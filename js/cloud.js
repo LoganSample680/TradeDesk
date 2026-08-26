@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.25.26.61';
+const APP_VERSION='08.25.26.62';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2287,7 +2287,7 @@ async function supaInit(){
           // Crew caches are keyed by EMAIL, so without this the next account's
           // roster renders the previous account's location status against any
           // matching address. Reset the loaded flags too or they never refetch.
-          _teamGeo={};_teamGeoLoaded=false;_teamComp={};_teamCompLoaded=false;
+          _teamGeo={};_teamGeoLoaded=false;_teamGeoAt=0;_teamComp={};_teamCompLoaded=false;
           // Inbound-lead review queue lives OUTSIDE these arrays and was never cleared
           // here: the incoming account's Leads page kept rendering the outgoing
           // account's unreviewed QR/intake leads until its own poll happened to
@@ -3813,9 +3813,22 @@ function renderTeam(){
   if(_canViewComp()&&supaEnabled()&&_supaUser&&!_teamCompLoaded){
     _teamCompLoaded=true;_loadTeamComp().then(()=>renderTeam());
   }
-  // Crew location status, same lazy-load-then-rerender shape as team comp above.
-  if(!_isEmployee&&S.teamTracking&&supaEnabled()&&_supaUser&&!_teamGeoLoaded){
-    _teamGeoLoaded=true;_loadTeamGeo().then(()=>renderTeam());
+  // Crew location status. RE-FETCHED when the screen is opened, not once per
+  // session (owner report 2026-08-26: set location to Never, everything else
+  // said fix it, Team still said "Tracking"). Two things caused that; this is
+  // the second. _teamGeoLoaded latched true on the first render, so the roster
+  // kept showing whatever was true at BOOT. Somebody changing a permission and
+  // opening Team to check is the exact moment the data must not be stale, and
+  // it was the only moment it always was.
+  //
+  // 20s floor so flipping between the Fleet and Team tabs does not re-query on
+  // every tap, while any real trip back to this screen gets fresh rows.
+  if(!_isEmployee&&S.teamTracking&&supaEnabled()&&_supaUser){
+    const _age=_teamGeoAt?Date.now()-_teamGeoAt:Infinity;
+    if(!_teamGeoLoaded||_age>_TEAM_GEO_MIN_GAP_MS){
+      _teamGeoLoaded=true;_teamGeoAt=Date.now();
+      _loadTeamGeo().then(()=>renderTeam());
+    }
   }
   // ── Your own phone, as a row (owner report 2026-08-26: "don't see owner me
   // under team") ────────────────────────────────────────────────────────────
@@ -4065,6 +4078,10 @@ function _empLoadedHourly(comp){
 // honest "haven't heard from this phone."
 let _teamGeo={};
 let _teamGeoLoaded=false;
+// When the roster rows were last fetched, so opening the screen again gets
+// current data instead of whatever was true at boot. See renderTeam.
+let _teamGeoAt=0;
+const _TEAM_GEO_MIN_GAP_MS=20000;
 const _GEO_FRESH_MS=36*3600*1000; // a phone that hasn't checked in for ~1.5 days is unknown, not OK
 // How far back a ping is worth NAMING, as opposed to trusting. Past
 // _GEO_FRESH_MS a ping no longer proves anything, but "last ping 3 days ago"
@@ -4262,13 +4279,24 @@ function _geoRosterStatus(email){
   const io_=g.ios;
   const ioAt=io_?(Date.parse(io_.checked_at||'')||0):0;
   const ioFresh=ioAt>0&&(Date.now()-ioAt)<_GEO_FRESH_MS;
-  // Newest evidence wins. A ping proves tracking worked at that moment; iOS's
-  // word proves what happens once the app closes. Neither outranks the other
-  // by kind, only by age: an amber "While Using" read yesterday must not
-  // override breadcrumbs arriving an hour ago (they may have just fixed it),
-  // and a green ping from this morning must not hide a permission they
-  // turned off since.
-  const iosWins=ioFresh&&(!fresh||ioAt>=(Date.parse(g.lastPing||'')||0));
+  // A FRESH iOS READING ALWAYS WINS. Full stop, whatever the ping says.
+  //
+  // This used to also require the iOS row to be NEWER than the last ping, on a
+  // "newest evidence wins" theory. That theory is wrong, and the owner caught
+  // it: location set to Never, everything else screaming fix it, and the crew
+  // roster still said "Tracking". A ping that arrived twenty minutes before
+  // they hit Never was more recent than the permission row, so it won.
+  //
+  // The two are not the same KIND of evidence. A ping is the past: proof that
+  // tracking worked at that instant. The permission is the PRESENT, and it is
+  // the gate on every future ping. Once iOS says denied, no further ping can
+  // arrive, so recent breadcrumbs say nothing about whether tracking works now.
+  //
+  // The ping still wins where it always should have: when the iOS row is STALE
+  // (older than _GEO_FRESH_MS) or absent entirely. That is the case the rule
+  // was written for, a phone whose permission row went quiet while data kept
+  // landing, and it is untouched.
+  const iosWins=ioFresh;
   // Last ping, on EVERY state rather than only the green one. On a broken row
   // it is the thing that says how long this has been going on, which is the
   // difference between "he flipped it this morning" and "nothing has come off
@@ -6277,7 +6305,7 @@ function _wipeLocalAccountData(){
   vehicles=[];
   scans=[];equipment=[];
   places=[];
-  _teamGeo={};_teamGeoLoaded=false;_teamComp={};_teamCompLoaded=false;
+  _teamGeo={};_teamGeoLoaded=false;_teamGeoAt=0;_teamComp={};_teamCompLoaded=false;
   // Inbound-lead review queue is account-scoped in-memory state that lived OUTSIDE
   // the arrays above, the next account's Leads page would keep rendering this
   // account's unreviewed QR/intake leads (and could even promote one into the

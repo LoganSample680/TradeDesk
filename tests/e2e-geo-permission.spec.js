@@ -354,12 +354,34 @@ test.describe('Crew location permission', () => {
     expect(out.label, 'and must not be duplicated back onto it').not.toContain('iPhone');
   });
 
-  // ── Newest evidence wins, in BOTH directions ──────────────────────────────
-  test('a stale While Using does not override breadcrumbs arriving now', async () => {
+  // ── The iOS reading is the present; a ping is the past ────────────────────
+  //
+  // RULE CHANGED 2026-08-26 (CLAUDE.md 10.4). This asserted that a 20-hour-old
+  // "While Using" loses to pings arriving now, on a "newest evidence wins"
+  // theory where the two were the same kind of fact separated only by age.
+  //
+  // The owner broke that theory: location set to Never, everything else
+  // screaming fix it, and the roster still said "Tracking". A ping from
+  // shortly before they hit Never was newer than the permission row, so it won.
+  //
+  // Two reasons the old theory was wrong. A permission is the GATE on every
+  // future ping, so once iOS says denied no further ping can arrive and recent
+  // breadcrumbs say nothing about now. And ping recency is not even a reliable
+  // liveness signal in this app: the geo engine buffers fixes to disk and
+  // replays them through drainBuffer, so a row can land long after the moment
+  // it describes.
+  //
+  // A fresh iOS reading now wins outright. "Fresh" still means inside
+  // _GEO_FRESH_MS, and since the row is rewritten on every foreground, a
+  // reading older than that means the app has not been opened in a day and a
+  // half, which is the genuinely stale case the ping rule exists for (see the
+  // stale test below, unchanged).
+  test('a day-old While Using still wins over breadcrumbs arriving now', async () => {
     const old = new Date(Date.now() - 20 * 3600 * 1000).toISOString();
     const out = await rosterIos({ location_status: 'wheninuse', checked_at: old }, { lastPing: NOW() });
-    expect(out.dot, 'they may have already fixed it; the pings are the newer fact').toBe('🟢');
-    expect(out.label).toContain('last ping');
+    expect(out.dot, 'a While Using phone sends pings whenever the app is open, so they prove nothing')
+      .toBe('🟠');
+    expect(out.fix).toContain('Always');
   });
 
   test('a fresh While Using DOES override an older ping', async () => {
@@ -1238,6 +1260,66 @@ test.describe('Crew location permission', () => {
     // how one of them becomes a dead button.
     expect(/_setupTodoGo\(\\?'location\\?'\)/.test(blk),
       'one fix path, shared with the setup checklist').toBe(true);
+  });
+
+  // ── A denied phone is never "Tracking" (owner report 2026-08-26) ──────────
+  //
+  // "Location set to never allow and it still said tracking when everything
+  // else screamed fix it."
+  //
+  // The old rule made a fresh iOS reading win only if it was NEWER than the
+  // last ping. A ping from twenty minutes before they hit Never was more
+  // recent than the permission row, so it won and the row went green. The two
+  // are not the same kind of evidence: a ping is the past, the permission is
+  // the present and the gate on every future ping.
+  test('a fresh denial beats a ping that arrived just before it', async () => {
+    const out = await rosterIos({ location_status: 'denied', checked_at: NOW() },
+      { lastPing: new Date(Date.now() - 20 * 60000).toISOString() });
+    expect(out.dot, 'no further ping can arrive once iOS says denied').toBe('🔴');
+    expect(out.label).toMatch(/off/i);
+  });
+
+  test('so do the other hard-off states', async () => {
+    const recent = { lastPing: new Date(Date.now() - 10 * 60000).toISOString() };
+    const services = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: false, checked_at: NOW() }, recent);
+    const restricted = await rosterIos({ location_status: 'restricted', checked_at: NOW() }, recent);
+    expect(services.dot).toBe('🔴');
+    expect(restricted.dot).toBe('🔴');
+  });
+
+  test('and a fresh While Using beats a newer ping too', async () => {
+    const out = await rosterIos({ location_status: 'wheninuse', checked_at: NOW() },
+      { lastPing: new Date(Date.now() - 60000).toISOString() });
+    expect(out.dot, 'the app was open for that ping; the pocket is the problem').toBe('🟠');
+  });
+
+  // UNCHANGED, and the case the rule was written for: a permission row that
+  // went quiet while data kept landing. Silence from the phone must never
+  // outrank breadcrumbs that are actually arriving.
+  test('a STALE iOS row still loses to live pings', async () => {
+    const ancient = new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString();
+    const out = await rosterIos({ location_status: 'denied', checked_at: ancient },
+      { lastPing: new Date(Date.now() - 5 * 60000).toISOString() });
+    expect(out.dot, 'rows are landing, so something is working whatever the old row said').toBe('🟢');
+    expect(out.label).toContain('last ping');
+  });
+
+  test('the roster re-fetches when the screen is reopened, not once per session', () => {
+    const fs = require('fs'), path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+    const i = src.indexOf('Crew location status');
+    expect(i).toBeGreaterThan(-1);
+    const blk = src.slice(i, i + 1200);
+    // A bare !_teamGeoLoaded latch is the bug: it pins the roster to whatever
+    // was true at boot, and somebody who just changed a permission and opened
+    // Team to check is the one person who must not see stale rows.
+    expect(blk.includes('_teamGeoAt'), 'staleness has to be time-based, not a one-shot latch').toBe(true);
+    expect(blk.includes('_TEAM_GEO_MIN_GAP_MS'), 'with a floor so tab-flipping does not re-query').toBe(true);
+    // And every account-reset path must clear the stamp, or the next account
+    // inherits a timestamp that blocks its first load.
+    expect((src.match(/_teamGeoAt=0/g) || []).length,
+      'declaration plus both reset paths').toBeGreaterThanOrEqual(3);
   });
 
   // ── 5. The checklist item stays completable ────────────────────────────────
