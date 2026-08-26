@@ -5237,7 +5237,7 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
         allPresent: rows.every(Boolean),
         distinct: Array.from(new Set(sig)).length,
         greenLeft: /#f0fdf4|#86efac|#166534|#16a34a/i.test(html),
-        cardsCopy: /take cards/i.test(el.textContent),
+        cardsCopy: /get paid online/i.test(el.textContent),
       };
       el.remove();
       return r;
@@ -5246,7 +5246,47 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     expect(result.allPresent, 'all four rows render').toBe(true);
     expect(result.distinct, 'one shared visual signature across all four').toBe(1);
     expect(result.greenLeft, 'no hand-rolled green hex survives in the markup').toBe(false);
-    expect(result.cardsCopy, 'the copy itself is unchanged').toBe(true);
+    // ASSERTION UPDATED 2026-08-26 (10.4). This matched /take cards/ when the
+    // label WAS "Take cards & bank transfers". The owner replaced it because
+    // that phrasing read as intimidating; the row itself is unchanged, only
+    // the words are, so the check follows the new label rather than pinning
+    // copy the owner deliberately moved on from.
+    expect(result.cardsCopy, 'the card row renders its copy').toBe(true);
+  });
+
+  // Owner, 2026-08-26: "Take cards and bank transfers sounds intimidating as
+  // fuck, how do we narrow it down to them wanting to use it, not seeing the
+  // fee ticking tail and checking it off." Nobody opts INTO a percentage. The
+  // label is the outcome now and the fee sits last, still stated, because
+  // hiding it would be worse than leading with it.
+  test('obStep8: the card row sells the outcome, and the fee is not the headline', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof obStep8 !== 'function') return { skip: true };
+      _ob.wantCards = true;
+      const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
+      obStep8(el);
+      const row = el.querySelector('#obpay-wantCards');
+      const label = row.querySelector('div > div').textContent.trim();
+      const body = row.querySelector('div > div:nth-child(2)').textContent.trim();
+      const out = {
+        label,
+        feeIdx: body.search(/2\.9%/),
+        bodyLen: body.length,
+        saysDeposit: /deposit lands in your bank/i.test(body),
+        saysNothingToSetUp: /nothing to set up now/i.test(body),
+        stillStatesFee: /2\.9%/.test(body),
+      };
+      el.remove();
+      return out;
+    });
+    if (r.skip) return;
+    expect(r.label, 'the label is the outcome, not the mechanism').toBe('Get paid online');
+    expect(r.label).not.toMatch(/take cards/i);
+    expect(r.saysDeposit, 'it leads with the money arriving').toBe(true);
+    expect(r.saysNothingToSetUp, 'and with the fact that nothing is owed right now').toBe(true);
+    expect(r.stillStatesFee, 'the fee is still disclosed, never hidden').toBe(true);
+    expect(r.feeIdx / r.bodyLen, 'but it sits in the last third, not the first line')
+      .toBeGreaterThan(0.6);
   });
 
   // Owner 2026-08-26: "never got prompted to do location when we onboarded
@@ -5290,6 +5330,46 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
       expect(r.a, 'Turn on location resolves true').toBe(true);
       expect(r.b, 'Not now resolves false').toBe(false);
       expect(r.goneAfter, 'the handler is torn down so a stray tap cannot re-answer').toBe(true);
+    });
+
+    // Owner, 2026-08-26: "turn on location needs to be at bottom and not now a
+    // soft grey where turn on screams at ya." Both buttons used to sit right
+    // under the copy with half a screen empty below, and Not now was a full
+    // bordered secondary the same size as the primary, so they read as a coin
+    // flip when one of them is the thing the product runs on.
+    test('the actions sit at the bottom and the decline recedes', async () => {
+      const r = await page.evaluate(async () => {
+        if (typeof obStepLocation !== 'function') return { skip: true };
+        let el = document.getElementById('ob-body');
+        if (!el) { el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el); }
+        const p = obStepLocation();
+        const btns = Array.from(el.querySelectorAll('button'));
+        const on = btns.find(b => /turn on location/i.test(b.textContent));
+        const not = btns.find(b => /not now/i.test(b.textContent));
+        const copy = el.querySelector('div > div');
+        const cs = (n) => getComputedStyle(n);
+        const out = {
+          skip: false,
+          order: btns.map(b => b.textContent.trim()),
+          pushedDown: on.getBoundingClientRect().top - copy.getBoundingClientRect().bottom,
+          onWeight: cs(on).fontWeight, notWeight: cs(not).fontWeight,
+          onBg: cs(on).backgroundColor, notBg: cs(not).backgroundColor,
+          notBorder: cs(not).borderTopWidth,
+          onSize: parseFloat(cs(on).fontSize), notSize: parseFloat(cs(not).fontSize),
+        };
+        window._obGeoAnswer && window._obGeoAnswer(false);
+        await p;
+        return out;
+      });
+      if (r.skip) return;
+      expect(r.order, 'the real choice comes first, the decline last').toEqual(['Turn on location', 'Not now']);
+      expect(r.pushedDown, 'a spacer drives the actions toward the thumb').toBeGreaterThan(100);
+      expect(Number(r.onWeight), 'the primary is heavy').toBeGreaterThanOrEqual(600);
+      expect(Number(r.notWeight), 'the decline is lighter').toBeLessThan(Number(r.onWeight));
+      expect(r.onSize, 'and larger').toBeGreaterThan(r.notSize);
+      expect(r.notBg, 'the decline has no fill of its own').toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+      expect(parseFloat(r.notBorder), 'and no border, so it is not a second button').toBe(0);
+      expect(r.onBg, 'while the primary is a solid slab').not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
     });
 
     test('it never fires the OS prompt itself', async () => {

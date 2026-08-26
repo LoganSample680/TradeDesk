@@ -1728,7 +1728,15 @@ function renderObStep(){
   else if(_ob.step===3)obStep8(body);   // get paid
 }
 
+// Three weights now (owner 2026-08-26). 'quiet' is a bordered-off, soft grey
+// text button for a decline that must not read as an equal choice: on the
+// location step a full secondary button sat right under the primary with the
+// same footprint, so the two looked like a coin flip when one of them is the
+// thing the whole product runs on.
 function obBtn(label,onclick,secondary){
+  if(secondary==='quiet'){
+    return '<button onclick="'+onclick+'" style="width:100%;padding:12px 18px;border-radius:9px;border:none;background:transparent;color:var(--text3);font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;margin-top:4px;letter-spacing:-.01em;transition:opacity .15s" onmousedown="this.style.opacity=\'.6\'" onmouseup="this.style.opacity=\'1\'">'+label+'</button>';
+  }
   return '<button onclick="'+onclick+'" style="width:100%;padding:13px 18px;border-radius:9px;border:'+(secondary?'1.5px solid #e0dfd8':'none')+';background:'+(secondary?'#fff':'#0D1117')+';color:'+(secondary?'#5f5e5a':'#fff')+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px;letter-spacing:-.01em;box-shadow:'+(secondary?'none':'0 2px 8px rgba(0,0,0,.15)')+';transition:opacity .15s" onmousedown="this.style.opacity=\'.85\'" onmouseup="this.style.opacity=\'1\'">'+label+'</button>';
 }
 function obInput(id,label,placeholder,type,value){
@@ -2040,8 +2048,21 @@ function obStep8(el){
     // stopped on it, read it, and switched card payments OFF. A payment option
     // that looks like an alert is a conversion bug, and hand-rolling a row an
     // existing helper already renders is what 7.3 exists to stop.
-    obPayRow('wantCards','Take cards & bank transfers',
-      'Clients pay their deposit straight to your bank. Card fee 2.9% + $0.30, auto-logged as a deductible expense. Leave this on and <strong>Turn on card payments</strong> will be waiting on your dashboard, connect Stripe in ~2 min whenever you\'ve got your EIN and bank info handy. Cash & check work right now without it.')+
+    // COPY, owner 2026-08-26: "Take cards and bank transfers sounds
+    // intimidating as fuck, how do we narrow it down to them wanting to use
+    // it, not seeing the fee ticking tail and checking it off."
+    //
+    // The old row led with the mechanism and put the fee in the second
+    // sentence, so the first thing a contractor read was a percentage. Nobody
+    // opts INTO a fee. They opt into getting paid without chasing anyone. So
+    // the label is now the outcome in three words, the body leads with the
+    // money arriving, and the fee stays, because hiding it would be worse,
+    // but it sits last and reads as the ordinary cost of business it is.
+    // Nothing here commits them to anything: Stripe is still connected later
+    // from the dashboard, which the copy says plainly so the checkbox does
+    // not feel like a contract.
+    obPayRow('wantCards','Get paid online',
+      'Your deposit lands in your bank the moment they sign, so you can start the job instead of chasing a check. Nothing to set up now, <strong>Turn on card payments</strong> waits on your dashboard until you have your bank info handy, about 2 minutes. Cash and check keep working either way. The usual card fee is 2.9% + 30&cent;, and it logs itself as a write-off.')+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     '<div id="ob-progress" style="display:none;font-size:12px;color:var(--text3);text-align:center;margin-bottom:8px"></div>'+
     obBtn('Create my account','obSubmit()')+
@@ -2061,7 +2082,16 @@ function obStepLocation(){
       try{delete window._obGeoAnswer;}catch(_e){window._obGeoAnswer=null;}
       resolve(!!yes);
     };
+    // Actions sit at the BOTTOM, and the decline recedes (owner 2026-08-26:
+    // "turn on location needs to be at bottom and not now a soft grey where
+    // turn on screams at ya"). Previously both buttons sat directly under the
+    // copy with an empty half-screen below them, and 'Not now' was a full
+    // bordered secondary the same size as the primary, so the two read as a
+    // coin flip. A column that pushes the actions down puts the thumb where
+    // the thumb already is, and the quiet weight makes the real choice obvious
+    // without taking the other one away.
     body.innerHTML=
+      '<div style="display:flex;flex-direction:column;min-height:calc(100vh - 96px)">'+
       '<div style="margin-bottom:24px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('\ud83d\udccd',{size:28})+'</div>'+
       '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Log your miles and hours automatically</div>'+
       '<div style="font-size:14px;color:var(--text3)">This is the part that saves you the most time, so it is worth 10 seconds now.</div></div>'+
@@ -2070,12 +2100,14 @@ function obStepLocation(){
         '<div style="font-size:12px;color:var(--text3);line-height:1.6">'+
           'Every drive between jobs logs itself as deductible mileage, and your time on each job site clocks in and out on its own. No timesheets, no odometer photos, no writing anything down.'+
         '</div></div>'+
-      '<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:16px">'+
+      '<div style="font-size:12px;color:var(--text3);line-height:1.6">'+
         'Your phone will ask next. Choose <strong>Always</strong> so it still works with the app closed and in your pocket, which is where it lives on a work day. '+
         'Tracking only runs during your work hours, and you can turn it off any time in Settings.'+
       '</div>'+
+      '<div style="flex:1;min-height:24px"></div>'+
       obBtn('Turn on location','_obGeoAnswer(true)')+
-      obBtn('Not now','_obGeoAnswer(false)',true);
+      obBtn('Not now','_obGeoAnswer(false)','quiet')+
+      '</div>';
   });
 }
 
