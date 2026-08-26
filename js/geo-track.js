@@ -2666,12 +2666,11 @@ function _geoRequestPermission(cb){
           try{localStorage.setItem(_GEO_GRANTED_KEY,'1');}catch(_e){}
           done('granted');
         }else if(st==='denied'||st==='restricted'){done('denied');}
-        else if(_geoNativeWatcherId!=null){
-          // The watcher is alive, so the dialog was answered yes even on a
-          // shell too old to report the status back.
-          try{localStorage.setItem(_GEO_GRANTED_KEY,'1');}catch(_e){}
-          done('granted');
-        }else done('prompt');
+        // No watcher-alive shortcut here either (owner 2026-08-26). A live
+        // watcher proves the tracker started, not what iOS granted, and those
+        // two came apart in exactly the case that matters: whenInUse starts a
+        // watcher perfectly well and delivers nothing from a pocket.
+        else done('prompt');
       };
       // The dialog is modal and answered by a person, so read the result on a
       // delay rather than racing it. A wrong answer here is not fatal: the
@@ -2823,30 +2822,41 @@ async function _geoReadPermission(){
     if(nat.status==='denied'||nat.status==='restricted')return 'denied';
     return 'prompt';
   }
-  return _geoReadPermissionInferred();
-}
-async function _geoReadPermissionInferred(){
-  // Native shell: the WebView's per-origin permission is meaningless here,
-  // the geolocation shim intentionally never grants it (owner report
-  // 2026-08-08: "Turn on location" never cleared even with the watcher
-  // running). The truth is the plugin watcher itself: delivering = granted.
+  // ── ON NATIVE, iOS IS THE ONLY VOICE ─────────────────────────────────────
+  //
+  // Owner, 2026-08-26: "I don't want ours, ours does nothing in a true native
+  // app, go entirely off iOS since location calls capacitor plugins."
+  //
+  // Correct. Everything below this line reads WebView state, localStorage and
+  // whether our own watcher happens to be alive, and not one of those is what
+  // the phone thinks. They agreed with iOS often enough to look right and
+  // disagreed exactly when it mattered: a watcher spinning up read as
+  // 'granted' while the actual grant was whenInUse, so a phone that could
+  // never track in the background reported itself healthy.
+  //
+  // So a native shell gets iOS's answer or nothing. 'prompt' here means "not
+  // established", never "they said no": the checklist treats it as not-done
+  // and offers the ask, which is harmless and is exactly the thing that fixes
+  // it. The row also carries derived:true, so the database says plainly that
+  // no native answer was available rather than presenting a guess as fact.
+  //
+  // CONSEQUENCE, stated rather than buried: a shell older than build 36 has no
+  // locationPermStatus, so it can never answer, so its checklist item stays
+  // open until the person updates. That is the honest reading of a phone we
+  // genuinely cannot interrogate, and it is a nag rather than a wrong number.
   try{
     const _cap=window.Capacitor;
-    if(_cap&&typeof _cap.isNativePlatform==='function'&&_cap.isNativePlatform()){
-      if(_geoNativeWatcherId!=null)return 'granted';
-      if(localStorage.getItem('geo_owner_consent')==='declined')return 'denied';
-      // The plugin's watcher reported an OS-level permission failure and no
-      // success since: the phone's Settings are the only fix, say so.
-      if(localStorage.getItem('td_geo_os_denied')==='1')return 'denied';
-      // Consent given on this device and no denial on record: granted. This
-      // is what makes the checklist SURVIVE sign-out/sign-in (owner report
-      // 2026-08-08: "onboarding didn't persist my location"): the watcher
-      // takes seconds to spin up after sign-in, and gating 'granted' on it
-      // alone re-flashed the item on every boot.
-      if(localStorage.getItem('geo_owner_consent')==='1')return 'granted';
-      return 'prompt';
-    }
+    if(_cap&&typeof _cap.isNativePlatform==='function'&&_cap.isNativePlatform())return 'prompt';
   }catch(_e){}
+  return _geoReadPermissionInferred();
+}
+// BROWSER ONLY (owner 2026-08-26). The native branch that used to live at the
+// top of this function is gone: it read our own watcher, our own localStorage
+// consent flag and our own os-denied flag, none of which is what iOS thinks,
+// and a native shell now returns before ever reaching here. What is left is
+// the genuine web path, where navigator.permissions IS the platform's answer
+// rather than a stand-in for it.
+async function _geoReadPermissionInferred(){
   if(!navigator.geolocation)return 'unsupported';
   try{
     if(navigator.permissions&&navigator.permissions.query){

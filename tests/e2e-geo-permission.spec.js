@@ -759,6 +759,79 @@ test.describe('Crew location permission', () => {
         expect(guess.row.derived, 'inferred, and the row now admits it').toBe(true);
       });
 
+      // ── On native, iOS is the only voice ─────────────────────────────────
+      //
+      // Owner 2026-08-26: "I don't want ours, ours does nothing in a true
+      // native app, go entirely off iOS since location calls capacitor
+      // plugins." Every signal below used to be able to answer this question
+      // and not one of them is what the phone thinks. They agreed with iOS
+      // often enough to look right and disagreed exactly when it mattered: a
+      // watcher spinning up read as granted while the real grant was whenInUse,
+      // so a phone that could never track from a pocket reported itself fine.
+      test.describe('no local signal can answer for iOS on a native shell', () => {
+        const onNative = (setup) => page.evaluate(async (o) => {
+          const saved = { cap: window.Capacitor, nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined,
+                          wid: (typeof _geoNativeWatcherId !== 'undefined') ? _geoNativeWatcherId : undefined,
+                          consent: localStorage.getItem('geo_owner_consent'),
+                          osd: localStorage.getItem('td_geo_os_denied') };
+          try {
+            // A native shell whose plugin cannot answer at all.
+            window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+            if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = null;
+            if (typeof _geoNativeWatcherId !== 'undefined') _geoNativeWatcherId = o.watcher === undefined ? null : o.watcher;
+            if (o.consent === null) localStorage.removeItem('geo_owner_consent');
+            else if (o.consent !== undefined) localStorage.setItem('geo_owner_consent', o.consent);
+            if (o.osDenied) localStorage.setItem('td_geo_os_denied', '1');
+            else localStorage.removeItem('td_geo_os_denied');
+            return await _geoReadPermission();
+          } finally {
+            window.Capacitor = saved.cap;
+            if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+            if (typeof _geoNativeWatcherId !== 'undefined') _geoNativeWatcherId = saved.wid;
+            if (saved.consent === null) localStorage.removeItem('geo_owner_consent');
+            else localStorage.setItem('geo_owner_consent', saved.consent);
+            if (saved.osd === null) localStorage.removeItem('td_geo_os_denied');
+            else localStorage.setItem('td_geo_os_denied', saved.osd);
+          }
+        }, setup);
+
+        test('a live watcher does not mean granted', async () => {
+          expect(await onNative({ watcher: 42 }),
+            'the tracker starting proves nothing about what iOS granted').toBe('prompt');
+        });
+
+        test('our own consent flag does not mean granted', async () => {
+          expect(await onNative({ consent: '1' }),
+            'they agreed to be tracked; that is not iOS agreeing').toBe('prompt');
+        });
+
+        test('our own os-denied flag does not mean denied', async () => {
+          expect(await onNative({ osDenied: true }),
+            'a watcher error is our reading of a failure, not a status').toBe('prompt');
+        });
+
+        test('a declined consent does not mean denied either', async () => {
+          expect(await onNative({ consent: 'declined' })).toBe('prompt');
+        });
+
+        test('every combination of local signals still answers prompt', async () => {
+          for (const w of [null, 9]) for (const c of [null, '1', 'declined']) for (const d of [false, true]) {
+            expect(await onNative({ watcher: w, consent: c, osDenied: d }),
+              JSON.stringify({ w, c, d })).toBe('prompt');
+          }
+        });
+
+        test('a real browser still uses the platform permission API', async () => {
+          const r = await page.evaluate(async () => {
+            const saved = window.Capacitor;
+            try { window.Capacitor = undefined; return await _geoReadPermission(); }
+            finally { window.Capacitor = saved; }
+          });
+          expect(['granted', 'denied', 'prompt', 'unsupported'],
+            'navigator.permissions IS the platform answer in a browser').toContain(r);
+        });
+      });
+
       test('a junk status never invents an authorization', async () => {
         for (const bad of [{ status: '' }, { status: 'banana' }, {}, { status: null }]) {
           const r = await withAuth(bad);
