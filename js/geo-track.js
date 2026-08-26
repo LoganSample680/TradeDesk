@@ -1157,7 +1157,19 @@ async function _geoOnPing(pos){
     if(cur&&cur.k==='job')_geoWakeAcquire();   // hidden-gap STAY: the unseen time counts
     if(!cur){
       // Still outside everything: accumulate the dwell that makes this a STOP.
-      if(_geoStopAnchor&&_geoDistFt(here,_geoStopAnchor)<=_GEO_STOP_FT)_geoStopAnchor.lastAt=nowIso;
+      if(_geoStopAnchor&&_geoDistFt(here,_geoStopAnchor)<=_GEO_STOP_FT){
+        _geoStopAnchor.lastAt=nowIso;
+        // The pin of record refines to the BEST fix of the dwell. The first
+        // fix after a wake is routinely the worst reading of the whole park,
+        // and it used to be the only one consulted: a 200m first fix put the
+        // pin across the street and no saved-place fence could ever match it,
+        // however many precise fixes followed. Same spot (inside the stop
+        // radius), better measured, so home detection and fence resolution at
+        // close time judge the real kerb.
+        if(acc>0&&(!(_geoStopAnchor.acc>0)||acc<_geoStopAnchor.acc)){
+          _geoStopAnchor.lat=here.lat;_geoStopAnchor.lng=here.lng;_geoStopAnchor.acc=acc;
+        }
+      }
       else{
         // Pulling away from a kerb the anchor was watching: if the sit was a
         // sub-stop PAUSE (2.5-5 min, the pizza pickup), the leg is marked
@@ -1165,7 +1177,7 @@ async function _geoOnPing(pos){
         // contains an errand rather than a forced detour.
         _geoNotePause(_geoStopAnchor);
         if(_geoStopAnchor)_geoCloseStop(_geoStopAnchor);
-        _geoStopAnchor={lat:here.lat,lng:here.lng,at:nowIso,lastAt:nowIso};
+        _geoStopAnchor={lat:here.lat,lng:here.lng,at:nowIso,lastAt:nowIso,acc:acc};
       }
     }
   }else{
@@ -1311,7 +1323,7 @@ async function _geoOnPing(pos){
         // round trip (see _geoFlickerCandidate above).
         if(_flickerPrev)_geoFlickerCandidate={..._flickerPrev,driveStartedAt:_geoDriveStartedAt};
       }
-      _geoStopAnchor={lat:here.lat,lng:here.lng,at:nowIso,lastAt:nowIso};
+      _geoStopAnchor={lat:here.lat,lng:here.lng,at:nowIso,lastAt:nowIso,acc:acc};
     }
     // ── 4. Commit the new state ─────────────────────────────────────────────
     _geoCurrentJob=(cur&&cur.k==='job')?insideId:null;
@@ -2260,10 +2272,47 @@ function _geoCloseClientEntry(clientId,arrivedAt,departedIso){
 // home and it didn't log"): "Home" is a real endpoint on the log, and naming
 // it also keeps _geoCollapseDetours from folding the end of the day away as
 // if it were a passed-through errand.
+// SAVED PLACES AND CLIENT FENCES RESOLVE FIRST (owner 2026-08-26: "we should
+// never miss saved geofence places and their correct drive and edge cases we
+// already solved for"). The ping path already asks placeAt and _geoClientAt on
+// every fix, so a stop anchor only ever forms OUTSIDE those fences, but three
+// things can still put a real place under a "Stop" by close time: the anchor
+// pin was a bad first fix that better fixes later corrected (the anchor now
+// refines, see _geoOnPing), the place was saved mid-dwell (a promoted
+// repeat-stop suggestion), or a client's geocode cache warmed up during the
+// park. Resolving here, at close, with the SAME matchers and the SAME
+// descriptor shape the fence path builds (curLoc in _geoOnPing) means every
+// rule already solved downstream, purpose from _PLACE_KIND_TO_PURPOSE, the
+// sameSpot placeId check in _geoDriveEntry, the queued-bid client labeling,
+// the home-office commute call, applies to a resolved stop exactly as it does
+// to a fence arrival. No parallel path (CLAUDE.md 7.3), the stop just stops
+// being anonymous.
 function _geoStopLoc(a,ms){
   const atHome=(typeof _placeIsLikelyHome==='function')&&_placeIsLikelyHome({lat:a.lat,lng:a.lng},ms);
+  try{
+    const pl=(typeof placeAt==='function')?placeAt({lat:a.lat,lon:a.lng}):null;
+    if(pl)return {lat:pl.lat,lng:pl.lon,name:pl.name||'Place',kind:pl.kind||'other',
+                  placeId:String(pl.id),addr:pl.addr||''};
+    const cl=(typeof _geoClientAt==='function')?_geoClientAt({lat:a.lat,lng:a.lng}):null;
+    if(cl)return {lat:cl.lat,lng:cl.lng,name:cl.name||'Client',kind:'client',
+                  clientId:cl.id,addr:cl.addr||'',
+                  queuedJob:(typeof _geoHasQueuedBid==='function')&&_geoHasQueuedBid(cl.id)};
+  }catch(_e){}
   return {lat:a.lat,lng:a.lng,kind:'stop',likelyHome:atHome,
           name:atHome?(S.homeOffice?'Home Office':'Home'):'Stop'};
+}
+// The visit row for a closed stop, routed by what the pin resolved to. The
+// overnight-park guard runs FIRST whatever the kind: the truck parked at the
+// shop overnight was the original more-than-24-hours bug, and the shop being
+// a saved place does not change what a park is. A resolved dwell then lands
+// through the SAME writers a fence visit uses, so it reads as the place or
+// client visit it actually was (source 'place', the name on dest_place, Time
+// at Places, paid overhead) instead of an anonymous unpaid stop.
+function _geoWriteStopResolved(a,ms,stopLoc){
+  if(_geoStopIsOvernightPark(a,ms)){_geoParkNote('stop-skip','overnight park, no unpaid row');return;}
+  if(stopLoc&&stopLoc.placeId){_geoClosePlaceEntry(stopLoc.placeId,a.at,a.lastAt);return;}
+  if(stopLoc&&stopLoc.clientId){_geoCloseClientEntry(stopLoc.clientId,a.at,a.lastAt);return;}
+  _geoWriteStop(a);
 }
 // SETTLE THE LEG WHEN THEY PARK, NOT WHEN THEY LEAVE (owner report
 // 2026-08-09: FBC -> lunch -> home logged nothing).
@@ -2290,7 +2339,7 @@ function _geoSettleStopLeg(a,nowIso){
   const ms=Math.max(0,Date.parse(a.lastAt||nowIso)-Date.parse(a.at));
   const stopLoc=_geoStopLoc(a,ms);
   stopLoc.prevOrigin=_geoLegOrigin||null;
-  _geoDriveEntry(null,_geoDriveStartedAt,null,a.at,false,stopLoc);
+  _geoDriveEntry(null,_geoDriveStartedAt,(stopLoc.placeId||stopLoc.clientId)?stopLoc.name:null,a.at,false,stopLoc);
   a.legClosed=true;
   _geoDriveStartedAt=a.lastAt||nowIso;   // the leg out starts when they pull away
   _geoDriveReset();
@@ -2303,12 +2352,17 @@ function _geoCloseStop(a){
   if(!(ms>=_GEO_STOP_MS))return;          // a light, not a stop
   // Already settled when they parked: the leg and the split are done, only
   // the departure time needs refining to the last fix seen at the kerb.
+  const stopLoc=_geoStopLoc(a,ms);
+  const known=!!(stopLoc.placeId||stopLoc.clientId);
   if(a.legClosed){
     _geoDriveStartedAt=a.lastAt;
     _geoDriveReset();
-    if(typeof recordUnknownStop==='function')recordUnknownStop({lat:a.lat,lng:a.lng},ms);
+    // A pin that resolved to a saved place or client is not an unknown stop:
+    // feeding it to the ledger would suggest saving somewhere already saved
+    // (placeAt inside recordUnknownStop guards places, nothing guarded clients).
+    if(!known&&typeof recordUnknownStop==='function')recordUnknownStop({lat:a.lat,lng:a.lng},ms);
     if(!_supaUser)return;
-    _geoWriteStop(a);
+    _geoWriteStopResolved(a,ms,stopLoc);
     return;
   }
   // Split the leg at the kerb. Without this the parked minutes ride out on the
@@ -2323,7 +2377,6 @@ function _geoCloseStop(a){
   // A stop has no geocode, so it is its own endpoint: the inbound leg ends at
   // the kerb they parked at, and the outbound leg starts from the same spot
   // (_geoStopLoc above owns that descriptor and the home naming).
-  const stopLoc=_geoStopLoc(a,ms);
   // Where the leg INTO this stop began, carried on the stop itself. If the stop
   // turns out to be personal, that is the point the next leg has to be measured
   // from: a lunch break in the middle of a supply-house-to-job-site run does not
@@ -2332,17 +2385,17 @@ function _geoCloseStop(a){
   // CPA, 2026-08-02). Recorded before the reassignment below, which is the only
   // moment it is still known.
   stopLoc.prevOrigin=_geoLegOrigin||null;
-  if(_geoDriveStartedAt)_geoDriveEntry(null,_geoDriveStartedAt,null,a.at,false,stopLoc);
+  if(_geoDriveStartedAt)_geoDriveEntry(null,_geoDriveStartedAt,known?stopLoc.name:null,a.at,false,stopLoc);
   _geoDriveStartedAt=a.lastAt;
   _geoDriveReset();   // the banner's "this trip" restarts with the leg out of the stop
   _geoLegOrigin=stopLoc;
   // Somewhere they park repeatedly is a candidate location in its own right,
   // which is how an un-named supply yard eventually gets offered to them.
-  if(typeof recordUnknownStop==='function')recordUnknownStop({lat:a.lat,lng:a.lng},ms);
+  if(!known&&typeof recordUnknownStop==='function')recordUnknownStop({lat:a.lat,lng:a.lng},ms);
   if(!_supaUser)return;
   // Logged, and logged as ITSELF. Off-job time is neither job labor nor drive
   // time; folding it into either is what made a lunch break bill to a job.
-  _geoWriteStop(a);
+  _geoWriteStopResolved(a,ms,stopLoc);
 }
 // A personal stop must not become the origin of the next leg. Called once the
 // business at the pin is known (mileage.js _autoNameStopTrip), which is always

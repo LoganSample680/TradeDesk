@@ -1481,6 +1481,81 @@ test.describe('Places, drive attribution and the map', () => {
     });
   });
 
+  test.describe('saving a place renames the Stop trips it explains', () => {
+    // Owner 2026-08-26: "we should never miss saved geofence places". Every
+    // drive that ended at this pin before it had a name was written "Stop",
+    // because that was all anyone knew. Naming the pin is the missing fact
+    // arriving late, so savePlace now runs the same rename the POI path
+    // applies when Apple answers late (_autoNameStopTrip's loop), with the
+    // contractor's own answer, which outranks Apple's.
+    test('savePlace renames Stop endpoints at the pin, sets the purpose, and touches nothing else', async () => {
+      const out = await page.evaluate(() => {
+        const realMileage = mileage.slice(), realPlaces = places.slice();
+        mileage.length = 0;
+        mileage.push(
+          { id: 71, gps: true, from_name: 'Stop', from: 'Stop', fromCoord: { lat: 44.61, lng: -100.61 },
+            to_name: 'Job A', to: '1 Job Rd', toCoord: { lat: 44.7, lng: -100.7 }, purpose: 'Job site', date: '2026-08-20' },
+          { id: 72, gps: true, from_name: 'Shop', from: 'Shop Rd', fromCoord: { lat: 44.0, lng: -100.0 },
+            to_name: 'Stop', to: 'Stop', toCoord: { lat: 44.61, lng: -100.61 }, purpose: 'Other', date: '2026-08-21' },
+          // A human-entered row is never touched, GPS or not.
+          { id: 73, gps: false, from_name: 'Stop', from: 'Stop', fromCoord: { lat: 44.61, lng: -100.61 },
+            to_name: 'Home', to: 'Home', purpose: 'Other', date: '2026-08-21' },
+          // A Stop somewhere ELSE stays a Stop.
+          { id: 74, gps: true, from_name: 'Stop', from: 'Stop', fromCoord: { lat: 45.9, lng: -101.9 },
+            to_name: 'Job B', to: '2 Job Rd', toCoord: { lat: 45.8, lng: -101.8 }, purpose: 'Job site', date: '2026-08-22' },
+          // An endpoint a human already renamed is never overwritten.
+          { id: 75, gps: true, from_name: 'Depot', from: 'Depot Rd', fromCoord: { lat: 44.61, lng: -100.61 },
+            to_name: 'Job C', to: '3 Job Rd', toCoord: { lat: 44.7, lng: -100.7 }, purpose: 'Job site', date: '2026-08-22' },
+        );
+        try {
+          savePlace({ name: 'ProBuild Yard', kind: 'supply', lat: 44.61, lon: -100.61, addr: '900 Yard Rd' });
+          const by = id => mileage.find(m => m.id === id);
+          return {
+            r71: { from_name: by(71).from_name, from: by(71).from, purpose: by(71).purpose },
+            r72: { to_name: by(72).to_name, to: by(72).to, purpose: by(72).purpose },
+            r73: { from_name: by(73).from_name },
+            r74: { from_name: by(74).from_name },
+            r75: { from_name: by(75).from_name },
+            again: _placeRetroNameTrips(places.find(pl => pl.name === 'ProBuild Yard')),
+          };
+        } finally {
+          mileage.length = 0; realMileage.forEach(x => mileage.push(x));
+          places.length = 0; realPlaces.forEach(x => places.push(x));
+          saveAll();
+        }
+      });
+      expect(out.r71.from_name).toBe('ProBuild Yard');
+      expect(out.r71.from).toBe('900 Yard Rd');
+      // The origin rename never rewrites the trip's purpose: purpose describes
+      // the DESTINATION, and this row already knows it went to a job.
+      expect(out.r71.purpose).toBe('Job site');
+      expect(out.r72.to_name).toBe('ProBuild Yard');
+      expect(out.r72.to).toBe('900 Yard Rd');
+      // The destination rename upgrades the anonymous default to the kind's
+      // purpose, the same mapping every fence arrival uses.
+      expect(out.r72.purpose).toBe('Supply run');
+      expect(out.r73.from_name).toBe('Stop');
+      expect(out.r74.from_name).toBe('Stop');
+      expect(out.r75.from_name).toBe('Depot');
+      // Idempotent: a second sweep finds nothing left to rename.
+      expect(out.again).toBe(0);
+    });
+
+    test('_placeRetroNameTrips survives junk without throwing', async () => {
+      const out = await page.evaluate(() => {
+        try {
+          return {
+            nullPl: _placeRetroNameTrips(null),
+            noCoord: _placeRetroNameTrips({ name: 'X', kind: 'supply' }),
+          };
+        } catch (e) { return { threw: e.message }; }
+      });
+      expect(out.threw).toBeUndefined();
+      expect(out.nullPl).toBe(0);
+      expect(out.noCoord).toBe(0);
+    });
+  });
+
   test('zero console errors across the places suite', async () => {
     assertNoErrors(page, 'places, drive attribution and map');
   });

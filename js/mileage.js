@@ -2129,6 +2129,45 @@ const _PLACE_KIND_TO_PURPOSE={
   home_office:'Home Office',
   business_meeting:'Business meeting',
 };
+
+// When a place is SAVED, the log it should have had catches up (owner
+// 2026-08-26: "we should never miss saved geofence places"). Every drive that
+// ended or began at this pin before it had a name was written as "Stop",
+// because that is all anyone knew at the time. The contractor naming the pin
+// is the missing fact arriving late, so the same patch the POI path applies
+// when Apple answers late (_autoNameStopTrip's rename loop) runs here for the
+// contractor's own answer, which outranks Apple's: their name, their address,
+// and the purpose their chosen kind maps to. Only endpoints still reading
+// "Stop" are touched, a row a human already edited is never overwritten, and
+// purpose only moves off the anonymous default for the same reason.
+function _placeRetroNameTrips(pl){
+  try{
+    if(!pl||pl.lat==null||pl.lon==null)return 0;
+    if(typeof mileage==='undefined'||!Array.isArray(mileage))return 0;
+    const ft=pl.fenceFt||((typeof PLACE_MATCH_FT!=='undefined')?PLACE_MATCH_FT:300);
+    const near=c=>!!(c&&c.lat!=null&&typeof _placeDistFt==='function'&&_placeDistFt({lat:c.lat,lon:c.lng!=null?c.lng:c.lon},pl)<=ft);
+    let n=0;
+    mileage.forEach(m=>{
+      if(!m||!m.gps)return;
+      if(m.from_name==='Stop'&&near(m.fromCoord)){
+        m.from_name=pl.name;
+        if(m.from==='Stop'||!m.from)m.from=pl.addr||pl.name;
+        n++;
+      }
+      if(m.to_name==='Stop'&&near(m.toCoord)){
+        m.to_name=pl.name;
+        if(m.to==='Stop'||!m.to)m.to=pl.addr||pl.name;
+        if(!m.purpose||m.purpose==='Other')m.purpose=_autoTripPurpose({kind:pl.kind});
+        n++;
+      }
+    });
+    if(n){
+      if(typeof saveAll==='function')saveAll();
+      if(document.getElementById('mil-table')&&typeof renderAllMileage==='function')renderAllMileage();
+    }
+    return n;
+  }catch(_e){return 0;}
+}
 function _autoTripPurpose(to){
   const k=(to&&to.kind)||'';
   if(k==='job')return 'Job site';

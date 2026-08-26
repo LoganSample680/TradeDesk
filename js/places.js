@@ -199,6 +199,10 @@ function savePlace(pl){
     places.push(pl);
   }
   if(typeof saveAll==='function')saveAll();
+  // The trips that predate the name catch up (mileage.js): every "Stop" row at
+  // this pin becomes this place, which is the whole payoff of promoting a
+  // repeat-stop suggestion. Idempotent, only anonymous endpoints move.
+  if(typeof _placeRetroNameTrips==='function')_placeRetroNameTrips(existing||pl);
   return existing||pl;
 }
 function deletePlace(id){
