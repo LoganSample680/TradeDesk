@@ -3529,6 +3529,71 @@ test.describe('clients.js: exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // _startPropQueue / _tickPropQueue: the background property-data queue
+  //
+  // It had no coverage at all, which is how a missing null guard sat in it
+  // until a webkit shard threw "undefined is not an object (evaluating
+  // 'c.addr')" (2026-08-26). The failure mode is the quiet kind: the queue dies
+  // on the throw and nothing ever restarts it, so property data stops arriving
+  // for the rest of the session and nobody sees a reason why.
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_startPropQueue', () => {
+    const withClients = (page, list) => page.evaluate((rows) => {
+      const saved = clients.slice();
+      const savedTimer = _propQueueTimer;
+      if (_propQueueTimer) { clearTimeout(_propQueueTimer); _propQueueTimer = null; }
+      clients.length = 0; rows.forEach((r) => clients.push(r));
+      let threw = null;
+      try { _startPropQueue(); } catch (e) { threw = String((e && e.message) || e); }
+      const queued = _propQueue.slice();
+      if (_propQueueTimer) { clearTimeout(_propQueueTimer); }
+      _propQueueTimer = savedTimer;
+      clients.length = 0; saved.forEach((c) => clients.push(c));
+      return { threw, queued };
+    }, list);
+
+    test('a null entry in clients does not take the queue down', async () => {
+      // The exact shape that threw: a hole in the array, which a realtime
+      // delete landing mid-sweep or a restore leaving a gap can both produce.
+      const r = await withClients(page, [
+        { id: 9001, addr: '1 Real St' },
+        null,
+        { id: 9002, addr: '2 Real St' },
+      ]);
+      expect(r.threw, 'a null client must never throw out of _startPropQueue').toBeNull();
+      // And the real clients on either side of the hole still got queued: the
+      // guard has to skip the bad entry, not abandon the list at it.
+      expect(r.queued).toEqual([9001, 9002]);
+    });
+
+    test('undefined entries and an all-junk list are both survivable', async () => {
+      const mixed = await withClients(page, [undefined, { id: 9003, street: '3 Real St' }, null]);
+      expect(mixed.threw).toBeNull();
+      expect(mixed.queued).toEqual([9003]);
+
+      const junk = await withClients(page, [null, undefined, null]);
+      expect(junk.threw).toBeNull();
+      expect(junk.queued).toEqual([]);
+    });
+
+    test('a client with no address is skipped, and one already fetched is not re-queued', async () => {
+      const r = await withClients(page, [
+        { id: 9004 },                                             // no address at all
+        { id: 9005, addr: '5 Real St', propDataFetchedAt: 1 },    // already done
+        { id: 9006, addr: '6 Real St' },                          // the only work
+      ]);
+      expect(r.threw).toBeNull();
+      expect(r.queued).toEqual([9006]);
+    });
+
+    test('an empty roster queues nothing and arms no timer', async () => {
+      const r = await withClients(page, []);
+      expect(r.threw).toBeNull();
+      expect(r.queued).toEqual([]);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // no console errors
   // ═══════════════════════════════════════════════════════════════════════════
   test('no console errors, clients.js', async () => {

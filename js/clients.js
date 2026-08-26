@@ -3152,7 +3152,14 @@ let _propQueueTimer=null;
 
 function _startPropQueue(){
   if(_propQueueTimer)return;
-  _propQueue=clients.filter(c=>(c.addr||c.street)&&!c.propDataFetchedAt).map(c=>c.id);
+  // `c&&` is not decoration. A null or undefined entry in `clients` (a realtime
+  // delete landing mid-sweep, a restore that leaves a hole) threw here and took
+  // the whole background property queue down with it, silently, for the rest of
+  // the session: nothing retries _startPropQueue. _tickPropQueue eight lines
+  // down already guards exactly this way, so the gap was an inconsistency
+  // rather than a decision. Surfaced by a webkit shard as
+  // "undefined is not an object (evaluating 'c.addr')", 2026-08-26.
+  _propQueue=clients.filter(c=>c&&(c.addr||c.street)&&!c.propDataFetchedAt).map(c=>c.id);
   if(!_propQueue.length)return;
   _propQueueTimer=setTimeout(_tickPropQueue,3000);
 }
