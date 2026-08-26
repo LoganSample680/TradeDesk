@@ -4111,8 +4111,25 @@ test.describe('Workforce time intelligence', () => {
   test('crew cost: a manual job clock-in overlapping automatic shop time is not paid twice', async () => {
     const r = await page.evaluate(async () => {
       if (typeof _crewCostRender !== 'function') return null;
-      const orig = { timeEntries, supa: window._supa, supaEnabled: window.supaEnabled, supaUser: window._supaUser };
-      const T0 = Date.now() - 3 * 3600000;   // 3h ago, safely inside "today"
+      // Save and restore the BARE bindings this test actually overwrites.
+      // Reading `window._supa` here captured undefined, and restoring that
+      // bare at the end wiped the real signed-in client for every test that
+      // ran after this one in the file.
+      const orig = { timeEntries, supa: _supa, supaEnabled: window.supaEnabled, supaUser: _supaUser };
+      // "3 hours ago" is NOT safely inside today. Between midnight and 03:00
+      // Central it lands on YESTERDAY's CT date, and _crewCostRender filters
+      // every row by CT date (js/finance.js), so the entire fixture vanished
+      // and the modal rendered "No tracked time today yet". That is how this
+      // test failed at 00:40 CT and passed at noon, which reads as a shard
+      // flake and is really a clock. Clamp the anchor into today's CT date so
+      // the hour the runner happens to start can never decide the result.
+      let T0 = Date.now() - 3 * 3600000;
+      {
+        const today = _ctDateStr(new Date());
+        let mid = Date.now();
+        while (_ctDateStr(new Date(mid - 900000)) === today) mid -= 900000;
+        if (T0 < mid) T0 = mid + 60000;
+      }
       const EMP = 'emp-shopoverlap-1';
       // Shop dwell: 2 real hours, T0 to T0+120m.
       const shopRow = { employee_user_id: EMP, minutes: 120, arrived_at: new Date(T0).toISOString() };
@@ -4126,7 +4143,7 @@ test.describe('Workforce time intelligence', () => {
         minutes: 60, logged_by_uid: EMP, logged_by_name: 'Test Crew',
       });
       const makeQ = (rows) => { const q = { _data: { data: rows } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.is = () => q; q.lt = () => q; q.lte = () => q; q.not = () => q; q.order = () => q; q.limit = () => q; q.select = () => q; return q; };
-      window._supa = {
+      _supa = {
         from: (tbl) => {
           if (tbl === 'team_members') return makeQ([{ employee_user_id: EMP, name: 'Test Crew', email: '', pay_type: 'hourly', pay_rate: 30 }]);
           if (tbl === 'shop_time_entries') return makeQ([shopRow]);
@@ -4134,7 +4151,13 @@ test.describe('Workforce time intelligence', () => {
         },
       };
       window.supaEnabled = () => true;
-      window._supaUser = window._supaUser || { id: 'owner-test' };
+      // BARE bindings, not window.*. js/cloud.js:638 declares these as
+      // `let _supa=null,_supaUser=null`, and a top-level let lives in the
+      // global LEXICAL environment, so `window._supa = x` creates an unrelated
+      // property while _fetchCrewLabor keeps reading the real binding. The
+      // boot already signs a _supaUser in, so that line is only a safety net,
+      // but the _supa stub above is load-bearing and must be assigned bare.
+      _supaUser = _supaUser || { id: 'owner-test' };
       document.getElementById('_crew-cost-ov')?.remove();
       let paidMin = null, html = '';
       try {
@@ -4142,7 +4165,7 @@ test.describe('Workforce time intelligence', () => {
         html = document.getElementById('_crew-cost-body')?.innerHTML || '';
       } catch (e) { return { error: e.message }; }
       document.getElementById('_crew-cost-ov')?.remove();
-      timeEntries = orig.timeEntries; window._supa = orig.supa; window.supaEnabled = orig.supaEnabled; window._supaUser = orig.supaUser;
+      timeEntries = orig.timeEntries; _supa = orig.supa; window.supaEnabled = orig.supaEnabled; _supaUser = orig.supaUser;
       // 2h loaded cost at $30 wage would show as $60 wage-only; 3h (the bug)
       // would show $90. Read the rendered hours figure directly rather than
       // re-deriving it, so the test proves what the OWNER actually sees.
@@ -4183,8 +4206,16 @@ test.describe('Workforce time intelligence', () => {
   test('crew cost: the prep and wrap-up allowances pay the ends of the day', async () => {
     const r = await page.evaluate(async () => {
       if (typeof _crewCostRender !== 'function') return null;
-      const orig = { timeEntries, supa: window._supa, supaEnabled: window.supaEnabled, supaUser: window._supaUser, wrap: S.shopWrapMin, prep: S.shopPrepMin };
-      const T0 = Date.now() - 3 * 3600000;
+      // Bare bindings, same reason as the sibling test above.
+      const orig = { timeEntries, supa: _supa, supaEnabled: window.supaEnabled, supaUser: _supaUser, wrap: S.shopWrapMin, prep: S.shopPrepMin };
+      // Same CT-date clamp as the sibling test above.
+      let T0 = Date.now() - 3 * 3600000;
+      {
+        const today = _ctDateStr(new Date());
+        let mid = Date.now();
+        while (_ctDateStr(new Date(mid - 900000)) === today) mid -= 900000;
+        if (T0 < mid) T0 = mid + 60000;
+      }
       const EMP = 'emp-shopwrap-1';
       const shopRow = { employee_user_id: EMP, minutes: 120, arrived_at: new Date(T0).toISOString() };
       timeEntries = timeEntries.filter(e => e.id !== 8970098);
@@ -4194,7 +4225,7 @@ test.describe('Workforce time intelligence', () => {
         minutes: 60, logged_by_uid: EMP, logged_by_name: 'Test Crew',
       });
       const makeQ = (rows) => { const q = { _data: { data: rows } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.is = () => q; q.lt = () => q; q.lte = () => q; q.not = () => q; q.order = () => q; q.limit = () => q; q.select = () => q; return q; };
-      window._supa = {
+      _supa = {
         from: (tbl) => {
           if (tbl === 'team_members') return makeQ([{ employee_user_id: EMP, name: 'Test Crew', email: '', pay_type: 'hourly', pay_rate: 30 }]);
           if (tbl === 'shop_time_entries') return makeQ([shopRow]);
@@ -4202,7 +4233,13 @@ test.describe('Workforce time intelligence', () => {
         },
       };
       window.supaEnabled = () => true;
-      window._supaUser = window._supaUser || { id: 'owner-test' };
+      // BARE bindings, not window.*. js/cloud.js:638 declares these as
+      // `let _supa=null,_supaUser=null`, and a top-level let lives in the
+      // global LEXICAL environment, so `window._supa = x` creates an unrelated
+      // property while _fetchCrewLabor keeps reading the real binding. The
+      // boot already signs a _supaUser in, so that line is only a safety net,
+      // but the _supa stub above is load-bearing and must be assigned bare.
+      _supaUser = _supaUser || { id: 'owner-test' };
       S.shopWrapMin = 30; S.shopPrepMin = 30;
       document.getElementById('_crew-cost-ov')?.remove();
       let html = '';
@@ -4211,7 +4248,7 @@ test.describe('Workforce time intelligence', () => {
         html = document.getElementById('_crew-cost-body')?.innerHTML || '';
       } catch (e) { return { error: e.message }; }
       document.getElementById('_crew-cost-ov')?.remove();
-      timeEntries = orig.timeEntries; window._supa = orig.supa; window.supaEnabled = orig.supaEnabled; window._supaUser = orig.supaUser; S.shopWrapMin = orig.wrap; S.shopPrepMin = orig.prep;
+      timeEntries = orig.timeEntries; _supa = orig.supa; window.supaEnabled = orig.supaEnabled; _supaUser = orig.supaUser; S.shopWrapMin = orig.wrap; S.shopPrepMin = orig.prep;
       const hoursMatch = html.match(/(\d+(?:\.\d+)?)h/);
       return { html, hours: hoursMatch ? parseFloat(hoursMatch[1]) : null };
     });
