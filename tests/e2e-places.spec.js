@@ -1292,6 +1292,11 @@ test.describe('Places, drive attribution and the map', () => {
       const mk = (tbl) => {
         const q = { _eq: {}, _gte: null, _lt: null };
         q.select = () => q;
+        // .is added 2026-08-26: the time-table reads carry
+        // .is('deleted_at',null) now, and a builder that only knows the filters
+        // it was written against turns a new one into "is is not a function",
+        // which surfaces as a missing place name three layers away.
+        q.is = () => q;
         q.eq = (c, v) => { q._eq[c] = v; return q; };
         q.gte = (c, v) => { q._gte = v; return q; };
         q.lt = (c, v) => { q._lt = v; return q; };

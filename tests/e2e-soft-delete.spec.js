@@ -76,9 +76,15 @@ test.describe('Shared soft delete', () => {
     expect(one.rec.updates[0].ids).toEqual(many.rec.updates[0].ids);
   });
 
-  test('ids are stringified, so a numeric id still matches the row', async () => {
+  // ASSERTION CHANGED 2026-08-26 (10.4). This required ids to be stringified,
+  // and they were, until that turned ten assertions elsewhere about WHICH row
+  // was removed into type mismatches: a numeric row id went out as '502' and
+  // came back as a string. PostgREST coerces either happily, so nothing in
+  // production depended on the conversion, and the ledger that genuinely wants
+  // strings gets them at the one line that writes it. Ids now travel as given.
+  test('ids travel as given, so a caller can still recognise the row it removed', async () => {
     const r = await withRec(async () => await _tdSoftDelete('td_mileage', [17, '18']));
-    expect(r.rec.updates[0].ids).toEqual(['17', '18']);
+    expect(r.rec.updates[0].ids, 'no silent type conversion on the way out').toEqual([17, '18']);
   });
 
   test('it chunks at 50 rather than sending one enormous filter', async () => {
