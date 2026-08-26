@@ -310,24 +310,71 @@ test.describe('Geo banner + ping, _geoPermissionBanner / _geoRequestPermission /
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_geoPermissionBanner: hides banner for non-employee (display:none)', async () => {
+  // BEHAVIOUR CHANGED 2026-08-26 (CLAUDE.md 10.4), owner ask: "banner on their
+  // login if they disable it."
+  //
+  // OLD RULE: hide the banner for anyone who is not an employee. That was
+  // deliberate when the banner existed purely so crew could fix their own
+  // phone without the owner chasing them, and it was correct at the time.
+  //
+  // NEW RULE: the owner sees it too. They are the one person who could switch
+  // off their own tracking and never be told, and it is their mileage
+  // deduction. The banner is now hidden by STATE (location is fine) rather
+  // than by ROLE.
+  //
+  // What survives unchanged: an employee on an account with crew tracking off
+  // still sees nothing, since tracking is not running for them at all.
+  test('_geoPermissionBanner: an owner with a healthy phone still sees nothing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof _geoPermissionBanner !== 'function') return { skip: true };
       let el = document.getElementById('dash-geo-perm');
       if (!el) { el = document.createElement('div'); el.id = 'dash-geo-perm'; document.body.appendChild(el); }
       el.style.display = 'block';
-      const origEmp = window._isEmployee;
-      window._isEmployee = false; // non-employee → banner must hide
+      const orig = { emp: window._isEmployee, cap: window.Capacitor,
+                     nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined };
+      window._isEmployee = false;
+      // iOS reporting a perfectly healthy phone: nothing to warn about, so
+      // nothing shows. Hidden by state, not by who is looking.
+      window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = { status: 'always', accuracy: 'full', servicesEnabled: true };
       try {
         await _geoPermissionBanner();
-        const disp = el.style.display;
-        window._isEmployee = origEmp;
-        return { ok: true, disp };
-      } catch (e) { window._isEmployee = origEmp; return { ok: false, error: e.message }; }
+        return { ok: true, disp: el.style.display };
+      } catch (e) { return { ok: false, error: e.message }; }
+      finally {
+        window._isEmployee = orig.emp; window.Capacitor = orig.cap;
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = orig.nat;
+      }
     });
     if (!result.skip) {
       expect(result.ok).toBe(true);
       expect(result.disp).toBe('none');
+    }
+  });
+
+  test('_geoPermissionBanner: an owner whose location is OFF now gets warned', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _geoPermissionBanner !== 'function') return { skip: true };
+      let el = document.getElementById('dash-geo-perm');
+      if (!el) { el = document.createElement('div'); el.id = 'dash-geo-perm'; document.body.appendChild(el); }
+      el.style.display = 'none';
+      const orig = { emp: window._isEmployee, cap: window.Capacitor,
+                     nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined };
+      window._isEmployee = false;
+      window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = { status: 'denied', accuracy: 'full', servicesEnabled: true };
+      try {
+        await _geoPermissionBanner();
+        return { ok: true, disp: el.style.display };
+      } catch (e) { return { ok: false, error: e.message }; }
+      finally {
+        window._isEmployee = orig.emp; window.Capacitor = orig.cap;
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = orig.nat;
+      }
+    });
+    if (!result.skip) {
+      expect(result.ok).toBe(true);
+      expect(result.disp, 'the owner used to be the one person never told').toBe('block');
     }
   });
 
