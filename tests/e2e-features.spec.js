@@ -4029,11 +4029,20 @@ test.describe('Workforce time intelligence', () => {
     const r = await page.evaluate(async () => {
       if (typeof _fetchCrewLabor !== 'function') return null;
       const orig = window._supa;
+      // `is` added 2026-08-26: the time-table reads now carry
+      // .is('deleted_at',null), and a builder that only knows the filters it was
+      // written against turns a new one into "is is not a function".
       const makeQ = () => {
         const q = { _data: { data: [] } };
         q.then = (res, rej) => Promise.resolve(q._data).then(res, rej);
         q.gte = () => q;
         q.eq  = () => q;
+        q.is  = () => q;
+        q.lt  = () => q;
+        q.lte = () => q;
+        q.not = () => q;
+        q.order = () => q;
+        q.limit = () => q;
         q.select = () => q;
         return q;
       };
@@ -4073,7 +4082,7 @@ test.describe('Workforce time intelligence', () => {
       timeEntries = timeEntries.filter(e => e.id !== 8970002);
       timeEntries.push({ id: 8970002, job_id: 1, date: now.toISOString().slice(0, 10), start_time: now.toISOString(), end_time: now.toISOString(), minutes: 60, logged_by_uid: null, logged_by_name: 'Owner (me)' });
       S.ownerPayType = 'hourly'; S.ownerPayRate = 25;
-      const makeQ = () => { const q = { _data: { data: [] } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.select = () => q; return q; };
+      const makeQ = () => { const q = { _data: { data: [] } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.is = () => q; q.lt = () => q; q.lte = () => q; q.not = () => q; q.order = () => q; q.limit = () => q; q.select = () => q; return q; };
       window._supa = { from: () => makeQ() };
       window.supaEnabled = () => true;
       window._supaUser = window._supaUser || { id: 'test-uid' };

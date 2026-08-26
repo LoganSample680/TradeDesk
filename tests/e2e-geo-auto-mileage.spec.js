@@ -1165,9 +1165,16 @@ test.describe('Automatic mileage from drive legs', () => {
         const savedSupa = window._supa, savedUser = window._supaUser;
         const cloudDeletes = [];
         window._supaUser = window._supaUser || { id: 'twin-del-u' };
+        // Records the SOFT delete (2026-08-26): sweeps stamp deleted_at through
+        // _tdSoftDelete now rather than issuing a DELETE, so the recorder has to
+        // watch update().in() to see the same event. The hard-delete branch is
+        // kept so this still catches a sweep that regresses to one.
         window._supa = { from: (tbl) => ({
           delete: () => ({ eq: (c1, v1) => ({ eq: () => ({ then: (res, rej) => { cloudDeletes.push({ tbl, id: v1 }); return Promise.resolve({ error: null }).then(res, rej); } }) }) }),
-          select: () => { const q = { eq: () => q, gte: () => q, then: (res, rej) => Promise.resolve({ data: [], error: null }).then(res, rej) }; return q; },
+          update: (patch) => { const u = { in: (col, vals) => { (vals || []).forEach(v => cloudDeletes.push({ tbl, id: String(v) })); return u; },
+                                           eq: () => u, then: (res, rej) => Promise.resolve({ error: null }).then(res, rej) }; return u; },
+          select: () => { const q = new Proxy(function(){}, { get: (_, k) =>
+            k === 'then' ? (res, rej) => Promise.resolve({ data: [], error: null }).then(res, rej) : () => q }); return q; },
         }) };
         try {
           mileage.push(
@@ -1186,7 +1193,15 @@ test.describe('Automatic mileage from drive legs', () => {
       });
       expect(out.healed).toBe(1);
       expect(out.left, 'the contemporaneous close survives, the replay dies').toEqual([9301]);
-      expect(out.cloudDeletes, 'the loser is deleted from td_mileage directly, so no reload can resurrect it').toEqual([{ tbl: 'td_mileage', id: '9302' }]);
+      // ASSERTION UPDATED 2026-08-26 (10.4). This required a HARD .delete() on
+      // td_mileage. Owner directive that day: every sweep soft deletes so a
+      // wrong guess can be undone, and _mileDedupTrips now goes through
+      // _tdSoftDelete like the rest. The intent the test was protecting is
+      // unchanged and still checked, the loser must be removed on the SERVER so
+      // no reload resurrects it, only the verb changed from delete to a
+      // deleted_at stamp.
+      expect(out.cloudDeletes, 'the loser is removed on the server, so no reload can resurrect it')
+        .toEqual([{ tbl: 'td_mileage', id: '9302' }]);
     });
 
     test('a backdated manual trip to the same client is never eaten', async () => {
@@ -4229,10 +4244,20 @@ test.describe('Automatic mileage from drive legs', () => {
           else localStorage.setItem('td_geo_os_denied', savedDenied);
         }
       });
-      expect(r.running, 'a delivering watcher IS granted, the checklist item clears').toBe('granted');
-      expect(r.declined).toBe('denied');
-      expect(r.consented, 'consent on this device survives sign-out/sign-in as granted').toBe('granted');
-      expect(r.osDenied, 'an OS-level denial outranks stored consent').toBe('denied');
+      // ASSERTIONS REWRITTEN 2026-08-26 (10.4). Every line here pinned an
+      // INFERENCE about iOS drawn from something that is not iOS: our watcher
+      // being alive, our stored consent, our os-denied flag. Owner that day:
+      // "I don't want ours, ours does nothing in a true native app, go entirely
+      // off iOS since location calls capacitor plugins."
+      //
+      // They were not harmless. A delivering watcher reading as 'granted' is
+      // exactly how a phone on whenInUse, which can never track from a pocket,
+      // reported itself healthy. On a native shell the answer now comes from
+      // iOS or not at all, and 'prompt' means "not established", never a denial.
+      expect(r.running, 'a live watcher proves the tracker started, not what iOS granted').toBe('prompt');
+      expect(r.declined, 'our own declined flag is not an iOS status').toBe('prompt');
+      expect(r.consented, 'they agreed to be tracked; that is not iOS agreeing').toBe('prompt');
+      expect(r.osDenied, 'a watcher error is our reading of a failure, not a status').toBe('prompt');
       expect(r.fresh).toBe('prompt');
     });
 
@@ -6557,7 +6582,18 @@ test.describe('Automatic mileage from drive legs', () => {
       window._supaUser = { id: 'wd-user' };
       window._mileWorkdaySweepRan = false;
       const q = { data: ents, error: null };
-      window._supa = { from: () => ({ select: () => { const c = { eq: () => c, gte: () => c, then: (res, rej) => Promise.resolve(q).then(res, rej) }; return c; },
+      // Chainable, plus an update() recorder: the sweeps SOFT delete now
+      // (js/cloud.js _tdSoftDelete), so a stub that only knows .delete() sees
+      // nothing happen, and one that only knows .eq/.gte throws the moment
+      // .is('deleted_at',null) is added to the read.
+      window.__softDeletes = [];
+      window._supa = { from: (tbl) => ({
+        select: () => { const c = new Proxy(function(){}, { get: (_, k) =>
+          k === 'then' ? (res, rej) => Promise.resolve(q).then(res, rej) : () => c }); return c; },
+        update: (patch) => { const u = { tbl, patch, ids: null };
+          const c = { in: (col, vals) => { u.ids = vals.slice(); window.__softDeletes.push(u); return c; },
+                      eq: () => c, then: (res, rej) => Promise.resolve({ error: null }).then(res, rej) };
+          return c; },
         delete: () => ({ eq: () => ({ eq: () => ({ then: (res) => Promise.resolve({ error: null }).then(res) }) }) }) }) };
       let dropped = 0, err = null;
       try { dropped = await window.__real_mileWorkdaySweep ? await window.__real_mileWorkdaySweep() : await _mileWorkdaySweep(); }

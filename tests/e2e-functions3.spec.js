@@ -5346,7 +5346,11 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
         const btns = Array.from(el.querySelectorAll('button'));
         const on = btns.find(b => /turn on location/i.test(b.textContent));
         const not = btns.find(b => /not now/i.test(b.textContent));
-        const copy = el.querySelector('div > div');
+        // Anchor on the explanatory paragraph by its text, not by position: the
+        // step gained a flex wrapper, so 'div > div' silently started matching
+        // a different node and the measurement went negative.
+        const copy = Array.from(el.querySelectorAll('div'))
+          .filter(d => /your phone will ask next/i.test(d.textContent) && d.children.length <= 1).pop();
         const cs = (n) => getComputedStyle(n);
         const out = {
           skip: false,
