@@ -338,12 +338,20 @@ test.describe('Crew location permission', () => {
     expect(out.label).toMatch(/answered/i);
   });
 
-  test('Always with full accuracy reads as all set', async () => {
+  // ASSERTION MOVED 2026-08-26 (CLAUDE.md 10.4). The handset name used to be
+  // glued onto the end of the label; it is its own line now, so that the name
+  // appears on BROKEN rows too (knowing which phone is broken is the point)
+  // and so it can sit beside the battery bar. The rule is unchanged, only
+  // which field carries it. This one was missed when the rest were updated,
+  // which is precisely the "grep for every other test asserting the same
+  // behaviour" step 10.4 exists for.
+  test('Always with full accuracy reads as all set, and names the handset', async () => {
     const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
       location_services_enabled: true, device_label: 'iPhone', checked_at: NOW() });
     expect(out.dot).toBe('🟢');
     expect(out.label).toContain('all set');
-    expect(out.label).toContain('iPhone');
+    expect(out.device, 'the name moved off the label onto its own line').toContain('iPhone');
+    expect(out.label, 'and must not be duplicated back onto it').not.toContain('iPhone');
   });
 
   // ── Newest evidence wins, in BOTH directions ──────────────────────────────
