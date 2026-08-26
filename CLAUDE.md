@@ -458,6 +458,15 @@ trip and a failure the owner had to watch land.
   Push only when it says passed. `--project=chromium` alone is enough for a
   pre-push check; CI still runs WebKit, and cross-browser differences are the
   part CI genuinely earns.
+- **Run the specs that TEST what you changed, not just the ones you edited.**
+  This is the gap that cost a CI round the same night the rule was written: the
+  crew banner changed from hiding by ROLE to hiding by STATE, the spec that was
+  edited passed, and `e2e-geo-send-coverage.spec.js` failed in CI still
+  asserting the old rule. It was never opened, so it was never run, and it would
+  have taken twelve seconds. Grep first:
+  `grep -ln "<functionYouChanged>" tests/*.spec.js` and run every file it names.
+  A behaviour change with no matching test update is not a passing change, it is
+  a test that has not been told yet (§10.4 step 4).
 - **Never run the full suite locally.** No bare `npx playwright test`. That is
   the case the original rule was written for and it is still correct: thousands
   of tests, six shards' worth of output, minutes of wall clock, and CI already
@@ -1127,6 +1136,7 @@ Run this before every `git push`. If any answer is "unsure", stop and read more 
 | 6 | Can I state the root cause of every failure I fixed in one sentence? | Yes |
 | 7 | Does the fix change behavior beyond the minimum needed? | No |
 | 8 | **Did I RUN every spec file I touched, locally, and see it pass?** (§5.2.1) | Yes, with output |
+| 9 | Did I grep for every spec that EXERCISES the functions I changed, and run those too? | Yes, listed |
 
 Row 8 is the one that pays for itself. It costs 5 to 13 seconds and it is the
 difference between CI confirming your work and CI discovering your mistakes.
