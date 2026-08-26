@@ -550,6 +550,35 @@ async function _mileTapeHadPause(startedIso,endedIso){
 // NOTHING at all when X and Y are the same place, because a loop that
 // touched no business point drove no business miles. Reductions only, once
 // per session, capped, and announced.
+// ── Is this stop a BUSINESS destination? (one definition, two callers) ─────
+// Only facts the CONTRACTOR established count: a job site, a client, a place
+// they saved with a business kind, or qualifying money they spent there that
+// day. Anything the app merely GUESSED (a purpose label, a place the
+// repeat-stop finder auto-suggested) deliberately does not, which is the whole
+// reason _milePersonalStopSweep can re-judge a stop it once called a supply
+// run (owner 2026-08-14, the Casey's loop).
+//
+// Extracted from that sweep's own isPersonalStop so the recovery tool below
+// asks this question with the SAME code rather than a lookalike written from
+// memory (§7.3). opts.skipReceipt lets that original caller keep its separate
+// receipt branch, which is the one that leaves the 'stop-keep' diagnostic.
+function _mileStopIsBusiness(coord,name,day,opts){
+  try{
+    if(!coord||coord.lat==null)return false;
+    const near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&typeof _geoDistFt==='function'&&
+      _geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=_MILE_DEDUP_DEST_FT);
+    if((typeof jobs!=='undefined'&&Array.isArray(jobs))&&
+       jobs.some(j=>j&&j.lat!=null&&near({lat:j.lat,lng:j.lon},coord)))return true;
+    if((typeof clients!=='undefined'&&Array.isArray(clients))&&
+       clients.some(c=>c&&c.lat!=null&&near({lat:c.lat,lng:c.lng!=null?c.lng:c.lon},coord)))return true;
+    const savedPlace=(typeof placeAt==='function')?placeAt({lat:coord.lat,lon:coord.lng}):null;
+    if(savedPlace&&typeof _PLACE_KIND_TO_PURPOSE!=='undefined'&&_PLACE_KIND_TO_PURPOSE[savedPlace.kind])return true;
+    if(opts&&opts.skipReceipt)return false;
+    if(typeof _bizReceiptForStop==='function'&&
+       _bizReceiptForStop({lat:coord.lat,lng:coord.lng,name:name||'',day:day||todayKey()}))return true;
+    return false;
+  }catch(_e){return false;}
+}
 async function _milePersonalStopSweep(){
   try{
     if(window._milePersonalSweepRan)return 0;
@@ -594,16 +623,16 @@ async function _milePersonalStopSweep(){
     // saved place' was too broad: a gas station saved for navigation, or
     // auto-suggested by the repeat-stop finder, became permanently
     // untouchable and the loop never collapsed (owner 2026-08-15).
+    // The place half of this question now lives in _mileStopIsBusiness below,
+    // because the mileage RECOVERY tool has to ask the identical question and
+    // an approximation of it written from memory is exactly the parallel
+    // pattern §7.3 exists to stop. The receipt half stays inline: only this
+    // caller leaves the 'stop-keep' trail, and that trail is what told the
+    // owner WHY a Casey's stop survived (2026-08-14).
     const isPersonalStop=(inb,name)=>{
       if(inb.client_id!=null)return false;
       const day=inb.date||todayKey();
-      const P={lat:inb.toCoord.lat,lon:inb.toCoord.lng};
-      const _atJob=(typeof jobs!=='undefined'&&Array.isArray(jobs))&&jobs.some(j=>j&&j.lat!=null&&near({lat:j.lat,lng:j.lon},inb.toCoord));
-      if(_atJob)return false;
-      const _atClient=(typeof clients!=='undefined'&&Array.isArray(clients))&&clients.some(c=>c&&c.lat!=null&&near({lat:c.lat,lng:c.lng!=null?c.lng:c.lon},inb.toCoord));
-      if(_atClient)return false;
-      const savedPlace=(typeof placeAt==='function')?placeAt(P):null;
-      if(savedPlace&&typeof _PLACE_KIND_TO_PURPOSE!=='undefined'&&_PLACE_KIND_TO_PURPOSE[savedPlace.kind])return false;
+      if(_mileStopIsBusiness(inb.toCoord,name,day,{skipReceipt:true}))return false;
       if(_bizReceiptForStop({lat:inb.toCoord.lat,lng:inb.toCoord.lng,name,day})){
         try{if(typeof _geoParkNote==='function')_geoParkNote('stop-keep',name+' receipt');}catch(_e){}
         return false;
@@ -1036,6 +1065,282 @@ async function _mileFlightSweep(){
     return 0;
   }
 }
+// ══ RECOVERING MILEAGE A SWEEP SHOULD NEVER HAVE TAKEN ══════════════════════
+// Every sweep above removes rows, and every one of them can be wrong: the
+// 2026-08-25 cascade (a bad reconciler trim collapsed the workday window, so
+// _mileWorkdaySweep judged two real "John Doe to Shop" drives personal and
+// deleted them) proved that the destructive half of this file needs an undo.
+// Nothing here runs on its own. A sweep that fires by itself is what created
+// the problem; the cure is not a second sweep that fires by itself.
+//
+// It can only ever ADD rows back, never remove one, and it is safe to run
+// twice: a row already live is skipped, and the fetch below cannot even see it
+// (a restored row has no deleted_at, and the query filters on deleted_at).
+//
+// Every removal in this app is a SOFT delete: js/cloud.js stamps deleted_at
+// and the row stays in the table forever ("keep everything in"). That is what
+// makes recovery possible at all, and it is also the hard boundary of this
+// tool: _devHardPurge's DELETE genuinely removes the row, and nothing can
+// bring that back.
+const _MILE_RESTORE_DAYS=180;    // how far back a recovery run looks
+const _MILE_RESTORE_SCAN=500;    // deleted rows examined per run
+const _MILE_RESTORE_MAX=50;      // rows restored per run: a bounded, reviewable batch
+
+// Rows this app's own test harness wrote into a dev account. They are shaped
+// like drives and they are not drives, so they can never be "recovered" into a
+// tax record. Named by the fixtures that actually produced them (verified
+// against the dev account's deleted rows, 2026-08-26).
+const _MILE_SEED_NAME=/(MyLeg|OtherLeg|Sync Job|Truck [AB] job|^E2E )/;
+const _MILE_SEED_KEY=/^(sync-|dev-a-|dev-b-|dev-b2-|scope-)/;
+function _mileRestoreIsSeed(m){
+  const f=String((m&&m.from_name)||''),t=String((m&&m.to_name)||'');
+  // A generated id embedded in the place name ("Kansas Ave Client 1785640356810")
+  // is the single most reliable fixture tell: no real place is named after a
+  // millisecond timestamp.
+  if(/\d{10,}/.test(f)||/\d{10,}/.test(t))return true;
+  if(_MILE_SEED_NAME.test(f)||_MILE_SEED_NAME.test(t))return true;
+  if(_MILE_SEED_KEY.test(String((m&&m.legKey)||'')))return true;
+  // A crew member's row is restored from THEIR device, not the owner's.
+  if(m&&m.logged_by_id!=null)return true;
+  return false;
+}
+function _mileRestoreWin(m){
+  const a=Date.parse((m&&m.startedIso)||'')||0;
+  const b=Date.parse((m&&m.endedIso)||'')||a;
+  return {a,b:Math.max(a,b)};
+}
+// Everything decidable about ONE row on its own. The context rules (is it a
+// duplicate, is it an echo, was it part of a deliberate cleanup) need the rest
+// of the log and live in _mileRestoreSwept.
+function _mileRestoreEligible(m){
+  if(!m)return 'no row';
+  // A hand-entered trip is the contractor's own statement. If one of those was
+  // removed, it was removed on purpose: nothing automatic ever touches them.
+  if(!m.gps||!m.legKey)return 'not an automatic leg';
+  if(m.calc_method!=='auto_route')return 'never measured';
+  if(!(Number(m.miles)>0))return 'no miles';
+  // The owner's own rule, unchanged from _mileWorkdaySweep: a drive with a real
+  // business name at BOTH ends is a business drive by its own endpoints. An
+  // anonymous 'Stop' at either end is what an errand looks like, and an errand
+  // stays deleted.
+  if(!_mileNamedEnd(m.from_name)||!_mileNamedEnd(m.to_name))return 'anonymous endpoint';
+  // Left a place and came back to it: no business miles exist to claim.
+  if(String(m.from_name).trim()===String(m.to_name).trim())return 'round trip to the same place';
+  if(_mileRestoreIsSeed(m))return 'test seed data';
+  if(!_mileRestoreWin(m).a)return 'no clock';
+  return null;   // eligible
+}
+// Does a row already on the books describe this same journey? Two shapes, both
+// straight out of _mileSameJourney/_mileSameLeg: another automatic leg over the
+// same route whose wheel time overlaps, or the HAND-TYPED half of a double log,
+// tapped at the same destination within the same window.
+function _mileRestoreCovered(c,kept){
+  const w=_mileRestoreWin(c);
+  return kept.some(k=>{
+    if((k.logged_by_id||null)!==(c.logged_by_id||null))return false;
+    if(k.legKey){
+      const kw=_mileRestoreWin(k);
+      if(!kw.a)return false;
+      return k.from_name===c.from_name&&k.to_name===c.to_name&&kw.a<=w.b&&kw.b>=w.a;
+    }
+    const la=Date.parse(k.loggedAt||'')||0;
+    if(!la)return false;
+    return k.to_name===c.to_name&&la>=w.a-_MILE_DEDUP_SLACK_MS&&la<=w.b+_MILE_DEDUP_SLACK_MS;
+  });
+}
+// ── The recovery itself ────────────────────────────────────────────────────
+// opts.apply === true writes. Anything else is a scan: it reads, decides, and
+// returns the verdict without touching a single row, which is what the panel
+// shows the owner before he agrees to anything.
+async function _mileRestoreSwept(opts){
+  opts=opts||{};
+  const out={scanned:0,restored:0,miles:0,rows:[],skipped:{},error:null};
+  const note=(ev,x)=>{try{if(typeof _geoParkNote==='function')_geoParkNote(ev,x);}catch(_e){}};
+  const skip=(m,why)=>{out.skipped[why]=(out.skipped[why]||0)+1;};
+  try{
+    if(typeof mileage==='undefined'||!Array.isArray(mileage)){out.error='no mileage log';return out;}
+    if(typeof _supa==='undefined'||!_supa){out.error='not connected';return out;}
+    const uid=(typeof _effectiveUid==='function'&&_effectiveUid())||(window._supaUser&&window._supaUser.id)||null;
+    if(!uid){out.error='not signed in';return out;}
+    const since=new Date(Date.now()-_MILE_RESTORE_DAYS*86400000).toISOString();
+    // `gte` on deleted_at is the whole filter: a NULL never satisfies a
+    // comparison, so live rows are excluded by the same clause that bounds the
+    // window. One predicate, no `not.is` to get wrong.
+    let del=[];
+    try{
+      const{data,error}=await _supa.from('td_mileage').select('id,data,deleted_at')
+        .eq('user_id',uid).gte('deleted_at',since).limit(_MILE_RESTORE_SCAN);
+      if(error||!Array.isArray(data)){out.error=(error&&error.message)||'fetch failed';return out;}
+      del=data;
+    }catch(e){out.error=(e&&e.message)||String(e);return out;}
+    out.scanned=del.length;
+    if(!del.length)return out;
+
+    // ── Was this save a SWEEP, or a person cleaning house? ──────────────────
+    // deleted_at is stamped once per supaSaveToCloud call, so every row a
+    // single save removed carries the identical timestamp. A mileage sweep can
+    // only ever remove mileage; the moment a client, job, bid, expense or
+    // income row shares that timestamp, that save was a human deleting things
+    // (or a test harness tearing its fixtures down), and the mileage in it went
+    // with them ON PURPOSE. Restoring it would drag back records the owner
+    // deliberately threw away, which is the one failure this tool must not have.
+    const human=new Set();
+    for(const t of ['td_clients','td_jobs','td_bids','td_expenses','td_income']){
+      try{
+        const{data}=await _supa.from(t).select('deleted_at').eq('user_id',uid).gte('deleted_at',since).limit(_MILE_RESTORE_SCAN);
+        (data||[]).forEach(r=>{if(r&&r.deleted_at)human.add(String(r.deleted_at));});
+      }catch(_e){}
+    }
+
+    const cands=[];
+    for(const r of del){
+      const m=r&&r.data;
+      if(!m){skip(m,'unreadable');continue;}
+      if(mileage.some(x=>String(x.id)===String(r.id))){skip(m,'already back');continue;}
+      if(human.has(String(r.deleted_at))){skip(m,'deleted on purpose');continue;}
+      const why=_mileRestoreEligible(m);
+      if(why){skip(m,why);continue;}
+      cands.push(Object.assign({},m,{id:r.id}));
+    }
+    // Chronological, because every context rule below reads "against what is
+    // already on the books", and the earlier leg is the one with the better
+    // claim to being the real drive.
+    cands.sort((a,b)=>_mileRestoreWin(a).a-_mileRestoreWin(b).a);
+    const kept=mileage.slice();
+    const win=[];
+    for(const c of cands){
+      if(win.length>=_MILE_RESTORE_MAX)break;
+      if(_mileRestoreCovered(c,kept)){skip(c,'already logged');continue;}
+      const w=_mileRestoreWin(c);
+      // Nobody is on two drives at once. An overlap means one of the pair is
+      // the fence machine's echo of the other, and the first by the clock keeps
+      // the claim.
+      if(win.some(k=>{const kw=_mileRestoreWin(k);return kw.a<=w.b&&kw.b>=w.a;})){skip(c,'overlaps a kept leg');continue;}
+      // GAP ECHO (_geoDriveEntry's own discriminator, applied after the fact):
+      // the same route, the same day, and no leg in between that brought them
+      // back to where this one starts. You cannot drive somewhere you never
+      // left.
+      const back=win.concat(kept).some(k=>k.to_name===c.from_name&&_mileRestoreWin(k).b>0&&_mileRestoreWin(k).b<=w.a);
+      if(win.some(k=>k.from_name===c.from_name&&k.to_name===c.to_name&&(k.date||'')===(c.date||''))&&!back){
+        skip(c,'echo of a leg already kept');continue;
+      }
+      win.push(c);
+    }
+    // ROUND TRIP THROUGH A PERSONAL STOP, the Casey's rule (owner 2026-08-14),
+    // applied to the recovery set: leave a business point, stop somewhere that
+    // is not a job, a client, a saved business place or a receipt, come back to
+    // the same business point. No business miles exist in that loop, so neither
+    // leg comes back. Runs last so it can see the whole surviving set.
+    for(let i=win.length-1;i>=0;i--){
+      const inb=win[i];if(!inb)continue;
+      const j=win.findIndex(o=>o&&o!==inb&&o.from_name===inb.to_name&&o.to_name===inb.from_name&&
+        _mileRestoreWin(o).a>=_mileRestoreWin(inb).b);
+      if(j<0)continue;
+      if(inb.client_id!=null)continue;
+      if(_mileStopIsBusiness(inb.toCoord,inb.to_name,inb.date))continue;
+      const out2=win[j];
+      win.splice(Math.max(i,j),1);win.splice(Math.min(i,j),1);
+      skip(inb,'round trip through a personal stop');skip(out2,'round trip through a personal stop');
+      i=Math.min(i,win.length);
+    }
+    out.rows=win.map(m=>({id:m.id,date:m.date||'',from:m.from_name||'',to:m.to_name||'',miles:Number(m.miles)||0}));
+    out.miles=Math.round(win.reduce((s,m)=>s+(Number(m.miles)||0),0)*10)/10;
+    if(!opts.apply||!win.length){
+      note('mile-restore-scan','found='+win.length+' mi='+out.miles+' of '+out.scanned);
+      return out;
+    }
+
+    // ── WRITE ──────────────────────────────────────────────────────────────
+    // Both halves, or the row comes straight back out: the cloud row loses its
+    // deleted_at, AND the local log gets the row back so the next save's sweep
+    // does not read it as a row this device deleted. Dropping the id out of
+    // _locallyDeletedIds is that same point from the other side: a stale delete
+    // intent would re-stamp deleted_at on the very next save.
+    const ts=new Date().toISOString();
+    const ids=win.map(m=>String(m.id));
+    try{
+      for(let i=0;i<ids.length;i+=50){
+        const{error}=await _supa.from('td_mileage').update({deleted_at:null,updated_at:ts})
+          .in('id',ids.slice(i,i+50)).eq('user_id',uid);
+        if(error)throw error;
+      }
+    }catch(e){out.error=(e&&e.message)||String(e);note('mile-restore-err',out.error);return out;}
+    for(const m of win){
+      if(mileage.some(x=>String(x.id)===String(m.id)))continue;   // idempotent
+      mileage.push(m);
+      out.restored++;
+      note('mile-restore',(m.from_name||'?')+' to '+(m.to_name||'?')+' '+(m.miles||0)+'mi '+(m.startedIso||''));
+      try{if(typeof _locallyDeletedIds!=='undefined'&&_locallyDeletedIds&&_locallyDeletedIds.td_mileage)_locallyDeletedIds.td_mileage.delete(String(m.id));}catch(_e){}
+    }
+    note('mile-restore-done','rows='+out.restored+' mi='+out.miles);
+    // Reporting sits OUTSIDE the decision, the same split _milePersonalStopSweep
+    // needed: the rows are already back by the time this runs, and a repaint
+    // that throws must not turn a completed recovery into a reported failure.
+    try{
+      if(typeof saveAll==='function')saveAll();
+      if(typeof supaSaveToCloud==='function')supaSaveToCloud();
+      if(document.getElementById('mil-table')&&typeof renderAllMileage==='function')renderAllMileage();
+      if(typeof renderDash==='function')renderDash();
+      if(typeof showToast==='function')showToast(out.restored+' drive'+(out.restored===1?'':'s')+' back on the log · '+out.miles+' mi','🧾');
+    }catch(_e){note('mile-restore-ui',(_e&&_e.message)||String(_e));}
+    return out;
+  }catch(e){
+    out.error=(e&&e.message)||String(e);
+    note('mile-restore-err',out.error);
+    return out;
+  }
+}
+window._mileRestoreSwept=_mileRestoreSwept;
+
+// The owner-invoked trigger, and the ONLY way this ever runs. Scans first and
+// shows what it found; nothing is written until he taps Restore. Built on
+// .zmodal-overlay/.zmodal, the app's centred-modal convention (§7.3), the same
+// shell _geoDiagPanel uses two buttons over in Settings → Developer.
+function _mileRestorePanel(){
+  if(document.getElementById('_mile-restore-ov'))return;
+  const ov=document.createElement('div');ov.id='_mile-restore-ov';ov.className='zmodal-overlay';
+  const m=document.createElement('div');m.className='zmodal';
+  m.innerHTML='<div style="font-size:16px;font-weight:800;margin-bottom:10px">Recover swept mileage</div>'+
+    '<div id="_mile-restore-body" style="font-size:12px;color:var(--text3)">Checking the deleted rows…</div>'+
+    '<div style="display:flex;gap:10px;margin-top:14px">'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Close</button>'+
+      '<button id="_mile-restore-go" class="btn" style="flex:1;display:none">Restore</button>'+
+    '</div>';
+  ov.appendChild(m);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  const body=()=>document.getElementById('_mile-restore-body');
+  const paint=(r)=>{
+    const b=body();if(!b)return;
+    if(r.error){b.innerHTML='<div style="color:var(--red)">'+escHtml(r.error)+'</div>';return;}
+    const skipped=Object.keys(r.skipped||{}).sort().map(k=>
+      '<div style="display:flex;justify-content:space-between;padding:2px 0"><span>'+escHtml(k)+'</span><span style="font-weight:600">'+r.skipped[k]+'</span></div>').join('');
+    b.innerHTML=(r.rows.length
+        ? '<div style="font-size:13px;color:var(--text);font-weight:700;margin-bottom:6px">'+r.rows.length+' drive'+(r.rows.length===1?'':'s')+' · '+r.miles+' mi</div>'+
+          '<div style="max-height:34vh;overflow-y:auto;font-family:ui-monospace,monospace;line-height:1.7">'+
+          r.rows.map(x=>'<div>'+escHtml(x.date)+' '+escHtml(x.from)+' → '+escHtml(x.to)+' · '+x.miles+'mi</div>').join('')+'</div>'
+        : '<div style="font-size:13px;color:var(--text);font-weight:700;margin-bottom:6px">Nothing to bring back.</div>'+
+          '<div>Every deleted row was either removed on purpose, already on the log, or not a business drive.</div>')+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:12px 0 4px">Left alone ('+r.scanned+' checked)</div>'+
+      (skipped||'<div>Nothing.</div>');
+  };
+  _mileRestoreSwept({}).then(r=>{
+    paint(r);
+    const go=document.getElementById('_mile-restore-go');
+    if(!go||!r.rows.length||r.error)return;
+    go.style.display='';go.textContent='Restore '+r.rows.length;
+    go.onclick=()=>{
+      go.disabled=true;go.textContent='Restoring…';
+      _mileRestoreSwept({apply:true}).then(res=>{
+        go.style.display='none';
+        const b=body();
+        if(b)b.innerHTML=res.error
+          ? '<div style="color:var(--red)">'+escHtml(res.error)+'</div>'
+          : '<div style="font-size:13px;font-weight:700">'+res.restored+' drive'+(res.restored===1?'':'s')+' back on the log · '+res.miles+' mi</div>';
+      });
+    };
+  });
+}
+window._mileRestorePanel=_mileRestorePanel;
 const _MILE_DEDUP_DEST_FT=1500;         // fence radius + GPS scatter
 const _MILE_DEDUP_SLACK_MS=10*60000;    // manual rows only: loggedAt is a tap, not a clock
 function _mileTripWindow(m){
