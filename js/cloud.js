@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.25.26.42';
+const APP_VERSION='08.25.26.43';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -4010,8 +4010,23 @@ function _empLoadedHourly(comp){
 let _teamGeo={};
 let _teamGeoLoaded=false;
 const _GEO_FRESH_MS=36*3600*1000; // a phone that hasn't checked in for ~1.5 days is unknown, not OK
+// Owner, or a manager they trusted with the crew screens. This used to bail on
+// any employee at all, which was fine while the owner was the only reader and
+// became a hole the moment a manager could be notified that somebody's
+// tracking broke: the notification routes here (js/push.js, route 'team'), and
+// it would have landed on a roster that loaded nothing.
+//
+// Same two permissions the server uses to pick who gets told
+// (supabase/functions/send-push) and the same pair the RLS policy allows
+// (20260828_device_status_manager_read.sql). All three have to agree, or a
+// manager is notified about something they cannot then look at.
+function _teamGeoAllowed(){
+  if(typeof _isEmployee==='undefined'||!_isEmployee)return true;
+  const p=(typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.permissions)||{};
+  return !!(p.payroll||p.team);
+}
 async function _loadTeamGeo(){
-  if(!supaEnabled()||!_supaUser||_isEmployee)return;
+  if(!supaEnabled()||!_supaUser||!_teamGeoAllowed())return;
   const cid=_contractorUserId||_supaUser.id;
   try{
     const{data,error}=await _supa.from('team_members')

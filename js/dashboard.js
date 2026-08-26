@@ -458,10 +458,51 @@ function _geoNotifyBreak(){
   }
   if(prev===kind)return false;          // same break, already told them once
   try{localStorage.setItem(_GEO_BREAK_KEY,kind);}catch(_e){}
+  _geoAlertManagers(kind);
   if(typeof _notifySchedule!=='function')return false;
   _notifySchedule(_GEO_BREAK_ID,'Auto mileage and time logs are off',
     _geoBreakCopy(kind),Date.now()+_GEO_BREAK_DELAY_MS);
   return true;
+}
+// ── The owner and their managers hear about it too (owner ask 2026-08-26) ────
+//
+// The local notification above tells the PERSON. This tells whoever has to
+// answer for the timesheet, the moment it happens rather than at payroll.
+//
+// Recipients are chosen SERVER-side (supabase/functions/send-push), not here:
+// an ordinary crew member's RLS lets them read exactly one team_members row,
+// their own, so this device genuinely cannot know who the managers are. It
+// asks for the role and the server resolves it, which also means a device
+// cannot aim a notification at somebody it was never allowed to see.
+//
+// Owner-on-their-own-phone sends nothing: they already got the local buzz two
+// minutes out, and the server drops the caller from the recipient list anyway,
+// so this is belt and braces rather than the only guard.
+function _geoAlertManagers(kind){
+  try{
+    if(typeof _isEmployee==='undefined'||!_isEmployee)return false;
+    if(typeof _supa==='undefined'||!_supa||typeof SUPA_URL==='undefined')return false;
+    const who=(typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.name)||'A crew member';
+    const what=kind==='wheninuse'?'set location to While Using, so their drives will not log'
+      :kind==='precise'?'turned off Precise Location, so job arrivals will not register'
+      :kind==='services'?'turned off Location Services for their whole phone'
+      :kind==='restricted'?'has location blocked by Screen Time or a device policy'
+      :'turned location off';
+    _supa.auth.getSession().then(sess=>{
+      const token=sess&&sess.data&&sess.data.session&&sess.data.session.access_token;
+      if(!token)return;
+      return fetch(SUPA_URL+'/functions/v1/send-push',{
+        method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+        body:JSON.stringify({
+          toRole:'managers',
+          title:'Tracking stopped for '+who,
+          body:who+' '+what+'. Their hours and mileage need entering by hand until it is back on.',
+          route:'team'
+        })
+      });
+    }).catch(()=>{});
+    return true;
+  }catch(_e){return false;}
 }
 function _geoNatSig(){
   try{
@@ -573,8 +614,25 @@ function _setupTodoGo(id){
         {title:'Turn notifications back on'});
       return;
     }
+    // pushEnable FIRST, not _notifyAsk. Both end at the same iOS dialog
+    // (UNUserNotificationCenter authorization is app-wide, so one grant covers
+    // local and remote alike), but only pushEnable also calls
+    // registerForRemoteNotifications and lands a device token. Asking with
+    // _notifyAsk would spend the one prompt iOS ever shows and still leave
+    // the account unreachable from a server, which is precisely the gap that
+    // left every crew phone with no token at all.
+    const done=()=>{_notifyRefreshPermCache();};
+    if(typeof pushEnable==='function'){
+      pushEnable().then(ok=>{
+        // A browser, or a shell with no TdPush: fall back to the local-only
+        // ask so a PWA user still gets reminders.
+        if(!ok&&typeof _notifyAsk==='function')return _notifyAsk().then(done);
+        done();
+      }).catch(()=>{if(typeof _notifyAsk==='function')_notifyAsk().then(done).catch(done);else done();});
+      return;
+    }
     if(typeof _notifyAsk==='function'){
-      _notifyAsk().then(()=>{_notifyRefreshPermCache();}).catch(()=>{});
+      _notifyAsk().then(done).catch(()=>{});
     }
     return;
   }

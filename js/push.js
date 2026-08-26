@@ -71,6 +71,9 @@ function _pushRoute(payload){
     }
     if(route==='client'&&id!=null&&typeof openClientDetail==='function'){openClientDetail(Number(id));return;}
     if(route==='job'&&typeof goPg==='function'){goPg('pg-jobs');return;}
+    // A crew member's tracking broke. The roster is the only screen that says
+    // who, on which handset, and what to tell them to tap.
+    if(route==='team'&&typeof goPg==='function'){goPg('pg-team');return;}
     if(route==='money'&&typeof goPg==='function'){goPg('pg-dash');return;}
     // Siri/Shortcuts intents (owner ask 2026-08-17): the SAME dispatcher a
     // push tap already uses, not a parallel one (§7.3). td-intents drains

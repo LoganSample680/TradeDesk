@@ -60,11 +60,47 @@ serve(async (req) => {
       .eq("user_id", user.id).maybeSingle();
     if (emp?.contractor_user_id) account = emp.contractor_user_id;
 
+    // toRole:'managers' , the account owner plus anyone they have trusted with
+    // the crew screens. Resolved HERE, with the service key, because an
+    // ordinary crew member cannot enumerate their own account's managers:
+    // team_members RLS lets them read exactly one row, their own (see
+    // "Payroll manager reads team", 20260619_team_comp_geo_tracking.sql). A
+    // device that cannot see who the managers are also cannot be trusted to
+    // name them in the request body, so it asks for the ROLE and the server
+    // decides who that is.
+    //
+    // 'payroll' is documented in the app as the permission that sees the crew
+    // location map, and 'team' as the one that manages crew; both are labelled
+    // managers-only. Anyone else on the account is deliberately excluded:
+    // where a colleague's phone is, and whether it is reporting, is not
+    // general staff information.
+    let recipients: string[] | null = null;
+    if (String(body.toRole || "") === "managers") {
+      const { data: mgrs } = await admin
+        .from("team_members").select("employee_user_id,permissions,active")
+        .eq("contractor_user_id", account);
+      const ids = new Set<string>([account]);
+      (mgrs || []).forEach((m: Record<string, unknown>) => {
+        if (m.active === false) return;
+        const p = (m.permissions || {}) as Record<string, unknown>;
+        if (!p.payroll && !p.team) return;
+        if (m.employee_user_id) ids.add(String(m.employee_user_id));
+      });
+      // Never notify the person it is about. Their own phone already told them
+      // locally, and a second buzz saying "somebody's tracking broke" about
+      // themselves reads as a bug.
+      ids.delete(user.id);
+      recipients = [...ids];
+      if (!recipients.length) return json({ ok: true, sent: 0, note: "no managers to notify" });
+    } else if (Array.isArray(body.to) && body.to.length) {
+      recipients = body.to.map(String).slice(0, 50);
+    }
+
     // Optionally narrow to specific people inside that account (dispatching one
     // crew member). Still constrained to the account resolved above.
     let q = admin.from("device_tokens").select("token,user_id")
       .eq("contractor_user_id", account).is("invalid_at", null);
-    if (Array.isArray(body.to) && body.to.length) q = q.in("user_id", body.to.map(String).slice(0, 50));
+    if (recipients) q = q.in("user_id", recipients.slice(0, 50));
     const { data: rows, error: qerr } = await q;
     if (qerr) return json({ ok: false, error: qerr.message }, 500);
     if (!rows?.length) return json({ ok: true, sent: 0, note: "no registered devices" });

@@ -694,6 +694,134 @@ test.describe('Crew location permission', () => {
     expect(out.maximumAge).toBe(600000);
   });
 
+  // ── 4g. The owner and their managers get told (owner ask 2026-08-26) ──────
+  const alertRun = (opts) => page.evaluate(async (o) => {
+    const saved = { emp: window._isEmployee, rec: window._employeeRecord, f: window.fetch,
+                    supa: window._supa, url: window.SUPA_URL };
+    const calls = [];
+    try {
+      window._isEmployee = o.isEmployee;
+      window._employeeRecord = o.record || null;
+      window.SUPA_URL = 'https://x.test';
+      window._supa = { auth: { getSession: () => Promise.resolve({ data: { session: { access_token: 't' } } }) } };
+      window.fetch = (url, init) => {
+        calls.push({ url, body: JSON.parse((init && init.body) || '{}') });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      };
+      const out = _geoAlertManagers(o.kind);
+      // The fetch fires inside _supa.auth.getSession().then(...), a microtask.
+      // Returning here would hand back an empty list every time and make every
+      // assertion below pass without testing anything.
+      for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0));
+      return { out, calls };
+    } finally {
+      window._isEmployee = saved.emp; window._employeeRecord = saved.rec;
+      window.fetch = saved.f; window._supa = saved.supa; window.SUPA_URL = saved.url;
+    }
+  }, opts);
+
+  test('the alert names the person, the exact problem, and lands on the roster', async () => {
+    const r = await alertRun({ isEmployee: true, record: { name: 'Danny Kwon' }, kind: 'wheninuse' });
+    expect(r.out).toBe(true);
+    expect(r.calls.length, 'the manager alert must actually be sent').toBe(1);
+    const body = r.calls[0].body;
+    expect(r.calls[0].url).toContain('/functions/v1/send-push');
+    expect(body.toRole, 'a crew device cannot enumerate managers, so it asks for the role').toBe('managers');
+    expect(body.to, 'and it must never hand the server a recipient list').toBeUndefined();
+    expect(body.title).toContain('Danny Kwon');
+    expect(body.body).toMatch(/While Using/i);
+    expect(body.route, 'the roster is the only screen that says who and on which phone').toBe('team');
+  });
+
+  test('each break kind says what actually broke, not one generic line', async () => {
+    const kinds = ['wheninuse', 'precise', 'services', 'restricted'];
+    const seen = [];
+    for (const k of kinds) {
+      const r = await alertRun({ isEmployee: true, record: { name: 'Danny' }, kind: k });
+      expect(r.calls.length, k).toBe(1);
+      seen.push(r.calls[0].body.body);
+    }
+    expect(new Set(seen).size, 'four different problems need four different fixes').toBe(4);
+    expect(seen[1]).toMatch(/precise/i);
+    expect(seen[2]).toMatch(/whole phone/i);
+  });
+
+  test('the owner on their own phone sends nothing, they already got the local buzz', async () => {
+    const r = await alertRun({ isEmployee: false, kind: 'wheninuse' });
+    expect(r.out).toBe(false);
+    expect(r.calls.length).toBe(0);
+  });
+
+  // Who may LOOK. All three layers have to agree (client gate, RLS policy,
+  // and the server's recipient list) or a manager gets notified about
+  // something they cannot then open.
+  test('owner and managers may load the roster; ordinary crew may not', async () => {
+    const out = await page.evaluate(() => {
+      const saved = { emp: window._isEmployee, rec: window._employeeRecord };
+      const check = (isEmp, perms) => {
+        window._isEmployee = isEmp;
+        window._employeeRecord = perms ? { permissions: perms } : null;
+        return _teamGeoAllowed();
+      };
+      try {
+        return {
+          owner: check(false, null),
+          payroll: check(true, { payroll: true }),
+          team: check(true, { team: true }),
+          plainCrew: check(true, { estimate: true }),
+          noPerms: check(true, {}),
+        };
+      } finally { window._isEmployee = saved.emp; window._employeeRecord = saved.rec; }
+    });
+    expect(out.owner).toBe(true);
+    expect(out.payroll).toBe(true);
+    expect(out.team).toBe(true);
+    expect(out.plainCrew,
+      "where a colleague's phone is, is not general staff information").toBe(false);
+    expect(out.noPerms).toBe(false);
+  });
+
+  test('the three layers name the same two permissions', () => {
+    const fs = require('fs'), path = require('path');
+    const root = path.join(__dirname, '..');
+    const fn = fs.readFileSync(path.join(root, 'supabase', 'functions', 'send-push', 'index.ts'), 'utf8');
+    const mig = fs.readFileSync(path.join(root, 'supabase', 'migrations',
+      '20260828_device_status_manager_read.sql'), 'utf8');
+    const cli = fs.readFileSync(path.join(root, 'js', 'cloud.js'), 'utf8');
+    // Server picks recipients, RLS decides who may read, client decides who
+    // even tries. A drift between any two is a manager notified about a screen
+    // that stays empty, or worse, one that should have stayed shut.
+    expect(fn.includes('p.payroll') && fn.includes('p.team'), 'send-push recipients').toBe(true);
+    expect(mig.includes("'payroll'") && mig.includes("'team'"), 'RLS policy').toBe(true);
+    expect(cli.includes('p.payroll||p.team'), 'client gate').toBe(true);
+  });
+
+  test('a manager tapping the alert lands on the team page', async () => {
+    const out = await page.evaluate(() => {
+      const saved = window.goPg;
+      let went = null;
+      try { window.goPg = (p) => { went = p; }; _pushRoute({ route: 'team' }); return went; }
+      finally { window.goPg = saved; }
+    });
+    expect(out).toBe('pg-team');
+  });
+
+  // The whole reason the token gap existed: _notifyAsk asks the SAME iOS
+  // dialog but never registers for remote notifications, so asking with it
+  // would spend the one prompt iOS shows and still leave the account
+  // unreachable from a server.
+  test('the checklist asks with pushEnable, so a token actually lands', () => {
+    const fs = require('fs'), path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'dashboard.js'), 'utf8');
+    const i = src.indexOf("if(id==='notify')");
+    expect(i).toBeGreaterThan(-1);
+    const blk = src.slice(i, i + 1600);
+    const pe = blk.indexOf('pushEnable'), na = blk.indexOf('_notifyAsk');
+    expect(pe, 'pushEnable must be in the notify branch').toBeGreaterThan(-1);
+    expect(pe < na || na === -1,
+      'pushEnable is tried FIRST; _notifyAsk is only the browser fallback').toBe(true);
+  });
+
   // ── 5. The checklist item stays completable ────────────────────────────────
 
   test('a denied user gets a Settings walkthrough, not a button that cannot work', async () => {
