@@ -179,6 +179,177 @@ test.describe('Share inbox', () => {
     expect(r.clean, 'asks when the coast is clear').toBe(2);
   });
 
+  // ── Shared straight into an expense (owner ask 2026-08-26) ────────────────
+  //
+  // "Receipts from Home Depot pro accounts ... that can then drop expenses and
+  // the actual receipt in, no scan needed."
+  //
+  // The share sheet delivers two different things and they are not the same
+  // job. Forcing a receipt to become a job photo buries the money in a gallery,
+  // which is the manual re-entry this whole feature exists to kill.
+
+  test('the prompt offers the receipt path before the job list', async () => {
+    const r = await page.evaluate(() => {
+      try {
+        _shareInPrompt([{ path: '/x/a.jpg' }]);
+        const ov = document.getElementById('_sharein-ov');
+        const html = ov ? ov.innerHTML : '';
+        const btn = document.getElementById('_si-receipt');
+        const jobIdx = html.indexOf('_si-job');
+        const rcIdx = html.indexOf('_si-receipt');
+        return { has: !!btn, rcIdx, jobIdx,
+                 text: btn ? btn.textContent : '' };
+      } finally { document.getElementById('_sharein-ov')?.remove(); }
+    });
+    expect(r.has, 'a receipt must not be forced into being a job photo').toBe(true);
+    expect(r.rcIdx, 'the receipt is what someone went out of their way to share').toBeLessThan(r.jobIdx);
+    expect(r.text).toMatch(/receipt/i);
+  });
+
+  // 15.1: nothing bleeds. The receipt button carries two stacked lines inside
+  // a .btn, which is inline-flex + a fixed 36px height + white-space:nowrap,
+  // and it pushed straight off the edge until it was overridden.
+  test('the prompt does not bleed off screen at any supported width', async () => {
+    for (const w of [390, 820]) {
+      await page.setViewportSize({ width: w, height: 844 });
+      const r = await page.evaluate(() => {
+        try {
+          _shareInPrompt([{ path: '/x/a.jpg' }, { path: '/x/b.jpg' }]);
+          const btn = document.getElementById('_si-receipt');
+          const br = btn.getBoundingClientRect();
+          return { bleed: document.documentElement.scrollWidth - window.innerWidth,
+                   right: br.right, inner: window.innerWidth,
+                   h: Math.round(br.height) };
+        } finally { document.getElementById('_sharein-ov')?.remove(); }
+      });
+      expect(r.bleed, 'horizontal bleed at ' + w).toBeLessThanOrEqual(1);
+      expect(r.right, 'button past the edge at ' + w).toBeLessThanOrEqual(r.inner);
+      expect(r.h, 'two lines must wrap, not collapse onto one at ' + w).toBeGreaterThan(40);
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+  });
+
+  test('a shared receipt is read on device, filed, and the inbox cleared', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { open: window.openExpenseFlow, ocr: window._rcptOcrLines,
+                      parse: window._rcptParseLines, up: window._uploadReceiptToStorage,
+                      comp: window.compressAndEncodeImage, st: window._expState,
+                      render: window._renderExpPages, cap: window.Capacitor };
+      const calls = { opened: 0, ocrPaths: [], cleared: [], uploaded: 0 };
+      try {
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({
+          read: ({ path }) => Promise.resolve({ b64: btoa('x'), size: 1 }),
+          clear: ({ paths }) => { calls.cleared.push(...(paths || [])); return Promise.resolve({}); },
+        }) };
+        window._rcptOcrLines = (p) => { calls.ocrPaths.push(p); return Promise.resolve(['HOME DEPOT', 'TOTAL 128.44']); };
+        window._rcptParseLines = () => ({ vendor: 'Home Depot', amount: '128.44' });
+        window.compressAndEncodeImage = () => Promise.resolve('B64DATA');
+        window._uploadReceiptToStorage = () => { calls.uploaded++; return Promise.resolve('key'); };
+        window._renderExpPages = () => {};
+        window._expState = { imagePages: [], imageData: null, hasReceipt: false };
+        window.openExpenseFlow = () => {
+          calls.opened++;
+          ['em-vendor', 'em-amount'].forEach(id => {
+            document.getElementById(id)?.remove();
+            const i = document.createElement('input'); i.id = id; document.body.appendChild(i);
+          });
+        };
+        const added = await _shareInAsReceipt([{ path: '/x/a.jpg' }, { path: '/x/b.jpg' }]);
+        return { added, calls,
+                 pages: window._expState.imagePages.length,
+                 hasReceipt: window._expState.hasReceipt,
+                 vendor: document.getElementById('em-vendor').value,
+                 amount: document.getElementById('em-amount').value };
+      } finally {
+        window.openExpenseFlow = saved.open; window._rcptOcrLines = saved.ocr;
+        window._rcptParseLines = saved.parse; window._uploadReceiptToStorage = saved.up;
+        window.compressAndEncodeImage = saved.comp; window._expState = saved.st;
+        window._renderExpPages = saved.render; window.Capacitor = saved.cap;
+        ['em-vendor', 'em-amount'].forEach(id => document.getElementById(id)?.remove());
+      }
+    });
+    expect(r.added, 'both pages of the receipt land').toBe(2);
+    expect(r.calls.opened, 'it reuses the real expense flow, not a parallel one').toBe(1);
+    expect(r.calls.ocrPaths, 'the FIRST page only: reading every page multiplies the wait')
+      .toEqual(['/x/a.jpg']);
+    expect(r.vendor, 'no scan needed is literal, the fields are filled before they look').toBe('Home Depot');
+    expect(r.amount).toBe('128.44');
+    expect(r.pages, 'several files are pages of ONE receipt, not several expenses').toBe(2);
+    expect(r.hasReceipt).toBe(true);
+    expect(r.calls.uploaded, 'the bytes go where every other receipt lives').toBe(2);
+    expect(r.calls.cleared.sort(), 'and only then is the inbox cleared')
+      .toEqual(['/x/a.jpg', '/x/b.jpg']);
+  });
+
+  test('a receipt that cannot be read is never cleared from the inbox', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { open: window.openExpenseFlow, ocr: window._rcptOcrLines,
+                      st: window._expState, cap: window.Capacitor };
+      const cleared = [];
+      try {
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({
+          read: () => Promise.resolve(null),
+          clear: ({ paths }) => { cleared.push(...(paths || [])); return Promise.resolve({}); },
+        }) };
+        window._rcptOcrLines = () => Promise.reject(new Error('no vision'));
+        window._expState = { imagePages: [], imageData: null, hasReceipt: false };
+        window.openExpenseFlow = () => {};
+        const added = await _shareInAsReceipt([{ path: '/x/a.jpg' }]);
+        return { added, cleared };
+      } finally {
+        window.openExpenseFlow = saved.open; window._rcptOcrLines = saved.ocr;
+        window._expState = saved.st; window.Capacitor = saved.cap;
+      }
+    });
+    expect(r.added).toBe(0);
+    expect(r.cleared, 'a shared file iOS never offers again is not something to be casual with')
+      .toEqual([]);
+  });
+
+  test('OCR failing still opens the expense, just empty', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { open: window.openExpenseFlow, ocr: window._rcptOcrLines,
+                      comp: window.compressAndEncodeImage, st: window._expState,
+                      render: window._renderExpPages, up: window._uploadReceiptToStorage,
+                      cap: window.Capacitor };
+      let opened = 0;
+      try {
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({
+          read: () => Promise.resolve({ b64: btoa('x'), size: 1 }),
+          clear: () => Promise.resolve({}),
+        }) };
+        window._rcptOcrLines = () => Promise.resolve([]);
+        window.compressAndEncodeImage = () => Promise.resolve('B64');
+        window._uploadReceiptToStorage = () => Promise.resolve('k');
+        window._renderExpPages = () => {};
+        window._expState = { imagePages: [], imageData: null, hasReceipt: false };
+        window.openExpenseFlow = () => { opened++; };
+        const added = await _shareInAsReceipt([{ path: '/x/a.jpg' }]);
+        return { added, opened };
+      } finally {
+        window.openExpenseFlow = saved.open; window._rcptOcrLines = saved.ocr;
+        window.compressAndEncodeImage = saved.comp; window._expState = saved.st;
+        window._renderExpPages = saved.render; window._uploadReceiptToStorage = saved.up;
+        window.Capacitor = saved.cap;
+      }
+    });
+    expect(r.opened, 'an unreadable total is a typing job, not a dead end').toBe(1);
+    expect(r.added).toBe(1);
+  });
+
+  test('no expense flow at all is a no-op, never a throw', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = window.openExpenseFlow;
+      try {
+        window.openExpenseFlow = undefined;
+        return { n: await _shareInAsReceipt([{ path: '/x/a.jpg' }]), threw: false };
+      } catch (e) { return { threw: true, msg: String(e && e.message) }; }
+      finally { window.openExpenseFlow = saved; }
+    });
+    expect(r.threw).toBe(false);
+    expect(r.n).toBe(0);
+  });
+
   test('no console errors during share inbox tests', async () => {
     assertNoErrors(page, 'share inbox');
   });
