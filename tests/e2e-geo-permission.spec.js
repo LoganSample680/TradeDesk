@@ -1135,6 +1135,111 @@ test.describe('Crew location permission', () => {
     expect(r.calls).toBe(0);
   });
 
+  // ── The login banner (owner ask 2026-08-26) ───────────────────────────────
+  //
+  // "Banner on their login if they disable it."
+  //
+  // Two things were wrong with the banner that already existed. It was gated
+  // on _isEmployee, so the one person who could turn their own tracking off
+  // and never be told was the owner, whose mileage deduction it is. And it
+  // read navigator.permissions, which cannot see accuracy at all, so a phone
+  // dropped to Approximate sailed straight past it reporting 'granted'.
+  const bannerFor = (nat) => page.evaluate((n) => {
+    const saved = { nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined,
+                    emp: window._isEmployee, cap: window.Capacitor, tt: S.teamTracking };
+    try {
+      window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+      window._isEmployee = false;              // the OWNER, the case that was skipped
+      S.teamTracking = true;
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = n;
+      let el = document.getElementById('dash-geo-perm');
+      if (!el) { el = document.createElement('div'); el.id = 'dash-geo-perm'; document.body.appendChild(el); }
+      el.innerHTML = ''; el.style.display = 'none';
+      return Promise.resolve(_geoPermissionBanner()).then(() => ({
+        shown: el.style.display !== 'none', html: el.innerHTML,
+      }));
+    } finally {
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+      window._isEmployee = saved.emp; window.Capacitor = saved.cap; S.teamTracking = saved.tt;
+    }
+  }, nat);
+
+  test('the OWNER gets the banner too, not just crew', async () => {
+    const r = await bannerFor({ status: 'denied', accuracy: 'full', servicesEnabled: true });
+    expect(r.shown, 'it is the owner\'s own mileage deduction').toBe(true);
+  });
+
+  // _geoNatProblem covers the four "granted but useless" states and
+  // deliberately NOT denied or never-asked, which the setup checklist routes
+  // through _geoPermState instead. The banner needs all six, so it asks iOS
+  // directly for the two the helper skips. Missing that swallowed the loudest
+  // case of all.
+  test('never-asked raises a soft banner, denied raises a hard one', async () => {
+    const nd = await bannerFor({ status: 'notdetermined' });
+    expect(nd.shown).toBe(true);
+    expect(nd.html).toMatch(/Turn on location/i);
+    const dn = await bannerFor({ status: 'denied', accuracy: 'full', servicesEnabled: true });
+    expect(dn.html).toMatch(/Location is off/i);
+  });
+
+  test('Approximate raises the banner, which the old web-only check could never see', async () => {
+    const r = await bannerFor({ status: 'always', accuracy: 'reduced', servicesEnabled: true });
+    expect(r.shown).toBe(true);
+    expect(r.html).toMatch(/precise/i);
+  });
+
+  test('While Using raises it, and names Always as the fix', async () => {
+    const r = await bannerFor({ status: 'wheninuse', accuracy: 'full', servicesEnabled: true });
+    expect(r.shown).toBe(true);
+    expect(r.html).toMatch(/Always/);
+  });
+
+  test('device-wide Location Services off raises it', async () => {
+    const r = await bannerFor({ status: 'always', accuracy: 'full', servicesEnabled: false });
+    expect(r.shown).toBe(true);
+  });
+
+  test('a healthy phone shows nothing at all', async () => {
+    const r = await bannerFor({ status: 'always', accuracy: 'full', servicesEnabled: true });
+    expect(r.shown, 'a banner on a working phone is noise').toBe(false);
+  });
+
+  test('a session-upgraded phone shows nothing, because it IS working right now', async () => {
+    const r = await page.evaluate(() => {
+      const saved = { nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined,
+                      emp: window._isEmployee, cap: window.Capacitor, tt: S.teamTracking,
+                      tmp: (typeof _geoPreciseTemp !== 'undefined') ? _geoPreciseTemp : undefined };
+      try {
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+        window._isEmployee = false; S.teamTracking = true;
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = { status: 'always', accuracy: 'full', servicesEnabled: true };
+        if (typeof _geoPreciseTemp !== 'undefined') _geoPreciseTemp = true;
+        let el = document.getElementById('dash-geo-perm');
+        if (!el) { el = document.createElement('div'); el.id = 'dash-geo-perm'; document.body.appendChild(el); }
+        el.style.display = 'none';
+        return Promise.resolve(_geoPermissionBanner()).then(() => ({ shown: el.style.display !== 'none' }));
+      } finally {
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+        if (typeof _geoPreciseTemp !== 'undefined') _geoPreciseTemp = saved.tmp;
+        window._isEmployee = saved.emp; window.Capacitor = saved.cap; S.teamTracking = saved.tt;
+      }
+    });
+    expect(r.shown, 'a red banner on a phone that is tracking fine is a lie').toBe(false);
+  });
+
+  test('the banner button uses the same fix path as the checklist, never a second one', () => {
+    const fs = require('fs'), path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'geo-track.js'), 'utf8');
+    const i = src.indexOf('function _geoBannerHtml');
+    expect(i).toBeGreaterThan(-1);
+    const blk = src.slice(i, i + 1200);
+    // _geoRequestPermission cannot re-prompt a settled iOS decision and knows
+    // nothing about accuracy. Two buttons with two ideas of how to fix this is
+    // how one of them becomes a dead button.
+    expect(/_setupTodoGo\(\\?'location\\?'\)/.test(blk),
+      'one fix path, shared with the setup checklist').toBe(true);
+  });
+
   // ── 5. The checklist item stays completable ────────────────────────────────
 
   test('a denied user gets a Settings walkthrough, not a button that cannot work', async () => {

@@ -2614,27 +2614,90 @@ function _geoAutoMileage(from,to,legKey,startedIso,companyVeh,driveMins,endedIso
 async function _geoPermissionBanner(){
   const el=document.getElementById('dash-geo-perm');
   if(!el)return;
-  if(!_isEmployee||!S.teamTracking){el.style.display='none';return;}
+  // EVERYBODY, not just crew (owner ask 2026-08-26: "banner on their login if
+  // they disable it"). This was gated on _isEmployee, so the one person who
+  // could turn their own tracking off and never be told was the owner. It is
+  // their mileage deduction, so they get the same banner the crew gets.
+  if(!S.teamTracking&&_isEmployee){el.style.display='none';return;}
+  // iOS's OWN word first, via the same _geoNatProblem the setup checklist
+  // reads (7.3): one vocabulary, one set of copy, one fix path. The web
+  // permission API below is the browser fallback and CANNOT see accuracy at
+  // all, which is exactly why a phone dropped to Approximate used to sail past
+  // this banner reporting 'granted'.
+  let np=null,natSaid=false;
+  try{
+    np=(typeof _geoNatProblem==='function')?_geoNatProblem():null;
+    const _n=(typeof _geoNativeAuthPeek==='function')?_geoNativeAuthPeek():null;
+    natSaid=!!(_n&&_n.status);
+  }catch(_e){}
+  // _geoNatProblem deliberately does NOT cover denied or never-asked: the setup
+  // checklist routes those through _geoPermState. The banner needs them, so it
+  // asks iOS directly rather than leaning on a helper built for a different
+  // question. Without this the early return below swallowed a denied phone,
+  // which is the loudest case there is.
+  if(!np&&natSaid){
+    const _st=String(((typeof _geoNativeAuthPeek==='function')?_geoNativeAuthPeek():{}).status||'');
+    if(_st==='denied'){
+      el.style.display='block';
+      el.innerHTML=_geoBannerHtml('Location is off',
+        'TradeDesk logs your drive time and job hours automatically during work hours, and none of it runs with location off.',
+        'Fix it');
+      return;
+    }
+    if(_st==='notdetermined'){
+      el.style.display='block';
+      el.innerHTML=_geoBannerHtml('Turn on location',
+        'Your drive miles and hours on each job log themselves once location is on. Work hours only.',
+        'Turn on location');
+      return;
+    }
+    // iOS SPOKE AND HAD NO COMPLAINT: done, hide it, and do NOT fall through.
+    // The WebView keeps its own separate permission answer, which on a
+    // perfectly healthy iPhone commonly reads 'prompt', so falling through
+    // here put "Location is off" on a phone that was tracking fine. Caught
+    // locally before this shipped, and it is the same trust-the-web-API-on-
+    // native mistake the whole permission rework exists to stamp out.
+    el.style.display='none';return;
+  }
+  if(np){
+    // 'precisetemp' is not a break: it means we upgraded this session and it
+    // IS working right now. The checklist still pushes for the permanent fix;
+    // a red banner on a working phone would be a lie.
+    if(np.kind==='precisetemp'){el.style.display='none';return;}
+    el.style.display='block';
+    el.innerHTML=_geoBannerHtml(np.title,np.sub,np.cta);
+    return;
+  }
   let state='prompt';
   try{
     if(navigator.permissions&&navigator.permissions.query){
       const p=await navigator.permissions.query({name:'geolocation'});state=p.state;
-      // Re-render live if the employee flips the setting while the app is open
+      // Re-render live if they flip the setting while the app is open
       if(!p._tdBound){p._tdBound=true;p.onchange=()=>_geoPermissionBanner();}
     }
   }catch(_e){}
   if(state==='granted'){el.style.display='none';return;}
   const denied=state==='denied';
   el.style.display='block';
-  el.innerHTML='<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:var(--r);padding:12px 14px;margin-bottom:12px">'+
-    '<div style="font-size:13px;font-weight:800;color:#991B1B;margin-bottom:4px">'+svgIcon('📍',{size:13})+' Location is off</div>'+
-    '<div style="font-size:12px;color:#991B1B;line-height:1.5;margin-bottom:'+(denied?'0':'10px')+'">'+
-      'TradeDesk logs your drive time and job hours automatically during work hours, it only works with location on. '+
-      (denied
-        ?'Turn it back on in your phone: <strong>Settings → TradeDesk → Location → While Using the App</strong>.'
-        :'Tap below and choose <strong>Allow While Using</strong>.')+
-    '</div>'+
-    (denied?'':'<button onclick="_geoRequestPermission()" style="width:100%;padding:11px;border-radius:var(--r);border:none;background:#DC2626;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">Turn on location</button>')+
+  el.innerHTML=_geoBannerHtml('Location is off',
+    'TradeDesk logs your drive time and job hours automatically during work hours, it only works with location on. '+
+    (denied
+      ?'Turn it back on in your phone: Settings → TradeDesk → Location → While Using the App.'
+      :'Tap below and choose Allow While Using.'),
+    denied?null:'Turn on location');
+}
+// One banner shell for every state, so the copy is the only thing that varies.
+// The button routes through _setupTodoGo('location'), the SAME handler the
+// setup checklist uses, rather than calling _geoRequestPermission directly:
+// that handler already knows a settled iOS decision cannot be re-prompted and
+// has to go to Settings, and knows to try the accuracy upgrade first when the
+// complaint is Precise. Two buttons with two different ideas of how to fix
+// this is how one of them becomes a dead button.
+function _geoBannerHtml(title,body,cta){
+  return '<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:var(--r);padding:12px 14px;margin-bottom:12px">'+
+    '<div style="font-size:13px;font-weight:800;color:#991B1B;margin-bottom:4px">'+svgIcon('📍',{size:13})+' '+escHtml(title)+'</div>'+
+    '<div style="font-size:12px;color:#991B1B;line-height:1.5;margin-bottom:'+(cta?'10px':'0')+'">'+escHtml(body)+'</div>'+
+    (cta?'<button onclick="if(typeof _setupTodoGo===\'function\')_setupTodoGo(\'location\')" style="width:100%;padding:11px;border-radius:var(--r);border:none;background:#DC2626;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">'+escHtml(cta)+'</button>':'')+
   '</div>';
 }
 // ── Permission request ────────────────────────────────────────────────────────
