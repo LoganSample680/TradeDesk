@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.25.26.43';
+const APP_VERSION='08.25.26.44';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -3840,9 +3840,20 @@ function renderTeam(){
         (e.email?'<div style="font-size:11px;color:var(--text3);margin-top:3px">'+svgIcon('📧')+' '+escHtml(e.email)+' <span style="font-size:9px;font-weight:700;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:6px">Invite sent</span></div>':'')+
         '<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.5">'+perms+'</div>'+
         (function(){
-          // Owner-facing only, and never for the owner's own row (they see their
-          // own state on the dashboard checklist instead).
-          if(e.role==='owner')return '';
+          // The owner's own row shows too now (owner ask 2026-08-26: "should
+          // individual shops show the owner under team"). It used to be
+          // skipped on the grounds that the dashboard checklist already tells
+          // them, and that reasoning does not survive a solo shop: for a
+          // one-person business the owner IS the crew, so a roster that lists
+          // everyone except the only person on it is an empty screen. It also
+          // never covered a second handset, which the checklist cannot see at
+          // all because it only ever reads THIS phone.
+          //
+          // But only to THEMSELVES. A manager trusted with the crew screens is
+          // trusted with the crew, not with where the boss's phone is, and
+          // that asymmetry has to be deliberate rather than a side effect of
+          // who happens to load the page.
+          if(e.role==='owner'&&(typeof _isEmployee!=='undefined'&&_isEmployee))return '';
           const g=_geoRosterStatus(e.email);
           if(!g)return '';
           // The problem on its own line, the tap that fixes it dimmer
@@ -3853,6 +3864,7 @@ function renderTeam(){
           return '<div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-top:5px;color:'+g.tone+'">'+
             '<span style="font-size:9px">'+svgIcon(g.dot,{size:9})+'</span><span>'+escHtml(g.label)+'</span></div>'+
             (g.device?_sub(g.device):'')+
+            (g.ping?_sub(g.ping):'')+
             (g.fix?_sub(g.fix):'');
         })()+
       '</div>';
@@ -4010,6 +4022,11 @@ function _empLoadedHourly(comp){
 let _teamGeo={};
 let _teamGeoLoaded=false;
 const _GEO_FRESH_MS=36*3600*1000; // a phone that hasn't checked in for ~1.5 days is unknown, not OK
+// How far back a ping is worth NAMING, as opposed to trusting. Past
+// _GEO_FRESH_MS a ping no longer proves anything, but "last ping 3 days ago"
+// is still the single most useful line on a stalled row, so the fetch reaches
+// further than the trust window does.
+const _GEO_PING_LOOKBACK_MS=30*86400000;
 // Owner, or a manager they trusted with the crew screens. This used to bail on
 // any employee at all, which was fine while the owner was the only reader and
 // became a hole the moment a manager could be notified that somebody's
@@ -4036,17 +4053,48 @@ async function _loadTeamGeo(){
     data.forEach(r=>{if(r.email)next[r.email.toLowerCase()]={
       status:r.location_status||null,checkedAt:r.location_checked_at||null,
       device:r.location_device||null,ackAt:r.location_ack_at||null,lastPing:null};});
+    // ONE uid -> roster-email map, shared by the ping fetch and the
+    // device_status fetch below, so both agree on exactly who is on this
+    // roster and neither can silently cover a different set of people.
+    const byUid={};
+    data.forEach(r=>{if(r.employee_user_id)byUid[r.employee_user_id]=(r.email||'').toLowerCase();});
+    // The owner has no team_members row of their own, so without this their
+    // roster line would read "Not set up yet" no matter how well their phone
+    // is actually reporting. Their email comes off the roster entry the Team
+    // screen is about to render, falling back to the signed-in address.
+    // Skipped for a manager: they never render the owner's row (see
+    // renderTeam), so fetching the boss's handset state would be collecting
+    // something they are never shown.
+    if(typeof _isEmployee==='undefined'||!_isEmployee){
+      let oEmail='';
+      try{
+        const own=(typeof S!=='undefined'&&(S.employees||[])).find(e=>e&&e.role==='owner'&&e.email);
+        oEmail=String((own&&own.email)||(_supaUser&&_supaUser.email)||'').toLowerCase();
+      }catch(_e){}
+      if(oEmail){
+        byUid[cid]=oEmail;
+        if(!next[oEmail])next[oEmail]={status:null,checkedAt:null,device:null,ackAt:null,lastPing:null};
+      }
+    }
+
     // Ping recency, the signal that outranks the permission API.
+    // The window is deliberately wider than _GEO_FRESH_MS: inside it a ping
+    // still PROVES tracking works, but outside it the timestamp is the most
+    // useful thing on the row ("last ping 3 days ago" is an answer, "no recent
+    // activity" is not), so it is fetched and shown rather than dropped.
     try{
-      const since=new Date(Date.now()-_GEO_FRESH_MS).toISOString();
+      const since=new Date(Date.now()-_GEO_PING_LOOKBACK_MS).toISOString();
       const{data:pings}=await _supa.from('location_pings')
         .select('employee_user_id,ts').eq('contractor_user_id',cid).gte('ts',since)
         .order('ts',{ascending:false}).limit(500);
       const byUser={};
       (pings||[]).forEach(p=>{if(p.employee_user_id&&!byUser[p.employee_user_id])byUser[p.employee_user_id]=p.ts;});
-      data.forEach(r=>{
-        const k=(r.email||'').toLowerCase();
-        if(k&&next[k]&&r.employee_user_id&&byUser[r.employee_user_id])next[k].lastPing=byUser[r.employee_user_id];
+      // Over byUid, not over `data`: the owner is in the first and not the
+      // second, and iterating team_members alone is what would leave their own
+      // row claiming no pings while their phone reported all day.
+      Object.keys(byUid).forEach(uid=>{
+        const k=byUid[uid];
+        if(k&&next[k]&&byUser[uid])next[k].lastPing=byUser[uid];
       });
     }catch(_e){}
     // iOS's OWN word, per handset, from device_status (owner ask 2026-08-26:
@@ -4063,12 +4111,10 @@ async function _loadTeamGeo(){
     // is read directly rather than teaching team_members a second vocabulary
     // it would then have to keep in sync (7.3).
     try{
-      const byUid={};
-      data.forEach(r=>{if(r.employee_user_id)byUid[r.employee_user_id]=(r.email||'').toLowerCase();});
       const uids=Object.keys(byUid);
       if(uids.length){
         const{data:devs}=await _supa.from('device_status')
-          .select('user_id,device_id,device_label,location_status,location_accuracy,location_services_enabled,derived,checked_at')
+          .select('user_id,device_id,device_label,location_status,location_accuracy,location_services_enabled,derived,checked_at,battery_level,battery_charging')
           .eq('contractor_user_id',cid).in('user_id',uids);
         // A FLEET handset: one device_id that more than one person has signed
         // into (owner ask 2026-08-26: "if using fleet iPads"). A personal
@@ -4113,7 +4159,21 @@ async function _loadTeamGeo(){
     _teamGeo=next;
   }catch(_e){}
 }
-// Returns {dot,label,tone} or null when crew tracking is off for the account.
+// Battery as a person would say it. Only shown when it MATTERS: a phone above
+// 30%, or one on a charger, tells the owner nothing they need, and a roster
+// that reports nine battery percentages is a roster nobody reads. Under 30% is
+// the point where "his phone died" becomes a real explanation for a missing
+// afternoon.
+const _GEO_BATT_WARN=0.30;
+function _geoBattLabel(io_){
+  if(!io_||io_.battery_level==null)return null;
+  const pct=Math.round(+io_.battery_level*100);
+  if(!Number.isFinite(pct)||pct<0)return null;
+  if(io_.battery_charging)return pct<=_GEO_BATT_WARN*100?(pct+'%, charging'):null;
+  if(pct>_GEO_BATT_WARN*100)return null;
+  return pct+'% battery';
+}
+// Returns {dot,label,device,ping,fix,tone} or null when crew tracking is off.
 function _geoRosterStatus(email){
   if(!S.teamTracking)return null;
   const g=_teamGeo[(email||'').toLowerCase()];
@@ -4134,33 +4194,41 @@ function _geoRosterStatus(email){
   // and a green ping from this morning must not hide a permission they
   // turned off since.
   const iosWins=ioFresh&&(!fresh||ioAt>=(Date.parse(g.lastPing||'')||0));
+  // Last ping, on EVERY state rather than only the green one. On a broken row
+  // it is the thing that says how long this has been going on, which is the
+  // difference between "he flipped it this morning" and "nothing has come off
+  // that phone since Tuesday". Suppressed when the label already says it, so a
+  // green row never reads "last ping 5m ago · last ping 5m ago".
+  const _ping=g.lastPing?('Last ping '+_timeAgo(g.lastPing)):'No pings yet';
   if(io_&&iosWins){
     const st=String(io_.location_status||'');
     // Which handset this verdict came off, as its own line. A personal phone
     // is just its name; a fleet device says so and says when THIS person last
     // used it, since that is the only thing a shared iPad can tell you about
     // one member of the crew.
-    const dev=io_.device_label
+    const _batt=_geoBattLabel(io_);
+    const _devName=io_.device_label
       ? (io_.shared
           ? io_.device_label+' (shared) · they last used it '+_timeAgo(io_.checked_at)
           : io_.device_label)
       : null;
+    const dev=[_devName,_batt].filter(Boolean).join(' · ')||null;
     if(io_.location_services_enabled===false)
-      return{dot:'🔴',label:'Location is off for their whole phone',fix:'Settings › Privacy › Location Services',device:dev,tone:'#DC2626'};
+      return{dot:'🔴',label:'Location is off for their whole phone',fix:'Settings › Privacy › Location Services',device:dev,ping:_ping,tone:'#DC2626'};
     if(st==='denied')
-      return{dot:'🔴',label:'Location off on their phone',fix:'Settings › TradeDesk › Location',device:dev,tone:'#DC2626'};
+      return{dot:'🔴',label:'Location off on their phone',fix:'Settings › TradeDesk › Location',device:dev,ping:_ping,tone:'#DC2626'};
     if(st==='restricted')
-      return{dot:'🔴',label:'Blocked by Screen Time or a device policy',device:dev,tone:'#DC2626'};
+      return{dot:'🔴',label:'Blocked by Screen Time or a device policy',device:dev,ping:_ping,tone:'#DC2626'};
     if(st==='notdetermined')
-      return{dot:'⚪',label:'Hasn’t answered the location prompt yet',device:dev,tone:'var(--text3)'};
+      return{dot:'⚪',label:'Hasn’t answered the location prompt yet',device:dev,ping:_ping,tone:'var(--text3)'};
     if(st==='wheninuse')
-      return{dot:'🟠',label:'Only tracks with the app open, their drives won’t log',fix:'Settings › TradeDesk › Location › Always',device:dev,tone:'#D97706'};
+      return{dot:'🟠',label:'Only tracks with the app open, their drives won’t log',fix:'Settings › TradeDesk › Location › Always',device:dev,ping:_ping,tone:'#D97706'};
     if(st==='always'&&String(io_.location_accuracy||'')==='reduced')
-      return{dot:'🟠',label:'On, but not precise enough for job check-ins',fix:'Settings › TradeDesk › Location › Precise Location',device:dev,tone:'#D97706'};
+      return{dot:'🟠',label:'On, but not precise enough for job check-ins',fix:'Settings › TradeDesk › Location › Precise Location',device:dev,ping:_ping,tone:'#D97706'};
     if(st==='always')
       return fresh
         ? {dot:'🟢',label:'Tracking · last ping '+_timeAgo(g.lastPing),device:dev,tone:'var(--green-mid,#16a34a)'}
-        : {dot:'🟢',label:'Tracking, all set',device:dev,tone:'var(--green-mid,#16a34a)'};
+        : {dot:'🟢',label:'Tracking, all set',device:dev,ping:_ping,tone:'var(--green-mid,#16a34a)'};
   }
   // A ping inside the window is proof, regardless of what the permission API said.
   if(fresh)

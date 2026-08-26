@@ -2916,6 +2916,25 @@ async function _geoReadPermissionInferred(){
 //
 // Motion rides along because the plugin could always answer it
 // (TdGeo.motionPermStatus) and there was nowhere to put the answer.
+// Battery, straight off the plugin. TdGeo.stats() has always returned it (it
+// exists for the radio-time accounting) and nothing but the shadow-engine
+// diagnostic ever looked. Cached rather than awaited inside the upsert so a
+// slow or missing plugin can never delay or block the permission row, which is
+// the row that actually explains payroll.
+let _geoBatt=null;
+function _geoBattPeek(){return _geoBatt;}
+async function _geoRefreshBattery(){
+  try{
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    if(!Td||typeof Td.stats!=='function'){_geoBatt=null;return null;}
+    const st=await Td.stats();
+    // -1 is the plugin's own "could not read", and must stay distinguishable
+    // from a genuinely flat phone.
+    const lvl=(st&&+st.batteryLevel>=0)?+st.batteryLevel:null;
+    _geoBatt=(lvl==null)?null:{level:lvl,charging:!!(st&&st.charging)};
+    return _geoBatt;
+  }catch(_e){_geoBatt=null;return null;}
+}
 function _geoReportPermission(state){
   if(!_supa||!_supaUser)return;
   const now=new Date().toISOString();
@@ -2957,6 +2976,10 @@ function _geoReportPermission(state){
         // the screen can never disagree. Undefined (never checked) stays null
         // rather than being written as a guess.
         motion_status:(typeof _motionPermCache!=='undefined'&&_motionPermCache)?_motionPermCache:null,
+        // A dead phone and a phone with location off look identical on the
+        // roster otherwise, and one of them is fixed with a charger.
+        battery_level:_geoBatt?_geoBatt.level:null,
+        battery_charging:_geoBatt?_geoBatt.charging:null,
         // TRUE when this row is a guess rather than iOS's own word (owner
         // 2026-08-25: "don't keep inferring, build explicitly off what iOS
         // reports"). It was hardcoded false, which quietly presented the
@@ -2993,6 +3016,7 @@ function _geoReportPermission(state){
 const _GEO_PERM_STALE_MS=6*60*60*1000;
 let _geoPermReportedAt=0;
 function _geoPermForeground(){
+  try{if(typeof _geoRefreshBattery==='function')_geoRefreshBattery();}catch(_e){}
   try{if(typeof _geoRefreshPermCache==='function')_geoRefreshPermCache();}catch(_e){}
   try{if(typeof _motionRefreshPermCache==='function')_motionRefreshPermCache();}catch(_e){}
   const now=Date.now();
@@ -3770,6 +3794,7 @@ function startGeoTracking(){
         }catch(_e){}
         // The watcher running IS the shell's 'granted' state: refresh the
         // dashboard's permission cache so "Turn on location" clears itself.
+        try{if(typeof _geoRefreshBattery==='function')_geoRefreshBattery();}catch(_e){}
         try{if(typeof _geoRefreshPermCache==='function')_geoRefreshPermCache();}catch(_e){}
         try{if(typeof _motionRefreshPermCache==='function')_motionRefreshPermCache();}catch(_e){}
       },

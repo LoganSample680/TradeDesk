@@ -417,6 +417,65 @@ test.describe('Crew location permission', () => {
     expect(out.device).toBeNull();
   });
 
+  // ── Battery and last ping (owner ask 2026-08-26) ──────────────────────────
+  //
+  // A dead phone and a phone with location switched off look IDENTICAL on a
+  // roster that shows neither, and the owner chases them completely
+  // differently: one is a conversation, the other is a charger.
+  test('a low battery is named, because "his phone died" is a real explanation', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, device_label: 'iPhone', battery_level: 0.09,
+      battery_charging: false, checked_at: NOW() });
+    expect(out.device).toContain('9% battery');
+    expect(out.device).toContain('iPhone');
+  });
+
+  test('a healthy battery is NOT named, so the roster stays readable', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, device_label: 'iPhone', battery_level: 0.82,
+      battery_charging: false, checked_at: NOW() });
+    expect(out.device, 'nine battery percentages is a roster nobody reads').toBe('iPhone');
+  });
+
+  test('a low battery on a charger says charging, and a healthy one on a charger says nothing', async () => {
+    const low = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, battery_level: 0.11, battery_charging: true, checked_at: NOW() });
+    const high = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, device_label: 'iPhone', battery_level: 0.95,
+      battery_charging: true, checked_at: NOW() });
+    expect(low.device).toContain('charging');
+    expect(high.device).toBe('iPhone');
+  });
+
+  test('an unknown battery is silent, never rendered as 0%', async () => {
+    for (const lvl of [null, undefined, -1]) {
+      const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+        location_services_enabled: true, device_label: 'iPhone', battery_level: lvl, checked_at: NOW() });
+      expect(out.device, String(lvl) + ': a phone that could not answer is not a flat phone').toBe('iPhone');
+    }
+  });
+
+  test('last ping shows on a BROKEN row, which is where it matters most', async () => {
+    const out = await rosterIos({ location_status: 'wheninuse', checked_at: NOW() },
+      { lastPing: new Date(Date.now() - 50 * 3600 * 1000).toISOString() });
+    expect(out.dot).toBe('🟠');
+    expect(out.ping,
+      '"he flipped it this morning" and "nothing since Tuesday" are different problems').toMatch(/Last ping/);
+  });
+
+  test('a row that never reported says so plainly', async () => {
+    const out = await rosterIos({ location_status: 'denied', checked_at: NOW() });
+    expect(out.ping).toBe('No pings yet');
+  });
+
+  test('the green ping row never says it twice', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, checked_at: NOW() },
+      { lastPing: new Date(Date.now() - 5 * 60000).toISOString() });
+    expect(out.label).toContain('last ping');
+    expect(out.ping, 'the label already carries it').toBeUndefined();
+  });
+
   // The BEST handset decides, not the newest. Somebody with a working iPhone
   // and a forgotten iPad on While Using does not have a problem, and a roster
   // that says otherwise sends the owner chasing a phantom.
@@ -820,6 +879,28 @@ test.describe('Crew location permission', () => {
     expect(pe, 'pushEnable must be in the notify branch').toBeGreaterThan(-1);
     expect(pe < na || na === -1,
       'pushEnable is tried FIRST; _notifyAsk is only the browser fallback').toBe(true);
+  });
+
+  // ── The owner's own row (owner ask 2026-08-26) ────────────────────────────
+  //
+  // It used to be skipped outright, on the grounds that the dashboard
+  // checklist already tells the owner about their own phone. That does not
+  // survive a solo shop, where the owner IS the crew and the roster would list
+  // everyone except the only person on it, and it never covered a second
+  // handset, which the checklist cannot see because it only reads THIS phone.
+  test("the owner sees their own row; a manager does not", () => {
+    const fs = require('fs'), path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+    const i = src.indexOf("if(e.role==='owner'");
+    expect(i, 'the owner-row rule must still exist').toBeGreaterThan(-1);
+    const line = src.slice(i, src.indexOf('\n', i));
+    // A bare `if(e.role==='owner')return ''` is the old unconditional skip.
+    // The rule now has to depend on WHO is looking: a manager trusted with the
+    // crew screens is trusted with the crew, not with where the boss's phone
+    // is, and that asymmetry must be deliberate rather than a side effect of
+    // who happens to load the page.
+    expect(line.includes('_isEmployee'),
+      "the owner's row is hidden from managers, not from the owner").toBe(true);
   });
 
   // ── 5. The checklist item stays completable ────────────────────────────────
