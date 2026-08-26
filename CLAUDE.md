@@ -642,9 +642,9 @@ Survives conversation compacting so context is not lost between sessions.
 
 **TradeDesk Comms (CRM Texting)**
 - SMS layer via Telnyx or Bandwidth (wholesale rates, bundled into subscription)
-- iMessage delivery via Mac Mini on TradeDesk infra (no SendBlue dependency)
 - Automation triggers: proposal sent → auto-text, job day-before reminder, invoice overdue, change order approval request, deposit confirmed
 - Number provisioning per contractor account
+- **iMessage relay: RULED OUT 2026-08-26.** See §9.4.
 
 **TradeDesk Payroll**
 - W-2 employee payroll via Check (checkhq.com) for compliance/tax filing layer
@@ -693,9 +693,74 @@ Survives conversation compacting so context is not lost between sessions.
 - Contractors see "TradeDesk Messaging," Bandwidth is invisible infrastructure
 - Automation triggers: proposal sent, 24h unopened follow-up, signed confirmation,
   job day-before reminder, change order approval request, invoice overdue
-- iMessage delivery: Mac Mini on TradeDesk infra handles Apple protocol (no SendBlue)
 - Files: `js/messaging/engine.js`, `templates.js`, `numbers.js`, `webhooks.js`
   + Supabase Edge Functions: `send-sms/`, `sms-webhook/`
+
+**iMessage: RULED OUT (researched 2026-08-26). Do not build it. Do not
+re-propose it without new evidence.** This section used to say "iMessage
+delivery: Mac Mini on TradeDesk infra handles Apple protocol." That plan is
+withdrawn for three reasons, in order of severity:
+
+1. **It fails silently, which is disqualifying for this product.** There is no
+   licensed way to send iMessage from third-party infrastructure; every service
+   doing it is tolerated, not authorized. When Apple cuts it off, messages do
+   not bounce, they vanish, and because the numbers stay registered to iMessage
+   the client's iPhone keeps routing there even after the relay is dead. A
+   payment request, a change order approval and a job reminder all stop arriving
+   and nobody finds out until a customer says "you never told me." A CRM whose
+   promise is that the job chain does not drop cannot ship a channel that fails
+   invisibly.
+2. **Apple bans the hardware, not just the account.** Beeper's own registration
+   tool got users' real Macs blocked from iMessage; Beeper Mini was killed in
+   days; Sunbird lasted under a day. One Apple ID plus one registered number per
+   contractor is also exactly the fingerprint Apple flags as a spam farm.
+3. **iMessage has no STOP handling and no consent record.** TCPA damages run
+   $500 to $1,500 per message and the FCC requires honoring opt-outs by any
+   reasonable method. Sending contractor follow-ups over it puts that exposure
+   on TradeDesk with no compliance layer to point at.
+
+Apple Messages for Business was also checked: it requires an Apple-approved MSP
+and a capability review, and it is inbound-first. It is an enterprise
+support-desk channel, not a contractor sending an estimate.
+
+**What replaces it, and why the premise was wrong anyway:**
+
+- **The app already sends blue bubbles.** Every client message goes out through
+  an `sms:` deep link from the contractor's own phone (~32 call sites across
+  proposals.js, bids.js, clients.js, jobs.js, cloud.js, dashboard.js). On iOS,
+  Messages picks the transport, so iPhone to iPhone that link is ALREADY a blue
+  iMessage from their real number with their name on it. Bubble colour was never
+  the gap. **Keep this path; do not "upgrade" it into a platform send.**
+- **The actual gap is that nothing comes back.** The reply never reaches
+  TradeDesk, nothing is logged against the job beyond `autoLogContact`'s
+  `last_contact_date` stamp, and a deep link can never send unattended at 8pm the
+  night before a job. Build inbound capture and logging BEFORE outbound
+  automation: it closes the real gap and needs no campaign approval to ship.
+- **RCS is the answer to "green looks like spam," and it is free.** Live on all
+  three US carriers and on iPhone since 18.1. Build on a carrier supporting RBM,
+  turn on verified sender once iPhone coverage settles, and the brand name and
+  logo land on both platforms with no new architecture.
+
+**10DLC is the real work here, and it is bigger than the code.** Registration
+takes 1 to 4 weeks end to end, so **a contractor cannot text on day one of
+signup**: this collides directly with §9.9's onboarding restructure and needs a
+designed "your texting is being approved" state. Sole proprietors (no EIN) are
+throttled hard (1 number, 1 msg/sec, 1,000/day to T-Mobile), so onboarding needs
+an EIN branch. TradeDesk registers as ISV on behalf of each customer using THEIR
+details, which means EIN capture, opt-in language on `intake.html` and
+`sign.html`, STOP/HELP handling, per-contractor consent records, and a
+quarantine path when a campaign is rejected.
+
+**Open decision for the owner, and it is the real one:** contractor's own number
+or a TradeDesk-provisioned number. Own number keeps the blue bubbles and the
+trust but makes logging and automation nearly impossible. Provisioned number
+gives logging and automation but goes green. You cannot have both, and every
+other question here follows from that answer.
+
+**Competitive note:** no competitor in §16.1 does iMessage, all do 10DLC SMS,
+and they all charge extra for texting (DripJobs +$25/mo, Workiz ~+$100/mo with a
+message cap). Bundling unlimited texting into the base price is a sharper wedge
+than bubble colour.
 
 ### 9.5 Employee Geo-Tracking & Job Time-on-Site
 
