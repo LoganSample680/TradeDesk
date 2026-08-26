@@ -31,7 +31,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         CAPPluginMethod(name: "stats", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "motionPermStatus", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "locationPermStatus", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "locationPermStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "requestPreciseTemp", returnType: CAPPluginReturnPromise)
     ]
 
     private var locationManager: CLLocationManager?
@@ -344,6 +345,94 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             var out2 = out
             out2["servicesEnabled"] = CLLocationManager.locationServicesEnabled()
             call.resolve(out2)
+        }
+    }
+
+    // requestPreciseTemp({purposeKey}) : ask a reduced-accuracy user for
+    // Precise Location, without sending them to Settings.
+    //
+    // Owner rule 2026-08-26: "we need the tightest location services upfront at
+    // all times, never can default to approximates." Reduced accuracy is about
+    // a mile wide, so a 600ft job fence can never fire and a job arrival never
+    // registers. locationPermStatus can already SEE that state; this is the one
+    // API that can do anything about it from inside the app.
+    //
+    // THIS GRANT IS SESSION-SCOPED. iOS drops it when the app is relaunched, so
+    // it is a way to make today work, never the permanent fix. The permanent
+    // fix is Settings > TradeDesk > Location > Precise Location, and the copy
+    // in JS has to say so. `temporary` travels in the answer for exactly that
+    // reason: a caller that cannot tell a lapsing grant from a permanent one
+    // will tick its checklist off and stop asking.
+    //
+    // NSLocationTemporaryUsageDescriptionDictionary IS LOAD-BEARING. Without an
+    // entry in Info.plist under the purpose key passed here, iOS does nothing
+    // at all: no dialog, no error a user can see, the completion just comes
+    // back with the accuracy unchanged. It is patched in by
+    // .github/workflows/ios-beta.yml alongside the other usage strings.
+    //
+    // Raw capability only, per keep-native-dumb: this asks and reports what iOS
+    // said. Whether to ask, what to say afterwards, and what a temporary grant
+    // means to the setup checklist are all JS decisions (js/geo-track.js,
+    // js/dashboard.js).
+    @objc func requestPreciseTemp(_ call: CAPPluginCall) {
+        // Defaulted rather than required: a bridge call with no options, or
+        // with junk in place of the key, must still get a real answer instead
+        // of a rejection, the same contract locationPermStatus carries.
+        let key = call.getString("purposeKey") ?? "JobSiteAccuracy"
+        // Below iOS 14 there is no reduced accuracy to upgrade FROM: every fix
+        // is already full accuracy, so "unsupported" here means "nothing to
+        // ask for", not "this phone cannot be precise". Reported as both, so a
+        // JS caller never reads the absence of the API as a broken handset.
+        guard #available(iOS 14.0, *) else {
+            call.resolve([
+                "supported": false, "asked": false, "temporary": false,
+                "accuracy": "full", "precise": true, "reason": "os"
+            ])
+            return
+        }
+        DispatchQueue.main.async {
+            let m = self.mgr()
+            let auth = m.authorizationStatus
+            // Nothing to upgrade: already precise. Answering without asking
+            // keeps this idempotent, so a JS retry loop can never spend a
+            // dialog it did not need.
+            if m.accuracyAuthorization == .fullAccuracy {
+                call.resolve([
+                    "supported": true, "asked": false, "temporary": false,
+                    "accuracy": "full", "precise": true, "reason": "alreadyfull"
+                ])
+                return
+            }
+            // No authorization at all yet (or a hard denial) means the accuracy
+            // question is not the one in the way, and iOS will not raise this
+            // dialog on top of a missing or refused grant. Say so plainly so JS
+            // routes to the ask, or to Settings, instead of waiting on a
+            // completion handler that may never arrive.
+            if auth != .authorizedAlways && auth != .authorizedWhenInUse {
+                call.resolve([
+                    "supported": true, "asked": false, "temporary": false,
+                    "accuracy": "reduced", "precise": false, "reason": "unauthorized"
+                ])
+                return
+            }
+            m.requestTemporaryFullAccuracyAuthorization(withPurposeKey: key) { error in
+                let full = m.accuracyAuthorization == .fullAccuracy
+                var out: [String: Any] = [
+                    "supported": true,
+                    "asked": true,
+                    // True ONLY when this call is what produced the full
+                    // accuracy, which is the bit that lapses on relaunch.
+                    "temporary": full,
+                    "accuracy": full ? "full" : "reduced",
+                    "precise": full,
+                    "reason": full ? "granted" : "declined"
+                ]
+                // Carried, never thrown: the missing-plist-key failure arrives
+                // here and is otherwise completely silent, so the one place it
+                // can be seen has to hand it back rather than swallow it.
+                if let e = error { out["error"] = e.localizedDescription }
+                call.resolve(out)
+            }
         }
     }
 

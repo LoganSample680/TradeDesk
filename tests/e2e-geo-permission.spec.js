@@ -631,6 +631,119 @@ test.describe('Crew location permission', () => {
     expect(out.problem).toBeNull();
   });
 
+  // ── 4c-2. A temporary Precise grant is not a finished task ────────────────
+  //
+  // requestTemporaryFullAccuracyAuthorization is the only thing that can lift
+  // a reduced-accuracy user to Precise from inside the app, and what it hands
+  // back LAPSES on the next app launch. So iOS reports accuracy 'full' for the
+  // rest of this session while the underlying problem is untouched. If the
+  // checklist took that at face value the task would tick off, the card would
+  // clear, and job arrivals would silently stop registering again tomorrow.
+  //
+  // Uses the same withNat harness as 4c above: _geoPreciseTemp is a top-level
+  // `let` in js/geo-track.js, reachable from the page's global scope exactly
+  // the way _geoPermCache and _geoNativeAuth already are here.
+  test('the temporary-grant flag and its asker both exist', async () => {
+    const out = await page.evaluate(() => ({
+      ask: typeof _geoRequestPreciseTemp,
+      peek: typeof _geoPreciseTempPeek,
+      key: typeof _GEO_PRECISE_PURPOSE_KEY === 'string' ? _GEO_PRECISE_PURPOSE_KEY : null,
+    }));
+    // Without these the two tests below would be asserting against nothing.
+    expect(out.ask).toBe('function');
+    expect(out.peek).toBe('function');
+    expect(out.key, 'the purpose key has to be a named constant the plist test can read').toBeTruthy();
+  });
+
+  test('a session-scoped Precise grant does NOT complete the location task', async () => {
+    const out = await withNat({ status: 'always', accuracy: 'full', precise: true, servicesEnabled: true }, () => {
+      const saved = _geoPreciseTemp;
+      _geoPreciseTemp = true;
+      _geoPermCache = 'granted';
+      const p = _geoNatProblem();
+      const r = { done: _geoPermDone(), kind: p && p.kind, title: p && p.title, sub: p && p.sub,
+                  peek: _geoPreciseTempPeek() };
+      _geoPreciseTemp = saved;
+      return r;
+    });
+    expect(out.peek, 'the flag must actually be readable, or this test proves nothing').toBe(true);
+    expect(out.done, 'a grant that dies on relaunch cannot finish the task').toBe(false);
+    expect(out.kind).toBe('precisetemp');
+    expect(out.title, 'the copy must not read as done').toContain('permanent');
+    expect(out.sub, 'it has to say plainly that this lapses').toMatch(/restart/i);
+  });
+
+  test('a permanent Precise grant still completes it, so nobody is nagged for free', async () => {
+    const out = await withNat({ status: 'always', accuracy: 'full', precise: true, servicesEnabled: true }, () => {
+      const saved = _geoPreciseTemp;
+      _geoPreciseTemp = false;
+      _geoPermCache = 'granted';
+      const r = { done: _geoPermDone(), problem: _geoNatProblem() };
+      _geoPreciseTemp = saved;
+      return r;
+    });
+    expect(out.done).toBe(true);
+    expect(out.problem).toBeNull();
+  });
+
+  // The lapse itself: iOS reports reduced again, so the flag describing a
+  // grant that no longer exists has to go with it, and the hard complaint
+  // comes back. Cleared off iOS's own answer, never a timer, because iOS is
+  // the only thing that knows.
+  test('when the grant lapses the flag clears and the hard complaint returns', async () => {
+    const out = await page.evaluate(async () => {
+      const saved = { plug: window._geoTdPlugin, nat: _geoNativeAuth, tmp: _geoPreciseTemp, cache: _geoPermCache };
+      try {
+        _geoPreciseTemp = true;
+        _geoPermCache = 'granted';
+        window._geoTdPlugin = () => ({
+          locationPermStatus: () => Promise.resolve({ status: 'always', accuracy: 'reduced', precise: false, servicesEnabled: true }),
+        });
+        await _geoRefreshNativeAuth();
+        const p = _geoNatProblem();
+        return { peek: _geoPreciseTempPeek(), kind: p && p.kind, done: _geoPermDone() };
+      } finally {
+        window._geoTdPlugin = saved.plug; _geoNativeAuth = saved.nat;
+        _geoPreciseTemp = saved.tmp; _geoPermCache = saved.cache;
+      }
+    });
+    expect(out.peek, 'a flag that outlives the grant it describes is a lie').toBe(false);
+    expect(out.kind).toBe('precise');
+    expect(out.done).toBe(false);
+  });
+
+  // A temporary grant means tracking IS working right now, so the break
+  // notification must not fire for it, and a pending 'precise' buzz from
+  // before the tap has to be cancelled rather than left to arrive two minutes
+  // after somebody already fixed it.
+  test('a temporary grant cancels the break buzz instead of firing another one', async () => {
+    const out = await page.evaluate(async () => {
+      const saved = { nat: _geoNativeAuth, tmp: _geoPreciseTemp, cache: _geoPermCache,
+                      sched: window._notifySchedule, cancel: window._notifyCancel, cap: window.Capacitor };
+      const calls = { scheduled: [], cancelled: [] };
+      try {
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+        window._notifySchedule = (id, title, body) => { calls.scheduled.push(id); return Promise.resolve(true); };
+        window._notifyCancel = (ids) => { calls.cancelled.push(ids); };
+        try { localStorage.setItem('zp3_geo_break_notified', 'precise'); } catch (e) {}
+        _geoNativeAuth = { status: 'always', accuracy: 'full', precise: true, servicesEnabled: true };
+        _geoPreciseTemp = true;
+        _geoPermCache = 'granted';
+        const fired = _geoNotifyBreak();
+        let flag = null; try { flag = localStorage.getItem('zp3_geo_break_notified'); } catch (e) {}
+        return { fired, calls, flag };
+      } finally {
+        _geoNativeAuth = saved.nat; _geoPreciseTemp = saved.tmp; _geoPermCache = saved.cache;
+        window._notifySchedule = saved.sched; window._notifyCancel = saved.cancel; window.Capacitor = saved.cap;
+        try { localStorage.removeItem('zp3_geo_break_notified'); } catch (e) {}
+      }
+    });
+    expect(out.fired, 'nothing is broken this session, so nothing to tell them').toBe(false);
+    expect(out.calls.scheduled).toEqual([]);
+    expect(out.calls.cancelled.length, 'the pending buzz for the state they just fixed is dropped').toBe(1);
+    expect(out.flag, 'forgetting it makes the NEXT lapse a fresh transition with its own one notification').toBeNull();
+  });
+
   // ── 4d. One notification per break, never a nag (Apple 4.5.4 / 5.1.1) ─────
   const breakRun = (nat, pre) => page.evaluate(([n, p]) => {
     const saved = (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined;
@@ -991,6 +1104,148 @@ test.describe('Crew location permission', () => {
     // on top of it, a user who gets the real one-tap fix should not also
     // see a wall of manual instructions.
     expect(out.alerted).toBeNull();
+  });
+
+  // ── 5a. Reduced accuracy is ASKED about, not pointed at ───────────────────
+  //
+  // Owner rule 2026-08-26: "we need the tightest location services upfront at
+  // all times, never can default to approximates." Every other iOS complaint
+  // is settled and unaskable, so routing it to Settings is the only honest
+  // move. Reduced accuracy is the exception: iOS will still take the question
+  // (requestTemporaryFullAccuracyAuthorization), and sending somebody on a
+  // Settings trip for something the app could have asked in place is friction
+  // we chose not to spend.
+  //
+  // Same save/restore shape as the deep-link test above, because the routing
+  // is async here: the upgrade has to resolve before the fallback decision.
+  const precise = (opts) => page.evaluate(async (o) => {
+    const saved = { plug: window._geoTdPlugin, nat: _geoNativeAuth, tmp: _geoPreciseTemp,
+                    cache: _geoPermCache, toast: window.showToast, alert: window.zAlert,
+                    supa: window._supa, user: window._supaUser };
+    const calls = { asked: 0, settings: 0, purpose: null };
+    let toasted = null, alerted = null;
+    try {
+      // The upgrade re-reads iOS and repaints, and the repaint reports the new
+      // row. Stubbed the same way the ask helper below does it, so a live
+      // upsert can never reach the network from an offline shard.
+      window._supaUser = { id: 'precise-probe' };
+      window._supa = { from: () => ({ upsert: () => ({ then: (f) => Promise.resolve({}).then(f) }),
+                                      update: () => ({ eq: () => ({ then: (f) => Promise.resolve({}).then(f) }) }) }) };
+      _geoNativeAuth = { status: 'always', accuracy: 'reduced', precise: false, servicesEnabled: true };
+      _geoPreciseTemp = false;
+      _geoPermCache = 'granted';
+      window.showToast = (m) => { toasted = m; };
+      window.zAlert = (m) => { alerted = m; };
+      const plug = {
+        openSettings: () => { calls.settings++; return Promise.resolve({ opened: true }); },
+        locationPermStatus: () => Promise.resolve(_geoNativeAuth),
+      };
+      if (o.answer !== null) {
+        plug.requestPreciseTemp = (arg) => {
+          calls.asked++;
+          calls.purpose = arg && arg.purposeKey;
+          if (o.answer.precise) _geoNativeAuth = { status: 'always', accuracy: 'full', precise: true, servicesEnabled: true };
+          return o.reject ? Promise.reject(new Error('bridge blew up')) : Promise.resolve(o.answer);
+        };
+      }
+      window._geoTdPlugin = () => plug;
+      _setupTodoGo('location');
+      await new Promise(r => setTimeout(r, 120));
+      const p = _geoNatProblem();
+      return { calls, toasted, alerted, temp: _geoPreciseTempPeek(),
+               kind: p && p.kind, done: _geoPermDone() };
+    } finally {
+      window._geoTdPlugin = saved.plug; _geoNativeAuth = saved.nat; _geoPreciseTemp = saved.tmp;
+      _geoPermCache = saved.cache; window.showToast = saved.toast; window.zAlert = saved.alert;
+      window._supa = saved.supa; window._supaUser = saved.user;
+    }
+  }, opts);
+
+  test('a reduced-accuracy tap asks iOS to upgrade before it sends anyone to Settings', async () => {
+    const out = await precise({ answer: { supported: true, asked: true, accuracy: 'full', precise: true, temporary: true, reason: 'granted' } });
+    expect(out.calls.asked, 'the upgrade is the first move, not the fallback').toBe(1);
+    expect(out.calls.settings, 'a Settings trip nobody needed is exactly the friction this removes').toBe(0);
+    // Silent-failure guard: iOS does NOTHING at all if the purpose key has no
+    // matching Info.plist entry, so the two have to be the same string.
+    expect(out.calls.purpose).toBe('JobSiteAccuracy');
+    expect(out.alerted, 'the real ask replaces the walkthrough, it does not stack on it').toBeNull();
+  });
+
+  test('the toast never implies the temporary grant is the permanent fix', async () => {
+    const out = await precise({ answer: { supported: true, asked: true, accuracy: 'full', precise: true, temporary: true, reason: 'granted' } });
+    expect(out.toasted, 'a grant that dies on relaunch must not be reported as done').toBeTruthy();
+    expect(out.toasted).toMatch(/restart/i);
+    expect(out.toasted, 'it has to name the switch that fixes it for good').toContain('Settings');
+  });
+
+  test('a temporary grant does NOT permanently complete the checklist task', async () => {
+    const out = await precise({ answer: { supported: true, asked: true, accuracy: 'full', precise: true, temporary: true, reason: 'granted' } });
+    expect(out.temp).toBe(true);
+    expect(out.kind, 'iOS now says full, but only until the next launch').toBe('precisetemp');
+    expect(out.done, 'ticking this off would hide a job fence that stops firing tomorrow').toBe(false);
+  });
+
+  test('a shell too old to ask falls back to the Settings deep link', async () => {
+    // answer:null means the plugin has no requestPreciseTemp at all, which is
+    // every TestFlight build already on a phone today.
+    const out = await precise({ answer: null });
+    expect(out.calls.asked).toBe(0);
+    expect(out.calls.settings, 'no way to ask means the old route is still the route').toBe(1);
+    expect(out.temp).toBe(false);
+  });
+
+  test('a refusal falls back to the Settings deep link and claims nothing', async () => {
+    const out = await precise({ answer: { supported: true, asked: true, accuracy: 'reduced', precise: false, temporary: false, reason: 'declined' } });
+    expect(out.calls.asked).toBe(1);
+    expect(out.calls.settings, 'they said no to the dialog, so the permanent switch is the only way left').toBe(1);
+    expect(out.toasted, 'nothing was granted, so nothing is announced').toBeNull();
+    expect(out.temp).toBe(false);
+    expect(out.kind).toBe('precise');
+  });
+
+  test('a bridge that rejects still lands on Settings, never on a dead button', async () => {
+    const out = await precise({ answer: { supported: true, precise: false }, reject: true });
+    expect(out.calls.asked).toBe(1);
+    expect(out.calls.settings).toBe(1);
+    expect(out.temp).toBe(false);
+  });
+
+  // ── 5a-2. The silent half: the Info.plist key ─────────────────────────────
+  //
+  // requestTemporaryFullAccuracyAuthorization does NOTHING without
+  // NSLocationTemporaryUsageDescriptionDictionary carrying the exact purpose
+  // key the call passes: no dialog, no error anyone can see, the accuracy just
+  // never changes. Nothing else in this suite can catch that, because every
+  // JS-side assertion above passes against a plugin stub. This is the only
+  // check standing between a working feature and a completely silent one.
+  test('the temporary-accuracy purpose key is in Info.plist and matches the one the app sends', () => {
+    const fs = require('fs'), path = require('path');
+    const root = path.join(__dirname, '..');
+    const js = fs.readFileSync(path.join(root, 'js', 'geo-track.js'), 'utf8');
+    const m = js.match(/_GEO_PRECISE_PURPOSE_KEY\s*=\s*'([^']+)'/);
+    expect(m, 'the purpose key must be a named constant, not a literal buried in a call').toBeTruthy();
+    const wf = fs.readFileSync(path.join(root, '.github', 'workflows', 'ios-beta.yml'), 'utf8');
+    expect(wf, 'without the dictionary iOS ignores the request entirely, and says nothing')
+      .toContain('NSLocationTemporaryUsageDescriptionDictionary');
+    expect(wf, 'the plist entry and the key the app passes must be the same string')
+      .toContain('NSLocationTemporaryUsageDescriptionDictionary:' + m[1]);
+    // A bare `Add :NSLocation... dict` with no child is the same silent
+    // failure, so the entry itself must carry real consent copy.
+    const line = wf.split('\n').find(l => l.includes('NSLocationTemporaryUsageDescriptionDictionary:' + m[1]) && l.includes('string'));
+    expect(line, 'the purpose key needs a usage string, an empty dict is the same silent no-op').toBeTruthy();
+  });
+
+  test('the native side actually exposes the method the JS calls', () => {
+    const fs = require('fs'), path = require('path');
+    const swift = fs.readFileSync(path.join(__dirname, '..', 'native', 'td-geo', 'ios', 'Plugin', 'TdGeoPlugin.swift'), 'utf8');
+    expect(swift, 'the only API that can lift a reduced-accuracy user in place')
+      .toContain('requestTemporaryFullAccuracyAuthorization');
+    expect(swift).toMatch(/@objc func requestPreciseTemp\(/);
+    // An @objc method missing from pluginMethods is invisible to the bridge,
+    // and the failure looks exactly like an old shell: JS sees no such method
+    // and falls back to Settings forever.
+    expect(swift, 'unregistered means uncallable from JS')
+      .toMatch(/CAPPluginMethod\(name: "requestPreciseTemp"/);
   });
 
   test("'unsupported' counts as done so Safari users are not nagged forever", async () => {

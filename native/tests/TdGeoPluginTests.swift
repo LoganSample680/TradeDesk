@@ -425,6 +425,209 @@ final class TdGeoPluginTests: XCTestCase {
         wait(for: exps, timeout: 60)
     }
 
+    // MARK: - requestPreciseTemp: ask for Precise Location, never hang on it
+
+    // WHAT CI CAN AND CANNOT SEE. A simulator has no authorization granted, so
+    // this never reaches requestTemporaryFullAccuracyAuthorization here, it
+    // takes the unauthorized short-circuit. That is not a hole, it IS the
+    // adversarial case: an unauthorized handset used to be the state where
+    // Apple's completion handler may never fire at all, and a plugin that
+    // simply forwarded the call would leave its CAPPluginCall unresolved
+    // forever, which reads in the app as a tap that did nothing. Every test
+    // here is therefore about the promise contract and the shape of the
+    // answer, which is exactly what the JS side branches on.
+
+    func testRequestPreciseTemp_alwaysResolvesWithACompleteAnswer() {
+        let exp = expectation(description: "requestPreciseTemp")
+        plugin.requestPreciseTemp(makeCall(method: "requestPreciseTemp", onSuccess: { data in
+            XCTAssertTrue(data?["supported"] is Bool, "supported must be a real Bool for a JS caller to test directly")
+            XCTAssertTrue(data?["asked"] is Bool, "the caller has to know whether a dialog was actually spent")
+            XCTAssertTrue(data?["precise"] is Bool)
+            XCTAssertTrue(data?["temporary"] is Bool, "a session-scoped grant must be distinguishable from a permanent one")
+            let accuracy = data?["accuracy"] as? String
+            XCTAssertTrue(["full", "reduced"].contains(accuracy ?? ""),
+                          "accuracy must be full or reduced, got \(accuracy ?? "nil")")
+            XCTAssertNotNil(data?["reason"] as? String, "the branch taken must be nameable, or a silent no-op is indistinguishable from a refusal")
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 30)
+    }
+
+    // precise and accuracy are two spellings of one fact. Two callers reading
+    // different keys must never be able to disagree.
+    func testRequestPreciseTemp_preciseAndAccuracyNeverContradictEachOther() {
+        let exp = expectation(description: "requestPreciseTemp agreement")
+        plugin.requestPreciseTemp(makeCall(method: "requestPreciseTemp", onSuccess: { data in
+            let precise = data?["precise"] as? Bool
+            let accuracy = data?["accuracy"] as? String
+            XCTAssertEqual(precise, accuracy == "full", "precise:\(String(describing: precise)) against accuracy:\(accuracy ?? "nil")")
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 30)
+    }
+
+    // temporary:true is the whole reason this method reports more than a Bool.
+    // It may only ever be true alongside an actual full-accuracy grant; a
+    // "temporary" flag on a refusal would make the JS checklist show a
+    // lapsing-grant nag to somebody who never got one.
+    func testRequestPreciseTemp_temporaryIsNeverTrueWithoutFullAccuracy() {
+        let exp = expectation(description: "requestPreciseTemp temporary")
+        plugin.requestPreciseTemp(makeCall(method: "requestPreciseTemp", onSuccess: { data in
+            let temporary = (data?["temporary"] as? Bool) ?? false
+            let precise = (data?["precise"] as? Bool) ?? false
+            if temporary { XCTAssertTrue(precise, "temporary without precise is a grant that never happened") }
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 30)
+    }
+
+    // The device-capability gap, per the input-class table. The sub-iOS-14
+    // branch cannot be reached on a modern simulator (nothing below the 14.0
+    // deployment target exists to run on), so what is pinned is the CONTRACT
+    // it has to satisfy: unsupported means "there is no reduced accuracy to
+    // upgrade from", never "this phone cannot be precise", so it must answer
+    // full/precise rather than leaving JS to guess which it meant.
+    func testRequestPreciseTemp_unsupportedStillReportsFullAccuracy() {
+        let exp = expectation(description: "requestPreciseTemp unsupported contract")
+        plugin.requestPreciseTemp(makeCall(method: "requestPreciseTemp", onSuccess: { data in
+            if (data?["supported"] as? Bool) == false {
+                XCTAssertEqual(data?["accuracy"] as? String, "full", "pre-iOS-14 has no reduced accuracy at all")
+                XCTAssertEqual(data?["precise"] as? Bool, true)
+                XCTAssertEqual(data?["asked"] as? Bool, false, "nothing to ask for means no dialog was spent")
+            }
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 30)
+    }
+
+    // null/invalid input: a purposeKey of the wrong type, or absent entirely.
+    // The key is what ties the call to Info.plist's
+    // NSLocationTemporaryUsageDescriptionDictionary, and a missing one must
+    // fall back to the built-in default rather than reject, because a
+    // rejection here surfaces as a dead button on the setup checklist.
+    func testRequestPreciseTemp_junkOrMissingPurposeKeyNeverRejects() {
+        let cases: [[String: Any]] = [
+            [:],
+            ["purposeKey": 42],
+            ["purposeKey": ""],
+            ["purposeKey": ["nested": "object"]],
+            ["unexpected": "junk"],
+        ]
+        for (i, opts) in cases.enumerated() {
+            let exp = expectation(description: "requestPreciseTemp junk \(i)")
+            plugin.requestPreciseTemp(makeCall(method: "requestPreciseTemp", options: opts, onSuccess: { data in
+                XCTAssertNotNil(data?["accuracy"], "case \(i) must still answer")
+                exp.fulfill()
+            }))
+            wait(for: [exp], timeout: 30)
+        }
+    }
+
+    // Concurrency, per the input-class table: a double tap, or a checklist
+    // repaint racing the tap that caused it, puts several of these in flight at
+    // once. Every one holds its own CAPPluginCall and must resolve exactly
+    // once, or the bridge leaks a pending promise.
+    func testRequestPreciseTemp_concurrentCallsAllResolveExactlyOnce() {
+        var exps: [XCTestExpectation] = []
+        for i in 0..<8 {
+            let exp = expectation(description: "concurrent requestPreciseTemp \(i)")
+            exps.append(exp)
+            plugin.requestPreciseTemp(makeCall(method: "requestPreciseTemp", onSuccess: { data in
+                XCTAssertNotNil(data?["accuracy"])
+                exp.fulfill()
+            }))
+        }
+        wait(for: exps, timeout: 60)
+    }
+
+    func testRequestPreciseTemp_repeatedCallsDoNotWobble() {
+        var seen: [String] = []
+        for i in 0..<5 {
+            let exp = expectation(description: "requestPreciseTemp repeat \(i)")
+            plugin.requestPreciseTemp(makeCall(method: "requestPreciseTemp", onSuccess: { data in
+                if let a = data?["accuracy"] as? String { seen.append(a) }
+                exp.fulfill()
+            }))
+            wait(for: [exp], timeout: 30)
+        }
+        XCTAssertEqual(seen.count, 5, "every call must resolve")
+        XCTAssertEqual(Set(seen).count, 1, "nothing changed in between, so the answer must not wobble")
+    }
+
+    // Permission-denied path. Asking for accuracy must never disturb the
+    // authorization axis itself: this is an upgrade to an existing grant, not
+    // a second grant, and a version that quietly re-asked for authorization
+    // would spend the one prompt iOS ever shows.
+    func testRequestPreciseTemp_leavesTheAuthorizationStatusUntouched() {
+        var before: String?
+        let pre = expectation(description: "status before")
+        plugin.locationPermStatus(makeCall(method: "locationPermStatus", onSuccess: { data in
+            before = data?["status"] as? String
+            pre.fulfill()
+        }))
+        wait(for: [pre], timeout: 30)
+
+        let ask = expectation(description: "requestPreciseTemp")
+        plugin.requestPreciseTemp(makeCall(method: "requestPreciseTemp", onSuccess: { _ in ask.fulfill() }))
+        wait(for: [ask], timeout: 30)
+
+        let post = expectation(description: "status after")
+        plugin.locationPermStatus(makeCall(method: "locationPermStatus", onSuccess: { data in
+            XCTAssertEqual(data?["status"] as? String, before,
+                           "the accuracy ask must not touch, or re-prompt for, the authorization grant")
+            post.fulfill()
+        }))
+        wait(for: [post], timeout: 30)
+    }
+
+    // The two methods read the same CLLocationManager, so their accuracy
+    // answers have to match. A JS caller asks for the upgrade and then
+    // immediately re-reads status (_geoRequestPreciseTemp does exactly that);
+    // if these two could disagree, the checklist would repaint into a state
+    // the tap never produced.
+    func testRequestPreciseTemp_agreesWithLocationPermStatusOnAccuracy() {
+        var asked: String?
+        let ask = expectation(description: "requestPreciseTemp accuracy")
+        plugin.requestPreciseTemp(makeCall(method: "requestPreciseTemp", onSuccess: { data in
+            asked = data?["accuracy"] as? String
+            ask.fulfill()
+        }))
+        wait(for: [ask], timeout: 30)
+
+        let read = expectation(description: "locationPermStatus accuracy")
+        plugin.locationPermStatus(makeCall(method: "locationPermStatus", onSuccess: { data in
+            XCTAssertEqual(data?["accuracy"] as? String, asked, "one manager, one accuracy, two methods")
+            read.fulfill()
+        }))
+        wait(for: [read], timeout: 30)
+    }
+
+    // Post-error / interrupted state: the engine torn down underneath it, the
+    // way a backgrounded app or a stopAll from the JS layer leaves it. The
+    // manager is rebuilt lazily by mgr(), so this must still answer rather
+    // than resolve empty or hang.
+    func testRequestPreciseTemp_stillAnswersAfterStopAll() {
+        let stop = expectation(description: "stopAll first")
+        plugin.stopAll(makeCall(onSuccess: { _ in stop.fulfill() }))
+        wait(for: [stop], timeout: 30)
+
+        let exp = expectation(description: "requestPreciseTemp after stopAll")
+        plugin.requestPreciseTemp(makeCall(method: "requestPreciseTemp", onSuccess: { data in
+            XCTAssertNotNil(data?["accuracy"], "a torn-down engine must still answer the accuracy question")
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 30)
+    }
+
+    // Registration is what makes the method reachable from JS at all. An
+    // @objc func that never made it into pluginMethods is invisible to the
+    // bridge, and the failure is silent: the JS side simply sees no such
+    // method and falls back to Settings forever.
+    func testRequestPreciseTemp_isRegisteredWithTheBridge() {
+        XCTAssertTrue(plugin.pluginMethods.contains { $0.name == "requestPreciseTemp" },
+                      "requestPreciseTemp must be in pluginMethods or JS can never call it")
+    }
+
     // MARK: - motionPermStatus: read-only, never crashes, no arguments needed
 
     func testMotionPermStatus_resolvesWithStatusAndAvailability() {

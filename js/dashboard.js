@@ -402,6 +402,18 @@ function _geoNatProblem(){
     title:'Turn on Precise Location',
     sub:'Without it your location is about a mile wide, so arriving at a job never registers and hours do not start. Settings › TradeDesk › Location › Precise Location.',
     cta:'Fix it'};
+  // Precise, but only because WE asked for it this session
+  // (_geoRequestPreciseTemp). iOS drops that grant on the next app launch and
+  // arrivals silently stop registering again, so the task cannot tick off on
+  // the back of it. The nag is bounded and self-correcting: it clears the
+  // moment a restart shows Precise permanently on, and it never produces a
+  // false all-clear, which is the error that costs somebody a payroll week.
+  let _tmp=false;
+  try{_tmp=(typeof _geoPreciseTempPeek==='function')&&_geoPreciseTempPeek()===true;}catch(_e){_tmp=false;}
+  if(_tmp&&String(n.accuracy||'')==='full')return{kind:'precisetemp',
+    title:'Make Precise Location permanent',
+    sub:'Precise Location is on for right now, but iOS switches it back to approximate when the app restarts, and then job arrivals stop registering again. Settings › TradeDesk › Location › Precise Location.',
+    cta:'Fix it'};
   return null;
 }
 function _geoPermDone(){
@@ -446,7 +458,13 @@ function _geoNotifyBreak(){
   let prev=null;
   try{prev=localStorage.getItem(_GEO_BREAK_KEY)||null;}catch(_e){}
   const np=_geoNatProblem();
-  const kind=np?np.kind:(_geoPermState()==='denied'?'denied':null);
+  let kind=np?np.kind:(_geoPermState()==='denied'?'denied':null);
+  // A temporary Precise grant means tracking IS working right now, so there is
+  // nothing to buzz anybody about. Falling through to the clear-and-forget
+  // branch below is the point: it cancels the pending 'precise' buzz for
+  // somebody who just fixed it, and leaves the NEXT lapse a fresh transition
+  // that gets its own one notification.
+  if(kind==='precisetemp')kind=null;
   if(!kind){
     // Fixed, or never broken. Drop the pending buzz and forget, so the NEXT
     // break is a fresh transition and gets its one notification.
@@ -602,6 +620,21 @@ function _notifyRefreshPermCache(){
     }).catch(()=>{});
   }catch(_e){}
 }
+// The Settings hand-off, in one place because two paths now need it: every
+// settled iOS complaint, and a Precise upgrade that could not be asked for or
+// was declined. Native gets the one-tap deep link into OUR Settings page;
+// browsers cannot be deep-linked into OS settings at all, so the PWA keeps the
+// walkthrough text as its last resort.
+function _geoLocationSettings(){
+  const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+  if(Td&&typeof Td.openSettings==='function'){Td.openSettings().catch(()=>{});return;}
+  if(typeof zAlert==='function')zAlert(
+    'Your phone is blocking location for TradeDesk, so we can\'t turn it back on from in here.\n\n'+
+    'iPhone: Settings → TradeDesk → Location → While Using the App\n'+
+    'Android: Settings → Apps → TradeDesk → Permissions → Location → Allow only while using\n\n'+
+    'Come back here after and this will clear itself.',
+    {title:'Turn location back on'});
+}
 function _setupTodoGo(id){
   if(id==='notify'){
     // Denied is terminal from script here for the same reason location is:
@@ -642,11 +675,13 @@ function _setupTodoGo(id){
     // OUR settings page (not the Settings app's home screen), one tap to
     // flip it back on. Browsers can't be deep-linked into OS settings at
     // all, so the PWA keeps the walkthrough text as its only option.
-    // Every iOS complaint routes the same way, and for the same reason as
+    // Most iOS complaints route the same way, and for the same reason as
     // denied: iOS holds the decision, so nothing in here can change it and a
-    // button that "asks again" is a dead button. Restricted is the one
-    // exception, because our Settings page has no switch that beats a Screen
-    // Time or MDM block, so it gets the honest explanation instead.
+    // button that "asks again" is a dead button. Two exceptions, both below.
+    // Restricted, because our Settings page has no switch that beats a Screen
+    // Time or MDM block, so it gets the honest explanation instead. And
+    // reduced accuracy, which is the one thing iOS will still take a question
+    // about from inside the app.
     const _np=(typeof _geoNatProblem==='function')?_geoNatProblem():null;
     if(_np&&_np.kind==='restricted'){
       if(typeof zAlert==='function')zAlert(
@@ -656,20 +691,29 @@ function _setupTodoGo(id){
         {title:'Location is blocked on this phone'});
       return;
     }
-    if(_geoPermState()==='denied'||_np){
-      const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
-      if(Td&&typeof Td.openSettings==='function'){
-        Td.openSettings().catch(()=>{});
-        return;
-      }
-      if(typeof zAlert==='function')zAlert(
-        'Your phone is blocking location for TradeDesk, so we can\'t turn it back on from in here.\n\n'+
-        'iPhone: Settings → TradeDesk → Location → While Using the App\n'+
-        'Android: Settings → Apps → TradeDesk → Permissions → Location → Allow only while using\n\n'+
-        'Come back here after and this will clear itself.',
-        {title:'Turn location back on'});
+    // PRECISE IS THE ONE COMPLAINT IOS WILL STILL TAKE A QUESTION ABOUT.
+    // Everything else here is settled and unaskable, but a reduced-accuracy
+    // user can be asked to upgrade in place, from this tap, with no Settings
+    // trip at all (requestTemporaryFullAccuracyAuthorization). Try that FIRST,
+    // and only fall through to Settings when the shell is too old to ask, or
+    // when they say no.
+    //
+    // The grant is SESSION-SCOPED and the toast says exactly that. It is not
+    // the permanent fix, it just makes today work, and the checklist item
+    // stays open (kind 'precisetemp') so the permanent fix still gets asked
+    // for. Do not soften this copy into sounding finished.
+    if(_np&&_np.kind==='precise'&&typeof _geoRequestPreciseTemp==='function'){
+      _geoRequestPreciseTemp().then(r=>{
+        if(r&&r.precise){
+          if(typeof showToast==='function')showToast(
+            'Precise Location is on for now. It goes back to approximate when the app restarts, so switch it on for good in Settings › TradeDesk › Location.','📍');
+          return;
+        }
+        _geoLocationSettings();
+      }).catch(()=>_geoLocationSettings());
       return;
     }
+    if(_geoPermState()==='denied'||_np){_geoLocationSettings();return;}
     // Owners record the per-device preference; crew get the notice sheet, which
     // records a real acknowledgment. Either way the OS prompt fires inside this tap.
     if(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _geoNoticeSheet==='function'){_geoNoticeSheet();return;}

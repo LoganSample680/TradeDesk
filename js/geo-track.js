@@ -2833,8 +2833,60 @@ async function _geoRefreshNativeAuth(){
                     // not as false (switched off), because those two mean
                     // opposite things to whoever reads the row.
                     servicesEnabled:(typeof r.servicesEnabled==='boolean')?r.servicesEnabled:null};
+    // The temporary grant lapsed (app relaunched, or iOS took it back), so the
+    // flag that describes it has to go with it. Cleared HERE rather than on a
+    // timer because iOS's own answer is the only thing that knows.
+    if(String(r.accuracy||'')!=='full')_geoPreciseTemp=false;
     return _geoNativeAuth;
   }catch(_e){_geoNativeAuth=null;return null;}
+}
+// ── Precise Location, asked for instead of pointed at ────────────────────────
+//
+// Owner rule 2026-08-26: "we need the tightest location services upfront at all
+// times, never can default to approximates." A user on reduced accuracy is
+// about a mile wide, so a 600ft job fence can never fire and an arrival never
+// registers. _geoNatProblem already SEES that (kind 'precise') and the crew
+// roster already shows it amber; until now the only thing either could do was
+// send somebody into Settings and hope.
+//
+// requestTemporaryFullAccuracyAuthorization is the one API that can fix it from
+// inside a tap. What it gives back is SESSION-SCOPED: iOS drops it the moment
+// the app is relaunched. So this makes today work and nothing more, and every
+// piece of copy hanging off it has to say so, or people stop checking the
+// switch that would have fixed it for good.
+//
+// _geoPreciseTemp is deliberately IN MEMORY ONLY, never localStorage: the
+// authorization it describes dies with the process, so a flag that outlived the
+// process would be a record of something that is no longer true, which is the
+// same class of mistake as a remembered permission grant.
+const _GEO_PRECISE_PURPOSE_KEY='JobSiteAccuracy';   // must match NSLocationTemporaryUsageDescriptionDictionary in .github/workflows/ios-beta.yml
+let _geoPreciseTemp=false;
+function _geoPreciseTempPeek(){return _geoPreciseTemp;}
+// Returns {ok,supported,precise,temporary,reason}. Never throws and never
+// rejects: every caller is a tap handler that has to decide what to do next,
+// and 'we could not ask' has to be an answer rather than an exception.
+async function _geoRequestPreciseTemp(){
+  const miss={ok:false,supported:false,precise:false,temporary:false,reason:'unsupported'};
+  let r=null;
+  try{
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    // A browser, or a TestFlight shell built before this method existed. Not an
+    // error, just nothing to ask with, and the caller falls back to Settings.
+    if(!Td||typeof Td.requestPreciseTemp!=='function')return miss;
+    r=await Td.requestPreciseTemp({purposeKey:_GEO_PRECISE_PURPOSE_KEY});
+  }catch(_e){return miss;}
+  if(!r)return miss;
+  const precise=!!r.precise;
+  // Only a grant this call produced counts as temporary. Already-full answers
+  // back with temporary:false, and treating those as lapsing would nag a person
+  // whose Precise Location is permanently on.
+  _geoPreciseTemp=precise&&!!r.temporary;
+  // Re-read iOS and repaint, so the roster row and the setup checklist both
+  // reflect what just happened instead of the state from before the tap.
+  try{if(typeof _geoRefreshNativeAuth==='function')await _geoRefreshNativeAuth();}catch(_e){}
+  try{if(typeof _geoRefreshPermCache==='function')_geoRefreshPermCache();}catch(_e){}
+  return {ok:precise,supported:r.supported!==false,precise:precise,
+          temporary:!!_geoPreciseTemp,reason:String(r.reason||(precise?'granted':'declined'))};
 }
 async function _geoReadPermission(){
   // iOS's own answer wins whenever the shell is new enough to give one. An
