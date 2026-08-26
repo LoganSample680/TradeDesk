@@ -622,6 +622,78 @@ test.describe('Crew location permission', () => {
     expect(out.denied).toBe(false);
   });
 
+  // ── 4f. Never default to approximate (owner rule 2026-08-26) ──────────────
+  //
+  // "We need the tightest location services upfront at all times. Never can
+  // default to approximates."
+  //
+  // enableHighAccuracy:false lets the browser answer from wifi or cell
+  // triangulation instead of GPS, and a maximumAge lets it answer from a
+  // cache. Three call sites were doing both on data that is not cosmetic: the
+  // job-fence match in checkNearbyJob (which even reads pos.coords.accuracy to
+  // decide whether to trust the fix), the start coordinate of a deductible
+  // drive, and the address written onto a mileage row. Coarse is still
+  // allowed where it is genuinely right, but it now has to be asked for and
+  // justified, and this scan is what keeps that true as new call sites appear.
+  test('every coarse geolocation call carries a written reason', () => {
+    const fs = require('fs'), path = require('path');
+    const dir = path.join(__dirname, '..', 'js');
+    const offenders = [];
+    fs.readdirSync(dir).filter(f => f.endsWith('.js')).forEach(f => {
+      const lines = fs.readFileSync(path.join(dir, f), 'utf8').split('\n');
+      lines.forEach((ln, i) => {
+        if (/^\s*(\/\/|\*|\/\*)/.test(ln)) return;   // prose describing it, not a call
+        if (!/enableHighAccuracy\s*:\s*false/.test(ln)) return;
+        const back = lines.slice(Math.max(0, i - 12), i + 1).join('\n');
+        if (!/COARSE OK/.test(back)) offenders.push('js/' + f + ':' + (i + 1));
+      });
+    });
+    expect(offenders,
+      'mark it "COARSE OK: <why>" if approximate really is right here, otherwise drop the flag').toEqual([]);
+  });
+
+  test('the shared helper defaults to the tightest fix, with no stale cache', async () => {
+    const out = await page.evaluate(() => {
+      const saved = { g: navigator.geolocation, lg: S.locationGranted };
+      let opts = null;
+      try {
+        Object.defineProperty(navigator, 'geolocation', {
+          configurable: true,
+          value: { getCurrentPosition: (cb, err, o) => { opts = o; } },
+        });
+        S.locationGranted = true;
+        geoIfGranted(() => {});
+        return opts;
+      } finally {
+        Object.defineProperty(navigator, 'geolocation', { configurable: true, value: saved.g });
+        S.locationGranted = saved.lg;
+      }
+    });
+    expect(out.enableHighAccuracy, 'a job fence cannot be matched against a wifi fix').toBe(true);
+    expect(out.maximumAge, 'a cached fix stamps a drive that already moved on').toBe(0);
+  });
+
+  test('a caller can still ask for coarse explicitly', async () => {
+    const out = await page.evaluate(() => {
+      const saved = { g: navigator.geolocation, lg: S.locationGranted };
+      let opts = null;
+      try {
+        Object.defineProperty(navigator, 'geolocation', {
+          configurable: true,
+          value: { getCurrentPosition: (cb, err, o) => { opts = o; } },
+        });
+        S.locationGranted = true;
+        geoIfGranted(() => {}, null, { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 });
+        return opts;
+      } finally {
+        Object.defineProperty(navigator, 'geolocation', { configurable: true, value: saved.g });
+        S.locationGranted = saved.lg;
+      }
+    });
+    expect(out.enableHighAccuracy, 'weather does not need GPS and should not spin the radio').toBe(false);
+    expect(out.maximumAge).toBe(600000);
+  });
+
   // ── 5. The checklist item stays completable ────────────────────────────────
 
   test('a denied user gets a Settings walkthrough, not a button that cannot work', async () => {

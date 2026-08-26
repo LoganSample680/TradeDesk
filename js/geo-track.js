@@ -2720,6 +2720,10 @@ function _geoRequestPermission(cb){
         startGeoTracking(); done('granted');
       },
       (err)=>{ done(err&&err.code===1?'denied':'prompt'); },
+      // COARSE OK: this is a permission probe, not a fix. The success handler
+      // above throws the position away and records only the grant, so asking
+      // for GPS accuracy here would spin the radio purely to learn an answer
+      // a cached cell fix already gives.
       {enableHighAccuracy:false,maximumAge:60000,timeout:15000}
     );
   }catch(_e){done('prompt');}

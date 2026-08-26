@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.25.26.41';
+const APP_VERSION='08.25.26.42';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -8381,11 +8381,15 @@ async function supaLoadFromCloud({silent=false}={}){
         // Always (on this boot or a prior one), weather silently piggybacks
         // off it with zero extra prompt.
         setTimeout(()=>{
+          // COARSE OK: a weather forecast. The value is rounded to 4 decimals
+          // on the very next line, so a GPS-grade fix would be thrown away,
+          // and spinning the radio up for a forecast is exactly the kind of
+          // battery burn park mode exists to avoid.
           if(typeof geoIfGranted==='function')geoIfGranted(pos=>{
             S.weatherLat=Math.round(pos.coords.latitude*10000)/10000;
             S.weatherLon=Math.round(pos.coords.longitude*10000)/10000;
             S.locationGranted=true;S.settingsTs=Date.now();saveAll();
-          });
+          },null,{enableHighAccuracy:false,timeout:8000,maximumAge:600000});
         },1200);
       }else{
         setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);

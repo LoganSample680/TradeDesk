@@ -2873,7 +2873,10 @@ async function getCurrentLocAddress(){
       }
       const nom=await _nominatimReverse(lat,lon);
       resolve(nom||lat.toFixed(4)+', '+lon.toFixed(4));
-    },err=>reject(err),{timeout:8000,enableHighAccuracy:false,maximumAge:300000});
+    // The address this resolves to is written onto a MILEAGE row, which is a
+    // tax record. A five-minute-old approximate fix names the wrong end of the
+    // drive (owner rule 2026-08-26, no approximates by default).
+    },err=>reject(err),{timeout:15000,enableHighAccuracy:true,maximumAge:0});
     if(S.locationGranted){doGet();return;}
     if(typeof requestLocationPermission==='function'){
       requestLocationPermission(doGet,()=>reject(new Error('Location denied')));

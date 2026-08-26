@@ -250,11 +250,24 @@ function _mdYToYmd(s){
 // Silent GPS grab, only fires if OS permission is already 'granted'.
 // Never triggers the OS permission dialog. Use requestLocationPermission()
 // for any flow that needs to ask the user.
+// DEFAULT IS THE TIGHTEST FIX AVAILABLE (owner rule 2026-08-26: "we need the
+// tightest location services upfront at all times, never can default to
+// approximates"). This defaulted to enableHighAccuracy:false with a 30-second
+// cache, and its callers are not cosmetic: checkNearbyJob (js/jobs.js) matches
+// a position against a job fence and reads pos.coords.accuracy to decide
+// whether to trust it, and startDrive (js/mileage.js) stamps the start of a
+// deductible trip. Both were being handed a wifi-derived fix that could be
+// half a minute stale.
+//
+// Coarse is still available, but it now has to be ASKED for, with a reason.
+// A caller that genuinely wants cheap and approximate (weather, a permission
+// probe that throws the position away) passes opts and says why in a comment;
+// the tests scan for that justification.
 function geoIfGranted(cb, errCb, opts){
   if(!navigator.geolocation)return;
   const doGet=()=>navigator.geolocation.getCurrentPosition(
     cb, errCb||function(){},
-    opts||{enableHighAccuracy:false,timeout:5000,maximumAge:30000}
+    opts||{enableHighAccuracy:true,timeout:15000,maximumAge:0}
   );
   if(S.locationGranted){doGet();return;}
   if(!navigator.permissions||!navigator.permissions.query)return;

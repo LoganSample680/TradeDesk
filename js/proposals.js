@@ -860,6 +860,8 @@ function _grabLocCoords(onGranted,onDenied){
     S.weatherLon=Math.round(pos.coords.longitude*10000)/10000;
     S.locationDenied=false;S.locationGranted=true;S.settingsTs=Date.now();saveAll();
     if(onGranted)onGranted();
+  // COARSE OK: weather again, rounded to 4 decimals three lines up. Same
+  // reasoning as the piggyback grab in js/cloud.js.
   },()=>{S.locationDenied=true;S.settingsTs=Date.now();saveAll();if(onDenied)onDenied();},{enableHighAccuracy:false,timeout:10000});
 }
 function _showLocModal(onGranted,onDenied){

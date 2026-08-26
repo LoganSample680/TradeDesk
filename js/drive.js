@@ -186,7 +186,10 @@ function _driveHere(){
     try{
       navigator.geolocation.getCurrentPosition(
         p=>res({lat:p.coords.latitude,lng:p.coords.longitude}),
-        ()=>res(null),{enableHighAccuracy:false,maximumAge:120000,timeout:8000});
+        // Where the drive is starting FROM. A two-minute-old coarse fix can
+        // be most of a mile out, which is a wrong start point on a deductible
+        // leg, not just a wrong map pin.
+        ()=>res(null),{enableHighAccuracy:true,maximumAge:0,timeout:15000});
     }catch(_e){res(null);}
   });
 }
