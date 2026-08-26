@@ -1275,8 +1275,19 @@ test.describe('timelog.js: exhaustive coverage', () => {
       const updates = [];
       window._canViewComp = () => true;
       window._supaUser = { id: 'u' };
+      // CHAINABLE, not a fixed chain (2026-08-26). This spelled out
+      // select -> eq -> maybeSingle exactly, and the query it backs now carries
+      // .is('deleted_at',null) between the two. A literal mock turns a filter
+      // being added into "is is not a function", which surfaces as an assertion
+      // about a property of undefined three layers away from the real cause.
+      const _sel = (data) => new Proxy(function () {}, {
+        get: (_, k) => k === 'maybeSingle' || k === 'single'
+          ? async () => ({ data, error: null })
+          : k === 'then' ? (res, rej) => Promise.resolve({ data, error: null }).then(res, rej)
+          : () => _sel(data),
+      });
       window._supa = { from: () => ({
-        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: row, error: null }) }) }),
+        select: () => _sel(row),
         update: (patch) => ({ eq: (c, v) => { updates.push({ patch, id: v }); return Promise.resolve({ error: null }); } }),
       }) };
       window.showToast = () => {}; window.renderTimeLog = () => {};
