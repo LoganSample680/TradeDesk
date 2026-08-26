@@ -1039,6 +1039,85 @@ test.describe('Crew location permission', () => {
       });
     });
 
+    // ── Permission lab, dev-gated (owner ask 2026-08-26) ────────────────────
+    test.describe('the permission lab', () => {
+      const open = (nat) => page.evaluate((n) => {
+        const saved = { cap: window.Capacitor, nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined };
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = n;
+        _geoPermLab();
+        const ov = document.getElementById('_geo-perm-ov');
+        const text = ov ? ov.textContent : '';
+        ov && ov.remove();
+        window.Capacitor = saved.cap;
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+        return text;
+      }, nat);
+
+      test('it shows all three iOS axes and labels what is ours', async () => {
+        const t = await open({ status: 'always', accuracy: 'full', precise: true, servicesEnabled: true });
+        expect(t).toContain('Permission lab');
+        expect(t).toContain('iOS location');
+        expect(t).toContain('Precise Location');
+        expect(t).toContain('Location Services (device)');
+        expect(t, 'our own consent record is marked as ours, not passed off as iOS').toContain('ours, not iOS');
+        expect(t, 'and it says plainly that nothing here is inferred').toContain('Nothing here is inferred');
+      });
+
+      test('it tells you up front that iOS will not re-prompt', async () => {
+        const t = await open(null);
+        expect(t, 'the limitation is on the panel, not discovered by tapping').toMatch(/only shows its dialog once per install/i);
+        expect(t).toMatch(/delete and reinstall/i);
+      });
+
+      test('nothing known reads as unknown, never as a denial', async () => {
+        const t = await open(null);
+        expect(t).toContain('not reported');
+        expect(t).not.toMatch(/\bdenied\b/i);
+      });
+
+      test('reset clears OUR state and leaves iOS alone', async () => {
+        const r = await page.evaluate(() => {
+          const saved = { c: localStorage.getItem('geo_owner_consent'), d: localStorage.getItem('td_geo_os_denied'),
+                          cap: window.Capacitor, toast: window.showToast };
+          try {
+            window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+            window.showToast = () => {};
+            localStorage.setItem('geo_owner_consent', '1');
+            localStorage.setItem('td_geo_os_denied', '1');
+            let askedNative = 0;
+            const realReq = window._geoRequestPermission;
+            window._geoRequestPermission = () => { askedNative++; };
+            _geoPermLabReset();
+            window._geoRequestPermission = realReq;
+            const out = { consent: localStorage.getItem('geo_owner_consent'),
+                          denied: localStorage.getItem('td_geo_os_denied'), askedNative };
+            document.getElementById('_geo-perm-ov')?.remove();
+            return out;
+          } finally {
+            if (saved.c === null) localStorage.removeItem('geo_owner_consent'); else localStorage.setItem('geo_owner_consent', saved.c);
+            if (saved.d === null) localStorage.removeItem('td_geo_os_denied'); else localStorage.setItem('td_geo_os_denied', saved.d);
+            window.Capacitor = saved.cap; window.showToast = saved.toast;
+          }
+        });
+        expect(r.consent, 'our consent record is cleared').toBe(null);
+        expect(r.denied, 'and our os-denied flag with it').toBe(null);
+        expect(r.askedNative, 'resetting must not fire a prompt as a side effect').toBe(0);
+      });
+
+      test('the button is dev-gated and native-gated, never loose in Settings', () => {
+        const fs = require('fs'), path = require('path');
+        const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+        const i = html.indexOf('id="set-geo-perm-btn"');
+        expect(i, 'the button exists').toBeGreaterThan(-1);
+        const grp = html.lastIndexOf('id="dev-geo-tools"', i);
+        expect(grp, 'and it sits inside the dev-geo-tools group').toBeGreaterThan(-1);
+        // dev-geo-tools ships display:none and is only unhidden on a native
+        // shell, inside a Developer section that only exists for is_dev.
+        expect(html.slice(grp, grp + 200)).toContain('display:none');
+      });
+    });
+
     test('a write that fails never throws at the caller', async () => {
       const threw = await page.evaluate(async () => {
         const saved = { supa: window._supa, user: window._supaUser };

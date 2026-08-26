@@ -3302,6 +3302,88 @@ function _geoCopyText(txt){
     }else fallback();
   }catch(_e){fallback();}
 }
+// ── Permission lab: drive the iOS prompt and watch what comes back ─────────
+//
+// Owner, 2026-08-26: "I need a way on logansample97 to test location iOS
+// prompts and switching but only in that in dev tools."
+//
+// Reuses _geoDiagPanel's shell exactly (.zmodal-overlay/.zmodal, 7.3) rather
+// than inventing a second panel style. Lives under Settings > Developer >
+// Location engine, so it is gated twice: the Developer row only exists for an
+// is_dev account, and dev-geo-tools only unhides on a native shell.
+//
+// WHAT IT CANNOT DO, said on the panel itself rather than discovered by
+// tapping: no app can reset or downgrade its own iOS authorization. Once a
+// decision exists iOS will not re-show the dialog from script, so "switching"
+// means going to Settings and changing it there, or deleting and reinstalling
+// to get back to notDetermined. The Reset button here clears OUR local state
+// only, which is what makes the first-run PATH testable even though the OS
+// dialog itself will not come back.
+function _geoPermLab(){
+  const nat=((typeof _geoNativeAuthPeek==='function')?_geoNativeAuthPeek():null)||null;
+  const row=(k,v,note)=>'<div style="display:flex;justify-content:space-between;gap:12px;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)">'+
+    '<span style="color:var(--text3)">'+escHtml(k)+'</span>'+
+    '<span style="font-weight:700;text-align:right">'+escHtml(String(v))+(note?'<div style="font-weight:400;color:var(--text3);font-size:11px">'+escHtml(note)+'</div>':'')+'</span></div>';
+  const ov=document.createElement('div');ov.id='_geo-perm-ov';ov.className='zmodal-overlay';
+  const m=document.createElement('div');m.className='zmodal';
+  m.innerHTML=
+    '<div style="font-size:16px;font-weight:800;margin-bottom:2px">Permission lab</div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:12px">Everything below is read straight off iOS. Nothing here is inferred.</div>'+
+    '<div id="_geo-perm-state">'+
+      row('iOS location',nat&&nat.status?nat.status:'not reported')+
+      row('Precise Location',nat&&nat.accuracy?nat.accuracy:'not reported')+
+      row('Location Services (device)',!nat?'unknown':(nat.servicesEnabled===true?'ON':(nat.servicesEnabled===false?'OFF':'unknown')))+
+      row('Motion',(typeof _motionPermCache!=='undefined'&&_motionPermCache)?_motionPermCache:'not checked')+
+      row('Tracker watcher',_geoNativeWatcherId!=null?'running':'off')+
+      row('Our consent record',localStorage.getItem('geo_owner_consent')||'unset','ours, not iOS')+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text3);line-height:1.6;margin:12px 0 4px">'+
+      'iOS only shows its dialog once per install. After that it will not re-prompt from script, so to <strong>switch</strong> a state go to '+
+      'Settings &rsaquo; TradeDesk &rsaquo; Location and change it there, then come back and tap Re-read. To get the very first prompt back you have to delete and reinstall the app.'+
+    '</div>'+
+    '<button class="btn btn-p" style="width:100%;margin-top:10px;padding:12px" onclick="_geoPermLabAsk()">Ask iOS now</button>'+
+    '<button class="btn" style="width:100%;margin-top:8px;padding:12px" onclick="_geoPermLabReread()">Re-read from iOS</button>'+
+    '<button class="btn" style="width:100%;margin-top:8px;padding:12px" onclick="_geoPermLabSettings()">Open iOS Settings</button>'+
+    '<button class="btn" style="width:100%;margin-top:8px;padding:12px" onclick="_geoPermLabReset()">Reset our local state</button>'+
+    '<button class="btn" style="width:100%;margin-top:14px;padding:12px" onclick="document.getElementById(\'_geo-perm-ov\').remove()">Close</button>';
+  ov.appendChild(m);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function _geoPermLabRefresh(){
+  const ov=document.getElementById('_geo-perm-ov');
+  if(!ov)return;
+  ov.remove();_geoPermLab();
+}
+function _geoPermLabAsk(){
+  try{if(typeof _geoRequestPermission==='function')_geoRequestPermission(()=>{setTimeout(_geoPermLabRefresh,400);});}catch(_e){}
+  // Motion has no separate request call: the first query IS the prompt, so
+  // asking for it here is what makes the pair testable in one tap.
+  try{
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    if(Td&&typeof Td.motionSince==='function')Td.motionSince({sinceMs:Date.now()-60000}).catch(()=>{});
+  }catch(_e){}
+}
+function _geoPermLabReread(){
+  const done=()=>{try{if(typeof _motionRefreshPermCache==='function')_motionRefreshPermCache();}catch(_e){}setTimeout(_geoPermLabRefresh,250);};
+  try{if(typeof _geoRefreshNativeAuth==='function')_geoRefreshNativeAuth().then(done,done);else done();}catch(_e){done();}
+}
+function _geoPermLabSettings(){
+  try{
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    if(Td&&typeof Td.openSettings==='function')Td.openSettings().catch(()=>{});
+  }catch(_e){}
+}
+function _geoPermLabReset(){
+  // OURS ONLY. iOS authorization is untouched and untouchable from here; this
+  // exists so the first-run code path can be re-run without a reinstall.
+  try{
+    localStorage.removeItem('geo_owner_consent');
+    localStorage.removeItem('td_geo_os_denied');
+    localStorage.removeItem(_GEO_GRANTED_KEY);
+  }catch(_e){}
+  if(typeof showToast==='function')showToast('Local consent cleared. iOS is unchanged.','🧪');
+  _geoPermLabRefresh();
+}
 function _geoDiagCopy(){_geoCopyText(window.__geoDiagText||'');}
 function _geoDiagPanel(){
   if(document.getElementById('_geo-diag-ov'))return;

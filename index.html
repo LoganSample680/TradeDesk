@@ -3371,6 +3371,12 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div style="display:flex;flex-direction:column;gap:8px">
           <button id="set-geo-diag-btn" class="btn" onclick="_geoDiagPanel()" style="width:100%;padding:13px;font-size:13px">Location diagnostics</button>
           <button id="set-geo-shadow-btn" class="btn" onclick="_shadowPanel()" style="width:100%;padding:13px;font-size:13px">Engine comparison</button>
+          <!-- Permission lab (owner ask 2026-08-26): a place to drive the iOS
+               location prompt and watch what it reports back, without
+               reinstalling the app between tries. Dev-gated twice over, by the
+               Developer section itself and by dev-geo-tools only unhiding on a
+               native shell. -->
+          <button id="set-geo-perm-btn" class="btn" onclick="_geoPermLab()" style="width:100%;padding:13px;font-size:13px">Permission lab</button>
           <!-- The undo for every sweep in js/mileage.js. Owner-invoked only: a
                recovery that ran on its own would be the same mistake as the
                sweep that caused the loss. Scans and shows before it writes. -->
