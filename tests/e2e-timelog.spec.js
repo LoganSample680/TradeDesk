@@ -2384,6 +2384,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
         let called = false;
         window._geoReconcileFromMileage = async () => { called = true; throw new Error('boom'); };
         try {
+          // The repair carries a 30s recency floor so a scope toggle cannot
+          // queue another pass (see _TL_REPAIR_MIN_GAP_MS). This test is about
+          // the OPEN path, so it clears the floor first. Bare assignment: it is
+          // a module-scoped let, and window._tlRepairAt would make an unrelated
+          // property while the real binding stayed set.
+          _tlRepairAt = 0;
           setTimeLogYear(new Date().getFullYear());
           await renderTimeLog();
           return { called, listHtml: document.getElementById('tl-list').innerHTML.length };
@@ -3270,6 +3276,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
                         drain: window._geoDrainQueue, rows: window._timeLogRows };
         const seq = [];
         try {
+          _tlRepairAt = 0;   // module-scoped let: bare assignment, see _TL_REPAIR_MIN_GAP_MS
           window._geoReconcileFromMileage = async () => { seq.push('reconcile'); return true; };
           window._geoCleanupSweeps = async () => { seq.push('sweep'); return false; };
           window._geoDrainQueue = async () => { seq.push('drain'); };
@@ -3300,6 +3307,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
                         drain: window._geoDrainQueue, rows: window._timeLogRows };
         const calls = [];
         try {
+          _tlRepairAt = 0;   // clear the 30s floor, this test is the OPEN path
           window._geoReconcileFromMileage = async () => { calls.push('reconcile'); return true; };
           window._geoCleanupSweeps = async () => { calls.push('sweep'); return false; };
           window._geoDrainQueue = async () => {};
@@ -3342,6 +3350,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         const saved = { pass: window._tlRepairPass, rows: window._timeLogRows };
         let fetches = 0;
         try {
+          _tlRepairAt = 0;
           window._tlRepairPass = async () => {};
           window._timeLogRows = async () => { fetches++; return [{ minutes: 60 }]; };
           // A repaint closes any accordion the viewer opened by hand, so doing
@@ -3360,6 +3369,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         const saved = { pass: window._tlRepairPass, rows: window._timeLogRows, render: window.renderTimeLog };
         let renders = 0;
         try {
+          _tlRepairAt = 0;
           window._tlRepairPass = async () => {};
           window._timeLogRows = async () => [{ minutes: 60 }, { minutes: 30 }];
           window.renderTimeLog = async () => { renders++; };
@@ -3372,6 +3382,38 @@ test.describe('timelog.js: exhaustive coverage', () => {
       });
       expect(r.repainted).toBe(true);
       expect(r.renders).toBe(1);
+    });
+
+    // THE REGRESSION THIS EXISTS FOR (CI shard 6, 2026-08-26). The repair fired
+    // on EVERY render, so flipping Me/Team queued another reconciler pass whose
+    // async repaint landed on top of the render the viewer had just asked for.
+    // In CI it flipped the Share button mid-test; on a phone it re-renders the
+    // page under your finger a second after you tapped something.
+    //
+    // Opening the page is a deliberate look at hours and earns a pass. A scope
+    // toggle is not a new open.
+    test('a scope toggle does NOT queue another repair', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = { pass: window._tlRepairPass, rows: window._timeLogRows, at: _tlRepairAt };
+        let passes = 0;
+        try {
+          _tlRepairAt = 0;
+          window._tlRepairPass = async () => { passes++; };
+          window._timeLogRows = async () => [];
+          await renderTimeLog();                       // the open: earns a pass
+          for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 0));
+          const afterOpen = passes;
+          await renderTimeLog();                       // a re-render moments later
+          await renderTimeLog();
+          for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 0));
+          return { afterOpen, afterToggles: passes };
+        } finally {
+          window._tlRepairPass = saved.pass; window._timeLogRows = saved.rows;
+          _tlRepairAt = saved.at;
+        }
+      });
+      expect(r.afterOpen, 'opening the page still repairs').toBe(1);
+      expect(r.afterToggles, 'two more renders inside the window queue nothing').toBe(1);
     });
 
     test('the fingerprint notices an added row, a removed one, and a retimed one', async () => {

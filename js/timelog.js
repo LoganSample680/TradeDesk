@@ -1101,12 +1101,25 @@ function _tlRowsFingerprint(rows){
   return n+':'+min;
 }
 let _tlRepairRunning=false;
+// When a repair last ran. Opening the page is a deliberate look at hours and
+// earns a pass; flipping Me/Team or changing the year is NOT a new open and
+// must not trigger one (CI shard 6, 2026-08-26: the Share button read hidden
+// because a repaint from the previous render landed mid-test).
+//
+// The deeper reason this guard matters in production, not just in a test: the
+// repaint is async and re-renders the whole page. Without a floor, every scope
+// toggle queues another one, and they land under the viewer's finger seconds
+// after they tapped something. Same shape as _geoCleanupSweeps' own recency
+// skip in js/geo-track.js (7.3).
+let _tlRepairAt=0;
+const _TL_REPAIR_MIN_GAP_MS=30000;
 // Repaint ONLY when the repair actually changed something. A repaint closes
 // any accordion the viewer opened by hand, so doing it unconditionally would
 // trade a slow page for one that shuts itself a second after it opens.
 async function _tlRepairAfterPaint(paintedRows){
   if(_tlRepairRunning)return false;
-  _tlRepairRunning=true;
+  if(_tlRepairAt&&Date.now()-_tlRepairAt<_TL_REPAIR_MIN_GAP_MS)return false;
+  _tlRepairRunning=true;_tlRepairAt=Date.now();
   try{
     await _tlRepairPass();
     const fresh=await _timeLogRows(null);
