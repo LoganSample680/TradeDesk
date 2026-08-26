@@ -1054,6 +1054,26 @@ test.describe('Crew location permission', () => {
         return text;
       }, nat);
 
+      // The STATUS BLOCK alone. The rule below is about what the rows report,
+      // and scanning the whole overlay for it stopped working the moment the
+      // panel grew help text that legitimately names the td_geo_os_denied
+      // flag. Scoped to the container the rows already live in, and the
+      // caller asserts the rows are really in there so a renamed or emptied
+      // container can never make the rule pass by returning nothing.
+      const openState = (nat) => page.evaluate((n) => {
+        const saved = { cap: window.Capacitor, nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined };
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = n;
+        _geoPermLab();
+        const ov = document.getElementById('_geo-perm-ov');
+        const st = document.getElementById('_geo-perm-state');
+        const text = st ? st.textContent : '';
+        ov && ov.remove();
+        window.Capacitor = saved.cap;
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+        return text;
+      }, nat);
+
       test('it shows all three iOS axes and labels what is ours', async () => {
         const t = await open({ status: 'always', accuracy: 'full', precise: true, servicesEnabled: true });
         expect(t).toContain('Permission lab');
@@ -1070,10 +1090,21 @@ test.describe('Crew location permission', () => {
         expect(t).toMatch(/delete and reinstall/i);
       });
 
+      // ASSERTION SCOPE CHANGED 2026-08-26 (CLAUDE.md 10.4). The rule is
+      // unchanged and still correct: a phone that has told us nothing must
+      // read as unknown, never as a refusal, because "denied" on this panel
+      // sends the owner to Settings to fix something that was never broken.
+      // What changed is the panel, not the rule. It now carries an
+      // explanation naming the OS-denied flag by its real name, so a
+      // whole-overlay scan fails on help copy that no user could mistake for
+      // a status. The rows are the thing under test, so the rows are what is
+      // scanned, and the first two assertions prove the block still holds
+      // them rather than being empty.
       test('nothing known reads as unknown, never as a denial', async () => {
-        const t = await open(null);
-        expect(t).toContain('not reported');
-        expect(t).not.toMatch(/\bdenied\b/i);
+        const st = await openState(null);
+        expect(st, 'the status block is really the rows, not an empty container').toContain('iOS location');
+        expect(st).toContain('not reported');
+        expect(st).not.toMatch(/\bdenied\b/i);
       });
 
       test('reset clears OUR state and leaves iOS alone', async () => {
