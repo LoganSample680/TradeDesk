@@ -1105,6 +1105,82 @@ test.describe('Crew location permission', () => {
         expect(r.askedNative, 'resetting must not fire a prompt as a side effect').toBe(0);
       });
 
+      // Owner, within the hour of it shipping: "two presses to ask iOS now,
+      // didn't roll a thing, why?" Because his phone is already 'always', so
+      // iOS has nothing left to ask and startGeoTracking returns instantly
+      // when a watcher is live. The tap ran. The panel showed nothing either
+      // way, which is the exact dead-button shape this whole night was about,
+      // shipped inside the tool built to diagnose it.
+      test.describe('every tap says what it did', () => {
+        const tapAsk = (nat) => page.evaluate(async (n) => {
+          const saved = { cap: window.Capacitor, nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined,
+                          req: window._geoRequestPermission };
+          let asked = 0;
+          try {
+            window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({
+              locationPermStatus: () => n ? Promise.resolve(n) : Promise.reject(new Error('none')) }) };
+            if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = null;
+            window._geoRequestPermission = () => { asked++; };
+            _geoPermLab();
+            _geoPermLabAsk();
+            await new Promise(r => setTimeout(r, 300));
+            const say = (document.getElementById('_geo-perm-say') || {}).textContent || '';
+            document.getElementById('_geo-perm-ov')?.remove();
+            return { say, asked };
+          } finally {
+            window.Capacitor = saved.cap; window._geoRequestPermission = saved.req;
+            if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+          }
+        }, nat);
+
+        test('an already-answered phone is told so, and is not asked again', async () => {
+          for (const st of ['always', 'wheninuse']) {
+            const r = await tapAsk({ status: st, accuracy: 'full', precise: true, servicesEnabled: true });
+            expect(r.say, st + ' must explain itself').toMatch(/already answered/i);
+            expect(r.say, 'and point at the only thing that can change it').toMatch(/Settings/i);
+            expect(r.asked, 'no pretend ask when the dialog is spent').toBe(0);
+          }
+        });
+
+        test('a denial says the dialog is spent rather than going quiet', async () => {
+          const r = await tapAsk({ status: 'denied' });
+          expect(r.say).toMatch(/denied/i);
+          expect(r.say).toMatch(/Settings/i);
+          expect(r.asked).toBe(0);
+        });
+
+        test('notdetermined is the one case that actually asks', async () => {
+          const r = await tapAsk({ status: 'notdetermined' });
+          expect(r.asked, 'this is the only state where a dialog can still appear').toBe(1);
+          expect(r.say).toMatch(/asking ios/i);
+        });
+
+        test('a shell that cannot answer still tries, and still says something', async () => {
+          const r = await tapAsk(null);
+          expect(r.asked).toBe(1);
+          expect(r.say.length, 'never a silent tap').toBeGreaterThan(0);
+        });
+
+        test('no tap anywhere on the panel leaves the message line empty', async () => {
+          const r = await page.evaluate(async () => {
+            const saved = { cap: window.Capacitor, td: window._geoTdPlugin };
+            const out = {};
+            try {
+              window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+              window._geoTdPlugin = () => ({ openSettings: () => Promise.resolve() });
+              _geoPermLab();
+              const line = () => (document.getElementById('_geo-perm-say') || {}).textContent || '';
+              _geoPermLabSettings(); out.settings = line();
+              _geoPermLabReread();  out.reread = line();
+              document.getElementById('_geo-perm-ov')?.remove();
+              return out;
+            } finally { window.Capacitor = saved.cap; window._geoTdPlugin = saved.td; }
+          });
+          expect(r.settings.length, 'a bridge call produces no DOM change, so it must announce itself').toBeGreaterThan(0);
+          expect(r.reread.length).toBeGreaterThan(0);
+        });
+      });
+
       test('the button is dev-gated and native-gated, never loose in Settings', () => {
         const fs = require('fs'), path = require('path');
         const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');

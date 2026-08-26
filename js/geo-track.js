@@ -3365,7 +3365,8 @@ function _geoPermLab(){
       'iOS only shows its dialog once per install. After that it will not re-prompt from script, so to <strong>switch</strong> a state go to '+
       'Settings &rsaquo; TradeDesk &rsaquo; Location and change it there, then come back and tap Re-read. To get the very first prompt back you have to delete and reinstall the app.'+
     '</div>'+
-    '<button class="btn btn-p" style="width:100%;margin-top:10px;padding:12px" onclick="_geoPermLabAsk()">Ask iOS now</button>'+
+    '<div id="_geo-perm-say" style="font-size:12px;font-weight:600;color:var(--blue);min-height:17px;margin-top:10px"></div>'+
+    '<button class="btn btn-p" style="width:100%;margin-top:4px;padding:12px" onclick="_geoPermLabAsk()">Ask iOS now</button>'+
     '<button class="btn" style="width:100%;margin-top:8px;padding:12px" onclick="_geoPermLabReread()">Re-read from iOS</button>'+
     '<button class="btn" style="width:100%;margin-top:8px;padding:12px" onclick="_geoPermLabSettings()">Open iOS Settings</button>'+
     '<button class="btn" style="width:100%;margin-top:8px;padding:12px" onclick="_geoPermLabReset()">Reset our local state</button>'+
@@ -3378,24 +3379,71 @@ function _geoPermLabRefresh(){
   if(!ov)return;
   ov.remove();_geoPermLab();
 }
+function _geoPermLabSay(msg){
+  const el=document.getElementById('_geo-perm-say');
+  if(el)el.textContent=msg||'';
+}
+// SHIPPED WITHOUT FEEDBACK and the owner found it within the hour: "two
+// presses to ask iOS now, didn't roll a thing, why?" Because his phone is
+// already 'always', so iOS has nothing left to ask and startGeoTracking
+// returns instantly when a watcher is live. The tap DID run. The panel just
+// showed nothing either way, which is the exact dead-button shape this whole
+// night has been about, shipped in the tool built to diagnose it.
+//
+// Two fixes. It no longer pretends to ask when iOS has already decided, since
+// iOS will not re-show its dialog from script and a button that silently
+// no-ops is worse than one that explains itself. And every tap now says what
+// it did, in the panel, immediately.
 function _geoPermLabAsk(){
-  try{if(typeof _geoRequestPermission==='function')_geoRequestPermission(()=>{setTimeout(_geoPermLabRefresh,400);});}catch(_e){}
-  // Motion has no separate request call: the first query IS the prompt, so
-  // asking for it here is what makes the pair testable in one tap.
+  _geoPermLabSay('Checking with iOS...');
+  const after=(nat)=>{
+    const st=(nat&&nat.status)||'';
+    if(st==='always'||st==='wheninuse'){
+      _geoPermLabSay('iOS already answered: '+st+'. It will not ask again. Use Open iOS Settings to change it.');
+      return;
+    }
+    if(st==='denied'||st==='restricted'){
+      _geoPermLabSay('iOS says '+st+'. Only Settings can undo that, the dialog is spent.');
+      return;
+    }
+    // notdetermined, or a shell that cannot tell us: this is the one case
+    // where asking can still produce a dialog.
+    _geoPermLabSay('Asking iOS...');
+    try{
+      if(typeof _geoRequestPermission==='function'){
+        _geoRequestPermission(()=>{
+          _geoPermLabSay('Answered. Re-reading...');
+          setTimeout(_geoPermLabRefresh,600);
+        });
+      }else _geoPermLabSay('No permission path on this shell.');
+    }catch(_e){_geoPermLabSay('Ask failed: '+((_e&&_e.message)||_e));}
+    // Motion has no separate request call: the first query IS the prompt, so
+    // asking for it alongside is what makes the pair testable in one tap.
+    try{
+      const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+      if(Td&&typeof Td.motionSince==='function')Td.motionSince({sinceMs:Date.now()-60000}).catch(()=>{});
+    }catch(_e){}
+  };
   try{
-    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
-    if(Td&&typeof Td.motionSince==='function')Td.motionSince({sinceMs:Date.now()-60000}).catch(()=>{});
-  }catch(_e){}
+    if(typeof _geoRefreshNativeAuth==='function')_geoRefreshNativeAuth().then(after,()=>after(null));
+    else after((typeof _geoNativeAuthPeek==='function')?_geoNativeAuthPeek():null);
+  }catch(_e){after(null);}
 }
 function _geoPermLabReread(){
+  _geoPermLabSay('Re-reading from iOS...');
   const done=()=>{try{if(typeof _motionRefreshPermCache==='function')_motionRefreshPermCache();}catch(_e){}setTimeout(_geoPermLabRefresh,250);};
   try{if(typeof _geoRefreshNativeAuth==='function')_geoRefreshNativeAuth().then(done,done);else done();}catch(_e){done();}
 }
 function _geoPermLabSettings(){
+  // A bridge call produces no DOM change, no navigation and no fetch, which is
+  // why the dead-control detector flags these and why a person reads them as
+  // broken. Say something before handing off.
+  _geoPermLabSay('Opening iOS Settings...');
   try{
     const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
-    if(Td&&typeof Td.openSettings==='function')Td.openSettings().catch(()=>{});
-  }catch(_e){}
+    if(Td&&typeof Td.openSettings==='function')Td.openSettings().catch(()=>_geoPermLabSay('Could not open Settings from here.'));
+    else _geoPermLabSay('No native shell, so there is no Settings page to open.');
+  }catch(_e){_geoPermLabSay('Could not open Settings from here.');}
 }
 function _geoPermLabReset(){
   // OURS ONLY. iOS authorization is untouched and untouchable from here; this
