@@ -5351,7 +5351,8 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
         const out = {
           skip: false,
           order: btns.map(b => b.textContent.trim()),
-          pushedDown: on.getBoundingClientRect().top - copy.getBoundingClientRect().bottom,
+          pushedDown: not.getBoundingClientRect().top - copy.getBoundingClientRect().bottom,
+          onIsLowest: on.getBoundingClientRect().top > not.getBoundingClientRect().top,
           onWeight: cs(on).fontWeight, notWeight: cs(not).fontWeight,
           onBg: cs(on).backgroundColor, notBg: cs(not).backgroundColor,
           notBorder: cs(not).borderTopWidth,
@@ -5362,8 +5363,13 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
         return out;
       });
       if (r.skip) return;
-      expect(r.order, 'the real choice comes first, the decline last').toEqual(['Turn on location', 'Not now']);
+      // ORDER FLIPPED 2026-08-26 (10.4) on the owner's call: the bottom-most
+      // control is the one a thumb already rests on, so the action we want
+      // takes that slot and the decline sits above it. Reading order would put
+      // the primary first; reach puts it last, and reach is what gets tapped.
+      expect(r.order, 'the decline sits above, the real choice is bottom-most').toEqual(['Not now', 'Turn on location']);
       expect(r.pushedDown, 'a spacer drives the actions toward the thumb').toBeGreaterThan(100);
+      expect(r.onIsLowest, 'and the one we want sits lowest of all').toBe(true);
       expect(Number(r.onWeight), 'the primary is heavy').toBeGreaterThanOrEqual(600);
       expect(Number(r.notWeight), 'the decline is lighter').toBeLessThan(Number(r.onWeight));
       expect(r.onSize, 'and larger').toBeGreaterThan(r.notSize);

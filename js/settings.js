@@ -2105,8 +2105,15 @@ function obStepLocation(){
         'Tracking only runs during your work hours, and you can turn it off any time in Settings.'+
       '</div>'+
       '<div style="flex:1;min-height:24px"></div>'+
-      obBtn('Turn on location','_obGeoAnswer(true)')+
+      // THUMB ORDER, not reading order (owner 2026-08-26: "turn on location
+      // should be the bottom most button in onboarding and not now higher
+      // right, physiological needs have to be met here"). On a phone the
+      // bottom-most control is the one the thumb already rests on, so the
+      // action we want takes that slot and the decline sits above it. Reading
+      // order says primary-then-secondary; reach says the opposite, and reach
+      // is what actually gets tapped.
       obBtn('Not now','_obGeoAnswer(false)','quiet')+
+      obBtn('Turn on location','_obGeoAnswer(true)')+
       '</div>';
   });
 }
