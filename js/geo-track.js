@@ -1571,11 +1571,92 @@ function _geoIsOffJobSource(s){return String(s||'')==='stop';}
 // time is the app's day convention everywhere (_ctDateStr, js/finance.js);
 // dateKey (js/utils.js, always loaded first) is the local-day fallback if
 // load order ever changes, never a UTC slice (the day-key lint bans those).
+// The interval is HALF-OPEN: [arrived, departed). A row that ends exactly at
+// midnight contains not one minute of the new day, but its departure INSTANT
+// formats as that new day, so comparing the raw stamps called it a crossing.
+// Harmless while this only ever saw whole dwells; not harmless once
+// _geoWriteStop started apportioning a break AT midnight, because the first
+// half of every split ends precisely there and the repair sweep below would
+// have deleted it on the next pass. Compare the last millisecond the row
+// actually occupies instead.
 function _geoStopCrossesMidnight(arrIso,depIso){
-  const a=new Date(Date.parse(arrIso)||0),d=new Date(Date.parse(depIso)||0);
+  const at=Date.parse(arrIso)||0,dep=Date.parse(depIso)||0;
+  const a=new Date(at),d=new Date(dep>at?dep-1:dep);
   return (typeof _ctDateStr==='function')
     ? _ctDateStr(a)!==_ctDateStr(d)
     : dateKey(a)!==dateKey(d);
+}
+// Crossing midnight was only ever a PROXY for "the truck is home for the
+// night", and the proxy is what made a genuine late-night break disappear: a
+// night job with a 40-minute gate wait from 11:40pm to 12:20am was thrown away
+// because of where the calendar fell, not because of what happened (owner,
+// 2026-08-26: "midnight should gracefully count work on the previous day up to
+// midnight then carry on"). So ask the real question instead.
+//
+// A park is a dwell nobody would call a break. Six hours is the line places.js
+// already draws for the same judgement (PLACE_HOME_DWELL_MS, "sleep, not a
+// supply run"), and the home pin is a park at any length: home is where the
+// truck sits. Spanning TWO midnights needs no rule of its own, it is 24 hours
+// or more by construction and the duration rule has it already.
+//
+// The >24h days this replaces (owner rule 2026-08-24) came from parks, not from
+// midnights, so testing for the park directly protects that rule better than
+// the calendar did while giving the real break back.
+const _GEO_OVERNIGHT_PARK_MS=6*60*60*1000;   // matches PLACE_HOME_DWELL_MS
+function _geoStopIsOvernightPark(a,ms){
+  if(ms>=_GEO_OVERNIGHT_PARK_MS)return true;
+  return !!(typeof _placeIsLikelyHome==='function'&&
+            _placeIsLikelyHome({lat:a.lat,lng:a.lng},ms));
+}
+// The instant of the next Central midnight strictly after ms, or 0 if none
+// inside a day and a half (which cannot happen for a real dwell). Bisection on
+// _ctDateStr rather than a hand-kept offset, so CST/CDT is handled by the same
+// Intl call the rest of the app trusts for the day convention.
+function _ctMidnightAfter(ms){
+  const day=(d)=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
+  const d0=day(new Date(ms));
+  let lo=ms,hi=ms+36*3600000;
+  if(day(new Date(hi))===d0)return 0;
+  while(hi-lo>1){
+    const mid=lo+Math.floor((hi-lo)/2);
+    if(day(new Date(mid))===d0)lo=mid;else hi=mid;
+  }
+  return hi;
+}
+// One unpaid-stop row. Split out so the single-day and across-midnight paths
+// cannot drift apart in shape.
+function _geoEnqueueStopRow(mins,arrIso,depIso){
+  _geoEnqueue('job_time_entries',{
+    contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+    job_id:null,arrived_at:arrIso,departed_at:depIso,minutes:mins,
+    dest_place:null,client_key:_geoVisitKey('stop',null,arrIso),source:'stop'
+  });
+}
+// Write the dwell as unpaid off-job time, or decide it was a park and write
+// nothing. A break that runs past midnight is APPORTIONED: the minutes before
+// midnight belong to the day that was being worked, the minutes after belong to
+// the new one, and no row ever spans a day boundary again. Every consumer
+// buckets by arrived_at's Central date (js/finance.js _crewCostRender,
+// js/timelog.js), so two same-day rows land exactly where they should with no
+// change on their side, and the repair sweep's overnight fingerprint
+// (_geoStopCrossesMidnight, further down this file) can no longer mistake a
+// real break for a park because neither half crosses anything.
+function _geoWriteStop(a){
+  const at=Date.parse(a.at)||0,dep=Date.parse(a.lastAt)||0;
+  const ms=dep-at;
+  if(!(ms>0))return;
+  if(_geoStopIsOvernightPark(a,ms)){_geoParkNote('stop-skip','overnight park, no unpaid row');return;}
+  const mid=_ctMidnightAfter(at);
+  if(!(mid&&mid<dep)){
+    _geoEnqueueStopRow(Math.max(0,Math.round(ms/60000)),a.at,a.lastAt);
+    return;
+  }
+  const midIso=new Date(mid).toISOString();
+  const m1=Math.max(0,Math.round((mid-at)/60000));
+  const m2=Math.max(0,Math.round((dep-mid)/60000));
+  if(m1>0)_geoEnqueueStopRow(m1,a.at,midIso);
+  if(m2>0)_geoEnqueueStopRow(m2,midIso,a.lastAt);
+  _geoParkNote('stop-split','break across midnight, '+m1+'m + '+m2+'m');
 }
 // Has the contractor marked THIS coordinate as their own home office? Their
 // call, never inferred: places.js is explicit that a qualifying home office
@@ -2220,7 +2301,6 @@ function _geoCloseStop(a){
   if(!a||!a.at||!a.lastAt)return;
   const ms=Date.parse(a.lastAt)-Date.parse(a.at);
   if(!(ms>=_GEO_STOP_MS))return;          // a light, not a stop
-  const mins=Math.max(0,Math.round(ms/60000));
   // Already settled when they parked: the leg and the split are done, only
   // the departure time needs refining to the last fix seen at the kerb.
   if(a.legClosed){
@@ -2228,12 +2308,7 @@ function _geoCloseStop(a){
     _geoDriveReset();
     if(typeof recordUnknownStop==='function')recordUnknownStop({lat:a.lat,lng:a.lng},ms);
     if(!_supaUser)return;
-    if(_geoStopCrossesMidnight(a.at,a.lastAt)){_geoParkNote('stop-skip','overnight park, no unpaid row');return;}
-    _geoEnqueue('job_time_entries',{
-      contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
-      job_id:null,arrived_at:a.at,departed_at:a.lastAt,minutes:mins,
-      dest_place:null,client_key:_geoVisitKey('stop',null,a.at),source:'stop'
-    });
+    _geoWriteStop(a);
     return;
   }
   // Split the leg at the kerb. Without this the parked minutes ride out on the
@@ -2265,14 +2340,9 @@ function _geoCloseStop(a){
   // which is how an un-named supply yard eventually gets offered to them.
   if(typeof recordUnknownStop==='function')recordUnknownStop({lat:a.lat,lng:a.lng},ms);
   if(!_supaUser)return;
-  if(_geoStopCrossesMidnight(a.at,a.lastAt)){_geoParkNote('stop-skip','overnight park, no unpaid row');return;}
   // Logged, and logged as ITSELF. Off-job time is neither job labor nor drive
   // time; folding it into either is what made a lunch break bill to a job.
-  _geoEnqueue('job_time_entries',{
-    contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
-    job_id:null,arrived_at:a.at,departed_at:a.lastAt,minutes:mins,
-    dest_place:null,client_key:_geoVisitKey('stop',null,a.at),source:'stop'
-  });
+  _geoWriteStop(a);
 }
 // A personal stop must not become the origin of the next leg. Called once the
 // business at the pin is known (mileage.js _autoNameStopTrip), which is always
@@ -5097,11 +5167,15 @@ async function _geoRepairStopRows(){
     }
     const drop=new Set();
     // Fingerprint 1: a stop spanning Central midnight is an overnight park
-    // gap-absorb swallowed (or the live tracker wrote before the
-    // _geoStopCrossesMidnight guard existed), never a real unpaid leg.
+    // gap-absorb swallowed, or a row the live tracker wrote back when crossing
+    // midnight was the only test it had. Either way it is legacy damage: rows
+    // written since _geoWriteStop landed are apportioned at midnight, so a
+    // genuine late-night break arrives here as two same-day halves and this can
+    // no longer mistake it for a park. Same predicate the writer uses, one
+    // definition of "spans Central midnight" for the whole file.
     for(const r of rows){
       if(String(r.source||'')!=='stop')continue;
-      if(dstr(new Date(P(r.arrived_at)))!==dstr(new Date(P(r.departed_at))))drop.add(r.id);
+      if(_geoStopCrossesMidnight(r.arrived_at,r.departed_at))drop.add(r.id);
     }
     // Fingerprint 2: a merge survivor whose span is already (>=90%) covered
     // by real on-site rows is pure double-count, the reconciled/live rows it

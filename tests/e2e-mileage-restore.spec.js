@@ -93,6 +93,17 @@ test.describe('Mileage recovery (_mileRestoreSwept)', () => {
     window.__mr = rec;
     const human = o.human || {};
     window._supa = { from: (t) => ({
+      // A background cloud SAVE that lands inside this stub's window calls
+      // supaSaveToCloud, which does `_supa.from('zj_data').upsert(...)`. Same
+      // reasoning as the maybeSingle note below, and the same cost when it is
+      // missing: the throw becomes a console error that assertNoErrors pins on
+      // whatever test happened to be running (webkit shard 3, 2026-08-26).
+      // Resolves benignly, because the point is not to explode. Nothing here
+      // asserts on writes; rec.updates is what the write assertions read.
+      upsert: () => Promise.resolve({ data: null, error: null }),
+      insert: () => Promise.resolve({ data: null, error: null }),
+      delete: () => { const d = { eq: () => d, in: () => d, is: () => d,
+        then: (res, rej) => Promise.resolve({ error: null }).then(res, rej) }; return d; },
       select: () => { const c = {
         eq: () => c, gte: () => c, limit: () => c, is: () => c, in: () => c, order: () => c,
           // supaLoadFromCloud ends its zj_data read with .maybeSingle(). This
@@ -295,6 +306,17 @@ test.describe('Mileage recovery (_mileRestoreSwept)', () => {
       // gte('deleted_at') filter can no longer see the row.
       let cleared = false;
       window._supa = { from: (t) => ({
+      // A background cloud SAVE that lands inside this stub's window calls
+      // supaSaveToCloud, which does `_supa.from('zj_data').upsert(...)`. Same
+      // reasoning as the maybeSingle note below, and the same cost when it is
+      // missing: the throw becomes a console error that assertNoErrors pins on
+      // whatever test happened to be running (webkit shard 3, 2026-08-26).
+      // Resolves benignly, because the point is not to explode. Nothing here
+      // asserts on writes; rec.updates is what the write assertions read.
+      upsert: () => Promise.resolve({ data: null, error: null }),
+      insert: () => Promise.resolve({ data: null, error: null }),
+      delete: () => { const d = { eq: () => d, in: () => d, is: () => d,
+        then: (res, rej) => Promise.resolve({ error: null }).then(res, rej) }; return d; },
         select: () => { const c = { eq: () => c, gte: () => c, limit: () => c, is: () => c, in: () => c, order: () => c,
           // supaLoadFromCloud ends its zj_data read with .maybeSingle(). This
           // stub is installed for a few synchronous lines, but a background
@@ -425,6 +447,17 @@ test.describe('Mileage recovery (_mileRestoreSwept)', () => {
       window._supaUser = { id: 'u1' }; window._effectiveUid = () => 'u1';
       window.saveAll = () => {}; window.supaSaveToCloud = () => {};
       window._supa = { from: (t) => ({
+      // A background cloud SAVE that lands inside this stub's window calls
+      // supaSaveToCloud, which does `_supa.from('zj_data').upsert(...)`. Same
+      // reasoning as the maybeSingle note below, and the same cost when it is
+      // missing: the throw becomes a console error that assertNoErrors pins on
+      // whatever test happened to be running (webkit shard 3, 2026-08-26).
+      // Resolves benignly, because the point is not to explode. Nothing here
+      // asserts on writes; rec.updates is what the write assertions read.
+      upsert: () => Promise.resolve({ data: null, error: null }),
+      insert: () => Promise.resolve({ data: null, error: null }),
+      delete: () => { const d = { eq: () => d, in: () => d, is: () => d,
+        then: (res, rej) => Promise.resolve({ error: null }).then(res, rej) }; return d; },
         select: () => { const c = { eq: () => c, gte: () => c, limit: () => c, is: () => c, in: () => c, order: () => c,
           // supaLoadFromCloud ends its zj_data read with .maybeSingle(). This
           // stub is installed for a few synchronous lines, but a background
@@ -479,6 +512,17 @@ test.describe('Mileage recovery (_mileRestoreSwept)', () => {
         fromCoord: { lat: 38.3, lng: -94.3 }, toCoord: { lat: 38, lng: -94 },
         startedIso: '2026-08-19T22:18:05.091Z', endedIso: '2026-08-19T22:25:00.000Z' } }];
       window._supa = { from: (t) => ({
+      // A background cloud SAVE that lands inside this stub's window calls
+      // supaSaveToCloud, which does `_supa.from('zj_data').upsert(...)`. Same
+      // reasoning as the maybeSingle note below, and the same cost when it is
+      // missing: the throw becomes a console error that assertNoErrors pins on
+      // whatever test happened to be running (webkit shard 3, 2026-08-26).
+      // Resolves benignly, because the point is not to explode. Nothing here
+      // asserts on writes; rec.updates is what the write assertions read.
+      upsert: () => Promise.resolve({ data: null, error: null }),
+      insert: () => Promise.resolve({ data: null, error: null }),
+      delete: () => { const d = { eq: () => d, in: () => d, is: () => d,
+        then: (res, rej) => Promise.resolve({ error: null }).then(res, rej) }; return d; },
         select: () => { const c = { eq: () => c, gte: () => c, limit: () => c, is: () => c, in: () => c, order: () => c,
           // supaLoadFromCloud ends its zj_data read with .maybeSingle(). This
           // stub is installed for a few synchronous lines, but a background

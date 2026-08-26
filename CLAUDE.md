@@ -481,6 +481,68 @@ discovered and becomes where they are confirmed. A red shard then means
 something real broke, not that Claude fumbled an assertion, which is the only
 way a green board keeps meaning anything.
 
+
+---
+
+### 5.2.2 The clock is pinned. It is not an input to the suite. (2026-08-26)
+
+Owner: *"define how local tests can pass but ci fails, shouldn't be that way at
+all."* He was right, and the bill came due the same night: three separate tests
+failed in CI and passed locally, and the cause in every case was the wall clock.
+CI ran them at 00:05, 00:08 and 00:25 Central; their fixtures were written as
+"3 hours ago" and "50 minutes ago"; the scenario silently moved to the previous
+day. Nothing was wrong with the code, the browser, or the shard. **The hour
+decided the result.** 26 spec files build timestamps that way.
+
+**`mockAllExternal` pins the page's idea of "now" to 10:00 Central.** Local and
+CI now agree by construction instead of by luck.
+
+- It is a fixed OFFSET, not a frozen or faked clock. Time still flows at 1x,
+  every `setTimeout`, debounce and poll behaves exactly as in production, and an
+  explicit `new Date('2026-08-21T...')` still means precisely that instant.
+- It moves the time of DAY only, never the Central date, so every "is this
+  today" comparison in the app is untouched.
+- `TD_CLOCK_AT=HH:MM` re-pins it; `TD_CLOCK_AT=off` disables it for reproducing
+  a time-of-day bug by hand.
+- `mockAllExternal(page, {clock:'off'})` opts one spec out. Use it ONLY when the
+  spec drives `page.clock` itself (`e2e-mileage-days.spec.js` is the sole case:
+  two owners of `window.Date` means fastForward moves one clock while the
+  assertions read the other). A spec that names its own start hour was never
+  exposed to this class anyway.
+- `tests/e2e-clock-pin.spec.js` guards the pin. It is shared infrastructure
+  (§10.3): every spec boots through it, so a defect there is a silent defect
+  everywhere.
+
+**The `midnight clock` CI job is the other half.** It re-runs the date-sensitive
+specs pinned to `TD_CLOCK_AT=00:20`, so a fixture that cannot survive midnight
+fails on the PR that introduces it, in daylight, instead of on a red board at
+1am three weeks later. It **derives** its file list by grepping for
+`Date.now() - N`, so a new spec written the same way is covered the day it lands
+and nobody has to remember the workflow file exists. Chromium only: this class
+is arithmetic on dates and is identical in both engines.
+
+**The rule for new tests:** never let the wall clock decide an outcome. Name the
+instant (`'2026-08-21T17:00:00.000Z'`) rather than deriving it from `Date.now()`
+wherever the test's meaning depends on which day it is. If a relative offset is
+genuinely the clearer way to write it, the pin covers you, and the midnight job
+proves it.
+
+**Never compare a page timestamp against `Date.now()` on the NODE side.** The
+page is pinned; the Playwright runner is not. Those are two different clocks and
+an assertion that straddles them is meaningless, by however many hours the pin is
+offset that minute. Return the page's own `now` out of the same `page.evaluate`
+that produced the value and compare against that:
+
+```js
+const r = await page.evaluate(() => ({ now: Date.now(), arrivedAt: _geoArrivedAt }));
+expect(Date.parse(r.arrivedAt)).toBeLessThanOrEqual(r.now - 4.5 * 60000);   // one clock
+```
+
+This bit immediately (`e2e-geo-park-reconcile`, shard 6, 2026-08-26) and it bit
+because the pin was validated at `TD_CLOCK_AT=00:20`, where the offset happened
+to be minutes, and never at the default, where it is hours. **Validate a clock
+change at a LARGE offset**, or you have only proven it against a rounding error.
+
 ---
 
 ### 5.3 Console Error Policy

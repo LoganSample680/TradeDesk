@@ -39,7 +39,14 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
     page = await ctx.newPage();
-    await mockAllExternal(page);
+    // clock:'off' because this file owns time itself: page.clock.install below
+    // pins the simulated day to 9:00am and every dwell is driven by
+    // fastForward. The suite-wide pin in helpers.js replaces window.Date too,
+    // and two owners of window.Date means fastForward moves one clock while
+    // the assertions read the other ("fake clock refused to advance"). Opting
+    // out costs nothing here: a day that names its own start hour was never
+    // exposed to the midnight class in the first place.
+    await mockAllExternal(page, { clock: 'off' });
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
     await page.evaluate((G) => {

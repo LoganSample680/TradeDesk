@@ -345,3 +345,81 @@ jobs:
           name: playwright-traces-shard-${{ matrix.shard }}
           path: test-results/
           retention-days: 7
+
+  # ── The midnight run ────────────────────────────────────────────────────────
+  # Owner, 2026-08-26: "define how local tests can pass but ci fails, shouldn't
+  # be that way at all."
+  #
+  # The answer that night was the wall clock. Three tests failed in CI and
+  # passed locally because CI happened to run them at 00:05, 00:08 and 00:25
+  # Central while their fixtures were written as "3 hours ago" and "50 minutes
+  # ago", so the scenario silently moved to the previous day. Each one cost a
+  # four-minute round trip and a red X to discover something a clock could have
+  # told us for free.
+  #
+  # mockAllExternal now pins the page clock (default 10:00 Central), which is
+  # what makes local and CI agree. This job is the other half: it runs the
+  # date-sensitive specs pinned to 00:20 Central, so a fixture that cannot
+  # survive midnight fails on the PR that introduces it, in daylight, instead
+  # of on a red board at 1am three weeks later.
+  #
+  # Scoped, not the whole suite. It runs only the specs that actually build
+  # timestamps relative to now, and it DERIVES that list by grep rather than
+  # hard-coding it, so a new spec written the same way is covered the day it
+  # lands and nobody has to remember this file exists. Chromium only: the class
+  # of bug is arithmetic on dates, and it is identical in both engines, so a
+  # second browser would double the cost for no new information.
+  midnight:
+    name: midnight clock
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+      - name: Install Playwright 1.56
+        run: npm install --no-save @playwright/test@1.56.0 serve
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-1.56.0
+
+      - name: Install Playwright browsers (Chromium)
+        run: npx playwright install --with-deps chromium
+
+      # Any spec that derives a timestamp from "now" is date-sensitive. The
+      # clock-pin spec itself is always included: it is the thing under test.
+      - name: Collect the date-sensitive specs
+        id: pick
+        run: |
+          FILES=$(grep -lE 'Date\.now\(\) *- *[0-9]+|Date\.now\(\)-[0-9]+' tests/*.spec.js | tr '\n' ' ')
+          FILES="tests/e2e-clock-pin.spec.js $FILES"
+          echo "Pinned-clock specs: $FILES"
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+
+      - name: Run the date-sensitive specs at 00:20 Central
+        run: npx playwright test --project=chromium ${{ steps.pick.outputs.files }}
+        env:
+          CI: true
+          TD_CLOCK_AT: '00:20'
+
+      - name: Upload the midnight report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-midnight
+          path: playwright-report/
+          retention-days: 14

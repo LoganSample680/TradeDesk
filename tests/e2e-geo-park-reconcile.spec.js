@@ -316,6 +316,13 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     const driveRow = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries' && /^drive/.test(u.row.source || '')) || {}).row || null;
     return {
       fence, spotFt, clusterAfterFirst, spot,
+      // The PAGE's clock, returned so the backdating assertion below compares
+      // two readings of the same clock. tests/helpers.js pins the page to a
+      // fixed Central time and the Node test runner is NOT pinned, so an
+      // assertion that reads Date.now() on the Node side is comparing two
+      // different clocks and means nothing (webkit and chromium shard 6,
+      // 2026-08-26: nine hours apart, so it failed outright).
+      now: Date.now(),
       cur: _geoCurrentJob, arrivedAt: _geoArrivedAt, softJob: _geoSoftJob,
       driveOpen: _geoDriveStartedAt != null, driveRow,
     };
@@ -339,7 +346,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     expect(r.softJob && String(r.softJob.id)).toBe('885101');
     // Backdated to when motion stopped (5 min ago), not to when the resolver
     // noticed. 4.5 min of slack covers the eval's own runtime.
-    expect(Date.parse(r.arrivedAt)).toBeLessThanOrEqual(Date.now() - 4.5 * 60000);
+    expect(Date.parse(r.arrivedAt)).toBeLessThanOrEqual(r.now - 4.5 * 60000);
     // The drive was killed and its leg written, ending at the SAME backdated
     // moment the arrival starts: no gap, no overlap, "kill the drive and
     // capture the end time".
@@ -437,6 +444,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     const driveRow = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries' && /^drive/.test(u.row.source || '')) || {}).row || null;
     return {
       fence, spotFt, clusterAfterFirst, spot,
+      now: Date.now(),   // the page's clock, same reason as parkAtJob above
       wasInShop: _geoWasInShop, shopArrivedAt: _geoShopArrivedAt, softShop: _geoSoftShop,
       driveOpen: _geoDriveStartedAt != null, driveRow,
     };
@@ -456,7 +464,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     expect(r.clusterAfterFirst, 'first stationary fix starts the cluster').not.toBeNull();
     expect(r.wasInShop, 'the park resolved to the Shop, no job existed to compete for it').toBe(true);
     expect(r.softShop && r.softShop.lat).toBeCloseTo(r.spot.lat, 4);
-    expect(Date.parse(r.shopArrivedAt)).toBeLessThanOrEqual(Date.now() - 4.5 * 60000);
+    expect(Date.parse(r.shopArrivedAt)).toBeLessThanOrEqual(r.now - 4.5 * 60000);
     expect(r.driveOpen).toBe(false);
     expect(r.driveRow, 'the 20-minute leg into the Shop was written').not.toBeNull();
     expect(r.driveRow.departed_at).toBe(r.shopArrivedAt);
