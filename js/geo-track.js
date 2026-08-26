@@ -3366,10 +3366,18 @@ function _geoPermLab(){
       'Settings &rsaquo; TradeDesk &rsaquo; Location and change it there, then come back and tap Re-read. To get the very first prompt back you have to delete and reinstall the app.'+
     '</div>'+
     '<div id="_geo-perm-say" style="font-size:12px;font-weight:600;color:var(--blue);min-height:17px;margin-top:10px"></div>'+
-    '<button class="btn btn-p" style="width:100%;margin-top:4px;padding:12px" onclick="_geoPermLabAsk()">Ask iOS now</button>'+
-    '<button class="btn" style="width:100%;margin-top:8px;padding:12px" onclick="_geoPermLabReread()">Re-read from iOS</button>'+
-    '<button class="btn" style="width:100%;margin-top:8px;padding:12px" onclick="_geoPermLabSettings()">Open iOS Settings</button>'+
-    '<button class="btn" style="width:100%;margin-top:8px;padding:12px" onclick="_geoPermLabReset()">Reset our local state</button>'+
+    _geoPermAct('ask','Ask iOS now','_geoPermLabAsk()',true,
+      'Asks iOS for location permission, and pokes motion at the same time (CoreMotion has no separate request call, so the first query IS its prompt). '+
+      'A dialog only appears on a phone that has never answered. Once iOS holds a decision it will not re-show it from script, so on your phone this reports what the answer already is instead of doing nothing.')+
+    _geoPermAct('reread','Re-read from iOS','_geoPermLabReread()',false,
+      'Drops what we have cached and asks the phone again for all three switches plus motion. '+
+      'Use it right after changing something in Settings so this panel and the server row catch up, instead of waiting for the app to be closed and reopened.')+
+    _geoPermAct('settings','Open iOS Settings','_geoPermLabSettings()',false,
+      'Jumps straight to Settings, TradeDesk, where the Location and Motion switches actually live. '+
+      'Once iOS has a decision this is the ONLY place it can be changed. Nothing on this panel can change it for you.')+
+    _geoPermAct('reset','Reset our local state','_geoPermLabReset()',false,
+      'Clears OUR records only: the consent flag, the OS-denied flag and the granted marker. '+
+      'iOS authorization is untouched and cannot be touched from here. Use it to re-run the first-run code path without reinstalling. It will NOT bring the system dialog back.')+
     '<button class="btn" style="width:100%;margin-top:14px;padding:12px" onclick="document.getElementById(\'_geo-perm-ov\').remove()">Close</button>';
   ov.appendChild(m);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -3378,6 +3386,33 @@ function _geoPermLabRefresh(){
   const ov=document.getElementById('_geo-perm-ov');
   if(!ov)return;
   ov.remove();_geoPermLab();
+}
+// One action row: the button, an info dot beside it, and the explanation it
+// reveals underneath (owner ask 2026-08-26: "what do all these buttons do?
+// maybe an i block next to them with a popup explaining would be helpful").
+//
+// Inline disclosure rather than a popup ON a popup: this panel is already a
+// .zmodal, and stacking a second overlay on a phone is how you end up unable
+// to dismiss either. Tapping the dot toggles the text in place, so the
+// explanation sits next to the thing it explains and closes the same way.
+function _geoPermAct(id,label,onclick,primary,why){
+  return '<div style="display:flex;gap:8px;align-items:stretch;margin-top:8px">'+
+      '<button class="btn'+(primary?' btn-p':'')+'" style="flex:1;padding:12px" onclick="'+onclick+'">'+escHtml(label)+'</button>'+
+      '<button class="btn" aria-label="What does '+escHtml(label)+' do?" style="width:46px;padding:12px 0;font-weight:800;font-size:15px" onclick="_geoPermWhy(\''+id+'\')">i</button>'+
+    '</div>'+
+    '<div id="_geo-why-'+id+'" style="display:none;font-size:12px;color:var(--text3);line-height:1.6;padding:8px 10px;margin-top:6px;border-left:2px solid var(--blue);background:var(--bg2);border-radius:0 var(--r) var(--r) 0">'+escHtml(why)+'</div>';
+}
+function _geoPermWhy(id){
+  const el=document.getElementById('_geo-why-'+id);
+  if(!el)return;
+  const open=el.style.display!=='none';
+  // One at a time: four open blocks turns the panel into a wall of text on a
+  // phone and pushes the buttons off screen.
+  ['ask','reread','settings','reset'].forEach(k=>{
+    const n=document.getElementById('_geo-why-'+k);
+    if(n)n.style.display='none';
+  });
+  if(!open)el.style.display='';
 }
 function _geoPermLabSay(msg){
   const el=document.getElementById('_geo-perm-say');

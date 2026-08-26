@@ -1181,6 +1181,74 @@ test.describe('Crew location permission', () => {
         });
       });
 
+      // Owner ask 2026-08-26: "what do all these buttons do? maybe an i block
+      // next to them with a popup explaining would be helpful for me."
+      test.describe('every action explains itself', () => {
+        const withPanel = (fn) => page.evaluate((body) => {
+          const saved = window.Capacitor;
+          try {
+            window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+            _geoPermLab();
+            const out = (new Function('return (' + body + ')()'))();
+            document.getElementById('_geo-perm-ov')?.remove();
+            return out;
+          } finally { window.Capacitor = saved; }
+        }, fn.toString());
+
+        test('each action has its own info control and hidden explanation', async () => {
+          const r = await withPanel(() => {
+            const ids = ['ask', 'reread', 'settings', 'reset'];
+            return ids.map(id => {
+              const n = document.getElementById('_geo-why-' + id);
+              return { id, exists: !!n, hidden: n ? n.style.display === 'none' : null,
+                       len: n ? n.textContent.trim().length : 0 };
+            });
+          });
+          for (const x of r) {
+            expect(x.exists, x.id + ' has an explanation').toBe(true);
+            expect(x.hidden, x.id + ' starts collapsed, not a wall of text').toBe(true);
+            expect(x.len, x.id + ' actually says something').toBeGreaterThan(80);
+          }
+        });
+
+        test('tapping one opens it, tapping again closes it', async () => {
+          const r = await withPanel(() => {
+            const n = () => document.getElementById('_geo-why-reset');
+            _geoPermWhy('reset'); const open = n().style.display !== 'none';
+            _geoPermWhy('reset'); const shut = n().style.display === 'none';
+            return { open, shut };
+          });
+          expect(r.open).toBe(true);
+          expect(r.shut, 'the same control closes it').toBe(true);
+        });
+
+        test('only one is open at a time, so the buttons never scroll away', async () => {
+          const r = await withPanel(() => {
+            _geoPermWhy('ask'); _geoPermWhy('reread'); _geoPermWhy('settings');
+            return ['ask', 'reread', 'settings', 'reset']
+              .filter(id => document.getElementById('_geo-why-' + id).style.display !== 'none');
+          });
+          expect(r, 'the last one tapped is the only one showing').toEqual(['settings']);
+        });
+
+        test('the reset explanation is explicit that iOS is untouched', async () => {
+          const r = await withPanel(() => document.getElementById('_geo-why-reset').textContent);
+          expect(r, 'the most misreadable button says plainly what it cannot do').toMatch(/iOS authorization is untouched/i);
+          expect(r).toMatch(/will NOT bring the system dialog back/i);
+        });
+
+        test('no nested overlay: the explanation lives inside the existing panel', async () => {
+          const r = await withPanel(() => {
+            _geoPermWhy('ask');
+            return { overlays: document.querySelectorAll('.zmodal-overlay').length,
+                     inside: !!document.getElementById('_geo-perm-ov')
+                       .contains(document.getElementById('_geo-why-ask')) };
+          });
+          expect(r.overlays, 'stacking a second overlay on a phone is how you trap someone').toBe(1);
+          expect(r.inside).toBe(true);
+        });
+      });
+
       test('the button is dev-gated and native-gated, never loose in Settings', () => {
         const fs = require('fs'), path = require('path');
         const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
