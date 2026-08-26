@@ -422,37 +422,73 @@ test.describe('Crew location permission', () => {
   // A dead phone and a phone with location switched off look IDENTICAL on a
   // roster that shows neither, and the owner chases them completely
   // differently: one is a conversation, the other is a charger.
-  test('a low battery is named, because "his phone died" is a real explanation', async () => {
+  // ASSERTION MOVED 2026-08-26 (CLAUDE.md 10.4). These asserted on `device`,
+  // the text line, and that was right while the battery WAS text. It is a bar
+  // now, on purpose: a number is read, a bar is seen, and the whole point is
+  // that an owner scanning nine rows spots the dead phone without reading any
+  // of them. The rules below are unchanged, they just look at `battBar`. The
+  // device NAME stays on `device` and stays escaped, because it is whatever
+  // the user called their phone.
+  test('a low battery gets a bar, because "his phone died" is a real explanation', async () => {
     const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
       location_services_enabled: true, device_label: 'iPhone', battery_level: 0.09,
       battery_charging: false, checked_at: NOW() });
-    expect(out.device).toContain('9% battery');
-    expect(out.device).toContain('iPhone');
+    expect(out.battBar).toContain('9%');
+    expect(out.battBar, 'under 15 is the row that explains a missing afternoon').toContain('#DC2626');
+    expect(out.device, 'the name is still text, and still escaped').toBe('iPhone');
   });
 
-  test('a healthy battery is NOT named, so the roster stays readable', async () => {
+  test('a healthy battery draws no bar at all, so the roster stays readable', async () => {
     const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
       location_services_enabled: true, device_label: 'iPhone', battery_level: 0.82,
       battery_charging: false, checked_at: NOW() });
-    expect(out.device, 'nine battery percentages is a roster nobody reads').toBe('iPhone');
+    expect(out.battBar, 'nine battery bars is a roster nobody reads').toBe('');
+    expect(out.device).toBe('iPhone');
   });
 
-  test('a low battery on a charger says charging, and a healthy one on a charger says nothing', async () => {
+  test('a low battery on a charger reads as recovering, a healthy one draws nothing', async () => {
     const low = await rosterIos({ location_status: 'always', location_accuracy: 'full',
       location_services_enabled: true, battery_level: 0.11, battery_charging: true, checked_at: NOW() });
     const high = await rosterIos({ location_status: 'always', location_accuracy: 'full',
       location_services_enabled: true, device_label: 'iPhone', battery_level: 0.95,
       battery_charging: true, checked_at: NOW() });
-    expect(low.device).toContain('charging');
-    expect(high.device).toBe('iPhone');
+    expect(low.battBar).toContain('charging');
+    expect(low.battBar, 'charging back up is good news, not a warning').toContain('16a34a');
+    expect(high.battBar).toBe('');
   });
 
-  test('an unknown battery is silent, never rendered as 0%', async () => {
-    for (const lvl of [null, undefined, -1]) {
+  test('an unknown battery draws nothing, never a 0% bar', async () => {
+    for (const lvl of [null, undefined, -1, 'abc', NaN]) {
       const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
         location_services_enabled: true, device_label: 'iPhone', battery_level: lvl, checked_at: NOW() });
-      expect(out.device, String(lvl) + ': a phone that could not answer is not a flat phone').toBe('iPhone');
+      expect(out.battBar, String(lvl) + ': a phone that could not answer is not a flat phone').toBe('');
     }
+  });
+
+  // CLAUDE.md 7: the text version of this was replaced by the bar, so it is
+  // deleted rather than left defined and uncalled.
+  test('the replaced text battery helper is gone, not orphaned', async () => {
+    const still = await page.evaluate(() => typeof _geoBattLabel === 'function');
+    expect(still).toBe(false);
+  });
+
+  test('a nearly dead phone still draws a visible bar, not a sliver of nothing', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, battery_level: 0.01, checked_at: NOW() });
+    expect(out.battBar).toContain('1%');
+    // width:1% would be invisible, making the most urgent row on the screen
+    // the least visible one.
+    expect(out.battBar).not.toMatch(/width:[0-5]%/);
+  });
+
+  test('a device name can never inject markup through the bar line', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, device_label: '<img src=x onerror=alert(1)>',
+      battery_level: 0.09, checked_at: NOW() });
+    // The name rides on `device` (escaped at render); only the bar we built
+    // ourselves is ever trusted as markup.
+    expect(out.device).toBe('<img src=x onerror=alert(1)>');
+    expect(out.battBar).not.toContain('onerror');
   });
 
   test('last ping shows on a BROKEN row, which is where it matters most', async () => {

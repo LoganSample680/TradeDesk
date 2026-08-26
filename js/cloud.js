@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.25.26.44';
+const APP_VERSION='08.25.26.45';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -3860,10 +3860,14 @@ function renderTeam(){
           // underneath. One line carrying both read as a single sentence and
           // wrapped mid-path on a phone, which is exactly where the owner has
           // to read it.
-          const _sub=(t)=>'<div style="font-size:10px;color:var(--text3);margin-top:2px;padding-left:14px">'+escHtml(t)+'</div>';
+          // `extra` is trusted markup we built ourselves (the battery bar);
+          // `t` is always escaped because a device label is whatever the user
+          // named their phone.
+          const _sub=(t,extra)=>'<div style="font-size:10px;color:var(--text3);margin-top:2px;padding-left:14px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
+            (t?'<span>'+escHtml(t)+'</span>':'')+(extra||'')+'</div>';
           return '<div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-top:5px;color:'+g.tone+'">'+
             '<span style="font-size:9px">'+svgIcon(g.dot,{size:9})+'</span><span>'+escHtml(g.label)+'</span></div>'+
-            (g.device?_sub(g.device):'')+
+            ((g.device||g.battBar)?_sub(g.device,g.battBar):'')+
             (g.ping?_sub(g.ping):'')+
             (g.fix?_sub(g.fix):'');
         })()+
@@ -4165,13 +4169,44 @@ async function _loadTeamGeo(){
 // the point where "his phone died" becomes a real explanation for a missing
 // afternoon.
 const _GEO_BATT_WARN=0.30;
-function _geoBattLabel(io_){
+function _geoBattPct(io_){
   if(!io_||io_.battery_level==null)return null;
   const pct=Math.round(+io_.battery_level*100);
-  if(!Number.isFinite(pct)||pct<0)return null;
-  if(io_.battery_charging)return pct<=_GEO_BATT_WARN*100?(pct+'%, charging'):null;
-  if(pct>_GEO_BATT_WARN*100)return null;
-  return pct+'% battery';
+  // A phone that could not answer is not a flat phone. -1 is the plugin's own
+  // "could not read" and must never render as 0%.
+  if(!Number.isFinite(pct)||pct<0||pct>100)return null;
+  return pct;
+}
+// Shown only when it MATTERS: under 30%, or low and charging. A phone at 82%
+// tells the owner nothing they need, and a roster reporting nine battery
+// percentages is a roster nobody reads. Under 30% is where "his phone died"
+// becomes a real explanation for a missing afternoon.
+function _geoBattShow(io_){
+  const pct=_geoBattPct(io_);
+  if(pct==null)return false;
+  return pct<=_GEO_BATT_WARN*100;
+}
+// The bar itself. A number is read; a bar is SEEN, and the whole point of this
+// line is that an owner scanning nine rows spots the dead phone without
+// reading any of them. Red under 15 (this is why the afternoon is missing),
+// amber to 30, green while charging back up.
+//
+// Inline styles and a plain div, matching every other roster element here:
+// this renders inside a string of innerHTML, and a stylesheet class would put
+// half the rule somewhere the next person reading this function cannot see.
+function _geoBattBar(io_){
+  const pct=_geoBattPct(io_);
+  if(pct==null||!_geoBattShow(io_))return '';
+  const tone=io_.battery_charging?'var(--green-mid,#16a34a)':(pct<=15?'#DC2626':'#D97706');
+  // Never a sliver of nothing: a 1% phone still has to read as a bar with a
+  // colour, or the most urgent row on the screen is the least visible one.
+  const w=Math.max(6,Math.min(100,pct));
+  return '<span style="display:inline-flex;align-items:center;gap:4px;vertical-align:middle">'+
+      '<span style="display:inline-block;width:22px;height:9px;border:1px solid '+tone+';border-radius:2px;padding:1px;box-sizing:border-box">'+
+        '<span style="display:block;height:100%;width:'+w+'%;background:'+tone+';border-radius:1px"></span>'+
+      '</span>'+
+      '<span style="color:'+tone+';font-weight:700">'+pct+'%'+(io_.battery_charging?' charging':'')+'</span>'+
+    '</span>';
 }
 // Returns {dot,label,device,ping,fix,tone} or null when crew tracking is off.
 function _geoRosterStatus(email){
@@ -4206,29 +4241,32 @@ function _geoRosterStatus(email){
     // is just its name; a fleet device says so and says when THIS person last
     // used it, since that is the only thing a shared iPad can tell you about
     // one member of the crew.
-    const _batt=_geoBattLabel(io_);
-    const _devName=io_.device_label
+    // The name is TEXT (escaped at render, it is user-supplied), the bar is
+    // MARKUP. Keeping them apart is what stops a device someone named
+    // "<b>Shop</b>" from injecting anything, while still letting the bar be a
+    // real element rather than an escaped string of angle brackets.
+    const dev=io_.device_label
       ? (io_.shared
           ? io_.device_label+' (shared) · they last used it '+_timeAgo(io_.checked_at)
           : io_.device_label)
       : null;
-    const dev=[_devName,_batt].filter(Boolean).join(' · ')||null;
+    const battBar=_geoBattBar(io_);
     if(io_.location_services_enabled===false)
-      return{dot:'🔴',label:'Location is off for their whole phone',fix:'Settings › Privacy › Location Services',device:dev,ping:_ping,tone:'#DC2626'};
+      return{dot:'🔴',label:'Location is off for their whole phone',fix:'Settings › Privacy › Location Services',device:dev,ping:_ping,tone:'#DC2626',battBar};
     if(st==='denied')
-      return{dot:'🔴',label:'Location off on their phone',fix:'Settings › TradeDesk › Location',device:dev,ping:_ping,tone:'#DC2626'};
+      return{dot:'🔴',label:'Location off on their phone',fix:'Settings › TradeDesk › Location',device:dev,ping:_ping,tone:'#DC2626',battBar};
     if(st==='restricted')
-      return{dot:'🔴',label:'Blocked by Screen Time or a device policy',device:dev,ping:_ping,tone:'#DC2626'};
+      return{dot:'🔴',label:'Blocked by Screen Time or a device policy',device:dev,ping:_ping,tone:'#DC2626',battBar};
     if(st==='notdetermined')
-      return{dot:'⚪',label:'Hasn’t answered the location prompt yet',device:dev,ping:_ping,tone:'var(--text3)'};
+      return{dot:'⚪',label:'Hasn’t answered the location prompt yet',device:dev,ping:_ping,tone:'var(--text3)',battBar};
     if(st==='wheninuse')
-      return{dot:'🟠',label:'Only tracks with the app open, their drives won’t log',fix:'Settings › TradeDesk › Location › Always',device:dev,ping:_ping,tone:'#D97706'};
+      return{dot:'🟠',label:'Only tracks with the app open, their drives won’t log',fix:'Settings › TradeDesk › Location › Always',device:dev,ping:_ping,tone:'#D97706',battBar};
     if(st==='always'&&String(io_.location_accuracy||'')==='reduced')
-      return{dot:'🟠',label:'On, but not precise enough for job check-ins',fix:'Settings › TradeDesk › Location › Precise Location',device:dev,ping:_ping,tone:'#D97706'};
+      return{dot:'🟠',label:'On, but not precise enough for job check-ins',fix:'Settings › TradeDesk › Location › Precise Location',device:dev,ping:_ping,tone:'#D97706',battBar};
     if(st==='always')
       return fresh
-        ? {dot:'🟢',label:'Tracking · last ping '+_timeAgo(g.lastPing),device:dev,tone:'var(--green-mid,#16a34a)'}
-        : {dot:'🟢',label:'Tracking, all set',device:dev,ping:_ping,tone:'var(--green-mid,#16a34a)'};
+        ? {dot:'🟢',label:'Tracking · last ping '+_timeAgo(g.lastPing),device:dev,tone:'var(--green-mid,#16a34a)',battBar}
+        : {dot:'🟢',label:'Tracking, all set',device:dev,ping:_ping,tone:'var(--green-mid,#16a34a)',battBar};
   }
   // A ping inside the window is proof, regardless of what the permission API said.
   if(fresh)
