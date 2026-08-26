@@ -890,6 +890,82 @@ test.describe('Crew location permission', () => {
       });
     });
 
+    // ── The dead button, and the one-shot Always upgrade behind it ───────────
+    //
+    // Owner 2026-08-26: "I want it to go to always and stay that way."
+    //
+    // _geoRequestPermission used to call getCurrentPosition first and only start
+    // tracking inside its SUCCESS callback. On the shell _geoInstallGeoShim has
+    // replaced getCurrentPosition with a plugin read carrying
+    // requestPermissions:FALSE, so on a fresh install it cannot get a fix, times
+    // out, and startGeoTracking is never reached. No dialog ever appears. That
+    // is the live "Dead control: _setupTodoGo('location')|Fix it" from 08-22.
+    //
+    // Starting the watcher IS the ask: on iOS addWatcher with
+    // requestPermissions:true calls requestAlwaysAuthorization, which is the
+    // one-shot provisional-Always upgrade. It must be spent there and nowhere
+    // else, and it must not sit behind a read.
+    test.describe('asking for location on the native shell', () => {
+      const ask = (opts) => page.evaluate(async (o) => {
+        const saved = { cap: window.Capacitor, start: window.startGeoTracking,
+                        gc: navigator.geolocation && navigator.geolocation.getCurrentPosition,
+                        nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined,
+                        wid: (typeof _geoNativeWatcherId !== 'undefined') ? _geoNativeWatcherId : undefined,
+                        supa: window._supa, user: window._supaUser };
+        const calls = { started: 0, fixes: 0 };
+        try {
+          window._supaUser = { id: 'ask-probe' };
+          window._supa = { from: () => ({ upsert: () => ({ then: (f) => Promise.resolve({}).then(f) }),
+                                          update: () => ({ eq: () => ({ then: (f) => Promise.resolve({}).then(f) }) }) }) };
+          window.Capacitor = { isNativePlatform: () => true,
+            registerPlugin: () => ({ locationPermStatus: () => Promise.resolve(o.answer || { status: 'always', accuracy: 'full', precise: true, servicesEnabled: true }) }) };
+          if (navigator.geolocation) navigator.geolocation.getCurrentPosition = () => { calls.fixes++; };
+          window.startGeoTracking = () => { calls.started++; };
+          if (typeof _geoNativeWatcherId !== 'undefined') _geoNativeWatcherId = o.watcher === undefined ? null : o.watcher;
+          if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = null;
+          const state = await new Promise(res => { _geoRequestPermission(res); setTimeout(() => res('__timeout'), 6000); });
+          return { state, calls };
+        } finally {
+          window.Capacitor = saved.cap; window.startGeoTracking = saved.start;
+          if (navigator.geolocation && saved.gc) navigator.geolocation.getCurrentPosition = saved.gc;
+          if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+          if (typeof _geoNativeWatcherId !== 'undefined') _geoNativeWatcherId = saved.wid;
+          window._supa = saved.supa; window._supaUser = saved.user;
+        }
+      }, opts || {});
+
+      test('the tap starts the watcher, which IS the prompt, and reads nothing first', async () => {
+        const r = await ask({ answer: { status: 'always', accuracy: 'full', precise: true, servicesEnabled: true } });
+        expect(r.calls.started, 'the watcher is what raises the dialog').toBe(1);
+        expect(r.calls.fixes, 'nothing is read before asking: that is what made the button dead').toBe(0);
+        expect(r.state).toBe('granted');
+      });
+
+      test('while-using is still a grant, it is just not Always', async () => {
+        const r = await ask({ answer: { status: 'wheninuse', accuracy: 'full', precise: true, servicesEnabled: true } });
+        expect(r.calls.started).toBe(1);
+        expect(r.state, 'the checklist clears either way; the row records which').toBe('granted');
+      });
+
+      test('a refusal is reported as denied, not as a retryable prompt', async () => {
+        for (const st of ['denied', 'restricted']) {
+          const r = await ask({ answer: { status: st } });
+          expect(r.state, st).toBe('denied');
+        }
+      });
+
+      test('a live watcher counts as granted on a shell too old to report status', async () => {
+        const r = await ask({ answer: null, watcher: 7 });
+        expect(r.calls.started).toBe(1);
+        expect(r.state, 'the dialog was answered yes even if we cannot read it back').toBe('granted');
+      });
+
+      test('notdetermined with no watcher stays a prompt, never a false grant', async () => {
+        const r = await ask({ answer: { status: 'notdetermined' }, watcher: null });
+        expect(r.state).toBe('prompt');
+      });
+    });
+
     test('a write that fails never throws at the caller', async () => {
       const threw = await page.evaluate(async () => {
         const saved = { supa: window._supa, user: window._supaUser };

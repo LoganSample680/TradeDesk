@@ -2626,6 +2626,63 @@ function _geoRequestPermission(cb){
     try{if(typeof _renderDashSetupTodo==='function')_renderDashSetupTodo();}catch(_e){}
     if(typeof cb==='function')try{cb(state);}catch(_e){}
   };
+  // ── ON THE SHELL, ASKING IS startGeoTracking, NOT A FIX ATTEMPT ──────────
+  //
+  // Owner, 2026-08-26: "I want it to go to always and stay that way."
+  //
+  // Straight answer: iOS will not guarantee that. Always is the user's call and
+  // Apple requires a confirmation for it. What it WILL do is grant PROVISIONAL
+  // Always, and the BackgroundGeolocation watcher below already asks for
+  // exactly that: on iOS, addWatcher with requestPermissions:true calls
+  // requestAlwaysAuthorization, so accepting the ordinary "While Using" dialog
+  // reports back Always and background delivery works from that moment, with
+  // iOS confirming it later once it has seen real background use.
+  //
+  // The bug was the ORDER. This function used to call getCurrentPosition first
+  // and only start tracking inside its SUCCESS callback. On the native shell
+  // _geoInstallGeoShim has replaced getCurrentPosition with a plugin read that
+  // passes requestPermissions:FALSE, deliberately, so it can never prompt. On a
+  // fresh install with nothing granted, that read cannot produce a fix, so it
+  // times out, the error path reports 'prompt', and startGeoTracking is NEVER
+  // REACHED. No dialog. Ever.
+  //
+  // That is a dead button, and it is literally what the live account recorded
+  // on 08-22: "Dead control, no effect on click: _setupTodoGo('location')|Fix
+  // it". The tap did nothing because the only thing that can raise the prompt
+  // sat behind a read that was configured never to raise one.
+  //
+  // So on the shell the ask IS starting the tracker. Nothing is read first. The
+  // one-shot Always upgrade is spent by the watcher, which is the single place
+  // that should ever spend it, and _geoRefreshNativeAuth reports back what iOS
+  // actually decided rather than this inferring anything.
+  try{
+    const _cap=window.Capacitor;
+    if(_cap&&typeof _cap.isNativePlatform==='function'&&_cap.isNativePlatform()){
+      startGeoTracking();
+      const settle=()=>{
+        const nat=(typeof _geoNativeAuthPeek==='function')?_geoNativeAuthPeek():null;
+        const st=(nat&&nat.status)||'';
+        if(st==='always'||st==='wheninuse'){
+          try{localStorage.setItem(_GEO_GRANTED_KEY,'1');}catch(_e){}
+          done('granted');
+        }else if(st==='denied'||st==='restricted'){done('denied');}
+        else if(_geoNativeWatcherId!=null){
+          // The watcher is alive, so the dialog was answered yes even on a
+          // shell too old to report the status back.
+          try{localStorage.setItem(_GEO_GRANTED_KEY,'1');}catch(_e){}
+          done('granted');
+        }else done('prompt');
+      };
+      // The dialog is modal and answered by a person, so read the result on a
+      // delay rather than racing it. A wrong answer here is not fatal: the
+      // foreground re-read corrects the row the moment they come back.
+      setTimeout(()=>{
+        if(typeof _geoRefreshNativeAuth==='function')_geoRefreshNativeAuth().then(settle,settle);
+        else settle();
+      },2500);
+      return;
+    }
+  }catch(_e){}
   if(!navigator.geolocation){done('unsupported');return;}
   // getCurrentPosition triggers the OS prompt on its own and, unlike watchPosition,
   // hands back a definitive allow/deny we can record. Tracking is started
