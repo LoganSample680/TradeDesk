@@ -1089,6 +1089,14 @@ async function expSave(){
     deductible:catInfo.deductible!==false,meals_50:!!(catInfo.meals_50),
   });
   expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
+  // A supply-run card launched this flow (hidden field, js/mileage.js
+  // _supplyRunScan): the saved receipt/expense is the proof that commits the
+  // held mileage, both books settled in one save. Read BEFORE closeExpenseFlow
+  // below removes the modal, and the field with it.
+  const _srRun=document.getElementById('qe-supply-run');
+  if(_srRun&&_srRun.value&&typeof resolveSupplyRun==='function'){
+    resolveSupplyRun(_srRun.value,'receipt',expId);
+  }
   // Where it was logged. Fire-and-forget: this never blocks or delays the save,
   // and silently does nothing if location was never granted.
   if(typeof _stampGeo==='function')_stampGeo(expenses.find(e=>e.id===expId));
@@ -1505,13 +1513,6 @@ function saveQuickExpense(clientId){
   });
   expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
   saveAll();
-  // A supply-run card launched this modal (hidden field, js/mileage.js
-  // _supplyRunScan): the saved receipt/expense is the proof that commits the
-  // held mileage, both books settled in one save.
-  const _qeRun=document.getElementById('qe-supply-run');
-  if(_qeRun&&_qeRun.value&&typeof resolveSupplyRun==='function'){
-    resolveSupplyRun(_qeRun.value,'receipt',_qeExpId);
-  }
   const overlay=document.querySelector('.zmodal-overlay');
   if(overlay)overlay.remove();
   showToast(vendor+', '+fmt(amount)+' logged '+svgIcon('✓'),'💰');

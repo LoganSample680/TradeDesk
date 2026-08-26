@@ -2025,22 +2025,37 @@ function _supplyRunNoReceipt(k){
 // unrelated expense.
 function _supplyRunScan(k){
   const key=decodeURIComponent(k);
-  if(typeof showQuickExpenseModal!=='function')return;
-  showQuickExpenseModal(null,null);
-  // The modal is built synchronously (finance.js appends it before returning),
-  // so the key rides in immediately. This used to wait on a 120ms timer, which
-  // was pure guesswork: a slow WebKit CI runner fired the check before the
-  // timer and found nothing. Newest overlay, not the first: an older stray
-  // modal must never receive the key.
-  const _ovs=document.querySelectorAll('.zmodal-overlay');
-  const m=_ovs.length?_ovs[_ovs.length-1].querySelector('.zmodal'):null;
+  // The button says SCAN RECEIPT, so it opens the receipt SCANNER (owner
+  // 2026-08-26, screenshot in hand: this used to open the bare quick-expense
+  // form, vendor prefilled, keyboard up, no camera anywhere, the exact manual
+  // entry the button promised to replace). openExpenseFlow is the real flow:
+  // camera capture, OCR fill, receipt pages stored on the expense, and its
+  // save is what commits the held mileage (expSave reads the key below).
+  if(typeof openExpenseFlow!=='function')return;
+  openExpenseFlow();
+  const m=document.getElementById('expense-modal');
   if(!m)return;
+  // The key rides INSIDE the modal, synchronously, never a global: same rule
+  // the quick-modal version learned on a WebKit CI race, and cancelling the
+  // modal removes the key with it so it can never leak onto a later expense.
   const h=document.createElement('input');
   h.type='hidden';h.id='qe-supply-run';h.value=key;
   m.appendChild(h);
-  const v=m.querySelector('#qe-vendor');
+  // The run already knows the store and the DAY: the receipt in their hand is
+  // dated the day of the visit, not the day they finally answered the card.
   const store=key.split('|').slice(1).join('|');
+  const day=key.split('|')[0]||'';
+  const v=m.querySelector('#em-vendor');
   if(v&&!v.value&&store)v.value=store;
+  const dd=m.querySelector('#em-date');
+  const dm=day.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(dd&&dm)dd.value=dm[2]+'/'+dm[3]+'/'+dm[1];
+  const c=m.querySelector('#em-cat');
+  if(c)c.value='materials';
+  // Straight into the camera, still inside the tap's user gesture. If the
+  // scanner cannot open (no camera, denied), the modal is already up with its
+  // own Scan button, so nothing is lost.
+  try{if(typeof expTriggerScan==='function')expTriggerScan();}catch(_e){}
 }
 // The one tap that settles an unattributed drive. 'truck' moves it into the
 // deduction, 'own' into what the business owes them, 'rider' means they were a

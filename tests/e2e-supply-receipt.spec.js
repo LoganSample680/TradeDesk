@@ -235,41 +235,72 @@ test.describe('Receipt-gated supply runs', () => {
   });
 
   test.describe('the scan door settles both books in one save', () => {
-    test('the quick-expense modal carries the run key INSIDE the modal and prefills the vendor', async () => {
-      // No waits anywhere: the injection is synchronous by design (a 120ms
-      // timer version of _supplyRunScan lost this exact race on WebKit CI).
+    test('Scan receipt opens the REAL scanner flow: camera fired, key inside the modal, vendor/date/category prefilled', async () => {
+      // Owner 2026-08-26, screenshot in hand: this button opened the bare
+      // quick-expense form, keyboard up, no camera anywhere. The button says
+      // SCAN, so it must open openExpenseFlow and fire the scanner in the
+      // same tap. No waits anywhere: the injection is synchronous by design
+      // (a 120ms timer version of _supplyRunScan lost that race on WebKit CI).
       const out = await page.evaluate(() => {
         mileage.length = 0;
-        mileage.push({ id: _newId(), date: todayKey(), miles: 4, pendingReceipt: true, supplyRunKey: todayKey() + '|Home Depot', purpose: 'Supply run', created_at: new Date().toISOString() });
-        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
-        _supplyRunScan(encodeURIComponent(todayKey() + '|Home Depot'));
-        return {
-          key: (document.getElementById('qe-supply-run') || {}).value || '',
-          insideModal: !!document.querySelector('.zmodal-overlay .zmodal #qe-supply-run'),
-          vendor: (document.getElementById('qe-vendor') || {}).value || '',
-        };
+        mileage.push({ id: _newId(), date: '2026-08-20', miles: 4, pendingReceipt: true, supplyRunKey: '2026-08-20|Home Depot', purpose: 'Supply run', created_at: new Date().toISOString() });
+        document.getElementById('expense-modal')?.remove();
+        const realScanner = window._showReceiptScanner;
+        let scannerFired = 0;
+        window._showReceiptScanner = () => { scannerFired++; };
+        try {
+          _supplyRunScan(encodeURIComponent('2026-08-20|Home Depot'));
+          return {
+            scannerFired,
+            fullFlow: !!document.getElementById('expense-modal'),
+            quickModal: !!document.querySelector('.zmodal-overlay'),
+            key: (document.getElementById('qe-supply-run') || {}).value || '',
+            insideModal: !!document.querySelector('#expense-modal #qe-supply-run'),
+            vendor: (document.getElementById('em-vendor') || {}).value || '',
+            date: (document.getElementById('em-date') || {}).value || '',
+            cat: (document.getElementById('em-cat') || {}).value || '',
+          };
+        } finally {
+          window._showReceiptScanner = realScanner;
+          if (typeof closeExpenseFlow === 'function') closeExpenseFlow();
+        }
       });
-      expect(out.key).toBe(await page.evaluate(() => todayKey() + '|Home Depot'));
+      expect(out.fullFlow, 'openExpenseFlow, not the quick modal').toBe(true);
+      expect(out.quickModal).toBe(false);
+      expect(out.scannerFired, 'the camera opens on the same tap').toBe(1);
+      expect(out.key).toBe('2026-08-20|Home Depot');
       expect(out.insideModal, 'the key rides in the modal, never a global').toBe(true);
       expect(out.vendor).toBe('Home Depot');
-      await page.evaluate(() => { document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove()); });
+      // The receipt in their hand is dated the day of the VISIT, not the day
+      // they finally answered the card.
+      expect(out.date).toBe('08/20/2026');
+      expect(out.cat).toBe('materials');
     });
 
     test('saving the expense commits the held mileage and links the expense id', async () => {
       const out = await page.evaluate(async () => {
         mileage.length = 0;
+        const savedExp = expenses.slice();
         const key = todayKey() + '|Home Depot';
         mileage.push({ id: _newId(), date: todayKey(), miles: 4, pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', created_at: new Date().toISOString() });
-        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
-        _supplyRunScan(encodeURIComponent(key));
-        document.getElementById('qe-amount').value = '84.12';
-        const before = expenses.length;
-        saveQuickExpense(null);
-        const exp = expenses.length > before ? expenses.find(e => e.vendor === 'Home Depot' && e.amount === 84.12) : null;
-        const row = mileage[0];
-        return { saved: !!exp, expId: exp && exp.id,
-                 committed: !row.pendingReceipt, linked: row.receiptExpenseId,
-                 ded: deductibleTrips(mileage).length };
+        document.getElementById('expense-modal')?.remove();
+        const realScanner = window._showReceiptScanner;
+        window._showReceiptScanner = () => {};
+        try {
+          _supplyRunScan(encodeURIComponent(key));
+          document.getElementById('em-amount').value = '84.12';
+          const before = expenses.length;
+          await expSave();
+          const exp = expenses.length > before ? expenses.find(e => e.vendor === 'Home Depot' && e.amount === 84.12) : null;
+          const row = mileage[0];
+          return { saved: !!exp, expId: exp && exp.id,
+                   committed: !row.pendingReceipt, linked: row.receiptExpenseId,
+                   ded: deductibleTrips(mileage).length };
+        } finally {
+          window._showReceiptScanner = realScanner;
+          if (typeof closeExpenseFlow === 'function') closeExpenseFlow();
+          expenses.length = 0; savedExp.forEach(e => expenses.push(e));
+        }
       });
       expect(out.saved).toBe(true);
       expect(out.committed, 'the receipt is the proof: the save commits the run').toBe(true);
@@ -280,17 +311,27 @@ test.describe('Receipt-gated supply runs', () => {
     test('cancelling the scan modal cannot leak the key onto a later, unrelated expense', async () => {
       const out = await page.evaluate(async () => {
         mileage.length = 0;
+        const savedExp = expenses.slice();
         const key = todayKey() + '|Home Depot';
         mileage.push({ id: _newId(), date: todayKey(), miles: 4, pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', created_at: new Date().toISOString() });
-        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
-        _supplyRunScan(encodeURIComponent(key));
-        // Back out, then log a completely unrelated expense the plain way.
-        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
-        showQuickExpenseModal(null, null);
-        document.getElementById('qe-vendor').value = 'Chick-fil-A';
-        document.getElementById('qe-amount').value = '12.00';
-        saveQuickExpense(null);
-        return { stillHeld: mileage[0].pendingReceipt === true, leaked: !!mileage[0].receiptExpenseId };
+        document.getElementById('expense-modal')?.remove();
+        const realScanner = window._showReceiptScanner;
+        window._showReceiptScanner = () => {};
+        try {
+          _supplyRunScan(encodeURIComponent(key));
+          // Back out: the key lives in the modal, so closing takes it too.
+          closeExpenseFlow();
+          // Then log a completely unrelated expense the plain full-flow way.
+          openExpenseFlow();
+          document.getElementById('em-vendor').value = 'Chick-fil-A';
+          document.getElementById('em-amount').value = '12.00';
+          await expSave();
+          return { stillHeld: mileage[0].pendingReceipt === true, leaked: !!mileage[0].receiptExpenseId };
+        } finally {
+          window._showReceiptScanner = realScanner;
+          if (typeof closeExpenseFlow === 'function') closeExpenseFlow();
+          expenses.length = 0; savedExp.forEach(e => expenses.push(e));
+        }
       });
       expect(out.stillHeld).toBe(true);
       expect(out.leaked).toBe(false);
