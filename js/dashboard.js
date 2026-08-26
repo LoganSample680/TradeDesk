@@ -118,6 +118,7 @@ function _renderDashSetupTodo(){
   // state actually CHANGES, so this can never loop.
   _geoRefreshPermCache();
   _motionRefreshPermCache();
+  _notifyRefreshPermCache();
   // The full setup checklist (owner 2026-07-14, research-backed). Every task shows
   // from day one and drops off the moment it's done (or the contractor skips an
   // optional one); the whole card collapses once nothing's left. Copy is money/
@@ -182,12 +183,20 @@ function _renderDashSetupTodo(){
     // clears). 'unsupported' counts as done: Safari often can't report the state
     // at all, and nagging someone whose location already works is worse than
     // missing the nudge.
-    {id:'location',done:_geoPermDone(),icon:'📍',
-      title:_geoPermState()==='denied'?'Turn location back on':'Turn on location',
-      sub:_geoPermState()==='denied'
-        ?'Location is off, so drive mileage and job hours have stopped logging. Takes two taps in your phone settings.'
-        :'Your drive miles and hours on each job log themselves, no timesheets, no odometer photos. Work hours only.',
-      cta:_geoPermState()==='denied'?'Fix it':'Turn on',noSkip:true},
+    (function(){
+      // A specific iOS complaint outranks the generic copy: "turn on
+      // location" is useless advice to somebody whose location IS on and set
+      // to While Using, and it is the exact wording that made this task look
+      // impossible to finish.
+      const np=_geoNatProblem();
+      if(np)return{id:'location',done:false,icon:'📍',title:np.title,sub:np.sub,cta:np.cta,noSkip:true};
+      return{id:'location',done:_geoPermDone(),icon:'📍',
+        title:_geoPermState()==='denied'?'Turn location back on':'Turn on location',
+        sub:_geoPermState()==='denied'
+          ?'Location is off, so drive mileage and job hours have stopped logging. Takes two taps in your phone settings.'
+          :'Your drive miles and hours on each job log themselves, no timesheets, no odometer photos. Work hours only.',
+        cta:_geoPermState()==='denied'?'Fix it':'Turn on',noSkip:true};
+    })(),
     // Motion & Fitness: skippable, unlike location. It sharpens WHEN a drive
     // actually started/stopped (the motion coprocessor's own history corrects
     // a late-firing geofence exit), mileage still logs without it, just with
@@ -201,6 +210,16 @@ function _renderDashSetupTodo(){
         ?'Motion access is off, so drive start/stop times may run a little softer. Takes two taps in your phone settings.'
         :'Times exactly when a drive starts and stops, using the motion coprocessor already running on your phone.',
       cta:_motionPermState()==='denied'?'Fix it':'Allow'},
+    // Notifications: skippable (Apple 4.5.4, see _notifyPermDone). The copy
+    // leads with the silent-failure problem because that is the whole point:
+    // tracking stopping is invisible until payroll, and this is the only
+    // thing that can tell somebody on the day it happens.
+    {id:'notify',done:_notifyPermDone(),icon:'🔔',
+      title:_notifyPermState()==='denied'?'Turn notifications back on':'Get told if tracking stops',
+      sub:_notifyPermState()==='denied'
+        ?'Notifications are off, so nothing can tell you if drives stop logging. Takes two taps in your phone settings.'
+        :'If location gets switched off, drives and job hours stop logging silently and you find out at payroll. One notification, only when it actually breaks.',
+      cta:_notifyPermState()==='denied'?'Fix it':'Turn on'},
   ];
   const remaining=ALL.filter(t=>!t.done&&!skipped.includes(t.id));
   // Endowed progress: credit the 3 things signup genuinely finished (account, trade,
@@ -352,7 +371,98 @@ let _geoPermCache=null;
 // native field null). Gate on either changing.
 let _geoPermSig=null;
 function _geoPermState(){return _geoPermCache||'prompt';}
-function _geoPermDone(){const s=_geoPermState();return s==='granted'||s==='unsupported';}
+// The blind spot this closes (owner ask 2026-08-26). _geoPermDone treated
+// 'granted' as finished, and 'granted' is the FLATTENED answer: While Using
+// and Always-with-reduced-accuracy both arrive as granted. So a phone that
+// logs nothing in a pocket, or that can never fire a 600ft job fence, ticked
+// this task off and the card cleared. Worse, the notification that tells
+// somebody to come fix it lands on a checklist already claiming all set.
+//
+// Returns null when iOS has no complaint, otherwise the task copy for the one
+// thing that is actually wrong. Native-only by design: a browser has none of
+// these axes and must keep the old behaviour untouched.
+function _geoNatProblem(){
+  let n=null;
+  try{n=(typeof _geoNativeAuthPeek==='function')?_geoNativeAuthPeek():null;}catch(_e){return null;}
+  if(!n||!n.status)return null;
+  const st=String(n.status||'');
+  if(n.servicesEnabled===false)return{kind:'services',
+    title:'Turn Location Services back on',
+    sub:'Location is off for your whole phone, so drive mileage and job hours have stopped logging. Settings › Privacy & Security › Location Services.',
+    cta:'Fix it'};
+  if(st==='restricted')return{kind:'restricted',
+    title:'Location is blocked on this phone',
+    sub:'Screen Time or a device policy is blocking location, so mileage and job hours cannot log. Whoever manages this phone has to allow it.',
+    cta:'Fix it'};
+  if(st==='wheninuse')return{kind:'wheninuse',
+    title:'Set location to Always',
+    sub:'Right now location only works while the app is open, so your drives never log while the phone is in your pocket. Settings › TradeDesk › Location › Always.',
+    cta:'Fix it'};
+  if(st==='always'&&String(n.accuracy||'')==='reduced')return{kind:'precise',
+    title:'Turn on Precise Location',
+    sub:'Without it your location is about a mile wide, so arriving at a job never registers and hours do not start. Settings › TradeDesk › Location › Precise Location.',
+    cta:'Fix it'};
+  return null;
+}
+function _geoPermDone(){
+  const s=_geoPermState();
+  if(_geoNatProblem())return false;
+  return s==='granted'||s==='unsupported';
+}
+// ── One notification when tracking silently stops (owner ask 2026-08-26) ─────
+//
+// The failure this exists for is silent by nature: location gets switched off
+// (or down to While Using, or to reduced accuracy) and the app keeps opening
+// normally while logging nothing. Nobody finds out until payroll, when the
+// week is already gone.
+//
+// A LOCAL notification, not a remote push: the phone is the only thing that
+// can see its own permission change, so there is nothing for a server to
+// notice and no token to depend on. It also means this works on the build
+// already on people's phones (CLAUDE.md 3.2) rather than waiting on one.
+//
+// APPLE'S LINE (4.5.4, 5.1.1): this is operational, never promotional, and it
+// is scoped to the FEATURE rather than the app. TradeDesk still works with
+// location off, you just log by hand, and the copy says exactly that instead
+// of claiming the app is broken. It fires ONCE per transition into a broken
+// state, never on a schedule and never again while that state persists, which
+// is the difference between telling somebody and nagging them.
+const _GEO_BREAK_KEY='zp3_geo_break_notified';
+const _GEO_BREAK_ID='geo-break';
+// Two minutes: long enough that it never buzzes while they are still looking
+// at the screen that told them, short enough to arrive while the phone is
+// still in their hand and the switch is still one tap away. Fixing it inside
+// the window cancels the notification, so doing the right thing immediately
+// is never rewarded with a pointless buzz.
+const _GEO_BREAK_DELAY_MS=2*60000;
+function _geoBreakCopy(kind){
+  if(kind==='services')return 'Location is off for your whole phone, so drives and job hours are not logging. Everything else still works, you would just be entering them by hand.';
+  if(kind==='restricted')return 'Location is blocked on this phone, so drives and job hours are not logging. You can still enter them by hand.';
+  if(kind==='wheninuse')return 'Location is set to While Using, so drives only log while the app is open. Set it to Always and they log themselves.';
+  if(kind==='precise')return 'Precise Location is off, so arriving at a job does not register and hours are not starting on their own.';
+  return 'Location is off, so drives and job hours are not logging. You can still enter them by hand.';
+}
+function _geoNotifyBreak(){
+  let prev=null;
+  try{prev=localStorage.getItem(_GEO_BREAK_KEY)||null;}catch(_e){}
+  const np=_geoNatProblem();
+  const kind=np?np.kind:(_geoPermState()==='denied'?'denied':null);
+  if(!kind){
+    // Fixed, or never broken. Drop the pending buzz and forget, so the NEXT
+    // break is a fresh transition and gets its one notification.
+    if(prev){
+      try{localStorage.removeItem(_GEO_BREAK_KEY);}catch(_e){}
+      if(typeof _notifyCancel==='function')_notifyCancel([_GEO_BREAK_ID]);
+    }
+    return false;
+  }
+  if(prev===kind)return false;          // same break, already told them once
+  try{localStorage.setItem(_GEO_BREAK_KEY,kind);}catch(_e){}
+  if(typeof _notifySchedule!=='function')return false;
+  _notifySchedule(_GEO_BREAK_ID,'Auto mileage and time logs are off',
+    _geoBreakCopy(kind),Date.now()+_GEO_BREAK_DELAY_MS);
+  return true;
+}
 function _geoNatSig(){
   try{
     const n=(typeof _geoNativeAuthPeek==='function')?_geoNativeAuthPeek():null;
@@ -368,6 +478,9 @@ function _geoRefreshPermCache(){
       _geoPermCache=st;_geoPermSig=sig;
       if(!changed)return;
       if(typeof _geoReportPermission==='function')_geoReportPermission(st);
+      // Only on a real change, which is what makes this once-per-transition
+      // rather than once-per-foreground.
+      try{_geoNotifyBreak();}catch(_e){}
       _renderDashSetupTodo();
     }).catch(()=>{});
   }catch(_e){}
@@ -419,14 +532,73 @@ function _motionRefreshPermCache(){
     }).catch(()=>{});
   }catch(_e){}
 }
+// ── Notifications: the permission nothing ever asked for ────────────────────
+// _notifyAsk() had no caller anywhere in the app, so _notifyPermission() sat
+// at 'prompt' forever and every local notification silently returned false,
+// including the arrival tap-back the geofence engine already fires
+// (js/geo-track.js). The plumbing was all there; nobody ever opened the tap.
+//
+// SKIPPABLE, unlike location, and deliberately so: Apple's 4.5.4 is explicit
+// that notifications must not be required for an app to function, so this can
+// never be noSkip. Location earns noSkip because auto mileage genuinely cannot
+// exist without it; being told when it breaks is a convenience.
+let _notifyPermCache=null;
+function _notifyPermState(){return _notifyPermCache||'prompt';}
+function _notifyPermDone(){const s=_notifyPermState();return s==='granted'||s==='unsupported';}
+function _notifyRefreshPermCache(){
+  if(typeof _notifyPermission!=='function'){
+    Promise.resolve().then(()=>{
+      if(_notifyPermCache==='unsupported')return;
+      _notifyPermCache='unsupported';_renderDashSetupTodo();
+    });
+    return;
+  }
+  try{
+    _notifyPermission().then(st=>{
+      const v=st||'prompt';
+      if(v===_notifyPermCache)return;
+      _notifyPermCache=v;_renderDashSetupTodo();
+    }).catch(()=>{});
+  }catch(_e){}
+}
 function _setupTodoGo(id){
+  if(id==='notify'){
+    // Denied is terminal from script here for the same reason location is:
+    // iOS shows its notification dialog once. Settings is the only way back.
+    if(_notifyPermState()==='denied'){
+      const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+      if(Td&&typeof Td.openSettings==='function'){Td.openSettings().catch(()=>{});return;}
+      if(typeof zAlert==='function')zAlert(
+        'Notifications are switched off for TradeDesk.\n\niPhone: Settings → TradeDesk → Notifications → Allow Notifications',
+        {title:'Turn notifications back on'});
+      return;
+    }
+    if(typeof _notifyAsk==='function'){
+      _notifyAsk().then(()=>{_notifyRefreshPermCache();}).catch(()=>{});
+    }
+    return;
+  }
   if(id==='location'){
     // Denied: the OS will not re-prompt from script, so a button that "asks
     // again" would do nothing at all. On the native shell, jump straight to
     // OUR settings page (not the Settings app's home screen), one tap to
     // flip it back on. Browsers can't be deep-linked into OS settings at
     // all, so the PWA keeps the walkthrough text as its only option.
-    if(_geoPermState()==='denied'){
+    // Every iOS complaint routes the same way, and for the same reason as
+    // denied: iOS holds the decision, so nothing in here can change it and a
+    // button that "asks again" is a dead button. Restricted is the one
+    // exception, because our Settings page has no switch that beats a Screen
+    // Time or MDM block, so it gets the honest explanation instead.
+    const _np=(typeof _geoNatProblem==='function')?_geoNatProblem():null;
+    if(_np&&_np.kind==='restricted'){
+      if(typeof zAlert==='function')zAlert(
+        'Screen Time or a device management policy is blocking location for TradeDesk, so it can\'t be turned on from in here or from TradeDesk\'s own settings page.\n\n'+
+        'Settings → Screen Time → Content & Privacy Restrictions → Location Services\n\n'+
+        'If this is a company-managed phone, whoever manages it has to allow it.',
+        {title:'Location is blocked on this phone'});
+      return;
+    }
+    if(_geoPermState()==='denied'||_np){
       const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
       if(Td&&typeof Td.openSettings==='function'){
         Td.openSettings().catch(()=>{});

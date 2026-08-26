@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.25.26.40';
+const APP_VERSION='08.25.26.41';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -3849,9 +3849,11 @@ function renderTeam(){
           // underneath. One line carrying both read as a single sentence and
           // wrapped mid-path on a phone, which is exactly where the owner has
           // to read it.
+          const _sub=(t)=>'<div style="font-size:10px;color:var(--text3);margin-top:2px;padding-left:14px">'+escHtml(t)+'</div>';
           return '<div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-top:5px;color:'+g.tone+'">'+
             '<span style="font-size:9px">'+svgIcon(g.dot,{size:9})+'</span><span>'+escHtml(g.label)+'</span></div>'+
-            (g.fix?'<div style="font-size:10px;color:var(--text3);margin-top:2px;padding-left:14px">'+escHtml(g.fix)+'</div>':'');
+            (g.device?_sub(g.device):'')+
+            (g.fix?_sub(g.fix):'');
         })()+
       '</div>';
     }).join('');
@@ -4051,8 +4053,20 @@ async function _loadTeamGeo(){
       const uids=Object.keys(byUid);
       if(uids.length){
         const{data:devs}=await _supa.from('device_status')
-          .select('user_id,device_label,location_status,location_accuracy,location_services_enabled,derived,checked_at')
+          .select('user_id,device_id,device_label,location_status,location_accuracy,location_services_enabled,derived,checked_at')
           .eq('contractor_user_id',cid).in('user_id',uids);
+        // A FLEET handset: one device_id that more than one person has signed
+        // into (owner ask 2026-08-26: "if using fleet iPads"). A personal
+        // phone belongs to its owner and needs no explaining; a shared iPad
+        // does, because "iPad" on three different rows looks like three
+        // iPads, and the owner cannot tell whose hands it is in. The row
+        // carries who last used it and when, which is the only per-person
+        // fact a shared device can honestly report.
+        const seenBy={};
+        (devs||[]).forEach(r=>{
+          if(!r.device_id)return;
+          (seenBy[r.device_id]=seenBy[r.device_id]||new Set()).add(String(r.user_id));
+        });
         // ONE row per person, and the BEST phone wins rather than the newest.
         // Tracking needs one capable handset: an iPad left on While Using
         // must never drag down the iPhone that is actually on Always, and a
@@ -4077,7 +4091,7 @@ async function _loadTeamGeo(){
             if(a<b)return;
             if(a===b&&(Date.parse(r.checked_at||'')||0)<=(Date.parse(cur.checked_at||'')||0))return;
           }
-          next[k].ios=r;
+          next[k].ios=Object.assign({},r,{shared:((seenBy[r.device_id]||{size:1}).size||1)>1});
         });
       }
     }catch(_e){}
@@ -4107,23 +4121,31 @@ function _geoRosterStatus(email){
   const iosWins=ioFresh&&(!fresh||ioAt>=(Date.parse(g.lastPing||'')||0));
   if(io_&&iosWins){
     const st=String(io_.location_status||'');
-    const dev=io_.device_label?' · '+io_.device_label:'';
+    // Which handset this verdict came off, as its own line. A personal phone
+    // is just its name; a fleet device says so and says when THIS person last
+    // used it, since that is the only thing a shared iPad can tell you about
+    // one member of the crew.
+    const dev=io_.device_label
+      ? (io_.shared
+          ? io_.device_label+' (shared) · they last used it '+_timeAgo(io_.checked_at)
+          : io_.device_label)
+      : null;
     if(io_.location_services_enabled===false)
-      return{dot:'🔴',label:'Location is off for their whole phone',fix:'Settings › Privacy › Location Services',tone:'#DC2626'};
+      return{dot:'🔴',label:'Location is off for their whole phone',fix:'Settings › Privacy › Location Services',device:dev,tone:'#DC2626'};
     if(st==='denied')
-      return{dot:'🔴',label:'Location off on their phone',fix:'Settings › TradeDesk › Location',tone:'#DC2626'};
+      return{dot:'🔴',label:'Location off on their phone',fix:'Settings › TradeDesk › Location',device:dev,tone:'#DC2626'};
     if(st==='restricted')
-      return{dot:'🔴',label:'Blocked by Screen Time or a device policy',tone:'#DC2626'};
+      return{dot:'🔴',label:'Blocked by Screen Time or a device policy',device:dev,tone:'#DC2626'};
     if(st==='notdetermined')
-      return{dot:'⚪',label:'Hasn’t answered the location prompt yet',tone:'var(--text3)'};
+      return{dot:'⚪',label:'Hasn’t answered the location prompt yet',device:dev,tone:'var(--text3)'};
     if(st==='wheninuse')
-      return{dot:'🟠',label:'Only tracks with the app open, their drives won’t log',fix:'Settings › TradeDesk › Location › Always',tone:'#D97706'};
+      return{dot:'🟠',label:'Only tracks with the app open, their drives won’t log',fix:'Settings › TradeDesk › Location › Always',device:dev,tone:'#D97706'};
     if(st==='always'&&String(io_.location_accuracy||'')==='reduced')
-      return{dot:'🟠',label:'On, but not precise enough for job check-ins',fix:'Settings › TradeDesk › Location › Precise Location',tone:'#D97706'};
+      return{dot:'🟠',label:'On, but not precise enough for job check-ins',fix:'Settings › TradeDesk › Location › Precise Location',device:dev,tone:'#D97706'};
     if(st==='always')
       return fresh
-        ? {dot:'🟢',label:'Tracking · last ping '+_timeAgo(g.lastPing),tone:'var(--green-mid,#16a34a)'}
-        : {dot:'🟢',label:'Tracking, all set'+dev,tone:'var(--green-mid,#16a34a)'};
+        ? {dot:'🟢',label:'Tracking · last ping '+_timeAgo(g.lastPing),device:dev,tone:'var(--green-mid,#16a34a)'}
+        : {dot:'🟢',label:'Tracking, all set',device:dev,tone:'var(--green-mid,#16a34a)'};
   }
   // A ping inside the window is proof, regardless of what the permission API said.
   if(fresh)

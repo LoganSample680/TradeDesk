@@ -388,6 +388,35 @@ test.describe('Crew location permission', () => {
     expect(out.fix, 'Screen Time is not a TradeDesk setting, so pointing at one would be a lie').toBeUndefined();
   });
 
+  // ── Fleet vs personal handsets (owner ask 2026-08-26) ─────────────────────
+  test('a personal phone is named plainly, with no shared wording', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, device_label: 'iPhone', shared: false, checked_at: NOW() });
+    expect(out.device).toBe('iPhone');
+  });
+
+  test('a shared fleet device says so and says when THEY last used it', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, device_label: 'Shop iPad', shared: true,
+      checked_at: new Date(Date.now() - 2 * 3600 * 1000).toISOString() });
+    expect(out.device, 'three crew rows all reading "iPad" look like three iPads').toContain('shared');
+    expect(out.device).toContain('Shop iPad');
+    expect(out.device, 'the only per-person fact a shared handset can report').toMatch(/last used it/i);
+  });
+
+  test('the handset is named on a BROKEN state too, not just the green one', async () => {
+    const out = await rosterIos({ location_status: 'wheninuse', device_label: 'Shop iPad',
+      shared: true, checked_at: NOW() });
+    expect(out.dot).toBe('🟠');
+    expect(out.device, 'knowing WHICH phone is broken is the whole point').toContain('Shop iPad');
+  });
+
+  test('a device that never reported a label adds no empty line', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, checked_at: NOW() });
+    expect(out.device).toBeNull();
+  });
+
   // The BEST handset decides, not the newest. Somebody with a working iPhone
   // and a forgotten iPad on While Using does not have a problem, and a roster
   // that says otherwise sends the owner chasing a phantom.
@@ -401,9 +430,9 @@ test.describe('Crew location permission', () => {
                          location_checked_at: now, location_device: 'phone', location_ack_at: now }],
         location_pings: [],
         device_status: [
-          { user_id: 'u1', device_label: 'iPad', location_status: 'wheninuse',
+          { user_id: 'u1', device_id: 'd-ipad', device_label: 'iPad', location_status: 'wheninuse',
             location_accuracy: 'full', location_services_enabled: true, checked_at: now },
-          { user_id: 'u1', device_label: 'iPhone', location_status: 'always',
+          { user_id: 'u1', device_id: 'd-phone', device_label: 'iPhone', location_status: 'always',
             location_accuracy: 'full', location_services_enabled: true, checked_at: now },
         ],
       };
@@ -427,6 +456,170 @@ test.describe('Crew location permission', () => {
     expect(out.status, 'the iPad must not drag down the phone that works').toBe('always');
     expect(out.label).toBe('iPhone');
     expect(out.roster.dot).toBe('🟢');
+  });
+
+  // ── 4c. The checklist stops lying about While Using ───────────────────────
+  //
+  // _geoPermDone() treated the FLATTENED 'granted' as finished, so a phone on
+  // While Using (or reduced accuracy) ticked the task off and the card
+  // cleared, while logging nothing. The notification that tells somebody to
+  // go fix it would have landed on a checklist already claiming all set.
+  const withNat = (nat, fn) => page.evaluate(([n, body]) => {
+    const saved = (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined;
+    const savedCap = window.Capacitor;
+    window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+    if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = n;
+    try { return (new Function('return (' + body + ')()'))(); }
+    finally {
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved;
+      window.Capacitor = savedCap;
+    }
+  }, [nat, fn.toString()]);
+
+  test('While Using does NOT complete the location task', async () => {
+    const out = await withNat({ status: 'wheninuse', accuracy: 'full', servicesEnabled: true }, () => {
+      _geoPermCache = 'granted';
+      const p = _geoNatProblem();
+      return { done: _geoPermDone(), kind: p && p.kind, title: p && p.title };
+    });
+    expect(out.done, 'a phone that logs nothing in a pocket is not finished').toBe(false);
+    expect(out.kind).toBe('wheninuse');
+    expect(out.title, '"turn on location" is useless advice when it IS on').toContain('Always');
+  });
+
+  test('reduced accuracy does NOT complete the location task', async () => {
+    const out = await withNat({ status: 'always', accuracy: 'reduced', servicesEnabled: true }, () => {
+      _geoPermCache = 'granted';
+      return { done: _geoPermDone(), kind: (_geoNatProblem() || {}).kind };
+    });
+    expect(out.done).toBe(false);
+    expect(out.kind).toBe('precise');
+  });
+
+  test('device-wide Location Services off outranks an app-level Always', async () => {
+    const out = await withNat({ status: 'always', accuracy: 'full', servicesEnabled: false }, () => {
+      _geoPermCache = 'granted';
+      return { done: _geoPermDone(), kind: (_geoNatProblem() || {}).kind };
+    });
+    expect(out.done).toBe(false);
+    expect(out.kind).toBe('services');
+  });
+
+  test('Always with full accuracy completes it, so nobody is nagged for free', async () => {
+    const out = await withNat({ status: 'always', accuracy: 'full', servicesEnabled: true }, () => {
+      _geoPermCache = 'granted';
+      return { done: _geoPermDone(), problem: _geoNatProblem() };
+    });
+    expect(out.done).toBe(true);
+    expect(out.problem).toBeNull();
+  });
+
+  // REGRESSION GUARD: a browser has none of these axes and must behave
+  // exactly as it did before, or every PWA user gets a task they can never
+  // finish.
+  test('with no native answer at all the old behaviour is untouched', async () => {
+    const out = await withNat(null, () => {
+      _geoPermCache = 'granted'; const g = _geoPermDone();
+      _geoPermCache = 'prompt';  const p = _geoPermDone();
+      return { g, p, problem: _geoNatProblem() };
+    });
+    expect(out.g).toBe(true);
+    expect(out.p).toBe(false);
+    expect(out.problem).toBeNull();
+  });
+
+  // ── 4d. One notification per break, never a nag (Apple 4.5.4 / 5.1.1) ─────
+  const breakRun = (nat, pre) => page.evaluate(([n, p]) => {
+    const saved = (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined;
+    const savedCap = window.Capacitor, savedSched = window._notifySchedule, savedCancel = window._notifyCancel;
+    const calls = { scheduled: [], cancelled: [] };
+    window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+    window._notifySchedule = (id, title, body) => { calls.scheduled.push({ id, title, body }); return Promise.resolve(true); };
+    window._notifyCancel = (ids) => { calls.cancelled.push(ids); };
+    if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = n;
+    try { localStorage.removeItem('zp3_geo_break_notified'); } catch (e) {}
+    if (p) { try { localStorage.setItem('zp3_geo_break_notified', p); } catch (e) {} }
+    try {
+      const first = _geoNotifyBreak();
+      const again = _geoNotifyBreak();
+      let mark = null; try { mark = localStorage.getItem('zp3_geo_break_notified'); } catch (e) {}
+      return { first, again, mark, calls };
+    } finally {
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved;
+      window.Capacitor = savedCap; window._notifySchedule = savedSched; window._notifyCancel = savedCancel;
+      try { localStorage.removeItem('zp3_geo_break_notified'); } catch (e) {}
+    }
+  }, [nat, pre === undefined ? null : pre]);
+
+  test('a break fires exactly one notification, and calling again fires nothing', async () => {
+    const out = await breakRun({ status: 'wheninuse', accuracy: 'full', servicesEnabled: true });
+    expect(out.first).toBe(true);
+    expect(out.again, 'once per transition, never once per foreground').toBe(false);
+    expect(out.calls.scheduled.length).toBe(1);
+    expect(out.mark).toBe('wheninuse');
+  });
+
+  test('the copy names the feature, never claims the app is broken', async () => {
+    const out = await breakRun({ status: 'wheninuse', accuracy: 'full', servicesEnabled: true });
+    const n = out.calls.scheduled[0];
+    // Apple 5.1.1: scoped to the feature, and it says plainly that the rest
+    // still works. "The app will not work" is what gets this rejected.
+    expect(n.title).toMatch(/mileage|time log/i);
+    expect(n.body).toMatch(/While Using/i);
+    expect(n.body.toLowerCase()).not.toMatch(/app (is )?(broken|won.t work|will not work)/);
+  });
+
+  test('a DIFFERENT break is a new transition and does get told', async () => {
+    const out = await breakRun({ status: 'always', accuracy: 'reduced', servicesEnabled: true }, 'wheninuse');
+    expect(out.first, 'losing Precise is a different problem with a different fix').toBe(true);
+    expect(out.mark).toBe('precise');
+  });
+
+  test('fixing it cancels the pending buzz and forgets, so the next break tells them again', async () => {
+    const out = await breakRun({ status: 'always', accuracy: 'full', servicesEnabled: true }, 'wheninuse');
+    expect(out.first).toBe(false);
+    expect(out.calls.scheduled.length, 'nothing to say when nothing is wrong').toBe(0);
+    expect(out.calls.cancelled.length, 'fixing it inside the window earns no pointless buzz').toBe(1);
+    expect(out.mark).toBeNull();
+  });
+
+  test('a healthy phone that was never broken schedules and cancels nothing', async () => {
+    const out = await breakRun({ status: 'always', accuracy: 'full', servicesEnabled: true });
+    expect(out.calls.scheduled.length).toBe(0);
+    expect(out.calls.cancelled.length).toBe(0);
+  });
+
+  // ── 4e. The notifications task itself ─────────────────────────────────────
+  // Source scan, because the checklist array is a local inside
+  // _renderDashSetupTodo and cannot be called from here. A test that guards
+  // itself with typeof and passes vacuously would look like coverage while
+  // asserting nothing, which is worse than no test at all.
+  test('notifications is skippable, because Apple 4.5.4 forbids requiring it', () => {
+    const fs = require('fs'), path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'dashboard.js'), 'utf8');
+    const item = (id) => {
+      const i = src.indexOf("{id:'" + id + "'");
+      expect(i, 'checklist item ' + id + ' must exist').toBeGreaterThan(-1);
+      return src.slice(i, src.indexOf('},', i));
+    };
+    expect(item('notify').includes('noSkip'),
+      'a notification the user cannot decline is a rejected app (Apple 4.5.4)').toBe(false);
+    expect(item('location').includes('noSkip:true'),
+      'auto mileage genuinely cannot exist without location, so that one stays required').toBe(true);
+  });
+
+  test('granted/unsupported finish the notifications task; prompt and denied do not', async () => {
+    const out = await page.evaluate(() => {
+      const saved = _notifyPermCache;
+      const r = {};
+      ['granted', 'unsupported', 'prompt', 'denied'].forEach(s => { _notifyPermCache = s; r[s] = _notifyPermDone(); });
+      _notifyPermCache = saved;
+      return r;
+    });
+    expect(out.granted).toBe(true);
+    expect(out.unsupported, 'a browser must not be nagged forever').toBe(true);
+    expect(out.prompt).toBe(false);
+    expect(out.denied).toBe(false);
   });
 
   // ── 5. The checklist item stays completable ────────────────────────────────
