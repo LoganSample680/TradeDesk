@@ -2019,9 +2019,10 @@ function obTogglePay(key,on){
   _ob[key]=!!on;
   const row=document.getElementById('obpay-'+key);
   if(!row)return;
-  // The "take cards" card is green; the cash/check/later rows are blue.
-  if(key==='wantCards'){row.style.borderColor=on?'#86efac':'var(--border2)';}
-  else{row.style.borderColor=on?'var(--blue)':'var(--border2)';row.style.background=on?'var(--blue-lt)':'var(--bg2)';}
+  // Every payment row is the same row now (owner 2026-08-26), so no per-key
+  // branch is left: the green "take cards" variant is gone.
+  row.style.borderColor=on?'var(--blue)':'var(--border2)';
+  row.style.background=on?'var(--blue-lt)':'var(--bg2)';
 }
 function obStep8(el){
   el.innerHTML=
@@ -2032,15 +2033,50 @@ function obStep8(el){
     obPayRow('acceptCheck','Check','Client can tell you they\'ll pay by check.')+
     obPayRow('allowPayLater','Pay later','Client signs now and settles up any way that works before the job\'s done, no money due at signing.')+
     '<div style="border-top:1px solid var(--border);margin:20px 0 16px"></div>'+
-    '<label id="obpay-wantCards" style="display:flex;align-items:flex-start;gap:12px;padding:14px;border:1.5px solid '+(_ob.wantCards!==false?'#86efac':'var(--border2)')+';border-radius:var(--r);background:#f0fdf4;margin-bottom:8px;cursor:pointer;user-select:none">'+
-      '<input type="checkbox" '+(_ob.wantCards!==false?'checked':'')+' onchange="obTogglePay(\'wantCards\',this.checked)" style="width:19px;height:19px;margin-top:1px;accent-color:#16a34a;flex-shrink:0">'+
-      '<div><div style="font-size:14px;font-weight:700;color:#166534">Take cards & bank transfers</div>'+
-      '<div style="font-size:12px;color:#166534;margin-top:2px;line-height:1.6">Clients pay their deposit straight to your bank. Card fee 2.9% + $0.30, auto-logged as a deductible expense. Leave this on and <strong>Turn on card payments</strong> will be waiting on your dashboard, connect Stripe in ~2 min whenever you\'ve got your EIN and bank info handy. Cash & check work right now without it.</div></div>'+
-    '</label>'+
+    // SAME ROW AS THE OTHER THREE (owner, 2026-08-26). This was hand-rolled in
+    // green (#f0fdf4 fill, #86efac border, #166534 text) while cash, check and
+    // pay-later used the shared blue obPayRow. The odd colour did not read as
+    // "recommended", it read as a warning, and it cost a real signup: Jack
+    // stopped on it, read it, and switched card payments OFF. A payment option
+    // that looks like an alert is a conversion bug, and hand-rolling a row an
+    // existing helper already renders is what 7.3 exists to stop.
+    obPayRow('wantCards','Take cards & bank transfers',
+      'Clients pay their deposit straight to your bank. Card fee 2.9% + $0.30, auto-logged as a deductible expense. Leave this on and <strong>Turn on card payments</strong> will be waiting on your dashboard, connect Stripe in ~2 min whenever you\'ve got your EIN and bank info handy. Cash & check work right now without it.')+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     '<div id="ob-progress" style="display:none;font-size:12px;color:var(--text3);text-align:center;margin-bottom:8px"></div>'+
     obBtn('Create my account','obSubmit()')+
     obBtn('Back','_ob.step=2;renderObStep()',true);
+}
+
+// The signup location ask. Resolves true if they said yes, false if they
+// skipped. Renders into the SAME onboarding body every other step uses and
+// reuses obBtn, per 7.3: this is another onboarding screen, not a new kind of
+// thing. No OS prompt fires from here, the caller does that once the overlay is
+// down (see the note at the call site).
+function obStepLocation(){
+  return new Promise(resolve=>{
+    const body=document.getElementById('ob-body');
+    if(!body){resolve(false);return;}
+    window._obGeoAnswer=(yes)=>{
+      try{delete window._obGeoAnswer;}catch(_e){window._obGeoAnswer=null;}
+      resolve(!!yes);
+    };
+    body.innerHTML=
+      '<div style="margin-bottom:24px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('\ud83d\udccd',{size:28})+'</div>'+
+      '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Log your miles and hours automatically</div>'+
+      '<div style="font-size:14px;color:var(--text3)">This is the part that saves you the most time, so it is worth 10 seconds now.</div></div>'+
+      '<div style="border:1.5px solid var(--blue);background:var(--blue-lt);border-radius:var(--r);padding:14px;margin-bottom:10px">'+
+        '<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:6px">What you get</div>'+
+        '<div style="font-size:12px;color:var(--text3);line-height:1.6">'+
+          'Every drive between jobs logs itself as deductible mileage, and your time on each job site clocks in and out on its own. No timesheets, no odometer photos, no writing anything down.'+
+        '</div></div>'+
+      '<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:16px">'+
+        'Your phone will ask next. Choose <strong>Always</strong> so it still works with the app closed and in your pocket, which is where it lives on a work day. '+
+        'Tracking only runs during your work hours, and you can turn it off any time in Settings.'+
+      '</div>'+
+      obBtn('Turn on location','_obGeoAnswer(true)')+
+      obBtn('Not now','_obGeoAnswer(false)',true);
+  });
 }
 
 async function obSubmit(){
@@ -2161,9 +2197,32 @@ async function obSubmit(){
 
     setProgress('All done! Loading TradeDesk...');
     await new Promise(r=>setTimeout(r,600));
+    // ── Ask for location HERE, not on the dashboard afterwards ─────────────
+    // Owner, 2026-08-26, after watching a real signup: "never got prompted to
+    // do location when we onboarded him." He was right, there was no location
+    // step anywhere in signup. The only ask lived in the dashboard checklist,
+    // and for that user it was broken: on a build that could not read iOS's
+    // real answer the app fell back to the WebView's own geolocation
+    // permission, which a Capacitor shell never grants, read that as "denied",
+    // showed him "Fix it", and sent him to an iOS Settings page with no
+    // Location row on it because the app had never actually asked. Dead end.
+    //
+    // So the ask moves into signup, where the whole pitch is made. Placed
+    // after Get paid on the owner's call, and after the account exists so the
+    // consent, the permission read and the device_status row all have a real
+    // user to hang on. Skipping is a first-class answer: it leaves the
+    // checklist item standing exactly as before, it does not nag twice.
+    const _wantedGeo=await obStepLocation();
     document.getElementById('onboarding-overlay')?.remove();
     window._obInProgress=false;
     saveAll();applyPermissions();renderDash();goPg('pg-dash');
+    // AFTER the overlay is gone: iOS renders its permission alert over the top
+    // window, and firing it under a full-screen overlay that is about to be
+    // removed is how a prompt ends up dismissed by the teardown rather than by
+    // the person. Same reason the checklist fires it from a plain tap.
+    if(_wantedGeo){
+      try{if(typeof _geoSetConsent==='function')_geoSetConsent(true);}catch(_e){}
+    }
     // No Stripe auto-redirect (owner 2026-07-15): yanking a new contractor into an
     // EIN/bank form the instant they sign up is the exact high-friction moment we
     // defer everywhere else. Card setup lives ONLY on the dashboard checklist

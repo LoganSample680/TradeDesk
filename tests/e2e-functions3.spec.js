@@ -5210,6 +5210,113 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     expect(result.askCopy, 'step asks how they want to get paid').toBe(true);
   });
 
+  // Owner, 2026-08-26, after watching a real signup: the take-cards row was
+  // hand-rolled in green while cash/check/pay-later used the shared blue
+  // obPayRow. It did not read as "recommended", it read as a warning. Jack
+  // stopped on it, read it, and switched card payments OFF. All four rows are
+  // one helper now, so the styling cannot drift apart again.
+  test('obStep8: all four payment rows are styled identically, no odd one out', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obStep8 !== 'function') return { skip: true };
+      _ob.acceptCash = true; _ob.acceptCheck = true; _ob.allowPayLater = true; _ob.wantCards = true;
+      const el = document.createElement('div');
+      el.id = 'ob-body'; document.body.appendChild(el);
+      obStep8(el);
+      const keys = ['acceptCash', 'acceptCheck', 'allowPayLater', 'wantCards'];
+      const rows = keys.map(k => el.querySelector('#obpay-' + k));
+      const sig = rows.map(r => {
+        if (!r) return null;
+        const cs = getComputedStyle(r);
+        const box = r.querySelector('input');
+        return [cs.backgroundColor, cs.borderTopColor, cs.borderTopWidth,
+                getComputedStyle(box).accentColor,
+                getComputedStyle(r.querySelector('div > div')).color].join('|');
+      });
+      const html = el.innerHTML;
+      const r = {
+        allPresent: rows.every(Boolean),
+        distinct: Array.from(new Set(sig)).length,
+        greenLeft: /#f0fdf4|#86efac|#166534|#16a34a/i.test(html),
+        cardsCopy: /take cards/i.test(el.textContent),
+      };
+      el.remove();
+      return r;
+    });
+    if (result.skip) return;
+    expect(result.allPresent, 'all four rows render').toBe(true);
+    expect(result.distinct, 'one shared visual signature across all four').toBe(1);
+    expect(result.greenLeft, 'no hand-rolled green hex survives in the markup').toBe(false);
+    expect(result.cardsCopy, 'the copy itself is unchanged').toBe(true);
+  });
+
+  // Owner 2026-08-26: "never got prompted to do location when we onboarded
+  // him." There was no location step in signup at all. Placed after Get paid
+  // on the owner's call.
+  test.describe('obStepLocation: the signup location ask', () => {
+    const render = () => page.evaluate(() => {
+      if (typeof obStepLocation !== 'function') return { skip: true };
+      let el = document.getElementById('ob-body');
+      if (!el) { el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el); }
+      const p = obStepLocation();
+      return { skip: false, text: el.textContent, html: el.innerHTML, pending: !!window._obGeoAnswer };
+    });
+
+    test('it renders the ask and waits rather than resolving on its own', async () => {
+      const r = await render();
+      if (r.skip) return;
+      expect(r.pending, 'it parks until the person answers').toBe(true);
+      expect(/log your miles and hours automatically/i.test(r.text)).toBe(true);
+      expect(/always/i.test(r.text), 'it tells them which choice actually works').toBe(true);
+      expect(/turn on location/i.test(r.text)).toBe(true);
+      expect(/not now/i.test(r.text), 'skipping is a first-class answer').toBe(true);
+      await page.evaluate(() => window._obGeoAnswer && window._obGeoAnswer(false));
+    });
+
+    test('answering resolves with the choice, and only once', async () => {
+      const r = await page.evaluate(async () => {
+        if (typeof obStepLocation !== 'function') return { skip: true };
+        let el = document.getElementById('ob-body');
+        if (!el) { el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el); }
+        const yes = obStepLocation();
+        window._obGeoAnswer(true);
+        const a = await yes;
+        const goneAfter = !window._obGeoAnswer;
+        const no = obStepLocation();
+        window._obGeoAnswer(false);
+        const b = await no;
+        return { skip: false, a, b, goneAfter };
+      });
+      if (r.skip) return;
+      expect(r.a, 'Turn on location resolves true').toBe(true);
+      expect(r.b, 'Not now resolves false').toBe(false);
+      expect(r.goneAfter, 'the handler is torn down so a stray tap cannot re-answer').toBe(true);
+    });
+
+    test('it never fires the OS prompt itself', async () => {
+      // The prompt must come from the caller AFTER the overlay is gone: iOS
+      // draws its alert over the top window, and firing it under a full-screen
+      // overlay that is being torn down is how a prompt gets dismissed by the
+      // teardown instead of by the person.
+      const r = await page.evaluate(async () => {
+        if (typeof obStepLocation !== 'function') return { skip: true };
+        let el = document.getElementById('ob-body');
+        if (!el) { el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el); }
+        let asked = 0;
+        const real = window._geoRequestPermission, realSet = window._geoSetConsent;
+        window._geoRequestPermission = () => { asked++; };
+        window._geoSetConsent = () => { asked++; };
+        try {
+          const p = obStepLocation();
+          window._obGeoAnswer(true);
+          await p;
+          return { skip: false, asked };
+        } finally { window._geoRequestPermission = real; window._geoSetConsent = realSet; }
+      });
+      if (r.skip) return;
+      expect(r.asked, 'rendering and answering the step asks the OS nothing').toBe(0);
+    });
+  });
+
   test('obTogglePay: flips the _ob flag off and re-renders the row', async () => {
     const result = await page.evaluate(() => {
       if (typeof obTogglePay !== 'function' || typeof obStep8 !== 'function') return { skip: true };
