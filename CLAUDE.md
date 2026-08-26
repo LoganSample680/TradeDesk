@@ -719,9 +719,25 @@ withdrawn for three reasons, in order of severity:
    reasonable method. Sending contractor follow-ups over it puts that exposure
    on TradeDesk with no compliance layer to point at.
 
-Apple Messages for Business was also checked: it requires an Apple-approved MSP
-and a capability review, and it is inbound-first. It is an enterprise
-support-desk channel, not a contractor sending an estimate.
+**Apple Messages for Business: also ruled out (owner asked directly
+2026-08-26, "would Apple messages be a good fit for this app in general").
+No, and the eligibility problem is the SECOND reason, not the first.**
+
+1. **It cannot start a conversation, which is the entire feature.** AMB is
+   customer-initiated by design: the customer opens the thread. Every
+   automation the owner actually wants is unattended OUTBOUND (on the way,
+   payment reminder, escalation, post-job check-in). Apple's outbound
+   additions are gated to approved use cases and to customers who already
+   opted in through an existing thread. So even a contractor who somehow got
+   approved still could not send the messages they came for.
+2. **It is not obtainable at this size.** Approved MSPs are Salesforce,
+   Zendesk, LivePerson, Quiq, Infobip. It needs a business register account
+   with an administrator, technical contact and sponsoring executive, plus an
+   Apple capability review of the platform and go-to-market plan. It is an
+   enterprise support-desk channel, not a two-truck plumbing shop.
+
+The channel is SMS, on 10DLC, with RCS verified sender layered on later for
+the branding. That is the whole answer.
 
 **What replaces it, and why the premise was wrong anyway:**
 
@@ -761,6 +777,36 @@ other question here follows from that answer.
 and they all charge extra for texting (DripJobs +$25/mo, Workiz ~+$100/mo with a
 message cap). Bundling unlimited texting into the base price is a sharper wedge
 than bubble colour.
+
+### 9.4.1 The automations the owner actually wants (stated 2026-08-26)
+
+Opt-in per client, surfaced on the client hub. Three triggers, and they do NOT
+share a consent standard, which is the thing most likely to go wrong here:
+
+| Trigger | What it is | Consent standard |
+|---|---|---|
+| On the way | Transactional, tied to an appointment they booked | Implied by booking. Lowest risk. |
+| Payment reminder, then escalation | Transactional, first-party debt | Implied. Watch frequency and escalation wording; FDCPA is third-party but state rules reach first-party. |
+| Post-job check-in ("is that leak still dry?") | Service follow-up | **The one that drifts.** A genuine check-in is transactional. The moment it suggests booking again it is MARKETING and needs express written consent. Keep them separate features, not one template with a nicer ending. |
+
+**What exists today:** `sendOMWText` (js/jobs.js:1891) and the mileage-side
+equivalent are MANUAL: they open the Messages app with a prefilled body and the
+contractor taps send. That is why they need no consent model and no carrier
+registration. Automation is a different product, not a flag on this one: the
+moment the app sends unattended, TradeDesk becomes the sender and inherits
+10DLC registration, opt-out handling and consent records. There is currently NO
+opt-in model anywhere in the schema (no `sms_opt_in`, no comms prefs).
+
+**The post-job check-in is the differentiating one.** Competitors send review
+requests; almost nobody asks "is the repair still holding" at day 7. For
+plumbing and roofing that is both a real quality signal and the most natural
+route to a review, and it is worth designing as its own trigger with its own
+per-trade timing rather than folding into a generic follow-up.
+
+**Do not build any of this before §16 research runs on the automation itself.**
+The channel question is answered above; the open questions are per-trade timing,
+escalation ladders, and where the opt-in lives so a client can turn it off in
+one tap without emailing anybody.
 
 ### 9.5 Employee Geo-Tracking & Job Time-on-Site
 
