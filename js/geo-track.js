@@ -393,6 +393,30 @@ async function _geoDrainQueue(){
       const item=q[0];
       let error=null;
       try{
+        // A TOMBSTONE ON THE KEY IS A RECOVERY HANDLE, not an obstacle (owner
+        // 2026-08-26: "could use it for recovery").
+        //
+        // job_time_entries and shop_time_entries carry a unique index on
+        // (contractor_user_id, client_key), so a soft-deleted row still OWNS its
+        // key. The obvious reading is that this breaks recreation, and under
+        // ignoreDuplicates it does: the writer collides with a gravestone and
+        // the row can never come back, which is a bug the soft-delete work
+        // introduced. The better reading is that the collision IS the row we
+        // want. Same key means same window, so clearing deleted_at on an
+        // overwrite resurrects the ORIGINAL row, id and history intact, carrying
+        // whatever the recompute just decided.
+        //
+        // That makes a wrong sweep self-healing rather than merely undoable: the
+        // reconciler recomputes its windows from mileage and pings every pass,
+        // so the pass after a bad delete simply puts the row back. The two
+        // cannot fight over it either, because the sweep and the write-time gate
+        // run the same _geoPingTrim over the same fixes: a window the sweep was
+        // right to drop is one the reconciler declines to write at all.
+        //
+        // Only for overwrite writers, which today means the reconciler alone.
+        // Every other enqueued row mints its key once and must never revive
+        // something a person deliberately removed.
+        if(item.overwrite&&item.row&&item.row.deleted_at===undefined)item.row.deleted_at=null;
         ({error}=await _supa.from(item.tbl).upsert(item.row,{onConflict:'contractor_user_id,client_key',ignoreDuplicates:!item.overwrite}));
         // Hosted DB predating the geo-hardening migration: no unique index → retry as
         // a plain insert; no client_key column at all → retry without the key. Either

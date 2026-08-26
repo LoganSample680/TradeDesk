@@ -4008,6 +4008,71 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     });
   });
 
+  // ── A tombstone on the key is the recovery handle ─────────────────────────
+  //
+  // Owner 2026-08-26: "could use it for recovery."
+  //
+  // job_time_entries has a unique index on (contractor_user_id, client_key), so
+  // a soft-deleted row still owns its key. Under ignoreDuplicates that is a bug
+  // the soft-delete work introduced: the reconciler recomputes the same window,
+  // collides with the gravestone, the write is dropped, and a row wrongly swept
+  // can never come back. Turned around, the collision is exactly the row we
+  // want: same key means same window, so an overwrite clears deleted_at and
+  // brings the ORIGINAL row back with fresh values.
+  test.describe('overwrite writes resurrect rather than collide', () => {
+    const drain = () => page.evaluate(async () => {
+      const seen = [];
+      const saved = window._supa;
+      window._supa = { from: (tbl) => ({
+        upsert: (row, opts) => { seen.push({ tbl, row, opts }); 
+          const q = { select: () => q, single: () => Promise.resolve({ data: null, error: null }),
+                      then: (res, rej) => Promise.resolve({ data: null, error: null }).then(res, rej) };
+          return q; },
+      }) };
+      try {
+        localStorage.removeItem('zp3_geo_queue');
+        _geoEnqueue('job_time_entries', { contractor_user_id: 'c1', client_key: 'rec-lg1', minutes: 120 }, { overwrite: true });
+        _geoEnqueue('job_time_entries', { contractor_user_id: 'c1', client_key: 'vis-1', minutes: 30 });
+        if (typeof _geoDrainQueue === 'function') await _geoDrainQueue();
+        await new Promise(r => setTimeout(r, 120));
+        return seen.map(x => ({ key: x.row.client_key, del: x.row.deleted_at, ignore: x.opts && x.opts.ignoreDuplicates }));
+      } finally { window._supa = saved; localStorage.removeItem('zp3_geo_queue'); }
+    });
+
+    test('an overwrite write clears the tombstone; a mint-once write never does', async () => {
+      await geoReset();
+      const r = await drain();
+      const rec = r.find(x => x.key === 'rec-lg1');
+      const vis = r.find(x => x.key === 'vis-1');
+      expect(rec, 'the reconciled row was written').toBeTruthy();
+      expect(rec.del, 'clearing deleted_at is what brings the swept row back').toBe(null);
+      expect(rec.ignore, 'and it must actually overwrite, not be ignored as a duplicate').toBe(false);
+      expect(vis, 'the ordinary row was written too').toBeTruthy();
+      expect(vis.del, 'a mint-once key must never revive what a person deleted').toBe(undefined);
+      expect(vis.ignore, 'and stays insert-or-ignore').toBe(true);
+      await geoRestore();
+    });
+
+    test('an explicit deleted_at on the row is never overridden', async () => {
+      await geoReset();
+      const r = await page.evaluate(async () => {
+        const seen = []; const saved = window._supa;
+        window._supa = { from: () => ({ upsert: (row) => { seen.push(row); const q = { select: () => q,
+          single: () => Promise.resolve({ data: null, error: null }),
+          then: (res, rej) => Promise.resolve({ data: null, error: null }).then(res, rej) }; return q; } }) };
+        try {
+          localStorage.removeItem('zp3_geo_queue');
+          _geoEnqueue('job_time_entries', { contractor_user_id: 'c1', client_key: 'k', deleted_at: '2026-01-01T00:00:00Z' }, { overwrite: true });
+          if (typeof _geoDrainQueue === 'function') await _geoDrainQueue();
+          await new Promise(r2 => setTimeout(r2, 120));
+          return seen.map(x => x.deleted_at);
+        } finally { window._supa = saved; localStorage.removeItem('zp3_geo_queue'); }
+      });
+      expect(r[0], 'a caller that means to tombstone still can').toBe('2026-01-01T00:00:00Z');
+      await geoRestore();
+    });
+  });
+
   test('no console errors during park/reconcile tests', async () => {
     assertNoErrors(page, 'geo park/reconcile');
   });
