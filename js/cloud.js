@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.25.26.57';
+const APP_VERSION='08.25.26.58';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -3817,6 +3817,45 @@ function renderTeam(){
   if(!_isEmployee&&S.teamTracking&&supaEnabled()&&_supaUser&&!_teamGeoLoaded){
     _teamGeoLoaded=true;_loadTeamGeo().then(()=>renderTeam());
   }
+  // ── Your own phone, as a row (owner report 2026-08-26: "don't see owner me
+  // under team") ────────────────────────────────────────────────────────────
+  // S.employees is people you HIRE. Its own empty state says "No team members
+  // yet, just you." So the owner was never a row here, and un-skipping the geo
+  // line earlier gave that line nothing to attach to. It is rendered on its
+  // own instead of being pushed into S.employees, which would write a fake
+  // employee into saved settings and sync it to every device.
+  //
+  // Owner-only by design: a manager trusted with the crew screens is trusted
+  // with the crew, not with where the boss's phone is (same asymmetry as
+  // _teamGeoAllowed and the RLS policy).
+  //
+  // No Edit button, no invite badge, no permissions line: those belong to
+  // someone you hired, and on your own row they read as nonsense.
+  const _ownerRowHtml=(function(){
+    if(typeof _isEmployee!=='undefined'&&_isEmployee)return '';
+    if(!S.teamTracking)return '';
+    const email=String((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.email)||'').toLowerCase();
+    if(!email)return '';
+    const g=(typeof _geoRosterStatus==='function')?_geoRosterStatus(email):null;
+    if(!g)return '';
+    const name=(S.ownerName||(typeof getOwnerName==='function'&&getOwnerName())||'You');
+    const pal=(typeof _tlAvatarPalette==='function')?_tlAvatarPalette(name):{bg:'var(--bg3)',fg:'var(--text2)'};
+    const _sub=(t,extra)=>'<div style="font-size:10px;color:var(--text3);margin-top:2px;padding-left:14px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
+      (t?'<span>'+escHtml(t)+'</span>':'')+(extra||'')+'</div>';
+    return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
+      '<div style="display:flex;align-items:center;gap:8px">'+
+        '<div style="width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;background:'+pal.bg+';color:'+pal.fg+'">'+
+          escHtml((typeof initials==='function')?initials(name):name.slice(0,2))+'</div>'+
+        '<div style="font-size:13px;font-weight:700">'+escHtml(name)+
+          ' <span style="font-size:10px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);padding:1px 7px;border-radius:8px;margin-left:2px">You</span></div>'+
+      '</div>'+
+      '<div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-top:5px;color:'+g.tone+'">'+
+        '<span style="font-size:9px">'+svgIcon(g.dot,{size:9})+'</span><span>'+escHtml(g.label)+'</span></div>'+
+      ((g.device||g.battBar)?_sub(g.device,g.battBar):'')+
+      (g.ping?_sub(g.ping):'')+
+      (g.fix?_sub(g.fix):'')+
+    '</div>';
+  })();
   const emps=S.employees||[];
   const empHtml=!emps.length
     ?'<div style="font-size:12px;color:var(--text3);padding:6px 0">No team members yet, just you. Add someone when you hire.</div>'
@@ -3853,7 +3892,8 @@ function renderTeam(){
           // trusted with the crew, not with where the boss's phone is, and
           // that asymmetry has to be deliberate rather than a side effect of
           // who happens to load the page.
-          if(e.role==='owner'&&(typeof _isEmployee!=='undefined'&&_isEmployee))return '';
+          // The owner is rendered above (_ownerRowHtml), never from this list.
+          if(e.role==='owner')return '';
           const g=_geoRosterStatus(e.email);
           if(!g)return '';
           // The problem on its own line, the tap that fixes it dimmer
@@ -3873,8 +3913,8 @@ function renderTeam(){
         })()+
       '</div>';
     }).join('');
-  if(el)el.innerHTML=_reqHtml+empHtml;
-  if(el2)el2.innerHTML=_reqHtml+empHtml;
+  if(el)el.innerHTML=_reqHtml+_ownerRowHtml+empHtml;
+  if(el2)el2.innerHTML=_reqHtml+_ownerRowHtml+empHtml;
   const _psCard=document.getElementById('payroll-setup-card');
   if(_psCard){
     const _hasW2=emps.some(e=>e.role!=='owner');

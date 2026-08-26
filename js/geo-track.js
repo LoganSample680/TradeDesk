@@ -3088,8 +3088,43 @@ function _geoPermForeground(){
     if(typeof _geoReadPermission!=='function')return;
     _geoReadPermission().then(st=>{
       try{if(typeof _geoReportPermission==='function')_geoReportPermission(st);}catch(_e){}
+      try{_geoAutoPrecise();}catch(_e){}
     }).catch(()=>{});
   }catch(_e){}
+}
+// ── Precise, every session, without waiting to be asked (owner rule
+// 2026-08-26: "we better have precise location at all times") ───────────────
+//
+// BE CLEAR ABOUT WHAT IS POSSIBLE. iOS has no permanent override. A user who
+// turned Precise Location off owns that decision, and the ONLY permanent way
+// back is the Settings switch. requestTemporaryFullAccuracyAuthorization buys
+// full accuracy for THIS app session and iOS drops it on the next launch.
+//
+// So "at all times" is delivered the only way it can be: ask on every session
+// where iOS reports reduced, instead of waiting for someone to notice a
+// checklist item and tap it. A phone that would otherwise have run all day at
+// mile-wide accuracy runs precise from the moment the app opens, and the
+// roster and checklist keep pushing for the permanent fix underneath.
+//
+// ONCE PER SESSION, in memory, deliberately. The grant dies at launch, so
+// re-asking each launch is exactly matched to when it is needed and nothing
+// more. Repeating it inside one session would be nagging, which is the
+// behaviour Apple's 5.1.1 is aimed at.
+let _geoAutoPreciseAsked=false;
+function _geoAutoPrecise(){
+  if(_geoAutoPreciseAsked)return false;
+  if(typeof _geoRequestPreciseTemp!=='function')return false;
+  const n=(typeof _geoNativeAuthPeek==='function')?_geoNativeAuthPeek():null;
+  if(!n||!n.status)return false;                      // no iOS answer, nothing to act on
+  // Only when they HAVE granted location and it is merely imprecise. Denied or
+  // not-yet-asked are different problems with different fixes, and asking for
+  // an accuracy upgrade on top of them is noise.
+  if(n.status!=='always'&&n.status!=='wheninuse')return false;
+  if(String(n.accuracy||'')!=='reduced')return false;  // already precise
+  _geoAutoPreciseAsked=true;
+  _geoParkNote('precise-auto','asking iOS to upgrade reduced accuracy');
+  try{_geoRequestPreciseTemp();}catch(_e){}
+  return true;
 }
 try{
   if(typeof document!=='undefined'&&!window._geoPermVisBound){

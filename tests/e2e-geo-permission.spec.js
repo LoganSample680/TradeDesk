@@ -1045,19 +1045,94 @@ test.describe('Crew location permission', () => {
   // survive a solo shop, where the owner IS the crew and the roster would list
   // everyone except the only person on it, and it never covered a second
   // handset, which the checklist cannot see because it only reads THIS phone.
-  test("the owner sees their own row; a manager does not", () => {
+  // REWRITTEN 2026-08-26 (CLAUDE.md 10.4). This asserted the owner-skip line
+  // inside the crew loop carried an _isEmployee check. That was the right rule
+  // in the wrong place: S.employees is people you HIRE and never contains the
+  // owner at all, so the geo line had nothing to attach to and the owner's row
+  // simply did not appear (owner report: "don't see owner me under team"). The
+  // owner is now its OWN row, and the who-is-looking check moved there.
+  test("the owner gets their own row, and a manager never sees it", () => {
     const fs = require('fs'), path = require('path');
     const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
-    const i = src.indexOf("if(e.role==='owner'");
-    expect(i, 'the owner-row rule must still exist').toBeGreaterThan(-1);
-    const line = src.slice(i, src.indexOf('\n', i));
-    // A bare `if(e.role==='owner')return ''` is the old unconditional skip.
-    // The rule now has to depend on WHO is looking: a manager trusted with the
-    // crew screens is trusted with the crew, not with where the boss's phone
-    // is, and that asymmetry must be deliberate rather than a side effect of
-    // who happens to load the page.
-    expect(line.includes('_isEmployee'),
-      "the owner's row is hidden from managers, not from the owner").toBe(true);
+    const i = src.indexOf('const _ownerRowHtml=');
+    expect(i, 'the owner must be rendered as its own row, not fished out of S.employees')
+      .toBeGreaterThan(-1);
+    const blk = src.slice(i, i + 900);
+    expect(blk.includes('_isEmployee'),
+      "a manager is trusted with the crew, not with where the boss's phone is").toBe(true);
+    expect(blk.includes('S.teamTracking'),
+      'and nothing shows at all when crew tracking is off for the account').toBe(true);
+    // It must be rendered, not just built.
+    expect(src.includes('_reqHtml+_ownerRowHtml+empHtml'),
+      'built but never inserted is exactly the bug this replaces').toBe(true);
+  });
+
+  // ── Precise on every session (owner rule 2026-08-26) ──────────────────────
+  //
+  // "In this next build we better have precise location at all times."
+  // iOS has no permanent override, so this is delivered the only way it can
+  // be: ask on every session that opens with reduced accuracy, rather than
+  // waiting for somebody to notice a checklist item and tap it.
+  const autoPrecise = (nat) => page.evaluate((n) => {
+    const saved = { nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined,
+                    req: window._geoRequestPreciseTemp, cap: window.Capacitor,
+                    asked: (typeof _geoAutoPreciseAsked !== 'undefined') ? _geoAutoPreciseAsked : undefined };
+    let calls = 0;
+    try {
+      window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+      window._geoRequestPreciseTemp = () => { calls++; return Promise.resolve({ ok: true }); };
+      // BARE binding, not window.*: a top-level `let` in a classic script lives
+      // in the global LEXICAL environment, so window._geoAutoPreciseAsked=false
+      // creates an unrelated property and the real once-per-session flag stays
+      // set from the previous test. That made every test after the first one
+      // silently assert against an already-used flag.
+      _geoAutoPreciseAsked = false;
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = n;
+      const first = _geoAutoPrecise();
+      const second = _geoAutoPrecise();
+      return { first, second, calls };
+    } finally {
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+      window._geoRequestPreciseTemp = saved.req; window.Capacitor = saved.cap;
+      if (saved.asked !== undefined) _geoAutoPreciseAsked = saved.asked;
+    }
+  }, nat);
+
+  test('a session that opens on reduced accuracy asks for the upgrade unprompted', async () => {
+    const r = await autoPrecise({ status: 'always', accuracy: 'reduced', servicesEnabled: true });
+    expect(r.first, 'a phone would otherwise run all day at mile-wide accuracy').toBe(true);
+    expect(r.calls).toBe(1);
+  });
+
+  test('While Using plus reduced also gets asked, since accuracy is the separate switch', async () => {
+    const r = await autoPrecise({ status: 'wheninuse', accuracy: 'reduced', servicesEnabled: true });
+    expect(r.first).toBe(true);
+  });
+
+  test('it asks ONCE per session, never repeatedly', async () => {
+    const r = await autoPrecise({ status: 'always', accuracy: 'reduced', servicesEnabled: true });
+    expect(r.second, 'repeating inside one session is the nagging Apple 5.1.1 targets').toBe(false);
+    expect(r.calls).toBe(1);
+  });
+
+  test('an already-precise phone is never asked anything', async () => {
+    const r = await autoPrecise({ status: 'always', accuracy: 'full', servicesEnabled: true });
+    expect(r.first).toBe(false);
+    expect(r.calls).toBe(0);
+  });
+
+  test('denied and not-yet-asked are left alone: different problems, different fixes', async () => {
+    for (const st of ['denied', 'restricted', 'notdetermined']) {
+      const r = await autoPrecise({ status: st, accuracy: 'reduced' });
+      expect(r.first, st + ' must not draw an accuracy prompt on top of it').toBe(false);
+      expect(r.calls).toBe(0);
+    }
+  });
+
+  test('no iOS answer at all is a no-op, never a throw', async () => {
+    const r = await autoPrecise(null);
+    expect(r.first).toBe(false);
+    expect(r.calls).toBe(0);
   });
 
   // ── 5. The checklist item stays completable ────────────────────────────────
