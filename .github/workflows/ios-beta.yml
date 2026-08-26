@@ -222,9 +222,24 @@ jobs:
         # Skipping again so the rest of tonight's changes (Associated
         # Domains, the 4 manual-portal entitlements, App Intents) ship on a
         # clean build instead of blocking behind this.
+        #
+        # RE-ENABLED 2026-08-26 (attempt 3). The owner reports registering
+        # app.tradedesk.beta.share as its own App ID with App Groups checked,
+        # which is the exact thing attempts 1 and 2 were missing. There is no
+        # way to verify that from CI: a build IS the test, and the failure mode
+        # is loud (export fails, "No profiles for ... were found"), not silent.
+        #
+        # WHAT IT COSTS IF THE PORTAL IS STILL WRONG: this step runs before the
+        # archive, so a failure takes the whole build with it and the other
+        # native changes riding along (precise-location, the extra permission
+        # reads) do not ship either. Accepted deliberately: the alternative
+        # guarantees two builds, this has a real chance of needing one.
+        #
+        # IF IT FAILS: set this back to '1', rebuild to ship the rest, and the
+        # portal genuinely is not right yet.
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          SKIP_SHARE_EXT: '1'
+          SKIP_SHARE_EXT: '0'
         run: |
           if [ "$SKIP_SHARE_EXT" = "1" ]; then
             echo "::notice::share extension SKIPPED for signing isolation (see step comment)"
