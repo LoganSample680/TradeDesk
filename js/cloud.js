@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.25.26.24';
+const APP_VERSION='08.25.26.25';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1297,6 +1297,54 @@ function _userDelete(fn){
   }
   return ret;
 }
+
+// ── One soft delete, shared by every sweep that removes a row ───────────────
+//
+// Owner, 2026-08-26: "the logic should match time logs where they are only soft
+// deleted, that should share so we can bring things back."
+//
+// Until now nothing shared. td_mileage rows removed through supaSaveToCloud got
+// a deleted_at and were recoverable, but the mileage SWEEPS bypassed that with
+// a direct .delete(), and job_time_entries/shop_time_entries had no deleted_at
+// column at all so every sweep on them was permanent. Two real 3.2-mile legs
+// from 08-18 and 08-19 were destroyed that way on 08-25 by a rule that turned
+// out to be wrong, and there was nothing to restore.
+//
+// A sweep is a GUESS about data the user did not ask to lose. Every one of them
+// goes through here now, so being wrong costs an undo rather than the record.
+//
+// Deliberately NOT routed through here: _devHardPurge, which is the owner
+// knowingly purging a duplicate and wants the row actually gone.
+//
+// Returns the number of ids it believes it removed. Failure is silent by
+// design, an employee device holds no update grant on the time tables and must
+// not break a render over it; the contractor's own device runs the same sweep.
+async function _tdSoftDelete(tbl,ids,opts){
+  const list=(Array.isArray(ids)?ids:[ids]).filter(v=>v!=null).map(String);
+  if(!list.length||!_supa)return 0;
+  const ts=new Date().toISOString();
+  let done=0;
+  for(let i=0;i<list.length;i+=50){
+    const chunk=list.slice(i,i+50);
+    try{
+      let q=_supa.from(tbl).update({deleted_at:ts}).in('id',chunk);
+      // The per-user tables are scoped by user_id; the crew tables are scoped
+      // by contractor_user_id and RLS already fences them, so the caller passes
+      // whichever it has rather than this guessing.
+      if(opts&&opts.userCol&&opts.userVal)q=q.eq(opts.userCol,opts.userVal);
+      const{error}=await q;
+      if(!error)done+=chunk.length;
+    }catch(_e){}
+  }
+  // The local delete intent still gets recorded for the per-record tables, so
+  // supaSaveToCloud's own sweep does not later try to re-remove a row this
+  // already handled.
+  if(typeof _recordLocalDelete==='function'&&_lastKnownIds&&_lastKnownIds[tbl]){
+    for(const id of list){try{_recordLocalDelete(tbl,id);}catch(_e){}}
+  }
+  return done;
+}
+window._tdSoftDelete=_tdSoftDelete;
 
 // DEV-ONLY DELETE GATE (owner directive): nobody deletes in normal use, they edit,
 // and old records auto-archive (kept forever). The ONE exception is the dev/owner
@@ -2806,7 +2854,7 @@ async function _dispatchLoadStatus(force){
     const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
     const since=_dispatchDayStartIso();
     const [entRes,pingRes]=await Promise.all([
-      _supa.from('job_time_entries').select('job_id,employee_user_id,arrived_at,departed_at,minutes,source')
+      _supa.from('job_time_entries').select('job_id,employee_user_id,arrived_at,departed_at,minutes,source').is('deleted_at',null)
         .eq('contractor_user_id',cid).gte('arrived_at',since),
       _supa.from('location_pings').select('employee_user_id,job_id,ts')
         .eq('contractor_user_id',cid).gte('ts',new Date(Date.now()-_DISPATCH_ONSITE_MS).toISOString()),
@@ -7252,7 +7300,7 @@ async function _fetchProposalViews(){
     try{
       const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
       const{data:_jte}=await _supa.from('job_time_entries')
-        .select('job_id,employee_user_id,arrived_at,departed_at,minutes,source')
+        .select('job_id,employee_user_id,arrived_at,departed_at,minutes,source').is('deleted_at',null)
         .eq('contractor_user_id',cid)
         .not('job_id','is',null)
         .order('arrived_at',{ascending:false})

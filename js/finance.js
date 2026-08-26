@@ -2941,7 +2941,7 @@ async function _openJobProfit(){
     (tm||[]).forEach(r=>{if(r.employee_user_id)rateByUid[r.employee_user_id]=(typeof _empLoadedHourly==='function')?_empLoadedHourly(r):(r.pay_type==='salary'?(r.pay_rate||0)/2080:(r.pay_rate||0))*(S.laborBurden||1.3);});
     // Owner's own tracked time (bills under cid), cost it with the owner's pay rate
     rateByUid[cid]=(typeof _empLoadedHourly==='function')?_empLoadedHourly({pay_type:S.ownerPayType,pay_rate:S.ownerPayRate}):0;
-    const{data:te}=await _supa.from('job_time_entries').select('employee_user_id,job_id,minutes,source').eq('contractor_user_id',cid);
+    const{data:te}=await _supa.from('job_time_entries').select('employee_user_id,job_id,minutes,source').is('deleted_at',null).eq('contractor_user_id',cid);
     entries=te||[];
   }catch(_e){}
   // Fold in manually-clocked time (js/jobs.js clockOut → timeEntries), without
@@ -3085,7 +3085,7 @@ async function _fetchCrewLabor(sinceISO){
     // id: the Time Log's Edit button needs to address the actual row to
     // correct a wrong GPS clock-out (owner rule 2026-08-24). Additive, every
     // other _fetchCrewLabor consumer ignores fields it doesn't use.
-    let q=_supa.from('job_time_entries').select('id,employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,client_key').eq('contractor_user_id',cid);
+    let q=_supa.from('job_time_entries').select('id,employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,client_key').is('deleted_at',null).eq('contractor_user_id',cid);
     if(sinceISO)q=q.gte('arrived_at',sinceISO);
     const{data:te}=await q;
     out.entries=te||[];
@@ -3093,7 +3093,7 @@ async function _fetchCrewLabor(sinceISO){
     // (js/timelog.js _tlStopAnchored): a shop session is one of the "real
     // location events" an unpaid stop must sit between. Additive, every
     // other consumer ignores it.
-    let sq=_supa.from('shop_time_entries').select('employee_user_id,minutes,arrived_at,departed_at').eq('contractor_user_id',cid);
+    let sq=_supa.from('shop_time_entries').select('employee_user_id,minutes,arrived_at,departed_at').is('deleted_at',null).eq('contractor_user_id',cid);
     if(sinceISO)sq=sq.gte('arrived_at',sinceISO);
     const{data:se}=await sq;
     out.shopEntries=se||[];

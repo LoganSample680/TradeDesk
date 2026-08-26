@@ -580,7 +580,7 @@ async function _openFixAutoEntry(rowId){
   let row=null;
   try{
     const{data,error}=await _supa.from('job_time_entries')
-      .select('id,arrived_at,departed_at,job_id,dest_place').eq('id',String(rowId)).maybeSingle();
+      .select('id,arrived_at,departed_at,job_id,dest_place').is('deleted_at',null).eq('id',String(rowId)).maybeSingle();
     if(!error)row=data;
   }catch(_e){}
   if(!row||!row.arrived_at){if(typeof showToast==='function')showToast('Could not load that entry');return;}

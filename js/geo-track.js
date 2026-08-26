@@ -4093,7 +4093,7 @@ async function _geoDedupTimeEntries(){
   try{
     const cutoff=new Date(Date.now()-90*86400000).toISOString();
     const {data,error}=await _supa.from('job_time_entries')
-      .select('id,employee_user_id,job_id,dest_place,source,client_key,arrived_at,departed_at')
+      .select('id,employee_user_id,job_id,dest_place,source,client_key,arrived_at,departed_at').is('deleted_at',null)
       .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
     if(error||!Array.isArray(data)||data.length<2)return 0;
     // Only ON-SITE presence dedupes: geofence, geofence-gap, geofence-
@@ -4243,7 +4243,7 @@ async function _geoDedupTimeEntries(){
     }
     if(!drop.size&&!trims.length&&!inserts.length)return 0;
     for(const id of drop){
-      try{await _supa.from('job_time_entries').delete().eq('id',id);}catch(_e){}
+      try{await _tdSoftDelete('job_time_entries',id);}catch(_e){}
     }
     for(const t of trims){
       try{await _supa.from('job_time_entries').update({arrived_at:t.arrived_at,departed_at:t.departed_at,minutes:t.minutes,client_key:t.client_key}).eq('id',t.id);}catch(_e){}
@@ -4338,7 +4338,7 @@ async function _geoMergeAdjacentVisits(){
   try{
     const cutoff=new Date(Date.now()-90*86400000).toISOString();
     const {data,error}=await _supa.from('job_time_entries')
-      .select('id,employee_user_id,job_id,dest_place,source,client_key,arrived_at,departed_at')
+      .select('id,employee_user_id,job_id,dest_place,source,client_key,arrived_at,departed_at').is('deleted_at',null)
       .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
     if(error||!Array.isArray(data)||data.length<2)return 0;
     const all=data.filter(r=>r&&r.id!=null&&r.arrived_at&&r.departed_at);
@@ -4360,7 +4360,7 @@ async function _geoMergeAdjacentVisits(){
     let shopRows=[];
     try{
       const sr=await _supa.from('shop_time_entries')
-        .select('employee_user_id,arrived_at,departed_at')
+        .select('employee_user_id,arrived_at,departed_at').is('deleted_at',null)
         .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
       if(sr&&!sr.error&&Array.isArray(sr.data))shopRows=sr.data.filter(x=>x&&x.arrived_at&&x.departed_at);
     }catch(_e){}
@@ -4465,7 +4465,7 @@ async function _geoMergeAdjacentVisits(){
       try{await _supa.from('job_time_entries').update({arrived_at:u.arrived_at,departed_at:u.departed_at,minutes:u.minutes,job_id:u.job_id,dest_place:u.dest_place,source:u.source,client_key:u.client_key}).eq('id',u.id);}catch(_e){}
     }
     for(const id of drop){
-      try{await _supa.from('job_time_entries').delete().eq('id',id);}catch(_e){}
+      try{await _tdSoftDelete('job_time_entries',id);}catch(_e){}
     }
     _geoParkNote('time-merge','merged '+updates.length+' clusters, removed '+drop.size+' rows');
     return updates.length+drop.size;
@@ -4512,7 +4512,7 @@ async function _geoAbsorbGapsIntoStops(){
   try{
     const cutoff=new Date(Date.now()-90*86400000).toISOString();
     const {data,error}=await _supa.from('job_time_entries')
-      .select('id,employee_user_id,source,arrived_at,departed_at')
+      .select('id,employee_user_id,source,arrived_at,departed_at').is('deleted_at',null)
       .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
     if(error||!Array.isArray(data)||data.length<2)return 0;
     const rows=data.filter(r=>r&&r.id!=null&&r.arrived_at&&r.departed_at);
@@ -4583,7 +4583,7 @@ async function _geoRepairStopRows(){
   _geoStopRepairBusy=true;
   try{
     const {data,error}=await _supa.from('job_time_entries')
-      .select('id,employee_user_id,job_id,dest_place,source,client_key,arrived_at,departed_at')
+      .select('id,employee_user_id,job_id,dest_place,source,client_key,arrived_at,departed_at').is('deleted_at',null)
       .eq('contractor_user_id',_geoCid()).gte('arrived_at','2026-08-10T00:00:00Z')
       .lte('arrived_at','2026-08-25T00:00:00Z');
     if(error)return 0;
@@ -4597,7 +4597,7 @@ async function _geoRepairStopRows(){
     let shopRows=[];
     try{
       const sr=await _supa.from('shop_time_entries')
-        .select('employee_user_id,arrived_at,departed_at')
+        .select('employee_user_id,arrived_at,departed_at').is('deleted_at',null)
         .eq('contractor_user_id',_geoCid()).gte('arrived_at','2026-08-10T00:00:00Z')
         .lte('arrived_at','2026-08-25T00:00:00Z');
       if(sr&&!sr.error&&Array.isArray(sr.data))shopRows=sr.data.filter(s=>s&&s.arrived_at&&s.departed_at);
@@ -4721,7 +4721,7 @@ async function _geoRepairStopRows(){
       try{await _supa.from('job_time_entries').insert(row);}catch(_e){}
     }
     for(const id of drop){
-      try{const res=await _supa.from('job_time_entries').delete().eq('id',id);if(res&&res.error)ok=false;}catch(_e){ok=false;}
+      try{if(!(await _tdSoftDelete('job_time_entries',id)))ok=false;}catch(_e){ok=false;}
     }
     _geoParkNote('stop-repair','removed '+drop.size+', fixed '+fixUpdates.length+', rebuilt '+fixInserts.length+(ok?'':' (partial, will retry)'));
     // Done only when every delete landed: a partial pass (offline mid-sweep)
@@ -4792,7 +4792,7 @@ async function _geoSyncDriveTimeEntries(){
     // never pruned, so an old drive row with a real leg is never at risk.
     const cutoff=new Date(Date.now()-90*86400000).toISOString();
     const {data,error}=await _supa.from('job_time_entries')
-      .select('id,source,client_key')
+      .select('id,source,client_key').is('deleted_at',null)
       .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
     if(error||!Array.isArray(data)||!data.length)return 0;
     const driveRows=data.filter(r=>r&&r.id!=null&&/^drive/.test(String(r.source||'')));
@@ -4803,7 +4803,7 @@ async function _geoSyncDriveTimeEntries(){
     const drop=driveRows.filter(r=>!r.client_key||!surviving.has(r.client_key));
     if(!drop.length)return 0;
     for(const r of drop){
-      try{await _supa.from('job_time_entries').delete().eq('id',r.id);}catch(_e){}
+      try{await _tdSoftDelete('job_time_entries',r.id);}catch(_e){}
     }
     _geoParkNote('drive-sync','dropped '+drop.length+' drive row(s) with no surviving mileage leg');
     return drop.length;
@@ -4891,7 +4891,7 @@ async function _geoVerifyReconciled(){
   try{
     const cutoff=new Date(Date.now()-_GEO_VERIFY_DAYS*86400000).toISOString();
     const{data,error}=await _supa.from('job_time_entries')
-      .select('id,employee_user_id,job_id,dest_place,source,client_key,arrived_at,departed_at')
+      .select('id,employee_user_id,job_id,dest_place,source,client_key,arrived_at,departed_at').is('deleted_at',null)
       .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
     if(error||!Array.isArray(data)||!data.length)return 0;
     const seen=_geoVerifySeen();
@@ -4923,7 +4923,7 @@ async function _geoVerifyReconciled(){
         // survivor is trimmed, never dropped, because a sparse tape plus a
         // 5-minute floor is exactly how a real day got erased once already.
         if(tr.gone){
-          await _supa.from('job_time_entries').delete().eq('id',r.id);
+          await _tdSoftDelete('job_time_entries',r.id);
           _geoParkNote('recon-verify','dropped '+was+'m claim, all '+tr.seen+' mid-window fixes are elsewhere');
         }else if(tr.t2-tr.t1>=_GEO_RECON_MIN_GAP_MS){
           await _supa.from('job_time_entries').update({
@@ -4968,7 +4968,7 @@ async function _geoDedupShopTimeEntries(){
   try{
     const cutoff=new Date(Date.now()-90*86400000).toISOString();
     const{data,error}=await _supa.from('shop_time_entries')
-      .select('id,arrived_at,departed_at,employee_user_id')
+      .select('id,arrived_at,departed_at,employee_user_id').is('deleted_at',null)
       .eq('contractor_user_id',_geoCid()).gte('arrived_at',cutoff);
     if(error||!Array.isArray(data)||data.length<2)return 0;
     const rows=data.filter(r=>r&&r.id!=null&&r.arrived_at&&r.departed_at);
@@ -4995,7 +4995,7 @@ async function _geoDedupShopTimeEntries(){
     }
     if(!drop.size)return 0;
     for(const id of drop){
-      try{await _supa.from('shop_time_entries').delete().eq('id',id);}catch(_e){}
+      try{await _tdSoftDelete('shop_time_entries',id);}catch(_e){}
     }
     _geoParkNote('shop-dedup','dropped '+drop.size+' duplicate shop row(s)');
     return drop.size;

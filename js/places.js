@@ -691,9 +691,9 @@ async function _ptrFetch(year){
   const lo=year+'-01-01T00:00:00Z',hi=(year+1)+'-01-01T00:00:00Z';
   try{
     const[pRes,sRes]=await Promise.all([
-      _supa.from('job_time_entries').select('employee_user_id,dest_place,minutes,arrived_at,departed_at')
+      _supa.from('job_time_entries').select('employee_user_id,dest_place,minutes,arrived_at,departed_at').is('deleted_at',null)
         .eq('contractor_user_id',cid).eq('source','place').gte('arrived_at',lo).lt('arrived_at',hi),
-      _supa.from('shop_time_entries').select('employee_user_id,minutes,arrived_at,departed_at')
+      _supa.from('shop_time_entries').select('employee_user_id,minutes,arrived_at,departed_at').is('deleted_at',null)
         .eq('contractor_user_id',cid).gte('arrived_at',lo).lt('arrived_at',hi),
     ]);
     ((pRes&&pRes.data)||[]).forEach(r=>{if(r.dest_place)out.rows.push({place:r.dest_place,uid:r.employee_user_id||'',mins:r.minutes||0,arrivedAt:r.arrived_at,departedAt:r.departed_at,date:_ptrDateKey(r.arrived_at)});});

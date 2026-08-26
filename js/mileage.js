@@ -924,7 +924,7 @@ async function _mileWorkdaySweep(){
     let ents=[];
     try{
       const{data,error}=await _supa.from('job_time_entries')
-        .select('employee_user_id,arrived_at,departed_at,source')
+        .select('employee_user_id,arrived_at,departed_at,source').is('deleted_at',null)
         .eq('contractor_user_id',cid).gte('arrived_at',cutoff);
       if(error||!Array.isArray(data))return 0;   // no evidence, no deletions
       ents=data;
@@ -984,7 +984,7 @@ async function _mileWorkdaySweep(){
         if(typeof _recordLocalDelete==='function')_recordLocalDelete('td_mileage',m.id);
         try{
           const uid=(typeof _effectiveUid==='function'&&_effectiveUid())||(window._supaUser&&window._supaUser.id);
-          if(window._supa&&uid)_supa.from('td_mileage').delete().eq('id',String(m.id)).eq('user_id',uid).then(()=>{},()=>{});
+          if(window._supa&&uid)_tdSoftDelete('td_mileage',m.id,{userCol:'user_id',userVal:uid});
         }catch(_e){}
       }
     }
@@ -1047,7 +1047,7 @@ async function _mileFlightSweep(){
         if(typeof _recordLocalDelete==='function')_recordLocalDelete('td_mileage',m.id);
         try{
           const uid=(typeof _effectiveUid==='function'&&_effectiveUid())||(window._supaUser&&window._supaUser.id);
-          if(window._supa&&uid)_supa.from('td_mileage').delete().eq('id',String(m.id)).eq('user_id',uid).then(()=>{},()=>{});
+          if(window._supa&&uid)_tdSoftDelete('td_mileage',m.id,{userCol:'user_id',userVal:uid});
         }catch(_e){}
       }
     }
@@ -1494,7 +1494,7 @@ function _mileDedupTrips(heal){
       if(typeof _recordLocalDelete==='function')_recordLocalDelete('td_mileage',m.id);
       try{
         const uid=(typeof _effectiveUid==='function'&&_effectiveUid())||(window._supaUser&&window._supaUser.id);
-        if(window._supa&&uid)_supa.from('td_mileage').delete().eq('id',String(m.id)).eq('user_id',uid).then(()=>{},()=>{});
+        if(window._supa&&uid)_tdSoftDelete('td_mileage',m.id,{userCol:'user_id',userVal:uid});
       }catch(_e){}
     }
   }
