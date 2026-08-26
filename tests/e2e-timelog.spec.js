@@ -3177,6 +3177,193 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
   });
 
+  // ── One component for Me and Team (owner rule 2026-08-26) ─────────────────
+  //
+  // "Everything on the team should be the exact same thing on me, same code,
+  // same constant, only difference is the fact me is just me and team is
+  // everybody if you got those permissions."
+  //
+  // Me used to render something else entirely: a per-day list with a total and
+  // NO split bar. So the one person who most wants to know how much of their
+  // day went to driving was the only person who could not see it.
+  test.describe('Me mirrors Team', () => {
+    const WEEK = '2026-08-17';
+    const ROWS = [
+      { date: '2026-08-18', minutes: 210, source: 'manual', detail: 'geofence', personUid: 'me', personName: 'Logan Sample', clientName: 'Marcy', startTime: '2026-08-18T13:00:00Z' },
+      { date: '2026-08-18', minutes: 46, source: 'auto', detail: 'drive', personUid: 'me', personName: 'Logan Sample', clientName: 'Marcy', startTime: '2026-08-18T12:10:00Z' },
+      { date: '2026-08-19', minutes: 38, source: 'auto', detail: 'place', personUid: 'me', personName: 'Logan Sample', clientName: 'Supply', startTime: '2026-08-19T17:00:00Z' },
+      { date: '2026-08-20', minutes: 52, source: 'shop', detail: 'shop', personUid: 'me', personName: 'Logan Sample', startTime: '2026-08-20T12:00:00Z' },
+    ];
+    const body = (scope, sel) => page.evaluate(([wk, rows, sc, se]) => {
+      const key = 'T|' + wk;
+      _tlWeekCache[key] = { mo: '2026-08', wk, rows, scope: sc, cid: 'me', selfUid: 'me', domId: 'd' };
+      if (se) _tlPickerSel[key] = se; else delete _tlPickerSel[key];
+      const html = _tlRenderWeekBody(key);
+      delete _tlWeekCache[key]; delete _tlPickerSel[key];
+      return html;
+    }, [WEEK, ROWS, scope, sel || null]);
+
+    test('the Me split bar exists and is the SAME markup as Team', async () => {
+      const me = await body('me');
+      const team = await body('team');
+      expect(me, 'Me had no split bar at all before this').toContain('tl-split-bar');
+      expect(me).toContain('tl-emp-row');
+      // The bar itself, byte for byte. Two renderers drifting apart is the
+      // thing this rule exists to stop.
+      const bar = h => (h.match(/<div class="tl-split-bar">.*?<\/div>/s) || [''])[0];
+      expect(bar(me)).toBe(bar(team));
+      expect(bar(me).length).toBeGreaterThan(0);
+    });
+
+    test('the same four buckets, with the same split, in both scopes', async () => {
+      const me = await body('me');
+      const team = await body('team');
+      const legend = h => (h.match(/<div class="tl-split-legend">(.*?)<\/div>/s) || ['', ''])[1];
+      expect(legend(me)).toBe(legend(team));
+      expect(legend(me)).toContain('On-site');
+      expect(legend(me), 'drive time is the number a person most wants off their own week').toContain('Drive');
+      expect(legend(me)).toContain('Supply/other');
+      expect(legend(me)).toContain('Shop');
+    });
+
+    test('one person in Me, and Team would show more', async () => {
+      const me = await body('me');
+      const rowCount = h => (h.match(/tl-emp-row/g) || []).length;
+      expect(rowCount(me), 'me is just me').toBe(1);
+      const two = await page.evaluate(([wk, rows]) => {
+        const key = 'T2|' + wk;
+        const mixed = rows.concat([{ date: '2026-08-18', minutes: 120, source: 'manual',
+          detail: 'geofence', personUid: 'jack', personName: 'Jack Reyes', startTime: '2026-08-18T13:00:00Z' }]);
+        _tlWeekCache[key] = { mo: '2026-08', wk, rows: mixed, scope: 'team', cid: 'me', selfUid: 'me', domId: 'd' };
+        const html = _tlRenderWeekBody(key);
+        delete _tlWeekCache[key];
+        return (html.match(/tl-emp-row/g) || []).length;
+      }, [WEEK, ROWS]);
+      expect(two, 'team is everybody').toBe(2);
+    });
+
+    // 7.2: the day list is the one thing Me has that Team cannot, since a team
+    // day mixes several people. Forcing symmetry by deleting it would lose
+    // information nobody asked to lose.
+    test('the per-day breakdown survives as an addition, not an alternative', async () => {
+      const me = await body('me');
+      expect(me).toContain('tl-emp-row');
+      expect(me, 'the day list still renders under the shared row').toMatch(/Tue 8\/18|8\/18/);
+    });
+
+    test('a single-day pick still shows the shared row, same as Team does', async () => {
+      const me = await body('me', '2');   // Tuesday
+      expect(me, 'Me used to render nothing at all on a day pick').toContain('tl-split-bar');
+    });
+  });
+
+  // ── The repair pass is off the critical path (owner report 2026-08-26) ─────
+  //
+  // "Why the slowness on time log where skeleton takes forever." Three
+  // reconciler passes with waits between them, a write-queue drain and a full
+  // cleanup sweep all ran BEFORE the first fetch, so the skeleton sat through
+  // every one of them before the page asked for the hours it exists to show.
+  test.describe('paint first, repair after', () => {
+    test('the hours are fetched before any repair work runs', async () => {
+      const order = await page.evaluate(async () => {
+        const saved = { rec: window._geoReconcileFromMileage, sweep: window._geoCleanupSweeps,
+                        drain: window._geoDrainQueue, rows: window._timeLogRows };
+        const seq = [];
+        try {
+          window._geoReconcileFromMileage = async () => { seq.push('reconcile'); return true; };
+          window._geoCleanupSweeps = async () => { seq.push('sweep'); return false; };
+          window._geoDrainQueue = async () => { seq.push('drain'); };
+          window._timeLogRows = async () => { seq.push('fetch'); return []; };
+          await renderTimeLog();
+          // let the un-awaited repair chain run
+          for (let i = 0; i < 8; i++) await new Promise(r => setTimeout(r, 0));
+          return seq;
+        } finally {
+          window._geoReconcileFromMileage = saved.rec; window._geoCleanupSweeps = saved.sweep;
+          window._geoDrainQueue = saved.drain; window._timeLogRows = saved.rows;
+        }
+      });
+      expect(order[0], 'the skeleton must not outlive the fetch').toBe('fetch');
+      expect(order.indexOf('reconcile'), 'repair still runs, just after').toBeGreaterThan(0);
+      expect(order.indexOf('sweep')).toBeGreaterThan(0);
+    });
+
+    test('noRepair skips the pass entirely, so a repaint cannot recurse', async () => {
+      const seq = await page.evaluate(async () => {
+        const saved = { rec: window._geoReconcileFromMileage, sweep: window._geoCleanupSweeps,
+                        rows: window._timeLogRows };
+        const calls = [];
+        try {
+          window._geoReconcileFromMileage = async () => { calls.push('reconcile'); return true; };
+          window._geoCleanupSweeps = async () => { calls.push('sweep'); return false; };
+          window._timeLogRows = async () => [];
+          await renderTimeLog({ noRepair: true });
+          for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 0));
+          return calls;
+        } finally {
+          window._geoReconcileFromMileage = saved.rec; window._geoCleanupSweeps = saved.sweep;
+          window._timeLogRows = saved.rows;
+        }
+      });
+      expect(seq).toEqual([]);
+    });
+
+    test('a repair that changed nothing does NOT repaint', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = { pass: window._tlRepairPass, rows: window._timeLogRows };
+        let fetches = 0;
+        try {
+          window._tlRepairPass = async () => {};
+          window._timeLogRows = async () => { fetches++; return [{ minutes: 60 }]; };
+          // A repaint closes any accordion the viewer opened by hand, so doing
+          // it unconditionally would trade a slow page for one that shuts
+          // itself a second after it opens.
+          const repainted = await _tlRepairAfterPaint([{ minutes: 60 }]);
+          return { repainted, fetches };
+        } finally { window._tlRepairPass = saved.pass; window._timeLogRows = saved.rows; }
+      });
+      expect(r.repainted).toBe(false);
+      expect(r.fetches, 'one check, no re-render').toBe(1);
+    });
+
+    test('a repair that DID change something repaints exactly once', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = { pass: window._tlRepairPass, rows: window._timeLogRows, render: window.renderTimeLog };
+        let renders = 0;
+        try {
+          window._tlRepairPass = async () => {};
+          window._timeLogRows = async () => [{ minutes: 60 }, { minutes: 30 }];
+          window.renderTimeLog = async () => { renders++; };
+          const repainted = await _tlRepairAfterPaint([{ minutes: 60 }]);
+          return { repainted, renders };
+        } finally {
+          window._tlRepairPass = saved.pass; window._timeLogRows = saved.rows;
+          window.renderTimeLog = saved.render;
+        }
+      });
+      expect(r.repainted).toBe(true);
+      expect(r.renders).toBe(1);
+    });
+
+    test('the fingerprint notices an added row, a removed one, and a retimed one', async () => {
+      const r = await page.evaluate(() => {
+        const base = [{ minutes: 60 }, { minutes: 30 }];
+        return {
+          same: _tlRowsFingerprint(base) === _tlRowsFingerprint([{ minutes: 60 }, { minutes: 30 }]),
+          added: _tlRowsFingerprint(base) !== _tlRowsFingerprint(base.concat([{ minutes: 10 }])),
+          removed: _tlRowsFingerprint(base) !== _tlRowsFingerprint([{ minutes: 60 }]),
+          retimed: _tlRowsFingerprint(base) !== _tlRowsFingerprint([{ minutes: 90 }, { minutes: 30 }]),
+          empty: _tlRowsFingerprint([]) === _tlRowsFingerprint(null),
+        };
+      });
+      expect(r.same).toBe(true);
+      expect(r.added).toBe(true);
+      expect(r.removed).toBe(true);
+      expect(r.retimed).toBe(true);
+      expect(r.empty, 'null and empty are the same nothing').toBe(true);
+    });
+  });
+
   test('no console errors during time log tests', async () => {
     await assertNoErrors(page);
   });

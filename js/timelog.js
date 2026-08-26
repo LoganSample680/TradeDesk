@@ -880,8 +880,10 @@ function _tlWeekOwnerHtml(byEmp,selfUid){
     '</div>';
   }).join('');
 }
-// Me-scope, Week selection: own days, no dollars. A single-day selection
-// skips this (the Entries table below already says it all for one day).
+// Me-scope EXTRA, under the shared split-bar row: your own days listed out.
+// Not an alternative to the team component (see _tlRenderWeekBody), an
+// addition, and the one thing Me shows that Team cannot, since a team day
+// mixes several people. Week selections only.
 function _tlWeekMineHtml(rows){
   const byDay={};
   rows.forEach(r=>{
@@ -956,12 +958,24 @@ function _tlRenderWeekBody(cacheKey){
   let summaryHtml;
   if(!scopeRows.length){
     summaryHtml='<div class="tl-empty">No hours logged '+(sel==='week'?'this week.':'this day.')+'</div>';
-  }else if(scope==='team'){
-    summaryHtml=_tlWeekOwnerHtml(_tlEmpWeekAgg(scopeRows,cid),selfUid);
-  }else if(sel==='week'){
-    summaryHtml=_tlWeekMineHtml(scopeRows);
   }else{
-    summaryHtml=''; // one day, your own scope: the entries table below already says it all
+    // ONE component for both scopes (owner rule 2026-08-26: "everything on the
+    // team should be the exact same thing on me, same code, same constant,
+    // only difference is the fact me is just me and team is everybody").
+    //
+    // Me used to render something else entirely: a plain per-day list with a
+    // total and no split bar, so the one person who most wants to know how
+    // much of their day went to driving was the only person who could not see
+    // it. _tlEmpWeekAgg already works on any row subset, and in Me scope that
+    // subset is one person, so the same call produces a one-row version of the
+    // team view for free. No second layout to keep in step.
+    summaryHtml=_tlWeekOwnerHtml(_tlEmpWeekAgg(scopeRows,cid),selfUid);
+    // The per-day breakdown stays, as an ADDITION rather than an alternative:
+    // it is the one thing Me has that Team cannot (a team day legitimately
+    // mixes several people), and deleting it to force symmetry would lose
+    // information nobody asked to lose. Week selections only; on a single day
+    // the entries table below already lists every row.
+    if(sel==='week')summaryHtml+=_tlWeekMineHtml(scopeRows);
   }
   // Entries: the only place a manual clock entry can still be edited or
   // deleted (Edit button, _tlRow), scoped to whatever the picker currently
@@ -1019,56 +1033,97 @@ async function _tlShareWeek(){
   const text='My hours this week ('+_tlWeekLabel(wkStartStr)+')\n'+lines.join('\n')+'\nTotal: '+(typeof _fmtMin==='function'?_fmtMin(totalMin):totalMin+'m');
   if(typeof pwaShare==='function')await pwaShare({title:'This week\'s hours',text});
 }
-async function renderTimeLog(){
+// ── The repair pass, moved OFF the critical path (owner report 2026-08-26:
+// "why the slowness on time log where skeleton takes forever") ──────────────
+//
+// All of this used to run BEFORE the first fetch, so the skeleton sat through
+// three reconciler passes with 150ms waits between them, a write-queue drain,
+// and a full cleanup sweep, and only then did the page ask the server for the
+// hours it was there to show. Each of those does its own round trips, so on a
+// truck connection the wait was seconds of shimmer for work the viewer never
+// asked for.
+//
+// It still all runs, and still on every open, for the reasons each block
+// documents. It just runs AFTER the hours are on screen. CLAUDE.md 8.3 is
+// explicit that a slow reveal is never the answer to async data: paint
+// instantly, repaint once when the real thing lands.
+async function _tlRepairPass(){
+    // Catch up any already-closed gap before showing hours. _geoReconcileSoon's
+    // periodic trigger only ever fires from a LIVE GPS watcher (js/geo-track.js:
+    // "if(_geoWatchId==null&&_geoNativeWatcherId==null)return;"), so a gap left
+    // by a drive that already finished never gets backfilled once tracking goes
+    // quiet (owner report 2026-08-21: hours still missing on reopening Time Log
+    // well after the job). Opening this page is an explicit, deliberate look at
+    // hours, not ambient background noise, so it calls the reconciler directly
+    // instead of waiting on a live ping stream that may never come again today.
+    //
+    // An explicit false means the pass was SKIPPED (a GPS ping was mid-flight,
+    // exactly when a phone with live tracking opens this page right after a
+    // drive), not that it ran and found nothing: retry briefly rather than
+    // silently never repairing this visit (owner report 2026-08-21, round two).
+    // Then drain the write queue, so a row the reconciler just enqueued is on
+    // the server BEFORE _timeLogRows fetches: without this the repair raced its
+    // own render and only showed up on the NEXT visit to this page.
+    if(typeof _geoReconcileFromMileage==='function'){
+      try{
+        // 150ms, not 350ms: three attempts at the old backoff held the skeleton
+        // on screen for up to ~1050ms in the worst case (owner report
+        // 2026-08-23: skeleton "way too long" specifically on this page). Still
+        // three tries, same protection against the mid-flight-ping race the
+        // retry exists for, just a shorter wait between them.
+        for(let _i=0;_i<3;_i++){
+          const ran=await _geoReconcileFromMileage();
+          if(ran!==false)break;
+          await new Promise(res=>setTimeout(res,150));
+        }
+        if(typeof _geoDrainQueue==='function')await _geoDrainQueue();
+      }catch(_e){}
+    }
+    // The cleanup sweeps are NOT the reconciler's business (owner report
+    // 2026-08-25: "still not seeing time log clear the shit that doesn't
+    // matter"). The reconciler skips its own tail on three exits that say
+    // nothing about whether there is junk to clear (a ping mid-flight, a pass
+    // already running, or simply no window to repair), and on a phone with
+    // live tracking the ping exit is the common case: the three retries above
+    // can all come back false and the log then renders whatever stale
+    // duplicates and orphaned drive rows were already there. Run the sweeps
+    // here directly, every open. _geoCleanupSweeps carries its own busy flag
+    // and a 10s recency skip, so when the reconciler above DID run to
+    // completion this is a cheap no-op rather than a second round of queries.
+    if(typeof _geoCleanupSweeps==='function'){try{await _geoCleanupSweeps();}catch(_e){}}
+}
+// Cheap enough to run on every open, and the only thing that decides whether
+// the repair earned a repaint. Count plus total minutes catches an added row,
+// a removed row, and a retimed one, which is everything the repair can do.
+function _tlRowsFingerprint(rows){
+  let n=0,min=0;
+  (rows||[]).forEach(r=>{n++;min+=(r.minutes||0);});
+  return n+':'+min;
+}
+let _tlRepairRunning=false;
+// Repaint ONLY when the repair actually changed something. A repaint closes
+// any accordion the viewer opened by hand, so doing it unconditionally would
+// trade a slow page for one that shuts itself a second after it opens.
+async function _tlRepairAfterPaint(paintedRows){
+  if(_tlRepairRunning)return false;
+  _tlRepairRunning=true;
+  try{
+    await _tlRepairPass();
+    const fresh=await _timeLogRows(null);
+    if(_tlRowsFingerprint(fresh)===_tlRowsFingerprint(paintedRows))return false;
+    // noRepair: the pass just ran. Without it this recurses on every open.
+    await renderTimeLog({noRepair:true});
+    return true;
+  }catch(_e){return false;}
+  finally{_tlRepairRunning=false;}
+}
+async function renderTimeLog(opts){
   const el=document.getElementById('tl-list');if(!el)return;
   _tlStartOpenRefresh();
   const totalEl=document.getElementById('tl-total');
   const shareEl=document.getElementById('tl-share');
   const toggleEl=document.getElementById('tl-scope-toggle');
   el.innerHTML='<div style="padding:6px 2px">'+_tdSkelRows(4,12)+'</div>';
-  // Catch up any already-closed gap before showing hours. _geoReconcileSoon's
-  // periodic trigger only ever fires from a LIVE GPS watcher (js/geo-track.js:
-  // "if(_geoWatchId==null&&_geoNativeWatcherId==null)return;"), so a gap left
-  // by a drive that already finished never gets backfilled once tracking goes
-  // quiet (owner report 2026-08-21: hours still missing on reopening Time Log
-  // well after the job). Opening this page is an explicit, deliberate look at
-  // hours, not ambient background noise, so it calls the reconciler directly
-  // instead of waiting on a live ping stream that may never come again today.
-  //
-  // An explicit false means the pass was SKIPPED (a GPS ping was mid-flight,
-  // exactly when a phone with live tracking opens this page right after a
-  // drive), not that it ran and found nothing: retry briefly rather than
-  // silently never repairing this visit (owner report 2026-08-21, round two).
-  // Then drain the write queue, so a row the reconciler just enqueued is on
-  // the server BEFORE _timeLogRows fetches: without this the repair raced its
-  // own render and only showed up on the NEXT visit to this page.
-  if(typeof _geoReconcileFromMileage==='function'){
-    try{
-      // 150ms, not 350ms: three attempts at the old backoff held the skeleton
-      // on screen for up to ~1050ms in the worst case (owner report
-      // 2026-08-23: skeleton "way too long" specifically on this page). Still
-      // three tries, same protection against the mid-flight-ping race the
-      // retry exists for, just a shorter wait between them.
-      for(let _i=0;_i<3;_i++){
-        const ran=await _geoReconcileFromMileage();
-        if(ran!==false)break;
-        await new Promise(res=>setTimeout(res,150));
-      }
-      if(typeof _geoDrainQueue==='function')await _geoDrainQueue();
-    }catch(_e){}
-  }
-  // The cleanup sweeps are NOT the reconciler's business (owner report
-  // 2026-08-25: "still not seeing time log clear the shit that doesn't
-  // matter"). The reconciler skips its own tail on three exits that say
-  // nothing about whether there is junk to clear (a ping mid-flight, a pass
-  // already running, or simply no window to repair), and on a phone with
-  // live tracking the ping exit is the common case: the three retries above
-  // can all come back false and the log then renders whatever stale
-  // duplicates and orphaned drive rows were already there. Run the sweeps
-  // here directly, every open. _geoCleanupSweeps carries its own busy flag
-  // and a 10s recency skip, so when the reconciler above DID run to
-  // completion this is a cheap no-op rather than a second round of queries.
-  if(typeof _geoCleanupSweeps==='function'){try{await _geoCleanupSweeps();}catch(_e){}}
   let allRows;
   try{allRows=await _timeLogRows(null);}
   catch(_e){el.innerHTML='<div class="empty">Couldn\'t load time entries.</div>';return;}
@@ -1189,5 +1244,11 @@ async function renderTimeLog(){
     }else{
       shareEl.style.display='none';shareEl.innerHTML='';
     }
+  }
+  // The hours are on screen. NOW do the housekeeping, and repaint only if it
+  // found something. Deliberately not awaited: this function's job is done,
+  // and awaiting it here would put the wait straight back where it was.
+  if(!(opts&&opts.noRepair)){
+    try{_tlRepairAfterPaint(allRows);}catch(_e){}
   }
 }
