@@ -4125,7 +4125,7 @@ test.describe('Workforce time intelligence', () => {
         start_time: new Date(T0 + 30 * 60000).toISOString(), end_time: new Date(T0 + 90 * 60000).toISOString(),
         minutes: 60, logged_by_uid: EMP, logged_by_name: 'Test Crew',
       });
-      const makeQ = (rows) => { const q = { _data: { data: rows } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.select = () => q; return q; };
+      const makeQ = (rows) => { const q = { _data: { data: rows } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.is = () => q; q.lt = () => q; q.lte = () => q; q.not = () => q; q.order = () => q; q.limit = () => q; q.select = () => q; return q; };
       window._supa = {
         from: (tbl) => {
           if (tbl === 'team_members') return makeQ([{ employee_user_id: EMP, name: 'Test Crew', email: '', pay_type: 'hourly', pay_rate: 30 }]);
@@ -4193,7 +4193,7 @@ test.describe('Workforce time intelligence', () => {
         start_time: new Date(T0 + 30 * 60000).toISOString(), end_time: new Date(T0 + 90 * 60000).toISOString(),
         minutes: 60, logged_by_uid: EMP, logged_by_name: 'Test Crew',
       });
-      const makeQ = (rows) => { const q = { _data: { data: rows } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.select = () => q; return q; };
+      const makeQ = (rows) => { const q = { _data: { data: rows } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.is = () => q; q.lt = () => q; q.lte = () => q; q.not = () => q; q.order = () => q; q.limit = () => q; q.select = () => q; return q; };
       window._supa = {
         from: (tbl) => {
           if (tbl === 'team_members') return makeQ([{ employee_user_id: EMP, name: 'Test Crew', email: '', pay_type: 'hourly', pay_rate: 30 }]);
@@ -4243,7 +4243,7 @@ test.describe('Workforce time intelligence', () => {
       timeEntries = timeEntries.filter(e => e.job_id !== 87801);
       timeEntries.push({ id: 8970001, job_id: 87801, date: '2026-01-01', start_time: '2026-01-01T09:00:00Z', end_time: '2026-01-01T11:00:00Z', minutes: 120, logged_by_uid: null, logged_by_name: 'Owner (me)' });
       S.ownerPayType = 'hourly'; S.ownerPayRate = 30;
-      const makeQ = (data) => { const q = { _data: { data } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.select = () => q; return q; };
+      const makeQ = (data) => { const q = { _data: { data } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.is = () => q; q.lt = () => q; q.lte = () => q; q.not = () => q; q.order = () => q; q.limit = () => q; q.select = () => q; return q; };
       window._supa = { from: (t) => makeQ([]) }; // no GPS-tracked entries or team_members at all
       window.supaEnabled = () => true;
       window._supaUser = window._supaUser || { id: 'test-uid' };

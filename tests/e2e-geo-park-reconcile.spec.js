@@ -244,7 +244,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
             },
             in: (col, vals) => {
               rec.filters[col] = vals;
-              if (soft) (vals || []).forEach(v => window.__rec.deletes.push({ tbl, col, val: String(v) }));
+              if (soft) (vals || []).forEach(v => window.__rec.deletes.push({ tbl, col, val: v }));
               return q;
             },
             then: (res, rej) => Promise.resolve({ data: null, error: null }).then(res, rej) };

@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.25.26.34';
+const APP_VERSION='08.25.26.35';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1320,7 +1320,12 @@ function _userDelete(fn){
 // design, an employee device holds no update grant on the time tables and must
 // not break a render over it; the contractor's own device runs the same sweep.
 async function _tdSoftDelete(tbl,ids,opts){
-  const list=(Array.isArray(ids)?ids:[ids]).filter(v=>v!=null).map(String);
+  // Ids go to the server AS GIVEN. Stringifying them here changed a numeric
+  // row id into '502' on the wire, which PostgREST coerces back happily but
+  // which turned ten assertions about which row was removed into type
+  // mismatches. The local delete ledger is the only thing that genuinely wants
+  // strings, and it gets them where it is written, below.
+  const list=(Array.isArray(ids)?ids:[ids]).filter(v=>v!=null);
   if(!list.length||!_supa)return 0;
   const ts=new Date().toISOString();
   let done=0;
@@ -1340,7 +1345,7 @@ async function _tdSoftDelete(tbl,ids,opts){
   // supaSaveToCloud's own sweep does not later try to re-remove a row this
   // already handled.
   if(typeof _recordLocalDelete==='function'&&_lastKnownIds&&_lastKnownIds[tbl]){
-    for(const id of list){try{_recordLocalDelete(tbl,id);}catch(_e){}}
+    for(const id of list){try{_recordLocalDelete(tbl,String(id));}catch(_e){}}
   }
   return done;
 }
