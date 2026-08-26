@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.25.26.39';
+const APP_VERSION='08.25.26.40';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -3845,8 +3845,13 @@ function renderTeam(){
           if(e.role==='owner')return '';
           const g=_geoRosterStatus(e.email);
           if(!g)return '';
+          // The problem on its own line, the tap that fixes it dimmer
+          // underneath. One line carrying both read as a single sentence and
+          // wrapped mid-path on a phone, which is exactly where the owner has
+          // to read it.
           return '<div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-top:5px;color:'+g.tone+'">'+
-            '<span style="font-size:9px">'+svgIcon(g.dot,{size:9})+'</span><span>'+escHtml(g.label)+'</span></div>';
+            '<span style="font-size:9px">'+svgIcon(g.dot,{size:9})+'</span><span>'+escHtml(g.label)+'</span></div>'+
+            (g.fix?'<div style="font-size:10px;color:var(--text3);margin-top:2px;padding-left:14px">'+escHtml(g.fix)+'</div>':'');
         })()+
       '</div>';
     }).join('');
@@ -4027,6 +4032,55 @@ async function _loadTeamGeo(){
         if(k&&next[k]&&r.employee_user_id&&byUser[r.employee_user_id])next[k].lastPing=byUser[r.employee_user_id];
       });
     }catch(_e){}
+    // iOS's OWN word, per handset, from device_status (owner ask 2026-08-26:
+    // "the location permissions based on team member can read from these iOS
+    // values in actual plain English").
+    //
+    // team_members.location_status only ever holds the FLATTENED answer
+    // (granted/denied/prompt/unsupported), and the flattening is what hides
+    // the two failures that matter most: While Using and Always-but-reduced
+    // both arrive here as 'granted', so the roster showed a green light for a
+    // phone that logs nothing in a pocket, or that can never fire a 600ft
+    // fence. device_status carries all three axes and is described at its
+    // writer (js/geo-track.js _geoReportPermission) as the real record, so it
+    // is read directly rather than teaching team_members a second vocabulary
+    // it would then have to keep in sync (7.3).
+    try{
+      const byUid={};
+      data.forEach(r=>{if(r.employee_user_id)byUid[r.employee_user_id]=(r.email||'').toLowerCase();});
+      const uids=Object.keys(byUid);
+      if(uids.length){
+        const{data:devs}=await _supa.from('device_status')
+          .select('user_id,device_label,location_status,location_accuracy,location_services_enabled,derived,checked_at')
+          .eq('contractor_user_id',cid).in('user_id',uids);
+        // ONE row per person, and the BEST phone wins rather than the newest.
+        // Tracking needs one capable handset: an iPad left on While Using
+        // must never drag down the iPhone that is actually on Always, and a
+        // person carrying a working phone is not a person with a problem.
+        // Ties break on recency so the surviving row is the freshest of the
+        // equally-capable ones.
+        const rank=r=>{
+          const st=String(r.location_status||'');
+          if(r.location_services_enabled===false)return 0;
+          if(st==='denied'||st==='restricted')return 0;
+          if(st==='notdetermined'||!st)return 1;
+          if(st==='wheninuse')return 2;
+          if(st==='always')return String(r.location_accuracy||'')==='reduced'?3:4;
+          return 1;
+        };
+        (devs||[]).forEach(r=>{
+          const k=byUid[r.user_id];
+          if(!k||!next[k])return;
+          const cur=next[k].ios;
+          if(cur){
+            const a=rank(r),b=rank(cur);
+            if(a<b)return;
+            if(a===b&&(Date.parse(r.checked_at||'')||0)<=(Date.parse(cur.checked_at||'')||0))return;
+          }
+          next[k].ios=r;
+        });
+      }
+    }catch(_e){}
     _teamGeo=next;
   }catch(_e){}
 }
@@ -4036,8 +4090,43 @@ function _geoRosterStatus(email){
   const g=_teamGeo[(email||'').toLowerCase()];
   if(!g)return{dot:'⚪',label:'Not set up yet',tone:'var(--text3)'};
   const pingAge=g.lastPing?Date.now()-new Date(g.lastPing).getTime():null;
+  const fresh=pingAge!=null&&pingAge<_GEO_FRESH_MS;
+  // ── iOS's own word, when this person's phone has given one ────────────────
+  // Every line below names the ONE thing that fixes it, because an owner
+  // cannot change any of these remotely. All they can do is tell the person
+  // what to tap, and a red dot with no instruction just moves the confusion.
+  const io_=g.ios;
+  const ioAt=io_?(Date.parse(io_.checked_at||'')||0):0;
+  const ioFresh=ioAt>0&&(Date.now()-ioAt)<_GEO_FRESH_MS;
+  // Newest evidence wins. A ping proves tracking worked at that moment; iOS's
+  // word proves what happens once the app closes. Neither outranks the other
+  // by kind, only by age: an amber "While Using" read yesterday must not
+  // override breadcrumbs arriving an hour ago (they may have just fixed it),
+  // and a green ping from this morning must not hide a permission they
+  // turned off since.
+  const iosWins=ioFresh&&(!fresh||ioAt>=(Date.parse(g.lastPing||'')||0));
+  if(io_&&iosWins){
+    const st=String(io_.location_status||'');
+    const dev=io_.device_label?' · '+io_.device_label:'';
+    if(io_.location_services_enabled===false)
+      return{dot:'🔴',label:'Location is off for their whole phone',fix:'Settings › Privacy › Location Services',tone:'#DC2626'};
+    if(st==='denied')
+      return{dot:'🔴',label:'Location off on their phone',fix:'Settings › TradeDesk › Location',tone:'#DC2626'};
+    if(st==='restricted')
+      return{dot:'🔴',label:'Blocked by Screen Time or a device policy',tone:'#DC2626'};
+    if(st==='notdetermined')
+      return{dot:'⚪',label:'Hasn’t answered the location prompt yet',tone:'var(--text3)'};
+    if(st==='wheninuse')
+      return{dot:'🟠',label:'Only tracks with the app open, their drives won’t log',fix:'Settings › TradeDesk › Location › Always',tone:'#D97706'};
+    if(st==='always'&&String(io_.location_accuracy||'')==='reduced')
+      return{dot:'🟠',label:'On, but not precise enough for job check-ins',fix:'Settings › TradeDesk › Location › Precise Location',tone:'#D97706'};
+    if(st==='always')
+      return fresh
+        ? {dot:'🟢',label:'Tracking · last ping '+_timeAgo(g.lastPing),tone:'var(--green-mid,#16a34a)'}
+        : {dot:'🟢',label:'Tracking, all set'+dev,tone:'var(--green-mid,#16a34a)'};
+  }
   // A ping inside the window is proof, regardless of what the permission API said.
-  if(pingAge!=null&&pingAge<_GEO_FRESH_MS)
+  if(fresh)
     return{dot:'🟢',label:'Tracking · last ping '+_timeAgo(g.lastPing),tone:'var(--green-mid,#16a34a)'};
   if(g.status==='denied')
     return{dot:'🔴',label:'Location off on their phone',tone:'#DC2626'};

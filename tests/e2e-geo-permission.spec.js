@@ -290,6 +290,145 @@ test.describe('Crew location permission', () => {
     expect(out.c.dot).toBe('⚪');
   });
 
+  // ── 4b. iOS's own word, in plain English (owner ask 2026-08-26) ───────────
+  //
+  // The flattened status hid the two failures that cost the most: While Using
+  // and Always-but-reduced both arrived as 'granted' and lit the roster GREEN
+  // for a phone that logs nothing in a pocket, or that can never fire a job
+  // fence. These lock in that each one now reads as its own problem, and
+  // names the single Settings path that fixes it.
+  const rosterIos = (ios, rest) => page.evaluate(([i, r]) => {
+    S.teamTracking = true;
+    _teamGeo = { 'a@b.co': Object.assign({ status: null, checkedAt: null, ackAt: null, lastPing: null, ios: i }, r || {}) };
+    return _geoRosterStatus('a@b.co');
+  }, [ios, rest]);
+  const NOW = () => new Date().toISOString();
+
+  test('While Using is amber and says drives will not log, never a green light', async () => {
+    const out = await rosterIos({ location_status: 'wheninuse', location_accuracy: 'full', checked_at: NOW() });
+    expect(out.dot, 'granted-but-useless is not green').toBe('🟠');
+    expect(out.label).toContain('Only tracks with the app open');
+    expect(out.fix, 'the owner cannot fix this remotely, so it names the tap').toContain('Always');
+  });
+
+  test('Always with reduced accuracy is amber and points at Precise Location', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'reduced', checked_at: NOW() });
+    expect(out.dot).toBe('🟠');
+    expect(out.label).toContain('not precise enough');
+    expect(out.fix).toContain('Precise Location');
+  });
+
+  test('device-wide Location Services off is called out as the whole phone', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: false, checked_at: NOW() });
+    expect(out.dot).toBe('🔴');
+    expect(out.label, 'app-level Always is irrelevant when the master switch is off').toContain('whole phone');
+    expect(out.fix).toContain('Location Services');
+  });
+
+  test('restricted names the cause, since no amount of tapping TradeDesk fixes it', async () => {
+    const out = await rosterIos({ location_status: 'restricted', checked_at: NOW() });
+    expect(out.dot).toBe('🔴');
+    expect(out.label).toMatch(/screen time|device policy/i);
+  });
+
+  test('notdetermined is grey and unanswered, not a refusal', async () => {
+    const out = await rosterIos({ location_status: 'notdetermined', checked_at: NOW() });
+    expect(out.dot).toBe('⚪');
+    expect(out.label).toMatch(/answered/i);
+  });
+
+  test('Always with full accuracy reads as all set', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, device_label: 'iPhone', checked_at: NOW() });
+    expect(out.dot).toBe('🟢');
+    expect(out.label).toContain('all set');
+    expect(out.label).toContain('iPhone');
+  });
+
+  // ── Newest evidence wins, in BOTH directions ──────────────────────────────
+  test('a stale While Using does not override breadcrumbs arriving now', async () => {
+    const old = new Date(Date.now() - 20 * 3600 * 1000).toISOString();
+    const out = await rosterIos({ location_status: 'wheninuse', checked_at: old }, { lastPing: NOW() });
+    expect(out.dot, 'they may have already fixed it; the pings are the newer fact').toBe('🟢');
+    expect(out.label).toContain('last ping');
+  });
+
+  test('a fresh While Using DOES override an older ping', async () => {
+    const old = new Date(Date.now() - 20 * 3600 * 1000).toISOString();
+    const out = await rosterIos({ location_status: 'wheninuse', checked_at: NOW() }, { lastPing: old });
+    expect(out.dot, 'a green ping from this morning must not hide a switch flipped since').toBe('🟠');
+  });
+
+  test('an iOS row older than the freshness window is ignored entirely', async () => {
+    const ancient = new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString();
+    const out = await rosterIos({ location_status: 'wheninuse', checked_at: ancient },
+      { status: 'granted', checkedAt: ancient, ackAt: ancient });
+    expect(out.dot, 'stale is unknown, never a colour that claims to know').toBe('⚪');
+    expect(out.label).toContain('No recent activity');
+  });
+
+  // REGRESSION GUARD: a phone that never reported to device_status (an
+  // Android, a browser, anyone on a build older than this one) must keep the
+  // exact behaviour it had before, or this change would blank the roster for
+  // every existing crew member until they next open the app.
+  test('no iOS row at all leaves the old flattened behaviour untouched', async () => {
+    const now = NOW();
+    const out = await page.evaluate((n) => {
+      S.teamTracking = true;
+      _teamGeo = { 'a@b.co': { status: 'granted', checkedAt: n, ackAt: n, lastPing: null } };
+      return _geoRosterStatus('a@b.co');
+    }, now);
+    expect(out.dot).toBe('🟢');
+    expect(out.label).toContain('Location on');
+  });
+
+  test('a state the owner cannot fix carries no fix line to tap', async () => {
+    const out = await rosterIos({ location_status: 'restricted', checked_at: NOW() });
+    expect(out.fix, 'Screen Time is not a TradeDesk setting, so pointing at one would be a lie').toBeUndefined();
+  });
+
+  // The BEST handset decides, not the newest. Somebody with a working iPhone
+  // and a forgotten iPad on While Using does not have a problem, and a roster
+  // that says otherwise sends the owner chasing a phantom.
+  test('the most capable device wins when someone has several', async () => {
+    const out = await page.evaluate(async () => {
+      const saved = { supa: window._supa, user: window._supaUser, emp: window._isEmployee,
+                      cid: window._contractorUserId, en: window.supaEnabled, geo: window._teamGeo };
+      const now = new Date().toISOString();
+      const rows = {
+        team_members: [{ email: 'A@b.co', employee_user_id: 'u1', location_status: 'granted',
+                         location_checked_at: now, location_device: 'phone', location_ack_at: now }],
+        location_pings: [],
+        device_status: [
+          { user_id: 'u1', device_label: 'iPad', location_status: 'wheninuse',
+            location_accuracy: 'full', location_services_enabled: true, checked_at: now },
+          { user_id: 'u1', device_label: 'iPhone', location_status: 'always',
+            location_accuracy: 'full', location_services_enabled: true, checked_at: now },
+        ],
+      };
+      window.supaEnabled = () => true;
+      window._supaUser = { id: 'owner-1' };
+      window._isEmployee = false;
+      window._contractorUserId = 'owner-1';
+      window._supa = { from: (t) => { const q = { select: () => q, eq: () => q, in: () => q, gte: () => q,
+        order: () => q, limit: () => q, then: (res) => Promise.resolve({ data: rows[t] || [], error: null }).then(res) }; return q; } };
+      try {
+        await _loadTeamGeo();
+        const g = _teamGeo['a@b.co'];
+        S.teamTracking = true;
+        return { label: g && g.ios && g.ios.device_label, status: g && g.ios && g.ios.location_status,
+                 roster: _geoRosterStatus('a@b.co') };
+      } finally {
+        window._supa = saved.supa; window._supaUser = saved.user; window._isEmployee = saved.emp;
+        window._contractorUserId = saved.cid; window.supaEnabled = saved.en; window._teamGeo = saved.geo;
+      }
+    });
+    expect(out.status, 'the iPad must not drag down the phone that works').toBe('always');
+    expect(out.label).toBe('iPhone');
+    expect(out.roster.dot).toBe('🟢');
+  });
+
   // ── 5. The checklist item stays completable ────────────────────────────────
 
   test('a denied user gets a Settings walkthrough, not a button that cannot work', async () => {
