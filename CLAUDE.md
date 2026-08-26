@@ -54,7 +54,9 @@ This rule is mandatory and applies to every response, not just summaries.
 How a change ships. Repeat until review is clean:
 
 1. **Build it**, write the feature + its tests on the branch.
-2. **Local tests**, flow tests on a local copy + the offline CI shards. Free, no Cloudflare.
+2. **Run the tests you just wrote, locally, right now.** One spec file, 5 to 13
+   seconds (§5.2.1). Green before you push, always. This step exists because
+   its absence is what turned single mistakes into four-minute CI rounds.
 3. **Cloud gate**, the same tests, now against the REAL backend (Dev Supabase + Stripe).
    The app still runs on localhost, so still no Cloudflare cost. This seeds real data into
    Dev A/B for you to poke at.
@@ -420,14 +422,55 @@ CI sees both at once, so the new tests cover the new code and the suite passes.
 1. Write the feature code on the feature branch.
 2. Write E2E tests in the **same commit**: happy path + edge cases + an
    `assertNoErrors()` call to confirm zero console errors.
-3. Push → CI runs the full WebKit + Chromium suite automatically.
-4. If CI fails → fetch logs via WebFetch, fix on the feature branch, push again,
-   CI reruns. Loop until green.
-5. When CI is green → merge via PR with explicit user approval.
+3. **Run the spec files you touched, locally, and get them green BEFORE you
+   push.** See §5.2.1. This is not optional and it is not a judgement call.
+4. Push → CI runs the full WebKit + Chromium suite automatically.
+5. If CI fails → fetch logs, fix on the feature branch, push again. CI reruns.
+6. When CI is green → merge via PR with explicit user approval.
 
-**Never run tests locally.** Push and let CI handle everything. Local test runs
-dump hundreds of lines into context for no benefit, CI runs the same browsers
-and reports back via webhook.
+### 5.2.1 Run the file you touched. Never run the whole suite. (owner mandate 2026-08-26)
+
+This section used to say **"Never run tests locally"**, on the grounds that a
+local run dumps hundreds of lines into context for no benefit. That was right
+about the FULL suite and badly wrong about a single file, and the cost was paid
+by the owner, in his own words: "tired of the iteration on iteration of these
+tests failing and wasting my time."
+
+**Measured on this repo, 2026-08-26, not estimated:**
+
+| Command | Tests | Wall clock | Context |
+|---|---|---|---|
+| `npx playwright test tests/e2e-share-inbox.spec.js --project=chromium --reporter=line` | 12 | **5.6s** | ~15 lines |
+| `npx playwright test tests/e2e-timelog.spec.js --project=chromium --reporter=line` | 245 | **12.5s** | 4 lines piped through `tail` |
+| One CI round trip | 8,889 | **~4 min** | plus a red X the owner has to look at |
+
+On the night this rule changed, EVERY CI failure but one was a test Claude had
+written wrong: a stale assertion left behind when a field moved, a test that
+seeded no data so its own comparison was meaningless, a scan written too
+broadly, a stub missing a method the real code calls. Every one of them would
+have surfaced in under thirteen seconds. Instead each cost a four-minute round
+trip and a failure the owner had to watch land.
+
+**The rule, now:**
+
+- **Before every push**, run each `tests/*.spec.js` you added to or changed:
+  `npx playwright test <file> --project=chromium --reporter=line 2>&1 | tail -20`
+  Push only when it says passed. `--project=chromium` alone is enough for a
+  pre-push check; CI still runs WebKit, and cross-browser differences are the
+  part CI genuinely earns.
+- **Never run the full suite locally.** No bare `npx playwright test`. That is
+  the case the original rule was written for and it is still correct: thousands
+  of tests, six shards' worth of output, minutes of wall clock, and CI already
+  does it for free on every push.
+- **Never run `tests/flow/*` locally on a whim** (§12.8, §14.2): those hit the
+  real backend and can exhaust the daily proxy quota in one run.
+- `--reporter=line` and `| tail` are load-bearing. The default reporter is what
+  made "hundreds of lines" true in the first place.
+
+**Why this matters more than it sounds.** CI stops being where bugs are
+discovered and becomes where they are confirmed. A red shard then means
+something real broke, not that Claude fumbled an assertion, which is the only
+way a green board keeps meaning anything.
 
 ---
 
@@ -1083,6 +1126,10 @@ Run this before every `git push`. If any answer is "unsure", stop and read more 
 | 5 | Did I update ALL affected assertions (not just one)? | Yes |
 | 6 | Can I state the root cause of every failure I fixed in one sentence? | Yes |
 | 7 | Does the fix change behavior beyond the minimum needed? | No |
+| 8 | **Did I RUN every spec file I touched, locally, and see it pass?** (§5.2.1) | Yes, with output |
+
+Row 8 is the one that pays for itself. It costs 5 to 13 seconds and it is the
+difference between CI confirming your work and CI discovering your mistakes.
 
 ---
 
