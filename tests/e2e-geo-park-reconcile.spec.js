@@ -223,11 +223,31 @@ test.describe('Geo park detection + mileage reconciliation', () => {
         // Chainable on MULTIPLE .eq() calls (the duplicate-key drain fix
         // matches on both contractor_user_id AND client_key), and directly
         // awaitable bare, same reasoning as upsert/insert above.
+        // A SOFT DELETE IS A DELETE, as far as these tests are concerned
+        // (2026-08-26). Every sweep now stamps deleted_at through
+        // _tdSoftDelete instead of issuing a DELETE, so a recorder that only
+        // watched .delete() saw nothing happen and 25 assertions about
+        // __rec.deletes read undefined. Recording the stamp into the SAME
+        // ledger keeps every one of those assertions meaningful and unchanged:
+        // they were always about "was this row removed", never about the verb.
+        // Genuine field updates (a trim, a merge widening a span) still land in
+        // __rec.updates as before, because they carry no deleted_at.
         update: (patch) => {
           const rec = { tbl, patch, filters: {} };
-          window.__rec.updates.push(rec);
-          const q = { eq: (col, val) => { rec.filters[col] = val; return q; },
-                      then: (res, rej) => Promise.resolve({ data: null, error: null }).then(res, rej) };
+          const soft = !!(patch && patch.deleted_at);
+          if (!soft) window.__rec.updates.push(rec);
+          const q = {
+            eq: (col, val) => {
+              rec.filters[col] = val;
+              if (soft) window.__rec.deletes.push({ tbl, col, val });
+              return q;
+            },
+            in: (col, vals) => {
+              rec.filters[col] = vals;
+              if (soft) (vals || []).forEach(v => window.__rec.deletes.push({ tbl, col, val: String(v) }));
+              return q;
+            },
+            then: (res, rej) => Promise.resolve({ data: null, error: null }).then(res, rej) };
           return q;
         },
         // Chainable AND directly awaitable, same reasoning as upsert/insert
