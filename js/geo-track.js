@@ -1317,6 +1317,9 @@ async function _geoOnPing(pos){
         _geoDriveStartedAt=nowIso;_geoLegOrigin=_geoLastFenceLoc;
         _geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs,acc};
         _geoDriveHadPause=false;
+        // A drive opening IS a shift running: the beat must survive whatever
+        // the day does next, including the app dying at the destination.
+        _geoHeartbeatSync(null);
         // This exit was JUST confirmed and the drive is only NOW opening:
         // stash who we left, so a settle-back into this exact fence within
         // the grace window above can undo it instead of logging a phantom
@@ -3572,6 +3575,38 @@ function _geoTdPlugin(){
   }catch(_e){return null;}
 }
 let _geoParkSpot=null;   // where to center the region when the countdown fires
+// ── The shift heartbeat, armed at every chance JS gets ──────────────────────
+// Owner report 2026-08-27 (live device, morning at a job): zero heartbeat
+// events all day. The only call site was _geoEnterParkMode, and park mode only
+// arms after minutes of live JS pings, which a phone that arrives at a job and
+// goes straight into a pocket never provides. The native wake lane kept
+// posting fixes, so the pipe looked healthy while the 30-minute beat never
+// started: the switch was simply never thrown.
+//
+// So the heartbeat is now armed at SHIFT START, from every place JS provably
+// runs: the moment tracking starts, the moment a drive opens, and (as before)
+// the moment park mode arms. Parking at the likely-home pin still stops it,
+// and the native ttl still self-stops a beat nobody turned off. Re-arming is
+// idempotent on the native side (the timer restarts, the ttl refreshes), and
+// the 60s throttle keeps drive-start churn off the bridge.
+let _geoHbArmedAtMs=0;
+function _geoHeartbeatSync(spot){
+  try{
+    const Td=_geoTdPlugin();
+    if(!Td||typeof Td.startHeartbeat!=='function')return;
+    const atHome=!!(spot&&typeof _placeIsLikelyHome==='function'&&_placeIsLikelyHome({lat:spot.lat,lng:spot.lng},0));
+    if(atHome){
+      _geoHbArmedAtMs=0;
+      if(typeof Td.stopHeartbeat==='function')Promise.resolve(Td.stopHeartbeat()).catch(()=>{});
+      _geoParkNote('hb-off','home park');
+      return;
+    }
+    if(Date.now()-_geoHbArmedAtMs<60000)return;
+    _geoHbArmedAtMs=Date.now();
+    Promise.resolve(Td.startHeartbeat({intervalMs:30*60000,ttlMs:12*3600000})).catch(()=>{});
+    _geoParkNote('hb-on','30m tick armed');
+  }catch(_e){}
+}
 function _geoArmParkTimer(spot){
   if(spot)_geoParkSpot=spot;
   if(_geoParkTimer||_geoParkModeOn)return;
@@ -3644,13 +3679,7 @@ function _geoEnterParkMode(spot){
       // shift and turns it off. Timing lives here in JS; the plugin only
       // holds the low-power session and fires the tick. ttl self-stops a
       // heartbeat nobody turned off (phone left at the shop over a weekend).
-      try{
-        if(typeof Td.startHeartbeat==='function'){
-          const _atHome=(typeof _placeIsLikelyHome==='function')&&_placeIsLikelyHome({lat:_at.lat,lng:_at.lng},0);
-          if(_atHome){if(typeof Td.stopHeartbeat==='function')Td.stopHeartbeat();}
-          else Td.startHeartbeat({intervalMs:30*60000,ttlMs:12*3600000});
-        }
-      }catch(_e){}
+      _geoHeartbeatSync(_at);
       if(_geoNativeWatcherId!=null){
         const BG=_geoNativePlugin();
         try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id:_geoNativeWatcherId});}catch(_e){}
@@ -4209,6 +4238,10 @@ function startGeoTracking(){
           if(_TdN&&typeof _TdN.startEvents==='function')
             Promise.resolve(_TdN.startEvents({regions:_geoParkRegions(null)})).catch(()=>{});
         }catch(_e){}
+        // The heartbeat is armed alongside it, same rule: from the first
+        // minute of tracking, not only at park time. If this boot is actually
+        // at home, the park arm minutes later corrects it to off.
+        _geoHeartbeatSync(null);
         // Chain the Motion & Fitness ask right behind the location grant
         // (owner 2026-08-14): one consent flow, prompts in sequence, never
         // stacked. The first coprocessor query is what surfaces the dialog;

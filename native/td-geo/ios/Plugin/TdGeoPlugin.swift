@@ -44,6 +44,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // What JS last armed, persisted so a system relaunch can restore it.
     // {mode:"parked"|"events", visits:Bool}. Cleared by stopAll.
     private let armedKey = "td_geo_armed"
+    // The heartbeat's own persisted state ({intervalMs, ttlMs, startedAtMs}).
+    // Without it a force-quit or OS kill silently ends the 30-minute beat for
+    // the rest of the shift (owner report 2026-08-27: a whole morning at a job
+    // with zero heartbeat events), because heartbeatOn only lived in memory
+    // and load() restored everything EXCEPT the beat.
+    private let hbKey = "td_geo_hb"
     // ── Real-time flush (owner 2026-08-27) ──────────────────────────────────
     // Config JS hands over via configureFlush: {url, userId, deviceId, key}.
     // The key is the per-device geo_flush_keys secret, NOT a Supabase token:
@@ -95,6 +101,33 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             // The event that woke us is (or is about to be) in the buffer;
             // this relaunch window is the moment to get it to the server.
             self.scheduleFlush()
+            // Restore the shift heartbeat across the kill. The ttl is judged
+            // from the ORIGINAL start, so a phone left at the shop still goes
+            // quiet on schedule however many times iOS relaunches the app.
+            if let hb = d.dictionary(forKey: self.hbKey),
+               let ivRaw = hb["intervalMs"] as? Double,
+               let ttlRaw = hb["ttlMs"] as? Double,
+               let t0 = hb["startedAtMs"] as? Double {
+                // Same clamps as startHeartbeat: stored state is ours, but a
+                // corrupt default must never become a 1ms timer.
+                let iv = min(max(ivRaw, 60000), 3600000)
+                let ttl = min(max(ttlRaw, iv), 86400000)
+                if Date().timeIntervalSince1970 * 1000 - t0 > ttl {
+                    d.removeObject(forKey: self.hbKey)
+                } else {
+                    self.heartbeatOn = true
+                    self.heartbeatStartedAt = Date(timeIntervalSince1970: t0 / 1000)
+                    self.heartbeatTtlMs = ttl
+                    if self.burstStartedAt == nil {
+                        m.desiredAccuracy = kCLLocationAccuracyThreeKilometers
+                        m.distanceFilter = 99999
+                    }
+                    m.startUpdatingLocation()
+                    self.heartbeatTimer = Timer.scheduledTimer(withTimeInterval: iv / 1000, repeats: true) { [weak self] _ in
+                        self?.heartbeatTick()
+                    }
+                }
+            }
         }
     }
     // ── Radio-time accounting ────────────────────────────────────────────────
@@ -574,6 +607,10 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             self.heartbeatOn = true
             self.heartbeatStartedAt = Date()
             self.heartbeatTtlMs = ttlMs
+            UserDefaults.standard.set([
+                "intervalMs": intervalMs, "ttlMs": ttlMs,
+                "startedAtMs": Date().timeIntervalSince1970 * 1000
+            ], forKey: self.hbKey)
             let m = self.mgr()
             if self.burstStartedAt == nil {
                 m.desiredAccuracy = kCLLocationAccuracyThreeKilometers
@@ -599,6 +636,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         heartbeatTimer = nil
         heartbeatOn = false
         heartbeatStartedAt = nil
+        UserDefaults.standard.removeObject(forKey: hbKey)
         // Only release the radio if no burst still owns it.
         if burstStartedAt == nil { mgr().stopUpdatingLocation() }
     }

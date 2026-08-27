@@ -882,6 +882,60 @@ final class TdGeoPluginTests: XCTestCase {
         wait(for: [done], timeout: 30)
     }
 
+    func testHeartbeatPersistsStateAndStopClearsIt() {
+        // The whole point of the persisted dict: a force-quit or OS kill must
+        // not silently end the shift's 30-minute beat (owner report
+        // 2026-08-27, a full morning at a job with zero heartbeat events).
+        let started = expectation(description: "heartbeat on")
+        plugin.startHeartbeat(makeCall(options: ["intervalMs": 60000, "ttlMs": 3600000],
+                                       onSuccess: { _ in started.fulfill() }))
+        wait(for: [started], timeout: 30)
+        let hb = UserDefaults.standard.dictionary(forKey: "td_geo_hb")
+        XCTAssertNotNil(hb, "startHeartbeat must persist its state for load() to restore")
+        XCTAssertEqual(hb?["intervalMs"] as? Double, 60000)
+        XCTAssertEqual(hb?["ttlMs"] as? Double, 3600000)
+        XCTAssertNotNil(hb?["startedAtMs"] as? Double)
+        let stopped = expectation(description: "heartbeat off")
+        plugin.stopHeartbeat(makeCall(onSuccess: { _ in stopped.fulfill() }))
+        wait(for: [stopped], timeout: 30)
+        XCTAssertNil(UserDefaults.standard.dictionary(forKey: "td_geo_hb"),
+                     "stopHeartbeat must clear the persisted state or a home park would not survive a relaunch")
+    }
+
+    func testLoadRestoresAFreshHeartbeatAndDropsAnExpiredOne() {
+        // Fresh: started 1 minute ago, ttl 1h. load() must bring the beat back
+        // (one stop returns it to off, proving a timer existed to stop).
+        UserDefaults.standard.set(["mode": "events", "visits": true], forKey: "td_geo_armed")
+        UserDefaults.standard.set([
+            "intervalMs": 60000.0, "ttlMs": 3600000.0,
+            "startedAtMs": Date().timeIntervalSince1970 * 1000 - 60000
+        ], forKey: "td_geo_hb")
+        plugin.load()
+        let wait1 = expectation(description: "restored beat stops")
+        // Give load()'s main-queue hop a beat before asserting.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.plugin.stopHeartbeat(self.makeCall(onSuccess: { data in
+                XCTAssertEqual(data?["on"] as? Bool, false)
+                wait1.fulfill()
+            }))
+        }
+        wait(for: [wait1], timeout: 30)
+        // Expired: started 2h ago, ttl 1h. load() must clear it, not restart it.
+        UserDefaults.standard.set([
+            "intervalMs": 60000.0, "ttlMs": 3600000.0,
+            "startedAtMs": Date().timeIntervalSince1970 * 1000 - 7200000
+        ], forKey: "td_geo_hb")
+        plugin.load()
+        let wait2 = expectation(description: "expired state cleared")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            XCTAssertNil(UserDefaults.standard.dictionary(forKey: "td_geo_hb"),
+                         "an expired beat must be dropped at relaunch, never restarted")
+            wait2.fulfill()
+        }
+        wait(for: [wait2], timeout: 30)
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+    }
+
     func testStopAllTearsDownHeartbeat() {
         // stopAll is the tracking kill switch; a heartbeat surviving it would
         // keep a location session alive after the user turned tracking off.

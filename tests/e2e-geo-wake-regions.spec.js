@@ -223,6 +223,73 @@ test.describe('Wake region set for the dead app', () => {
     expect(src.includes('td_geo_armed'), 'the armed state must persist for the relaunch to restore').toBe(true);
   });
 
+  // ── The heartbeat arms at shift start, not only at park ────────────────────
+  // Owner report 2026-08-27 (live device): a whole morning at a job with zero
+  // heartbeat events, because the only call site was _geoEnterParkMode and
+  // park needs minutes of live JS pings a pocketed phone never provides. The
+  // beat now arms from every place JS provably runs.
+  test('_geoHeartbeatSync arms the 30-minute beat, throttles re-arms, and a home park stops it', async () => {
+    const r = await page.evaluate(async () => {
+      // BARE bindings: _geoTdPlugin/_geoHbArmedAtMs/_placeIsLikelyHome are
+      // module-scoped, window.* would set unrelated properties.
+      const saved = { td: _geoTdPlugin, home: _placeIsLikelyHome };
+      const calls = { start: [], stop: 0 };
+      try {
+        _geoTdPlugin = () => ({
+          startHeartbeat: (o) => { calls.start.push(o); return Promise.resolve({ on: true }); },
+          stopHeartbeat: () => { calls.stop++; return Promise.resolve({ on: false }); },
+        });
+        _placeIsLikelyHome = (c) => !!(c && c.lat === 39.9);
+        _geoHbArmedAtMs = 0;
+        _geoHeartbeatSync(null);                       // shift start: arms
+        _geoHeartbeatSync(null);                       // 1s later: throttled
+        const afterThrottle = calls.start.length;
+        _geoHeartbeatSync({ lat: 39.9, lng: -94.9 });  // home park: stops
+        const stops = calls.stop;
+        _geoHeartbeatSync({ lat: 39.1, lng: -94.1 });  // work park right after home: re-arms (throttle was reset)
+        return { first: calls.start[0] || null, afterThrottle, stops, total: calls.start.length };
+      } finally {
+        _geoTdPlugin = saved.td; _placeIsLikelyHome = saved.home; _geoHbArmedAtMs = 0;
+      }
+    });
+    expect(r.first).toBeTruthy();
+    expect(r.first.intervalMs).toBe(30 * 60000);
+    expect(r.first.ttlMs).toBe(12 * 3600000);
+    expect(r.afterThrottle, 'a second arm inside 60s must not hit the bridge').toBe(1);
+    expect(r.stops, 'a likely-home park must stop the beat').toBe(1);
+    expect(r.total, 'a work park after a home stop must re-arm').toBe(2);
+  });
+
+  test('a shell without startHeartbeat is a silent no-op', async () => {
+    const r = await page.evaluate(() => {
+      const saved = { td: _geoTdPlugin };
+      try {
+        _geoTdPlugin = () => ({});
+        _geoHbArmedAtMs = 0;
+        try { _geoHeartbeatSync(null); return { threw: false }; }
+        catch (e) { return { threw: true, msg: e.message }; }
+      } finally { _geoTdPlugin = saved.td; _geoHbArmedAtMs = 0; }
+    });
+    expect(r.threw, r.msg || '').toBe(false);
+  });
+
+  test('the heartbeat is wired at all three shift moments (source guarantee)', async () => {
+    const src = readJs('geo-track.js');
+    // 1. Tracking start: alongside the force-close net in the watcher-on path.
+    const w = src.indexOf("_geoParkNote('watcher-on'");
+    expect(w).toBeGreaterThan(-1);
+    expect(src.slice(w, w + 1500).includes('_geoHeartbeatSync(null)'),
+      'the watcher-on path must arm the heartbeat').toBe(true);
+    // 2. Drive open.
+    const d = src.indexOf('_geoDriveStartedAt=nowIso;_geoLegOrigin=_geoLastFenceLoc;');
+    expect(d).toBeGreaterThan(-1);
+    expect(src.slice(d, d + 400).includes('_geoHeartbeatSync(null)'),
+      'a drive opening must arm the heartbeat').toBe(true);
+    // 3. Park arm, with the park spot so home can turn it off.
+    expect(src.includes('_geoHeartbeatSync(_at)'),
+      'the park arm must sync the heartbeat against the park spot').toBe(true);
+  });
+
   // ── Liveness + motion events (build 39) ────────────────────────────────────
   test('a heartbeat event never reaches the fence machine', async () => {
     // Its fix is 3km-accuracy keepalive garbage; through _geoOnPing it could
