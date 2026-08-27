@@ -792,6 +792,71 @@ async function _mileMotionHealSweep(){
     return fixed;
   }catch(_e){return 0;}
 }
+
+// ── Server-provisional refine (real-time geofence ingest, 2026-08-27) ───────
+// The ingest-geo edge function writes a mileage row within seconds of a fence
+// crossing, app force-closed or not, so the log is LIVE. But the server has
+// no router, no motion tape, and no home knowledge, so its rows are marked
+// data.provisional and this sweep, once per session at the same settle point
+// as its siblings above, turns each one into a first-class row:
+//   1. If the client engine ALSO derived the leg (same legKey, its own row),
+//      the server row is redundant: locally-deleted, which the sweep
+//      propagates as a soft delete. The client row is always the richer one.
+//   2. A leg out of the likely-home pin is a commute, and a commute is not
+//      deductible unless the declared home office makes it so (Rev. Rul.
+//      99-7, same rule autoLogDriveTrip applies live): deleted.
+//   3. Everything else gets the real routed distance in place of the
+//      straight-line estimate, the walk check (an errand inside the leg),
+//      and the provisional flag comes off. From then on it is
+//      indistinguishable from a live-derived row.
+// Idempotent by construction: refined rows lose the flag, deleted rows are
+// recorded via _recordLocalDelete, so a second session finds nothing to do.
+async function _mileServerRefine(){
+  try{
+    if(window._mileServerRefineRan)return 0;
+    if(typeof mileage==='undefined'||!Array.isArray(mileage))return 0;
+    window._mileServerRefineRan=true;
+    const cands=mileage.filter(m=>m&&m.provisional&&m.legKey&&m.fromCoord&&m.toCoord);
+    if(!cands.length)return 0;
+    let refined=0,dropped=0;
+    const kill=(m,why)=>{
+      const i=mileage.indexOf(m);
+      if(i>=0)mileage.splice(i,1);
+      if(typeof _recordLocalDelete==='function')_recordLocalDelete('td_mileage',m.id);
+      dropped++;
+      try{if(typeof _geoParkNote==='function')_geoParkNote('srv-refine',String(m.id)+' dropped: '+why);}catch(_e){}
+    };
+    for(const m of cands.slice(0,20)){
+      // 1. The client engine already owns this leg.
+      if(mileage.some(x=>x&&x!==m&&x.legKey===m.legKey&&!x.provisional)){kill(m,'client row exists');continue;}
+      // 2. Commute out of home, exactly the live rule: only the OWNER with a
+      // declared home office keeps a leg that starts at the likely-home pin.
+      const likelyHome=(typeof _placeIsLikelyHome==='function')&&_placeIsLikelyHome({lat:m.fromCoord.lat,lng:m.fromCoord.lng},0);
+      if(likelyHome&&!(S.homeOffice&&(typeof _isEmployee==='undefined'||!_isEmployee))){kill(m,'home commute');continue;}
+      // 3. Route the real distance and promote the row.
+      try{
+        const{miles}=await _routeDistance(m.fromCoord,m.toCoord);
+        if(miles>0){m.miles=Math.round(miles*10)/10;m.calc_method='auto_route';}
+      }catch(_e){}
+      try{
+        const walked=await _mileTapeHadPause(m.startedIso,m.endedIso);
+        if(walked===true)m.pausedLeg=true;
+      }catch(_e){}
+      delete m.provisional;
+      refined++;
+    }
+    try{if(typeof _geoParkNote==='function')_geoParkNote('srv-refine','cands='+cands.length+' refined='+refined+' dropped='+dropped);}catch(_e){}
+    if(refined||dropped){
+      saveAll();
+      if(document.getElementById('mil-table'))renderAllMileage();
+      if(typeof renderDash==='function')renderDash();
+    }
+    return refined+dropped;
+  }catch(_e){
+    try{if(typeof _geoParkNote==='function')_geoParkNote('srv-refine-err',(_e&&_e.message)||String(_e));}catch(_e2){}
+    return 0;
+  }
+}
 function _mileFixLegClock(rec,routeMins){
   if(!rec||!(routeMins>0)||!rec.endedIso)return;
   if(rec.mins>0&&rec.mins*2>=routeMins)return;   // plausible window, observed wins

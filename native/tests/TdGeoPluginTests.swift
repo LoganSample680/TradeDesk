@@ -732,4 +732,101 @@ final class TdGeoPluginTests: XCTestCase {
         }))
         wait(for: [after], timeout: 30)
     }
+
+    // ── configureFlush (build 39: real-time ingest) ─────────────────────────
+    // The flush lane's contract: config is all-or-nothing, and the watermark
+    // only ever moves forward on acknowledged batches. The network itself is
+    // exercised in the live flow test, not here; this stresses the plumbing
+    // the same adversarial way as every other method in this file.
+
+    func testConfigureFlushRejectsMissingArgs() {
+        // Each required field absent must reject, never crash, and never
+        // store a partial config a background wake would then flush with.
+        UserDefaults.standard.removeObject(forKey: "td_geo_flush_cfg")
+        let combos: [[String: Any]] = [
+            [:],
+            ["url": "https://x.example/functions/v1/ingest-geo"],
+            ["url": "https://x.example", "userId": "u1"],
+            ["url": "https://x.example", "userId": "u1", "deviceId": "d1"],
+            ["url": "", "userId": "u1", "deviceId": "d1", "key": "k1"],
+        ]
+        for opts in combos {
+            let rejected = expectation(description: "rejects \(opts.keys.sorted())")
+            plugin.configureFlush(makeCall(
+                options: opts,
+                onSuccess: { _ in XCTFail("must reject incomplete config: \(opts)") },
+                onError: { _ in rejected.fulfill() }
+            ))
+            wait(for: [rejected], timeout: 30)
+        }
+        XCTAssertNil(UserDefaults.standard.dictionary(forKey: "td_geo_flush_cfg"),
+                     "an incomplete configure must not leave a stored config behind")
+    }
+
+    func testConfigureFlushStoresCompleteConfig() {
+        let done = expectation(description: "configureFlush resolves")
+        plugin.configureFlush(makeCall(
+            options: ["url": "https://x.example/functions/v1/ingest-geo",
+                      "userId": "u-test", "deviceId": "d-test", "key": "gfk_test"],
+            onSuccess: { data in
+                XCTAssertEqual(data?["configured"] as? Bool, true)
+                done.fulfill()
+            }
+        ))
+        wait(for: [done], timeout: 30)
+        let cfg = UserDefaults.standard.dictionary(forKey: "td_geo_flush_cfg") as? [String: String]
+        XCTAssertEqual(cfg?["userId"], "u-test")
+        XCTAssertEqual(cfg?["key"], "gfk_test")
+        UserDefaults.standard.removeObject(forKey: "td_geo_flush_cfg")
+    }
+
+    func testConfigureFlushDoubleCallLastWriterWins() {
+        // Re-configuring (a new session, a rotated key) must replace, not
+        // merge or duplicate: the same guard-race shape §11.2 tests in JS.
+        for i in 1...5 {
+            let done = expectation(description: "configure #\(i)")
+            plugin.configureFlush(makeCall(
+                options: ["url": "https://x.example/f", "userId": "u\(i)",
+                          "deviceId": "d", "key": "k\(i)"],
+                onSuccess: { _ in done.fulfill() }
+            ))
+            wait(for: [done], timeout: 30)
+        }
+        let cfg = UserDefaults.standard.dictionary(forKey: "td_geo_flush_cfg") as? [String: String]
+        XCTAssertEqual(cfg?["userId"], "u5")
+        XCTAssertEqual(cfg?["key"], "k5")
+        UserDefaults.standard.removeObject(forKey: "td_geo_flush_cfg")
+    }
+
+    func testFlushDelegateFailedTaskLeavesWatermarkAndClearsInflight() {
+        // Drive the REAL delegate method with a real (never-resumed) task:
+        // no HTTP response means status 0, the failure branch, so the
+        // watermark must not move and the inflight entry must be consumed
+        // (a dead task that stayed inflight would block its ts range forever).
+        let d = UserDefaults.standard
+        d.set(2000.0, forKey: "td_geo_flush_ts")
+        let session = URLSession.shared
+        let task = session.dataTask(with: URL(string: "https://x.invalid/never-resumed")!)
+        d.set([String(task.taskIdentifier): 5000.0], forKey: "td_geo_flush_inflight")
+        plugin.urlSession(session, task: task, didCompleteWithError: nil)
+        XCTAssertEqual(d.double(forKey: "td_geo_flush_ts"), 2000.0,
+                       "a non-2xx completion must never advance the watermark")
+        let inflight = (d.dictionary(forKey: "td_geo_flush_inflight") as? [String: Double]) ?? [:]
+        XCTAssertNil(inflight[String(task.taskIdentifier)],
+                     "the inflight entry is consumed either way, success or failure")
+        d.removeObject(forKey: "td_geo_flush_ts")
+        d.removeObject(forKey: "td_geo_flush_inflight")
+    }
+
+    func testFlushDelegateUnknownTaskIsANoOp() {
+        // A callback for a task this plugin never sent (another library's
+        // background session, a stale identifier) must change nothing.
+        let d = UserDefaults.standard
+        d.set(3000.0, forKey: "td_geo_flush_ts")
+        d.removeObject(forKey: "td_geo_flush_inflight")
+        let task = URLSession.shared.dataTask(with: URL(string: "https://x.invalid/unknown")!)
+        plugin.urlSession(URLSession.shared, task: task, didCompleteWithError: nil)
+        XCTAssertEqual(d.double(forKey: "td_geo_flush_ts"), 3000.0)
+        d.removeObject(forKey: "td_geo_flush_ts")
+    }
 }

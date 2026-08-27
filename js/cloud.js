@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.26.26.12';
+const APP_VERSION='08.26.26.13';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -8237,6 +8237,10 @@ async function supaLoadFromCloud({silent=false}={}){
     // before the walk check existed corrects itself here (once per session,
     // reductions only, js/mileage.js).
     try{if(typeof _mileMotionHealSweep==='function')_mileMotionHealSweep();}catch(_e){}
+    // Promote server-provisional mileage rows (real-time geofence ingest):
+    // route the real distance, apply the commute rule, drop redundant twins.
+    // Same once-per-session settle point as the sweeps around it.
+    try{if(typeof _mileServerRefine==='function')_mileServerRefine();}catch(_e){}
     // And re-judge named personal stops (the Casey's loop): the live decision
     // runs once when Apple names the stop, so a day the app died through, or
     // a day judged under an older rule, never gets a second look without this.

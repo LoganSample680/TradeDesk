@@ -17,7 +17,7 @@ import UIKit
 // as a listener event, so fixes that arrive while the WebView is suspended or
 // dead replay into the fence machine on the next boot via drainBuffer().
 @objc(TdGeoPlugin)
-public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate {
+public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate, URLSessionTaskDelegate {
     public let identifier = "TdGeoPlugin"
     public let jsName = "TdGeo"
     public let pluginMethods: [CAPPluginMethod] = [
@@ -32,7 +32,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "motionPermStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "locationPermStatus", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "requestPreciseTemp", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "requestPreciseTemp", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "configureFlush", returnType: CAPPluginReturnPromise)
     ]
 
     private var locationManager: CLLocationManager?
@@ -41,6 +42,19 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // What JS last armed, persisted so a system relaunch can restore it.
     // {mode:"parked"|"events", visits:Bool}. Cleared by stopAll.
     private let armedKey = "td_geo_armed"
+    // ── Real-time flush (owner 2026-08-27) ──────────────────────────────────
+    // Config JS hands over via configureFlush: {url, userId, deviceId, key}.
+    // The key is the per-device geo_flush_keys secret, NOT a Supabase token:
+    // a token refresh from here would rotate the JS client's session away.
+    private let flushCfgKey = "td_geo_flush_cfg"
+    // Capture-ts watermark: events with ts <= this have been acknowledged by
+    // the server. Never advanced on send, only on a 2xx, so a lost response
+    // re-sends the tail and the server's dedupe index absorbs the overlap.
+    private let flushMarkKey = "td_geo_flush_ts"
+    // taskIdentifier -> the batch's max ts, persisted so a delegate callback
+    // arriving after a relaunch can still advance the watermark.
+    private let flushInflightKey = "td_geo_flush_inflight"
+    private var flushPending = false
 
     // THE WAKE HANDLER. iOS relaunches even a force-quit app, silently and in
     // the background, when a monitored region trips, a visit closes, or the
@@ -64,6 +78,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             let m = self.mgr()
             m.startMonitoringSignificantLocationChanges()
             if visits { m.startMonitoringVisits() }
+            // The event that woke us is (or is about to be) in the buffer;
+            // this relaunch window is the moment to get it to the server.
+            self.scheduleFlush()
         }
     }
     // ── Radio-time accounting ────────────────────────────────────────────────
@@ -494,6 +511,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         if buf.count > bufferCap { buf.removeFirst(buf.count - bufferCap) }
         d.set(buf, forKey: bufferKey)
         notifyListeners("geoEvent", data: ev)
+        scheduleFlush()
     }
 
     private func event(type: String, loc: CLLocation?, regionId: String?) -> [String: Any] {
@@ -509,6 +527,96 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         }
         if let rid = regionId { ev["regionId"] = rid }
         return ev
+    }
+
+    // MARK: - Real-time flush (owner 2026-08-27: rows land force-closed)
+
+    // configureFlush({url, userId, deviceId, key}) : JS hands over the
+    // ingest-geo endpoint and this device's flush key. Dumb by design
+    // (CLAUDE.md 3.2): what to send, where, and how it is authorized are all
+    // decided in JS and on the server; this layer only moves bytes.
+    @objc func configureFlush(_ call: CAPPluginCall) {
+        guard let url = call.getString("url"), !url.isEmpty,
+              let userId = call.getString("userId"), !userId.isEmpty,
+              let deviceId = call.getString("deviceId"), !deviceId.isEmpty,
+              let key = call.getString("key"), !key.isEmpty else {
+            call.reject("url, userId, deviceId and key are all required")
+            return
+        }
+        UserDefaults.standard.set(
+            ["url": url, "userId": userId, "deviceId": deviceId, "key": key],
+            forKey: flushCfgKey)
+        call.resolve(["configured": true])
+        scheduleFlush()
+    }
+
+    // Background URLSession: the OS finishes the upload even if this process
+    // is suspended mid-transfer, which is the entire guarantee. Lazy so an
+    // app that never configures the flush never creates the session.
+    private lazy var flushSession: URLSession = {
+        let cfg = URLSessionConfiguration.background(withIdentifier: "td.geo.flush")
+        cfg.isDiscretionary = false
+        cfg.sessionSendsLaunchEvents = true
+        return URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
+    }()
+
+    // Debounced so one wake's burst of events becomes one POST.
+    private func scheduleFlush() {
+        if flushPending { return }
+        flushPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            self.flushPending = false
+            self.flushNow()
+        }
+    }
+
+    private func flushNow() {
+        let d = UserDefaults.standard
+        guard let cfg = d.dictionary(forKey: flushCfgKey) as? [String: String],
+              let urlStr = cfg["url"], let target = URL(string: urlStr),
+              let userId = cfg["userId"], let deviceId = cfg["deviceId"], let key = cfg["key"] else { return }
+        let mark = d.double(forKey: flushMarkKey)
+        let buf = (d.array(forKey: bufferKey) as? [[String: Any]]) ?? []
+        let fresh = buf.filter { (num($0["ts"]) ?? 0) > mark }
+        if fresh.isEmpty { return }
+        let batch = Array(fresh.prefix(400))
+        let maxTs = batch.compactMap { num($0["ts"]) }.max() ?? mark
+        let payload: [String: Any] = [
+            "user_id": userId, "device_id": deviceId, "key": key, "events": batch
+        ]
+        guard JSONSerialization.isValidJSONObject(payload),
+              let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        // Background upload tasks require a file, not a data body.
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("td-geo-flush-\(Int(maxTs)).json")
+        do { try body.write(to: tmp) } catch { return }
+        var req = URLRequest(url: target)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let task = flushSession.uploadTask(with: req, fromFile: tmp)
+        var inflight = (d.dictionary(forKey: flushInflightKey) as? [String: Double]) ?? [:]
+        inflight[String(task.taskIdentifier)] = maxTs
+        d.set(inflight, forKey: flushInflightKey)
+        task.resume()
+        countWake("flushSent")
+    }
+
+    // Watermark advances ONLY on a server 2xx. Anything else leaves the tail
+    // in place for the next wake to re-send; the server dedupes the overlap.
+    public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        let d = UserDefaults.standard
+        var inflight = (d.dictionary(forKey: flushInflightKey) as? [String: Double]) ?? [:]
+        let tid = String(task.taskIdentifier)
+        guard let maxTs = inflight[tid] else { return }
+        inflight.removeValue(forKey: tid)
+        d.set(inflight, forKey: flushInflightKey)
+        let status = (task.response as? HTTPURLResponse)?.statusCode ?? 0
+        if error == nil && status >= 200 && status < 300 {
+            if maxTs > d.double(forKey: flushMarkKey) { d.set(maxTs, forKey: flushMarkKey) }
+            countWake("flushOk")
+        } else {
+            countWake("flushFail")
+        }
     }
 
     // MARK: - CLLocationManagerDelegate

@@ -3299,6 +3299,7 @@ function _geoReportPermission(state){
 const _GEO_PERM_STALE_MS=6*60*60*1000;
 let _geoPermReportedAt=0;
 function _geoPermForeground(){
+  try{if(typeof _geoConfigureFlush==='function')_geoConfigureFlush();}catch(_e){}
   try{if(typeof _geoRefreshBattery==='function')_geoRefreshBattery();}catch(_e){}
   try{if(typeof _geoRefreshPermCache==='function')_geoRefreshPermCache();}catch(_e){}
   try{if(typeof _motionRefreshPermCache==='function')_motionRefreshPermCache();}catch(_e){}
@@ -4014,6 +4015,41 @@ async function _geoTdEvent(ev,replay){
     // arrival minutes later with a time that had nothing to do with it.
     if(_backdated&&_geoParkBackdate===_backdated)_geoParkBackdate=null;
   }
+}
+// ── Native flush credentials (real-time ingest, owner 2026-08-27) ───────────
+// Build 39's plugin background-POSTs its event buffer to the ingest-geo edge
+// function within seconds of every wake, force-quit included, which is what
+// makes mileage and time logs land in Supabase in real time. The native layer
+// cannot hold a Supabase session (a Swift token refresh would rotate the
+// refresh token out from under this client and sign the user out), so it
+// authenticates with a per-device random key: minted here, registered in
+// geo_flush_keys (owner-only RLS), then handed to the plugin. Configure only
+// after the server registration succeeds: a key the server never saw would
+// just 401 forever from inside the background session.
+async function _geoConfigureFlush(){
+  try{
+    if(window._geoFlushCfgDone)return;
+    const Td=_geoTdPlugin();
+    if(!Td||typeof Td.configureFlush!=='function')return; // shell predates build 39
+    if(!_supa||!_supaUser||typeof supaEnabled!=='function'||!supaEnabled())return;
+    const devId=(typeof _initDeviceId==='function')?_initDeviceId():null;
+    if(!devId)return;
+    let key=null;
+    try{key=localStorage.getItem('zp3_geo_flush_key');}catch(_e){}
+    if(!key){
+      const b=new Uint8Array(24);crypto.getRandomValues(b);
+      key='gfk_'+Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');
+      try{localStorage.setItem('zp3_geo_flush_key',key);}catch(_e){}
+    }
+    const{error}=await _supa.from('geo_flush_keys')
+      .upsert({user_id:_supaUser.id,device_id:devId,key},{onConflict:'user_id,device_id'});
+    if(error)return; // table not deployed yet, or offline: retry next session
+    await Td.configureFlush({
+      url:_SUPA_DIRECT_URL+'/functions/v1/ingest-geo',
+      userId:_supaUser.id,deviceId:devId,key
+    });
+    window._geoFlushCfgDone=true;
+  }catch(_e){}
 }
 function _geoTdInit(){
   if(window._geoTdBound)return;
