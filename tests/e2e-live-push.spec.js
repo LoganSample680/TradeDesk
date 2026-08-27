@@ -375,6 +375,35 @@ test.describe('Remote push: token handling and tap routing', () => {
 
   test.afterEach(() => { assertNoErrors(page, 'push'); });
 
+  // A TestFlight build mints SANDBOX device tokens; the same app from the App
+  // Store mints PRODUCTION ones. The wrong gateway answers BadDeviceToken,
+  // which is indistinguishable from an uninstalled app, so a single static
+  // APNS_ENV silently drops every push for half the fleet during any rollout
+  // where both builds are live AND marks those good tokens dead on the way
+  // past. Owner asked directly (2026-08-27) whether production would handle
+  // itself; it would not have, so the environment is now a per-token fact.
+  test('APNs sends survive the wrong gateway, and only condemn a token both refuse', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const root = path.join(__dirname, '..');
+    const apns = fs.readFileSync(path.join(root, 'supabase', 'functions', '_shared', 'apns.ts'), 'utf8');
+    expect(apns.includes('export async function apnsSend'),
+      'both push functions must share one sender, never hand-roll the retry').toBe(true);
+    expect(apns.includes('APNS_OTHER_HOST'),
+      'without the other gateway there is no fallback to make').toBe(true);
+    // The retry must be reached BEFORE a token is written off, or the
+    // fallback exists but never runs.
+    const badIdx = apns.indexOf('if (badToken(');
+    const deadIdx = apns.indexOf('return { ok: false, dead: true }');
+    expect(badIdx).toBeGreaterThan(-1);
+    expect(deadIdx).toBeGreaterThan(badIdx);
+    for (const fn of ['send-push', 'push-geo-ping']) {
+      const src = fs.readFileSync(path.join(root, 'supabase', 'functions', fn, 'index.ts'), 'utf8');
+      expect(src.includes('apnsSend('), `${fn} must send through the shared sender`).toBe(true);
+      expect(src.includes('APNS_HOST'), `${fn} must not pin itself to one gateway`).toBe(false);
+    }
+  });
+
   test('a notification tap lands on the right screen, and an unknown one still goes somewhere', async () => {
     const r = await page.evaluate(async () => {
       const seen = [];
