@@ -85,4 +85,4 @@ alter table geo_flush_keys enable row level security;
 -- else (managers included) can read them.
 drop policy if exists geo_flush_keys_own on geo_flush_keys;
 create policy geo_flush_keys_own on geo_flush_keys
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  for all using (auth.uid()::text = user_id::text) with check (auth.uid()::text = user_id::text);

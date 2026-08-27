@@ -3392,6 +3392,37 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.renders).toBe(1);
     });
 
+    test('a STALE repair never repaints over a newer render (CI shard 6, 2026-08-27)', async () => {
+      // The clobber this guards: render N schedules the repair, render N+1
+      // paints the list (new scope, new year, or just a fresh open), then
+      // N's repair finishes and repainted over N+1 with whatever its own
+      // later fetch returned. In CI that fetch ran after the previous test
+      // had already restored its stubs, so the year-filter test read
+      // "No time logged in 2026" that it never painted. The fix is the
+      // render generation: a repair whose generation is no longer current
+      // must return without touching the DOM.
+      const r = await page.evaluate(async () => {
+        const saved = { pass: window._tlRepairPass, rows: window._timeLogRows, render: window.renderTimeLog };
+        let renders = 0, fetches = 0;
+        try {
+          _tlRepairAt = 0;   // module-scoped let: bare assignment
+          // The newer render arrives while the repair pass is running, which
+          // is exactly where it landed in CI: bump the generation mid-pass.
+          window._tlRepairPass = async () => { _tlRenderGen++; };
+          window._timeLogRows = async () => { fetches++; return [{ minutes: 60 }, { minutes: 30 }]; };
+          window.renderTimeLog = async () => { renders++; };
+          const repainted = await _tlRepairAfterPaint([{ minutes: 60 }], _tlRenderGen);
+          return { repainted, renders, fetches };
+        } finally {
+          window._tlRepairPass = saved.pass; window._timeLogRows = saved.rows;
+          window.renderTimeLog = saved.render;
+        }
+      });
+      expect(r.repainted).toBe(false);
+      expect(r.renders, 'a stale repair must not repaint').toBe(0);
+      expect(r.fetches, 'stale is decided before the re-fetch, not after').toBe(0);
+    });
+
     // THE REGRESSION THIS EXISTS FOR (CI shard 6, 2026-08-26). The repair fired
     // on EVERY render, so flipping Me/Team queued another reconciler pass whose
     // async repaint landed on top of the render the viewer had just asked for.

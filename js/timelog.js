@@ -1116,14 +1116,25 @@ const _TL_REPAIR_MIN_GAP_MS=30000;
 // Repaint ONLY when the repair actually changed something. A repaint closes
 // any accordion the viewer opened by hand, so doing it unconditionally would
 // trade a slow page for one that shuts itself a second after it opens.
-async function _tlRepairAfterPaint(paintedRows){
+// The generation the CURRENT on-screen paint belongs to. A repair is
+// scheduled by one render and finishes later, async; if ANY newer render has
+// painted meanwhile (the user flipped scope, changed year, or simply opened
+// the page again), that newer paint owns the screen and the stale repair
+// must not repaint over it. Without this, a repair scheduled by render N
+// clobbered render N+1's list with whatever its own later fetch returned
+// (caught by CI shard 6, 2026-08-27: the year-filter test read "No time
+// logged in 2026" painted by the PREVIOUS test's leftover repair).
+let _tlRenderGen=0;
+async function _tlRepairAfterPaint(paintedRows,gen){
   if(_tlRepairRunning)return false;
   if(_tlRepairAt&&Date.now()-_tlRepairAt<_TL_REPAIR_MIN_GAP_MS)return false;
   _tlRepairRunning=true;_tlRepairAt=Date.now();
   try{
     await _tlRepairPass();
+    if(gen!==undefined&&gen!==_tlRenderGen)return false;   // a newer render owns the screen
     const fresh=await _timeLogRows(null);
     if(_tlRowsFingerprint(fresh)===_tlRowsFingerprint(paintedRows))return false;
+    if(gen!==undefined&&gen!==_tlRenderGen)return false;   // re-check across the await
     // noRepair: the pass just ran. Without it this recurses on every open.
     await renderTimeLog({noRepair:true});
     return true;
@@ -1132,6 +1143,7 @@ async function _tlRepairAfterPaint(paintedRows){
 }
 async function renderTimeLog(opts){
   const el=document.getElementById('tl-list');if(!el)return;
+  const _gen=++_tlRenderGen;
   _tlStartOpenRefresh();
   const totalEl=document.getElementById('tl-total');
   const shareEl=document.getElementById('tl-share');
@@ -1151,7 +1163,7 @@ async function renderTimeLog(opts){
   // Not awaited, and it opens with an await of its own, so this yields
   // immediately and the synchronous render below still paints first.
   if(!(opts&&opts.noRepair)){
-    try{_tlRepairAfterPaint(allRows);}catch(_e){}
+    try{_tlRepairAfterPaint(allRows,_gen);}catch(_e){}
   }
   const canComp=typeof _canViewComp==='function'&&_canViewComp();
   const isEmp=typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser;
