@@ -20,6 +20,12 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await waitForAppBoot(page);
+    // The 5s reconnect tick (_probeAndSync -> _onReconnect) can fire a silent
+    // cloud load mid-test and replace the seeded in-memory arrays with the
+    // mock's empty ones (the same wipe e2e-sub-invite.spec.js guards against;
+    // caught here 2026-08-27: the midnight job's getClientExpenses read 0
+    // rows that were seeded 2000 tests earlier and wiped in between).
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
 
     // Silence any day-of-week modals that boot might spawn
     await page.evaluate(() => {
@@ -2441,6 +2447,12 @@ test.describe('bids.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The 5s reconnect tick (_probeAndSync -> _onReconnect) can fire a silent
+    // cloud load mid-test and replace the seeded in-memory arrays with the
+    // mock's empty ones (the same wipe e2e-sub-invite.spec.js guards against;
+    // caught here 2026-08-27: the midnight job's getClientExpenses read 0
+    // rows that were seeded 2000 tests earlier and wiped in between).
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
 
     // Seed stable test fixtures used throughout the suite
     await page.evaluate(() => {
@@ -4715,6 +4727,12 @@ test.describe('paint-estimate.js: deleted', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await waitForAppBoot(page);
+    // The 5s reconnect tick (_probeAndSync -> _onReconnect) can fire a silent
+    // cloud load mid-test and replace the seeded in-memory arrays with the
+    // mock's empty ones (the same wipe e2e-sub-invite.spec.js guards against;
+    // caught here 2026-08-27: the midnight job's getClientExpenses read 0
+    // rows that were seeded 2000 tests earlier and wiped in between).
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
   });
 
   test.afterAll(async () => {
@@ -4765,6 +4783,12 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The 5s reconnect tick (_probeAndSync -> _onReconnect) can fire a silent
+    // cloud load mid-test and replace the seeded in-memory arrays with the
+    // mock's empty ones (the same wipe e2e-sub-invite.spec.js guards against;
+    // caught here 2026-08-27: the midnight job's getClientExpenses read 0
+    // rows that were seeded 2000 tests earlier and wiped in between).
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
 
     // Seed stable test fixtures
     await page.evaluate(() => {
@@ -7207,6 +7231,12 @@ test.describe('data.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The 5s reconnect tick (_probeAndSync -> _onReconnect) can fire a silent
+    // cloud load mid-test and replace the seeded in-memory arrays with the
+    // mock's empty ones (the same wipe e2e-sub-invite.spec.js guards against;
+    // caught here 2026-08-27: the midnight job's getClientExpenses read 0
+    // rows that were seeded 2000 tests earlier and wiped in between).
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
 
     // Seed stable fixtures used throughout the suite
     await page.evaluate(() => {
@@ -9684,6 +9714,12 @@ test.describe('utils.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The 5s reconnect tick (_probeAndSync -> _onReconnect) can fire a silent
+    // cloud load mid-test and replace the seeded in-memory arrays with the
+    // mock's empty ones (the same wipe e2e-sub-invite.spec.js guards against;
+    // caught here 2026-08-27: the midnight job's getClientExpenses read 0
+    // rows that were seeded 2000 tests earlier and wiped in between).
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
   });
 
   test.afterAll(async () => {
@@ -11535,6 +11571,12 @@ test.describe('settings.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The 5s reconnect tick (_probeAndSync -> _onReconnect) can fire a silent
+    // cloud load mid-test and replace the seeded in-memory arrays with the
+    // mock's empty ones (the same wipe e2e-sub-invite.spec.js guards against;
+    // caught here 2026-08-27: the midnight job's getClientExpenses read 0
+    // rows that were seeded 2000 tests earlier and wiped in between).
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
 
     // Seed a stable licenses array and DOM stubs used throughout the suite
     await page.evaluate(() => {
@@ -13939,6 +13981,12 @@ test.describe('jobs.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The 5s reconnect tick (_probeAndSync -> _onReconnect) can fire a silent
+    // cloud load mid-test and replace the seeded in-memory arrays with the
+    // mock's empty ones (the same wipe e2e-sub-invite.spec.js guards against;
+    // caught here 2026-08-27: the midnight job's getClientExpenses read 0
+    // rows that were seeded 2000 tests earlier and wiped in between).
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
 
     // Seed stable test fixtures
     await page.evaluate(() => {
@@ -15669,6 +15717,12 @@ test.describe('clients.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The 5s reconnect tick (_probeAndSync -> _onReconnect) can fire a silent
+    // cloud load mid-test and replace the seeded in-memory arrays with the
+    // mock's empty ones (the same wipe e2e-sub-invite.spec.js guards against;
+    // caught here 2026-08-27: the midnight job's getClientExpenses read 0
+    // rows that were seeded 2000 tests earlier and wiped in between).
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
 
     await page.evaluate(() => {
       // Remove any leftover fixtures
@@ -18226,6 +18280,12 @@ test.describe('tax.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The 5s reconnect tick (_probeAndSync -> _onReconnect) can fire a silent
+    // cloud load mid-test and replace the seeded in-memory arrays with the
+    // mock's empty ones (the same wipe e2e-sub-invite.spec.js guards against;
+    // caught here 2026-08-27: the midnight job's getClientExpenses read 0
+    // rows that were seeded 2000 tests earlier and wiped in between).
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
 
     // Navigate to the tax page so the tax DOM is present
     await page.evaluate(() => {
@@ -19990,6 +20050,12 @@ test.describe('sales-tax.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The 5s reconnect tick (_probeAndSync -> _onReconnect) can fire a silent
+    // cloud load mid-test and replace the seeded in-memory arrays with the
+    // mock's empty ones (the same wipe e2e-sub-invite.spec.js guards against;
+    // caught here 2026-08-27: the midnight job's getClientExpenses read 0
+    // rows that were seeded 2000 tests earlier and wiped in between).
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
   });
 
   test.afterAll(async () => {
@@ -21887,6 +21953,12 @@ test.describe('finance.js: exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The 5s reconnect tick (_probeAndSync -> _onReconnect) can fire a silent
+    // cloud load mid-test and replace the seeded in-memory arrays with the
+    // mock's empty ones (the same wipe e2e-sub-invite.spec.js guards against;
+    // caught here 2026-08-27: the midnight job's getClientExpenses read 0
+    // rows that were seeded 2000 tests earlier and wiped in between).
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
 
     // Seed stable fixtures used throughout the suite
     await page.evaluate(() => {
