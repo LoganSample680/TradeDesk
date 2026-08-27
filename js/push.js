@@ -50,7 +50,7 @@ async function _pushSaveToken(token){
     };
     const{error}=await _supa.from('device_tokens').upsert(row,{onConflict:'token'});
     if(error){console.error('[push] token save: '+error.message);return false;}
-    try{localStorage.setItem('zp3_push_token',String(token));}catch(_e){}
+    try{localStorage.setItem('zp3_push_token',String(token));localStorage.removeItem('zp3_push_err');}catch(_e){}
     return true;
   }catch(e){console.error('[push] token save: '+(e&&e.message||e));return false;}
 }
@@ -97,7 +97,19 @@ function _pushWire(){
     P.addListener('token',e=>{_pushSaveToken(e&&e.token);});
     // A registration failure is not fatal and must never block anything, but it
     // is worth recording: without it, "I never get notifications" has no trail.
-    P.addListener('tokenError',e=>{console.error('[push] apns register: '+((e&&e.error)||'unknown'));});
+    P.addListener('tokenError',e=>{
+      // KEEP the reason, do not just log it. Apple's rejection string is the
+      // entire diagnosis when no token ever arrives (a missing
+      // aps-environment entitlement, an App ID without Push Notifications,
+      // no network at register time), and a console on a phone nobody can
+      // attach a debugger to is the same as throwing it away. The permission
+      // lab reads this back (owner 2026-08-27: device_tokens empty
+      // account-wide with every permission granted, and nothing on any screen
+      // could say why).
+      const msg=(e&&e.error)||'unknown';
+      try{localStorage.setItem('zp3_push_err',JSON.stringify({at:new Date().toISOString(),msg:String(msg)}));}catch(_e){}
+      console.error('[push] apns register: '+msg);
+    });
     P.addListener('tapped',e=>{_pushRoute(e&&e.payload);});
   }catch(_e){}
   // A tap can arrive before this file has run at all (a cold launch FROM the

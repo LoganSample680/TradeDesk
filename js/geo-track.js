@@ -3773,6 +3773,21 @@ function _geoPermLab(){
       row('Location Services (device)',!nat?'unknown':(nat.servicesEnabled===true?'ON':(nat.servicesEnabled===false?'OFF':'unknown')))+
       row('Motion',(typeof _motionPermCache!=='undefined'&&_motionPermCache)?_motionPermCache:'not checked')+
       row('Tracker watcher',_geoNativeWatcherId!=null?'running':'off')+
+      // ── Push, the half this panel was missing ──────────────────────────
+      // Owner 2026-08-27: location read perfect on every row here while
+      // device_tokens was empty account-wide, and nothing on any screen could
+      // say why. A permission lab that covers location and motion but not the
+      // notification grant or the device token cannot diagnose the one thing
+      // that was actually broken. Filled asynchronously (both reads are
+      // promises) by _geoPermLabPush, called right after this paints.
+      row('Notifications','checking…')+
+      row('Device token','checking…')+
+      (function(){
+        let e=null;try{e=JSON.parse(localStorage.getItem('zp3_push_err')||'null');}catch(_e){}
+        // Apple's own rejection string, kept by js/push.js. This is the line
+        // that names the cause when a token never arrives.
+        return e&&e.msg?row('Last APNs error',String(e.msg).slice(0,90),_timeAgo?_timeAgo(e.at):''):'';
+      })()+
       row('Our consent record',localStorage.getItem('geo_owner_consent')||'unset','ours, not iOS')+
     '</div>'+
     '<div style="font-size:11px;color:var(--text3);line-height:1.6;margin:12px 0 4px">'+
@@ -3789,12 +3804,67 @@ function _geoPermLab(){
     _geoPermAct('settings','Open iOS Settings','_geoPermLabSettings()',false,
       'Jumps straight to Settings, TradeDesk, where the Location and Motion switches actually live. '+
       'Once iOS has a decision this is the ONLY place it can be changed. Nothing on this panel can change it for you.')+
+    _geoPermAct('push','Register for push','_geoPermLabPushReg()',false,
+      'Asks iOS for the notification grant and then registers with Apple for a device token. '+
+      'The token is what lets the server reach this phone at all: the 30-minute wake-up ping, dispatch alerts, everything sent FROM the server. '+
+      'Without one the phone can only ever report in when iOS happens to wake it. If Apple refuses, the reason appears above as Last APNs error.')+
     _geoPermAct('reset','Reset our local state','_geoPermLabReset()',false,
       'Clears OUR records only: the consent flag, the OS-denied flag and the granted marker. '+
       'iOS authorization is untouched and cannot be touched from here. Use it to re-run the first-run code path without reinstalling. It will NOT bring the system dialog back.')+
     '<button class="btn" style="width:100%;margin-top:14px;padding:12px" onclick="document.getElementById(\'_geo-perm-ov\').remove()">Close</button>';
   ov.appendChild(m);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  _geoPermLabPush();
+}
+// The two push reads are promises, so the panel paints "checking…" and this
+// fills them in. Both are read straight off the device and the server, the
+// same honesty rule the rest of the panel states at the top.
+async function _geoPermLabPush(){
+  const set=(label,val,note)=>{
+    const ov=document.getElementById('_geo-perm-ov');if(!ov)return;
+    const rows=ov.querySelectorAll('#_geo-perm-state > div');
+    rows.forEach(r=>{
+      const k=r.firstElementChild,v=r.lastElementChild;
+      if(!k||!v||k.textContent!==label)return;
+      v.innerHTML=escHtml(String(val))+(note?'<div style="font-weight:400;color:var(--text3);font-size:11px">'+escHtml(note)+'</div>':'');
+    });
+  };
+  try{
+    const st=(typeof pushStatus==='function')?await pushStatus():'unavailable';
+    set('Notifications',st);
+  }catch(_e){set('Notifications','error');}
+  // A token in localStorage means Apple issued one to THIS install. A row in
+  // device_tokens means the server can actually reach it. They can disagree,
+  // and which one is missing says which half is broken, so both are shown.
+  let local='';
+  try{local=localStorage.getItem('zp3_push_token')||'';}catch(_e){}
+  if(!local){set('Device token','none on this phone','Apple never issued one');return;}
+  const short=local.slice(0,8)+'…';
+  try{
+    if(typeof _supa==='undefined'||!_supa||!_supaUser){set('Device token',short,'on phone; not signed in to check server');return;}
+    const{data,error}=await _supa.from('device_tokens').select('token').eq('token',local).is('invalid_at',null).limit(1);
+    if(error){set('Device token',short,'on phone; server check failed');return;}
+    set('Device token',short,(data&&data.length)?'saved on the server':'on phone but NOT saved to the server');
+  }catch(_e){set('Device token',short,'on phone; server check failed');}
+}
+// Reproduce the registration on demand and say what came back, rather than
+// leaving the answer in a console nobody can read.
+async function _geoPermLabPushReg(){
+  const say=document.getElementById('_geo-perm-say');
+  if(say)say.textContent='Asking iOS, then Apple…';
+  try{localStorage.removeItem('zp3_push_err');}catch(_e){}
+  let ok=false;
+  try{ok=(typeof pushEnable==='function')?await pushEnable():false;}catch(_e){ok=false;}
+  // Apple answers the registration asynchronously on the token listener, so
+  // give it a moment before reading the result back.
+  await new Promise(r=>setTimeout(r,2500));
+  let err=null;try{err=JSON.parse(localStorage.getItem('zp3_push_err')||'null');}catch(_e){}
+  let tok='';try{tok=localStorage.getItem('zp3_push_token')||'';}catch(_e){}
+  if(say){
+    say.textContent=err?('Apple refused: '+String(err.msg).slice(0,80))
+      :(tok?'Token received':(ok?'Granted, still waiting on Apple':'Not granted'));
+  }
+  _geoPermLabPush();
 }
 function _geoPermLabRefresh(){
   const ov=document.getElementById('_geo-perm-ov');
@@ -3822,7 +3892,7 @@ function _geoPermWhy(id){
   const open=el.style.display!=='none';
   // One at a time: four open blocks turns the panel into a wall of text on a
   // phone and pushes the buttons off screen.
-  ['ask','reread','settings','reset'].forEach(k=>{
+  ['ask','reread','settings','reset','push'].forEach(k=>{
     const n=document.getElementById('_geo-why-'+k);
     if(n)n.style.display='none';
   });

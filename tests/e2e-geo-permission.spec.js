@@ -2361,6 +2361,100 @@ test.describe('Crew location permission', () => {
         return text;
       }, nat);
 
+      // ── Push, the half the lab was missing (owner 2026-08-27) ───────────
+      // Location read perfect on every row while device_tokens was empty
+      // account-wide and nothing on any screen could say why.
+      test('the lab reports the notification grant and the device token', async () => {
+        const t = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, st: window.pushStatus };
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          window.pushStatus = async () => 'granted';
+          localStorage.setItem('zp3_push_token', 'abcdef0123456789');
+          _geoPermLab();
+          await new Promise(r => setTimeout(r, 120));
+          const st = document.getElementById('_geo-perm-state');
+          const text = st ? st.textContent : '';
+          document.getElementById('_geo-perm-ov')?.remove();
+          localStorage.removeItem('zp3_push_token');
+          window.Capacitor = saved.cap; window.pushStatus = saved.st;
+          return text;
+        });
+        expect(t).toContain('Notifications');
+        expect(t).toContain('granted');
+        expect(t).toContain('Device token');
+        expect(t).toContain('abcdef01');
+      });
+
+      test('no token on the phone says so plainly, never a blank', async () => {
+        const t = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, st: window.pushStatus };
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          window.pushStatus = async () => 'granted';
+          localStorage.removeItem('zp3_push_token');
+          _geoPermLab();
+          await new Promise(r => setTimeout(r, 120));
+          const st = document.getElementById('_geo-perm-state');
+          const text = st ? st.textContent : '';
+          document.getElementById('_geo-perm-ov')?.remove();
+          window.Capacitor = saved.cap; window.pushStatus = saved.st;
+          return text;
+        });
+        expect(t).toContain('none on this phone');
+        expect(t).toContain('Apple never issued one');
+      });
+
+      test("Apple's rejection reason is kept and shown, not just logged", async () => {
+        // The whole point: the reason a token never arrives lives in a console
+        // on a phone nobody can attach a debugger to.
+        const t = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, st: window.pushStatus };
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          window.pushStatus = async () => 'granted';
+          localStorage.setItem('zp3_push_err', JSON.stringify({ at: new Date().toISOString(), msg: 'no valid aps-environment entitlement' }));
+          _geoPermLab();
+          await new Promise(r => setTimeout(r, 120));
+          const st = document.getElementById('_geo-perm-state');
+          const text = st ? st.textContent : '';
+          document.getElementById('_geo-perm-ov')?.remove();
+          localStorage.removeItem('zp3_push_err');
+          window.Capacitor = saved.cap; window.pushStatus = saved.st;
+          return text;
+        });
+        expect(t).toContain('Last APNs error');
+        expect(t).toContain('aps-environment');
+      });
+
+      test('a token that never reached the server is called out as such', async () => {
+        const t = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, st: window.pushStatus, supa: _supa, user: _supaUser };
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          window.pushStatus = async () => 'granted';
+          localStorage.setItem('zp3_push_token', 'deadbeefcafe');
+          _supaUser = _supaUser || { id: 'owner-test' };
+          const q = { _d: { data: [], error: null } };
+          q.then = (res, rej) => Promise.resolve(q._d).then(res, rej);
+          q.eq = () => q; q.is = () => q; q.limit = () => q; q.select = () => q;
+          _supa = { from: () => q };
+          _geoPermLab();
+          await new Promise(r => setTimeout(r, 200));
+          const st = document.getElementById('_geo-perm-state');
+          const text = st ? st.textContent : '';
+          document.getElementById('_geo-perm-ov')?.remove();
+          localStorage.removeItem('zp3_push_token');
+          window.Capacitor = saved.cap; window.pushStatus = saved.st;
+          _supa = saved.supa; _supaUser = saved.user;
+          return text;
+        });
+        expect(t).toContain('NOT saved to the server');
+      });
+
+      test('the lab offers a Register for push action', async () => {
+        const t = await open({ status: 'always', accuracy: 'full', servicesEnabled: true });
+        expect(t).toContain('Register for push');
+        const fn = await page.evaluate(() => typeof _geoPermLabPushReg);
+        expect(fn).toBe('function');
+      });
+
       test('it shows all three iOS axes and labels what is ours', async () => {
         const t = await open({ status: 'always', accuracy: 'full', precise: true, servicesEnabled: true });
         expect(t).toContain('Permission lab');
