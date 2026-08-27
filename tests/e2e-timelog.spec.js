@@ -2323,15 +2323,23 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
 
     test('day accordions within a month, newest day sorts first', async () => {
+      // Both the month container id and the expected day come from the PAGE
+      // clock. Node's todayStr is the runner's real date, and under the
+      // midnight-clock pin the two disagree: the fixture rows land on the
+      // page's day, so asserting Node's day found nothing. Same seam as the
+      // vehicle-dispatch fixtures, closed the same way. toISOString is also
+      // a UTC slice, which the day-key convention bans for exactly this
+      // reason; todayKey() is the app's own answer.
       const r = await page.evaluate(async () => {
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
-        const monthEl = document.getElementById('bk-tl-mo-' + new Date().toISOString().slice(0, 7));
-        return monthEl ? [...monthEl.querySelectorAll('.bk-day')].map(el => el.id) : [];
+        const day = todayKey();
+        const monthEl = document.getElementById('bk-tl-mo-' + day.slice(0, 7));
+        return { day, ids: monthEl ? [...monthEl.querySelectorAll('.bk-day')].map(el => el.id) : [] };
       });
-      expect(r.length).toBeGreaterThan(0);
+      expect(r.ids.length).toBeGreaterThan(0);
       // The current-day entry should appear in this month's day list.
-      expect(r.some(id => id.includes(todayStr.replace(/-/g, '')))).toBe(true);
+      expect(r.ids.some(id => id.includes(r.day.replace(/-/g, '')))).toBe(true);
     });
 
     test('week accordions sit between month and day, current week open by default', async () => {

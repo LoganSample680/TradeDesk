@@ -134,10 +134,17 @@ test.describe('Dashboard: view counts and timezone timestamps', () => {
   });
 
   test('shows "Yesterday at H:MM" for hub opened yesterday', async () => {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    yesterday.setHours(14, 30, 0, 0); // 2:30 PM yesterday, well past 60m cutoff
-    await injectViewsAndRender(page, { hubTs: yesterday.toISOString(), hubCount: 1 });
+    // On the PAGE clock, not Node's. The harness pins the page to a fixed
+    // Central time while Node keeps the runner's real clock, and under the
+    // midnight-clock job's 00:20 pin, Node's "yesterday 2:30pm" is nine hours
+    // in the page's FUTURE, which the dashboard clamps to "just now".
+    const hubTs = await page.evaluate(() => {
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      y.setHours(14, 30, 0, 0); // 2:30 PM yesterday, well past the 60m cutoff
+      return y.toISOString();
+    });
+    await injectViewsAndRender(page, { hubTs, hubCount: 1 });
 
     const text = await page.textContent('#pg-dash');
     expect(text, 'Dashboard must say "Yesterday at" for yesterday\'s open').toContain('Yesterday at');
