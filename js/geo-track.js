@@ -2344,18 +2344,32 @@ function _geoParkRegions(spot,spotRadius){
       if(c)push('job-'+j.id,c.lat,c.lng);
     });
   }catch(_e){}
+  // Places and clients compete for whatever slots the tiers above left, and
+  // NEAREST TO THE PARK SPOT WINS, pooled together (owner question
+  // 2026-08-27: a day with no scheduled jobs, just driving to client homes).
+  // These used to fill in raw array order, places first, so an account with
+  // more candidates than slots armed an arbitrary 18 and a client two blocks
+  // away could lose its fence to a supply house thirty miles gone. The next
+  // stop is overwhelmingly near where you are now; sorting by distance from
+  // the kerb makes the armed set the ones a wake could actually need.
+  // No anchor to measure from (no spot, no last fence): array order stands.
   try{
+    const pool=[];
     (typeof places!=='undefined'&&Array.isArray(places)?places:[]).forEach(pl=>{
-      if(pl&&pl.lat!=null&&pl.lon!=null)push('place-'+pl.id,pl.lat,pl.lon,pl.fenceFt?pl.fenceFt*0.3048+60:undefined);
+      if(pl&&pl.lat!=null&&pl.lon!=null)pool.push({id:'place-'+pl.id,lat:pl.lat,lng:pl.lon,radius:pl.fenceFt?pl.fenceFt*0.3048+60:undefined});
     });
-  }catch(_e){}
-  try{
     const cache=(typeof _nearbyGeoCache==='function')?_nearbyGeoCache():{};
     (typeof clients!=='undefined'&&Array.isArray(clients)?clients:[]).forEach(c=>{
       if(!c||!c.addr)return;
       const hit=cache[c.id];
-      if(hit&&hit.addr===c.addr)push('client-'+c.id,hit.lat,hit.lon);
+      if(hit&&hit.addr===c.addr)pool.push({id:'client-'+c.id,lat:hit.lat,lng:hit.lon});
     });
+    const anchor=spot||_geoLastFenceLoc||null;
+    if(anchor&&anchor.lat!=null){
+      pool.forEach(p=>{p._ft=_geoDistFt({lat:p.lat,lng:p.lng},{lat:anchor.lat,lng:anchor.lng});});
+      pool.sort((a,b)=>a._ft-b._ft);
+    }
+    pool.forEach(p=>push(p.id,p.lat,p.lng,p.radius));
   }catch(_e){}
   return out;
 }

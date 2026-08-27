@@ -133,6 +133,56 @@ test.describe('Wake region set for the dead app', () => {
     expect(out.uniq).toBe(out.n);
   });
 
+  test('when the cap bites, the fences nearest the park spot win, places and clients pooled (owner 2026-08-27)', async () => {
+    // A day with NO scheduled jobs, just driving between client homes: the
+    // armed set used to fill in raw array order, places first, so a client
+    // two blocks from the kerb could lose their fence to a supply house
+    // thirty miles gone. Nearest-to-the-kerb is what a wake could actually
+    // need next.
+    const out = await page.evaluate(() => {
+      const savedPlaces = places.slice(), savedClients = clients.slice(), savedJobs = jobs.slice();
+      const savedCache = window._nearbyGeoCache;
+      const savedLat = S.officeLat, savedLon = S.officeLon;
+      try {
+        S.officeLat = null; S.officeLon = null;   // no shop tier in this world
+        jobs.length = 0;                          // nothing on the schedule
+        // 20 far places, each ~7+ miles out, in array order BEFORE the clients.
+        places.length = 0;
+        for (let i = 0; i < 20; i++) places.push({ id: 'far' + i, name: 'Far ' + i, kind: 'supply', lat: 39.1 + i * 0.01, lon: -94.5 });
+        // 3 client homes within a mile of the kerb.
+        clients.length = 0;
+        clients.push({ id: 901, name: 'Near A', addr: '1 A St' });
+        clients.push({ id: 902, name: 'Near B', addr: '2 B St' });
+        clients.push({ id: 903, name: 'Near C', addr: '3 C St' });
+        window._nearbyGeoCache = () => ({
+          901: { addr: '1 A St', lat: 39.001, lon: -94.001 },
+          902: { addr: '2 B St', lat: 39.002, lon: -94.002 },
+          903: { addr: '3 C St', lat: 39.003, lon: -94.003 },
+        });
+        const regs = _geoParkRegions({ lat: 39.0, lng: -94.0 }, 200);
+        return { ids: regs.map(r => r.id), n: regs.length };
+      } finally {
+        places.length = 0; savedPlaces.forEach(p => places.push(p));
+        clients.length = 0; savedClients.forEach(c => clients.push(c));
+        jobs.length = 0; savedJobs.forEach(j => jobs.push(j));
+        window._nearbyGeoCache = savedCache;
+        S.officeLat = savedLat; S.officeLon = savedLon;
+      }
+    });
+    expect(out.n).toBeLessThanOrEqual(18);
+    // Every near client armed, despite 20 places sitting earlier in array order.
+    expect(out.ids).toContain('client-901');
+    expect(out.ids).toContain('client-902');
+    expect(out.ids).toContain('client-903');
+    // And they beat the FARTHEST places specifically: the tail of the far
+    // list must be what fell off the cap, not the nearby homes.
+    expect(out.ids).not.toContain('place-far19');
+    // Order inside the pool is nearest-first: the kerb fence leads, then the
+    // three homes before any 7-mile place.
+    expect(out.ids[0]).toBe('fence');
+    expect(out.ids.slice(1, 4).sort()).toEqual(['client-901', 'client-902', 'client-903']);
+  });
+
   test('junk input cannot break the builder', async () => {
     const out = await page.evaluate(() => {
       const savedPlaces = places.slice(), savedJobs = jobs.slice();
