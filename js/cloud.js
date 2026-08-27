@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.27.26.4';
+const APP_VERSION='08.27.26.5';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1947,6 +1947,10 @@ function _removeBootOverlay(immediate){
     // automatically: kicked shortly after boot so it never competes with
     // the boot render. No-op for accounts with no links.
     setTimeout(()=>{if(typeof _ingestPipeInbox==='function')_ingestPipeInbox(true);},1800);
+    // Push token refresh: silent when permission is already granted, a no-op
+    // otherwise (js/push.js _pushResume). After the save-token listener has a
+    // signed-in _supaUser to attribute the row to, which is true here.
+    setTimeout(()=>{if(typeof _pushResume==='function')_pushResume();},2500);
     // Restore any unsaved form fields that were open when auto-update fired
     try{
       const raw=localStorage.getItem('_form_snap');

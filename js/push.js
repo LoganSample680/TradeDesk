@@ -108,6 +108,27 @@ function _pushWire(){
   }catch(_e){}
 }
 
+// Boot-time re-registration, Apple's own rule (tokens rotate; register every
+// launch). This exists because the checklist CANNOT do it: its notify item
+// reads as done the moment iOS permission is granted, and the tap on that
+// item was the only code path that ever landed a device token. A phone that
+// granted notifications before token registration existed therefore had no
+// path left to a device_tokens row, which is exactly the state the owner's
+// phone was found in (2026-08-27: permission granted, zero rows, every
+// server push and every 30-minute silent ping addressed to nobody).
+//
+// Safe on boot precisely because it only acts when permission is ALREADY
+// granted: register() then shows no dialog, it just refreshes the token.
+// Anything else returns without spending the one prompt iOS ever grants.
+async function _pushResume(){
+  try{
+    if(typeof pushStatus!=='function'||typeof pushEnable!=='function')return;
+    const s=await pushStatus();
+    if(s!=='granted')return;
+    await pushEnable();
+  }catch(_e){}
+}
+
 // Ask for permission and register. Call this at a moment the contractor can see
 // the point of it, never on boot. Returns true only when a token is on its way.
 async function pushEnable(){

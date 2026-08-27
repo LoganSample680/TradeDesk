@@ -1060,6 +1060,49 @@ test.describe('Crew location permission', () => {
       'pushEnable is tried FIRST; _notifyAsk is only the browser fallback').toBe(true);
   });
 
+  // ── Boot token refresh (owner's phone found tokenless 2026-08-27) ─────────
+  // The notify checklist item reads as done the moment iOS permission is
+  // granted, and its tap was the ONLY path to a device_tokens row. A phone
+  // that granted notifications before token registration existed was
+  // permanently unreachable: permission granted, zero rows, every server
+  // push and every 30-minute silent ping sent to nobody. _pushResume closes
+  // it: on boot, permission already granted -> silent re-register (Apple's
+  // own register-every-launch rule); anything else -> strictly nothing, the
+  // one prompt iOS grants is never spent on boot.
+  test('_pushResume registers when permission is granted and does nothing otherwise', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { st: window.pushStatus, en: window.pushEnable };
+      const calls = { enable: 0 };
+      try {
+        window.pushEnable = async () => { calls.enable++; return true; };
+        window.pushStatus = async () => 'granted';
+        await _pushResume();
+        const afterGranted = calls.enable;
+        window.pushStatus = async () => 'ask';
+        await _pushResume();
+        const afterAsk = calls.enable;
+        window.pushStatus = async () => 'denied';
+        await _pushResume();
+        const afterDenied = calls.enable;
+        window.pushStatus = async () => { throw new Error('boom'); };
+        let threw = false;
+        try { await _pushResume(); } catch (e) { threw = true; }
+        return { afterGranted, afterAsk, afterDenied, threw };
+      } finally { window.pushStatus = saved.st; window.pushEnable = saved.en; }
+    });
+    expect(r.afterGranted, 'granted must silently re-register').toBe(1);
+    expect(r.afterAsk, 'ask must never spend the one iOS prompt on boot').toBe(1);
+    expect(r.afterDenied, 'denied is terminal, never re-asked').toBe(1);
+    expect(r.threw, 'a pushStatus failure must never break boot').toBe(false);
+  });
+
+  test('the boot path actually calls _pushResume (source guarantee)', () => {
+    const fs = require('fs'), path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+    expect(src.includes('_pushResume'),
+      'without a boot call site the fix is dead code and tokenless phones stay unreachable').toBe(true);
+  });
+
   // ── The owner's own row (owner ask 2026-08-26) ────────────────────────────
   //
   // It used to be skipped outright, on the grounds that the dashboard
