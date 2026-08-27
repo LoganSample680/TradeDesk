@@ -277,16 +277,33 @@ Deno.serve(async (req) => {
 
     // ── Write the derived rows ──────────────────────────────────────────────
     let derived = 0;
-    if (timeRows.length) {
-      const { error } = await svc.from("job_time_entries")
-        .upsert(timeRows, { onConflict: "contractor_user_id,client_key", ignoreDuplicates: true });
-      if (!error) derived += timeRows.length;
-    }
-    if (shopRows.length) {
-      const { error } = await svc.from("shop_time_entries")
-        .upsert(shopRows, { onConflict: "contractor_user_id,client_key", ignoreDuplicates: true });
-      if (!error) derived += shopRows.length;
-    }
+    // NOT an upsert. The idempotency index on (contractor_user_id, client_key)
+    // is PARTIAL (where client_key is not null, 20260719 migration), and
+    // Postgres cannot use a partial index as an ON CONFLICT target, so the
+    // upsert form errors and drops the whole batch: the exact failure the
+    // client's drain queue already works around with its own fallback chain
+    // (js/geo-track.js). Caught live by the geo-ingest flow test: the mileage
+    // row landed, the dwell silently did not. Check-then-insert instead; the
+    // narrow race between check and insert still lands on the unique index,
+    // where a duplicate error IS the dedupe working, absorbed row by row.
+    const insertByKey = async (tbl: string, rows: any[]) => {
+      if (!rows.length) return 0;
+      const { data: have } = await svc.from(tbl).select("client_key")
+        .eq("contractor_user_id", cid).in("client_key", rows.map((r) => r.client_key));
+      const haveSet = new Set((have || []).map((r) => r.client_key));
+      const fresh = rows.filter((r) => !haveSet.has(r.client_key));
+      if (!fresh.length) return 0;
+      const { error } = await svc.from(tbl).insert(fresh);
+      if (!error) return fresh.length;
+      let n = 0;
+      for (const r of fresh) {
+        const { error: e2 } = await svc.from(tbl).insert(r);
+        if (!e2) n++;
+      }
+      return n;
+    };
+    derived += await insertByKey("job_time_entries", timeRows);
+    derived += await insertByKey("shop_time_entries", shopRows);
     if (mileRows.length) {
       // td_mileage has no key column to conflict on (data is a JSON blob), so
       // the guard is an existence check on the legKey inside data. The client
