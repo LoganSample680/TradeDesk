@@ -1676,7 +1676,12 @@ test.describe('finance.js: exhaustive coverage', () => {
         });
         expect(r.isZmodalOverlay).toBe(true);
         expect(r.hasZmodalBox).toBe(true);
-        expect(r.alignItems).toBe('center');
+        // Centring is asserted GEOMETRICALLY, not by align-items. The overlay moved
+        // to flex-start + margin:auto on 2026-08-15 so a modal taller than the
+        // screen keeps its top reachable instead of being clipped; short modals
+        // still land dead centre, which is the thing this test has always guarded.
+        // What must never come back is a bottom-pinned sheet (align-items:flex-end).
+        expect(r.alignItems).not.toBe('flex-end');
         expect(r.roughlyCentered).toBe(true);
       });
 

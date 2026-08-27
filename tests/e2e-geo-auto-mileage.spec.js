@@ -288,6 +288,53 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.meta).toContain('10:47a');
       expect(out.meta.indexOf('·')).toBeGreaterThan(-1);   // duration and clock on ONE grouped line
     });
+
+    test('the log is year -> month -> day on the SAME Books accordion, never a hand-rolled one', async () => {
+      // Owner 2026-08-13: "same accordion constant logic, no new hand rolled
+      // accordion please." The month shell is _bkMonthAcc/_bkTogMonth from
+      // finance.js, the one Income/Expenses/Time Log already share; the day
+      // cards inside are mileage's existing day accordions, unchanged.
+      const out = await page.evaluate(() => {
+        window.__origMileage = mileage.slice();
+        mileage.length = 0;
+        const yr = todayKey().slice(0, 4);
+        const curMo = todayKey().slice(0, 7);
+        // Two months: one row today, two rows in an earlier month this year.
+        const older = curMo.endsWith('-01') ? yr + '-12' : curMo.slice(0, 5) + String(parseInt(curMo.slice(5)) - 1).padStart(2, '0');
+        mileage.push({ id: 991101, date: todayKey(), from_name: 'Shop', to_name: 'Miller Residence', miles: 4.1, purpose: 'Job site', gps: true, created_at: new Date().toISOString() });
+        mileage.push({ id: 991102, date: older + '-05', from_name: 'Shop', to_name: 'Ace Supply', miles: 2.2, purpose: 'Supply run', gps: true, created_at: new Date().toISOString() });
+        mileage.push({ id: 991103, date: older + '-06', from_name: 'Ace Supply', to_name: 'Shop', miles: 2.2, purpose: 'Supply run', gps: true, created_at: new Date().toISOString() });
+        renderAllMileage();
+        const list = document.getElementById('mil-table');
+        const monthEls = [...list.querySelectorAll('.bk-month')];
+        const cur = document.getElementById('bk-mil-mo-' + curMo);
+        const old = document.getElementById('bk-mil-mo-' + older);
+        const res = {
+          months: monthEls.length,
+          usesSharedShell: monthEls.every(m => m.querySelector('.bk-month-hd') && m.querySelector('.bk-month-body')),
+          curOpen: !!(cur && cur.classList.contains('open')),
+          oldClosed: !!(old && !old.classList.contains('open')),
+          oldBodyHidden: old ? old.querySelector('.bk-month-body').style.display === 'none' : null,
+          // The day cards live INSIDE month bodies now, never loose in the list.
+          daysInsideMonths: [...list.querySelectorAll('.mil-day')].every(d => d.closest('.bk-month-body')),
+          oldMonthDayCount: old ? old.querySelectorAll('.mil-day').length : 0,
+          curSub: cur ? (cur.querySelector('.bk-month-sub')?.innerText || '') : '',
+          // The shared toggler works on the mileage months too.
+          togWorks: (() => { if (!old) return false; _bkTogMonth('mil', older); return old.classList.contains('open') && old.querySelector('.bk-month-body').style.display !== 'none'; })(),
+        };
+        mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
+        return res;
+      });
+      expect(out.months, 'one accordion per month').toBe(2);
+      expect(out.usesSharedShell, 'the Books month shell, not a hand-rolled one').toBe(true);
+      expect(out.curOpen, 'the current month arrives open').toBe(true);
+      expect(out.oldClosed, 'older months arrive collapsed').toBe(true);
+      expect(out.oldBodyHidden).toBe(true);
+      expect(out.daysInsideMonths, 'every day card nests inside a month body').toBe(true);
+      expect(out.oldMonthDayCount, 'the older month holds its two days').toBe(2);
+      expect(out.curSub, 'month sub reads trips and days').toContain('1 trip');
+      expect(out.togWorks, 'the shared _bkTogMonth toggler opens mileage months').toBe(true);
+    });
   });
 
   // ── "Which vehicle are you driving today?" ─────────────────────────────────
@@ -1105,6 +1152,56 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.left).toEqual([2]);
       expect(out.live).toBe(0);          // strict mode defers the offset pair to boot
       expect(out.liveLeft).toBe(2);
+    });
+
+    // Owner audit 2026-08-24: the 8/21 twin pair survived in the CLOUD days
+    // after every boot's heal pass spliced one away locally, because a cloud
+    // reload restored it before any save swept it. A dropped twin must be a
+    // REAL deletion: tombstoned and deleted from td_mileage directly.
+    test('a dropped auto twin is deleted from the cloud, not just spliced locally', async () => {
+      const out = await page.evaluate(() => {
+        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
+        const keep = mileage.splice(0);
+        const savedSupa = window._supa, savedUser = window._supaUser;
+        const cloudDeletes = [];
+        window._supaUser = window._supaUser || { id: 'twin-del-u' };
+        // Records the SOFT delete (2026-08-26): sweeps stamp deleted_at through
+        // _tdSoftDelete now rather than issuing a DELETE, so the recorder has to
+        // watch update().in() to see the same event. The hard-delete branch is
+        // kept so this still catches a sweep that regresses to one.
+        window._supa = { from: (tbl) => ({
+          delete: () => ({ eq: (c1, v1) => ({ eq: () => ({ then: (res, rej) => { cloudDeletes.push({ tbl, id: v1 }); return Promise.resolve({ error: null }).then(res, rej); } }) }) }),
+          update: (patch) => { const u = { in: (col, vals) => { (vals || []).forEach(v => cloudDeletes.push({ tbl, id: String(v) })); return u; },
+                                           eq: () => u, then: (res, rej) => Promise.resolve({ error: null }).then(res, rej) }; return u; },
+          select: () => { const q = new Proxy(function(){}, { get: (_, k) =>
+            k === 'then' ? (res, rej) => Promise.resolve({ data: [], error: null }).then(res, rej) : () => q }); return q; },
+        }) };
+        try {
+          mileage.push(
+            { id: 9301, gps: true, legKey: 'twin-w', calc_method: 'auto_route', miles: 3.2, client_id: 77,
+              to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
+              startedIso: '2026-08-21T12:48:53.281Z', endedIso: '2026-08-21T12:55:55.101Z', loggedAt: '2026-08-21T12:55:55.106Z', date: '2026-08-21' },
+            { id: 9302, gps: true, legKey: 'twin-l', calc_method: 'auto_route', miles: 3.2, client_id: 77,
+              to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
+              startedIso: '2026-08-21T12:48:53.275Z', endedIso: '2026-08-21T12:58:34.983Z', loggedAt: '2026-08-21T14:52:11.874Z', date: '2026-08-21' });
+          const healed = _mileDedupTrips(true);
+          return { healed, left: mileage.map(m => m.id), cloudDeletes };
+        } finally {
+          mileage.length = 0; keep.forEach(m => mileage.push(m));
+          window._supa = savedSupa; window._supaUser = savedUser;
+        }
+      });
+      expect(out.healed).toBe(1);
+      expect(out.left, 'the contemporaneous close survives, the replay dies').toEqual([9301]);
+      // ASSERTION UPDATED 2026-08-26 (10.4). This required a HARD .delete() on
+      // td_mileage. Owner directive that day: every sweep soft deletes so a
+      // wrong guess can be undone, and _mileDedupTrips now goes through
+      // _tdSoftDelete like the rest. The intent the test was protecting is
+      // unchanged and still checked, the loser must be removed on the SERVER so
+      // no reload resurrects it, only the verb changed from delete to a
+      // deleted_at stamp.
+      expect(out.cloudDeletes, 'the loser is removed on the server, so no reload can resurrect it')
+        .toEqual([{ tbl: 'td_mileage', id: '9302' }]);
     });
 
     test('a backdated manual trip to the same client is never eaten', async () => {
@@ -2509,18 +2606,19 @@ test.describe('Automatic mileage from drive legs', () => {
   // lift. A false deduction is worse than a blank, because a blank claims
   // nothing and a false one goes on the return.
   test.describe('the vehicle answer that survives midnight', () => {
-    // todayKey() is a BROWSER global. These fixtures are built in Node, where it
-    // does not exist, so the date has to be computed here. Matches dateKey()'s
-    // LOCAL-time construction rather than toISOString(), which is UTC and would
-    // disagree with the app for part of every day.
-    const todayLocal = () => {
-      const d = new Date();
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    };
-    // The day is computed ONCE in Node and passed in, so nothing inside the
-    // browser body reaches for a date function at all. Two commits in a row
-    // broke on this boundary: first todayKey() called in Node, then todayLocal()
-    // called in the browser. Passing the value removes the question.
+    // "Today" comes from the PAGE, never from Node. This is the third and,
+    // structurally, the last form of the boundary bug this comment block has
+    // chronicled: first todayKey() was called in Node where it does not
+    // exist, then a Node-defined helper was called in the browser, and then
+    // the fix, computing the date in Node, was itself broken by the harness
+    // clock pin (tests/helpers.js): the app now runs on a page clock pinned
+    // to 10:00 Central while Node keeps the runner's real clock, so from
+    // 19:00 Central to midnight (runner UTC one day ahead) every fixture
+    // keyed to Node's "today" landed on the app's TOMORROW. The truck seeded
+    // as down-today was not down yet on the app's calendar, and nine tests
+    // failed for the hour of day. The page's own todayKey() reads the pinned
+    // clock, which is the only clock the code under test can see.
+    const todayLocal = () => page.evaluate(() => todayKey());
     const setup = (o) => page.evaluate((a) => {
       S.employees = [{ id: 'e-danny', name: 'Danny' }, { id: 'e-sam', name: 'Sam' }];
       vehicles.length = 0;
@@ -2530,10 +2628,10 @@ test.describe('Automatic mileage from drive legs', () => {
       jobs.length = 0;
       jobs.push({ id: 8801, name: 'Job', status: 'upcoming', start: a.today, days: 1, assignedTo: 'e-danny' });
       return true;
-    }, Object.assign({ today: todayLocal() }, o));
+    }, o);
 
     test('a usual truck answers for today with nobody touching anything', async () => {
-      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' } });
+      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' }, today: await todayLocal() });
       const r = await page.evaluate(() => _crewVehicleForDay('e-danny'));
       expect(r.mode).toBe('truck');
       expect(r.vehicleId).toBe('v-250');
@@ -2541,8 +2639,9 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('the usual truck being in the shop does NOT quietly keep deducting', async () => {
-      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' },
-                    down: [{ start: todayLocal(), end: null }] });   // open end = still in
+      const day = await todayLocal();
+      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' }, today: day,
+                    down: [{ start: day, end: null }] });   // open end = still in
       const r = await page.evaluate(() => _crewVehicleForDay('e-danny'));
       // Not 'truck'. This is the whole point.
       expect(r.mode).toBe('none');
@@ -2551,8 +2650,9 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('with the truck down and another free, dispatch offers that one', async () => {
-      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' },
-                    down: [{ start: todayLocal(), end: null }], vanDrivable: true });
+      const day = await todayLocal();
+      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' }, today: day,
+                    down: [{ start: day, end: null }], vanDrivable: true });
       const need = await page.evaluate(() => crewNeedingVehicleAnswer());
       expect(need.length).toBe(1);
       expect(need[0].name).toBe('Danny');
@@ -2564,9 +2664,10 @@ test.describe('Automatic mileage from drive legs', () => {
     test('with EVERY truck down, no truck is offered at all', async () => {
       // Only what is true. Their own vehicle or riding with somebody are the
       // honest answers left, and the board must not pretend otherwise.
-      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' },
-                    down: [{ start: todayLocal(), end: null }],
-                    vanDrivable: true, vanDown: [{ start: todayLocal(), end: null }] });
+      const day = await todayLocal();
+      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' }, today: day,
+                    down: [{ start: day, end: null }],
+                    vanDrivable: true, vanDown: [{ start: day, end: null }] });
       const need = await page.evaluate(() => crewNeedingVehicleAnswer());
       expect(need[0].options).toEqual(['own', 'rider']);
       expect(need[0].offer).toEqual([]);
@@ -2588,7 +2689,7 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('nobody set yet is reported as unset, not guessed', async () => {
-      await setup({});
+      await setup({ today: await todayLocal() });
       const r = await page.evaluate(() => _crewVehicleForDay('e-danny'));
       expect(r.reason).toBe('unset');
       const need = await page.evaluate(() => crewNeedingVehicleAnswer());
@@ -2596,7 +2697,7 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('somebody not working today is not a gap', async () => {
-      await setup({});
+      await setup({});   // deliberately NO today: the job lands on no valid day
       const need = await page.evaluate(() => crewNeedingVehicleAnswer());
       expect(need.map(n => n.name)).not.toContain('Sam');
     });
@@ -2617,10 +2718,9 @@ test.describe('Automatic mileage from drive legs', () => {
   // trucks, truck deducts miles on personal cars), so the app asks rather than
   // guesses, and until it is answered those drives claim nothing.
   test.describe('the dispatch gap card', () => {
-    const dayLocal = () => {
-      const d = new Date();
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    };
+    // Same rule as the describe above: the day comes from the PAGE's pinned
+    // clock, because Node's clock is a different clock since the harness pin.
+    const dayLocal = () => page.evaluate(() => todayKey());
     const seed = (o) => page.evaluate((a) => {
       S.employees = [{ id: 'e-danny', name: 'Danny' }];
       vehicles.length = 0;
@@ -2629,10 +2729,10 @@ test.describe('Automatic mileage from drive legs', () => {
       jobs.length = 0;
       jobs.push({ id: 8811, name: 'Job', status: 'upcoming', start: a.today, days: 1, assignedTo: 'e-danny' });
       return true;
-    }, Object.assign({ today: dayLocal() }, o));
+    }, o);
 
     test('somebody with no answer shows on the card', async () => {
-      await seed({});
+      await seed({ today: await dayLocal() });
       const html = await page.evaluate(() => _dispatchVehicleGapHtml());
       expect(html).toContain('Danny');
       expect(html).toContain('No usual vehicle set yet');
@@ -2640,7 +2740,7 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('answering it once clears the card', async () => {
-      await seed({});
+      await seed({ today: await dayLocal() });
       const out = await page.evaluate(() => {
         setUsualVehicle('e-danny', 'v-250');
         const e = S.employees[0];
@@ -2651,7 +2751,7 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('"their own vehicle" is a real answer, not an absence', async () => {
-      await seed({});
+      await seed({ today: await dayLocal() });
       const out = await page.evaluate(() => {
         setUsualVehicle('e-danny', 'own');
         return { usual: S.employees[0].usualVehicle, html: _dispatchVehicleGapHtml() };
@@ -2661,7 +2761,7 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('clearing it back to unset is allowed, and reopens the question', async () => {
-      await seed({ usual: { mode: 'truck', vehicleId: 'v-250' } });
+      await seed({ usual: { mode: 'truck', vehicleId: 'v-250' }, today: await dayLocal() });
       const out = await page.evaluate(() => {
         setUsualVehicle('e-danny', '');
         return { usual: S.employees[0].usualVehicle, html: _dispatchVehicleGapHtml() };
@@ -2671,13 +2771,13 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('a usual truck in the shop shows WHY, by name', async () => {
-      await seed({ usual: { mode: 'truck', vehicleId: 'v-250' }, down: [{ start: dayLocal(), end: null }] });
+      const day = await dayLocal(); await seed({ usual: { mode: 'truck', vehicleId: 'v-250' }, today: day, down: [{ start: day, end: null }] });
       const html = await page.evaluate(() => _dispatchVehicleGapHtml());
       expect(html).toContain('F-250 is in the shop');
     });
 
     test('with every truck down the card offers no truck at all', async () => {
-      await seed({ usual: { mode: 'truck', vehicleId: 'v-250' }, down: [{ start: dayLocal(), end: null }] });
+      const day = await dayLocal(); await seed({ usual: { mode: 'truck', vehicleId: 'v-250' }, today: day, down: [{ start: day, end: null }] });
       const html = await page.evaluate(() => _dispatchVehicleGapHtml());
       expect(html).toContain('Their own vehicle');
       // The only crew-drivable truck is the one in the shop, so it must not be
@@ -2686,7 +2786,7 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('nothing to ask means no card', async () => {
-      await seed({ usual: { mode: 'truck', vehicleId: 'v-250' } });
+      await seed({ usual: { mode: 'truck', vehicleId: 'v-250' }, today: await dayLocal() });
       const html = await page.evaluate(() => _dispatchVehicleGapHtml());
       expect(html).toBe('');
     });
@@ -2698,7 +2798,7 @@ test.describe('Automatic mileage from drive legs', () => {
       // when a real person picked an answer. So this one parses the HTML into
       // the DOM and dispatches a real change event; asserting on the markup is
       // not asserting on the control.
-      await seed({});
+      await seed({ today: await dayLocal() });
       const out = await page.evaluate(() => {
         const realRD = window.renderDispatch;
         window.renderDispatch = () => {};   // setUsualVehicle repaints the board; not under test here
@@ -2720,7 +2820,7 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('setting a vehicle for somebody who does not exist is a no-op', async () => {
-      await seed({});
+      await seed({ today: await dayLocal() });
       const out = await page.evaluate(() => setUsualVehicle('nobody', 'v-250'));
       expect(out).toBeNull();
     });
@@ -4147,10 +4247,20 @@ test.describe('Automatic mileage from drive legs', () => {
           else localStorage.setItem('td_geo_os_denied', savedDenied);
         }
       });
-      expect(r.running, 'a delivering watcher IS granted, the checklist item clears').toBe('granted');
-      expect(r.declined).toBe('denied');
-      expect(r.consented, 'consent on this device survives sign-out/sign-in as granted').toBe('granted');
-      expect(r.osDenied, 'an OS-level denial outranks stored consent').toBe('denied');
+      // ASSERTIONS REWRITTEN 2026-08-26 (10.4). Every line here pinned an
+      // INFERENCE about iOS drawn from something that is not iOS: our watcher
+      // being alive, our stored consent, our os-denied flag. Owner that day:
+      // "I don't want ours, ours does nothing in a true native app, go entirely
+      // off iOS since location calls capacitor plugins."
+      //
+      // They were not harmless. A delivering watcher reading as 'granted' is
+      // exactly how a phone on whenInUse, which can never track from a pocket,
+      // reported itself healthy. On a native shell the answer now comes from
+      // iOS or not at all, and 'prompt' means "not established", never a denial.
+      expect(r.running, 'a live watcher proves the tracker started, not what iOS granted').toBe('prompt');
+      expect(r.declined, 'our own declined flag is not an iOS status').toBe('prompt');
+      expect(r.consented, 'they agreed to be tracked; that is not iOS agreeing').toBe('prompt');
+      expect(r.osDenied, 'a watcher error is our reading of a failure, not a status').toBe('prompt');
       expect(r.fresh).toBe('prompt');
     });
 
@@ -4561,12 +4671,27 @@ test.describe('Automatic mileage from drive legs', () => {
           const grp = document.getElementById('dev-geo-tools');
           const btn = document.getElementById('set-geo-diag-btn');
           const shadowBtn = document.getElementById('set-geo-shadow-btn');
+          // §7.1: the ungated Cloud sync copy (set-geo-diag-btn2, added
+          // 2026-08-21 so the panel stayed reachable on the plain UAT web
+          // link) was removed 2026-08-25 on owner instruction: "put it under
+          // the advanced developer tools section, it needs to be there."
+          // Prove the DELETION, not just that the Developer copy works, or a
+          // future change re-adds it citing the 08-21 note and nothing catches
+          // it. Two nets: the exact id is gone document-wide, and no control
+          // under #setd-cloud reaches the panel by any route.
+          const cloud = document.getElementById('setd-cloud');
+          const cloudCtrls = cloud ? Array.from(cloud.querySelectorAll('button,a,[onclick]')) : [];
           return {
             opened,
             hasState: /Park mode/.test(text) && /GPS watcher/.test(text),
             grpHiddenInBrowser: grp ? grp.style.display === 'none' : null,
             underDev: !!(btn && btn.closest('#setd-dev')) && !!(shadowBtn && shadowBtn.closest('#setd-dev')),
             notUnderCloud: !(btn && btn.closest('#setd-cloud')),
+            cloudSectionExists: !!cloud,
+            oldIdGone: !document.getElementById('set-geo-diag-btn2'),
+            noDiagRouteInCloud: !cloudCtrls.some(el =>
+              /_geoDiagPanel/.test(el.getAttribute('onclick') || '') ||
+              /location diagnostics/i.test(el.textContent || '')),
           };
         } finally { window.Capacitor = realCap; }
       });
@@ -4575,6 +4700,168 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.grpHiddenInBrowser, 'no location engine tools outside the shell').toBe(true);
       expect(r.underDev, 'both tools sit under Settings → Developer').toBe(true);
       expect(r.notUnderCloud, 'and no longer beside Cloud sync').toBe(true);
+      expect(r.cloudSectionExists, 'the Cloud sync section itself is still there to check').toBe(true);
+      expect(r.oldIdGone, 'the ungated Cloud sync copy set-geo-diag-btn2 is deleted, not hidden').toBe(true);
+      expect(r.noDiagRouteInCloud, 'nothing under Cloud sync opens the diagnostics panel any more').toBe(true);
+    });
+
+    // Owner 2026-08-25: "don't keep inferring, build explicitly off what iOS
+    // reports", and "device wide location services ... why do we need it?"
+    // The panel showed Consent and OS-denied, both app-side readings, and
+    // nothing iOS actually said. It now shows all three independent axes,
+    // because any one of them being wrong stops every ping while the other
+    // two keep looking healthy.
+    test('the diagnostics panel shows all three location axes straight off iOS', async () => {
+      const r = await page.evaluate(async () => {
+        const realCap = window.Capacitor;
+        const savedNat = (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined;
+        const read = () => {
+          _geoDiagPanel();
+          const ov = document.getElementById('_geo-diag-ov');
+          const text = ov ? ov.textContent : '';
+          ov && ov.remove();
+          return text;
+        };
+        try {
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          if (typeof _geoNativeAuth !== 'undefined') {
+            _geoNativeAuth = { status: 'always', accuracy: 'full', precise: true, servicesEnabled: true };
+          }
+          const on = read();
+          // The trap this row exists for: iOS still says `always` with the
+          // master switch off, so the grant line alone reads as healthy.
+          if (typeof _geoNativeAuth !== 'undefined') {
+            _geoNativeAuth = { status: 'always', accuracy: 'full', precise: true, servicesEnabled: false };
+          }
+          const off = read();
+          // An older shell cannot answer at all, and 'unknown' must not be
+          // rendered as OFF: telling someone to fix a switch that is already
+          // on is how the whole panel loses credibility.
+          if (typeof _geoNativeAuth !== 'undefined') {
+            _geoNativeAuth = { status: 'always', accuracy: 'full', precise: true, servicesEnabled: null };
+          }
+          const unknown = read();
+          if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = null;
+          const none = read();
+          return { on, off, unknown, none };
+        } finally {
+          window.Capacitor = realCap;
+          if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = savedNat;
+        }
+      });
+      expect(r.on).toContain('Location Services (device)');
+      expect(r.on).toContain('iOS location');
+      expect(r.on).toContain('Precise Location');
+      // Label and value render as adjacent spans, so match the pair rather
+      // than a bare 'ON' that would pass on almost any text in the panel.
+      expect(r.on, 'the master switch is on').toContain('Location Services (device)ON');
+      expect(r.off, 'and the panel says plainly that nothing can arrive')
+        .toContain('Location Services (device)OFF, nothing can arrive');
+      expect(r.off, 'while iOS still reports the app grant as always').toContain('always');
+      expect(r.unknown, 'an old shell reads unknown, never OFF').toContain('unknown (old build)');
+      expect(r.unknown).not.toContain('OFF, nothing can arrive');
+      expect(r.none, 'no plugin at all is its own honest answer').toContain('unknown (no plugin)');
+      expect(r.none, 'and the grant line says not reported rather than guessing').toContain('not reported');
+    });
+
+    // Owner ask 2026-08-23: the diagnostics panel showed raw UTC event
+    // times, confusing to read against a phone that's on Central time.
+    // _geoParkNote now stores the full ISO instant; _geoDiagFmtT converts
+    // to Central at render time. August is CDT (UTC-5).
+    test('_ctStamp/_ctHM convert a UTC instant to Central time, DST-correct', async () => {
+      const r = await page.evaluate(() => ({
+        augStamp: _ctStamp(new Date('2026-08-23T20:58:31.000Z')),   // CDT, UTC-5
+        augHM: _ctHM(new Date('2026-08-21T22:07:00.000Z')),
+        janStamp: _ctStamp(new Date('2026-01-15T20:58:31.000Z')),   // CST, UTC-6
+      }));
+      expect(r.augStamp).toBe('08-23T15:58:31');
+      expect(r.augHM).toBe('17:07');
+      expect(r.janStamp, 'winter uses CST (UTC-6), not a fixed offset').toBe('01-15T14:58:31');
+    });
+
+    test('_geoDiagFmtT converts a full-ISO park-log entry to Central', async () => {
+      const r = await page.evaluate(() => _geoDiagFmtT(new Date('2026-08-23T20:58:31.123Z').toISOString()));
+      expect(r).toBe('08-23T15:58:31');
+    });
+
+    // Backward compatibility: entries already sitting in an on-device
+    // localStorage log from before this fix are the OLD sliced format
+    // (no year, implicitly UTC), and must still render correctly after an
+    // app update, not throw or show garbage.
+    test('_geoDiagFmtT still converts the old sliced (no-year) format for entries logged before this fix', async () => {
+      const r = await page.evaluate(() => _geoDiagFmtT('08-23T20:58:31'));
+      expect(r).toBe('08-23T15:58:31');
+    });
+
+    test('_geoDiagFmtT passes through empty/malformed input without throwing', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: [_geoDiagFmtT(''), _geoDiagFmtT(null), _geoDiagFmtT('not-a-date')] }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v[0]).toBe('');
+      expect(r.v[1]).toBe('');
+    });
+
+    test('the diagnostics panel renders park-log timestamps in Central time, not raw UTC', async () => {
+      const r = await page.evaluate(() => {
+        const realCap = window.Capacitor;
+        const realLog = _geoParkLog.slice();
+        try {
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          _geoParkLog.length = 0;
+          _geoParkLog.push({ t: '2026-08-23T20:58:31.000Z', ev: 'park-exit', x: '' });
+          _geoDiagPanel();
+          const ov = document.getElementById('_geo-diag-ov');
+          const text = ov ? ov.textContent : '';
+          ov && ov.remove();
+          return { text, copyText: window.__geoDiagText || '' };
+        } finally {
+          window.Capacitor = realCap;
+          _geoParkLog.length = 0; realLog.forEach(x => _geoParkLog.push(x));
+        }
+      });
+      expect(r.text).toContain('08-23T15:58:31');
+      expect(r.text, 'never the raw UTC hour').not.toContain('08-23T20:58:31');
+      expect(r.copyText, '"Copy everything" must carry the same converted time').toContain('08-23T15:58:31');
+    });
+
+    // HISTORY, kept deliberately (§10.4), because this test's assertions were
+    // inverted by an owner decision and the reasoning on BOTH sides matters.
+    //
+    // 2026-08-21, why the Cloud sync copy existed: the Developer copy needs
+    // is_dev in the database (the owner's real account never had it) AND the
+    // native shell (they were testing the plain UAT web link), so the panel
+    // they needed to unblock a live reconciliation bug was invisible on both
+    // counts. A second copy under Cloud sync (set-geo-diag-btn2) needed
+    // neither, so this test asserted it existed and was ungated. Correct then.
+    //
+    // 2026-08-25, why it no longer does: the owner asked for diagnostics to
+    // live under the developer tools only. The downside was put to him first,
+    // in these terms: deleting the Cloud sync copy makes the panel unreachable
+    // on the plain UAT web link and on any non-dev account. His answer: "No,
+    // put it under the advanced developer tools section, it needs to be there."
+    // So Developer-only is the INTENDED state now, and this test flips to
+    // proving the deletion (§7.1): the old entry point is gone, not hidden.
+    test('the ungated Cloud sync diagnostics button is gone, diagnostics is Developer-only now', async () => {
+      const r = await page.evaluate(() => {
+        const btn = document.getElementById('set-geo-diag-btn2');
+        const cloud = document.getElementById('setd-cloud');
+        const devBtn = document.getElementById('set-geo-diag-btn');
+        // The Cloud sync section must still render its other controls, this
+        // was a surgical button removal, not a section that lost its contents.
+        const survivors = cloud ? cloud.querySelectorAll('button').length : 0;
+        return {
+          gone: !btn,
+          cloudStillThere: !!cloud,
+          survivors,
+          stillReachableUnderDev: !!(devBtn && devBtn.closest('#setd-dev')),
+        };
+      });
+      expect(r.gone, 'set-geo-diag-btn2 is deleted from the DOM, not display:none (§7)').toBe(true);
+      expect(r.cloudStillThere, 'the Cloud sync section survived the removal').toBe(true);
+      expect(r.survivors, 'its other buttons are untouched').toBeGreaterThanOrEqual(3);
+      expect(r.stillReachableUnderDev, 'the Developer copy is the one remaining route').toBe(true);
     });
 
     // Owner report (2026-08-09, second sighting): arrow still on after four
@@ -4825,6 +5112,151 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── Exit confirmation, gap or not (owner mandate 2026-08-20) ────────────────
+  // "when I enter a fence I am there... this should persist until iOS says hey
+  // big fella you're driving." Before this, the two-ping confirm-before-exit
+  // protection only applied to a departure discovered while resolving a
+  // BACKGROUND gap (_geoGapHiddenAt set). Live, screen-on, continuously
+  // tracking the whole time, a single noisy ping reading outside the fence
+  // closed the visit immediately — ordinary GPS wander while standing still at
+  // a job site (owner report the same day: lost the on-site card mid-shift,
+  // no gap involved at all). This generalizes the same confirmation bar to
+  // every live departure from a job/place/client fence, with a driving-speed
+  // reading trusted as immediate confirmation (real evidence of motion) and a
+  // second agreeing position otherwise required.
+  test.describe('exit confirmation: a lone noisy ping never closes an on-site visit', () => {
+    test('a single out-of-fence ping with no speed signal does not close the job; a confirming return leaves it untouched', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realEnq = window._geoEnqueue;
+        const entries = [];
+        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+        _supaUser = { id: 'u-wander' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoExitPending = null;
+          const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+          await ping(a.job);                                // arrive, immediate
+          const job1 = _geoCurrentJob;
+          _geoArrivedAt = new Date(Date.now() - 10 * 60000).toISOString(); // backdate: real visit, not a pass-through
+          const arrivedAt1 = _geoArrivedAt;
+          // Ordinary GPS wander: one good-accuracy ping ~1000ft away, no speed.
+          await ping({ lat: a.job.lat + 0.003, lon: a.job.lon });
+          const afterWander = { job: _geoCurrentJob, arrivedAt: _geoArrivedAt, closed: entries.length };
+          // Position confirms them back on site: the wander was noise, not a trip.
+          await ping(a.job);
+          return {
+            job1, arrivedAt1, afterWander,
+            job2: _geoCurrentJob, arrivedAt2: _geoArrivedAt, closedTotal: entries.length,
+          };
+        } finally {
+          _supaUser = realUser; window._geoEnqueue = realEnq;
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoExitPending = null;
+        }
+      }, { job: JOB });
+      expect(r.job1, 'arrival is immediate, no confirmation needed to enter').toBe(9901);
+      expect(r.afterWander.job, 'one noisy out-of-fence ping must not close the visit').toBe(9901);
+      expect(r.afterWander.arrivedAt, 'the original arrival time must survive the wander').toBe(r.arrivedAt1);
+      expect(r.afterWander.closed, 'nothing gets written on an unconfirmed reading').toBe(0);
+      expect(r.job2, 'confirmed back on site: still the same open visit').toBe(9901);
+      expect(r.arrivedAt2, 'the visit never actually closed, so arrival time is unchanged').toBe(r.arrivedAt1);
+      expect(r.closedTotal, 'the whole wander-and-return produced zero closes').toBe(0);
+    });
+
+    test('two agreeing out-of-fence pings DO close the visit when no speed signal is available', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realEnq = window._geoEnqueue;
+        const entries = [];
+        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+        _supaUser = { id: 'u-confirm' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoExitPending = null;
+          const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+          await ping(a.job);
+          _geoArrivedAt = new Date(Date.now() - 10 * 60000).toISOString();
+          await ping(a.road);                               // first out-of-fence ping: pending
+          const afterFirst = { job: _geoCurrentJob, closed: entries.length };
+          await ping(a.road);                               // second agreeing ping: confirmed
+          return {
+            afterFirst, jobAfter: _geoCurrentJob, closedAfter: entries.length,
+            closedTbl: entries[0] && entries[0].tbl,
+          };
+        } finally {
+          _supaUser = realUser; window._geoEnqueue = realEnq;
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoExitPending = null;
+        }
+      }, { job: JOB, road: ROAD });
+      expect(r.afterFirst.job, 'the first out-of-fence ping must not close it yet').toBe(9901);
+      expect(r.afterFirst.closed).toBe(0);
+      expect(r.jobAfter, 'the SECOND agreeing ping confirms the departure').toBe(null);
+      expect(r.closedAfter, 'exactly one close, on the confirming ping').toBe(1);
+      expect(r.closedTbl).toBe('job_time_entries');
+    });
+
+    test('a driving-speed reading confirms departure immediately, no second ping needed', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realEnq = window._geoEnqueue;
+        const entries = [];
+        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+        _supaUser = { id: 'u-speed' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoExitPending = null;
+          await _geoOnPing({ coords: { latitude: a.job.lat, longitude: a.job.lon, accuracy: 8 } });
+          _geoArrivedAt = new Date(Date.now() - 10 * 60000).toISOString();
+          // One ping, outside the fence, reporting real driving speed (~13mph).
+          await _geoOnPing({ coords: { latitude: a.road.lat, longitude: a.road.lon, accuracy: 8, speed: 6 } });
+          return { job: _geoCurrentJob, closed: entries.length, closedTbl: entries[0] && entries[0].tbl };
+        } finally {
+          _supaUser = realUser; window._geoEnqueue = realEnq;
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoExitPending = null;
+        }
+      }, { job: JOB, road: ROAD });
+      expect(r.job, 'a confirmed driving-speed ping closes the visit on the FIRST out-of-fence reading').toBe(null);
+      expect(r.closed).toBe(1);
+      expect(r.closedTbl).toBe('job_time_entries');
+    });
+
+    test('bad-accuracy pings never confirm a departure, no matter how many arrive', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realEnq = window._geoEnqueue;
+        const entries = [];
+        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+        _supaUser = { id: 'u-bad-acc' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoExitPending = null;
+          const ping = (c, acc) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: acc } });
+          await ping(a.job, 8);
+          _geoArrivedAt = new Date(Date.now() - 10 * 60000).toISOString();
+          for (let i = 0; i < 5; i++) await ping(a.road, 250); // well past the 100m trust floor
+          return { job: _geoCurrentJob, closed: entries.length };
+        } finally {
+          _supaUser = realUser; window._geoEnqueue = realEnq;
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoExitPending = null;
+        }
+      }, { job: JOB, road: ROAD });
+      expect(r.job, 'no fix bad enough to trust can ever confirm a departure').toBe(9901);
+      expect(r.closed).toBe(0);
+    });
+  });
+
   // ── Phantom legs (owner report 2026-08-09) ──────────────────────────────────
   // One real Shop→FBC drive produced four rows: two 2-minute "FBC to FBC"
   // trips (GPS jitter bouncing across the fence line), and a duplicate
@@ -4903,6 +5335,7 @@ test.describe('Automatic mileage from drive legs', () => {
           _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null;
           _geoLastFenceAt = null; _geoGapHiddenAt = null; _geoStopAnchor = null;
           _geoQuietSinceMs = null; _geoParkPrevFix = null; _geoFenceEnteredAtMs = null;
+          window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
           _geoRestoreOpen();
           const restoredOrigin = _geoLegOrigin && _geoLegOrigin.name;
           const restoredDrive = !!_geoDriveStartedAt;
@@ -4929,6 +5362,61 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.rows[0].miles).toBe(7.7);
     });
 
+    // A drive still in progress (not at a job, not at the shop) when the app died
+    // AND the calendar rolled to a new day before it ever restarted: previously
+    // _geoRestoreOpen's day-mismatch branch salvaged an open job/shop dwell but
+    // just discarded an open DRIVE outright, silently losing the hours. The
+    // destination is genuinely unknown (they never arrived), so this claims no
+    // mileage, only the payroll-relevant time entry.
+    test('a drive still open across a day rollover is salvaged as time, not silently dropped', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realEnq = window._geoEnqueue;
+        const entries = [];
+        _supaUser = { id: 'u-rollover' };
+        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+        try {
+          __seedGeo();
+          const t0 = Date.now();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoLegAtShop = false;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoStopAnchor = null;
+          const driveStart = new Date(t0 - 40 * 60000).toISOString();
+          const hiddenAt = new Date(t0 - 5 * 60000).toISOString();
+          _geoDriveStartedAt = driveStart;
+          _geoLegOrigin = { lat: a.job.lat, lng: a.job.lon, name: 'Miller Residence', kind: 'job' };
+          _geoLastFenceLoc = _geoLegOrigin;
+          _geoLastFenceAt = driveStart;
+          _geoPersistOpen(hiddenAt);
+          // Back-date the persisted blob's day so restore sees yesterday, the
+          // same shape a real overnight app-kill produces.
+          const raw = JSON.parse(localStorage.getItem('zp3_geo_open'));
+          raw.day = 'not-today';
+          localStorage.setItem('zp3_geo_open', JSON.stringify(raw));
+          // ── app dies here, relaunches tomorrow ──
+          _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null;
+          _geoLastFenceAt = null; _geoGapHiddenAt = null; _geoStopAnchor = null;
+          window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
+          _geoRestoreOpen();
+          const salvaged = entries.filter(e => e.tbl === 'job_time_entries' && e.row.source === 'drive-unassigned-salvaged');
+          return {
+            restoredDrive: !!_geoDriveStartedAt, // must NOT come back live, the day already rolled
+            salvagedCount: salvaged.length,
+            salvaged: salvaged[0] && salvaged[0].row,
+          };
+        } finally {
+          _supaUser = realUser; window._geoEnqueue = realEnq;
+          _geoDriveStartedAt = null; _geoDriveReset(); _geoLegOrigin = null;
+          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoGapHiddenAt = null;
+          _geoClearOpen();
+        }
+      }, { job: JOB });
+      expect(r.restoredDrive, 'a rolled-over day never resumes as a live drive').toBe(false);
+      expect(r.salvagedCount, 'the in-progress drive logs its time instead of vanishing').toBe(1);
+      expect(r.salvaged.job_id, 'destination was never known, so no job is claimed').toBe(null);
+      expect(r.salvaged.dest_place, 'and no place is claimed either').toBe(null);
+      expect(r.salvaged.minutes).toBe(35);
+    });
+
     test('a bounce restored after a kill is still refused, because the origin came back with it', async () => {
       const r = await page.evaluate(async (a) => {
         const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue;
@@ -4951,6 +5439,7 @@ test.describe('Automatic mileage from drive legs', () => {
           _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null;
           _geoLastFenceAt = null; _geoGapHiddenAt = null;
           _geoQuietSinceMs = null; _geoParkPrevFix = null; _geoFenceEnteredAtMs = null;
+          window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
           _geoRestoreOpen();
           _geoDriveMiles = 0;                     // nothing actually moved
           await _geoOnPing({ coords: { latitude: a.shop.lat, longitude: a.shop.lon, accuracy: 8, speed: 0 }, __tdTs: t0 });
@@ -4968,6 +5457,392 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.newRows, 'the phantom stays dead: same spot, no miles moved').toBe(0);
     });
 
+  });
+
+  // ── Same-fence flicker (owner video 2026-08-20) ─────────────────────────────
+  // Real device: two near-duplicate "Driving" legs both to job "John Doe",
+  // same start, end times two minutes apart, then several more 2-6 minute
+  // job<->shop blips through midday, all while genuinely parked. Root cause:
+  // once _geoExitPending confirms a departure (a lone driving-speed blip, or
+  // two borderline-accuracy pings agreeing) and the drive clock opens, the
+  // VERY NEXT ping landing back inside that SAME fence had no guard at all,
+  // it went through the unconditional "single clean ping into a well-defined
+  // fence" trust path (protected further below), because by then `prev` reads
+  // null, so the settle-back looks identical to a brand-new arrival. See
+  // _geoFlickerCandidate in js/geo-track.js for the full mechanism.
+  test.describe('same-fence flicker (owner video 2026-08-20)', () => {
+    test('a confirmed exit that settles back into the SAME job within the grace window logs no drive leg and never splits the visit', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realEnq = window._geoEnqueue;
+        const entries = [];
+        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+        _supaUser = { id: 'u-flicker' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null; _geoDriveReset();
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoExitPending = null;
+          _geoFlickerCandidate = null;
+          const ping = (c, extra) => _geoOnPing({
+            coords: Object.assign({ latitude: c.lat, longitude: c.lon, accuracy: 8 }, extra || {}),
+          });
+          // Arrive at the job: single ping, trusted immediately.
+          await ping(a.job);
+          const arrivedAt = _geoArrivedAt;
+          // A spurious driving-speed blip reads them outside every fence: the
+          // exit is confirmed on the FIRST ping (real evidence of motion, by
+          // design, see _GEO_DRIVEBY_SPEED_MPS).
+          await ping(a.road, { speed: 5 });
+          const afterExit = { job: _geoCurrentJob, driveOpen: !!_geoDriveStartedAt, closed: entries.length };
+          // GPS settles right back inside the SAME job fence, moments later.
+          await ping(a.job);
+          const afterFlicker = {
+            job: _geoCurrentJob, arrivedAt: _geoArrivedAt,
+            driveOpen: !!_geoDriveStartedAt, closed: entries.length,
+          };
+          // Backdate the (restored) arrival to simulate a real, longer dwell
+          // already in progress, then leave for real: proves the flicker never
+          // split the visit, the eventual close spans the WHOLE time, the
+          // original arrival included.
+          _geoArrivedAt = new Date(Date.parse(_geoArrivedAt) - 12 * 60000).toISOString();
+          const trueArrivedAt = _geoArrivedAt;
+          await ping(a.road, { speed: 5 });   // the real departure, confirmed immediately
+          await new Promise(r2 => setTimeout(r2, 30));
+          return {
+            arrivedAt, afterExit, afterFlicker, trueArrivedAt,
+            driveRows: entries.filter(e => e.tbl === 'job_time_entries' && /^drive/.test(e.row.source)),
+            allRows: entries.filter(e => e.tbl === 'job_time_entries')
+              .map(e => ({ source: e.row.source, arrived_at: e.row.arrived_at, departed_at: e.row.departed_at, minutes: e.row.minutes, job_id: e.row.job_id })),
+          };
+        } finally {
+          _supaUser = realUser; window._geoEnqueue = realEnq;
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoDriveReset();
+          _geoExitPending = null; _geoFlickerCandidate = null; _geoStopAnchor = null; _geoLegOrigin = null;
+        }
+      }, { job: JOB, road: ROAD });
+
+      expect(r.afterExit.job, 'the spurious exit is confirmed immediately (real evidence of motion)').toBe(null);
+      expect(r.afterExit.driveOpen, 'a drive clock opens for the (phantom) exit').toBe(true);
+      expect(r.afterExit.closed, 'arriving seconds ago: the close floor (mins<2) refuses to write anything yet').toBe(0);
+      expect(r.afterFlicker.job, 'settling back into the SAME job undoes the exit').toBe(9901);
+      expect(r.afterFlicker.arrivedAt, 'the ORIGINAL arrival time survives, not a fresh one').toBe(r.arrivedAt);
+      expect(r.afterFlicker.driveOpen, 'the phantom drive clock is discarded').toBe(false);
+      expect(r.afterFlicker.closed, 'still nothing written after the undo').toBe(0);
+      expect(r.driveRows.length, 'no drive leg was ever logged for the flicker').toBe(0);
+      expect(r.allRows.length, 'exactly one row for the whole visit, never split in two').toBe(1);
+      expect(r.allRows[0].job_id).toBe('9901');
+      expect(r.allRows[0].arrived_at, 'the row spans the ORIGINAL arrival, flicker gap included').toBe(r.trueArrivedAt);
+      expect(r.allRows[0].minutes).toBeGreaterThanOrEqual(12);
+    });
+
+    // The mirror case: a same-fence flicker must never suppress a REAL exit to
+    // somewhere else. This is the "single clean ping into a well-defined
+    // fence" trust path the flicker guard must leave untouched (js/geo-track.js
+    // comment above _geoExitPending): a job/shop/place/client entry is
+    // trusted on ONE ping whether or not a drive clock happens to be open,
+    // because the flicker candidate only ever matches its OWN exact fence.
+    test('settling into a DIFFERENT fence right after an exit is a real trip, not a flicker', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realUser = _supaUser, realEnq = window._geoEnqueue;
+        const entries = [];
+        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+        _supaUser = { id: 'u-real-trip' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null; _geoDriveReset();
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoExitPending = null;
+          _geoFlickerCandidate = null;
+          const ping = (c, extra) => _geoOnPing({
+            coords: Object.assign({ latitude: c.lat, longitude: c.lon, accuracy: 8 }, extra || {}),
+          });
+          await ping(a.job);                       // arrive at the job
+          await ping(a.road, { speed: 5 });         // confirmed exit, drive opens
+          // Backdate the drive clock so this reads as a real 20-minute drive,
+          // same as every other real-trip test in this file (drive()'s own
+          // rewind helper): a sub-second synthetic gap between pings would
+          // otherwise trip the existing mins<2 pass-through floor in
+          // _geoDriveEntry, unrelated to the thing under test here.
+          if (_geoDriveStartedAt) _geoDriveStartedAt = new Date(Date.now() - 20 * 60000).toISOString();
+          await ping(a.shop);                       // lands at a DIFFERENT, real fence
+          await new Promise(r2 => setTimeout(r2, 30));
+          return {
+            job: _geoCurrentJob, atShop: _geoWasInShop, legAtShop: _geoLegAtShop,
+            driveRows: entries.filter(e => e.tbl === 'job_time_entries' && /^drive/.test(e.row.source)).length,
+          };
+        } finally {
+          _supaUser = realUser; window._geoEnqueue = realEnq;
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
+          _geoDriveStartedAt = null; _geoDriveReset();
+          _geoExitPending = null; _geoFlickerCandidate = null; _geoStopAnchor = null; _geoLegOrigin = null;
+        }
+      }, { job: JOB, road: ROAD, shop: SHOP });
+
+      expect(r.job, 'no longer at the job').toBe(null);
+      expect(r.atShop, 'a single clean ping into a DIFFERENT fence is still trusted immediately').toBe(true);
+      expect(r.legAtShop).toBe(true);
+      expect(r.driveRows, 'a real trip to a different destination still logs its drive leg').toBe(1);
+    });
+  });
+
+  // ── TdGeo live delivery vs buffer replay (owner video 2026-08-21) ───────────
+  // The owner's phone showed two "Driving" legs to the same job, both display
+  // 7:52a, ending 8:00a and 8:02a. Root cause: TdGeoPlugin.swift's record()
+  // buffers every native event UNCONDITIONALLY (live or not), and the buffer
+  // is only cleared by an explicit drainBuffer() call, which only ever runs
+  // once per JS boot. So a live-delivered event still sitting in that buffer
+  // at the next reload (version watchdog, a WKWebView kill, a park-mode wake)
+  // gets replayed a second time with its ORIGINAL native timestamp. That alone
+  // is harmless if live and replay agree on the leg's clock (same legStart =
+  // same deterministic legKey = the existing exact-match idempotency guard in
+  // autoLogDriveTrip blocks the second write for free). The bug: _geoTdEvent
+  // used to stamp __tdTs only on replay, so a LIVE event clocked itself off
+  // Date.now() at whatever moment the JS handler actually ran (which lags the
+  // true GPS fix by however long the main thread was busy), while its
+  // buffered twin, replayed later, clocked off the true capture time. Two
+  // derivations of ONE physical exit/arrival, seconds apart, mint two
+  // different legKeys.
+  // Owner report 2026-08-25, off two weeks of his own engine journal: a stop
+  // the app has a FENCE for is stamped within a minute; a stop with no fence
+  // waits on iOS to volunteer a visit report, and iOS sits on those (measured
+  // across 27 of his unfenced stops: median 4 minutes late, worst 45). The
+  // late report is not vague about WHEN though: it carries iOS's own
+  // arrivalDate. "visit · Stop · in 10:28" delivered at 11:13 knew, in the
+  // same message, that he arrived at 10:28. The engine was reading the
+  // postmark and throwing away the letter.
+  test.describe('an iOS visit report stamps the arrival it actually reports', () => {
+    // Park the machine outside everything, then hand it ONE event.
+    const deliver = (ev, pre) => page.evaluate(async ([d, ev, pre]) => {
+      const realUser = _supaUser, realEnq = window._geoEnqueue, realNow = Date.now;
+      const notesBefore = _geoParkLog.slice();
+      _supaUser = { id: 'u-visit-clock' };
+      window._geoEnqueue = () => {};
+      try {
+        __seedGeo();
+        _geoPingBusy = false;
+        _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoDriveReset();
+        _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+        _geoCurrentClient = null; _geoClientArrivedAt = null; _geoLegOrigin = null;
+        _geoExitPending = null; _geoFlickerCandidate = null; _geoParkModeOn = false;
+        _geoParkCluster = null; _geoSoftJob = null; _geoSoftShop = null;
+        _geoWasInShop = false; _geoLegAtShop = false; _geoShopArrivedAt = null;
+        _geoLastFenceAt = null; _geoLastFenceLoc = null;
+        _geoParkBackdate = pre && pre.backdate ? pre.backdate : null;
+        Date.now = () => d.now;
+        await _geoTdEvent(ev, false);
+        Date.now = realNow;
+        const fresh = _geoParkLog.slice(notesBefore.length >= 30 ? 0 : notesBefore.length)
+          .filter(n => !notesBefore.some(o => o.t === n.t && o.ev === n.ev && o.x === n.x));
+        return {
+          jobArrived: _geoArrivedAt, shopArrived: _geoShopArrivedAt,
+          leftover: _geoParkBackdate,
+          noted: fresh.filter(n => n.ev === 'visit-backdate').map(n => n.x),
+        };
+      } finally { _supaUser = realUser; window._geoEnqueue = realEnq; Date.now = realNow; }
+    }, [{ now: NOW, job: JOB, shop: SHOP }, ev, pre || null]);
+
+    // Fixed clock so "same Central day" is never a race against real midnight.
+    const NOW = Date.parse('2026-08-25T18:13:00.000Z');   // 13:13 Central
+    const AGO = (min) => NOW - min * 60000;
+    const visitAt = (lat, lon, arrivalTs) => ({ type: 'visit', lat, lng: lon, acc: 30, ts: NOW,
+      ...(arrivalTs == null ? {} : { arrivalTs }) });
+
+    test('a job arrival is stamped when he got there, not when the report landed', async () => {
+      const r = await deliver(visitAt(JOB.lat, JOB.lon, AGO(45)));
+      expect(r.jobArrived, 'the 45-minute-late report still knows the real arrival')
+        .toBe(new Date(AGO(45)).toISOString());
+      expect(r.noted[0]).toContain('45m late');
+    });
+
+    test('a shop arrival gets the same treatment', async () => {
+      const r = await deliver(visitAt(SHOP.lat, SHOP.lon, AGO(18)));
+      expect(r.shopArrived).toBe(new Date(AGO(18)).toISOString());
+    });
+
+    test('with no arrival time in the report, nothing is backdated', async () => {
+      const r = await deliver(visitAt(JOB.lat, JOB.lon, null));
+      expect(r.jobArrived, 'it stamps the delivery moment, exactly as before')
+        .toBe(new Date(NOW).toISOString());
+      expect(r.noted.length).toBe(0);
+    });
+
+    test('a plain fix carrying an arrival time is never backdated: visits only', async () => {
+      const r = await deliver({ type: 'fix', lat: JOB.lat, lng: JOB.lon, acc: 8, ts: NOW, arrivalTs: AGO(20) });
+      expect(r.jobArrived).toBe(new Date(NOW).toISOString());
+      expect(r.noted.length).toBe(0);
+    });
+
+    test('time is never invented: future, ancient, and yesterday are all refused', async () => {
+      const future = await deliver(visitAt(JOB.lat, JOB.lon, NOW + 5 * 60000));
+      expect(future.jobArrived, 'an arrival that has not happened yet').toBe(new Date(NOW).toISOString());
+
+      const ancient = await deliver(visitAt(JOB.lat, JOB.lon, AGO(3 * 60)));
+      expect(ancient.jobArrived, 'past the two-hour ceiling it is history, not a late stamp')
+        .toBe(new Date(NOW).toISOString());
+
+      const yesterday = await deliver(visitAt(JOB.lat, JOB.lon, Date.parse('2026-08-24T23:00:00.000Z')));
+      expect(yesterday.jobArrived, 'a report delivered after midnight never reaches back a day')
+        .toBe(new Date(NOW).toISOString());
+    });
+
+    test('junk arrival times never throw and never stamp', async () => {
+      for (const bad of [0, -1, NaN, 'noon', null, undefined, {}]) {
+        const r = await deliver(visitAt(JOB.lat, JOB.lon, bad));
+        expect(r.jobArrived, String(bad) + ' is not a timestamp').toBe(new Date(NOW).toISOString());
+      }
+    });
+
+    test('a backdate the park resolver already set is never stomped', async () => {
+      const parked = new Date(AGO(6)).toISOString();
+      const r = await deliver(visitAt(JOB.lat, JOB.lon, AGO(40)), { backdate: parked });
+      expect(r.jobArrived, "the resolver's own stop moment wins, it observed the truck stop")
+        .toBe(parked);
+    });
+
+    // The leak this guard exists for: set a backdate, produce no transition,
+    // and it would sit there waiting to stamp an unrelated arrival minutes
+    // later with a time that had nothing to do with it.
+    test('a visit that lands nowhere leaves no backdate behind', async () => {
+      const r = await deliver(visitAt(41.9, -80.4, AGO(30)));   // open country, no fence
+      expect(r.leftover, 'one-shot means one-shot').toBe(null);
+    });
+
+    test('the backdate never survives the ping that carried it', async () => {
+      const r = await deliver(visitAt(JOB.lat, JOB.lon, AGO(30)));
+      expect(r.leftover).toBe(null);
+    });
+  });
+
+  test.describe('TdGeo live delivery vs buffer replay (owner video 2026-08-21)', () => {
+    // One physical drive, told to _geoTdEvent twice: once "live" (a JS-side
+    // processing lag simulated via a stubbed Date.now, standing in for the
+    // main-thread contention the code's own comments already document as
+    // real) and once "replayed" the way a reload's drainBuffer would, with
+    // the SAME two native events and their true, unstubbed ts fields.
+    async function driveTwice(a) {
+      return page.evaluate(async (d) => {
+        const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue, realNow = Date.now;
+        _supaUser = { id: 'u-replay-clock' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 8.1, mins: 9 });
+        window._geoEnqueue = () => {};
+        const before = mileage.length;
+        const reset = (trueExitTs) => {
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoDriveReset();
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLegOrigin = null; _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoExitPending = null; _geoFlickerCandidate = null; _geoParkModeOn = false;
+          _geoParkCluster = null; _geoSoftJob = null;
+          // Parked at the shop before the drive, as if freshly booted (a
+          // reload wipes every one of these `let` module variables).
+          _geoWasInShop = true; _geoLegAtShop = true;
+          _geoShopArrivedAt = new Date(trueExitTs - 30 * 60000).toISOString();
+          _geoLastFenceAt = new Date(trueExitTs - 60000).toISOString();
+          _geoLastFenceLoc = { lat: d.shop.lat, lng: d.shop.lon, name: 'Shop', kind: 'shop' };
+        };
+        try {
+          __seedGeo();
+          // The TRUE native capture instants (what TdGeoPlugin.swift actually
+          // stamped and buffered, byte-identical on both passes below).
+          const trueExitTs = Date.parse('2026-08-21T07:52:03.000Z');
+          const trueArriveTs = Date.parse('2026-08-21T08:00:10.000Z');
+          const exitEvent = { type: 'regionExit', lat: d.road.lat, lng: d.road.lon, acc: 20, speed: 12, ts: trueExitTs };
+          const arriveEvent = { type: 'fix', lat: d.job.lat, lng: d.job.lon, acc: 8, speed: 0, ts: trueArriveTs };
+
+          // ── PASS 1: "live" delivery, lagging the true capture moment ──────
+          reset(trueExitTs);
+          Date.now = () => trueExitTs + 5000;      // 5s of live-processing lag
+          await _geoTdEvent(exitEvent, false);
+          Date.now = () => trueArriveTs + 118000;  // ~2min of lag (a busy main
+          await _geoTdEvent(arriveEvent, false);   // thread, a slow geocode)
+          Date.now = realNow;
+
+          // ── PASS 2: buffer replay after a "reload", true ts honored ───────
+          reset(trueExitTs);
+          await _geoTdEvent(exitEvent, true);
+          await _geoTdEvent(arriveEvent, true);
+
+          await new Promise(r => setTimeout(r, 30));
+          const rows = mileage.slice(0, Math.max(0, mileage.length - before));
+          return {
+            count: rows.length,
+            legKeys: [...new Set(rows.map(m => m.legKey))],
+            rows: rows.map(m => ({ from: m.from_name, to: m.to_name, startedIso: m.startedIso, endedIso: m.endedIso, mins: m.mins })),
+          };
+        } finally {
+          Date.now = realNow;
+          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute; window._geoEnqueue = realEnq;
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
+          _geoDriveStartedAt = null; _geoDriveReset(); _geoLegAtShop = false;
+          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoStopAnchor = null; _geoLegOrigin = null;
+          _geoExitPending = null; _geoFlickerCandidate = null; _geoParkCluster = null; _geoSoftJob = null;
+        }
+      }, a);
+    }
+
+    test('the same drive, live then replayed, collapses to ONE row', async () => {
+      const out = await driveTwice({ shop: SHOP, road: ROAD, job: JOB });
+      // Both passes display the same "7:52a" start (5s apart, same minute),
+      // and both are real ~8-10 minute drives, well clear of the 2-min floor.
+      // Before the fix this produced 2 rows with 2 different legKeys, exactly
+      // the owner's screenshot. The deterministic legKey now agrees on both
+      // passes (both clock off the true ev.ts), so the second close is
+      // recognised as the first one again and never writes a second row.
+      expect(out.count, 'one physical drive must never produce two rows').toBe(1);
+      expect(out.legKeys.length).toBe(1);
+      expect(out.rows[0].startedIso).toBe('2026-08-21T07:52:03.000Z');
+      expect(out.rows[0].endedIso).toBe('2026-08-21T08:00:10.000Z');
+      expect(out.rows[0].to).toBe('Miller Residence');
+    });
+  });
+
+  // ── Mileage-side cleanup: the owner's real duplicate pair (2026-08-21) ─────
+  // Proves the ALREADY-SHIPPED boot heal (efa418d, 2026-08-11) still collapses
+  // this exact shape once it runs: same person, same near-identical shop/job
+  // endpoints, starts a few seconds apart, overlapping windows. This is the
+  // cleanup half of the fix, independent of the prevention fix above: it is
+  // what actually clears rows a phone already wrote before this deploy landed
+  // (existing duplicate rows the owner already has need this heal to run on
+  // their next boot/reconnect; the prevention fix above only stops NEW ones).
+  test.describe('the owner\'s real duplicate pair heals (owner video 2026-08-21)', () => {
+    test('same job, starts seconds apart, ends 2 minutes apart: heal keeps one', async () => {
+      const out = await page.evaluate(() => {
+        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
+        // Same measured route both times (same two geocoded endpoints), so
+        // _mileTripWinner's mileage comparison ties and falls to earliest
+        // loggedAt, "the contemporaneous one" (its own documented rule).
+        // Row 501 is the LIVE row: written for real, in real time, during
+        // the drive. Row 502 is its buffer-replayed twin: it only exists
+        // once a LATER reload runs drainBuffer, so its loggedAt is later in
+        // wall-clock terms even though the trip IT describes started first.
+        const rows = [
+          { id: 501, gps: true, legKey: 'live-8f2a', calc_method: 'auto_route', miles: 3.1, client_id: 77,
+            to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
+            startedIso: '2026-08-21T07:52:08.000Z', endedIso: '2026-08-21T08:02:08.000Z',
+            mins: 10, loggedAt: '2026-08-21T08:02:10.000Z', date: '2026-08-21' },
+          { id: 502, gps: true, legKey: 'replay-3c91', calc_method: 'auto_route', miles: 3.1, client_id: 77,
+            to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
+            startedIso: '2026-08-21T07:52:03.000Z', endedIso: '2026-08-21T08:00:10.000Z',
+            mins: 8, loggedAt: '2026-08-21T09:15:00.000Z', date: '2026-08-21' },
+        ];
+        const keep = mileage.splice(0);
+        try {
+          rows.forEach(m => mileage.push(m));
+          const healed = _mileDedupTrips(true);
+          const left = mileage.map(m => m.id);
+          mileage.length = 0; rows.forEach(m => mileage.push(m));
+          const live = _mileDedupTrips();   // the live sweep must defer this to boot
+          return { healed, left, live, liveLeft: mileage.length };
+        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
+      });
+      expect(out.healed, 'exactly one duplicate collapses').toBe(1);
+      expect(out.left).toEqual([501]);
+      expect(out.live, 'the strict live sweep does not touch this pair').toBe(0);
+      expect(out.liveLeft).toBe(2);
+    });
   });
 
   // ── The last leg of the day (owner report 2026-08-09) ───────────────────────
@@ -5132,17 +6007,24 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.afterTick.renders, 'same-road pings update text in place, never re-render the dashboard').toBe(r.onRoad.renders);
     });
 
-    test('arriving at the job clears the banner, and the LOGGED trip still comes from the geocodes', async () => {
+    // Old contract: nothing detected -> the card faded to display:none. New
+    // contract (owner 2026-08-19, "ability for somebody to clock in at all
+    // times, nothing dependent on anything"): this card never goes blank
+    // anymore, the DRIVING banner clearing reveals the always-there manual
+    // clock control instead of hiding the element entirely.
+    test('arriving at the job clears the DRIVING banner into the manual clock card, and the LOGGED trip still comes from the geocodes', async () => {
       const r = await bannerDrive({ shop: SHOP, road: ROAD, road2: ROAD2, job: JOB, tick: true, arrive: true });
-      expect(r.afterArrive.display).toBe('none');      // faded out, matching the ON SITE card's exit
+      expect(r.afterArrive.display).toBe('block');
+      expect(r.afterArrive.html).toContain('Not clocked in');
       expect(r.rows.length).toBe(1);
       expect(r.rows[0].miles, 'route measurement rounded to a tenth, never the banner\'s straight-line tally').toBe(12.3);
     });
 
-    test('parked somewhere unknown, the banner fades once driving speed stops', async () => {
+    test('parked somewhere unknown, the DRIVING banner clears into the manual clock card once driving speed stops', async () => {
       const r = await bannerDrive({ shop: SHOP, road: ROAD, road2: ROAD2, job: JOB, park: true });
       expect(r.onRoad.display).toBe('block');
-      expect(r.afterPark.display).toBe('none');
+      expect(r.afterPark.display).toBe('block');
+      expect(r.afterPark.html).toContain('Not clocked in');
     });
   });
 
@@ -5175,6 +6057,7 @@ test.describe('Automatic mileage from drive legs', () => {
           const liveStart = _geoDriveStartedAt;
           _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null; _geoLastFenceAt = null;
           _geoStopAnchor = null; _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+          window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
           _geoRestoreOpen();
           return {
             snapHasDrive: !!(snap && snap.driveStartedAt),
@@ -5383,6 +6266,269 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.timeEntries, 'a duration nobody observed is still never claimed').toBe(0);
     });
 
+    test('_mileTapeHadPause: the coprocessor walk check reads windows honestly', async () => {
+      // Owner 2026-08-14: "time isn't a good enough factor." The motion
+      // coprocessor's answer to "did the human leave the vehicle" comes
+      // through TdGeo.motionSince; this proves the JS reading of it: a 40s+
+      // on-foot window inside the leg is a walk, driving/still-only is not,
+      // walking BEFORE the drive (to the truck) never counts, and no plugin
+      // at all answers null (fall back to the time rule), never false.
+      const r = await page.evaluate(async () => {
+        const realTd = window._geoTdPlugin;
+        const s = Date.now() - 20 * 60000, e = Date.now();
+        const iso = (ms) => new Date(ms).toISOString();
+        const withTd = (transitions) => { window._geoTdPlugin = () => ({ motionSince: async () => ({ available: true, transitions }) }); };
+        try {
+          withTd([{ kind: 'driving', ts: s }, { kind: 'onFoot', ts: s + 8 * 60000 }, { kind: 'driving', ts: s + 11 * 60000 }]);
+          const walked = await _mileTapeHadPause(iso(s), iso(e));
+          // THE REAL PICKUP TAPE (owner 2026-08-14 "didn't correct"): walk 30s,
+          // STILL at the counter 3 minutes, walk 30s, drive. The out-of-vehicle
+          // span runs first-walk to next-DRIVING; measured to the next
+          // transition of any kind, both walks were ignorable blips.
+          withTd([{ kind: 'driving', ts: s }, { kind: 'onFoot', ts: s + 8 * 60000 }, { kind: 'still', ts: s + 8 * 60000 + 30000 }, { kind: 'onFoot', ts: s + 11 * 60000 }, { kind: 'driving', ts: s + 11 * 60000 + 30000 }]);
+          const counterStop = await _mileTapeHadPause(iso(s), iso(e));
+          withTd([{ kind: 'driving', ts: s }, { kind: 'still', ts: s + 8 * 60000 }, { kind: 'driving', ts: s + 11 * 60000 }]);
+          const drivethru = await _mileTapeHadPause(iso(s), iso(e));
+          withTd([{ kind: 'driving', ts: s }, { kind: 'still', ts: s + 8 * 60000 }, { kind: 'driving', ts: s + 8 * 60000 + 90000 }]);
+          const shortStill = await _mileTapeHadPause(iso(s), iso(e));
+          withTd([{ kind: 'driving', ts: s }]);
+          const jam = await _mileTapeHadPause(iso(s), iso(e));
+          withTd([{ kind: 'onFoot', ts: s - 5 * 60000 }, { kind: 'driving', ts: s }]);
+          const preWalk = await _mileTapeHadPause(iso(s), iso(e));
+          withTd([{ kind: 'driving', ts: s }, { kind: 'onFoot', ts: s + 8 * 60000 }, { kind: 'driving', ts: s + 8 * 60000 + 20000 }]);
+          const blip = await _mileTapeHadPause(iso(s), iso(e));
+          window._geoTdPlugin = () => null;
+          const noPlugin = await _mileTapeHadPause(iso(s), iso(e));
+          return { walked, counterStop, drivethru, shortStill, jam, preWalk, blip, noPlugin };
+        } finally { window._geoTdPlugin = realTd; }
+      });
+      expect(r.walked, 'a 3-minute walk mid-leg is an errand').toBe(true);
+      expect(r.counterStop, 'walk-still-walk, the real pickup tape, is an errand').toBe(true);
+      expect(r.drivethru, 'a 3-minute STILL is the drive-thru/curbside tape, same evidence as the live dwell rule').toBe(true);
+      expect(r.shortStill, 'a 90-second still is a long light, below the 2.5-minute bar').toBe(false);
+      expect(r.jam, 'a rolling jam (driving-only tape) never disqualifies a real detour').toBe(false);
+      expect(r.preWalk, 'the walk TO the truck never counts').toBe(false);
+      expect(r.blip, 'a 20-second hop straight back to driving is below the 40s bar').toBe(false);
+      expect(r.noPlugin, 'no signal answers null, never an answer').toBe(null);
+    });
+
+    test('a walk inside the leg disqualifies the detour floor at measurement time', async () => {
+      // The fast-pickup hole: an errand quicker than the 2.5-minute time rule
+      // still puts extra miles in the observed tally. The measurement now
+      // asks the coprocessor before the floor collects: walked = the direct
+      // route saves; no walk on record = the floor still collects (the same
+      // answer as no motion signal at all, proven by the detour tests above).
+      const r = await page.evaluate(async () => {
+        const realRoute = _routeDistance, realUser = _supaUser, realTd = window._geoTdPlugin;
+        _supaUser = { id: 'u-walk' };
+        window.__origMileage = mileage.slice();
+        try {
+          mileage.length = 0;
+          const ended = new Date().toISOString();
+          const started = new Date(Date.now() - 14 * 60000).toISOString();
+          const mk = (id, legKey) => ({ id, date: todayKey(), gps: true, legKey, calc_method: 'pending_auto',
+            fromCoord: { lat: 39.02, lng: -95.73 }, toCoord: { lat: 39.0, lng: -95.7 }, miles: 0, mins: 14,
+            gpsMiles: 5.3, startedIso: started, endedIso: ended, loggedAt: ended });
+          window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 9 });
+          // Walked: the floor stands down.
+          mileage.push(mk(997501, 'walk-leg-1'));
+          window._geoTdPlugin = () => ({ motionSince: async () => ({ available: true,
+            transitions: [{ kind: 'driving', ts: Date.parse(started) }, { kind: 'onFoot', ts: Date.parse(started) + 5 * 60000 }, { kind: 'driving', ts: Date.parse(started) + 9 * 60000 }] }) });
+          await _retryPendingTrips();
+          const walkedRow = mileage.find(m => m.id === 997501);
+          // No walk: the floor collects.
+          mileage.length = 0; mileage.push(mk(997502, 'walk-leg-2'));
+          window._geoTdPlugin = () => ({ motionSince: async () => ({ available: true,
+            transitions: [{ kind: 'driving', ts: Date.parse(started) }] }) });
+          await _retryPendingTrips();
+          const jamRow = mileage.find(m => m.id === 997502);
+          return { walkedMiles: walkedRow.miles, walkedPaused: !!walkedRow.pausedLeg, jamMiles: jamRow.miles };
+        } finally {
+          window._routeDistance = _routeDistance = realRoute; _supaUser = realUser; window._geoTdPlugin = realTd;
+          mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
+        }
+      });
+      expect(r.walkedMiles, 'walked leg saves the DIRECT route').toBe(3.2);
+      expect(r.walkedPaused, 'and carries the errand mark').toBe(true);
+      expect(r.jamMiles, 'no walk on record: the observed detour still collects').toBe(5.3);
+    });
+
+    test('the retroactive walk sweep corrects a week of over-paid errand legs: reductions only, once per session', async () => {
+      // Owner 2026-08-14: the coprocessor stores about a week, so it can
+      // correct data and rows. Rows whose measurement KEPT the observed tally
+      // (the floor collected) get the walk question after the load settles:
+      // walked = re-measured down to the direct route. Rows outside the week,
+      // rows with a driving-only record, and hand-edited rows (tally no
+      // longer matches) are untouched, and the sweep runs once per session.
+      const r = await page.evaluate(async () => {
+        const realRoute = _routeDistance, realTd = window._geoTdPlugin, realRan = window._mileMotionHealRan;
+        window.__origMileage = mileage.slice();
+        try {
+          mileage.length = 0;
+          const mk = (id, endMsAgo, miles, gpsMiles) => {
+            const end = Date.now() - endMsAgo;
+            return { id, date: todayKey(), gps: true, legKey: 'heal-' + id, calc_method: 'auto_route',
+              miles, gpsMiles, mins: 12,
+              fromCoord: { lat: 39.02, lng: -95.73 }, toCoord: { lat: 39.0, lng: -95.7 },
+              startedIso: new Date(end - 14 * 60000).toISOString(), endedIso: new Date(end).toISOString(),
+              loggedAt: new Date(end).toISOString() };
+          };
+          const A = mk(998601, 2 * 86400000, 5.3, 5.3);    // walked, in window -> corrects
+          const B = mk(998602, 3 * 86400000, 5.3, 5.3);    // driving-only -> untouched
+          const C = mk(998603, 9 * 86400000, 5.3, 5.3);    // beyond the week -> untouched
+          const D = mk(998604, 2 * 86400000, 3.2, 5.3);    // hand-edited -> untouched
+          mileage.push(A, B, C, D);
+          window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 9 });
+          const aStart = Date.parse(A.startedIso);
+          window._geoTdPlugin = () => ({ motionSince: async (o) => {
+            // Only row A's window carries a walk.
+            const isA = Math.abs((o.sinceMs || 0) - (aStart - 120000)) < 60000;
+            return { available: true, transitions: isA
+              ? [{ kind: 'driving', ts: aStart }, { kind: 'onFoot', ts: aStart + 5 * 60000 }, { kind: 'still', ts: aStart + 5 * 60000 + 30000 }, { kind: 'onFoot', ts: aStart + 8 * 60000 }, { kind: 'driving', ts: aStart + 8 * 60000 + 30000 }]
+              : [{ kind: 'driving', ts: (o.sinceMs || 0) + 130000 }] };
+          } });
+          window._mileMotionHealRan = false;
+          const fixed1 = await _mileMotionHealSweep();
+          const after = Object.fromEntries(mileage.map(m => [m.id, { miles: m.miles, paused: !!m.pausedLeg }]));
+          const fixed2 = await _mileMotionHealSweep();   // session guard: never twice
+          return { fixed1, fixed2, after };
+        } finally {
+          window._routeDistance = _routeDistance = realRoute; window._geoTdPlugin = realTd; window._mileMotionHealRan = realRan;
+          mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
+        }
+      });
+      expect(r.fixed1, 'exactly the walked in-window row corrects').toBe(1);
+      expect(r.after[998601], 'walked leg reduced to the direct route and marked').toEqual({ miles: 3.2, paused: true });
+      expect(r.after[998602].miles, 'driving-only record untouched').toBe(5.3);
+      expect(r.after[998603].miles, 'beyond the coprocessor week untouched').toBe(5.3);
+      expect(r.after[998604], 'hand-edited row untouched, never re-marked').toEqual({ miles: 3.2, paused: false });
+      expect(r.fixed2, 'once per session, never a second stampede').toBe(0);
+    });
+
+    test('the walk sweep rides the load settle point beside the dedup heal', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+      const anchor = src.indexOf('_loadedDataOwner=(_supaUser');
+      expect(anchor).toBeGreaterThan(0);
+      expect(src.slice(anchor, anchor + 2200), 'sweep fires after every completed load')
+        .toContain("_mileMotionHealSweep==='function')_mileMotionHealSweep()");
+    });
+
+    test("the owner's real Friday: personal loop off the deduction, job sites untouched", async () => {
+      // Owner's 2026-08-14 day: home office -> John Doe -> library (personal
+      // notary) -> Casey's (gas, logged as an expense) -> John Doe -> shop.
+      // The app logged the Casey's legs as deductible because a FUEL receipt
+      // satisfied the "money spent here" test, money already inside the
+      // mileage rate. Three fixes meet here: fuel no longer qualifies a stop
+      // on a mileage-method vehicle, the retroactive sweep re-judges named
+      // stops after the fact, and a loop returning to the same business point
+      // claims nothing. Job sites and clients are refused before the personal
+      // test is asked: the first cut of this sweep collapsed John Doe himself
+      // out of the day, which is the worst failure a row-removing sweep has.
+      const r = await page.evaluate(async () => {
+        const realRoute = _routeDistance;
+        const keep = { m: mileage.slice(), e: expenses.slice(), v: vehicles.slice(), c: clients.slice(), j: jobs.slice(), p: places.slice(), ran: window._milePersonalSweepRan };
+        const HOME = { lat: 39.0300, lng: -95.7600 }, JOHN = { lat: 39.0208, lng: -95.7351 };
+        const CASEYS = { lat: 39.0300, lng: -95.7200 }, SHOP = { lat: 39.0000, lng: -95.7000 };
+        const d = todayKey();
+        try {
+          window._routeDistance = _routeDistance = async (f, t) => {
+            const R = (x) => x * Math.PI / 180;
+            const dd = 3958.8 * Math.acos(Math.min(1, Math.sin(R(f.lat)) * Math.sin(R(t.lat)) +
+              Math.cos(R(f.lat)) * Math.cos(R(t.lat)) * Math.cos(R(t.lng - f.lng))));
+            return { miles: Math.round(dd * 1.25 * 10) / 10, mins: 9 };
+          };
+          vehicles.length = 0; vehicles.push({ id: 'v1', name: 'F-250', status: 'active', deductionMethod: 'mileage' });
+          places.length = 0; savePlace({ name: 'Home Office', kind: 'home_office', lat: HOME.lat, lon: HOME.lng, confirmedBy: 'manual' });
+          clients.length = 0; clients.push({ id: 8801, name: 'John Doe', addr: '2950 SW McClure Rd', lat: JOHN.lat, lng: JOHN.lng });
+          jobs.length = 0; jobs.push({ id: 9911, name: 'John Repaint', client_id: 8801, lat: JOHN.lat, lon: JOHN.lng, start: d, days: 1, status: 'upcoming' });
+          expenses.length = 0;
+          expenses.push({ id: 77, date: d, cat: 'fuel', amount: 141.5, vendor: 'Caseys', vehicleId: 'v1', vehicleName: 'F-250', lat: CASEYS.lat, lon: CASEYS.lng });
+          mileage.length = 0;
+          mileage.push(
+            { id: 1, gps: true, legKey: 'L1', calc_method: 'auto_route', miles: 4.0, date: d, from_name: 'Home Office', to_name: 'John Doe', client_id: 8801, purpose: 'Job site',
+              fromCoord: HOME, toCoord: JOHN, startedIso: d + 'T13:00:00Z', endedIso: d + 'T13:12:00Z', loggedAt: d + 'T13:12:02Z' },
+            // 'Supply run' is what the app ACTUALLY stamped here: _poiPlaceKind
+            // labels any non-food business 'supply'. That label blocked the
+            // sweep until the purpose guard came out, so the fixture carries
+            // it or the test cannot catch the regression.
+            { id: 3, gps: true, legKey: 'L3', calc_method: 'auto_route', miles: 4.7, date: d, from_name: 'John Doe', to_name: 'Caseys', purpose: 'Supply run',
+              fromCoord: JOHN, toCoord: CASEYS, startedIso: d + 'T15:45:41Z', endedIso: d + 'T16:36:00Z', loggedAt: d + 'T16:36:02Z',
+              passedThrough: { stop: { lat: 39.025, lng: -95.728, name: 'Shawnee County Public Library' } } },
+            { id: 4, gps: true, legKey: 'L4', calc_method: 'auto_route', miles: 4.5, date: d, from_name: 'Caseys', to_name: 'John Doe', client_id: 8801, purpose: 'Job site',
+              fromCoord: CASEYS, toCoord: JOHN, startedIso: d + 'T16:49:00Z', endedIso: d + 'T16:58:00Z', loggedAt: d + 'T16:58:02Z' },
+            { id: 5, gps: true, legKey: 'L5', calc_method: 'auto_route', miles: 3.2, date: d, from_name: 'John Doe', to_name: 'Shop', purpose: 'Shop',
+              fromCoord: JOHN, toCoord: SHOP, startedIso: d + 'T22:00:00Z', endedIso: d + 'T22:08:00Z', loggedAt: d + 'T22:08:02Z' }
+          );
+          window._milePersonalSweepRan = false;
+          const fixed = await _milePersonalStopSweep();
+          return { fixed, rows: mileage.map(m => m.from_name + ' -> ' + m.to_name), total: +mileage.reduce((s, m) => s + (m.miles || 0), 0).toFixed(1) };
+        } finally {
+          window._routeDistance = _routeDistance = realRoute;
+          mileage.length = 0; keep.m.forEach(x => mileage.push(x));
+          expenses.length = 0; keep.e.forEach(x => expenses.push(x));
+          vehicles.length = 0; keep.v.forEach(x => vehicles.push(x));
+          clients.length = 0; keep.c.forEach(x => clients.push(x));
+          jobs.length = 0; keep.j.forEach(x => jobs.push(x));
+          places.length = 0; keep.p.forEach(x => places.push(x));
+          window._milePersonalSweepRan = keep.ran;
+        }
+      });
+      expect(r.fixed, 'the Casey\'s loop is the one thing collapsed').toBe(1);
+      expect(r.rows, 'the day is the two real business drives, nothing else')
+        .toEqual(['Home Office -> John Doe', 'John Doe -> Shop']);
+      expect(r.total, 'deductible miles match the IRS reading of the day').toBe(7.2);
+    });
+
+    test('a fuel receipt never qualifies a stop on a mileage vehicle; materials always do', async () => {
+      const r = await page.evaluate(() => {
+        const keep = { e: expenses.slice(), v: vehicles.slice() };
+        const CASEYS = { lat: 39.0300, lng: -95.7200 };
+        const d = todayKey();
+        try {
+          vehicles.length = 0; vehicles.push({ id: 'v1', name: 'F-250', status: 'active', deductionMethod: 'mileage' });
+          expenses.length = 0;
+          expenses.push({ id: 77, date: d, cat: 'fuel', amount: 141.5, vendor: 'Caseys', vehicleId: 'v1', vehicleName: 'F-250', lat: CASEYS.lat, lon: CASEYS.lng });
+          expenses.push({ id: 78, date: d, cat: 'materials', amount: 200, vendor: 'Sherwin', lat: 39.05, lon: -95.66 });
+          const fuelOnMileage = !!_bizReceiptForStop({ lat: CASEYS.lat, lng: CASEYS.lng, name: 'Caseys', day: d });
+          vehicles[0].deductionMethod = 'actual';
+          const fuelOnActual = !!_bizReceiptForStop({ lat: CASEYS.lat, lng: CASEYS.lng, name: 'Caseys', day: d });
+          const materials = !!_bizReceiptForStop({ lat: 39.05, lng: -95.66, name: 'Sherwin', day: d });
+          return { fuelOnMileage, fuelOnActual, materials };
+        } finally {
+          expenses.length = 0; keep.e.forEach(x => expenses.push(x));
+          vehicles.length = 0; keep.v.forEach(x => vehicles.push(x));
+        }
+      });
+      expect(r.fuelOnMileage, 'fuel is inside the rate: it cannot make a stop a destination').toBe(false);
+      expect(r.fuelOnActual, 'on actual expenses the same receipt is a real standalone deduction').toBe(true);
+      expect(r.materials, 'money spent on the job still proves a business stop').toBe(true);
+    });
+
+    test('dedup keeps the CORRECTED row, not the longer orphan it replaced', async () => {
+      const r = await page.evaluate(() => {
+        const keep = mileage.slice();
+        const JOHN = { lat: 39.0208, lng: -95.7351 }, CASEYS = { lat: 39.0300, lng: -95.7200 };
+        const d = todayKey();
+        try {
+          mileage.length = 0;
+          mileage.push(
+            { id: 2, gps: true, legKey: 'A', calc_method: 'auto_route', miles: 5.6, date: d, from_name: 'John Doe', to_name: 'Stop',
+              fromCoord: JOHN, toCoord: CASEYS, startedIso: d + 'T15:45:04Z', endedIso: d + 'T15:59:00Z', loggedAt: d + 'T15:59:02Z' },
+            { id: 3, gps: true, legKey: 'B', calc_method: 'auto_route', miles: 4.7, date: d, from_name: 'John Doe', to_name: 'Caseys',
+              fromCoord: JOHN, toCoord: CASEYS, startedIso: d + 'T15:45:41Z', endedIso: d + 'T16:36:00Z', loggedAt: d + 'T16:36:02Z',
+              passedThrough: { stop: { lat: 39.025, lng: -95.728, name: 'Shawnee County Public Library' } } }
+          );
+          _mileDedupTrips(true);
+          return mileage.map(m => ({ id: m.id, to: m.to_name, miles: m.miles }));
+        } finally { mileage.length = 0; keep.forEach(x => mileage.push(x)); }
+      });
+      expect(r.length, 'one journey, one row').toBe(1);
+      expect(r[0].id, 'the breadcrumbed, corrected row survives').toBe(3);
+      expect(r[0].miles, 'and its collapsed distance is what stands, not the orphan\'s inflated one').toBe(4.7);
+    });
+
     test('the pending sweep applies the route clock to an impossible window', async () => {
       const r = await page.evaluate(async () => {
         const realRoute = _routeDistance, realUser = _supaUser;
@@ -5412,4 +6558,320 @@ test.describe('Automatic mileage from drive legs', () => {
   });
 
   test('no console errors', async () => { await assertNoErrors(page); });
+
+  // ── _mileWorkdaySweep: personal legs outside the workday ────────────────
+  // Owner 2026-08-24, on a 6:26pm "Civitan Day Camp to Shop" leg in his IRS
+  // log: "was a time we did family pictures and I'm not sure why it's there.
+  // It should be dropped." Plus a Saturday "Shop to Stop" on a day with no
+  // work in it at all. Same workday window the Time Log and Crew Cost use, so
+  // a day cannot be one length for payroll and another for the deduction.
+  test.describe('_mileWorkdaySweep', () => {
+    // 8:00am to 4:00pm Central on 2026-08-20 (UTC-5), from one job visit and
+    // the legs chained to it.
+    const ENTS = [
+      { employee_user_id: 'wd-user', arrived_at: '2026-08-20T12:30:00Z', departed_at: '2026-08-20T13:00:00Z', source: 'drive' },
+      { employee_user_id: 'wd-user', arrived_at: '2026-08-20T13:00:00Z', departed_at: '2026-08-20T21:00:00Z', source: 'geofence' },
+      { employee_user_id: 'wd-user', arrived_at: '2026-08-20T21:00:00Z', departed_at: '2026-08-20T21:30:00Z', source: 'drive' },
+    ];
+    const leg = (o) => Object.assign({ id: 'wd-' + Math.random().toString(36).slice(2), gps: true, legKey: 'wd-lg',
+      fromCoord: { lat: 9, lng: 9 }, toCoord: { lat: 9.1, lng: 9.1 }, from_name: 'Shop', to_name: 'Stop',
+      miles: 3.2, date: '2026-08-20' }, o);
+
+    const run = (rows, ents) => page.evaluate(async ([rows, ents]) => {
+      const orig = { mileage: mileage.slice(), supa: window._supa, ran: window._mileWorkdaySweepRan,
+        expenses: expenses.slice(), user: window._supaUser };
+      mileage.length = 0; rows.forEach(r => mileage.push(r));
+      expenses.length = 0;
+      window._supaUser = { id: 'wd-user' };
+      window._mileWorkdaySweepRan = false;
+      const q = { data: ents, error: null };
+      // Chainable, plus an update() recorder: the sweeps SOFT delete now
+      // (js/cloud.js _tdSoftDelete), so a stub that only knows .delete() sees
+      // nothing happen, and one that only knows .eq/.gte throws the moment
+      // .is('deleted_at',null) is added to the read.
+      window.__softDeletes = [];
+      window._supa = { from: (tbl) => ({
+        select: () => { const c = new Proxy(function(){}, { get: (_, k) =>
+          k === 'then' ? (res, rej) => Promise.resolve(q).then(res, rej) : () => c }); return c; },
+        update: (patch) => { const u = { tbl, patch, ids: null };
+          const c = { in: (col, vals) => { u.ids = vals.slice(); window.__softDeletes.push(u); return c; },
+                      eq: () => c, then: (res, rej) => Promise.resolve({ error: null }).then(res, rej) };
+          return c; },
+        delete: () => ({ eq: () => ({ eq: () => ({ then: (res) => Promise.resolve({ error: null }).then(res) }) }) }) }) };
+      let dropped = 0, err = null;
+      try { dropped = await window.__real_mileWorkdaySweep ? await window.__real_mileWorkdaySweep() : await _mileWorkdaySweep(); }
+      catch (e) { err = String(e && e.message || e); }
+      const left = mileage.map(m => m.to_name + '@' + m.startedIso);
+      mileage.length = 0; orig.mileage.forEach(m => mileage.push(m));
+      expenses.length = 0; orig.expenses.forEach(e => expenses.push(e));
+      window._supa = orig.supa; window._mileWorkdaySweepRan = orig.ran; window._supaUser = orig.user;
+      return { dropped, left, err };
+    }, [rows, ents]);
+
+    test('a leg driven after the day clocked out is removed', async () => {
+      // 6:26pm to 7:44pm, well past the 4:00pm close.
+      const r = await run([leg({ startedIso: '2026-08-20T23:26:00Z', endedIso: '2026-08-21T00:44:00Z', to_name: 'Shop', from_name: 'Civitan Day Camp' })], ENTS);
+      expect(r.err).toBe(null);
+      expect(r.dropped, 'the family-pictures run is not a business trip').toBe(1);
+      expect(r.left).toEqual([]);
+    });
+
+    test('a leg inside the workday is never touched', async () => {
+      const r = await run([leg({ startedIso: '2026-08-20T13:30:00Z', endedIso: '2026-08-20T13:40:00Z' })], ENTS);
+      expect(r.dropped).toBe(0);
+      expect(r.left.length).toBe(1);
+    });
+
+    test('a leg straddling the edge of the workday is kept, not trimmed', async () => {
+      // Pulls out at 3:50pm, lands at 4:10pm: it overlaps the day, so it stays
+      // whole. This sweep only ever removes, it never rewrites a distance.
+      const r = await run([leg({ startedIso: '2026-08-20T20:50:00Z', endedIso: '2026-08-20T21:10:00Z' })], ENTS);
+      expect(r.dropped).toBe(0);
+      expect(r.left.length).toBe(1);
+    });
+
+    test('every leg on a day with no work at all is removed', async () => {
+      const r = await run([leg({ date: '2026-08-22', startedIso: '2026-08-22T16:47:00Z', endedIso: '2026-08-22T16:57:00Z' })], ENTS);
+      expect(r.dropped, 'a Saturday errand is not a deduction').toBe(1);
+    });
+
+    // ── The cascade that ate real deductible miles (owner, 2026-08-25) ──────
+    //
+    // His live diagnostic log at 18:39 that day:
+    //   mile-offday - John Doe to Shop 3.2mi 2026-08-19T22:18:05.091Z
+    //   mile-offday - John Doe to Shop 3.2mi 2026-08-18T22:19:15.091Z
+    //
+    // Two real 4:18pm drives home from a client, deleted from the IRS log. The
+    // chain: a bad reconciler trim removed those days' on-site rows, so the day
+    // had no work event, so the workday window collapsed, so "a day with no
+    // work at all means every leg on it is personal" judged both drives
+    // personal and swept them. Absence of a time entry is evidence the TIME
+    // side failed, never evidence the DRIVING was personal.
+    //
+    // The owner's original rule is unchanged and still tested just above: an
+    // anonymous Stop on a no-work day is an errand and goes.
+    test('a named business leg on a day with no time entries is NOT removed', async () => {
+      const r = await run([leg({ date: '2026-08-22', from_name: 'John Doe', to_name: 'Shop',
+        startedIso: '2026-08-22T22:18:05.091Z', endedIso: '2026-08-22T22:25:00.000Z' })], ENTS);
+      expect(r.err).toBe(null);
+      expect(r.dropped, 'the exact leg his log shows being destroyed').toBe(0);
+      expect(r.left).toEqual(['Shop@2026-08-22T22:18:05.091Z']);
+    });
+
+    test('one anonymous end is enough to drop it on a no-work day', async () => {
+      for (const ends of [{ from_name: 'Stop', to_name: 'John Doe' },
+                          { from_name: 'John Doe', to_name: 'Stop' },
+                          { from_name: '', to_name: 'Shop' },
+                          { from_name: 'Shop', to_name: '' },
+                          { from_name: '?', to_name: 'Shop' }]) {
+        const r = await run([leg(Object.assign({ date: '2026-08-22',
+          startedIso: '2026-08-22T16:47:00Z', endedIso: '2026-08-22T16:57:00Z' }, ends))], ENTS);
+        expect(r.dropped, 'half-anonymous is still an errand: ' + JSON.stringify(ends)).toBe(1);
+      }
+    });
+
+    test('a leg OUTSIDE a real workday window is still removed, named ends or not', async () => {
+      // 08-20 HAS a window, so the named-ends reprieve must not reach it or the
+      // family-pictures run comes back from the dead.
+      const r = await run([leg({ startedIso: '2026-08-20T23:26:00Z', endedIso: '2026-08-21T00:44:00Z',
+        from_name: 'Civitan Day Camp', to_name: 'Shop' })], ENTS);
+      expect(r.dropped, 'evidence of that day exists, and this leg sits outside it').toBe(1);
+    });
+
+    test('_mileNamedEnd: only a real resolved place counts', async () => {
+      const r = await page.evaluate(() => ({
+        named: ['John Doe', 'Shop', 'The Home Depot', 'Caseys'].map(_mileNamedEnd),
+        anon: ['Stop', 'stop', 'STOP', '?', '', '   ', null, undefined].map(_mileNamedEnd),
+      }));
+      expect(r.named, 'a resolved place is business').toEqual([true, true, true, true]);
+      expect(r.anon, 'anything anonymous or missing is not').toEqual(
+        [false, false, false, false, false, false, false, false]);
+    });
+
+    test('a hand-entered trip is never second-guessed', async () => {
+      const r = await run([leg({ gps: false, legKey: null, startedIso: '2026-08-20T23:26:00Z', endedIso: '2026-08-21T00:44:00Z' })], ENTS);
+      expect(r.dropped, "the contractor's own statement stands").toBe(0);
+    });
+
+    test('a leg carrying a client link is never removed', async () => {
+      const r = await run([leg({ client_id: 42, startedIso: '2026-08-20T23:26:00Z', endedIso: '2026-08-21T00:44:00Z' })], ENTS);
+      expect(r.dropped).toBe(0);
+    });
+
+    test('with no time entries at all it deletes nothing, absence is not evidence', async () => {
+      const r = await run([leg({ startedIso: '2026-08-20T23:26:00Z', endedIso: '2026-08-21T00:44:00Z' })], []);
+      expect(r.dropped).toBe(0);
+      expect(r.left.length).toBe(1);
+    });
+
+    test('it runs once per session', async () => {
+      const rows = [leg({ startedIso: '2026-08-20T23:26:00Z', endedIso: '2026-08-21T00:44:00Z' })];
+      const first = await run(rows, ENTS);
+      expect(first.dropped).toBe(1);
+      const again = await page.evaluate(async () => {
+        const prev = window._mileWorkdaySweepRan;
+        window._mileWorkdaySweepRan = true;
+        const n = await (window.__real_mileWorkdaySweep || _mileWorkdaySweep)();
+        window._mileWorkdaySweepRan = prev;
+        return n;
+      });
+      expect(again, 'a second pass in the same session is a no-op').toBe(0);
+    });
+
+    test('malformed rows and an empty log never throw', async () => {
+      const r = await run([{ id: 'x', gps: true }, { id: 'y', gps: true, startedIso: 'nope', endedIso: 'nope' }], ENTS);
+      expect(r.err).toBe(null);
+      expect(r.dropped).toBe(0);
+    });
+  });
+
+  // Owner report 2026-08-24, from the air: a flight was still tacking on
+  // mileage. A phone on a plane takes a fix at the gate, loses the sky, and
+  // takes another one several hundred miles later; the fence machine reads
+  // that as one leg and the router measures a DRIVING route between two
+  // airports. Nothing was checking whether a vehicle could have done it.
+  //
+  // The test is straight-line distance over the leg's own wheel time, which
+  // is a conservative floor (real roads are longer than the crow's route), so
+  // the ceiling never touches real driving.
+  test.describe('the flight ceiling', () => {
+    // 1 degree of latitude is about 69 miles, so these are comfortably clear
+    // of the 100mph line rather than sitting on it.
+    const impossible = (dLat, mins) => page.evaluate(([d, m]) =>
+      _geoLegIsImpossible({ lat: 38, lng: -94 }, { lat: 38 + d, lng: -94 }, m), [dLat, mins]);
+
+    test('a flight is refused', async () => {
+      expect(await impossible(0.80, 30), '55 miles in half an hour is not a drive').toBe(true);
+    });
+
+    test('a long highway haul is kept', async () => {
+      expect(await impossible(0.65, 30), '45 miles in half an hour is ordinary interstate').toBe(false);
+      expect(await impossible(3.0, 180), '207 miles in three hours is a real drive').toBe(false);
+    });
+
+    test('a GPS teleport is refused too, same shape', async () => {
+      expect(await impossible(6.0, 4), '414 miles in four minutes').toBe(true);
+    });
+
+    test('a short leg is never judged on a ratio', async () => {
+      expect(await impossible(0.40, 3), 'under the 30-mile floor, whatever the ratio').toBe(false);
+    });
+
+    test('no wheel time, no verdict: it fails open', async () => {
+      expect(await impossible(6.0, 0)).toBe(false);
+      expect(await impossible(6.0, 2), 'under three minutes there is nothing to divide by').toBe(false);
+    });
+
+    test('junk input never throws and never refuses a leg', async () => {
+      const out = await page.evaluate(() => ({
+        nulls: _geoLegIsImpossible(null, null, 60),
+        noFrom: _geoLegIsImpossible(null, { lat: 38, lng: -94 }, 60),
+        noLat: _geoLegIsImpossible({ lng: -94 }, { lat: 38, lng: -94 }, 60),
+        noArgs: _geoLegIsImpossible(),
+        strMins: _geoLegIsImpossible({ lat: 38, lng: -94 }, { lat: 45, lng: -94 }, 'sixty'),
+        negMins: _geoLegIsImpossible({ lat: 38, lng: -94 }, { lat: 45, lng: -94 }, -30),
+      }));
+      expect(Object.values(out).every(v => v === false), 'nothing here is evidence of a flight').toBe(true);
+    });
+  });
+
+  // The ceiling above stops the NEXT flight. This clears the ones already in
+  // the log, so the owner never has to delete them by hand.
+  test.describe('_mileFlightSweep', () => {
+    const fleg = (o) => Object.assign({ id: 'fl-' + Math.random().toString(36).slice(2), gps: true, legKey: 'fl-lg',
+      fromCoord: { lat: 38, lng: -94 }, toCoord: { lat: 38.8, lng: -94 },
+      from_name: 'Wichita', to_name: 'Denver', miles: 420, date: '2026-08-24' }, o);
+
+    const runF = (rows) => page.evaluate(async (rows) => {
+      const orig = { mileage: mileage.slice(), supa: window._supa, ran: window._mileFlightSweepRan,
+        expenses: expenses.slice(), user: window._supaUser };
+      mileage.length = 0; rows.forEach(r => mileage.push(r));
+      expenses.length = 0;
+      window._supaUser = { id: 'fl-user' };
+      window._mileFlightSweepRan = false;
+      window._supa = { from: () => ({ delete: () => ({ eq: () => ({ eq: () => ({ then: (res) => Promise.resolve({ error: null }).then(res) }) }) }) }) };
+      let dropped = 0, err = null;
+      try { dropped = await _mileFlightSweep(); } catch (e) { err = String(e && e.message || e); }
+      const left = mileage.map(m => m.to_name);
+      mileage.length = 0; orig.mileage.forEach(m => mileage.push(m));
+      expenses.length = 0; orig.expenses.forEach(e => expenses.push(e));
+      window._supa = orig.supa; window._mileFlightSweepRan = orig.ran; window._supaUser = orig.user;
+      return { dropped, left, err };
+    }, rows);
+
+    test('the flight already in the log is removed', async () => {
+      const r = await runF([fleg({ mins: 30 })]);
+      expect(r.err).toBe(null);
+      expect(r.dropped).toBe(1);
+      expect(r.left).toEqual([]);
+    });
+
+    test('it reads the clock span when the row carries no wheel time', async () => {
+      const r = await runF([fleg({ startedIso: '2026-08-24T14:00:00Z', endedIso: '2026-08-24T14:30:00Z' })]);
+      expect(r.dropped).toBe(1);
+    });
+
+    test('the drive either side of the flight is untouched', async () => {
+      const r = await runF([fleg({ mins: 30 }), fleg({ toCoord: { lat: 38.1, lng: -94 }, to_name: 'Job', miles: 7, mins: 12 })]);
+      expect(r.dropped).toBe(1);
+      expect(r.left, 'only the flight goes').toEqual(['Job']);
+    });
+
+    test('a hand-entered trip is never second-guessed', async () => {
+      const r = await runF([fleg({ gps: false, legKey: null, mins: 30 })]);
+      expect(r.dropped, "the contractor's own statement stands").toBe(0);
+    });
+
+    test('a leg carrying a client link is never removed', async () => {
+      const r = await runF([fleg({ client_id: 42, mins: 30 })]);
+      expect(r.dropped).toBe(0);
+    });
+
+    test('a row with nothing to judge is left alone', async () => {
+      const r = await runF([fleg({ mins: 0, startedIso: null, endedIso: null }), fleg({ fromCoord: null, mins: 30 })]);
+      expect(r.err).toBe(null);
+      expect(r.dropped).toBe(0);
+      expect(r.left.length).toBe(2);
+    });
+
+    test('malformed rows and an empty log never throw', async () => {
+      const r = await runF([{ id: 'x', gps: true }, { id: 'y', gps: true, startedIso: 'nope', endedIso: 'nope' }]);
+      expect(r.err).toBe(null);
+      expect(r.dropped).toBe(0);
+      const empty = await runF([]);
+      expect(empty.err).toBe(null);
+      expect(empty.dropped).toBe(0);
+    });
+
+    test('it runs once per session', async () => {
+      const first = await runF([fleg({ mins: 30 })]);
+      expect(first.dropped).toBe(1);
+      const again = await page.evaluate(async () => {
+        const prev = window._mileFlightSweepRan;
+        window._mileFlightSweepRan = true;
+        const n = await _mileFlightSweep();
+        window._mileFlightSweepRan = prev;
+        return n;
+      });
+      expect(again, 'a second pass in the same session is a no-op').toBe(0);
+    });
+
+    test('concurrent calls only let one pass through', async () => {
+      const out = await page.evaluate(async () => {
+        const orig = { mileage: mileage.slice(), supa: window._supa, ran: window._mileFlightSweepRan, user: window._supaUser };
+        mileage.length = 0;
+        mileage.push({ id: 'fl-c', gps: true, legKey: 'fl-c', mins: 30,
+          fromCoord: { lat: 38, lng: -94 }, toCoord: { lat: 38.8, lng: -94 }, to_name: 'Denver', miles: 420, date: '2026-08-24' });
+        window._supaUser = { id: 'fl-user' };
+        window._mileFlightSweepRan = false;
+        window._supa = { from: () => ({ delete: () => ({ eq: () => ({ eq: () => ({ then: (res) => Promise.resolve({ error: null }).then(res) }) }) }) }) };
+        const all = await Promise.all([1, 2, 3, 4, 5].map(() => _mileFlightSweep()));
+        mileage.length = 0; orig.mileage.forEach(m => mileage.push(m));
+        window._supa = orig.supa; window._mileFlightSweepRan = orig.ran; window._supaUser = orig.user;
+        return all;
+      });
+      expect(out.filter(n => n > 0).length, 'exactly one caller does the work').toBe(1);
+    });
+  });
+
 });

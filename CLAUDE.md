@@ -54,7 +54,9 @@ This rule is mandatory and applies to every response, not just summaries.
 How a change ships. Repeat until review is clean:
 
 1. **Build it**, write the feature + its tests on the branch.
-2. **Local tests**, flow tests on a local copy + the offline CI shards. Free, no Cloudflare.
+2. **Run the tests you just wrote, locally, right now.** One spec file, 5 to 13
+   seconds (§5.2.1). Green before you push, always. This step exists because
+   its absence is what turned single mistakes into four-minute CI rounds.
 3. **Cloud gate**, the same tests, now against the REAL backend (Dev Supabase + Stripe).
    The app still runs on localhost, so still no Cloudflare cost. This seeds real data into
    Dev A/B for you to poke at.
@@ -331,6 +333,56 @@ the monthly keep-alive cron (`ios-beta.yml` schedule) already covers that.
 Batch pending native changes into the next needed build rather than firing
 one per change.
 
+### 3.3 Native Plugin Test Coverage (owner mandate, 2026-08-17)
+
+A native change couldn't be tested without firing an actual signed TestFlight
+build and poking at it by hand, and §3.2 makes that build itself rare and
+gated on explicit approval, so it could never be the feedback loop for every
+native change. Every `td-*` plugin now gets the same "tests ship in the same
+commit" treatment §5.1 already mandates for the web app, via a dedicated
+XCTest target, `TdNativeTests`.
+
+**Scope, deliberately: plugin-level XCTest, not XCUITest.** No WKWebView
+automation, no simulator UI driving. "Keep native dumb" (§3.2) means the
+Swift layer is capability-only, arm a region, buffer an event, report a fix,
+so stressing each plugin's methods directly IS stressing the native surface
+that can actually break. The app's on-screen behavior is already covered by
+the Playwright flow-test harness. This is also what keeps it cheap: no full
+app launch, no signing, no App Store Connect, seconds not minutes, and it
+never counts as "firing a build" under §3.2, it can run on every PR that
+touches `native/` without anyone's approval.
+
+**Every new or changed Swift plugin method ships adversarial XCTest coverage
+in the SAME commit.** Test source lives permanently at `native/tests/`, one
+file per plugin (`TdGeoPluginTests.swift` is the reference implementation,
+mirroring how `tests/flow/estimate-build.spec.js` anchors the web flow-test
+shape). Coverage follows the same input-class table §11.1 already mandates
+for the web app, translated to native:
+
+| Class | Native equivalent |
+|---|---|
+| null/invalid input | `@objc` methods called with malformed/missing `CAPPluginCall` args |
+| concurrent calls | rapid repeated start/stop/register calls, same guard-variable race pattern as §11.2 |
+| permission-denied path | simulated denied location/camera/mic/notification authorization, confirm graceful no-op, never a crash |
+| post-error / interrupted state | simulated backgrounding or app-suspend mid-operation |
+| boundary | zero pending events, buffer overflow, double-start/double-end |
+| device-capability gaps | `isSupported`-style checks under simulated "unavailable" conditions |
+
+**CI enforcement, same two-layer pattern as §12.8:**
+- `.github/workflows/ios-native-tests.yml` is a hard-blocking check on every
+  PR that touches `native/`: it injects the `TdNativeTests` target
+  (`scripts/ios-add-native-tests.rb`, the same regenerate-the-project-fresh
+  pattern as every other `ios-add-*.rb` script) and runs it against the iOS
+  Simulator. This workflow is structurally independent from `ios-beta.yml`,
+  no archive, no export, no signing, no `APPSTORE_*` secrets, so it can
+  never accidentally fire a real build.
+- `native-test-advisory` (in `.github/workflows/test.yml`, alongside
+  `flow-test-advisory`) is a non-blocking `::warning::` when a plugin's
+  Swift file changes with no matching `native/tests/*Tests.swift` change
+  anywhere in the diff. Advisory only, for the same reason §12.8's job is:
+  a hard gate here would false-positive on a drive-by plugin tweak and
+  teach Claude to route around it.
+
 ---
 
 ## 4. Branch Protection (One-Time Setup by Repo Owner)
@@ -370,14 +422,126 @@ CI sees both at once, so the new tests cover the new code and the suite passes.
 1. Write the feature code on the feature branch.
 2. Write E2E tests in the **same commit**: happy path + edge cases + an
    `assertNoErrors()` call to confirm zero console errors.
-3. Push → CI runs the full WebKit + Chromium suite automatically.
-4. If CI fails → fetch logs via WebFetch, fix on the feature branch, push again,
-   CI reruns. Loop until green.
-5. When CI is green → merge via PR with explicit user approval.
+3. **Run the spec files you touched, locally, and get them green BEFORE you
+   push.** See §5.2.1. This is not optional and it is not a judgement call.
+4. Push → CI runs the full WebKit + Chromium suite automatically.
+5. If CI fails → fetch logs, fix on the feature branch, push again. CI reruns.
+6. When CI is green → merge via PR with explicit user approval.
 
-**Never run tests locally.** Push and let CI handle everything. Local test runs
-dump hundreds of lines into context for no benefit, CI runs the same browsers
-and reports back via webhook.
+### 5.2.1 Run the file you touched. Never run the whole suite. (owner mandate 2026-08-26)
+
+This section used to say **"Never run tests locally"**, on the grounds that a
+local run dumps hundreds of lines into context for no benefit. That was right
+about the FULL suite and badly wrong about a single file, and the cost was paid
+by the owner, in his own words: "tired of the iteration on iteration of these
+tests failing and wasting my time."
+
+**Measured on this repo, 2026-08-26, not estimated:**
+
+| Command | Tests | Wall clock | Context |
+|---|---|---|---|
+| `npx playwright test tests/e2e-share-inbox.spec.js --project=chromium --reporter=line` | 12 | **5.6s** | ~15 lines |
+| `npx playwright test tests/e2e-timelog.spec.js --project=chromium --reporter=line` | 245 | **12.5s** | 4 lines piped through `tail` |
+| One CI round trip | 8,889 | **~4 min** | plus a red X the owner has to look at |
+
+On the night this rule changed, EVERY CI failure but one was a test Claude had
+written wrong: a stale assertion left behind when a field moved, a test that
+seeded no data so its own comparison was meaningless, a scan written too
+broadly, a stub missing a method the real code calls. Every one of them would
+have surfaced in under thirteen seconds. Instead each cost a four-minute round
+trip and a failure the owner had to watch land.
+
+**The rule, now:**
+
+- **Before every push**, run each `tests/*.spec.js` you added to or changed:
+  `npx playwright test <file> --project=chromium --reporter=line 2>&1 | tail -20`
+  Push only when it says passed. `--project=chromium` alone is enough for a
+  pre-push check; CI still runs WebKit, and cross-browser differences are the
+  part CI genuinely earns.
+- **Run the specs that TEST what you changed, not just the ones you edited.**
+  This is the gap that cost a CI round the same night the rule was written: the
+  crew banner changed from hiding by ROLE to hiding by STATE, the spec that was
+  edited passed, and `e2e-geo-send-coverage.spec.js` failed in CI still
+  asserting the old rule. It was never opened, so it was never run, and it would
+  have taken twelve seconds. Grep first:
+  `grep -ln "<functionYouChanged>" tests/*.spec.js` and run every file it names.
+  A behaviour change with no matching test update is not a passing change, it is
+  a test that has not been told yet (§10.4 step 4).
+- **Never run the full suite locally.** No bare `npx playwright test`. That is
+  the case the original rule was written for and it is still correct: thousands
+  of tests, six shards' worth of output, minutes of wall clock, and CI already
+  does it for free on every push.
+- **Never run `tests/flow/*` locally on a whim** (§12.8, §14.2): those hit the
+  real backend and can exhaust the daily proxy quota in one run.
+- `--reporter=line` and `| tail` are load-bearing. The default reporter is what
+  made "hundreds of lines" true in the first place.
+
+**Why this matters more than it sounds.** CI stops being where bugs are
+discovered and becomes where they are confirmed. A red shard then means
+something real broke, not that Claude fumbled an assertion, which is the only
+way a green board keeps meaning anything.
+
+
+---
+
+### 5.2.2 The clock is pinned. It is not an input to the suite. (2026-08-26)
+
+Owner: *"define how local tests can pass but ci fails, shouldn't be that way at
+all."* He was right, and the bill came due the same night: three separate tests
+failed in CI and passed locally, and the cause in every case was the wall clock.
+CI ran them at 00:05, 00:08 and 00:25 Central; their fixtures were written as
+"3 hours ago" and "50 minutes ago"; the scenario silently moved to the previous
+day. Nothing was wrong with the code, the browser, or the shard. **The hour
+decided the result.** 26 spec files build timestamps that way.
+
+**`mockAllExternal` pins the page's idea of "now" to 10:00 Central.** Local and
+CI now agree by construction instead of by luck.
+
+- It is a fixed OFFSET, not a frozen or faked clock. Time still flows at 1x,
+  every `setTimeout`, debounce and poll behaves exactly as in production, and an
+  explicit `new Date('2026-08-21T...')` still means precisely that instant.
+- It moves the time of DAY only, never the Central date, so every "is this
+  today" comparison in the app is untouched.
+- `TD_CLOCK_AT=HH:MM` re-pins it; `TD_CLOCK_AT=off` disables it for reproducing
+  a time-of-day bug by hand.
+- `mockAllExternal(page, {clock:'off'})` opts one spec out. Use it ONLY when the
+  spec drives `page.clock` itself (`e2e-mileage-days.spec.js` is the sole case:
+  two owners of `window.Date` means fastForward moves one clock while the
+  assertions read the other). A spec that names its own start hour was never
+  exposed to this class anyway.
+- `tests/e2e-clock-pin.spec.js` guards the pin. It is shared infrastructure
+  (§10.3): every spec boots through it, so a defect there is a silent defect
+  everywhere.
+
+**The `midnight clock` CI job is the other half.** It re-runs the date-sensitive
+specs pinned to `TD_CLOCK_AT=00:20`, so a fixture that cannot survive midnight
+fails on the PR that introduces it, in daylight, instead of on a red board at
+1am three weeks later. It **derives** its file list by grepping for
+`Date.now() - N`, so a new spec written the same way is covered the day it lands
+and nobody has to remember the workflow file exists. Chromium only: this class
+is arithmetic on dates and is identical in both engines.
+
+**The rule for new tests:** never let the wall clock decide an outcome. Name the
+instant (`'2026-08-21T17:00:00.000Z'`) rather than deriving it from `Date.now()`
+wherever the test's meaning depends on which day it is. If a relative offset is
+genuinely the clearer way to write it, the pin covers you, and the midnight job
+proves it.
+
+**Never compare a page timestamp against `Date.now()` on the NODE side.** The
+page is pinned; the Playwright runner is not. Those are two different clocks and
+an assertion that straddles them is meaningless, by however many hours the pin is
+offset that minute. Return the page's own `now` out of the same `page.evaluate`
+that produced the value and compare against that:
+
+```js
+const r = await page.evaluate(() => ({ now: Date.now(), arrivedAt: _geoArrivedAt }));
+expect(Date.parse(r.arrivedAt)).toBeLessThanOrEqual(r.now - 4.5 * 60000);   // one clock
+```
+
+This bit immediately (`e2e-geo-park-reconcile`, shard 6, 2026-08-26) and it bit
+because the pin was validated at `TD_CLOCK_AT=00:20`, where the offset happened
+to be minutes, and never at the default, where it is hours. **Validate a clock
+change at a LARGE offset**, or you have only proven it against a rounding error.
 
 ---
 
@@ -592,9 +756,9 @@ Survives conversation compacting so context is not lost between sessions.
 
 **TradeDesk Comms (CRM Texting)**
 - SMS layer via Telnyx or Bandwidth (wholesale rates, bundled into subscription)
-- iMessage delivery via Mac Mini on TradeDesk infra (no SendBlue dependency)
 - Automation triggers: proposal sent → auto-text, job day-before reminder, invoice overdue, change order approval request, deposit confirmed
 - Number provisioning per contractor account
+- **iMessage relay: RULED OUT 2026-08-26.** See §9.4.
 
 **TradeDesk Payroll**
 - W-2 employee payroll via Check (checkhq.com) for compliance/tax filing layer
@@ -643,9 +807,120 @@ Survives conversation compacting so context is not lost between sessions.
 - Contractors see "TradeDesk Messaging," Bandwidth is invisible infrastructure
 - Automation triggers: proposal sent, 24h unopened follow-up, signed confirmation,
   job day-before reminder, change order approval request, invoice overdue
-- iMessage delivery: Mac Mini on TradeDesk infra handles Apple protocol (no SendBlue)
 - Files: `js/messaging/engine.js`, `templates.js`, `numbers.js`, `webhooks.js`
   + Supabase Edge Functions: `send-sms/`, `sms-webhook/`
+
+**iMessage: RULED OUT (researched 2026-08-26). Do not build it. Do not
+re-propose it without new evidence.** This section used to say "iMessage
+delivery: Mac Mini on TradeDesk infra handles Apple protocol." That plan is
+withdrawn for three reasons, in order of severity:
+
+1. **It fails silently, which is disqualifying for this product.** There is no
+   licensed way to send iMessage from third-party infrastructure; every service
+   doing it is tolerated, not authorized. When Apple cuts it off, messages do
+   not bounce, they vanish, and because the numbers stay registered to iMessage
+   the client's iPhone keeps routing there even after the relay is dead. A
+   payment request, a change order approval and a job reminder all stop arriving
+   and nobody finds out until a customer says "you never told me." A CRM whose
+   promise is that the job chain does not drop cannot ship a channel that fails
+   invisibly.
+2. **Apple bans the hardware, not just the account.** Beeper's own registration
+   tool got users' real Macs blocked from iMessage; Beeper Mini was killed in
+   days; Sunbird lasted under a day. One Apple ID plus one registered number per
+   contractor is also exactly the fingerprint Apple flags as a spam farm.
+3. **iMessage has no STOP handling and no consent record.** TCPA damages run
+   $500 to $1,500 per message and the FCC requires honoring opt-outs by any
+   reasonable method. Sending contractor follow-ups over it puts that exposure
+   on TradeDesk with no compliance layer to point at.
+
+**Apple Messages for Business: also ruled out (owner asked directly
+2026-08-26, "would Apple messages be a good fit for this app in general").
+No, and the eligibility problem is the SECOND reason, not the first.**
+
+1. **It cannot start a conversation, which is the entire feature.** AMB is
+   customer-initiated by design: the customer opens the thread. Every
+   automation the owner actually wants is unattended OUTBOUND (on the way,
+   payment reminder, escalation, post-job check-in). Apple's outbound
+   additions are gated to approved use cases and to customers who already
+   opted in through an existing thread. So even a contractor who somehow got
+   approved still could not send the messages they came for.
+2. **It is not obtainable at this size.** Approved MSPs are Salesforce,
+   Zendesk, LivePerson, Quiq, Infobip. It needs a business register account
+   with an administrator, technical contact and sponsoring executive, plus an
+   Apple capability review of the platform and go-to-market plan. It is an
+   enterprise support-desk channel, not a two-truck plumbing shop.
+
+The channel is SMS, on 10DLC, with RCS verified sender layered on later for
+the branding. That is the whole answer.
+
+**What replaces it, and why the premise was wrong anyway:**
+
+- **The app already sends blue bubbles.** Every client message goes out through
+  an `sms:` deep link from the contractor's own phone (~32 call sites across
+  proposals.js, bids.js, clients.js, jobs.js, cloud.js, dashboard.js). On iOS,
+  Messages picks the transport, so iPhone to iPhone that link is ALREADY a blue
+  iMessage from their real number with their name on it. Bubble colour was never
+  the gap. **Keep this path; do not "upgrade" it into a platform send.**
+- **The actual gap is that nothing comes back.** The reply never reaches
+  TradeDesk, nothing is logged against the job beyond `autoLogContact`'s
+  `last_contact_date` stamp, and a deep link can never send unattended at 8pm the
+  night before a job. Build inbound capture and logging BEFORE outbound
+  automation: it closes the real gap and needs no campaign approval to ship.
+- **RCS is the answer to "green looks like spam," and it is free.** Live on all
+  three US carriers and on iPhone since 18.1. Build on a carrier supporting RBM,
+  turn on verified sender once iPhone coverage settles, and the brand name and
+  logo land on both platforms with no new architecture.
+
+**10DLC is the real work here, and it is bigger than the code.** Registration
+takes 1 to 4 weeks end to end, so **a contractor cannot text on day one of
+signup**: this collides directly with §9.9's onboarding restructure and needs a
+designed "your texting is being approved" state. Sole proprietors (no EIN) are
+throttled hard (1 number, 1 msg/sec, 1,000/day to T-Mobile), so onboarding needs
+an EIN branch. TradeDesk registers as ISV on behalf of each customer using THEIR
+details, which means EIN capture, opt-in language on `intake.html` and
+`sign.html`, STOP/HELP handling, per-contractor consent records, and a
+quarantine path when a campaign is rejected.
+
+**Open decision for the owner, and it is the real one:** contractor's own number
+or a TradeDesk-provisioned number. Own number keeps the blue bubbles and the
+trust but makes logging and automation nearly impossible. Provisioned number
+gives logging and automation but goes green. You cannot have both, and every
+other question here follows from that answer.
+
+**Competitive note:** no competitor in §16.1 does iMessage, all do 10DLC SMS,
+and they all charge extra for texting (DripJobs +$25/mo, Workiz ~+$100/mo with a
+message cap). Bundling unlimited texting into the base price is a sharper wedge
+than bubble colour.
+
+### 9.4.1 The automations the owner actually wants (stated 2026-08-26)
+
+Opt-in per client, surfaced on the client hub. Three triggers, and they do NOT
+share a consent standard, which is the thing most likely to go wrong here:
+
+| Trigger | What it is | Consent standard |
+|---|---|---|
+| On the way | Transactional, tied to an appointment they booked | Implied by booking. Lowest risk. |
+| Payment reminder, then escalation | Transactional, first-party debt | Implied. Watch frequency and escalation wording; FDCPA is third-party but state rules reach first-party. |
+| Post-job check-in ("is that leak still dry?") | Service follow-up | **The one that drifts.** A genuine check-in is transactional. The moment it suggests booking again it is MARKETING and needs express written consent. Keep them separate features, not one template with a nicer ending. |
+
+**What exists today:** `sendOMWText` (js/jobs.js:1891) and the mileage-side
+equivalent are MANUAL: they open the Messages app with a prefilled body and the
+contractor taps send. That is why they need no consent model and no carrier
+registration. Automation is a different product, not a flag on this one: the
+moment the app sends unattended, TradeDesk becomes the sender and inherits
+10DLC registration, opt-out handling and consent records. There is currently NO
+opt-in model anywhere in the schema (no `sms_opt_in`, no comms prefs).
+
+**The post-job check-in is the differentiating one.** Competitors send review
+requests; almost nobody asks "is the repair still holding" at day 7. For
+plumbing and roofing that is both a real quality signal and the most natural
+route to a review, and it is worth designing as its own trigger with its own
+per-trade timing rather than folding into a generic follow-up.
+
+**Do not build any of this before §16 research runs on the automation itself.**
+The channel question is answered above; the open questions are per-trade timing,
+escalation ladders, and where the opt-in lives so a client can turn it off in
+one tap without emailing anybody.
 
 ### 9.5 Employee Geo-Tracking & Job Time-on-Site
 
@@ -769,12 +1044,24 @@ wizard, which is our edge.
 - Files: `js/settings.js` (`_ob`, `renderObStep`, `obStep*`, `obSubmit`), `index.html`
   (dashboard setup-checklist card), new live flow test `tests/flow/onboarding-signup-flow.spec.js`.
 
-### 9.10 Dual-Hat Accounts: Crew by Day, Owner on the Side (owner back-burnered 2026-08-09)
+### 9.10 Dual-Hat Accounts: Crew by Day, Owner on the Side (slice 1 SHIPPED 2026-08-18)
 
 **One login, two hats: a person who is crew on an employer's account AND owner of
-their own side business.** Today they need two emails and a sign-out/sign-in; the
-design is an in-app account switcher on one login. Owner call: park it until the
-scanned estimate is solid.
+their own side business.** Un-parked by the owner 2026-08-18 (first real beta user
+is exactly this: plumber on his dad's crew by day, landscaping owner by night).
+
+**Slice 1 (switcher + data wall) is built:** `loadAccountData` surfaces an owner
+login's active crew links (`window._hatCrewLinks` / `_hatOwnsBusiness`) and honors
+a persisted `zp3_hat_<uid>` choice; a crew hat is steered through the standard
+crew-linking path (never a parallel one, §7.3). `window.switchHat` persists the
+choice, clears `zp3_cloud_cache`/`zp3_delta_meta` (the hard wall), and hard-reloads;
+the clean boot IS the reset machinery. Snapshots carry `_dataOwner` (the business
+whose rows they hold) alongside `_owner` (the login): both hats share `_owner`, so
+every data guard compares `_dataOwner`, which also fixed crew sessions' own offline
+cache being wrongly rejected. UI: "Switch business" in the Settings header (owner
+hat) and in the employee sign-out menu (crew hat). Tests: `tests/e2e-dual-hat.spec.js`.
+
+**Still open (slices 2-3):**
 
 - **Switcher**: profile menu flips between "Crew · {employer}" and "My business,"
   riding the existing account-switch reset machinery (arrays, caches, offline queues).
@@ -910,6 +1197,11 @@ Run this before every `git push`. If any answer is "unsure", stop and read more 
 | 5 | Did I update ALL affected assertions (not just one)? | Yes |
 | 6 | Can I state the root cause of every failure I fixed in one sentence? | Yes |
 | 7 | Does the fix change behavior beyond the minimum needed? | No |
+| 8 | **Did I RUN every spec file I touched, locally, and see it pass?** (§5.2.1) | Yes, with output |
+| 9 | Did I grep for every spec that EXERCISES the functions I changed, and run those too? | Yes, listed |
+
+Row 8 is the one that pays for itself. It costs 5 to 13 seconds and it is the
+difference between CI confirming your work and CI discovering your mistakes.
 
 ---
 
@@ -1171,6 +1463,21 @@ Skip this only for changes with genuinely no runtime user-flow surface (pure doc
 comments, a test-only edit). Everything a real user can touch gets a local-runner
 flow test architected with the owner and run green first.
 
+**CI-enforced visibility (added 2026-08-17):** this rule used to rely entirely on
+Claude remembering it, and features have shipped without a flow test as a result.
+`.github/workflows/test.yml` now runs a `flow-test-advisory` job on every PR: it
+diffs the branch against its base and, if any of the feature-surface files
+(`js/dashboard.js`, `js/mileage.js`, `js/clients.js`, `js/jobs.js`, `js/bids.js`,
+`js/finance.js`, `js/geo-track.js`, `js/proposals.js`, `js/generic-estimate.js`)
+changed with no matching `tests/flow/*.spec.js` change anywhere since the branch
+diverged from main, it emits a `::warning::` annotation naming the files and
+pointing back at this section. **It is advisory only, it never fails the check
+or blocks a merge**, a hard gate here would false-positive on small bug fixes
+already covered by existing tests and teach Claude to route around it. Seeing the
+warning on a PR is the trigger to ask: does this change actually need the flow
+test this section describes, or is it already covered? If it needs one, build it
+per steps 1-4 above before calling the work done.
+
 ---
 
 ## 13. Agentic Self-Heal Loop (Slack → Claude → Regression Test → PR)
@@ -1245,7 +1552,8 @@ Two independent systems, don't conflate them:
 | **Cloudflare Pages** | Builds + deploys the static app to `pages.dev` | **Every push** (by default) | Cloudflare Pages **build minutes** |
 | **GitHub Actions, offline shards** | Mocked Playwright (6 shards, WebKit+Chromium) | Every push | GH Actions minutes |
 | **GitHub Actions, Flow Tests** | Live Playwright vs the deployed `pages.dev` preview | On-demand (`run-flow` label / `workflow_dispatch`) + nightly | GH Actions minutes |
-| **Supabase preview** | Applies new migrations to the preview branch | Every push |, |
+| **Supabase preview** | Supabase's own PR-integration check, NOT a migration push to the shared project (see §14.1.2) | Every push | Free |
+| **`deploy-functions.yml`** | The ACTUAL `supabase db push` to the shared dev/UAT/prod project + edge functions | `main` push, or manual `workflow_dispatch` (§14.1.2) | GH Actions minutes |
 
 **The flow tests run on GitHub Actions, NOT Cloudflare.** Cloudflare only ever
 *deploys the app*. So a test-only / migration-only / docs-only push that triggers
@@ -1304,6 +1612,41 @@ also wait for a separate "deploy" word after merging; the merge IS the word.
 - This is about `main`/production specifically, §14.1's skip-by-default rule
   for WIP pushes on feature branches (and for previews on request) is
   unchanged.
+
+### 14.1.2 Migrations Aren't Gated Like Code: Dispatch `deploy-functions.yml` Directly
+
+§3.1 already says only CODE is gated by the merge to `main`, migrations and
+edge functions are supposed to be free to land on the shared Supabase project
+ahead of a merge. But the only workflow that actually runs `supabase db push`
+(`.github/workflows/deploy-functions.yml`) triggers on `push: branches:
+[main]`, nothing else in this repo pushes migrations to the real project. In
+practice that meant migrations silently piled up on a long-lived dev branch
+(incident 2026-08-22: 5 migrations going back 9 days, including the RPC a
+brand-new login gate depended on, none of them live) waiting on a `main`
+merge nobody realized was blocking them, since the "Supabase Preview" check
+in the PR checks list is a DIFFERENT thing (Supabase's own branch-preview
+integration, not a push to the shared dev/UAT/prod database, see §3.1).
+
+**The fix already exists in the workflow, it just wasn't documented:**
+`deploy-functions.yml` also has a `workflow_dispatch: {}` trigger. Fire it
+manually against your branch whenever a migration needs to be live for
+testing (Dev/UAT) before the PR merges:
+
+```
+mcp__github__actions_run_trigger({ method: 'run_workflow', owner, repo,
+  workflow_id: 'deploy-functions.yml', ref: '<your-branch>' })
+```
+
+This only runs `supabase db push` (idempotent, additive) + edge function
+deploy + the Stripe webhook sync, against the ONE shared Supabase project.
+It never touches `main`, app code, or Cloudflare, so it needs no more
+caution than any other backend-only action, but it IS a shared-state change
+(§ Executing actions with care), so still worth a quick heads-up to the
+owner before firing it, same as any other action that touches live
+infrastructure. Confirm success via `mcp__github__actions_get` /
+`get_workflow_run` (the "Push database migrations" and "Deploy edge
+functions" steps), the same way CI green is verified elsewhere (§1.4), don't
+assume the dispatch succeeded just because it queued.
 
 ### 14.2 The `/api` Proxy Is Load-Bearing: Never Remove It
 

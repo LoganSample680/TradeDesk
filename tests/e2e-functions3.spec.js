@@ -1027,6 +1027,59 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(cleared.delay).toBe('');          // inline stagger cleaned up
   });
 
+  // DIRECTION (owner 2026-08-15, after seeing the bottom-up build on UAT: "I
+  // don't want bottom up, want top down"). Greeting bar first, then each card in
+  // page order. This test exists because direction is invisible to every other
+  // cascade assertion: they only check that SOME inline delay was assigned.
+  // The whole pour also has to land inside the 1.2s beat the shimmer holds for,
+  // which is what _BOOT_MIN_SHIMMER_MS and the computed stagger are tuned to.
+  test('boot cascade falls top → bottom inside the 1.2s beat, greeting bar first', async () => {
+    const r = await page.evaluate(() => {
+      window._sboT0 = 0;
+      window._bootCascadeRan = false;
+      document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+      document.getElementById('supa-boot-overlay')?.remove();
+      const o = document.createElement('div');
+      o.id = 'supa-boot-overlay';
+      document.body.appendChild(o);
+      const dash = document.getElementById('pg-dash');
+      dash.classList.add('active');
+      const heights = [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.offsetHeight);
+      _removeBootOverlay();
+      const ms = el => parseFloat(el.style.animationDelay) || 0;
+      const cards = [...document.querySelectorAll('#dash-widget-root > .td-dw')];
+      const visible = cards.filter((el, i) => heights[i] > 2);
+      const tbar = document.querySelector('#pg-dash > .tbar');
+      return {
+        n: visible.length,
+        delays: visible.map(ms),
+        tbar: tbar ? ms(tbar) : null,
+      };
+    });
+    if (r.n < 2) return;   // a dashboard with one card has no direction to assert
+    // Each card further down the page starts LATER than the one above it
+    for (let i = 1; i < r.delays.length; i++) {
+      expect(r.delays[i], `card ${i} must start after card ${i - 1} (top-down)`)
+        .toBeGreaterThan(r.delays[i - 1]);
+    }
+    // The header sits above every card, so it leads the wave
+    expect(r.tbar).toBeLessThan(Math.min(...r.delays));
+    // ...and the LAST card must still start early enough that its .62s flight
+    // finishes inside the 1.2s beat (owner 2026-08-15: drop it to 1.2 seconds).
+    expect(Math.max(...r.delays)).toBeLessThanOrEqual(1200 - 620 + 1);
+    await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 8000 });
+  });
+
+  // The shimmer hold and the pour are one beat: if they drift apart the boot
+  // reads as a wait followed by a flick (owner 2026-08-15).
+  test('shimmer hold and the pour are the same 1.2s beat', async () => {
+    const r = await page.evaluate(() => ({
+      shimmer: typeof _BOOT_MIN_SHIMMER_MS !== 'undefined' ? _BOOT_MIN_SHIMMER_MS : null,
+      travel: getComputedStyle(document.querySelector('#dash-widget-root > .td-dw') || document.body).animationDuration,
+    }));
+    expect(r.shimmer).toBe(1200);
+  });
+
   // OWNER RULE (revised): the cascade plays BEHIND a boot popup, a popup being
   // open must NOT stop the dashboard from filling in under its scrim.
   test('boot waterfall, plays behind an open boot popup (no blank backdrop)', async () => {
@@ -1198,6 +1251,72 @@ test.describe('Cloud Supabase and account functions', () => {
     await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 6000 });
   });
 
+  // ── Regression: dash-setup-todo/dash-supply-hold/dash-geo-perm are siblings of
+  // #dash-widget-root, not .td-dw children, so the boot skeleton's original selector
+  // never covered them. A stale Stripe/QR cache could paint a wrong checklist count
+  // as final, bare content while every other widget was still shimmering (owner
+  // report: "9 of 10 done" reading wrong with no shimmer to explain it).
+  test('boot skeletons also cover the setup checklist card, not just .td-dw widgets', async () => {
+    const r = await page.evaluate(async () => {
+      const savedTimer = window._bootSkelTimer;
+      const setupEl = document.getElementById('dash-setup-todo');
+      const savedSetupHtml = setupEl.innerHTML, savedSetupDisplay = setupEl.style.display;
+      try {
+        window._bootSyncPending = true; window._bootSkelDone = false; window._bootSkelTimer = null;
+        document.getElementById('supa-boot-overlay')?.remove();
+        document.getElementById('pg-dash').classList.add('active');
+        // Simulate the checklist's first paint: real height, real (possibly wrong)
+        // content, exactly as _renderDashSetupTodo leaves it before Stripe/QR resolve.
+        setupEl.style.display = 'block';
+        setupEl.innerHTML = '<div class="card" style="padding:16px">9 of 10 done</div>';
+        _dashApplySkeletons();
+        const covered = setupEl.classList.contains('td-boot-skel-on') && !!setupEl.querySelector(':scope>.td-boot-skel');
+        const realHidden = getComputedStyle(setupEl.querySelector('.card')).display === 'none';
+        return { covered, realHidden };
+      } finally {
+        setupEl.innerHTML = savedSetupHtml; setupEl.style.display = savedSetupDisplay;
+        setupEl.classList.remove('td-boot-skel-on');
+        setupEl.querySelectorAll(':scope>.td-boot-skel').forEach(s => s.remove());
+        window._bootSyncPending = false; window._bootSkelDone = true;
+        try { clearTimeout(window._bootSkelTimer); } catch (e) {}
+        window._bootSkelTimer = savedTimer;
+      }
+    });
+    expect(r.covered, 'the checklist card must get the same shimmer overlay as every other boot widget').toBe(true);
+    expect(r.realHidden, 'the real (possibly wrong) checklist content must be hidden while it shimmers').toBe(true);
+  });
+
+  // ── Regression: _bootSyncSettled must not declare "settled" while the checklist's
+  // own Stripe/QR self-correction (500-650ms setTimeout calls in supaLoadFromCloud)
+  // is still in flight, else that correction lands as a bare, un-shimmered re-render
+  // after the skeleton already cleared.
+  test('_bootSyncSettled holds the skeleton open while a checklist self-correction is still pending', async () => {
+    const r = await page.evaluate(async () => {
+      const savedTimer = window._bootSkelTimer;
+      try {
+        window._bootSyncPending = true; window._bootSkelDone = false; window._bootSkelTimer = null;
+        window._bootChecklistHoldUntil = null; window._bootChecklistPending = 1; // Stripe/QR check "still in flight"
+        document.getElementById('supa-boot-overlay')?.remove();
+        document.getElementById('pg-dash').classList.add('active');
+        _bootSyncSettled();
+        await new Promise(res => setTimeout(res, 300));
+        const stillWaiting = !window._bootSkelDone;
+        window._bootChecklistPending = 0; // the fetch's own .finally() clears it and re-calls settle
+        _bootSyncSettled();
+        let waited = 0;
+        while (!window._bootSkelDone && waited < 3000) { await new Promise(res => setTimeout(res, 100)); waited += 100; }
+        return { stillWaiting, settledAfter: window._bootSkelDone };
+      } finally {
+        window._bootSyncPending = false; window._bootSkelDone = true; window._bootShimmerT0 = null;
+        window._bootChecklistPending = 0; window._bootChecklistHoldUntil = null;
+        try { clearTimeout(window._bootSkelTimer); } catch (e) {}
+        window._bootSkelTimer = savedTimer;
+      }
+    });
+    expect(r.stillWaiting, 'must not settle while a checklist self-correction is still in flight').toBe(true);
+    expect(r.settledAfter, 'must settle once the pending count clears').toBe(true);
+  });
+
   // While skeletons are up the overlay lift must NOT pour the cascade over
   // shimmer bars, and the settle must not pour INSTANTLY either: the shimmer
   // gets a visible beat first (owner video 2026-08-11: a fast sync used to
@@ -1242,7 +1361,15 @@ test.describe('Cloud Supabase and account functions', () => {
     const r = await page.evaluate(async () => {
       const saved = (typeof _activeTimer !== 'undefined') ? _activeTimer : null;
       const el = document.getElementById('dash-nearby');
-      el.style.display = 'none'; el.innerHTML = '';
+      el.style.display = 'none'; el.innerHTML = ''; el.style.maxHeight = ''; el.style.transition = ''; delete el.dataset.snap;
+      // A neighboring boot-cascade test earlier in this file can leave
+      // #pg-dash mid-pour or a pour-wait interval armed if it didn't settle
+      // before this one started; either makes _holdReveal true and the slide
+      // -open assertion below spuriously fails. This test isn't exercising
+      // that mechanic, so start from a guaranteed-settled state instead of
+      // assuming whatever a sibling test left behind.
+      document.getElementById('pg-dash')?.classList.remove('boot-cascade');
+      if (window._nearbyPourWait) { clearInterval(window._nearbyPourWait); window._nearbyPourWait = null; }
       try {
         _activeTimer = { startTime: Date.now() - 60000, clientName: 'Geo Test', jobId: null };
         renderDash();
@@ -1250,11 +1377,9 @@ test.describe('Cloud Supabase and account functions', () => {
         await new Promise(res => setTimeout(res, 500));
         const settled = { maxH: el.style.maxHeight, overflow: el.style.overflow, visible: el.style.display === 'block' };
         _activeTimer = null;
-        renderDash();          // state gone: card animates away and collapses
-        const hiding = { trans: el.style.transition, anim: el.style.animation };
-        await new Promise(res => setTimeout(res, 400));
-        const hidden = { disp: el.style.display, maxH: el.style.maxHeight };
-        return { during, settled, hiding, hidden };
+        renderDash();          // state gone (owner 2026-08-19: never hides anymore, resolves to the manual clock card in place instead)
+        const resolved = { disp: el.style.display, html: el.innerHTML };
+        return { during, settled, resolved };
       } finally { _activeTimer = saved; renderDash(); }
     });
     expect(r.during.disp).toBe('block');
@@ -1262,9 +1387,8 @@ test.describe('Cloud Supabase and account functions', () => {
     expect(r.during.trans).toContain('max-height');  // transitioning open from the flushed 0
     expect(r.settled.maxH).toBe('');                 // cleanup: no residual cap
     expect(r.settled.visible).toBe(true);
-    expect(r.hiding.trans).toContain('max-height');  // exit collapses the space
-    expect(r.hidden.disp).toBe('none');              // fully hidden after
-    expect(r.hidden.maxH).toBe('');                  // and cleaned up
+    expect(r.resolved.disp).toBe('block');           // never hidden, this card always shows something
+    expect(r.resolved.html).toContain('Not clocked in'); // the manual fallback, not a blank/collapsed card
   });
 
   // One waterfall, no stutters (owner spec 2026-08-11): a geo fix landing
@@ -1424,8 +1548,15 @@ test.describe('Cloud Supabase and account functions', () => {
         window._geoFixSeen = true; // GPS truth arrives and finds no live state
         renderDash();
         await new Promise(res => setTimeout(res, 350));
-        const hidden = el.style.display === 'none';
-        const cleared = !localStorage.getItem('zp3_nearby_snap');
+        // Old contract: no live state -> the card faded to display:none and
+        // the stored snapshot was cleared. New contract (owner 2026-08-19,
+        // "nothing dependent on anything"): the card never goes blank, GPS
+        // truth confirming "nothing rich" resolves to the plain manual clock
+        // card instead, and THAT becomes the freshly-persisted snapshot
+        // (overwritten with real content, not cleared to nothing).
+        const resolvedToManual = el.style.display === 'block' && el.innerHTML.includes('Not clocked in');
+        const stored = JSON.parse(localStorage.getItem('zp3_nearby_snap') || 'null');
+        const snapshotReplaced = !!stored && stored.html.includes('Not clocked in');
         window._geoFixSeen = false;
         window._nearbyLiveRendered = false;
         // Past the 45-minute freshness window (was 10 min; owner's 26-minute
@@ -1439,7 +1570,7 @@ test.describe('Cloud Supabase and account functions', () => {
         localStorage.setItem('zp3_nearby_snap', JSON.stringify({ html: '<div id="snap-probe3">x</div>', ts: Date.now(), uid }));
         renderDash();
         const postLiveShown = !!document.getElementById('snap-probe3');
-        return { shown, hidden, cleared, staleShown, postLiveShown };
+        return { shown, resolvedToManual, snapshotReplaced, staleShown, postLiveShown };
       } finally {
         window._geoFixSeen = savedFix;
         window._nearbyLiveRendered = savedLive;
@@ -1449,8 +1580,8 @@ test.describe('Cloud Supabase and account functions', () => {
       }
     });
     expect(r.shown, 'fresh same-user snapshot renders before any fix').toBe(true);
-    expect(r.hidden, 'the first no-state fix animates it away').toBe(true);
-    expect(r.cleared, 'and clears the stored copy').toBe(true);
+    expect(r.resolvedToManual, 'the first no-state fix resolves to the manual clock card, never hidden').toBe(true);
+    expect(r.snapshotReplaced, 'the stored copy is overwritten with the manual card, not cleared').toBe(true);
     expect(r.staleShown, 'a stale snapshot never shows').toBe(false);
     expect(r.postLiveShown, 'after a live render this page load, no resurrection').toBe(false);
   });
@@ -1567,6 +1698,743 @@ test.describe('Cloud Supabase and account functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // ── Identifier-first login gate (owner design 2026-08-22) ─────────────────
+  // Social buttons no longer show blind: the login screen starts with just an
+  // email field, and _loginIdentify's RPC result decides what shows next. This
+  // closes the duplicate-account problem structurally, a returning contractor
+  // can no longer accidentally create a second account through a social
+  // button, because the button doesn't exist until we've confirmed which
+  // methods their real account actually has.
+  test('_loginRenderResult: no account found offers signup, not a dead end', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('nobody@nowhere.com', { exists: false, hasPassword: false, hasApple: false, hasGoogle: false });
+      const gate = document.getElementById('login-gate');
+      const resultEl = document.getElementById('login-result');
+      const html = resultEl ? resultEl.innerHTML : '';
+      const r = {
+        gateHidden: gate ? gate.style.display === 'none' : false,
+        resultShown: resultEl ? resultEl.style.display === 'block' : false,
+        mentionsEmail: html.includes('nobody@nowhere.com'),
+        hasCreateBtn: /create an account/i.test(html),
+        noSocialOffered: !/continue with face id/i.test(html) && !/continue with google/i.test(html),
+      };
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, ...r };
+    });
+    if (result.skip) return;
+    expect(result.gateHidden, 'the email gate is hidden once a result renders').toBe(true);
+    expect(result.resultShown).toBe(true);
+    expect(result.mentionsEmail, 'the typed email is echoed back').toBe(true);
+    expect(result.hasCreateBtn, 'offers a way forward, never a dead end').toBe(true);
+    expect(result.noSocialOffered, 'no account means no social button, nothing to be one-tapped by accident').toBe(true);
+  });
+
+  test('_loginRenderResult: checkFailed renders an honest "couldn\'t check" state, never the confident "no account" screen', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('grace@greenpaint.com', { exists: false, hasPassword: false, hasApple: false, hasGoogle: false, checkFailed: true });
+      const resultEl = document.getElementById('login-result');
+      const html = resultEl ? resultEl.innerHTML : '';
+      const r = {
+        resultShown: resultEl ? resultEl.style.display === 'block' : false,
+        mentionsEmail: html.includes('grace@greenpaint.com'),
+        hasTryAgain: /try again/i.test(html),
+        hasCreateBtn: /create an account/i.test(html),
+        claimsNoAccount: /don't have an account/i.test(html),
+      };
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, ...r };
+    });
+    if (result.skip) return;
+    expect(result.resultShown).toBe(true);
+    expect(result.mentionsEmail).toBe(true);
+    expect(result.hasTryAgain, 'offers a way to retry the actual check').toBe(true);
+    expect(result.hasCreateBtn, 'never routes a failed check straight into creating a duplicate account').toBe(false);
+    expect(result.claimsNoAccount, 'must never claim "no account" when the lookup itself failed, exists:false here is a stub, not a confirmed answer').toBe(false);
+  });
+
+  test('_loginRenderResult: Apple-linked account surfaces Continue with Face ID', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('grace@greenpaint.com', { exists: true, hasPassword: false, hasApple: true, hasGoogle: false });
+      const html = document.getElementById('login-result')?.innerHTML || '';
+      const r = {
+        hasFaceId: /continue with face id/i.test(html),
+        noGoogle: !/continue with google/i.test(html),
+        // Apple-only account (no password on file): the password field must
+        // NOT show, that would be an option that can't actually work.
+        noPasswordField: !html.includes('id="supa-pass"'),
+      };
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, ...r };
+    });
+    if (result.skip) return;
+    expect(result.hasFaceId, 'Face ID button shown for a linked Apple identity').toBe(true);
+    expect(result.noGoogle, 'no Google button when Google is not linked').toBe(true);
+    expect(result.noPasswordField, 'no password field when the account has no password').toBe(true);
+  });
+
+  // Owner design 2026-08-22: Google is trimmed on iOS ONLY when Face ID is also
+  // on file for that account, redundant, one less tap. Never hidden when it
+  // would be the only way in, that's a dead end, not a simplification.
+  test('_loginRenderResult: Google is hidden on iOS when Face ID is also available (redundant, not a dead end)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      const realCap = window.Capacitor;
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      try {
+        window.Capacitor = { isNativePlatform: () => true };
+        _loginRenderResult('multi@methods.com', { exists: true, hasPassword: false, hasApple: true, hasGoogle: true });
+        const html = document.getElementById('login-result')?.innerHTML || '';
+        return { skip: false, hasFaceId: /continue with face id/i.test(html), hasGoogle: /continue with google/i.test(html) };
+      } finally {
+        window.Capacitor = realCap;
+        document.getElementById('supa-login-overlay')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.hasFaceId).toBe(true);
+    expect(result.hasGoogle, 'Google trimmed, Face ID already covers this account on iOS').toBe(false);
+  });
+
+  test('_loginRenderResult: Google stays on iOS when it is the account\'s ONLY method (never a dead end)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      const realCap = window.Capacitor;
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      try {
+        window.Capacitor = { isNativePlatform: () => true };
+        _loginRenderResult('googleonly@example.com', { exists: true, hasPassword: false, hasApple: false, hasGoogle: true });
+        const html = document.getElementById('login-result')?.innerHTML || '';
+        return { skip: false, hasGoogle: /continue with google/i.test(html) };
+      } finally {
+        window.Capacitor = realCap;
+        document.getElementById('supa-login-overlay')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.hasGoogle, 'Google is this account\'s only method, must never be hidden, even on iOS').toBe(true);
+  });
+
+  test('_loginRenderResult: Google stays on non-iOS regardless of Face ID', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      const realCap = window.Capacitor;
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      try {
+        window.Capacitor = undefined;
+        _loginRenderResult('multi@methods.com', { exists: true, hasPassword: false, hasApple: true, hasGoogle: true });
+        const html = document.getElementById('login-result')?.innerHTML || '';
+        return { skip: false, hasGoogle: /continue with google/i.test(html) };
+      } finally {
+        window.Capacitor = realCap;
+        document.getElementById('supa-login-overlay')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.hasGoogle, 'no native shell means no Apple option, Google must never be trimmed off-platform').toBe(true);
+  });
+
+  test('_loginRenderResult: password-only account surfaces the password field, no social buttons', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('grace@greenpaint.com', { exists: true, hasPassword: true, hasApple: false, hasGoogle: false });
+      const html = document.getElementById('login-result')?.innerHTML || '';
+      const r = {
+        hasPasswordField: html.includes('id="supa-pass"') && html.includes('id="supa-email"'),
+        emailCarried: html.includes('value="grace@greenpaint.com"'),
+        noFaceId: !/continue with face id/i.test(html),
+        noGoogle: !/continue with google/i.test(html),
+      };
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, ...r };
+    });
+    if (result.skip) return;
+    expect(result.hasPasswordField, 'password field shown for a password-only account').toBe(true);
+    expect(result.emailCarried, 'the identified email carries into the hidden field supaSignIn reads').toBe(true);
+    expect(result.noFaceId).toBe(true);
+    expect(result.noGoogle).toBe(true);
+  });
+
+  // Owner report 2026-08-22 (live device): auto-focusing #supa-pass
+  // unconditionally popped the iOS keyboard even when Face ID/Google was the
+  // intended tap, and on iOS a tap elsewhere while the keyboard is up just
+  // dismisses it rather than reaching the button, so "Continue with Face ID"
+  // needed a wasted first tap before a second tap actually registered.
+  test('_loginRenderResult: an Apple-linked account never auto-focuses the password field (would pop the keyboard over Face ID)', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('grace@greenpaint.com', { exists: true, hasPassword: true, hasApple: true, hasGoogle: false });
+      await new Promise(r => setTimeout(r, 120));
+      const focused = document.activeElement && document.activeElement.id;
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, focused };
+    });
+    if (result.skip) return;
+    expect(result.focused, 'nothing should have stolen focus, Face ID is the intended tap, not typing').not.toBe('supa-pass');
+  });
+
+  test('_loginRenderResult: a Google-only account never auto-focuses the password field either', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('grace@greenpaint.com', { exists: true, hasPassword: true, hasApple: false, hasGoogle: true });
+      await new Promise(r => setTimeout(r, 120));
+      const focused = document.activeElement && document.activeElement.id;
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, focused };
+    });
+    if (result.skip) return;
+    expect(result.focused).not.toBe('supa-pass');
+  });
+
+  test('_loginRenderResult: a password-only account (nothing else to tap) still auto-focuses the password field', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('grace@greenpaint.com', { exists: true, hasPassword: true, hasApple: false, hasGoogle: false });
+      await new Promise(r => setTimeout(r, 120));
+      const focused = document.activeElement && document.activeElement.id;
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, focused };
+    });
+    if (result.skip) return;
+    expect(result.focused, 'password is the only path in here, the original convenience focus still applies').toBe('supa-pass');
+  });
+
+  // Regression for the actual CI failure this feature shipped with: a
+  // password-only render schedules its legitimate 60ms focus timer, then a
+  // SECOND render (Apple-linked, should never focus) happens before that
+  // timer fires. Without cancelling the earlier pending timer, it looks up
+  // #supa-pass by ID when it finally goes off and lands on the NEWER
+  // render's field, stealing focus the second render explicitly decided
+  // against.
+  test('_loginRenderResult: a stale focus timer from an earlier render never fires against a later render that should not focus', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      // First render legitimately schedules the 60ms focus timer...
+      _loginRenderResult('wrong@address.com', { exists: true, hasPassword: true, hasApple: false, hasGoogle: false });
+      // ...then a second render replaces it immediately, well before that
+      // timer fires, and this one has Face ID: it must never end up focused.
+      _loginRenderResult('grace@greenpaint.com', { exists: true, hasPassword: true, hasApple: true, hasGoogle: false });
+      await new Promise(r => setTimeout(r, 150));
+      const focused = document.activeElement && document.activeElement.id;
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, focused };
+    });
+    if (result.skip) return;
+    expect(result.focused, 'the first render\'s stale timer must be cancelled by the second render, not left to fire later').not.toBe('supa-pass');
+  });
+
+  test('_loginRenderResult: account exists but no recognized method still offers a way in (safety net)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('weird@edge.com', { exists: true, hasPassword: false, hasApple: false, hasGoogle: false });
+      const html = document.getElementById('login-result')?.innerHTML || '';
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, hasPasswordField: html.includes('id="supa-pass"') };
+    });
+    if (result.skip) return;
+    expect(result.hasPasswordField, 'never a dead end, falls back to a password attempt + forgot-password recovery').toBe(true);
+  });
+
+  test('_loginIdentify: calls check_login_methods with the typed email and renders the result', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _loginIdentify !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      const savedSupa = _supa;
+      let rpcArgs = null;
+      try {
+        _supa = { ...savedSupa, rpc: (fn, args) => { rpcArgs = { fn, args }; return Promise.resolve({ data: { exists: true, hasPassword: false, hasApple: true, hasGoogle: false }, error: null }); } };
+        document.getElementById('login-email').value = 'grace@greenpaint.com';
+        await _loginIdentify();
+        const html = document.getElementById('login-result')?.innerHTML || '';
+        return { skip: false, rpcArgs, hasFaceId: /continue with face id/i.test(html) };
+      } finally {
+        _supa = savedSupa;
+        document.getElementById('supa-login-overlay')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.rpcArgs?.fn).toBe('check_login_methods');
+    expect(result.rpcArgs?.args?.check_email).toBe('grace@greenpaint.com');
+    expect(result.hasFaceId, 'renders the result the RPC actually returned').toBe(true);
+  });
+
+  test('_loginIdentify: blocks on a blank/invalid email before ever calling the RPC', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _loginIdentify !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      const savedSupa = _supa;
+      let rpcCalled = false;
+      try {
+        _supa = { ...savedSupa, rpc: () => { rpcCalled = true; return Promise.resolve({ data: null, error: null }); } };
+        document.getElementById('login-email').value = 'not-an-email';
+        await _loginIdentify();
+        const gateStillShown = document.getElementById('login-gate')?.style.display !== 'none';
+        return { skip: false, rpcCalled, gateStillShown, errText: document.getElementById('supa-login-err')?.textContent };
+      } finally {
+        _supa = savedSupa;
+        document.getElementById('supa-login-overlay')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.rpcCalled, 'an invalid email never even reaches the lookup').toBe(false);
+    expect(result.gateStillShown).toBe(true);
+    expect(result.errText).toBe('Enter a valid email.');
+  });
+
+  // Old assertion here (removed 2026-08-22) claimed a lookup failure should
+  // fail toward "no account found" with zero console.error, on the theory
+  // that a transient network hiccup shouldn't block a real signup. That
+  // shipped and lied to a real returning user (the owner's own account):
+  // check_login_methods wasn't deployed yet, the RPC failed on every call,
+  // and every visitor, existing account or not, was confidently told "we
+  // don't have an account for you" — the exact false claim this whole gate
+  // exists to prevent, since it pushes a returning user toward creating a
+  // duplicate account. Corrected behavior: a genuine lookup failure must
+  // render as an honest "couldn't check, try again" state, never a confident
+  // wrong answer, and must log to console so a real outage is visible.
+  test('_loginIdentify: a thrown RPC failure renders "couldn\'t check" (checkFailed), never a confident "no account"', async () => {
+    const consoleErrorsBefore = page._consoleErrors.length;
+    const result = await page.evaluate(async () => {
+      if (typeof _loginIdentify !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      const savedSupa = _supa;
+      try {
+        _supa = { ...savedSupa, rpc: () => Promise.reject(new Error('network unreachable')) };
+        document.getElementById('login-email').value = 'grace@greenpaint.com';
+        let threw = null;
+        try { await _loginIdentify(); } catch (e) { threw = e.message; }
+        const html = document.getElementById('login-result')?.innerHTML || '';
+        return { skip: false, threw, hasTryAgain: /try again/i.test(html), hasCreateBtn: /create an account/i.test(html) };
+      } finally {
+        _supa = savedSupa;
+        document.getElementById('supa-login-overlay')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.threw, 'a network failure during identify must never throw out to the caller').toBe(null);
+    expect(result.hasTryAgain, 'a genuine lookup failure gets an honest retry state').toBe(true);
+    expect(result.hasCreateBtn, 'must never claim "no account" when the check itself failed').toBe(false);
+    // A real backend failure must be logged now (that visibility is the fix),
+    // deliberately triggered here so trim it back off the shared page's error
+    // list before it trips an unrelated assertNoErrors() later in this file.
+    expect(page._consoleErrors.length, 'the failure is logged, not swallowed silently').toBeGreaterThan(consoleErrorsBefore);
+    page._consoleErrors.length = consoleErrorsBefore;
+  });
+
+  // The actual shape of the production bug: supabase-js does NOT throw on a
+  // failed RPC call, it resolves with {data:null, error:{...}}. This is the
+  // path that silently produced the false "no account" screen; the thrown-
+  // rejection test above only covers the defensive catch{} branch.
+  test('_loginIdentify: an RPC error response (not a throw) also renders "couldn\'t check", the actual 2026-08-22 bug shape', async () => {
+    const consoleErrorsBefore = page._consoleErrors.length;
+    const result = await page.evaluate(async () => {
+      if (typeof _loginIdentify !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      const savedSupa = _supa;
+      try {
+        _supa = { ...savedSupa, rpc: () => Promise.resolve({ data: null, error: { message: 'function check_login_methods does not exist' } }) };
+        document.getElementById('login-email').value = 'grace@greenpaint.com';
+        await _loginIdentify();
+        const html = document.getElementById('login-result')?.innerHTML || '';
+        return { skip: false, hasTryAgain: /try again/i.test(html), hasCreateBtn: /create an account/i.test(html) };
+      } finally {
+        _supa = savedSupa;
+        document.getElementById('supa-login-overlay')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.hasTryAgain, 'an {error} response (no throw) must still be treated as a failed check').toBe(true);
+    expect(result.hasCreateBtn, 'must never claim "no account" when the RPC itself errored').toBe(false);
+    expect(page._consoleErrors.length, 'the {error} response is logged, this is the exact shape that shipped silently').toBeGreaterThan(consoleErrorsBefore);
+    page._consoleErrors.length = consoleErrorsBefore;
+  });
+
+  test('_loginResetGate: returns from a result state to the plain email entry', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginResetGate !== 'function' || typeof _loginRenderResult !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      supaShowLogin({ force: true });
+      _loginRenderResult('grace@greenpaint.com', { exists: true, hasPassword: true, hasApple: false, hasGoogle: false });
+      _loginResetGate();
+      const gate = document.getElementById('login-gate');
+      const resultEl = document.getElementById('login-result');
+      const r = {
+        gateShown: gate ? gate.style.display !== 'none' : false,
+        resultHidden: resultEl ? resultEl.style.display === 'none' : false,
+        resultCleared: resultEl ? resultEl.innerHTML === '' : false,
+      };
+      document.getElementById('supa-login-overlay')?.remove();
+      return { skip: false, ...r };
+    });
+    if (result.skip) return;
+    expect(result.gateShown, 'the email gate reappears').toBe(true);
+    expect(result.resultHidden).toBe(true);
+    expect(result.resultCleared, 'stale results from a different email never linger').toBe(true);
+  });
+
+  test('_loginGoToSignup: closes the login overlay and carries the typed email into onboarding', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _loginGoToSignup !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+      document.getElementById('supa-login-overlay')?.remove();
+      document.getElementById('onboarding-overlay')?.remove();
+      supaShowLogin({ force: true });
+      const savedOb = _ob;
+      _loginGoToSignup('brandnew@example.com');
+      const r = {
+        loginGone: !document.getElementById('supa-login-overlay'),
+        onboardingOpen: !!document.getElementById('onboarding-overlay'),
+        emailCarried: _ob.email === 'brandnew@example.com',
+        stepReset: _ob.step === 1,
+      };
+      document.getElementById('onboarding-overlay')?.remove();
+      _ob = savedOb;
+      return { skip: false, ...r };
+    });
+    if (result.skip) return;
+    expect(result.loginGone, 'the login overlay is removed').toBe(true);
+    expect(result.onboardingOpen, 'onboarding opens in its place').toBe(true);
+    expect(result.emailCarried, 'the typed email is never asked for twice').toBe(true);
+    expect(result.stepReset).toBe(true);
+  });
+
+  // ── Remembered device: cold-launch Face ID resume (owner design 2026-08-22) ─
+  // "Remember this device, skip straight to Face ID" the way Navy Federal and
+  // other banking apps do. A small local-only zp3_remembered_login record
+  // (NOT a security boundary, just UI state, like a bank pre-filling your
+  // username) lets supaShowLogin() replace a cold blank email box with either
+  // an auto-firing TdLock resume (session already valid) or the cached
+  // Apple/Google/password buttons (session gone, real re-auth required, no
+  // RPC round trip needed since the methods are already known). See
+  // js/cloud.js _rememberLogin / _loginShowWelcomeBack / _loginRunTdLock /
+  // _loginEnterAppWithSession / _loginNotYou, and js/handoff.js's
+  // _lockPlugin, reused as-is, never a second registerPlugin('TdLock') call.
+  test.describe('Remembered device: cold-launch Face ID resume', () => {
+    test('no remembered login: the blank gate renders exactly as before, regression guard', async () => {
+      const result = await page.evaluate(async () => {
+        if (typeof supaShowLogin !== 'function') return { skip: true };
+        document.getElementById('supa-login-overlay')?.remove();
+        localStorage.removeItem('zp3_remembered_login');
+        await supaShowLogin({ force: true });
+        const gate = document.getElementById('login-gate');
+        const resultEl = document.getElementById('login-result');
+        const r = {
+          gateShown: gate ? gate.style.display !== 'none' : false,
+          resultHidden: resultEl ? resultEl.style.display !== 'block' : true,
+          hasWelcomeBack: !!document.getElementById('login-welcome-back'),
+        };
+        document.getElementById('supa-login-overlay')?.remove();
+        return { skip: false, ...r };
+      });
+      if (result.skip) return;
+      expect(result.gateShown, 'nothing remembered means the same blank email gate as before this feature').toBe(true);
+      expect(result.resultHidden).toBe(true);
+      expect(result.hasWelcomeBack).toBe(false);
+    });
+
+    test('remembered login + valid session + TdLock available: fires automatically, no email typed, success resumes straight into the app', async () => {
+      const result = await page.evaluate(async () => {
+        if (typeof supaShowLogin !== 'function' || typeof _lockPlugin !== 'function') return { skip: true };
+        document.getElementById('supa-login-overlay')?.remove();
+        localStorage.setItem('zp3_remembered_login', JSON.stringify({ email: 'grace@greenpaint.com', hasApple: true, hasGoogle: false, hasPassword: true, ts: Date.now() }));
+        const realCap = window.Capacitor;
+        const savedSupa = _supa;
+        const savedLoadAccountData = window.loadAccountData;
+        const savedCloudLoad = window.supaLoadFromCloud;
+        const savedBootSettled = window._bootSyncSettled;
+        const savedGoPg = window.goPg;
+        const savedUserState = { supaUser: _supaUser, cloudLoaded: _supaCloudLoaded };
+        let unlockCalls = 0, loadAccountCalls = 0, cloudLoadCalls = 0;
+        const goPgCalls = [];
+        const savedLoginIdentify = window._loginIdentify;
+        let identifyCalls = 0;
+        const fakeSession = { access_token: 'fake-jwt', refresh_token: 'fake-refresh', user: { id: 'e2e-remembered-user', email: 'grace@greenpaint.com' } };
+        try {
+          // _loginIdentify is what typing an email + tapping Continue actually
+          // calls, spying on it is the precise proof nothing was ever typed,
+          // not just that the overlay happened to be gone by the time we look.
+          window._loginIdentify = async (...a) => { identifyCalls++; return savedLoginIdentify.apply(this, a); };
+          _supa = { ...savedSupa, auth: { ...savedSupa.auth, getSession: () => Promise.resolve({ data: { session: fakeSession }, error: null }) } };
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: () => ({
+              available: () => Promise.resolve({ available: true, kind: 'face' }),
+              unlock: () => { unlockCalls++; return Promise.resolve({ ok: true }); },
+            }),
+          };
+          window.loadAccountData = async () => { loadAccountCalls++; return true; };
+          window.supaLoadFromCloud = async () => { cloudLoadCalls++; };
+          window._bootSyncSettled = () => {};
+          window.goPg = (id) => { goPgCalls.push(id); };
+          await supaShowLogin({ force: true });
+          // supaShowLogin's own await chain covers getSession(), but the TdLock
+          // probe+unlock+account-load it kicks off is deliberately fire-and-
+          // forget from supaShowLogin's point of view (a "show the screen"
+          // function shouldn't block on the whole downstream sign-in), so poll
+          // for it to settle rather than assuming the outer await covers it.
+          const t0 = Date.now();
+          while (goPgCalls.length === 0 && Date.now() - t0 < 2000) { await new Promise(r => setTimeout(r, 15)); }
+          return {
+            skip: false, unlockCalls, loadAccountCalls, cloudLoadCalls, goPgCalls, identifyCalls,
+            overlayGone: !document.getElementById('supa-login-overlay'),
+          };
+        } finally {
+          _supa = savedSupa;
+          window.Capacitor = realCap;
+          window.loadAccountData = savedLoadAccountData;
+          window.supaLoadFromCloud = savedCloudLoad;
+          window._bootSyncSettled = savedBootSettled;
+          window.goPg = savedGoPg;
+          window._loginIdentify = savedLoginIdentify;
+          _supaUser = savedUserState.supaUser; _supaCloudLoaded = savedUserState.cloudLoaded;
+          localStorage.removeItem('zp3_remembered_login');
+          document.getElementById('supa-login-overlay')?.remove();
+        }
+      });
+      if (result.skip) return;
+      expect(result.unlockCalls, 'TdLock fires the instant the screen appears, no preliminary tap').toBe(1);
+      expect(result.loadAccountCalls, 'a TdLock success resumes the already-valid session via the real account-load path').toBe(1);
+      expect(result.cloudLoadCalls).toBe(1);
+      expect(result.goPgCalls, 'lands on the dashboard').toContain('pg-dash');
+      expect(result.overlayGone, 'the login overlay is gone once the session resumes').toBe(true);
+      expect(result.identifyCalls, 'no email was ever typed and submitted, the fast path never needed the identify step').toBe(0);
+    });
+
+    test('remembered login + valid session + TdLock fails/cancels: drops to the password field, pre-filled with the remembered email', async () => {
+      const result = await page.evaluate(async () => {
+        if (typeof supaShowLogin !== 'function' || typeof _lockPlugin !== 'function') return { skip: true };
+        document.getElementById('supa-login-overlay')?.remove();
+        localStorage.setItem('zp3_remembered_login', JSON.stringify({ email: 'grace@greenpaint.com', hasApple: false, hasGoogle: false, hasPassword: true, ts: Date.now() }));
+        const realCap = window.Capacitor;
+        const savedSupa = _supa;
+        let unlockCalls = 0;
+        const fakeSession = { access_token: 'fake-jwt', refresh_token: 'fake-refresh', user: { id: 'e2e-remembered-user-2', email: 'grace@greenpaint.com' } };
+        try {
+          _supa = { ...savedSupa, auth: { ...savedSupa.auth, getSession: () => Promise.resolve({ data: { session: fakeSession }, error: null }) } };
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: () => ({
+              available: () => Promise.resolve({ available: true, kind: 'face' }),
+              unlock: () => { unlockCalls++; return Promise.resolve({ ok: false }); },
+            }),
+          };
+          await supaShowLogin({ force: true });
+          const t0 = Date.now();
+          while (!document.getElementById('supa-pass') && Date.now() - t0 < 2000) { await new Promise(r => setTimeout(r, 15)); }
+          const html = document.getElementById('login-result')?.innerHTML || '';
+          return {
+            skip: false, unlockCalls,
+            hasPasswordField: html.includes('id="supa-pass"'),
+            emailCarried: html.includes('value="grace@greenpaint.com"'),
+            welcomeBackGone: !document.getElementById('login-welcome-back'),
+          };
+        } finally {
+          _supa = savedSupa;
+          window.Capacitor = realCap;
+          localStorage.removeItem('zp3_remembered_login');
+          document.getElementById('supa-login-overlay')?.remove();
+        }
+      });
+      if (result.skip) return;
+      expect(result.unlockCalls).toBe(1);
+      expect(result.hasPasswordField, 'a cancelled/failed unlock falls through to real re-auth, never a blank email box').toBe(true);
+      expect(result.emailCarried, 'the remembered email pre-fills the password path, never typed twice').toBe(true);
+      expect(result.welcomeBackGone).toBe(true);
+    });
+
+    test('remembered login + valid session + TdLock reports unavailable: straight to password fallback, no dead-end prompt shown', async () => {
+      const result = await page.evaluate(async () => {
+        if (typeof supaShowLogin !== 'function' || typeof _lockPlugin !== 'function') return { skip: true };
+        document.getElementById('supa-login-overlay')?.remove();
+        localStorage.setItem('zp3_remembered_login', JSON.stringify({ email: 'grace@greenpaint.com', hasApple: false, hasGoogle: false, hasPassword: true, ts: Date.now() }));
+        const realCap = window.Capacitor;
+        const savedSupa = _supa;
+        let unlockCalls = 0, availableCalls = 0;
+        const fakeSession = { access_token: 'fake-jwt', refresh_token: 'fake-refresh', user: { id: 'e2e-remembered-user-3', email: 'grace@greenpaint.com' } };
+        try {
+          _supa = { ...savedSupa, auth: { ...savedSupa.auth, getSession: () => Promise.resolve({ data: { session: fakeSession }, error: null }) } };
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: () => ({
+              available: () => { availableCalls++; return Promise.resolve({ available: false, kind: 'none' }); },
+              unlock: () => { unlockCalls++; return Promise.resolve({ ok: true }); },
+            }),
+          };
+          await supaShowLogin({ force: true });
+          const t0 = Date.now();
+          while (!document.getElementById('supa-pass') && Date.now() - t0 < 2000) { await new Promise(r => setTimeout(r, 15)); }
+          const html = document.getElementById('login-result')?.innerHTML || '';
+          return { skip: false, unlockCalls, availableCalls, hasPasswordField: html.includes('id="supa-pass"') };
+        } finally {
+          _supa = savedSupa;
+          window.Capacitor = realCap;
+          localStorage.removeItem('zp3_remembered_login');
+          document.getElementById('supa-login-overlay')?.remove();
+        }
+      });
+      if (result.skip) return;
+      expect(result.availableCalls, 'availability is checked before ever trying to unlock').toBe(1);
+      expect(result.unlockCalls, 'never fires a doomed prompt on a device with no biometrics/passcode').toBe(0);
+      expect(result.hasPasswordField, 'skips straight to real re-auth, never a dead end').toBe(true);
+    });
+
+    test('remembered login but NO valid session (expired): straight to cached method buttons, zero RPC call, TdLock never fires (it only gates resuming an ALREADY-valid session)', async () => {
+      const result = await page.evaluate(async () => {
+        if (typeof supaShowLogin !== 'function') return { skip: true };
+        document.getElementById('supa-login-overlay')?.remove();
+        localStorage.setItem('zp3_remembered_login', JSON.stringify({ email: 'grace@greenpaint.com', hasApple: true, hasGoogle: false, hasPassword: true, ts: Date.now() }));
+        const realCap = window.Capacitor;
+        const savedSupa = _supa;
+        let rpcCalled = false, unlockCalls = 0, availableCalls = 0;
+        try {
+          _supa = { ...savedSupa, auth: { ...savedSupa.auth, getSession: () => Promise.resolve({ data: { session: null }, error: null }) }, rpc: (fn, args) => { rpcCalled = true; return Promise.resolve({ data: { exists: true, hasPassword: true, hasApple: true, hasGoogle: false }, error: null }); } };
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: () => ({
+              available: () => { availableCalls++; return Promise.resolve({ available: true, kind: 'face' }); },
+              unlock: () => { unlockCalls++; return Promise.resolve({ ok: true }); },
+            }),
+          };
+          await supaShowLogin({ force: true });
+          const html = document.getElementById('login-result')?.innerHTML || '';
+          return {
+            skip: false, rpcCalled, unlockCalls, availableCalls,
+            hasFaceId: /continue with face id/i.test(html),
+            hasPasswordField: html.includes('id="supa-pass"'),
+            emailCarried: html.includes('value="grace@greenpaint.com"'),
+          };
+        } finally {
+          _supa = savedSupa;
+          window.Capacitor = realCap;
+          localStorage.removeItem('zp3_remembered_login');
+          document.getElementById('supa-login-overlay')?.remove();
+        }
+      });
+      if (result.skip) return;
+      expect(result.rpcCalled, 'the cached methods answer the question, no check_login_methods round trip needed').toBe(false);
+      expect(result.unlockCalls, 'TdLock only ever gates resuming an already-valid session, it must never substitute for real re-auth').toBe(0);
+      expect(result.availableCalls, 'TdLock is not even probed on the no-session branch').toBe(0);
+      expect(result.hasFaceId, 'the account\'s own Apple Face ID button still shows, that is separate from TdLock').toBe(true);
+      expect(result.hasPasswordField).toBe(true);
+      expect(result.emailCarried, 'the remembered email pre-fills the password path').toBe(true);
+    });
+
+    test('"Not you?" clears the remembered-device record and signs out, landing back on a genuinely blank gate', async () => {
+      const result = await page.evaluate(async () => {
+        if (typeof _loginNotYou !== 'function' || typeof supaShowLogin !== 'function') return { skip: true };
+        document.getElementById('supa-login-overlay')?.remove();
+        localStorage.setItem('zp3_remembered_login', JSON.stringify({ email: 'grace@greenpaint.com', hasApple: false, hasGoogle: false, hasPassword: true, ts: Date.now() }));
+        const savedSupa = _supa;
+        let signOutCalled = false;
+        try {
+          _supa = { ...savedSupa, auth: { ...savedSupa.auth, signOut: (opts) => { signOutCalled = true; return savedSupa.auth.signOut(opts); } } };
+          const p = _loginNotYou();
+          // supaSignOut() (which _loginNotYou reuses, §7.3) waits (bounded 3s) for
+          // the real SIGNED_OUT event to drain _deliberateSignOut. The mocked
+          // client's signOut() never fires onAuthStateChange on its own
+          // (tests/helpers.js), so fire it by hand to settle promptly instead of
+          // eating the full timeout.
+          setTimeout(() => { if (typeof window.__capturedAuthCallback === 'function') window.__capturedAuthCallback('SIGNED_OUT', null); }, 20);
+          await p;
+          return {
+            skip: false, signOutCalled,
+            remembered: localStorage.getItem('zp3_remembered_login'),
+            overlayPresent: !!document.getElementById('supa-login-overlay'),
+            gateShown: document.getElementById('login-gate')?.style.display !== 'none',
+          };
+        } finally {
+          _supa = savedSupa;
+          localStorage.removeItem('zp3_remembered_login');
+          document.getElementById('supa-login-overlay')?.remove();
+        }
+      });
+      if (result.skip) return;
+      expect(result.signOutCalled, 'the lingering session is actually signed out, iOS never clears this on its own').toBe(true);
+      expect(result.remembered, 'the remembered-device record is cleared').toBe(null);
+      expect(result.overlayPresent, 'a fresh login screen exists in its place').toBe(true);
+      expect(result.gateShown, 'lands on the blank email gate, not a stale welcome-back screen').toBe(true);
+    });
+
+    // Old assertion here (removed 2026-08-22, live owner test) claimed
+    // _wipeLocalAccountData should clear the remembered-device record on
+    // every sign-out, on the theory that a deliberate sign-out should never
+    // let the fast path survive it. That shipped and immediately broke the
+    // actual point of the feature: the owner signed in, signed back out,
+    // and was dropped straight back to a blank email box, exactly the typing
+    // this whole feature exists to remove. A routine Sign Out ends the
+    // SESSION, it was never supposed to mean "this device forgot who uses
+    // it", the same distinction every bank in the original research makes
+    // (their apps still show your username/Face ID offer after signing out).
+    // Only _loginNotYou() (the explicit "Not you?" repudiation) may clear it
+    // now, that is the real "this isn't my device/account" signal, a normal
+    // sign-out was never that.
+    test('_wipeLocalAccountData (a routine sign-out) does NOT clear the remembered-device record', async () => {
+      const result = await page.evaluate(async () => {
+        if (typeof _wipeLocalAccountData !== 'function') return { skip: true };
+        localStorage.setItem('zp3_remembered_login', JSON.stringify({ email: 'grace@greenpaint.com', hasApple: false, hasGoogle: false, hasPassword: true, ts: Date.now() }));
+        _wipeLocalAccountData();
+        return { skip: false, afterWipe: localStorage.getItem('zp3_remembered_login') };
+      });
+      if (result.skip) return;
+      expect(result.afterWipe, 'signing out ends the session, it must not make the device forget who uses it').not.toBe(null);
+      await page.evaluate(() => localStorage.removeItem('zp3_remembered_login'));
+    });
+
+    // Still correct, and unchanged: the onboarding "I already have an
+    // account" bail-out signs out a just-created THROWAWAY session whose
+    // identity got remembered the instant its OAuth completed (_obInProgress
+    // is only set later, inside obSubmit, so the normal SIGNED_IN handler's
+    // _rememberLogin call is NOT suppressed here). That throwaway identity
+    // was never the account the person actually wants, and by the time it
+    // was written it had already overwritten whatever this device
+    // remembered before, so there is nothing legitimate left to protect by
+    // skipping this clear.
+    test('_obAlreadyHaveAccount\'s mid-onboarding bail-out still clears the throwaway signup\'s remembered identity', async () => {
+      const result = await page.evaluate(async () => {
+        if (typeof _obAlreadyHaveAccount !== 'function') return { skip: true };
+        localStorage.setItem('zp3_remembered_login', JSON.stringify({ email: 'grace@greenpaint.com', hasApple: false, hasGoogle: false, hasPassword: true, ts: Date.now() }));
+        document.getElementById('onboarding-overlay')?.remove();
+        const savedSupa = _supa;
+        try {
+          _supa = { ...savedSupa, auth: { ...savedSupa.auth, signOut: () => Promise.resolve({ error: null }) } };
+          await _obAlreadyHaveAccount();
+          return { skip: false, afterObBail: localStorage.getItem('zp3_remembered_login') };
+        } finally {
+          _supa = savedSupa;
+          document.getElementById('supa-login-overlay')?.remove();
+        }
+      });
+      if (result.skip) return;
+      expect(result.afterObBail, 'the abandoned throwaway signup\'s identity does not linger as this device\'s remembered login').toBe(null);
+    });
+  });
+
   test('supaSignIn: calls without throwing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof supaSignIn !== 'function') return { skip: true };
@@ -1612,6 +2480,78 @@ test.describe('Cloud Supabase and account functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // _classifyCloudError: the shape our own `if(error)throw error` sites
+  // actually receive is NOT a raw fetch exception, supabase-js wraps a real
+  // network failure into a PLAIN OBJECT with no .name and no Error prototype
+  // (js/vendor/supabase-js-2.112.3.min.js's PostgrestBuilder catch handler),
+  // so an earlier version of this classifier that checked `instanceof
+  // TypeError` / `.name==='AbortError'` silently misclassified every real
+  // outage as an app bug. These fixtures use the library's ACTUAL wrapped
+  // shape, not a guessed one.
+  test.describe('_classifyCloudError: input classes', () => {
+    test('missing-table error classifies as app, no probe needed', async () => {
+      const r = await page.evaluate(async () => {
+        if (typeof _classifyCloudError !== 'function') return { skip: true };
+        return { kind: await _classifyCloudError({ code: 'PGRST205', message: 'schema cache' }) };
+      });
+      if (!r.skip) expect(r.kind).toBe('app');
+    });
+    test('no error object at all classifies as network (historical default)', async () => {
+      const r = await page.evaluate(async () => {
+        if (typeof _classifyCloudError !== 'function') return { skip: true };
+        return { kind: await _classifyCloudError(null) };
+      });
+      if (!r.skip) expect(r.kind).toBe('network');
+    });
+    test('a genuine app-thrown Error (not network-shaped) classifies as app', async () => {
+      const r = await page.evaluate(async () => {
+        if (typeof _classifyCloudError !== 'function') return { skip: true };
+        return { kind: await _classifyCloudError(new Error('cannot read property of undefined')) };
+      });
+      if (!r.skip) expect(r.kind).toBe('app');
+    });
+    test('supabase-js network-shaped error, network actually reachable, reclassifies as app', async () => {
+      // No route override: the real /version.json on this test server answers,
+      // so the confirmation probe succeeds and this must NOT banner.
+      const r = await page.evaluate(async () => {
+        if (typeof _classifyCloudError !== 'function') return { skip: true };
+        return { kind: await _classifyCloudError({ message: 'TypeError: Failed to fetch', details: '', hint: '', code: '' }) };
+      });
+      if (!r.skip) expect(r.kind).toBe('app');
+    });
+    test('code:"offline" is trusted as an explicit signal (the shared test-fixture shape, tests/helpers.js maybeOffline)', async () => {
+      // Regression: this exact shape (helpers.js offlineResult()) briefly
+      // misclassified as 'app' when the classifier only recognized real
+      // browser/supabase-js message text, tripping assertNoErrors() on every
+      // __offlineMode-driven test across the suite.
+      const r = await page.evaluate(async () => {
+        if (typeof _classifyCloudError !== 'function') return { skip: true };
+        return { kind: await _classifyCloudError({ message: 'Simulated offline', code: 'offline' }) };
+      });
+      if (!r.skip) expect(r.kind).toBe('network');
+    });
+    test('supabase-js network-shaped error, network genuinely down, classifies as network', async () => {
+      await page.route('**/version.json*', route => route.abort('failed'));
+      try {
+        const r = await page.evaluate(async () => {
+          if (typeof _classifyCloudError !== 'function') return { skip: true };
+          return {
+            chrome: await _classifyCloudError({ message: 'TypeError: Failed to fetch', details: '', hint: '', code: '' }),
+            safari: await _classifyCloudError({ message: 'TypeError: Load failed', details: '', hint: '', code: '' }),
+            ourTimeout: await _classifyCloudError({ message: 'AbortError: signal timed out', hint: 'Request was aborted (timeout or manual cancellation)' }),
+          };
+        });
+        if (!r.skip) {
+          expect(r.chrome, 'Chrome-shaped fetch failure while genuinely offline').toBe('network');
+          expect(r.safari, 'Safari-shaped fetch failure while genuinely offline').toBe('network');
+          expect(r.ourTimeout, 'our own 30s request timeout while genuinely offline').toBe('network');
+        }
+      } finally {
+        await page.unroute('**/version.json*');
+      }
+    });
+  });
+
   test('_showOfflineBanner: calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _showOfflineBanner !== 'function') return { skip: true };
@@ -1646,6 +2586,178 @@ test.describe('Cloud Supabase and account functions', () => {
       catch (e) { return { ok: true, note: e.message }; }
     });
     if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test.describe('device model capture (screen-class fallback + native TdDevice)', () => {
+    test('_resolveIOSScreenClass: known signature maps to a label, unrecognized signature returns null', async () => {
+      const r = await page.evaluate(() => {
+        if (typeof _resolveIOSScreenClass !== 'function') return { skip: true };
+        return {
+          proMax: _resolveIOSScreenClass({ w: 440, h: 956, dpr: 3 }),
+          standard: _resolveIOSScreenClass({ w: 393, h: 852, dpr: 3 }),
+          unknown: _resolveIOSScreenClass({ w: 777, h: 999, dpr: 3 }),
+          wrongDpr: _resolveIOSScreenClass({ w: 440, h: 956, dpr: 2 }),
+          nullSig: _resolveIOSScreenClass(null),
+          undefinedSig: _resolveIOSScreenClass(undefined),
+        };
+      });
+      if (r.skip) return;
+      expect(r.proMax).toMatch(/Pro Max/);
+      expect(r.standard).toBeTruthy();
+      expect(r.unknown).toBeNull();
+      expect(r.wrongDpr).toBeNull();
+      expect(r.nullSig).toBeNull();
+      expect(r.undefinedSig).toBeNull();
+    });
+
+    test('_deviceScreenSig: normalizes width/height to portrait order regardless of current orientation', async () => {
+      const r = await page.evaluate(() => {
+        if (typeof _deviceScreenSig !== 'function') return { skip: true };
+        const wDesc = Object.getOwnPropertyDescriptor(window.screen, 'width') || Object.getOwnPropertyDescriptor(Screen.prototype, 'width');
+        const hDesc = Object.getOwnPropertyDescriptor(window.screen, 'height') || Object.getOwnPropertyDescriptor(Screen.prototype, 'height');
+        try {
+          // Simulate a landscape reading, width/height flipped from the
+          // portrait signature the lookup table is keyed on.
+          Object.defineProperty(window.screen, 'width', { value: 956, configurable: true });
+          Object.defineProperty(window.screen, 'height', { value: 440, configurable: true });
+          const sig = _deviceScreenSig();
+          return { sig };
+        } finally {
+          try { if (wDesc) Object.defineProperty(window.screen, 'width', wDesc); } catch (_e) {}
+          try { if (hDesc) Object.defineProperty(window.screen, 'height', hDesc); } catch (_e) {}
+        }
+      });
+      if (r.skip) return;
+      expect(r.sig.w).toBe(440);
+      expect(r.sig.h).toBe(956);
+    });
+
+    test('registerDevice: writes screen dimensions and a best-effort screenClass onto the current device record', async () => {
+      const r = await page.evaluate(() => {
+        if (typeof registerDevice !== 'function' || typeof _initDeviceId !== 'function') return { skip: true };
+        const origDevices = S.devices ? JSON.parse(JSON.stringify(S.devices)) : null;
+        const origSig = window._deviceScreenSig;
+        try {
+          window._deviceScreenSig = () => ({ w: 402, h: 874, dpr: 3 });
+          registerDevice(false);
+          const id = _initDeviceId();
+          const dev = (S.devices || []).find(d => d.id === id);
+          return { screenW: dev && dev.screenW, screenH: dev && dev.screenH, dpr: dev && dev.dpr, screenClass: dev && dev.screenClass };
+        } finally {
+          window._deviceScreenSig = origSig;
+          S.devices = origDevices;
+        }
+      });
+      if (r.skip) return;
+      expect(r.screenW).toBe(402);
+      expect(r.screenH).toBe(874);
+      expect(r.dpr).toBe(3);
+      expect(r.screenClass).toMatch(/Pro/);
+    });
+
+    test('registerDevice: a mocked native TdDevice plugin overwrites hwId/deviceName/osVersion on the same device record', async () => {
+      const r = await page.evaluate(async () => {
+        if (typeof registerDevice !== 'function' || typeof _initDeviceId !== 'function') return { skip: true };
+        const origDevices = S.devices ? JSON.parse(JSON.stringify(S.devices)) : null;
+        const origPlugin = window._tdDevicePlugin;
+        try {
+          window._tdDevicePlugin = { info: async () => ({ hwId: 'iPhone17,2', name: "Jack's iPhone", systemVersion: '19.0' }) };
+          registerDevice(false);
+          // The native capture is async (a resolved promise queued on the
+          // microtask queue); flushing one microtask turn is enough since
+          // the mock above has no real I/O latency.
+          await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+          const id = _initDeviceId();
+          const dev = (S.devices || []).find(d => d.id === id);
+          return { hwId: dev && dev.hwId, deviceName: dev && dev.deviceName, osVersion: dev && dev.osVersion };
+        } finally {
+          window._tdDevicePlugin = origPlugin;
+          S.devices = origDevices;
+        }
+      });
+      if (r.skip) return;
+      expect(r.hwId).toBe('iPhone17,2');
+      expect(r.deviceName).toBe("Jack's iPhone");
+      expect(r.osVersion).toBe('19.0');
+    });
+
+    test('registerDevice: an existing exact hwId is never clobbered back to the coarser screenClass guess', async () => {
+      const r = await page.evaluate(() => {
+        if (typeof registerDevice !== 'function' || typeof _initDeviceId !== 'function') return { skip: true };
+        const origDevices = S.devices ? JSON.parse(JSON.stringify(S.devices)) : null;
+        const origSig = window._deviceScreenSig;
+        try {
+          const id = _initDeviceId();
+          S.devices = [{ id, label: 'iPhone', hwId: 'iPhone17,2', lastSeen: new Date().toISOString(), addedAt: new Date().toISOString() }];
+          window._deviceScreenSig = () => ({ w: 440, h: 956, dpr: 3 });
+          registerDevice(false);
+          const dev = S.devices.find(d => d.id === id);
+          return { hwId: dev && dev.hwId, screenClass: dev && dev.screenClass };
+        } finally {
+          window._deviceScreenSig = origSig;
+          S.devices = origDevices;
+        }
+      });
+      if (r.skip) return;
+      expect(r.hwId).toBe('iPhone17,2');
+      expect(r.screenClass).toBeUndefined();
+    });
+
+    test('registerDevice: a native plugin that rejects leaves the screen-class fallback in place, never throws', async () => {
+      const r = await page.evaluate(async () => {
+        if (typeof registerDevice !== 'function' || typeof _initDeviceId !== 'function') return { skip: true };
+        const origDevices = S.devices ? JSON.parse(JSON.stringify(S.devices)) : null;
+        const origPlugin = window._tdDevicePlugin;
+        const origSig = window._deviceScreenSig;
+        try {
+          window._tdDevicePlugin = { info: async () => { throw new Error('native bridge unavailable'); } };
+          window._deviceScreenSig = () => ({ w: 393, h: 852, dpr: 3 });
+          let threw = false;
+          try { registerDevice(false); } catch (_e) { threw = true; }
+          await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+          const id = _initDeviceId();
+          const dev = (S.devices || []).find(d => d.id === id);
+          return { threw, hwId: dev && dev.hwId, screenClass: dev && dev.screenClass };
+        } finally {
+          window._tdDevicePlugin = origPlugin;
+          window._deviceScreenSig = origSig;
+          S.devices = origDevices;
+        }
+      });
+      if (r.skip) return;
+      expect(r.threw).toBe(false);
+      expect(r.hwId).toBeUndefined();
+      expect(r.screenClass).toBeTruthy();
+    });
+
+    test('renderTeam: device card shows the native device name and hwId when present', async () => {
+      const r = await page.evaluate(() => {
+        if (typeof renderTeam !== 'function') return { skip: true };
+        const origDevices = S.devices ? JSON.parse(JSON.stringify(S.devices)) : null;
+        try {
+          S.devices = [{
+            id: 'test-dev-model-1', label: 'iPhone', deviceName: "Jack's iPhone", hwId: 'iPhone17,2',
+            screenW: 440, screenH: 956, dpr: 3, lastSeen: new Date().toISOString(), addedAt: new Date().toISOString(),
+          }];
+          renderTeam();
+          const el = document.getElementById('device-list') || document.getElementById('team-page-devices');
+          return { html: el ? el.innerHTML : null };
+        } finally {
+          S.devices = origDevices;
+          try { renderTeam(); } catch (_e) {}
+        }
+      });
+      if (r.skip || r.html === null) return;
+      // escHtml('s) encodes to &#39; when the string is first built, but
+      // reading .innerHTML back out re-serializes the live DOM, and a
+      // browser's HTML serializer never re-escapes a plain apostrophe in
+      // text content (only & < > need it there), so it decodes back to a
+      // literal apostrophe on the round trip. Assert the actually-rendered
+      // text, not the entity string that only exists momentarily.
+      expect(r.html).toContain("Jack's iPhone");
+      expect(r.html).toContain('iPhone17,2');
+      expect(r.html).toContain('440×956');
+    });
   });
 
   test('removeDevice: calls without throwing', async () => {
@@ -2601,6 +3713,42 @@ test.describe('Client detail tab and notes functions', () => {
       catch (e) { return { ok: true, note: e.message }; }
     });
     if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  // Owner report 2026-08-20: on iOS the sticky headers in this full-screen
+  // proposal viewer (the "Proposals" list header and the detail view's
+  // Back/tabs header) rendered flush with the top of the fixed overlay, no
+  // top inset, so they collided with the status bar/Dynamic Island. Both
+  // now reserve env(safe-area-inset-top), matching the rest of the app's
+  // full-screen overlays (js/finance.js viewSavedProposal, js/dashboard.js
+  // openBidDetail).
+  test('openClientProposals + _cpOpen: both sticky headers reserve the iOS safe-area top inset (Dynamic Island regression)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof openClientProposals !== 'function' || typeof _cpOpen !== 'function') return { skip: true };
+      document.querySelector('[data-cpov]')?.remove();
+      const fakeClient = { id: 890091, name: 'Safe Area Client' };
+      const fakeBid = { id: 890091, status: 'Closed Won', client_id: 890091, amount: 900, proposalHtml: '<p>x</p>', signedAt: new Date().toISOString() };
+      clients.unshift(fakeClient);
+      bids.unshift(fakeBid);
+      try {
+        openClientProposals(890091);
+        const ov = document.querySelector('[data-cpov]');
+        const listHeader = document.querySelector('#cp-list > div');
+        const listInset = !!listHeader && listHeader.getAttribute('style').includes('env(safe-area-inset-top)');
+        _cpOpen(890091, 'bid');
+        const detailHeader = document.querySelector('#cp-detail > div');
+        const detailInset = !!detailHeader && detailHeader.getAttribute('style').includes('env(safe-area-inset-top)');
+        return { skip: false, exists: !!ov, listInset, detailInset };
+      } finally {
+        clients.shift();
+        bids.shift();
+        document.querySelector('[data-cpov]')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.exists).toBe(true);
+    expect(result.listInset).toBe(true);
+    expect(result.detailInset).toBe(true);
   });
 
   test('_cpView: calls without throwing', async () => {
@@ -3692,6 +4840,135 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // ── Regression: a stuck offline boot with NO recoverable session (no live
+  // getSession() result, no zp3_session_backup) used to make _probeAndSync's 5s
+  // tick a silent, permanent no-op, connectivity was confirmed fine every 5s
+  // forever, but nothing ever told the user their session was actually dead. The
+  // only way out was a manual sign-out/back-in (owner report: "had to sign out
+  // and back in to fix the loop, shouldn't have to"). It must now surface the
+  // real fix (the login prompt) instead of ticking silently.
+  test('_probeAndSync surfaces the login prompt when there is truly nothing left to retry', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _probeAndSync !== 'function') return { skip: true };
+      const saved = { supa: _supa, user: window._supaUser, restoring: window._sessionRestoreInProgress };
+      const origShowLogin = window.supaShowLogin;
+      let shown = 0;
+      window.supaShowLogin = (opts) => { shown++; };
+      try {
+        localStorage.removeItem('zp3_session_backup');
+        _supa = { auth: { getSession: () => Promise.resolve({ data: { session: null } }) } };
+        window._supaUser = null;
+        window._sessionRestoreInProgress = false;
+        await _probeAndSync();
+        return { skip: false, shown };
+      } finally {
+        window.supaShowLogin = origShowLogin;
+        _supa = saved.supa; window._supaUser = saved.user; window._sessionRestoreInProgress = saved.restoring;
+      }
+    });
+    if (r.skip) return;
+    expect(r.shown, 'must surface the login prompt instead of a silent no-op').toBeGreaterThanOrEqual(1);
+  });
+
+  // Owner report 2026-08-22 (live device): a brand-new signup has no session by
+  // design the whole time onboarding is open (nothing to restore, nothing dead),
+  // but _isOfflineState() reads that as offline, so this tick fires every 5s
+  // instead of 30 and used to force the login screen out from under someone
+  // still filling out the account step. Root cause: _probeAndSync's "nothing
+  // left to retry" fallback couldn't tell "session died" apart from "no session
+  // yet because onboarding is legitimately showing." _supa/_supaUser/
+  // _sessionRestoreInProgress are let-declared at script scope (cloud.js:638,
+  // :1665), not window properties, bare identifiers only.
+  test('_probeAndSync must NOT force the login screen while onboarding is open', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _probeAndSync !== 'function') return { skip: true };
+      const saved = { supa: _supa, user: _supaUser, restoring: _sessionRestoreInProgress };
+      const origShowLogin = window.supaShowLogin;
+      document.querySelectorAll('#onboarding-overlay').forEach(n => n.remove());
+      const ov = document.createElement('div'); ov.id = 'onboarding-overlay'; document.body.appendChild(ov);
+      let shown = 0;
+      window.supaShowLogin = () => { shown++; };
+      try {
+        localStorage.removeItem('zp3_session_backup');
+        _supa = { auth: { getSession: () => Promise.resolve({ data: { session: null } }) } };
+        _supaUser = null;
+        _sessionRestoreInProgress = false;
+        await _probeAndSync();
+        return { skip: false, shown };
+      } finally {
+        document.querySelectorAll('#onboarding-overlay').forEach(n => n.remove());
+        window.supaShowLogin = origShowLogin;
+        _supa = saved.supa; _supaUser = saved.user; _sessionRestoreInProgress = saved.restoring;
+      }
+    });
+    if (r.skip) return;
+    expect(r.shown, 'no session yet during onboarding must never force the login screen').toBe(0);
+  });
+
+  // Regression guard: the exact same "nothing left to retry" scenario, without
+  // onboarding open, must still surface the login prompt (the fix is scoped to
+  // onboarding specifically, not a blanket disable of the recovery path).
+  test('_probeAndSync still forces the login screen when nothing is open and nothing can restore', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _probeAndSync !== 'function') return { skip: true };
+      const saved = { supa: _supa, user: _supaUser, restoring: _sessionRestoreInProgress };
+      const origShowLogin = window.supaShowLogin;
+      document.querySelectorAll('#onboarding-overlay').forEach(n => n.remove());
+      let shown = 0;
+      window.supaShowLogin = () => { shown++; };
+      try {
+        localStorage.removeItem('zp3_session_backup');
+        _supa = { auth: { getSession: () => Promise.resolve({ data: { session: null } }) } };
+        _supaUser = null;
+        _sessionRestoreInProgress = false;
+        await _probeAndSync();
+        return { skip: false, shown };
+      } finally {
+        window.supaShowLogin = origShowLogin;
+        _supa = saved.supa; _supaUser = saved.user; _sessionRestoreInProgress = saved.restoring;
+      }
+    });
+    if (r.skip) return;
+    expect(r.shown, 'a genuinely dead session outside onboarding must still surface the login prompt').toBeGreaterThanOrEqual(1);
+  });
+
+  // ── Regression: the tick must try the SDK's own getSession() BEFORE falling
+  // back to the hand-maintained zp3_session_backup, a transient blip that outlasted
+  // the boot's own retry still deserves another shot at the real session, not an
+  // immediate drop to the shadow copy (or worse, straight to "show login").
+  test('_probeAndSync recovers via getSession() directly, without ever touching the session backup', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _probeAndSync !== 'function' || typeof _onReconnect !== 'function') return { skip: true };
+      const saved = {
+        supa: _supa, user: window._supaUser, restoring: window._sessionRestoreInProgress,
+        onReconnect: window._onReconnect,
+      };
+      let reconnected = false, setSessionCalled = false;
+      window._onReconnect = () => { reconnected = true; };
+      try {
+        localStorage.setItem('zp3_session_backup', JSON.stringify({ access_token: 'stale-at', refresh_token: 'stale-rt' }));
+        _supa = {
+          auth: {
+            getSession: () => Promise.resolve({ data: { session: { user: { id: 'recovered-u' } } } }),
+            setSession: () => { setSessionCalled = true; return Promise.resolve({ data: { session: null } }); },
+          },
+        };
+        window._supaUser = null;
+        window._sessionRestoreInProgress = false;
+        await _probeAndSync();
+        return { skip: false, reconnected, setSessionCalled, recoveredUser: window._supaUser?.id };
+      } finally {
+        window._onReconnect = saved.onReconnect;
+        _supa = saved.supa; window._supaUser = saved.user; window._sessionRestoreInProgress = saved.restoring;
+        localStorage.removeItem('zp3_session_backup');
+      }
+    });
+    if (r.skip) return;
+    expect(r.recoveredUser, 'getSession() result must be adopted as the live user').toBe('recovered-u');
+    expect(r.reconnected, 'a recovered session must drive reconnect').toBe(true);
+    expect(r.setSessionCalled, 'the backup path must never be tried once getSession() itself recovers').toBe(false);
+  });
+
   test('supaSaveToCloud: calls without throwing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof supaSaveToCloud !== 'function') return { skip: true };
@@ -3835,6 +5112,21 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // Owner report 2026-08-22 (live device, iPhone with Dynamic Island): the mobile
+  // header rendered UNDER the status bar/Dynamic Island, a flat 16px top padding
+  // is nowhere near env(safe-area-inset-top) on a Pro-model iPhone (§15: a layout
+  // bleed like this is a defect, same severity as a broken function).
+  test('renderObStep: mobile header clears the notch/Dynamic Island safe area', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof renderObStep !== 'function') return { skip: true };
+      renderObStep();
+      const hdr = document.getElementById('ob-mobile-hdr');
+      return { skip: false, usesSafeArea: !!hdr && /env\(safe-area-inset-top\)/.test(hdr.getAttribute('style') || '') };
+    });
+    if (result.skip) return;
+    expect(result.usesSafeArea, 'header top padding must clear env(safe-area-inset-top), not a flat px value').toBe(true);
+  });
+
   test('obSelectType: calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof obSelectType !== 'function') return { skip: true };
@@ -3918,6 +5210,203 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     expect(result.askCopy, 'step asks how they want to get paid').toBe(true);
   });
 
+  // Owner, 2026-08-26, after watching a real signup: the take-cards row was
+  // hand-rolled in green while cash/check/pay-later used the shared blue
+  // obPayRow. It did not read as "recommended", it read as a warning. Jack
+  // stopped on it, read it, and switched card payments OFF. All four rows are
+  // one helper now, so the styling cannot drift apart again.
+  test('obStep8: all four payment rows are styled identically, no odd one out', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obStep8 !== 'function') return { skip: true };
+      _ob.acceptCash = true; _ob.acceptCheck = true; _ob.allowPayLater = true; _ob.wantCards = true;
+      const el = document.createElement('div');
+      el.id = 'ob-body'; document.body.appendChild(el);
+      obStep8(el);
+      const keys = ['acceptCash', 'acceptCheck', 'allowPayLater', 'wantCards'];
+      const rows = keys.map(k => el.querySelector('#obpay-' + k));
+      const sig = rows.map(r => {
+        if (!r) return null;
+        const cs = getComputedStyle(r);
+        const box = r.querySelector('input');
+        return [cs.backgroundColor, cs.borderTopColor, cs.borderTopWidth,
+                getComputedStyle(box).accentColor,
+                getComputedStyle(r.querySelector('div > div')).color].join('|');
+      });
+      const html = el.innerHTML;
+      const r = {
+        allPresent: rows.every(Boolean),
+        distinct: Array.from(new Set(sig)).length,
+        greenLeft: /#f0fdf4|#86efac|#166534|#16a34a/i.test(html),
+        cardsCopy: /get paid online/i.test(el.textContent),
+      };
+      el.remove();
+      return r;
+    });
+    if (result.skip) return;
+    expect(result.allPresent, 'all four rows render').toBe(true);
+    expect(result.distinct, 'one shared visual signature across all four').toBe(1);
+    expect(result.greenLeft, 'no hand-rolled green hex survives in the markup').toBe(false);
+    // ASSERTION UPDATED 2026-08-26 (10.4). This matched /take cards/ when the
+    // label WAS "Take cards & bank transfers". The owner replaced it because
+    // that phrasing read as intimidating; the row itself is unchanged, only
+    // the words are, so the check follows the new label rather than pinning
+    // copy the owner deliberately moved on from.
+    expect(result.cardsCopy, 'the card row renders its copy').toBe(true);
+  });
+
+  // Owner, 2026-08-26: "Take cards and bank transfers sounds intimidating as
+  // fuck, how do we narrow it down to them wanting to use it, not seeing the
+  // fee ticking tail and checking it off." Nobody opts INTO a percentage. The
+  // label is the outcome now and the fee sits last, still stated, because
+  // hiding it would be worse than leading with it.
+  test('obStep8: the card row sells the outcome, and the fee is not the headline', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof obStep8 !== 'function') return { skip: true };
+      _ob.wantCards = true;
+      const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
+      obStep8(el);
+      const row = el.querySelector('#obpay-wantCards');
+      const label = row.querySelector('div > div').textContent.trim();
+      const body = row.querySelector('div > div:nth-child(2)').textContent.trim();
+      const out = {
+        label,
+        feeIdx: body.search(/2\.9%/),
+        bodyLen: body.length,
+        saysDeposit: /deposit lands in your bank/i.test(body),
+        saysNothingToSetUp: /nothing to set up now/i.test(body),
+        stillStatesFee: /2\.9%/.test(body),
+      };
+      el.remove();
+      return out;
+    });
+    if (r.skip) return;
+    expect(r.label, 'the label is the outcome, not the mechanism').toBe('Get paid online');
+    expect(r.label).not.toMatch(/take cards/i);
+    expect(r.saysDeposit, 'it leads with the money arriving').toBe(true);
+    expect(r.saysNothingToSetUp, 'and with the fact that nothing is owed right now').toBe(true);
+    expect(r.stillStatesFee, 'the fee is still disclosed, never hidden').toBe(true);
+    expect(r.feeIdx / r.bodyLen, 'but it sits in the last third, not the first line')
+      .toBeGreaterThan(0.6);
+  });
+
+  // Owner 2026-08-26: "never got prompted to do location when we onboarded
+  // him." There was no location step in signup at all. Placed after Get paid
+  // on the owner's call.
+  test.describe('obStepLocation: the signup location ask', () => {
+    const render = () => page.evaluate(() => {
+      if (typeof obStepLocation !== 'function') return { skip: true };
+      let el = document.getElementById('ob-body');
+      if (!el) { el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el); }
+      const p = obStepLocation();
+      return { skip: false, text: el.textContent, html: el.innerHTML, pending: !!window._obGeoAnswer };
+    });
+
+    test('it renders the ask and waits rather than resolving on its own', async () => {
+      const r = await render();
+      if (r.skip) return;
+      expect(r.pending, 'it parks until the person answers').toBe(true);
+      expect(/log your miles and hours automatically/i.test(r.text)).toBe(true);
+      expect(/always/i.test(r.text), 'it tells them which choice actually works').toBe(true);
+      expect(/turn on location/i.test(r.text)).toBe(true);
+      expect(/not now/i.test(r.text), 'skipping is a first-class answer').toBe(true);
+      await page.evaluate(() => window._obGeoAnswer && window._obGeoAnswer(false));
+    });
+
+    test('answering resolves with the choice, and only once', async () => {
+      const r = await page.evaluate(async () => {
+        if (typeof obStepLocation !== 'function') return { skip: true };
+        let el = document.getElementById('ob-body');
+        if (!el) { el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el); }
+        const yes = obStepLocation();
+        window._obGeoAnswer(true);
+        const a = await yes;
+        const goneAfter = !window._obGeoAnswer;
+        const no = obStepLocation();
+        window._obGeoAnswer(false);
+        const b = await no;
+        return { skip: false, a, b, goneAfter };
+      });
+      if (r.skip) return;
+      expect(r.a, 'Turn on location resolves true').toBe(true);
+      expect(r.b, 'Not now resolves false').toBe(false);
+      expect(r.goneAfter, 'the handler is torn down so a stray tap cannot re-answer').toBe(true);
+    });
+
+    // Owner, 2026-08-26: "turn on location needs to be at bottom and not now a
+    // soft grey where turn on screams at ya." Both buttons used to sit right
+    // under the copy with half a screen empty below, and Not now was a full
+    // bordered secondary the same size as the primary, so they read as a coin
+    // flip when one of them is the thing the product runs on.
+    test('the actions sit at the bottom and the decline recedes', async () => {
+      const r = await page.evaluate(async () => {
+        if (typeof obStepLocation !== 'function') return { skip: true };
+        let el = document.getElementById('ob-body');
+        if (!el) { el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el); }
+        const p = obStepLocation();
+        const btns = Array.from(el.querySelectorAll('button'));
+        const on = btns.find(b => /turn on location/i.test(b.textContent));
+        const not = btns.find(b => /not now/i.test(b.textContent));
+        // Anchor on the explanatory paragraph by its text, not by position: the
+        // step gained a flex wrapper, so 'div > div' silently started matching
+        // a different node and the measurement went negative.
+        const copy = Array.from(el.querySelectorAll('div'))
+          .filter(d => /your phone will ask next/i.test(d.textContent) && d.children.length <= 1).pop();
+        const cs = (n) => getComputedStyle(n);
+        const out = {
+          skip: false,
+          order: btns.map(b => b.textContent.trim()),
+          pushedDown: not.getBoundingClientRect().top - copy.getBoundingClientRect().bottom,
+          onIsLowest: on.getBoundingClientRect().top > not.getBoundingClientRect().top,
+          onWeight: cs(on).fontWeight, notWeight: cs(not).fontWeight,
+          onBg: cs(on).backgroundColor, notBg: cs(not).backgroundColor,
+          notBorder: cs(not).borderTopWidth,
+          onSize: parseFloat(cs(on).fontSize), notSize: parseFloat(cs(not).fontSize),
+        };
+        window._obGeoAnswer && window._obGeoAnswer(false);
+        await p;
+        return out;
+      });
+      if (r.skip) return;
+      // ORDER FLIPPED 2026-08-26 (10.4) on the owner's call: the bottom-most
+      // control is the one a thumb already rests on, so the action we want
+      // takes that slot and the decline sits above it. Reading order would put
+      // the primary first; reach puts it last, and reach is what gets tapped.
+      expect(r.order, 'the decline sits above, the real choice is bottom-most').toEqual(['Not now', 'Turn on location']);
+      expect(r.pushedDown, 'a spacer drives the actions toward the thumb').toBeGreaterThan(100);
+      expect(r.onIsLowest, 'and the one we want sits lowest of all').toBe(true);
+      expect(Number(r.onWeight), 'the primary is heavy').toBeGreaterThanOrEqual(600);
+      expect(Number(r.notWeight), 'the decline is lighter').toBeLessThan(Number(r.onWeight));
+      expect(r.onSize, 'and larger').toBeGreaterThan(r.notSize);
+      expect(r.notBg, 'the decline has no fill of its own').toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+      expect(parseFloat(r.notBorder), 'and no border, so it is not a second button').toBe(0);
+      expect(r.onBg, 'while the primary is a solid slab').not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+    });
+
+    test('it never fires the OS prompt itself', async () => {
+      // The prompt must come from the caller AFTER the overlay is gone: iOS
+      // draws its alert over the top window, and firing it under a full-screen
+      // overlay that is being torn down is how a prompt gets dismissed by the
+      // teardown instead of by the person.
+      const r = await page.evaluate(async () => {
+        if (typeof obStepLocation !== 'function') return { skip: true };
+        let el = document.getElementById('ob-body');
+        if (!el) { el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el); }
+        let asked = 0;
+        const real = window._geoRequestPermission, realSet = window._geoSetConsent;
+        window._geoRequestPermission = () => { asked++; };
+        window._geoSetConsent = () => { asked++; };
+        try {
+          const p = obStepLocation();
+          window._obGeoAnswer(true);
+          await p;
+          return { skip: false, asked };
+        } finally { window._geoRequestPermission = real; window._geoSetConsent = realSet; }
+      });
+      if (r.skip) return;
+      expect(r.asked, 'rendering and answering the step asks the OS nothing').toBe(0);
+    });
+  });
+
   test('obTogglePay: flips the _ob flag off and re-renders the row', async () => {
     const result = await page.evaluate(() => {
       if (typeof obTogglePay !== 'function' || typeof obStep8 !== 'function') return { skip: true };
@@ -3935,7 +5424,15 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
   // Booked-jobs import step (owner 2026-07-14): onboarding step 10 imports work
   // already sold, each row becomes a lead + a job on the calendar.
   // 3-step wizard (§9.9): step 1 merges account + core business into one screen.
-  test('obStepAccount: step 1 renders account + business fields + social sign-in', async () => {
+  // Owner decision 2026-08-22: brand-new signups are email-only, no social
+  // buttons on account creation at all, on any platform. Apple/Google
+  // sign-in only ever shows for a RETURNING contractor whose account already
+  // has that method linked (the identifier-first login gate), never as a way
+  // to CREATE one. This closes off the whole class of problem chased
+  // tonight (prefilled relay emails, duplicate accounts, matching text
+  // against a hidden address) at the root: if social sign-in can never
+  // create a new account, none of that can happen, full stop.
+  test('obStepAccount: step 1 is email-only, no Google or Apple offered on account creation', async () => {
     const result = await page.evaluate(() => {
       if (typeof obStepAccount !== 'function') return { skip: true };
       document.getElementById('onboarding-overlay')?.remove();
@@ -3955,7 +5452,31 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     if (result.skip) return;
     expect(result.title, 'account header shows').toBe(true);
     expect(result.fields, 'name/email/password/business/phone/state all present').toBe(true);
-    expect(result.google && result.apple, 'Google + Apple sign-in offered').toBe(true);
+    expect(result.google, 'no Google button on account creation').toBe(false);
+    expect(result.apple, 'no Apple button on account creation').toBe(false);
+  });
+
+  test('obStepAccount: still email-only on the native iOS shell too, nothing platform-specific to create an account', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obStepAccount !== 'function') return { skip: true };
+      const realCap = window.Capacitor;
+      document.getElementById('onboarding-overlay')?.remove();
+      document.querySelectorAll('#ob-body,#ob-err').forEach(n => n.remove());
+      const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
+      try {
+        window.Capacitor = { isNativePlatform: () => true };
+        obStepAccount(el);
+        const r = {
+          google: /continue with google/i.test(el.textContent),
+          apple: /continue with apple/i.test(el.textContent),
+        };
+        el.remove();
+        return { skip: false, ...r };
+      } finally { window.Capacitor = realCap; }
+    });
+    if (result.skip) return;
+    expect(result.google).toBe(false);
+    expect(result.apple).toBe(false);
   });
 
   test('obNextAccount: validates and advances step 1 → 2', async () => {
@@ -4013,14 +5534,15 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
         launched: !!ov,
         oauthFlag: _ob.oauth === true,
         namePrefill: _ob.name === 'Grace Green',
-        emailPrefill: _ob.email === 'grace@greenpaint.com',
+        emailLeftBlank: _ob.email === '',
         // Must NOT leave a sticky global flag (that would wedge future sign-ins).
         noStickyFlag: window._obInProgress === _obBefore,
         reentryKept,
         header: /finish setting up/i.test(txt),
-        noEmailField: !document.getElementById('ob-email'),
+        hasEmailField: !!document.getElementById('ob-email'),
         noPassField: !document.getElementById('ob-pass'),
         noSocial: !/continue with google/i.test(txt),
+        hasEscapeHatch: !!document.getElementById('ob-already-have-account'),
         hasBusiness: !!document.getElementById('ob-bname') && !!document.getElementById('ob-bphone') && !!document.getElementById('ob-state'),
       };
       ov?.remove();
@@ -4032,35 +5554,161 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     expect(result.launched, 'onboarding overlay opened').toBe(true);
     expect(result.oauthFlag, '_ob.oauth set').toBe(true);
     expect(result.namePrefill, 'name prefilled from provider').toBe(true);
-    expect(result.emailPrefill, 'email prefilled from provider').toBe(true);
+    // Owner report 2026-08-22 (live device, real signup): prefilling Apple's own
+    // email here was the actual bug, a private-relay address (or any address
+    // that isn't obviously "theirs") landing pre-typed read as broken. Email is
+    // now left blank on purpose, the contractor types the one they want.
+    expect(result.emailLeftBlank, 'email must NOT be prefilled from the provider').toBe(true);
     expect(result.noStickyFlag, '_beginOAuthOnboarding leaves no sticky _obInProgress flag').toBe(true);
     expect(result.reentryKept, 'a second call while onboarding is open does not restart/wipe answers').toBe(true);
     expect(result.header, '"Finish setting up" header shown, not "Create your account"').toBe(true);
-    expect(result.noEmailField && result.noPassField, 'no email/password fields in oauth mode').toBe(true);
+    // Original behavior: oauth mode showed no email field at all and silently
+    // trusted whatever the provider sent (owner incident 2026-08-21: that was
+    // Apple's private-relay address with nothing on screen to correct it).
+    // First fix (same day): show the field, prefilled from the provider. Owner
+    // report on a real device the next day: the prefill itself read as broken.
+    // Final behavior: the field IS shown, but starts blank, the contractor types
+    // the email they want. Password stays hidden, the session is already
+    // authenticated.
+    expect(result.hasEmailField, 'email field shown (editable) even in oauth mode').toBe(true);
+    expect(result.noPassField, 'no password field in oauth mode').toBe(true);
     expect(result.noSocial, 'no social buttons inside oauth-mode onboarding').toBe(true);
+    // Owner decision 2026-08-21: no email match can catch a private-relay or
+    // otherwise-mismatched provider email against an existing password account,
+    // so oauth onboarding offers an explicit way out instead of guessing.
+    expect(result.hasEscapeHatch, '"Already have an account? Sign in instead" link shown in oauth mode').toBe(true);
     expect(result.hasBusiness, 'business name/phone/state still collected').toBe(true);
   });
 
-  test('obNextAccount (oauth): advances to trade with no email/password, provider email kept', async () => {
+  // Owner report 2026-08-22 (live device, real signup): _beginOAuthOnboarding no
+  // longer prefills email from the provider (a private-relay address landing
+  // pre-typed read as broken), so this now matches the real starting state:
+  // blank email, same "must type one to continue" validation as the password path.
+  test('obNextAccount (oauth): advances to trade with no password, blank email must be typed before continuing', async () => {
     const result = await page.evaluate(() => {
       if (typeof obNextAccount !== 'function' || typeof obStepAccount !== 'function') return { skip: true };
       const _savedOb = _ob; const _origRender = window.renderObStep; window.renderObStep = () => {};
       document.querySelectorAll('#ob-body,#ob-err').forEach(n => n.remove());
       const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
-      _ob = { ..._savedOb, step: 1, oauth: true, name: 'Grace Green', email: 'grace@greenpaint.com', businessName: '', phone: '', state: '' };
+      _ob = { ..._savedOb, step: 1, oauth: true, name: 'Grace Green', email: '', businessName: '', phone: '', state: '' };
       obStepAccount(el);
-      // No email/password inputs exist in oauth mode; fill only the business fields.
       el.querySelector('#ob-name').value = 'Grace Green';
       el.querySelector('#ob-bname').value = 'Green Painting';
       el.querySelector('#ob-bphone').value = '316-555-0100';
       el.querySelector('#ob-state').value = 'KS';
+      obNextAccount(); // email field is still blank, must block same as the password path
+      const blockedOnBlankEmail = _ob.step === 1;
+      el.querySelector('#ob-email').value = 'grace@greenpaint.com';
       obNextAccount();
       const advanced = _ob.step === 2 && _ob.businessName === 'Green Painting' && _ob.state === 'KS' && _ob.email === 'grace@greenpaint.com';
+      el.remove(); window.renderObStep = _origRender; _ob = _savedOb; _ob.oauth = false;
+      return { blockedOnBlankEmail, advanced };
+    });
+    if (result.skip) return;
+    expect(result.blockedOnBlankEmail, 'a blank email must block advancing, oauth mode is not exempt').toBe(true);
+    expect(result.advanced, 'typing a real email advances normally').toBe(true);
+  });
+
+  // Owner decision 2026-08-21: a first-time Apple/Google signup no longer
+  // silently trusts whatever email the provider sent (that used to be Apple's
+  // private-relay address with no way to correct it). The contractor can edit
+  // the prefilled value, and the edit must be what actually lands on the account.
+  test('obNextAccount (oauth): editing the prefilled email overrides the provider value', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obNextAccount !== 'function' || typeof obStepAccount !== 'function') return { skip: true };
+      const _savedOb = _ob; const _origRender = window.renderObStep; window.renderObStep = () => {};
+      document.querySelectorAll('#ob-body,#ob-err').forEach(n => n.remove());
+      const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
+      _ob = { ..._savedOb, step: 1, oauth: true, name: 'Grace Green', email: '9x7f2k@privaterelay.appleid.com', businessName: '', phone: '', state: '' };
+      obStepAccount(el);
+      el.querySelector('#ob-name').value = 'Grace Green';
+      el.querySelector('#ob-email').value = 'grace@greenpaint.com'; // the contractor's real inbox, typed over the relay address
+      el.querySelector('#ob-bname').value = 'Green Painting';
+      el.querySelector('#ob-bphone').value = '316-555-0100';
+      el.querySelector('#ob-state').value = 'KS';
+      obNextAccount();
+      const advanced = _ob.step === 2 && _ob.email === 'grace@greenpaint.com';
       el.remove(); window.renderObStep = _origRender; _ob = _savedOb; _ob.oauth = false;
       return { advanced };
     });
     if (result.skip) return;
-    expect(result.advanced, 'oauth step 1 advances with no email/password, provider email preserved').toBe(true);
+    expect(result.advanced, 'the typed-over email wins, not the private-relay address the provider sent').toBe(true);
+  });
+
+  test('obStepAccount (oauth): private-relay email shows the explanatory hint, a real email does not', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obStepAccount !== 'function') return { skip: true };
+      const _savedOb = _ob;
+      document.querySelectorAll('#ob-body').forEach(n => n.remove());
+      const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
+      _ob = { ..._savedOb, oauth: true, email: '9x7f2k@privaterelay.appleid.com' };
+      obStepAccount(el);
+      const relayHintShown = /hid your real email/i.test(el.textContent);
+      _ob = { ..._savedOb, oauth: true, email: 'grace@greenpaint.com' };
+      obStepAccount(el);
+      const realEmailHintHidden = !/hid your real email/i.test(el.textContent);
+      el.remove(); _ob = _savedOb;
+      return { relayHintShown, realEmailHintHidden };
+    });
+    if (result.skip) return;
+    expect(result.relayHintShown, 'a privaterelay.appleid.com address shows the explanatory hint').toBe(true);
+    expect(result.realEmailHintHidden, 'a normal email shows no relay hint').toBe(true);
+  });
+
+  // Owner decision 2026-08-21: since no automatic check can catch a returning
+  // contractor whose Apple/Google email doesn't match their existing password
+  // account, the escape hatch has to actually work, sign out of the fresh
+  // duplicate-risk session and drop them at login rather than leave them stuck.
+  test('_obAlreadyHaveAccount: signs out, closes onboarding, and routes to login', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _obAlreadyHaveAccount !== 'function') return { skip: true };
+      const savedSupa = _supa, savedShowLogin = window.supaShowLogin;
+      document.querySelectorAll('#onboarding-overlay,#supa-login-err').forEach(n => n.remove());
+      const ov = document.createElement('div'); ov.id = 'onboarding-overlay'; document.body.appendChild(ov);
+      const loginErrEl = document.createElement('div'); loginErrEl.id = 'supa-login-err'; document.body.appendChild(loginErrEl);
+      let signOutCalled = false, showLoginCalled = false;
+      try {
+        _supa = { ...savedSupa, auth: { ...savedSupa.auth, signOut: () => { signOutCalled = true; return Promise.resolve({ error: null }); } } };
+        window.supaShowLogin = () => { showLoginCalled = true; };
+        await _obAlreadyHaveAccount();
+        const overlayGone = !document.getElementById('onboarding-overlay');
+        // The error line is written inside a setTimeout(...,150).
+        await new Promise(res => setTimeout(res, 300));
+        const errText = document.getElementById('supa-login-err')?.textContent;
+        return { skip: false, signOutCalled, showLoginCalled, overlayGone, errText };
+      } finally {
+        document.querySelectorAll('#onboarding-overlay,#supa-login-err').forEach(n => n.remove());
+        _supa = savedSupa; window.supaShowLogin = savedShowLogin;
+      }
+    });
+    if (result.skip) return;
+    expect(result.signOutCalled, 'the just-created duplicate-risk session is signed out').toBe(true);
+    expect(result.overlayGone, 'onboarding overlay is removed').toBe(true);
+    expect(result.showLoginCalled, 'routes to the login screen').toBe(true);
+    expect(result.errText).toBe('Sign in with your original method below.');
+  });
+
+  test('_obAlreadyHaveAccount: a signOut failure still closes onboarding and reaches login (fail open)', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _obAlreadyHaveAccount !== 'function') return { skip: true };
+      const savedSupa = _supa, savedShowLogin = window.supaShowLogin;
+      document.querySelectorAll('#onboarding-overlay,#supa-login-err').forEach(n => n.remove());
+      const ov = document.createElement('div'); ov.id = 'onboarding-overlay'; document.body.appendChild(ov);
+      let showLoginCalled = false, threw = null;
+      try {
+        _supa = { ...savedSupa, auth: { ...savedSupa.auth, signOut: () => Promise.reject(new Error('network unreachable')) } };
+        window.supaShowLogin = () => { showLoginCalled = true; };
+        try { await _obAlreadyHaveAccount(); } catch (e) { threw = e.message; }
+        return { skip: false, threw, showLoginCalled, overlayGone: !document.getElementById('onboarding-overlay') };
+      } finally {
+        document.querySelectorAll('#onboarding-overlay,#supa-login-err').forEach(n => n.remove());
+        _supa = savedSupa; window.supaShowLogin = savedShowLogin;
+      }
+    });
+    if (result.skip) return;
+    expect(result.threw, 'a signOut network failure must never throw out to the caller').toBe(null);
+    expect(result.overlayGone, 'onboarding still closes even if signOut fails').toBe(true);
+    expect(result.showLoginCalled, 'still reaches the login screen even if signOut fails').toBe(true);
   });
 
   test('onboarding restructure, cut steps are actually gone (§7.1)', async () => {
@@ -5143,6 +6791,32 @@ test.describe('Finance money and books page functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // Owner report 2026-08-20 (Dynamic Island regression, see js/dashboard.js
+  // openBidDetail and js/clients.js openClientProposals for the sibling
+  // fixes): this full-screen overlay's sticky header must reserve
+  // env(safe-area-inset-top) or its "Signed Proposal / Close" bar collides
+  // with the iOS status bar.
+  test('viewSavedProposal: sticky header reserves the iOS safe-area top inset', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof viewSavedProposal !== 'function') return { skip: true };
+      document.querySelector('[data-pov]')?.remove();
+      const fakeBid = { id: 890092, proposalHtml: '<p>x</p>', signedAt: new Date().toISOString() };
+      bids.unshift(fakeBid);
+      try {
+        viewSavedProposal(890092);
+        const ov = document.querySelector('[data-pov]');
+        const header = ov?.firstElementChild;
+        return { skip: false, exists: !!ov, hasInset: !!header && header.getAttribute('style').includes('env(safe-area-inset-top)') };
+      } finally {
+        bids.shift();
+        document.querySelector('[data-pov]')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.exists).toBe(true);
+    expect(result.hasInset).toBe(true);
+  });
+
   test('openBidHistoryDetail: calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof openBidHistoryDetail !== 'function') return { skip: true };
@@ -6202,6 +7876,11 @@ test.describe('Proposals photo, hub, contract, and form functions', () => {
         window.Capacitor = realCap;
         _supa.auth.signInWithIdToken = realIdToken;
         _supa.auth.signInWithOAuth = realOAuth;
+        // A successful mock never hits _obOAuth's own failure-path cleanup
+        // (that only clears the flag on a rejected/missing-plugin sheet), so
+        // this test would otherwise leak _nativeSocialAuthPending='apple'
+        // into every test that runs after it on this file's shared page.
+        window._nativeSocialAuthPending = null;
       }
     });
     expect(r.clientId).toBe('app.tradedesk.beta');
@@ -8218,6 +9897,39 @@ test.describe('Version consistency', () => {
     expect(r.userStillNull, 'nothing invented when nothing is cached').toBe(true);
   });
 
+  test('boot skeletons are component-shaped per widget, never one generic blob', async () => {
+    // Owner 2026-08-14: every tile gets its OWN shimmer shaped like itself.
+    // The KPI widget shimmers as six metric tiles, quick actions as three
+    // round buttons, the calendar as a seven-cell week, and an unknown
+    // widget still falls back to generic rows rather than a blank hole.
+    const r = await page.evaluate(() => {
+      const saved = { pending: window._bootSyncPending, done: window._bootSkelDone, timer: window._bootSkelTimer };
+      try {
+        goPg('pg-dash');
+        document.getElementById('pg-dash').classList.add('active');
+        window._bootSyncPending = true; window._bootSkelDone = false;
+        _dashApplySkeletons();
+        const shape = (dw) => document.querySelector('#dash-widget-root>.td-dw[data-dw="' + dw + '"]>.td-boot-skel');
+        const kpi = shape('kpi'), quick = shape('quick'), cal = shape('calendar');
+        return {
+          kpiTiles: kpi ? kpi.querySelectorAll(':scope>div>div').length : 0,
+          quickButtons: quick ? quick.querySelectorAll('.td-skel[style*="border-radius:14px"]').length : 0,
+          calCells: cal ? cal.querySelectorAll('div[style*="repeat(7"] .td-skel').length : 0,
+          fallbackHasRows: _tdSkelShape('никто', 120).includes('td-skel'),
+        };
+      } finally {
+        _dashClearSkeletons();
+        window._bootSyncPending = saved.pending; window._bootSkelDone = saved.done;
+        try { clearTimeout(window._bootSkelTimer); } catch (e) {}
+        window._bootSkelTimer = saved.timer;
+      }
+    });
+    expect(r.kpiTiles, 'the KPI skeleton is six tiles').toBe(6);
+    expect(r.quickButtons, 'quick actions skeleton is three round buttons').toBe(3);
+    expect(r.calCells, 'the calendar skeleton is a seven-cell week').toBe(7);
+    expect(r.fallbackHasRows, 'unknown widgets fall back to generic shimmer rows').toBe(true);
+  });
+
   test('the boot SDK fallback calls the identity restore before rendering', () => {
     const fs = require('fs');
     const path = require('path');
@@ -8226,6 +9938,46 @@ test.describe('Version consistency', () => {
     expect(fb, 'the SDK fallback exists').toBeGreaterThan(0);
     expect(html.slice(fb, fb + 400), 'fallback restores identity from the device cache')
       .toContain('_restoreIdentityFromCache');
+  });
+
+  // ── Regression: the two "no live session, restore from zp3_cloud_cache" boot
+  // fallbacks in cloud.js (offline blip on a fresh boot, and Supabase init itself
+  // throwing) restore clients/bids/settings from the cache but never set _user, so
+  // getUserName() returns '' and the greeting renders with no name (owner report:
+  // "got offline banner and no name on the greeting at the top" is the fingerprint
+  // that a boot fell into one of these paths). Same fix as the SDK fallback above,
+  // reusing _restoreIdentityFromCache rather than duplicating its restore logic.
+  test('both zp3_cloud_cache boot fallbacks also restore identity, not just data', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const cloud = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+    const noSession = cloud.indexOf("zp3_cloud_cache (no-session boot)");
+    const initFailed = cloud.indexOf("zp3_cloud_cache (offline boot, session present)");
+    expect(noSession, 'the no-session cache-restore branch exists').toBeGreaterThan(0);
+    expect(initFailed, 'the Supabase-init-failure cache-restore branch exists').toBeGreaterThan(0);
+    expect(cloud.slice(noSession, noSession + 600), 'no-session boot restores identity too')
+      .toContain('_restoreIdentityFromCache');
+    expect(cloud.slice(initFailed, initFailed + 600), 'init-failure boot restores identity too')
+      .toContain('_restoreIdentityFromCache');
+  });
+
+  // ── Regression: a stored auth token whose access token has expired makes
+  // getSession() attempt a network refresh, and a native cold launch right after
+  // the app resumes from a suspended background state can lose that first race
+  // even on a genuinely online device (iOS reports the radio connected a beat
+  // before the network path is actually usable). Before this fix, getSession()
+  // returning null was a single-shot decision straight into offline/cache mode.
+  // Now a stored-token boot gets one bounded retry first.
+  test('a stored-token boot retries getSession() once before falling back to offline/cache mode', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const cloud = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+    const gs = cloud.indexOf('let{data:{session}}=await _supa.auth.getSession();');
+    expect(gs, 'the boot session check exists').toBeGreaterThan(0);
+    const window_ = cloud.slice(gs, gs + 1500);
+    expect(window_, 'retries getSession() when the first check found nothing').toContain('await _supa.auth.getSession()');
+    expect(window_, 'only retries when a stored token actually exists (never delays a genuine sign-out)').toContain('_hadToken');
+    expect(window_, 'waits a beat before retrying, not an immediate re-check').toMatch(/setTimeout\(r,\s*\d+\)/);
   });
 
   test('the SDK-less state is never permanent: a retry loop re-injects the SDK and boots live in place', () => {
@@ -8493,5 +10245,503 @@ test.describe('Haptics bridge', () => {
 
   test('no console errors during haptics tests', async () => {
     assertNoErrors(page, 'haptics bridge');
+  });
+});
+
+// ── Native Sign in with Apple: onboarding-routing fix (owner incident 2026-08-21) ──
+// The native Apple sheet never reloads (unlike the browser-redirect path), so it
+// lands in the IN-TAB SIGNED_IN handler instead of boot. That handler used to have
+// no way to tell "first native social signup" apart from "same-device account
+// switch" and silently rendered an empty dashboard. The fix: _obOAuth sets a
+// one-shot window._nativeSocialAuthPending flag right before the native sheet
+// opens; the SIGNED_IN handler's brand-new-account branch consumes it to route
+// into onboarding instead. The same flag doubles as a re-entry guard: a second
+// tap while a sheet is already in flight is a no-op, so a losing first attempt's
+// cleanup can never clear a second attempt's still-pending flag out from under it.
+test.describe('Sign in with Apple: native onboarding routing fix (2026-08-21)', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => { window.location.reload = () => {}; window._activePg = 'pg-dash'; });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('_obOAuth(\'apple\') sets _nativeSocialAuthPending before the native sheet opens, clears it on failure', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const realCache = window._applePluginCache;
+      try {
+        // A cancel-shaped rejection (matches the /cancel|1001/i regex) so the
+        // flag-clearing path is exercised without the deliberate console.error
+        // the code fires for every OTHER kind of failure (that path is a
+        // different, existing behavior, not what this test is about).
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: (name) => name === 'SignInWithApple' ? {
+            authorize: () => Promise.reject(new Error('User cancelled the authorization attempt')),
+          } : null,
+        };
+        window._applePluginCache = null; // force re-registration against this stub
+        window._nativeSocialAuthPending = null;
+        _obOAuth('apple');
+        // _obOAuth is synchronous up to the point it kicks off _obNativeApple();
+        // the flag is set BEFORE that call, so it must already be visible here,
+        // before anything has had a chance to await/settle.
+        const immediatelyAfterCall = window._nativeSocialAuthPending;
+        await new Promise(res => setTimeout(res, 150));
+        const afterSettle = window._nativeSocialAuthPending;
+        return { immediatelyAfterCall, afterSettle };
+      } finally {
+        window.Capacitor = realCap;
+        window._applePluginCache = realCache;
+      }
+    });
+    expect(r.immediatelyAfterCall, 'the flag is set synchronously before the native sheet opens').toBe('apple');
+    expect(r.afterSettle, 'a rejected/cancelled sheet clears the flag').toBe(null);
+  });
+
+  test('_obOAuth(\'apple\') clears _nativeSocialAuthPending when the plugin is entirely missing (handled===false)', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const realCache = window._applePluginCache;
+      try {
+        // registerPlugin resolves but hands back nothing usable, and there is
+        // no cap.Plugins fallback either: _obNativeApple's AppleP ends up null,
+        // so it resolves false (this shell build predates the plugin) rather
+        // than throwing.
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: () => null,
+        };
+        window._applePluginCache = null;
+        window._nativeSocialAuthPending = null;
+        const errEl = document.getElementById('supa-login-err');
+        const preErrText = errEl ? errEl.textContent : null;
+        _obOAuth('apple');
+        const immediatelyAfterCall = window._nativeSocialAuthPending;
+        await new Promise(res => setTimeout(res, 150));
+        const afterSettle = window._nativeSocialAuthPending;
+        const postErrText = errEl ? errEl.textContent : null;
+        if (errEl) errEl.textContent = preErrText || '';
+        return { immediatelyAfterCall, afterSettle, preErrText, postErrText };
+      } finally {
+        window.Capacitor = realCap;
+        window._applePluginCache = realCache;
+      }
+    });
+    expect(r.immediatelyAfterCall, 'the flag is set synchronously before the native sheet opens').toBe('apple');
+    expect(r.afterSettle, 'handled===false clears the flag').toBe(null);
+  });
+
+  test('SIGNED_IN handler routes a first-time native Apple signup to onboarding via _nativeSocialAuthPending, not straight to dashboard', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof window.__capturedAuthCallback !== 'function') return { skip: true };
+      const savedLoadAccountData = window.loadAccountData;
+      const savedBeginOAuth = window._beginOAuthOnboarding;
+      const savedSetStatus = window.supaSetStatus;
+      // _supaUser/_supaCloudLoaded/_loadedDataOwner are `let`-declared at cloud.js
+      // script scope (cloud.js:638, :1662), NOT window properties, a plain
+      // `window._supaUser=...` is a no-op against the real handler and leaves it
+      // reading whatever state earlier tests/boot left behind. Bare identifiers only.
+      const saved = {
+        supaUser: _supaUser, cloudLoaded: _supaCloudLoaded, loadedOwner: _loadedDataOwner,
+        obInProgress: window._obInProgress, pending: window._nativeSocialAuthPending,
+      };
+      let onboardCalls = 0, setStatusCalls = 0;
+      try {
+        // Preconditions for the SIGNED_IN handler's "brand-new account" branch:
+        // no data already in memory for this incoming id, and not mid-onboarding.
+        _supaUser = null;
+        _supaCloudLoaded = false;
+        _loadedDataOwner = null;
+        window._obInProgress = false;
+        window._nativeSocialAuthPending = 'apple';
+        // loadAccountData resolving false is the real "no accounts row yet" signal
+        // the handler branches on (js/cloud.js: `const hasAccount=await loadAccountData();`).
+        window.loadAccountData = async () => false;
+        window._beginOAuthOnboarding = () => { onboardCalls++; };
+        // renderDash/goPg('pg-dash') fire unconditionally early in this handler
+        // (cloud.js:2276, before hasAccount is even known) purely to avoid
+        // flashing a stale page during the load, so counting them can't tell the
+        // two branches apart. supaSetStatus('cloud') is only ever called from
+        // the direct-to-dashboard branch, never the onboarding-routing branch,
+        // that's the real signal for which path actually ran.
+        window.supaSetStatus = () => { setStatusCalls++; };
+        let threw = null;
+        try {
+          await window.__capturedAuthCallback('SIGNED_IN', { user: { id: 'native-apple-first-time-' + Date.now() } });
+        } catch (e) { threw = e.message; }
+        return { skip: false, threw, onboardCalls, setStatusCalls, pendingAfter: window._nativeSocialAuthPending };
+      } finally {
+        window.loadAccountData = savedLoadAccountData;
+        window._beginOAuthOnboarding = savedBeginOAuth;
+        window.supaSetStatus = savedSetStatus;
+        _supaUser = saved.supaUser; _supaCloudLoaded = saved.cloudLoaded; _loadedDataOwner = saved.loadedOwner;
+        window._obInProgress = saved.obInProgress; window._nativeSocialAuthPending = saved.pending;
+      }
+    });
+    if (r.skip) return;
+    expect(r.threw).toBe(null);
+    expect(r.onboardCalls, '_beginOAuthOnboarding must fire for a pending native Apple signup').toBe(1);
+    expect(r.setStatusCalls, 'must NOT take the direct-to-dashboard same-device-switch path').toBe(0);
+    expect(r.pendingAfter, 'the one-shot flag is consumed').toBe(null);
+  });
+
+  // Regression guard: the ORIGINAL same-device account-switch behavior (no
+  // native Apple sheet involved at all) must be completely unchanged.
+  test('SIGNED_IN handler still goes straight to dashboard for a genuine same-device account switch (no _nativeSocialAuthPending set)', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof window.__capturedAuthCallback !== 'function') return { skip: true };
+      const savedLoadAccountData = window.loadAccountData;
+      const savedBeginOAuth = window._beginOAuthOnboarding;
+      const savedSetStatus = window.supaSetStatus;
+      const saved = {
+        supaUser: _supaUser, cloudLoaded: _supaCloudLoaded, loadedOwner: _loadedDataOwner,
+        obInProgress: window._obInProgress, pending: window._nativeSocialAuthPending,
+      };
+      let onboardCalls = 0, setStatusCalls = 0;
+      try {
+        _supaUser = null;
+        _supaCloudLoaded = false;
+        _loadedDataOwner = null;
+        window._obInProgress = false;
+        window._nativeSocialAuthPending = null; // the flag genuinely never set
+        window.loadAccountData = async () => false; // still "no accounts row"
+        window._beginOAuthOnboarding = () => { onboardCalls++; };
+        window.supaSetStatus = () => { setStatusCalls++; };
+        let threw = null;
+        try {
+          await window.__capturedAuthCallback('SIGNED_IN', { user: { id: 'same-device-switch-' + Date.now() } });
+        } catch (e) { threw = e.message; }
+        return { skip: false, threw, onboardCalls, setStatusCalls, pendingAfter: window._nativeSocialAuthPending };
+      } finally {
+        window.loadAccountData = savedLoadAccountData;
+        window._beginOAuthOnboarding = savedBeginOAuth;
+        window.supaSetStatus = savedSetStatus;
+        _supaUser = saved.supaUser; _supaCloudLoaded = saved.cloudLoaded; _loadedDataOwner = saved.loadedOwner;
+        window._obInProgress = saved.obInProgress; window._nativeSocialAuthPending = saved.pending;
+      }
+    });
+    if (r.skip) return;
+    expect(r.threw).toBe(null);
+    expect(r.onboardCalls, 'must NOT hijack a real same-device account switch into onboarding').toBe(0);
+    expect(r.setStatusCalls, 'the original direct-to-dashboard behavior must still fire').toBe(1);
+    expect(r.pendingAfter).toBe(null);
+  });
+
+  // Owner question 2026-08-22: a returning contractor whose Apple sign-in used
+  // a hidden relay email (never confirmed the real-email sync) can land on the
+  // onboarding overlay via the identifier-first gate's "no account found"
+  // path, tap Continue with Apple there, and have Apple's own identity match
+  // (keyed on its stable id, not email) correctly find their REAL account
+  // anyway. goPg('pg-dash') only touches .pg elements, never the onboarding
+  // overlay (position:fixed, z-index:9999), so without an explicit removal
+  // the real dashboard loads UNDER a frozen-looking signup form, signed in
+  // but visually stuck. This is the regression guard for that gap.
+  test('SIGNED_IN handler removes a lingering onboarding overlay when the account actually already exists', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof window.__capturedAuthCallback !== 'function') return { skip: true };
+      const savedLoadAccountData = window.loadAccountData;
+      const savedLoadFromCloud = window.supaLoadFromCloud;
+      const saved = {
+        supaUser: _supaUser, cloudLoaded: _supaCloudLoaded, loadedOwner: _loadedDataOwner,
+        obInProgress: window._obInProgress, mergeOnSignIn: typeof _mergeOnSignIn !== 'undefined' ? _mergeOnSignIn : undefined,
+      };
+      document.querySelectorAll('#onboarding-overlay').forEach(n => n.remove());
+      const ov = document.createElement('div'); ov.id = 'onboarding-overlay'; document.body.appendChild(ov);
+      localStorage.removeItem('zp3_offline_pending');
+      try {
+        _supaUser = null;
+        _supaCloudLoaded = false;
+        _loadedDataOwner = null;
+        window._obInProgress = false;
+        if (typeof _mergeOnSignIn !== 'undefined') _mergeOnSignIn = false;
+        window.loadAccountData = async () => true; // the account genuinely already exists
+        window.supaLoadFromCloud = async () => {}; // real cloud load, irrelevant to this test
+        let threw = null;
+        try {
+          await window.__capturedAuthCallback('SIGNED_IN', { user: { id: 'apple-relay-returning-' + Date.now() } });
+        } catch (e) { threw = e.message; }
+        return { skip: false, threw, overlayGone: !document.getElementById('onboarding-overlay') };
+      } finally {
+        window.loadAccountData = savedLoadAccountData;
+        window.supaLoadFromCloud = savedLoadFromCloud;
+        document.querySelectorAll('#onboarding-overlay').forEach(n => n.remove());
+        _supaUser = saved.supaUser; _supaCloudLoaded = saved.cloudLoaded; _loadedDataOwner = saved.loadedOwner;
+        window._obInProgress = saved.obInProgress;
+        if (typeof _mergeOnSignIn !== 'undefined' && saved.mergeOnSignIn !== undefined) _mergeOnSignIn = saved.mergeOnSignIn;
+      }
+    });
+    if (r.skip) return;
+    expect(r.threw).toBe(null);
+    expect(r.overlayGone, 'the onboarding overlay must not linger over a real dashboard load').toBe(true);
+  });
+
+  test('_obOAuth(\'apple\') ignores a second tap while the first sheet is still in flight (double-tap race guard)', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const realCache = window._applePluginCache;
+      try {
+        let authorizeCalls = 0;
+        let rejectFirst;
+        const firstAttemptGate = new Promise((_res, rej) => { rejectFirst = rej; });
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: (name) => name === 'SignInWithApple' ? {
+            authorize: () => { authorizeCalls++; return firstAttemptGate; },
+          } : null,
+        };
+        window._applePluginCache = null;
+        window._nativeSocialAuthPending = null;
+        // First tap: opens the sheet, hangs mid-authorize (simulates the real
+        // multi-second Face ID prompt window a double-tap actually races).
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 20));
+        const pendingAfterFirstTap = window._nativeSocialAuthPending;
+        // Second tap while the first is still in flight: must be a no-op, not
+        // a second concurrent _obNativeApple() call.
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 20));
+        const pendingAfterSecondTap = window._nativeSocialAuthPending;
+        // Let the single real attempt settle. Cancel-shaped rejection, same as
+        // the other failure-path test, so this doesn't trip a real console.error.
+        rejectFirst(new Error('User cancelled the authorization attempt'));
+        await new Promise(res => setTimeout(res, 50));
+        return { authorizeCalls, pendingAfterFirstTap, pendingAfterSecondTap, pendingAfterResolve: window._nativeSocialAuthPending };
+      } finally {
+        window.Capacitor = realCap;
+        window._applePluginCache = realCache;
+      }
+    });
+    expect(r.pendingAfterFirstTap, 'first tap sets the flag').toBe('apple');
+    expect(r.pendingAfterSecondTap, 'second tap while pending changes nothing').toBe('apple');
+    expect(r.authorizeCalls, 'the native sheet must only ever open once for the overlapping taps').toBe(1);
+    expect(r.pendingAfterResolve, 'the single real attempt still cleans up its own flag').toBe(null);
+  });
+
+  // Root cause of the owner's live-device report (2026-08-22): "Continue
+  // with Face ID, clicked 15 times, no response." _obNativeApple() resolves
+  // `true` on a genuine SUCCESS, and the .then() callback used to only clear
+  // _nativeSocialAuthPending in the handled===false branch, never on
+  // success. One successful sign-in left the flag stuck at 'apple' for the
+  // rest of the page's life, so the re-entry guard at the top of _obOAuth
+  // silently no-op'd every later tap, no error, no feedback, exactly what
+  // sign-out-then-sign-back-in (no reload in between) now does routinely.
+  test('_obOAuth(\'apple\') clears _nativeSocialAuthPending on a genuine SUCCESS too, a later tap must actually re-enter', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const realCache = window._applePluginCache;
+      const savedSupa = _supa;
+      try {
+        let authorizeCalls = 0;
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: (name) => name === 'SignInWithApple' ? {
+            authorize: () => { authorizeCalls++; return Promise.resolve({ response: { identityToken: 'fake-token' } }); },
+          } : null,
+        };
+        _supa = { ...savedSupa, auth: { ...savedSupa.auth, signInWithIdToken: () => Promise.resolve({ error: null }) } };
+        window._applePluginCache = null;
+        window._nativeSocialAuthPending = null;
+        // First (successful) tap.
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 150));
+        const pendingAfterSuccess = window._nativeSocialAuthPending;
+        // A SECOND tap afterward (the sign-out-then-sign-back-in shape) must
+        // actually open the sheet again, not silently no-op on a stuck flag.
+        _obOAuth('apple');
+        await new Promise(res => setTimeout(res, 150));
+        return { pendingAfterSuccess, authorizeCalls };
+      } finally {
+        window.Capacitor = realCap;
+        window._applePluginCache = realCache;
+        _supa = savedSupa;
+      }
+    });
+    expect(r.pendingAfterSuccess, 'a successful sign-in must clear the flag, not just failures').toBe(null);
+    expect(r.authorizeCalls, 'a later tap has to reach the native sheet again, not silently no-op forever').toBe(2);
+  });
+
+  // End-to-end close of the loop: the email typed over Apple's relay address on
+  // the account step is what actually lands in the account/user rows, never the
+  // provider's own auth.users.email (which is the relay address here).
+  test('obSubmit(): the contractor-edited email lands on the account, not the provider\'s relay address', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof obSubmit !== 'function') return { skip: true };
+      const savedOb = _ob, savedUser = _supaUser, savedSupa = _supa;
+      const savedAccount = typeof _account !== 'undefined' ? _account : null;
+      const savedUserRow = typeof _user !== 'undefined' ? _user : null;
+      document.querySelectorAll('#ob-err,#ob-progress,#onboarding-overlay').forEach(n => n.remove());
+      const errEl = document.createElement('div'); errEl.id = 'ob-err'; document.body.appendChild(errEl);
+      const progEl = document.createElement('div'); progEl.id = 'ob-progress'; document.body.appendChild(progEl);
+      let accountsInsertPayload = null, usersInsertPayload = null;
+      try {
+        _ob = { ...savedOb, oauth: true, email: 'grace@greenpaint.com', businessName: 'Green Painting Co',
+                 phone: '316-555-0100', address: '', licenseInfo: '', state: 'KS', businessType: 'painting',
+                 tradeLines: [], vehicles: [], jobs: [], name: 'Grace Green', role: 'owner' };
+        // The provider's own session carries the private-relay address, exactly
+        // what a real Apple sign-in hands back, distinct from what the contractor
+        // typed on the account step above.
+        _supaUser = { id: 'apple-relay-' + Date.now(), email: '9x7f2k@privaterelay.appleid.com' };
+        _supa = {
+          ...savedSupa,
+          from: (t) => {
+            if (t === 'accounts') return { insert: (payload) => { accountsInsertPayload = payload; return { select: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'test-acct-' + Date.now() }, error: null }) }) }; } };
+            if (t === 'users') return { insert: (payload) => { usersInsertPayload = payload; return Promise.resolve({ data: null, error: null }); } };
+            return savedSupa.from(t);
+          },
+        };
+        let threw = null;
+        try { await obSubmit(); } catch (e) { threw = e.message; }
+        return { skip: false, threw, accountsInsertPayload, usersInsertPayload };
+      } finally {
+        document.querySelectorAll('#ob-err,#ob-progress,#onboarding-overlay').forEach(n => n.remove());
+        _ob = savedOb; _supaUser = savedUser; _supa = savedSupa;
+        _account = savedAccount; _user = savedUserRow;
+        window._obInProgress = false;
+      }
+    });
+    if (r.skip) return;
+    expect(r.threw).toBe(null);
+    expect(r.accountsInsertPayload?.email, 'accounts row gets the contractor-typed email').toBe('grace@greenpaint.com');
+    expect(r.usersInsertPayload?.email, 'users row gets the contractor-typed email').toBe('grace@greenpaint.com');
+  });
+
+  // Owner decision 2026-08-22: a future email+password sign-in with the real
+  // address matches Supabase by auth.users.email, if that's still stuck on
+  // Apple's relay address, the real-email sign-in would silently miss this
+  // account. Sync the typed email into Supabase's own Auth record too, not
+  // just accounts/users.
+  test('obSubmit(): syncs the contractor-typed email into Supabase\'s own Auth record via updateUser', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof obSubmit !== 'function') return { skip: true };
+      const savedOb = _ob, savedUser = _supaUser, savedSupa = _supa;
+      const savedAccount = typeof _account !== 'undefined' ? _account : null;
+      const savedUserRow = typeof _user !== 'undefined' ? _user : null;
+      document.querySelectorAll('#ob-err,#ob-progress,#onboarding-overlay').forEach(n => n.remove());
+      const errEl = document.createElement('div'); errEl.id = 'ob-err'; document.body.appendChild(errEl);
+      const progEl = document.createElement('div'); progEl.id = 'ob-progress'; document.body.appendChild(progEl);
+      let updateUserArgs = null;
+      try {
+        _ob = { ...savedOb, oauth: true, email: 'grace@greenpaint.com', businessName: 'Green Painting Co',
+                 phone: '316-555-0100', address: '', licenseInfo: '', state: 'KS', businessType: 'painting',
+                 tradeLines: [], vehicles: [], jobs: [], name: 'Grace Green', role: 'owner' };
+        _supaUser = { id: 'apple-relay-' + Date.now(), email: '9x7f2k@privaterelay.appleid.com' };
+        _supa = {
+          ...savedSupa,
+          auth: { ...savedSupa.auth, updateUser: (args) => { updateUserArgs = args; return Promise.resolve({ data: {}, error: null }); } },
+          from: (t) => {
+            if (t === 'accounts') return { insert: () => ({ select: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'test-acct-' + Date.now() }, error: null }) }) }) };
+            if (t === 'users') return { insert: () => Promise.resolve({ data: null, error: null }) };
+            return savedSupa.from(t);
+          },
+        };
+        let threw = null;
+        try { await obSubmit(); } catch (e) { threw = e.message; }
+        return { skip: false, threw, updateUserArgs };
+      } finally {
+        document.querySelectorAll('#ob-err,#ob-progress,#onboarding-overlay').forEach(n => n.remove());
+        _ob = savedOb; _supaUser = savedUser; _supa = savedSupa;
+        _account = savedAccount; _user = savedUserRow;
+        window._obInProgress = false;
+      }
+    });
+    if (r.skip) return;
+    expect(r.threw).toBe(null);
+    expect(r.updateUserArgs?.email, 'auth.updateUser is called with the contractor-typed email').toBe('grace@greenpaint.com');
+  });
+
+  test('obSubmit(): skips updateUser when the typed email already matches the provider\'s session email', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof obSubmit !== 'function') return { skip: true };
+      const savedOb = _ob, savedUser = _supaUser, savedSupa = _supa;
+      const savedAccount = typeof _account !== 'undefined' ? _account : null;
+      const savedUserRow = typeof _user !== 'undefined' ? _user : null;
+      document.querySelectorAll('#ob-err,#ob-progress,#onboarding-overlay').forEach(n => n.remove());
+      const errEl = document.createElement('div'); errEl.id = 'ob-err'; document.body.appendChild(errEl);
+      const progEl = document.createElement('div'); progEl.id = 'ob-progress'; document.body.appendChild(progEl);
+      let updateUserCalls = 0;
+      try {
+        // Google without "Hide My Email" style behavior: the typed value matches
+        // exactly what the provider session already carries, nothing to sync.
+        _ob = { ...savedOb, oauth: true, email: 'grace@greenpaint.com', businessName: 'Green Painting Co',
+                 phone: '316-555-0100', address: '', licenseInfo: '', state: 'KS', businessType: 'painting',
+                 tradeLines: [], vehicles: [], jobs: [], name: 'Grace Green', role: 'owner' };
+        _supaUser = { id: 'google-match-' + Date.now(), email: 'grace@greenpaint.com' };
+        _supa = {
+          ...savedSupa,
+          auth: { ...savedSupa.auth, updateUser: () => { updateUserCalls++; return Promise.resolve({ data: {}, error: null }); } },
+          from: (t) => {
+            if (t === 'accounts') return { insert: () => ({ select: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'test-acct-' + Date.now() }, error: null }) }) }) };
+            if (t === 'users') return { insert: () => Promise.resolve({ data: null, error: null }) };
+            return savedSupa.from(t);
+          },
+        };
+        let threw = null;
+        try { await obSubmit(); } catch (e) { threw = e.message; }
+        return { skip: false, threw, updateUserCalls };
+      } finally {
+        document.querySelectorAll('#ob-err,#ob-progress,#onboarding-overlay').forEach(n => n.remove());
+        _ob = savedOb; _supaUser = savedUser; _supa = savedSupa;
+        _account = savedAccount; _user = savedUserRow;
+        window._obInProgress = false;
+      }
+    });
+    if (r.skip) return;
+    expect(r.threw).toBe(null);
+    expect(r.updateUserCalls, 'no pointless updateUser call when nothing actually changed').toBe(0);
+  });
+
+  test('obSubmit(): an updateUser failure never blocks or throws, the signup already succeeded', async () => {
+    const consoleErrorsBefore = page._consoleErrors.length;
+    const r = await page.evaluate(async () => {
+      if (typeof obSubmit !== 'function') return { skip: true };
+      const savedOb = _ob, savedUser = _supaUser, savedSupa = _supa;
+      const savedAccount = typeof _account !== 'undefined' ? _account : null;
+      const savedUserRow = typeof _user !== 'undefined' ? _user : null;
+      document.querySelectorAll('#ob-err,#ob-progress,#onboarding-overlay').forEach(n => n.remove());
+      const errEl = document.createElement('div'); errEl.id = 'ob-err'; document.body.appendChild(errEl);
+      const progEl = document.createElement('div'); progEl.id = 'ob-progress'; document.body.appendChild(progEl);
+      let accountsInsertPayload = null;
+      try {
+        _ob = { ...savedOb, oauth: true, email: 'grace@greenpaint.com', businessName: 'Green Painting Co',
+                 phone: '316-555-0100', address: '', licenseInfo: '', state: 'KS', businessType: 'painting',
+                 tradeLines: [], vehicles: [], jobs: [], name: 'Grace Green', role: 'owner' };
+        _supaUser = { id: 'apple-relay-' + Date.now(), email: '9x7f2k@privaterelay.appleid.com' };
+        _supa = {
+          ...savedSupa,
+          // A collision with another auth user (email already taken elsewhere)
+          // is a real possible failure here, must never block a signup that
+          // already succeeded.
+          auth: { ...savedSupa.auth, updateUser: () => Promise.reject(new Error('email address already registered')) },
+          from: (t) => {
+            if (t === 'accounts') return { insert: (payload) => { accountsInsertPayload = payload; return { select: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'test-acct-' + Date.now() }, error: null }) }) }; } };
+            if (t === 'users') return { insert: () => Promise.resolve({ data: null, error: null }) };
+            return savedSupa.from(t);
+          },
+        };
+        let threw = null;
+        try { await obSubmit(); } catch (e) { threw = e.message; }
+        return { skip: false, threw, accountsInsertPayload };
+      } finally {
+        document.querySelectorAll('#ob-err,#ob-progress,#onboarding-overlay').forEach(n => n.remove());
+        _ob = savedOb; _supaUser = savedUser; _supa = savedSupa;
+        _account = savedAccount; _user = savedUserRow;
+        window._obInProgress = false;
+      }
+    });
+    if (r.skip) return;
+    expect(r.threw).toBe(null);
+    expect(r.accountsInsertPayload?.email, 'the account still gets created with the typed email regardless').toBe('grace@greenpaint.com');
+    const consoleErrorsAfter = page._consoleErrors.length;
+    expect(consoleErrorsAfter - consoleErrorsBefore, 'the updateUser rejection is swallowed silently, no leaked console.error').toBe(0);
+  });
+
+  test('no console errors during Apple sign-in onboarding-routing tests', async () => {
+    assertNoErrors(page, 'apple sign-in onboarding routing');
   });
 });

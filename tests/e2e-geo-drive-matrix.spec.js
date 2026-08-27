@@ -176,6 +176,7 @@ test.describe('Drive matrix: every origin to every destination', () => {
         _geoLastFenceAt = null; _geoLegAtShop = false;
         _geoLastFenceLoc = null; _geoLegOrigin = null;
         _geoHomeDwell = null; _geoWasAtHome = false;
+        _geoExitPending = null;
         try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
 
         // ── establish the origin ──
@@ -191,9 +192,26 @@ test.describe('Drive matrix: every origin to every destination', () => {
 
         // ── travel ──
         if (viaRoad) { await ping(C.ROAD); }
+        // Round trip to the SAME fence (shop/place → itself): the return
+        // ping would otherwise match `prev` exactly (it never actually
+        // changed — the single ROAD ping above only deferred, pending,
+        // never confirmed) and read as "never left" instead of a real trip
+        // out and back. A second ROAD ping confirms the departure before
+        // the return ping arrives, exactly the ambiguous-reading case the
+        // exit-confirmation gate exists for (owner mandate 2026-08-20).
+        if (from === to && from !== 'stop') { await ping(C.ROAD); }
         if (from !== 'stop') rewind(mins);
         if (to === 'stop') {
           await ping(C.STOP2);
+          // DIRECT from a gated origin (place/job1): that first STOP2 ping
+          // landed on cur=null, genuinely ambiguous (owner mandate
+          // 2026-08-20 — a lone reading in open space is never trusted off
+          // one fix), so it deferred without creating _geoStopAnchor yet.
+          // A second identical reading confirms it. Harmless when the
+          // origin was already ungated (shop) or viaRoad already supplied
+          // the first ambiguous reading: the anchor already exists, and
+          // this just re-touches its lastAt.
+          if (!viaRoad) await ping(C.STOP2);
           setStop(DWELL, 0);               // parked 40 min, still there
           // They drove `mins` to get here and have sat DWELL since, so the leg
           // must start before both.
@@ -302,6 +320,11 @@ test.describe('Drive matrix: every origin to every destination', () => {
         const both = { job: !!_geoCurrentJob, shop: !!_geoWasInShop };
         _geoArrivedAt = new Date(Date.now() - 50 * 60000).toISOString();
         _geoShopArrivedAt = new Date(Date.now() - 50 * 60000).toISOString();
+        // Leaving JOB into open road (cur=null) is genuinely ambiguous (owner
+        // mandate 2026-08-20), so it needs a second reading to confirm; the
+        // independent shop_time_entries close is ungated and already lands
+        // on the first one.
+        await ping(C.ROAD);
         await ping(C.ROAD);
         return { rows, both };
       } finally {
@@ -332,6 +355,9 @@ test.describe('Drive matrix: every origin to every destination', () => {
         _geoPlaceArrivedAt = null; _geoStopAnchor = null; _geoLastFenceAt = null; _geoLegAtShop = false;
         await ping(C.PLACE);
         _geoPlaceArrivedAt = new Date(Date.now() - 23 * 60000).toISOString();
+        // Leaving into open road (cur=null) is ambiguous (owner mandate
+        // 2026-08-20): a second reading confirms it.
+        await ping(C.ROAD);
         await ping(C.ROAD);
         return rows;
       } finally { _geoEnqueue = realEnq; _supaUser = realUser; }
@@ -458,13 +484,24 @@ test.describe('Drive matrix: every origin to every destination', () => {
     //   • a stop is bounded by the pings that VERIFIED it, so the minute of
     //     pulling out belongs to the drive rather than to lunch.
     // Neither invents or loses a minute, which is what the total proves.
+    // Four of the six drive legs depart a GATED fence (job or place) into
+    // open road: job→supply, supply→job, job→lunch, job→shop. Each of those
+    // departures is now confirmed one ping late (owner mandate 2026-08-20:
+    // a lone reading in open space is never trusted off one fix), so the
+    // ORIGIN stays open one extra minute and the following drive leg is one
+    // minute shorter. shop→job and lunch→job depart an ungated origin (shop
+    // is never gated; lunch is an anonymous stop, not a job/place/client
+    // fence) and are unaffected. Net: -4 minutes off drive, landing back on
+    // job (+3, the three job-origin departures) and place (+1, the one
+    // place-origin departure) — nothing invented or lost, just re-homed to
+    // whichever side of the confirming ping the minute actually falls on.
     const detail = ` rows=${out.all}`;
     expect(out.driveN, 'drive legs' + detail).toBe(6);
     expect(out.jobN, 'job visits' + detail).toBe(3);
     expect(out.shop,  'shop time' + detail).toBe(45);
-    expect(out.drive, 'drive time' + detail).toBe(92);
-    expect(out.job,   'on-site time' + detail).toBe(276);
-    expect(out.place, 'supply time' + detail).toBe(21);
+    expect(out.drive, 'drive time' + detail).toBe(88);
+    expect(out.job,   'on-site time' + detail).toBe(279);
+    expect(out.place, 'supply time' + detail).toBe(22);
     expect(out.stop,  'off-job time' + detail).toBe(45);
     // 480 minutes were driven. 479 are closed and filed; the last one is the
     // shop dwell they are still sitting in, which closes when they leave. So:

@@ -53,7 +53,7 @@ function _showNewLeadsPicker(){
     // the relative label for older/fixture ids that predate this or aren't real timestamps.
     const _cts=Number(c.id);
     const hasRealTs=_cts>1e12;
-    const stamp=hasRealTs?(new Date(_cts).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' · '+new Date(_cts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})):'';
+    const stamp=hasRealTs?(new Date(_cts).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' · '+bizTime(_cts)):'';
     const subLabel=stamp?ageLabel+' · '+stamp:ageLabel;
     const initial=escHtml((c.name||'?').trim().charAt(0).toUpperCase()||'?');
     return '<button onclick="_pickLeadForEstimate('+c.id+')" onmouseover="this.style.background=\'var(--bg2)\'" onmouseout="this.style.background=\'none\'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 8px;border:none;border-radius:var(--r);background:none;cursor:pointer;font-family:inherit;margin-bottom:4px;transition:background .12s ease">'+
@@ -117,6 +117,8 @@ function _renderDashSetupTodo(){
   // Kick the async permission read once per paint. It re-renders only when the
   // state actually CHANGES, so this can never loop.
   _geoRefreshPermCache();
+  _motionRefreshPermCache();
+  _notifyRefreshPermCache();
   // The full setup checklist (owner 2026-07-14, research-backed). Every task shows
   // from day one and drops off the moment it's done (or the contractor skips an
   // optional one); the whole card collapses once nothing's left. Copy is money/
@@ -181,12 +183,43 @@ function _renderDashSetupTodo(){
     // clears). 'unsupported' counts as done: Safari often can't report the state
     // at all, and nagging someone whose location already works is worse than
     // missing the nudge.
-    {id:'location',done:_geoPermDone(),icon:'📍',
-      title:_geoPermState()==='denied'?'Turn location back on':'Turn on location',
-      sub:_geoPermState()==='denied'
-        ?'Location is off, so drive mileage and job hours have stopped logging. Takes two taps in your phone settings.'
-        :'Your drive miles and hours on each job log themselves, no timesheets, no odometer photos. Work hours only.',
-      cta:_geoPermState()==='denied'?'Fix it':'Turn on',noSkip:true},
+    (function(){
+      // A specific iOS complaint outranks the generic copy: "turn on
+      // location" is useless advice to somebody whose location IS on and set
+      // to While Using, and it is the exact wording that made this task look
+      // impossible to finish.
+      const np=_geoNatProblem();
+      if(np)return{id:'location',done:false,icon:'📍',title:np.title,sub:np.sub,cta:np.cta,noSkip:true};
+      return{id:'location',done:_geoPermDone(),icon:'📍',
+        title:_geoPermState()==='denied'?'Turn location back on':'Turn on location',
+        sub:_geoPermState()==='denied'
+          ?'Location is off, so drive mileage and job hours have stopped logging. Takes two taps in your phone settings.'
+          :'Your drive miles and hours on each job log themselves, no timesheets, no odometer photos. Work hours only.',
+        cta:_geoPermState()==='denied'?'Fix it':'Turn on',noSkip:true};
+    })(),
+    // Motion & Fitness: skippable, unlike location. It sharpens WHEN a drive
+    // actually started/stopped (the motion coprocessor's own history corrects
+    // a late-firing geofence exit), mileage still logs without it, just with
+    // occasionally softer start/stop timestamps. Same denied/prompt/unsupported
+    // shape as location, reusing the exact same Settings deep link
+    // (TdGeo.openSettings isn't location-specific, it just opens the app's
+    // Settings page).
+    {id:'motion',done:_motionPermDone(),icon:'🏃',
+      title:_motionPermState()==='denied'?'Turn motion access back on':'Allow motion & fitness',
+      sub:_motionPermState()==='denied'
+        ?'Motion access is off, so drive start/stop times may run a little softer. Takes two taps in your phone settings.'
+        :'Times exactly when a drive starts and stops, using the motion coprocessor already running on your phone.',
+      cta:_motionPermState()==='denied'?'Fix it':'Allow'},
+    // Notifications: skippable (Apple 4.5.4, see _notifyPermDone). The copy
+    // leads with the silent-failure problem because that is the whole point:
+    // tracking stopping is invisible until payroll, and this is the only
+    // thing that can tell somebody on the day it happens.
+    {id:'notify',done:_notifyPermDone(),icon:'🔔',
+      title:_notifyPermState()==='denied'?'Turn notifications back on':'Get told if tracking stops',
+      sub:_notifyPermState()==='denied'
+        ?'Notifications are off, so nothing can tell you if drives stop logging. Takes two taps in your phone settings.'
+        :'If location gets switched off, drives and job hours stop logging silently and you find out at payroll. One notification, only when it actually breaks.',
+      cta:_notifyPermState()==='denied'?'Fix it':'Turn on'},
   ];
   const remaining=ALL.filter(t=>!t.done&&!skipped.includes(t.id));
   // Endowed progress: credit the 3 things signup genuinely finished (account, trade,
@@ -239,6 +272,86 @@ function _renderDashSetupTodo(){
   const rows=el.querySelectorAll('.td-setup-row');
   if(rows.length)rows[rows.length-1].style.borderBottom='none';
 }
+// HELD SUPPLY RUNS (owner design 2026-08-17): a drive that touched a supply
+// store is not business until somebody stands behind it. Pinned to the very
+// top of the dashboard, above the money tiles, exactly like the setup
+// checklist: first thing seen on login, and once every run is answered the
+// card is gone (owner: "clear this out and it's gone"). Repeat visits to the
+// SAME store nest under one accordion (owner: "stack... nesting under that
+// store with an accordion dropdown"), oldest visit first, instead of piling
+// up as separate top-level cards. The three doors, in the owner's order:
+// Personal on the left (clears the trip from the log entirely), No receipt
+// in the middle (business, flagged, after the honest IRS line), Scan receipt
+// as the blue primary (expense + mileage settled in one save). Ignore a run
+// long enough and the 7-day sweep answers Personal for you, so it disappears
+// on its own.
+function _renderDashSupplyHold(){
+  const el=document.getElementById('dash-supply-hold');
+  if(!el)return;
+  if(typeof pendingSupplyStores!=='function'){el.style.display='none';el.innerHTML='';return;}
+  if(typeof _supplyRunSweep==='function')_supplyRunSweep();
+  const stores=pendingSupplyStores();
+  const totalRuns=stores.reduce((s,st)=>s+st.count,0);
+  if(!stores.length){el.style.display='none';el.innerHTML='';return;}
+  el.style.display='block';
+  const when=(run)=>{
+    let w=run.date;
+    try{
+      const _d=new Date(run.date+'T12:00:00');
+      if(isFinite(_d))w=_d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    }catch(_e){}
+    if(run.at){
+      try{
+        const _t=bizTime(run.at).replace(/\s/g,'').replace('AM','a').replace('PM','p');
+        if(_t)w+=' · '+_t;
+      }catch(_e){}
+    }
+    return w;
+  };
+  el.innerHTML=
+    '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden;border:1px solid var(--amber);box-shadow:0 2px 12px rgba(180,130,20,.14)">'+
+      '<div style="padding:12px 16px 10px;background:linear-gradient(135deg,rgba(180,130,20,.10),rgba(180,130,20,.02));border-bottom:1px solid var(--border)">'+
+        '<div style="display:flex;align-items:center;gap:8px">'+
+          '<span style="font-size:15px">'+svgIcon('🧾',{size:15})+'</span>'+
+          '<span style="font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.01em">Store runs need an answer</span>'+
+          '<span style="margin-left:auto;font-size:12px;font-weight:800;color:var(--amber)">'+totalRuns+' held</span>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:6px">Mileage stays out of your deduction until you answer. Scan the receipt and the miles and the expense are both done in one shot.</div>'+
+      '</div>'+
+      stores.map((store,idx)=>{
+        const openClass=idx===0?' open':'';
+        return '<div class="td-supply-store'+openClass+'">'+
+          '<button class="td-supply-store-hd" onclick="_supplyStoreTog(this)">'+
+            '<span class="name">'+escHtml(store.name)+'</span>'+
+            (store.count>1?'<span class="td-supply-store-badge">'+store.count+'</span>':'')+
+            '<span class="td-supply-chev">▸</span>'+
+          '</button>'+
+          '<div class="td-supply-store-body">'+
+            store.visits.map(run=>{
+              const ek=encodeURIComponent(run.key);
+              return '<div class="td-supply-visit">'+
+                '<div style="font-size:11px;color:var(--text3)">'+when(run)+'</div>'+
+                '<div style="display:flex;gap:8px;margin-top:8px">'+
+                  '<button onclick="_supplyRunPersonal(\''+ek+'\')" class="btn btn-sm" style="flex:1">Personal</button>'+
+                  '<button onclick="_supplyRunNoReceipt(\''+ek+'\')" class="btn btn-sm" style="flex:1;border-color:var(--amber);color:#856404;background:var(--amber-lt)">No receipt</button>'+
+                  '<button onclick="_supplyRunScan(\''+ek+'\')" class="btn btn-sm btn-p" style="flex:1">Scan receipt</button>'+
+                '</div>'+
+              '</div>';
+            }).join('')+
+          '</div>'+
+        '</div>';
+      }).join('')+
+    '</div>';
+}
+// Store accordion toggle. Takes the clicked header, not an id: a store's
+// name can contain characters that would need escaping into an id/selector,
+// and the element itself is all the toggle needs (mirrors the day/month
+// accordions' intent without inheriting their id-lookup plumbing).
+function _supplyStoreTog(btn){
+  const card=btn&&btn.closest('.td-supply-store');
+  if(!card)return;
+  card.classList.toggle('open');
+}
 // Setup-to-do actions. Kept out of inline onclick so the quoting stays sane and
 // the nav targets are guarded (a missing settings detail can never throw).
 // Permission state for the checklist. Read synchronously from a cache that
@@ -247,36 +360,382 @@ function _renderDashSetupTodo(){
 // would reintroduce exactly the show-then-hide flash the Stripe cache above
 // exists to prevent.
 let _geoPermCache=null;
+// A fingerprint of what iOS itself said, kept alongside the flattened state.
+// Reporting used to be gated on `st!==_geoPermCache` alone, and that state is
+// the FLATTENED granted/denied/prompt: it cannot change when a phone goes from
+// wheninuse to always, or loses Precise Location, or has device-wide Location
+// Services switched off, because all of those still flatten to 'granted'. So
+// the three fields that actually decide whether this product works were learned
+// and then never sent (owner's own handset, 08.25.26.18: the plugin was
+// answering motion fine while the location row sat at 'prompt' with every
+// native field null). Gate on either changing.
+let _geoPermSig=null;
 function _geoPermState(){return _geoPermCache||'prompt';}
-function _geoPermDone(){const s=_geoPermState();return s==='granted'||s==='unsupported';}
+// The blind spot this closes (owner ask 2026-08-26). _geoPermDone treated
+// 'granted' as finished, and 'granted' is the FLATTENED answer: While Using
+// and Always-with-reduced-accuracy both arrive as granted. So a phone that
+// logs nothing in a pocket, or that can never fire a 600ft job fence, ticked
+// this task off and the card cleared. Worse, the notification that tells
+// somebody to come fix it lands on a checklist already claiming all set.
+//
+// Returns null when iOS has no complaint, otherwise the task copy for the one
+// thing that is actually wrong. Native-only by design: a browser has none of
+// these axes and must keep the old behaviour untouched.
+function _geoNatProblem(){
+  let n=null;
+  try{n=(typeof _geoNativeAuthPeek==='function')?_geoNativeAuthPeek():null;}catch(_e){return null;}
+  if(!n||!n.status)return null;
+  const st=String(n.status||'');
+  if(n.servicesEnabled===false)return{kind:'services',
+    title:'Turn Location Services back on',
+    sub:'Location is off for your whole phone, so drive mileage and job hours have stopped logging. Settings › Privacy & Security › Location Services.',
+    cta:'Fix it'};
+  if(st==='restricted')return{kind:'restricted',
+    title:'Location is blocked on this phone',
+    sub:'Screen Time or a device policy is blocking location, so mileage and job hours cannot log. Whoever manages this phone has to allow it.',
+    cta:'Fix it'};
+  if(st==='wheninuse')return{kind:'wheninuse',
+    title:'Set location to Always',
+    sub:'Right now location only works while the app is open, so your drives never log while the phone is in your pocket. Settings › TradeDesk › Location › Always.',
+    cta:'Fix it'};
+  if(st==='always'&&String(n.accuracy||'')==='reduced')return{kind:'precise',
+    title:'Turn on Precise Location',
+    sub:'Without it your location is about a mile wide, so arriving at a job never registers and hours do not start. Settings › TradeDesk › Location › Precise Location.',
+    cta:'Fix it'};
+  // Precise, but only because WE asked for it this session
+  // (_geoRequestPreciseTemp). iOS drops that grant on the next app launch and
+  // arrivals silently stop registering again, so the task cannot tick off on
+  // the back of it. The nag is bounded and self-correcting: it clears the
+  // moment a restart shows Precise permanently on, and it never produces a
+  // false all-clear, which is the error that costs somebody a payroll week.
+  let _tmp=false;
+  try{_tmp=(typeof _geoPreciseTempPeek==='function')&&_geoPreciseTempPeek()===true;}catch(_e){_tmp=false;}
+  if(_tmp&&String(n.accuracy||'')==='full')return{kind:'precisetemp',
+    title:'Make Precise Location permanent',
+    sub:'Precise Location is on for right now, but iOS switches it back to approximate when the app restarts, and then job arrivals stop registering again. Settings › TradeDesk › Location › Precise Location.',
+    cta:'Fix it'};
+  return null;
+}
+function _geoPermDone(){
+  const s=_geoPermState();
+  if(_geoNatProblem())return false;
+  return s==='granted'||s==='unsupported';
+}
+// ── One notification when tracking silently stops (owner ask 2026-08-26) ─────
+//
+// The failure this exists for is silent by nature: location gets switched off
+// (or down to While Using, or to reduced accuracy) and the app keeps opening
+// normally while logging nothing. Nobody finds out until payroll, when the
+// week is already gone.
+//
+// A LOCAL notification, not a remote push: the phone is the only thing that
+// can see its own permission change, so there is nothing for a server to
+// notice and no token to depend on. It also means this works on the build
+// already on people's phones (CLAUDE.md 3.2) rather than waiting on one.
+//
+// APPLE'S LINE (4.5.4, 5.1.1): this is operational, never promotional, and it
+// is scoped to the FEATURE rather than the app. TradeDesk still works with
+// location off, you just log by hand, and the copy says exactly that instead
+// of claiming the app is broken. It fires ONCE per transition into a broken
+// state, never on a schedule and never again while that state persists, which
+// is the difference between telling somebody and nagging them.
+const _GEO_BREAK_KEY='zp3_geo_break_notified';
+const _GEO_BREAK_ID='geo-break';
+// Two minutes: long enough that it never buzzes while they are still looking
+// at the screen that told them, short enough to arrive while the phone is
+// still in their hand and the switch is still one tap away. Fixing it inside
+// the window cancels the notification, so doing the right thing immediately
+// is never rewarded with a pointless buzz.
+const _GEO_BREAK_DELAY_MS=2*60000;
+function _geoBreakCopy(kind){
+  if(kind==='services')return 'Location is off for your whole phone, so drives and job hours are not logging. Everything else still works, you would just be entering them by hand.';
+  if(kind==='restricted')return 'Location is blocked on this phone, so drives and job hours are not logging. You can still enter them by hand.';
+  if(kind==='wheninuse')return 'Location is set to While Using, so drives only log while the app is open. Set it to Always and they log themselves.';
+  if(kind==='precise')return 'Precise Location is off, so arriving at a job does not register and hours are not starting on their own.';
+  return 'Location is off, so drives and job hours are not logging. You can still enter them by hand.';
+}
+function _geoNotifyBreak(){
+  let prev=null;
+  try{prev=localStorage.getItem(_GEO_BREAK_KEY)||null;}catch(_e){}
+  const np=_geoNatProblem();
+  let kind=np?np.kind:(_geoPermState()==='denied'?'denied':null);
+  // A temporary Precise grant means tracking IS working right now, so there is
+  // nothing to buzz anybody about. Falling through to the clear-and-forget
+  // branch below is the point: it cancels the pending 'precise' buzz for
+  // somebody who just fixed it, and leaves the NEXT lapse a fresh transition
+  // that gets its own one notification.
+  if(kind==='precisetemp')kind=null;
+  if(!kind){
+    // Fixed, or never broken. Drop the pending buzz and forget, so the NEXT
+    // break is a fresh transition and gets its one notification.
+    if(prev){
+      try{localStorage.removeItem(_GEO_BREAK_KEY);}catch(_e){}
+      if(typeof _notifyCancel==='function')_notifyCancel([_GEO_BREAK_ID]);
+    }
+    return false;
+  }
+  if(prev===kind)return false;          // same break, already told them once
+  try{localStorage.setItem(_GEO_BREAK_KEY,kind);}catch(_e){}
+  _geoAlertManagers(kind);
+  if(typeof _notifySchedule!=='function')return false;
+  _notifySchedule(_GEO_BREAK_ID,'Auto mileage and time logs are off',
+    _geoBreakCopy(kind),Date.now()+_GEO_BREAK_DELAY_MS);
+  return true;
+}
+// ── The owner and their managers hear about it too (owner ask 2026-08-26) ────
+//
+// The local notification above tells the PERSON. This tells whoever has to
+// answer for the timesheet, the moment it happens rather than at payroll.
+//
+// Recipients are chosen SERVER-side (supabase/functions/send-push), not here:
+// an ordinary crew member's RLS lets them read exactly one team_members row,
+// their own, so this device genuinely cannot know who the managers are. It
+// asks for the role and the server resolves it, which also means a device
+// cannot aim a notification at somebody it was never allowed to see.
+//
+// Owner-on-their-own-phone sends nothing: they already got the local buzz two
+// minutes out, and the server drops the caller from the recipient list anyway,
+// so this is belt and braces rather than the only guard.
+function _geoAlertManagers(kind){
+  try{
+    if(typeof _isEmployee==='undefined'||!_isEmployee)return false;
+    if(typeof _supa==='undefined'||!_supa||typeof SUPA_URL==='undefined')return false;
+    const who=(typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.name)||'A crew member';
+    const what=kind==='wheninuse'?'set location to While Using, so their drives will not log'
+      :kind==='precise'?'turned off Precise Location, so job arrivals will not register'
+      :kind==='services'?'turned off Location Services for their whole phone'
+      :kind==='restricted'?'has location blocked by Screen Time or a device policy'
+      :'turned location off';
+    _supa.auth.getSession().then(sess=>{
+      const token=sess&&sess.data&&sess.data.session&&sess.data.session.access_token;
+      if(!token)return;
+      return fetch(SUPA_URL+'/functions/v1/send-push',{
+        method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+        body:JSON.stringify({
+          toRole:'managers',
+          title:'Tracking stopped for '+who,
+          body:who+' '+what+'. Their hours and mileage need entering by hand until it is back on.',
+          route:'team'
+        })
+      });
+    }).catch(()=>{});
+    return true;
+  }catch(_e){return false;}
+}
+function _geoNatSig(){
+  try{
+    const n=(typeof _geoNativeAuthPeek==='function')?_geoNativeAuthPeek():null;
+    return n?[n.status,n.accuracy,n.servicesEnabled].join('|'):'';
+  }catch(_e){return '';}
+}
 function _geoRefreshPermCache(){
   if(typeof _geoReadPermission!=='function')return;
   try{
     _geoReadPermission().then(st=>{
-      if(st===_geoPermCache)return;
-      _geoPermCache=st;
+      const sig=_geoNatSig();
+      const changed=(st!==_geoPermCache)||(sig!==_geoPermSig);
+      _geoPermCache=st;_geoPermSig=sig;
+      if(!changed)return;
       if(typeof _geoReportPermission==='function')_geoReportPermission(st);
+      // Only on a real change, which is what makes this once-per-transition
+      // rather than once-per-foreground.
+      try{_geoNotifyBreak();}catch(_e){}
       _renderDashSetupTodo();
     }).catch(()=>{});
   }catch(_e){}
 }
+// Same cache-then-render shape as location, just backed by TdGeo.motionPermStatus
+// instead of navigator.permissions (CoreMotion has no web equivalent at all). No
+// native shell at all (browser/PWA) counts as 'unsupported', same treatment
+// Safari gets for location, nothing to nag about on a platform that can't ask.
+let _motionPermCache=null;
+function _motionPermState(){return _motionPermCache||'prompt';}
+function _motionPermDone(){const s=_motionPermState();return s==='granted'||s==='unsupported';}
+// Motion resolved, so the handset's row on the server is now stale in a field
+// only this function ever learns about. The location reporter carries both, so
+// re-report through it rather than growing a second writer that could disagree.
+//
+// SHIPPED BROKEN 08.25.26.9, caught on the owner's own phone within the hour:
+// this call lived ONLY in the plugin-answered branch, so on the two paths that
+// actually resolve most often, a shell whose plugin predates motionPermStatus
+// and a query that rejects, the location row was written with motion null and
+// nothing ever went back to fill it. The very first row this feature produced
+// had motion null for exactly that reason. Every branch that settles the cache
+// reports now, including 'unsupported', which is a real answer and not an
+// absence of one.
+function _motionReport(){
+  try{if(typeof _geoReportPermission==='function')_geoReportPermission(_geoPermState());}catch(_e){}
+}
+function _motionRefreshPermCache(){
+  const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+  if(!Td||typeof Td.motionPermStatus!=='function'){
+    // Deferred (not a synchronous stomp) so this matches _geoRefreshPermCache's
+    // always-async shape: a caller that pins _motionPermCache then renders in
+    // the same tick (a test, or _renderDashSetupTodo's own top-of-function call)
+    // sees its value honored for that render, not immediately overwritten.
+    Promise.resolve().then(()=>{
+      if(_motionPermCache==='unsupported')return;
+      _motionPermCache='unsupported';
+      _renderDashSetupTodo();
+      _motionReport();
+    });
+    return;
+  }
+  try{
+    Td.motionPermStatus().then(r=>{
+      const st=(r&&r.available===false)?'unsupported':((r&&r.status)||'prompt');
+      if(st===_motionPermCache)return;
+      _motionPermCache=st;
+      _renderDashSetupTodo();
+      _motionReport();
+    }).catch(()=>{});
+  }catch(_e){}
+}
+// ── Notifications: the permission nothing ever asked for ────────────────────
+// _notifyAsk() had no caller anywhere in the app, so _notifyPermission() sat
+// at 'prompt' forever and every local notification silently returned false,
+// including the arrival tap-back the geofence engine already fires
+// (js/geo-track.js). The plumbing was all there; nobody ever opened the tap.
+//
+// SKIPPABLE, unlike location, and deliberately so: Apple's 4.5.4 is explicit
+// that notifications must not be required for an app to function, so this can
+// never be noSkip. Location earns noSkip because auto mileage genuinely cannot
+// exist without it; being told when it breaks is a convenience.
+let _notifyPermCache=null;
+function _notifyPermState(){return _notifyPermCache||'prompt';}
+function _notifyPermDone(){const s=_notifyPermState();return s==='granted'||s==='unsupported';}
+function _notifyRefreshPermCache(){
+  if(typeof _notifyPermission!=='function'){
+    Promise.resolve().then(()=>{
+      if(_notifyPermCache==='unsupported')return;
+      _notifyPermCache='unsupported';_renderDashSetupTodo();
+    });
+    return;
+  }
+  try{
+    _notifyPermission().then(st=>{
+      const v=st||'prompt';
+      if(v===_notifyPermCache)return;
+      _notifyPermCache=v;_renderDashSetupTodo();
+    }).catch(()=>{});
+  }catch(_e){}
+}
+// The Settings hand-off, in one place because two paths now need it: every
+// settled iOS complaint, and a Precise upgrade that could not be asked for or
+// was declined. Native gets the one-tap deep link into OUR Settings page;
+// browsers cannot be deep-linked into OS settings at all, so the PWA keeps the
+// walkthrough text as its last resort.
+function _geoLocationSettings(){
+  const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+  if(Td&&typeof Td.openSettings==='function'){Td.openSettings().catch(()=>{});return;}
+  if(typeof zAlert==='function')zAlert(
+    'Your phone is blocking location for TradeDesk, so we can\'t turn it back on from in here.\n\n'+
+    'iPhone: Settings → TradeDesk → Location → While Using the App\n'+
+    'Android: Settings → Apps → TradeDesk → Permissions → Location → Allow only while using\n\n'+
+    'Come back here after and this will clear itself.',
+    {title:'Turn location back on'});
+}
 function _setupTodoGo(id){
-  if(id==='location'){
-    // Denied: the OS will not re-prompt from script, so a button that "asks
-    // again" would do nothing at all. Show the platform walkthrough instead.
-    if(_geoPermState()==='denied'){
+  if(id==='notify'){
+    // Denied is terminal from script here for the same reason location is:
+    // iOS shows its notification dialog once. Settings is the only way back.
+    if(_notifyPermState()==='denied'){
+      const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+      if(Td&&typeof Td.openSettings==='function'){Td.openSettings().catch(()=>{});return;}
       if(typeof zAlert==='function')zAlert(
-        'Your phone is blocking location for TradeDesk, so we can\'t turn it back on from in here.\n\n'+
-        'iPhone: Settings → TradeDesk → Location → While Using the App\n'+
-        'Android: Settings → Apps → TradeDesk → Permissions → Location → Allow only while using\n\n'+
-        'Come back here after and this will clear itself.',
-        {title:'Turn location back on'});
+        'Notifications are switched off for TradeDesk.\n\niPhone: Settings → TradeDesk → Notifications → Allow Notifications',
+        {title:'Turn notifications back on'});
       return;
     }
+    // pushEnable FIRST, not _notifyAsk. Both end at the same iOS dialog
+    // (UNUserNotificationCenter authorization is app-wide, so one grant covers
+    // local and remote alike), but only pushEnable also calls
+    // registerForRemoteNotifications and lands a device token. Asking with
+    // _notifyAsk would spend the one prompt iOS ever shows and still leave
+    // the account unreachable from a server, which is precisely the gap that
+    // left every crew phone with no token at all.
+    const done=()=>{_notifyRefreshPermCache();};
+    if(typeof pushEnable==='function'){
+      pushEnable().then(ok=>{
+        // A browser, or a shell with no TdPush: fall back to the local-only
+        // ask so a PWA user still gets reminders.
+        if(!ok&&typeof _notifyAsk==='function')return _notifyAsk().then(done);
+        done();
+      }).catch(()=>{if(typeof _notifyAsk==='function')_notifyAsk().then(done).catch(done);else done();});
+      return;
+    }
+    if(typeof _notifyAsk==='function'){
+      _notifyAsk().then(done).catch(()=>{});
+    }
+    return;
+  }
+  if(id==='location'){
+    // Denied: the OS will not re-prompt from script, so a button that "asks
+    // again" would do nothing at all. On the native shell, jump straight to
+    // OUR settings page (not the Settings app's home screen), one tap to
+    // flip it back on. Browsers can't be deep-linked into OS settings at
+    // all, so the PWA keeps the walkthrough text as its only option.
+    // Most iOS complaints route the same way, and for the same reason as
+    // denied: iOS holds the decision, so nothing in here can change it and a
+    // button that "asks again" is a dead button. Two exceptions, both below.
+    // Restricted, because our Settings page has no switch that beats a Screen
+    // Time or MDM block, so it gets the honest explanation instead. And
+    // reduced accuracy, which is the one thing iOS will still take a question
+    // about from inside the app.
+    const _np=(typeof _geoNatProblem==='function')?_geoNatProblem():null;
+    if(_np&&_np.kind==='restricted'){
+      if(typeof zAlert==='function')zAlert(
+        'Screen Time or a device management policy is blocking location for TradeDesk, so it can\'t be turned on from in here or from TradeDesk\'s own settings page.\n\n'+
+        'Settings → Screen Time → Content & Privacy Restrictions → Location Services\n\n'+
+        'If this is a company-managed phone, whoever manages it has to allow it.',
+        {title:'Location is blocked on this phone'});
+      return;
+    }
+    // PRECISE IS THE ONE COMPLAINT IOS WILL STILL TAKE A QUESTION ABOUT.
+    // Everything else here is settled and unaskable, but a reduced-accuracy
+    // user can be asked to upgrade in place, from this tap, with no Settings
+    // trip at all (requestTemporaryFullAccuracyAuthorization). Try that FIRST,
+    // and only fall through to Settings when the shell is too old to ask, or
+    // when they say no.
+    //
+    // The grant is SESSION-SCOPED and the toast says exactly that. It is not
+    // the permanent fix, it just makes today work, and the checklist item
+    // stays open (kind 'precisetemp') so the permanent fix still gets asked
+    // for. Do not soften this copy into sounding finished.
+    if(_np&&_np.kind==='precise'&&typeof _geoRequestPreciseTemp==='function'){
+      _geoRequestPreciseTemp().then(r=>{
+        if(r&&r.precise){
+          if(typeof showToast==='function')showToast(
+            'Precise Location is on for now. It goes back to approximate when the app restarts, so switch it on for good in Settings › TradeDesk › Location.','📍');
+          return;
+        }
+        _geoLocationSettings();
+      }).catch(()=>_geoLocationSettings());
+      return;
+    }
+    if(_geoPermState()==='denied'||_np){_geoLocationSettings();return;}
     // Owners record the per-device preference; crew get the notice sheet, which
     // records a real acknowledgment. Either way the OS prompt fires inside this tap.
     if(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _geoNoticeSheet==='function'){_geoNoticeSheet();return;}
     if(typeof _geoSetConsent==='function'){_geoSetConsent(true);return;}
+    return;
+  }
+  if(id==='motion'){
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    if(!Td)return;   // no native shell, nothing to prompt (browser counts as unsupported/done)
+    // Same reasoning as location: once denied, the OS never re-shows its own
+    // dialog from script, so route straight to Settings instead of a dead button.
+    if(_motionPermState()==='denied'){
+      if(typeof Td.openSettings==='function')Td.openSettings().catch(()=>{});
+      return;
+    }
+    // CoreMotion has no separate "request permission" call, per motionSince's
+    // own comment in TdGeoPlugin.swift: the first query IS the prompt when the
+    // status is not yet determined. Re-check the cache once it resolves so the
+    // card clears the moment they answer the system dialog either way.
+    if(typeof Td.motionSince==='function'){
+      Td.motionSince({}).then(()=>{if(typeof _motionRefreshPermCache==='function')_motionRefreshPermCache();}).catch(()=>{});
+    }
     return;
   }
   if(id==='vehicle'){if(typeof openAddVehicleModal==='function')openAddVehicleModal();return;}
@@ -348,7 +807,12 @@ function renderDash(){
   const _incomeSum=income.filter(r=>r.date&&_dashInRange(r.date)).reduce((s,r)=>s+r.amount,0);
   const _paymentsSum=payments.filter(p=>p.date&&_dashInRange(p.date)&&p.amount!==0).reduce((s,p)=>s+p.amount,0);
   const tInc=_incomeSum+_paymentsSum;
-  const tExp=expenses.filter(e=>e.date&&_dashInRange(e.date)).reduce((s,e)=>s+e.amount,0);
+  // Vehicle money inside the mileage rate never reaches the money views
+  // (owner rule 2026-08-15, _expHiddenByMileage in js/fleet.js): on the
+  // standard rate those costs are already paid per mile, so showing them as
+  // spend the contractor can act on is noise. They come straight back if the
+  // vehicle moves to actual expenses.
+  const tExp=expenses.filter(e=>e.date&&_dashInRange(e.date)&&!(typeof _expHiddenByMileage==='function'&&_expHiddenByMileage(e))).reduce((s,e)=>s+e.amount,0);
   // Deductible only. tMi feeds mileDed, net, and the tax estimate below, so a
   // crew member's own-car miles landing here would show the owner a profit lower
   // than the truth twice over: once as a deduction that isn't theirs, and again
@@ -574,13 +1038,19 @@ function renderDash(){
   const _btnPStyle='font-size:11px';
   const _xStyle='font-size:11px;color:var(--text3);padding:6px 8px;background:var(--bg);border-color:var(--border2)';
   // Estimates in progress + sent proposals now live in renderTodayFeed()
+  // Milestones ride the render that already computed everything they read
+  // (js/milestones.js): dashboard only, once ever per milestone, never over
+  // a modal or mid-boot.
+  try{if(typeof checkMilestones==='function')setTimeout(checkMilestones,900);}catch(_e){}
   renderGoal();
   checkGoalPrompt();
   renderLeadSources();
   renderDashToday();
   renderDashCollect();
+  renderReadyQueue();
   renderTodayFeed();
   _renderDashSetupTodo();
+  _renderDashSupplyHold();
   const _nearbyEl=document.getElementById('dash-nearby');
   if(_nearbyEl){
     // The on-site card spans the WHOLE moment (owner: persist card + time-on-site):
@@ -642,11 +1112,18 @@ function renderDash(){
         '@keyframes tdDriveMove{0%{transform:translateX(-3px)}50%{transform:translateX(3px)}100%{transform:translateX(-3px)}}';
       document.head.appendChild(_s);
     }
-    if(_onClock||_driving||_nearbyJob||_showLocPrompt){
+    // Always renders SOMETHING now (owner 2026-08-19: "ability for somebody
+    // to clock in at all times, nothing dependent on anything"). The plain
+    // manual-clock fallback (final else below) needs no GPS fix to paint, so
+    // the old snapshot-restore-while-waiting-for-a-fix and fade-to-hidden
+    // tail this replaced no longer apply, there is no "nothing to show" state
+    // for this card to fade into anymore.
+    {
       const _svgPin=(c,sz)=>'<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+'" fill="none" stroke="'+c+'" stroke-width="2"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
-      const _fmtClk=(t)=>{try{return new Date(t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
+      const _fmtClk=(t)=>{try{return bizTime(t).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
       const _fmtDur=(ms)=>{const s=Math.max(0,Math.floor((Date.now()-ms)/1000));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return (h?h+'h ':'')+m+'m';};
       const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
+      let _usedSnap=false; // set true only by the no-rich-state branch below, when it painted a boot snapshot instead of the manual card
       // NEVER reveal mid-waterfall. A geo fix landing during the boot cascade
       // used to slide this card open while the cards below were still pouring
       // in: two animations fighting over the same layout, which is exactly the
@@ -766,7 +1243,7 @@ function renderDash(){
         const _extra='<div style="font-size:12px;color:var(--text3);margin-top:3px">Working on a job? Tap to clock in.</div>';
         _nearbyEl.innerHTML=_cardShell(_cardHead(_locPrompt.title,'',_extra)+
           '<div style="max-height:250px;overflow-y:auto">'+jobRows+'</div>');
-      } else {
+      } else if(_nearbyJob){
         // PRE-CLOCK-IN geofence prompt. Clock in (primary) + Estimate + conditional Collect.
         const nb=_nearbyJob;
         const clockTarget=nb.jobId||nb.fallbackJobId;
@@ -781,55 +1258,68 @@ function renderDash(){
         if(hasBalance)nbBtns.push('<button onclick="openPayPanel('+nb.bidId+',\'final\')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#0E6B39;color:#fff;display:flex;align-items:center;justify-content:center;gap:6px">'+svgIcon('💰',{size:13,color:'#fff'})+'Collect</button>');
         const _extra=hasBalance?'<div style="font-size:12px;color:#B45309;font-weight:700;margin-top:3px">'+fmt(nb.balance)+' owed</div>':'';
         _nearbyEl.innerHTML=_cardShell(_cardHead(nb.clientName,nb.addr,_extra)+_nbNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+nbBtns.join('')+'</div>');
-      }
-      // Snapshot the rendered card: the next page load shows it INSTANTLY at
-      // the settle pour instead of waiting seconds for the first GPS fix
-      // (owner 2026-08-10: "comes in 3 seconds late"). Live truth replaces it
-      // the moment a fix arrives (_geoFixSeen, js/geo-track.js).
-      delete _nearbyEl.dataset.snap;
-      window._nearbyLiveRendered=true; // real state has painted: the optimistic boot restore is over for this page load
-      try{localStorage.setItem('zp3_nearby_snap',JSON.stringify({html:_nearbyEl.innerHTML,ts:Date.now(),uid:(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null}));}catch(_e){}
-    }else if(!window._geoFixSeen&&!window._nearbyLiveRendered&&(_nearbyEl.style.display==='none'||!_nearbyEl.style.display)&&!_nearbyEl.dataset.snap){
-      // No live geo state YET (no fix this session): show the last session's
-      // card optimistically if it is fresh, so the boot pour includes it.
-      // A version-watchdog reload mid-workday is seconds old, exactly the
-      // case that felt broken. Stale (>10 min) or another user's card never
-      // shows, and the first real fix either confirms or animates it away.
-      try{
-        const _sn=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
-        // 45 min, up from 10 (owner's 6:54p boot, video 3: a 26-minute gap
-        // made the snapshot stale, so the ON SITE card missed the waterfall
-        // and slid in 2s late). A fence-state card is durable on that scale,
-        // parked stays parked, and the live fix corrects it in place within
-        // seconds anyway; only a card from another USER is ever dangerous.
-        if(_sn&&_sn.html&&_sn.uid===((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null)&&(Date.now()-_sn.ts)<2700000){
-          _nearbyEl.dataset.snap='1';
-          _nearbyEl.style.animation='';
-          _nearbyEl.innerHTML=_sn.html;
-          _nearbyEl.style.display='block';
+      } else {
+        // No rich state (not on the clock, not driving, no nearby/known-place
+        // prompt). Before falling back to the plain manual card, give an
+        // already-fresh same-session-boot snapshot one chance to paint
+        // instead, exactly the pre-existing "shows instantly pre-fix"
+        // optimization (owner 2026-08-10: "comes in 3 seconds late"): a real
+        // ON SITE/DRIVING card from seconds ago must not flash to "Not
+        // clocked in" and back while the first GPS fix of this session is
+        // still in flight. Once a fix HAS been seen (or this session already
+        // painted live truth once), that truth wins outright, manual card,
+        // no snapshot.
+        if(!window._geoFixSeen&&!window._nearbyLiveRendered&&!_nearbyEl.dataset.snap){
+          try{
+            const _sn=JSON.parse(localStorage.getItem('zp3_nearby_snap')||'null');
+            if(_sn&&_sn.html&&_sn.uid===((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null)&&(Date.now()-_sn.ts)<2700000){
+              _nearbyEl.dataset.snap='1';
+              _nearbyEl.innerHTML=_sn.html;
+              _usedSnap=true;
+            }
+          }catch(_e){}
         }
-      }catch(_e){}
-    }else if(_nearbyEl.style.display!=='none'&&_nearbyEl.innerHTML.trim()&&(!_nearbyEl.dataset.snap||window._geoFixSeen)){
-      // Slide/fade out instead of an abrupt display:none (CLAUDE.md §8): the
-      // card keeps its content and animates itself away, hard-hidden only
-      // once that's actually finished. Mirrors the .22s entrance (tdNearbyIn).
-      _nearbyEl.style.animation='tdNearbyOut .18s ease both';
-      // Collapse the space too: without this the fade ends and everything
-      // below jumps UP one frame, the mirror of the entrance yank.
-      _nearbyEl.style.overflow='hidden';
-      _nearbyEl.style.maxHeight=_nearbyEl.offsetHeight+'px';
-      _nearbyEl.style.transition='max-height .24s ease';
-      void _nearbyEl.offsetHeight; // flush, then collapse (no rAF: throttles unfocused)
-      _nearbyEl.style.maxHeight='0px';
-      // Real truth says no card: the stored snapshot is obsolete too.
-      delete _nearbyEl.dataset.snap;
-      try{localStorage.removeItem('zp3_nearby_snap');}catch(_e){}
-      _nearbyHideTimer=setTimeout(()=>{
-        _nearbyHideTimer=null;
-        _nearbyEl.style.display='none';
-        _nearbyEl.style.animation='';
-        _nearbyEl.style.maxHeight='';_nearbyEl.style.transition='';_nearbyEl.style.overflow='';
-      },250);
+        if(!_usedSnap){
+          delete _nearbyEl.dataset.snap;
+          const _btn='<button onclick="_dashManualClockIn()" style="flex-shrink:0;padding:11px 18px;border-radius:12px;background:#1B1612;color:#fff;font-size:13px;font-weight:800;font-family:inherit;border:none;cursor:pointer">Clock in</button>';
+          _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--border);background:var(--bg);box-shadow:0 2px 10px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+
+            '<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 15px">'+
+              '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
+                '<span style="width:34px;height:34px;border-radius:50%;background:var(--bg3,#ECEEF2);display:flex;align-items:center;justify-content:center">'+
+                  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'+
+                '</span>'+
+              '</div>'+
+              '<div style="flex:1;min-width:0">'+
+                '<div style="font-size:16px;font-weight:800;letter-spacing:-.02em;color:#1B1612">Not clocked in</div>'+
+                '<div style="font-size:12.5px;color:var(--text3);margin-top:2px">Tap Clock in when you start</div>'+
+              '</div>'+
+              _btn+
+            '</div>'+
+          '</div>';
+        }
+      }
+      // Never hidden anymore (display='block' already handled up top,
+      // _holdReveal and all), so the old collapse/fade-out machinery has
+      // nothing left to do; a stray in-flight one from before this render
+      // must not finish and hide a card that just painted real content.
+      // NOT touching maxHeight/transition/overflow here: the slide-open
+      // block above (_wasHidden) may have just synchronously set maxHeight
+      // to the expand target with its own setTimeout to release it after
+      // the CSS transition finishes, clearing it here would undo that
+      // reveal animation before it ever gets to run.
+      if(_nearbyHideTimer){clearTimeout(_nearbyHideTimer);_nearbyHideTimer=null;}
+      if(!_usedSnap){
+        // Snapshot the rendered card: the next page load shows it INSTANTLY at
+        // the settle pour instead of waiting seconds for the first GPS fix
+        // (owner 2026-08-10: "comes in 3 seconds late"). Live truth replaces
+        // it the moment a fix arrives (_geoFixSeen, js/geo-track.js). Skipped
+        // when THIS render itself painted from a snapshot, re-persisting that
+        // same stale copy under a fresh timestamp would just make it look
+        // newer than it is.
+        delete _nearbyEl.dataset.snap;
+        window._nearbyLiveRendered=true; // real state has painted (even if that real state is "nothing"): the optimistic boot restore is over for this page load
+        try{localStorage.setItem('zp3_nearby_snap',JSON.stringify({html:_nearbyEl.innerHTML,ts:Date.now(),uid:(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null}));}catch(_e){}
+      }
     }
   }
   // Update new nav badges
@@ -875,6 +1365,33 @@ function _dashSkelMode(){
   // boots render normally instead of shimmering into the failsafe.
   return !!window._bootSyncPending&&!window._bootSkelDone;
 }
+// Component-shaped boot skeletons (owner 2026-08-14: every tile gets its OWN
+// shimmer shaped like itself, never one generic blob). Composed entirely from
+// the existing .td-skel shimmer primitive (§8.4), keyed by the widget's own
+// data-dw id so the skeleton mirrors exactly what will pour into its place:
+// the KPI widget shimmers as six metric tiles, quick actions as three round
+// buttons, the calendar as a week strip, and so on. Unknown widgets fall back
+// to the generic rows so a future widget is never a blank hole.
+function _tdSkelShape(kind,h){
+  const band=(ht,w,extra)=>'<div class="td-skel" style="height:'+ht+'px;width:'+w+';'+(extra||'')+'"></div>';
+  const tile=()=>'<div style="border:1px solid var(--border);border-radius:var(--r);padding:10px">'+band(9,'55%','margin-bottom:8px')+band(16,'70%')+'</div>';
+  switch(kind){
+    case 'tbar':return band(18,'52%','margin:6px 0');
+    case 'kpi':return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+[tile(),tile(),tile(),tile(),tile(),tile()].join('')+'</div>';
+    case 'feed':return band(13,'42%','margin:2px 0 12px')+
+      [0,1,2].map(()=>'<div style="display:flex;align-items:center;gap:10px;margin:10px 0">'+band(30,'30px','border-radius:8px;flex:none')+'<div style="flex:1">'+band(11,'70%','margin-bottom:6px')+band(9,'45%')+'</div></div>').join('');
+    case 'quick':return '<div style="display:flex;gap:18px;justify-content:space-around;padding:4px 0">'+
+      [0,1,2].map(()=>'<div style="text-align:center">'+band(46,'46px','border-radius:14px;margin:0 auto 6px')+band(8,'40px','margin:0 auto')+'</div>').join('')+'</div>';
+    case 'pipeline':return band(13,'38%','margin:2px 0 10px')+band(40,'100%','border-radius:10px')+
+      '<div style="display:flex;gap:8px;margin-top:10px">'+band(10,'22%')+band(10,'22%')+band(10,'22%')+'</div>';
+    case 'calendar':return band(13,'34%','margin:2px 0 10px')+
+      '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">'+Array.from({length:7},()=>band(42,'100%','border-radius:8px')).join('')+'</div>';
+    case 'sources':return band(13,'40%','margin:2px 0 10px')+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+band(24,'28%','border-radius:99px')+band(24,'34%','border-radius:99px')+band(24,'24%','border-radius:99px')+'</div>';
+    case 'goal':return band(13,'44%','margin:2px 0 10px')+band(14,'100%','border-radius:99px')+band(10,'30%','margin-top:8px');
+    default:return (typeof _tdSkelRows==='function')?_tdSkelRows(Math.max(2,Math.min(5,Math.round((h||120)/46)))):'';
+  }
+}
 function _dashApplySkeletons(){
   if(!_dashSkelMode())return;
   if(!window._bootSkelTimer){
@@ -886,7 +1403,12 @@ function _dashApplySkeletons(){
   // removable .td-boot-skel card appended and a class that hides its real
   // children (CSS rule next to .td-skel in index.html). The greeting bar is
   // included: EVERYTHING shimmers until the sync settles (owner 2026-08-10).
-  const targets=[...document.querySelectorAll('#pg-dash>.tbar'),...document.querySelectorAll('#dash-widget-root>.td-dw')];
+  // dash-setup-todo/dash-supply-hold/dash-geo-perm are siblings of #dash-widget-root
+  // (their own display:none/block toggle controls whether they exist at all, unlike
+  // the always-present .td-dw widgets), so without them here they get zero shimmer
+  // coverage: whatever they compute on their first paint (Stripe/QR caches included)
+  // renders as final, bare content even while the rest of the dashboard is shimmering.
+  const targets=[...document.querySelectorAll('#pg-dash>.tbar'),...document.querySelectorAll('#dash-widget-root>.td-dw'),...document.querySelectorAll('#dash-setup-todo,#dash-supply-hold,#dash-geo-perm')];
   targets.forEach(el=>{
     if(el.querySelector(':scope>.td-boot-skel'))return;
     const tbar=el.classList.contains('tbar');
@@ -894,7 +1416,7 @@ function _dashApplySkeletons(){
     if(!h)return; // empty/hidden conditional widgets stay collapsed, no phantom card
     const sk=document.createElement('div');
     sk.className='td-boot-skel'+(tbar?'':' card');
-    sk.innerHTML=(typeof _tdSkelRows==='function')?_tdSkelRows(tbar?1:Math.max(2,Math.min(5,Math.round(h/46))),tbar?18:undefined):'';
+    sk.innerHTML=_tdSkelShape(tbar?'tbar':(el.dataset.dw||''),h);
     el.classList.add('td-boot-skel-on');
     el.appendChild(sk);
   });
@@ -951,7 +1473,7 @@ function _empConfirmDone(jobId){
 
 function _fmtEmpTaskTime(iso){
   if(!iso)return'';
-  try{const d=new Date(iso);if(isNaN(d.getTime()))return'';return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}catch(e){return'';}
+  try{const d=new Date(iso);if(isNaN(d.getTime()))return'';return bizTime(d);}catch(e){return'';}
 }
 function _empToggleTask(jobId,taskId){
   const j=jobs.find(x=>x.id===jobId);if(!j||!j.tasks)return;
@@ -1858,6 +2380,128 @@ function _markDepositCash(bidId){
   });
 }
 
+// ── Ready to schedule: signed work waiting for a day (owner 2026-08-18) ──────
+// A won bid with no job record yet is real, waiting work, and today it only
+// surfaces on the client's own detail page (js/clients.js needsAttention,
+// owner-approved 2026-08-17). This is the same fact, app-wide, so a job never
+// has to survive a trip to a specific client's page to get worked. Default
+// order is signed date (oldest first, first-signed-first-served); dragging
+// overrides that with an explicit queueOrder on the bid, same relationship
+// the dispatch board's dispatchOrder has to its own default order.
+function _readyQueueBids(){
+  if(typeof bids==='undefined'||typeof jobs==='undefined')return [];
+  const hasJob=b=>jobs.some(j=>j.bid_id===b.id||(!j.bid_id&&j.client_id===b.client_id&&(j.name||'')===(b.name||'')));
+  return bids.filter(b=>b.status==='Closed Won'&&!b.completion_date&&!hasJob(b));
+}
+function _sortReadyQueue(list){
+  return list.slice().sort((a,b)=>{
+    if(a.queueOrder!=null||b.queueOrder!=null){
+      const ao=a.queueOrder!=null?a.queueOrder:Infinity;
+      const bo=b.queueOrder!=null?b.queueOrder:Infinity;
+      if(ao!==bo)return ao-bo;
+    }
+    return String(a.signedAt||a.bid_date||'').localeCompare(String(b.signedAt||b.bid_date||''));
+  });
+}
+function renderReadyQueue(){
+  const el=document.getElementById('dash-ready-queue');
+  if(!el)return;
+  const list=_sortReadyQueue(_readyQueueBids());
+  if(!list.length){el.innerHTML='';return;}
+  const rows=list.map(b=>{
+    const c=(typeof getClientById==='function')?getClientById(b.client_id):null;
+    const addr=(c&&c.addr)||'';
+    return '<div class="rq-card" data-bid="'+b.id+'" style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
+      '<div style="display:flex;align-items:flex-start;gap:8px">'+
+        '<div class="rq-grip" data-bid="'+b.id+'" title="Drag to reorder the queue" style="touch-action:none;cursor:grab;padding:6px 8px;margin:-6px -4px -6px -8px;color:var(--text3);flex-shrink:0;line-height:0">'+
+          '<svg width="14" height="18" viewBox="0 0 14 18" fill="currentColor" aria-hidden="true"><circle cx="4" cy="4" r="1.6"/><circle cx="10" cy="4" r="1.6"/><circle cx="4" cy="9" r="1.6"/><circle cx="10" cy="9" r="1.6"/><circle cx="4" cy="14" r="1.6"/><circle cx="10" cy="14" r="1.6"/></svg></div>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:13px;font-weight:700;margin-bottom:3px">'+escHtml((c&&c.name)||b.name||'Job')+'</div>'+
+          (addr?'<div style="font-size:11px;color:var(--text3);margin-bottom:4px">'+escHtml(addr)+'</div>':'')+
+          '<div style="font-size:11px;font-weight:700;color:var(--text3)">Won '+_cdDShort(b.signedAt||b.bid_date)+'</div>'+
+        '</div>'+
+        '<button onclick="event.stopPropagation();schedFromBid('+b.id+')" class="btn btn-p" style="font-size:12px;font-weight:800;padding:8px 12px;flex-shrink:0">Schedule</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  el.innerHTML='<div class="card card-pad-0" id="dash-ready-queue-card">'+
+    '<div class="card-hd"><div>'+
+      '<div class="card-hd-title">Ready to schedule</div>'+
+      '<div class="card-hd-sub">'+list.length+' signed, sorted by when they were won, drag to reorder</div>'+
+    '</div></div>'+
+    '<div style="padding:12px" id="rq-list">'+rows+'</div>'+
+  '</div>';
+  _initReadyQueueDrag();
+}
+// Pointer events, same mechanic as the dispatch board's grip
+// (js/cloud.js _initDispatchDrag): one implementation covers finger, stylus
+// and mouse, reordered in the DOM live as the pointer crosses a neighbor's
+// midpoint, then the DOM order is read back and persisted, never tracked by
+// index during the drag itself.
+let _rqDrag=null;
+function _initReadyQueueDrag(){
+  const host=document.getElementById('dash-ready-queue');
+  if(!host||host._rqBound)return;
+  host._rqBound=true;
+  host.addEventListener('pointerdown',e=>{
+    const grip=e.target.closest&&e.target.closest('.rq-grip');
+    if(!grip)return;
+    const card=grip.closest('.rq-card');
+    const list=card&&card.parentElement;
+    if(!card||!list)return;
+    e.preventDefault();
+    _rqDrag={card,list,moved:false};
+    try{grip.setPointerCapture(e.pointerId);}catch(_e){}
+    card.style.transition='none';
+    card.style.opacity='.9';
+    card.style.boxShadow='0 6px 20px rgba(0,0,0,.18)';
+    card.style.position='relative';
+    card.style.zIndex='5';
+    if(typeof _tdHaptic==='function')_tdHaptic('thud');
+  });
+  host.addEventListener('pointermove',e=>{
+    if(!_rqDrag)return;
+    e.preventDefault();
+    _rqDrag.moved=true;
+    const {card,list}=_rqDrag;
+    const cards=[...list.querySelectorAll(':scope > .rq-card')];
+    const i=cards.indexOf(card);
+    const y=e.clientY;
+    const prev=cards[i-1],next=cards[i+1];
+    if(prev){
+      const pr=prev.getBoundingClientRect();
+      if(y<pr.top+pr.height/2){list.insertBefore(card,prev);return;}
+    }
+    if(next){
+      const nr=next.getBoundingClientRect();
+      if(y>nr.top+nr.height/2){list.insertBefore(next,card);return;}
+    }
+  });
+  const end=()=>{
+    if(!_rqDrag)return;
+    const {card,list,moved}=_rqDrag;
+    _rqDrag=null;
+    card.style.opacity='';card.style.boxShadow='';card.style.zIndex='';
+    card.style.position='';card.style.transition='';
+    if(!moved)return;
+    const ids=[...list.querySelectorAll(':scope > .rq-card')].map(c=>c.getAttribute('data-bid'));
+    _readyQueueSetOrder(ids);
+  };
+  host.addEventListener('pointerup',end);
+  host.addEventListener('pointercancel',end);
+}
+function _readyQueueSetOrder(bidIds){
+  if(!Array.isArray(bidIds))return;
+  let n=0;
+  bidIds.forEach((id,i)=>{
+    const b=bids.find(x=>String(x.id)===String(id));
+    if(!b)return;
+    b.queueOrder=i;n++;
+  });
+  if(!n)return;
+  saveAll();
+}
+
 function renderTodayFeed(){
   const el=document.getElementById('dash-money-feed');if(!el)return;
   const tk=todayKey();
@@ -1952,6 +2596,31 @@ function renderTodayFeed(){
     const depositRequired=(b.deposit||0)>0;
     const depositPaid=!depositRequired||getBidPaid(b.id)>0;
     const hasJob=jobs.some(j=>(j.bid_id===b.id||(j.client_id===b.client_id&&!j.bid_id))&&j.eventType!=='estimate');
+    // PAID IN FULL but never closed out (owner report 2026-08-17: a job fully
+    // paid, still "upcoming" on the calendar, and NOTHING anywhere said "wrap
+    // it up"; the close lived only on the proposal card). Closing is the last
+    // money step: it stamps the completion date, starts the warranty clock,
+    // and files the paid invoice to the client hub, so it belongs in the feed.
+    if(hasJob&&getBidBalance(b)<=0.01&&(b.amount||0)>0){
+      const _wj=jobs.find(j=>j.bid_id===b.id&&j.eventType!=='estimate')||jobs.find(j=>j.client_id===b.client_id&&!j.bid_id&&j.eventType!=='estimate');
+      if(_wj){
+        const _wc=getClientById(b.client_id);
+        finalPayItems.push(
+          '<div class="tf-card">'+
+            '<div class="tf-icon">'+svgIcon('🏁',{size:18})+'</div>'+
+            '<div class="tf-body">'+
+              '<div class="tf-name">'+escHtml(_wc?_wc.name:b.client_name||'Client')+'</div>'+
+              _mmtAddrLine(b,_wc)+
+              '<div class="tf-sub" style="color:var(--green-mid)">'+_mmtAmt(b.amount)+' paid in full · job never closed out</div>'+
+            '</div>'+
+            '<div class="tf-acts">'+
+              '<button onclick="markJobDone('+_wj.id+')" class="btn btn-sm btn-g" style="font-size:11px">Close it out →</button>'+
+            '</div>'+
+          '</div>'
+        );
+      }
+      return;
+    }
     if(hasJob&&depositPaid)return;
     const c=getClientById(b.client_id);
     const cDisp=c?c.name:b.client_name||b.name||'Client';
@@ -2062,7 +2731,7 @@ function renderTodayFeed(){
       const m=Math.floor((Date.now()-d)/60000);
       if(m<2)return'just now';
       if(m<60)return m+'m ago';
-      const t=d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+      const t=bizTime(d);
       const today=new Date();today.setHours(0,0,0,0);
       const yest=new Date(today-86400000);
       if(d>=today)return'Today at '+t;
@@ -2668,7 +3337,7 @@ function openBidDetail(bidId,view){
   const dateStr=b.signedAt?new Date(b.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):(b.bid_date||'');
   function _tabBtn(v,label,active){return '<button id="bdd-tab-'+v+'" onclick="_bddView(\''+v+'\')" style="padding:7px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;border:1.5px solid '+(active?'var(--blue)':'var(--border2)')+';background:'+(active?'var(--blue-lt)':'var(--bg)')+';color:'+(active?'var(--blue-dk)':'var(--text2)')+'">'+label+'</button>';}
   ov.innerHTML=
-    '<div style="position:sticky;top:0;background:var(--bg);border-bottom:2px solid var(--border);padding:10px 14px;display:flex;align-items:center;gap:10px;z-index:2">'+
+    '<div style="position:sticky;top:0;background:var(--bg);border-bottom:2px solid var(--border);padding:10px 14px;padding-top:max(10px,env(safe-area-inset-top));display:flex;align-items:center;gap:10px;z-index:2">'+
       '<button onclick="document.querySelector(\'[data-bdov]\').remove()" style="padding:7px 12px;border-radius:8px;border:1.5px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text);white-space:nowrap">'+svgIcon('✕',{size:13})+' Close</button>'+
       '<div id="bdd-tabs" style="display:flex;gap:6px;flex:1;justify-content:center">'+_tabBtn('bid',svgIcon('📋',{size:12})+' Our proposal',view==='bid')+_tabBtn('proposal',svgIcon('📄',{size:12})+' Client view',view==='proposal')+'</div>'+
       '<div style="width:70px"></div>'+
@@ -2763,7 +3432,7 @@ function openBidDetail(bidId,view){
     if(!b.signedAt||!sigUrl)return '';
     const sigDate=new Date(b.signedAt);
     const dateStr=sigDate.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
-    const timeStr=sigDate.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
+    const timeStr=bizTime(sigDate);
     return '<div style="margin-top:20px;padding:16px 18px;border-top:2px solid #e2e8f0;background:#f8fafc">'+
       '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:10px">Client Signature</div>'+
       '<img src="'+sigUrl+'" alt="Client signature" style="display:block;max-width:240px;height:auto;border:1px solid #e2e8f0;border-radius:4px;background:#fff;margin-bottom:10px">'+
@@ -3042,7 +3711,7 @@ function renderEstimatesPage(){
 // contracts/goal were split out of the old kpi+pipeline mega-widgets.
 // 'crew' was deleted 2026-07-14 ("simplify before we scale"): a saved order
 // containing it is harmless: _applyDashOrder skips ids with no matching element.
-const _DASH_DEFAULT_ORDER = ['kpi','alerts','contracts','goal','pipeline','feed','quick','calendar','sources'];
+const _DASH_DEFAULT_ORDER = ['kpi','alerts','contracts','readyQueue','goal','pipeline','feed','quick','calendar','sources'];
 
 // FLIP slide: run a DOM mutation (placeholder move) and animate every shifted
 // sibling from its old position to its new one, so cards GLIDE aside instead of

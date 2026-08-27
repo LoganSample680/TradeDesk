@@ -164,27 +164,294 @@ test.describe('shadow tracking engine', () => {
     expect(r.hasWakes).toBe(true);
   });
 
-  // Owner (2026-08-10): "engine comparison is forcing UTC, I want device
-  // local central time." Stored ISO stays UTC; the glass shows local.
-  test('panel timestamps read in device-local time, never sliced UTC', async () => {
+  // ASSERTION CHANGED 2026-08-25, deliberately (§10.4).
+  //
+  // WAS: device-local, and correct when written. Owner 2026-08-10, "engine
+  // comparison is forcing UTC, I want device local central time": the panel
+  // was showing raw UTC, and the owner's device WAS on Central, so reading
+  // the device clock delivered exactly what was asked for.
+  //
+  // NOW: the BUSINESS clock (bizTz, derived from the shop address). Owner
+  // 2026-08-24, from a trip: "it needs fixed to contractor time zone when
+  // setup off the shop business address, that should solve it permanently."
+  // Device-local is the very bug that ask closed, it just had not reached
+  // this panel yet. It matters most HERE: this journal exists to be compared
+  // against the Time Log, and the Time Log is on the business clock, so a
+  // panel an hour out would make the two engines look like they disagreed
+  // about a visit when only the reader's timezone had moved.
+  //
+  // What the owner asked for both times is unchanged: their own working
+  // clock, never UTC.
+  test('panel timestamps read on the business clock, never sliced UTC, never the phone\'s zone', async () => {
     const r = await withShell(async () => {
       _shadowClear();
-      const iso = '2026-01-15T23:45:00.000Z';
+      const prevTz = S.bizTz;
+      S.bizTz = 'America/Chicago';
+      const iso = '2026-01-15T23:45:00.000Z';   // 17:45 in Chicago (CST)
       _shadowLog.push({ k: 'arrive', name: 'TZ probe', t: iso });
       await _shadowPanel();
       const txt = document.getElementById('_geo-shadow-ov')?.textContent || '';
       document.getElementById('_geo-shadow-ov')?.remove();
-      const d = new Date(iso);
-      const localHm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      S.bizTz = prevTz;
       return {
-        showsLocal: txt.includes(localHm + '  arrive · TZ probe'),
-        // Only meaningful when the runner's zone differs from UTC, but
-        // harmless when it does not (both strings are then the same).
-        utcLeak: localHm !== '23:45' && txt.includes('23:45  arrive'),
+        showsBiz: txt.includes('17:45  arrive · TZ probe'),
+        utcLeak: txt.includes('23:45  arrive'),
       };
     });
-    expect(r.showsLocal, 'the row carries the device-local clock').toBe(true);
+    expect(r.showsBiz, 'the row carries the business clock').toBe(true);
     expect(r.utcLeak, 'the raw UTC slice never reaches the glass').toBe(false);
+  });
+
+  // Owner ask 2026-08-25: "would like a copy feature in this like we have in
+  // location diagnostics."
+  test.describe('copy everything', () => {
+    const seedAndOpen = (n) => withShell(async (count) => {
+      _shadowClear();
+      const prevTz = S.bizTz;
+      S.bizTz = 'America/Chicago';
+      const base = Date.parse('2026-01-15T23:45:00.000Z');
+      // Pushed oldest-first, because the journal is ordered by INSERTION and
+      // the panel reverses it: probe-0 ends up newest and heads the list,
+      // probe-59 is the oldest and falls off the 40-row window.
+      for (let i = count - 1; i >= 0; i--) {
+        _shadowLog.push({ k: 'arrive', name: 'probe-' + i, t: new Date(base - i * 3600000).toISOString() });
+      }
+      await _shadowPanel();
+      const ov = document.getElementById('_geo-shadow-ov');
+      const shown = ov ? ov.textContent : '';
+      const hasBtn = !!(ov && Array.from(ov.querySelectorAll('button')).some(b => /Copy everything/.test(b.textContent || '')));
+      ov && ov.remove();
+      S.bizTz = prevTz;
+      return { shown, hasBtn, copied: window.__shadowDiagText || '' };
+    }, n);
+
+    test('the panel offers a Copy everything button', async () => {
+      const r = await seedAndOpen(3);
+      expect(r.hasBtn).toBe(true);
+    });
+
+    test('the copy carries the stats header the panel shows', async () => {
+      const r = await seedAndOpen(3);
+      for (const line of ['Engine comparison', 'Current engine:', 'New engine:', 'Shadow engine:', 'Wakes:', 'Fences armed: 3', 'Motion history: available', 'Battery: 71%']) {
+        expect(r.copied, 'copy includes ' + line).toContain(line);
+      }
+      expect(r.copied, 'and says which clock it is on').toContain('Times: America/Chicago');
+    });
+
+    test('the copy carries the WHOLE journal, not just the 40 the panel can fit', async () => {
+      const r = await seedAndOpen(60);
+      expect(r.copied).toContain('(60 entries)');
+      // The oldest entry is well past the panel's 40-row window.
+      expect(r.shown, 'the panel stops at 40').not.toContain('probe-59');
+      expect(r.copied, 'the copy does not').toContain('probe-59');
+      expect(r.copied).toContain('probe-0');
+    });
+
+    test('copied rows carry the date, panel rows stay bare', async () => {
+      const r = await seedAndOpen(3);
+      expect(r.copied, 'a pasted 20:45 under an 04:36 is unreadable without it').toContain('01/15 17:45  arrive · probe-0');
+      expect(r.shown, 'on screen the day is obvious from reading down').toContain('17:45  arrive · probe-0');
+      expect(r.shown).not.toContain('01/15 17:45');
+    });
+
+    test('an empty journal copies the header and says so, never throws', async () => {
+      const r = await seedAndOpen(0);
+      expect(r.copied).toContain('(0 entries)');
+      expect(r.copied).toContain('Nothing yet.');
+    });
+
+    test('tapping copy writes the text to the clipboard', async () => {
+      const r = await withShell(async () => {
+        _shadowClear();
+        _shadowLog.push({ k: 'arrive', name: 'clip probe', t: '2026-01-15T23:45:00.000Z' });
+        await _shadowPanel();
+        document.getElementById('_geo-shadow-ov')?.remove();
+        let wrote = null;
+        const real = navigator.clipboard;
+        try {
+          Object.defineProperty(navigator, 'clipboard', {
+            value: { writeText: (t) => { wrote = t; return Promise.resolve(); } }, configurable: true });
+          _shadowCopy();
+          await new Promise(res => setTimeout(res, 20));
+        } finally {
+          if (real) Object.defineProperty(navigator, 'clipboard', { value: real, configurable: true });
+        }
+        return { wrote };
+      });
+      expect(r.wrote, 'the whole export lands on the clipboard').toContain('clip probe');
+      expect(r.wrote).toContain('Engine comparison');
+    });
+
+    // The hole this refactor closed: with no clipboard API at all, reading
+    // .writeText off undefined threw, the catch swallowed it, and the button
+    // did nothing without even a toast to say so.
+    test('a WebView with no clipboard API still copies, through the textarea', async () => {
+      const r = await withShell(async () => {
+        const real = navigator.clipboard;
+        let execd = false, threw = null;
+        const realExec = document.execCommand;
+        try {
+          Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+          document.execCommand = (c) => { if (c === 'copy') execd = true; return true; };
+          _geoCopyText('fallback probe');
+        } catch (e) { threw = String(e && e.message || e); }
+        finally {
+          document.execCommand = realExec;
+          if (real) Object.defineProperty(navigator, 'clipboard', { value: real, configurable: true });
+        }
+        return { execd, threw };
+      });
+      expect(r.threw, 'never throws at the caller').toBe(null);
+      expect(r.execd, 'it falls through to the textarea path').toBe(true);
+    });
+
+    test('a rejected clipboard write falls back rather than failing silently', async () => {
+      const r = await withShell(async () => {
+        const real = navigator.clipboard;
+        let execd = false;
+        const realExec = document.execCommand;
+        try {
+          Object.defineProperty(navigator, 'clipboard', {
+            value: { writeText: () => Promise.reject(new Error('denied')) }, configurable: true });
+          document.execCommand = (c) => { if (c === 'copy') execd = true; return true; };
+          _geoCopyText('rejected probe');
+          await new Promise(res => setTimeout(res, 20));
+        } finally {
+          document.execCommand = realExec;
+          if (real) Object.defineProperty(navigator, 'clipboard', { value: real, configurable: true });
+        }
+        return { execd };
+      });
+      expect(r.execd).toBe(true);
+    });
+
+    test('junk journal entries never break the export', async () => {
+      const r = await withShell(async () => {
+        _shadowClear();
+        _shadowLog.push({ k: 'arrive', name: 'ok', t: '2026-01-15T23:45:00.000Z' });
+        _shadowLog.push({ k: 'arrive', name: 'bad clock', t: 'not-a-date' });
+        _shadowLog.push({ k: 'mystery' });
+        let threw = null;
+        try { await _shadowPanel(); } catch (e) { threw = String(e && e.message || e); }
+        document.getElementById('_geo-shadow-ov')?.remove();
+        return { threw, copied: window.__shadowDiagText || '' };
+      });
+      expect(r.threw).toBe(null);
+      expect(r.copied).toContain('(3 entries)');
+      expect(r.copied).toContain('mystery');
+    });
+  });
+
+  // Owner journal, 2026-08-25. This function runs every time the location
+  // watcher starts (12 times in one morning on his phone) and armed from
+  // whatever was in memory at that instant:
+  //
+  //   15:23  engine on · 18 fences
+  //   16:20  engine on · 18 fences
+  //   16:23  engine on ·  1 fences     <- a start before the account loaded
+  //   16:47  engine on ·  3 fences
+  //
+  // and it never climbed back. Three fences instead of eighteen is why so
+  // many of his stops had no fence to trip and fell back on iOS visit
+  // reports, which are the slow path.
+  test.describe('arming the fences', () => {
+    const setup = (fn) => withShell(async (body) => {
+      _shadowClear();
+      S.officeLat = 39.0; S.officeLon = -95.7;
+      places.length = 0;
+      jobs.length = 0;
+      const place = (n, lat, lon) => savePlace({ name: n, kind: 'supply', lat, lon, confirmedBy: 'manual' });
+      const armedCounts = () => _shadowLog.filter(e => e.k === 'start').map(e => e.armed);
+      const skips = () => _shadowLog.filter(e => e.k === 'arm-skip').length;
+      return await (new Function('h', 'return (' + body + ')(h)'))({ place, armedCounts, skips,
+        calls: () => window.__tdCalls.startEvents.length });
+    }, fn.toString());
+
+    test('re-arming an identical set is a no-op: no native call, no journal line', async () => {
+      const r = await setup(async (h) => {
+        h.place('A', 39.1, -95.8); h.place('B', 39.2, -95.9);
+        await startShadowEngine();
+        const first = { calls: h.calls(), armed: h.armedCounts() };
+        await startShadowEngine();
+        await startShadowEngine();
+        return { first, after: { calls: h.calls(), armed: h.armedCounts() } };
+      });
+      expect(r.first.calls).toBe(1);
+      expect(r.first.armed).toEqual([3]);
+      expect(r.after.calls, 'nothing changed, so nothing was re-armed').toBe(1);
+      expect(r.after.armed, 'and the journal is not buried under it').toEqual([3]);
+    });
+
+    test('a cold boot with no account data loaded can never disarm the fences', async () => {
+      const r = await setup(async (h) => {
+        h.place('A', 39.1, -95.8); h.place('B', 39.2, -95.9);
+        await startShadowEngine();
+        const armed = h.armedCounts();
+        // The 16:23 moment: watcher starts again, account not loaded yet.
+        places.length = 0; jobs.length = 0;
+        const ret = await startShadowEngine();
+        return { armed, ret, on: shadowEngineOn(), calls: h.calls(), skips: h.skips(), after: h.armedCounts() };
+      });
+      expect(r.armed).toEqual([3]);
+      expect(r.calls, 'the shrink never reached the plugin').toBe(1);
+      expect(r.after, 'and never reached the journal as a start').toEqual([3]);
+      expect(r.skips, 'it is recorded as a refusal instead').toBe(1);
+      expect(r.on, 'the engine stays up on the fences it already had').toBe(true);
+      expect(r.ret).toBe(true);
+    });
+
+    test('a genuinely smaller set still arms, once the account is actually loaded', async () => {
+      const r = await setup(async (h) => {
+        h.place('A', 39.1, -95.8); h.place('B', 39.2, -95.9); h.place('C', 39.3, -96.0);
+        await startShadowEngine();
+        const before = h.armedCounts();
+        // A place was deleted. Data IS loaded, two places remain, so this is
+        // a real change and not a half-booted read.
+        places.length = 0;
+        h.place('A', 39.1, -95.8); h.place('B', 39.2, -95.9);
+        await startShadowEngine();
+        return { before, after: h.armedCounts(), calls: h.calls(), skips: h.skips() };
+      });
+      expect(r.before).toEqual([4]);
+      expect(r.after, 'four fences down to three, deliberately').toEqual([4, 3]);
+      expect(r.calls).toBe(2);
+      expect(r.skips).toBe(0);
+    });
+
+    test('a bigger set always arms', async () => {
+      const r = await setup(async (h) => {
+        h.place('A', 39.1, -95.8);
+        await startShadowEngine();
+        h.place('B', 39.2, -95.9); h.place('C', 39.3, -96.0);
+        await startShadowEngine();
+        return { armed: h.armedCounts(), calls: h.calls() };
+      });
+      expect(r.armed).toEqual([2, 4]);
+      expect(r.calls).toBe(2);
+    });
+
+    test('stopping forgets what was armed, so the next start really re-arms', async () => {
+      const r = await setup(async (h) => {
+        h.place('A', 39.1, -95.8); h.place('B', 39.2, -95.9);
+        await startShadowEngine();
+        stopShadowEngine();
+        await startShadowEngine();
+        return { armed: h.armedCounts(), calls: h.calls() };
+      });
+      expect(r.armed).toEqual([3, 3]);
+      expect(r.calls, 'a stopped engine is not still armed').toBe(2);
+    });
+
+    test('resetting the counters leaves a fresh log that fills again', async () => {
+      const r = await setup(async (h) => {
+        h.place('A', 39.1, -95.8);
+        await startShadowEngine();
+        _shadowClear();
+        await startShadowEngine();
+        return { armed: h.armedCounts() };
+      });
+      expect(r.armed, 'never an empty log looking like a dead engine').toEqual([2]);
+    });
   });
 
   test('in a plain browser the shadow engine is completely inert', async () => {

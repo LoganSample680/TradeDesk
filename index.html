@@ -202,7 +202,7 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    fills in under the popup's scrim. Delays are assigned in JS (_armBootCascade)
    over VISIBLE cards only, inline animation-delay wins, so no fixed nth-child
    holes. Backwards `both` fill keeps each card invisible until its turn. */
-#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:td-card-cascade .72s cubic-bezier(.33,1,.68,1) both;will-change:opacity,transform}
+#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:td-card-cascade .62s cubic-bezier(.33,1,.68,1) both;will-change:opacity,transform}
 @media (prefers-reduced-motion:reduce){#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:none}}
 /* pg-cal enters at the standard .2s now. Its old 5s slow fade existed only to
    hide the grid holding for the async weather fetch; the grid paints instantly
@@ -270,14 +270,22 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    band is var(--bg) blended into var(--border), correct in both themes.
    Use class td-skel (plus _tdSkelRows() in utils.js for list shapes). */
 @keyframes td-skel{0%{background-position:100% 0}100%{background-position:0 0}}
-.td-skel,.met-skel-lbl,.met-skel-bar{background:linear-gradient(90deg,var(--border) 30%,var(--bg) 50%,var(--border) 70%);background-size:400% 100%;animation:td-skel 1.3s ease infinite;border-radius:6px}
+/* linear, not ease: this loops forever, and ease decelerates into each cycle's
+   end before snapping straight back to the start, a visible stutter every
+   pass that gets more obvious the longer a skeleton stays on screen. A
+   continuous sweep has to move at constant speed to read as smooth, the
+   opposite of the eased in/out timing used for one-shot entrances elsewhere
+   in the app (owner report 2026-08-23: "way too long and not smooth" on
+   Time Log, whose skeleton is visible longer than most while it reconciles
+   against mileage before painting). */
+.td-skel,.met-skel-lbl,.met-skel-bar{background:linear-gradient(90deg,var(--border) 30%,var(--bg) 50%,var(--border) 70%);background-size:400% 100%;animation:td-skel 1.1s linear infinite;border-radius:6px}
 .met-skel-lbl{height:10px;width:60%;border-radius:4px;margin-bottom:10px}
 .met-skel-bar{height:22px;width:80%}
 /* One clean boot: while the first sync of a signed-in page load is in flight,
    each dashboard widget hides its real children behind an appended
    .td-boot-skel shimmer card (js/dashboard.js _dashApplySkeletons), removed in
    one swap when the sync settles. Non-destructive: the real markup stays. */
-#pg-dash>.tbar.td-boot-skel-on>*:not(.td-boot-skel),#dash-widget-root>.td-dw.td-boot-skel-on>*:not(.td-boot-skel){display:none!important}
+#pg-dash>.tbar.td-boot-skel-on>*:not(.td-boot-skel),#dash-widget-root>.td-dw.td-boot-skel-on>*:not(.td-boot-skel),#dash-setup-todo.td-boot-skel-on>*:not(.td-boot-skel),#dash-supply-hold.td-boot-skel-on>*:not(.td-boot-skel),#dash-geo-perm.td-boot-skel-on>*:not(.td-boot-skel){display:none!important}
 .met:hover{box-shadow:var(--shadow-hover)}
 .met-l{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .met-v{font-family:var(--font-display);font-size:22px;font-weight:900;line-height:1;letter-spacing:-.7px;color:var(--text);overflow:hidden;white-space:nowrap}
@@ -434,6 +442,17 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
    equal flex share (flex:1 1 0), centered text, no wrap. "Collect →", "📱 Send",
    "Snooze 2d", "Won ✓" all render to identical width within their row. */
 .tf-acts>.btn,.tf-acts>.btn-sm,.tf-acts>a{flex:1 1 0;min-width:0;justify-content:center;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ── Held supply runs: one accordion per store (owner 2026-08-17) ── */
+.td-supply-store-hd{width:100%;display:flex;align-items:center;gap:8px;padding:12px 16px;background:none;border:none;text-align:left;cursor:pointer;font-family:inherit}
+.td-supply-store-hd .name{flex:1;min-width:0;font-size:14px;font-weight:700;color:var(--text)}
+.td-supply-store-badge{font-size:11px;font-weight:800;color:var(--amber);background:var(--amber-lt);border-radius:10px;padding:2px 8px}
+.td-supply-chev{font-size:11px;color:var(--text3);transition:transform .18s ease;flex-shrink:0}
+.td-supply-store.open .td-supply-chev{transform:rotate(90deg)}
+.td-supply-store-body{max-height:0;opacity:0;overflow:hidden;transition:max-height .18s ease,opacity .18s ease}
+.td-supply-store.open .td-supply-store-body{max-height:900px;opacity:1}
+.td-supply-visit{padding:2px 16px 14px}
+.td-supply-visit+.td-supply-visit{border-top:1px dashed var(--border);padding-top:12px}
 /* Feed-card content (evidence-aligned): client NAME is the anchor, the dollar
    AMOUNT is a strong secondary beside it, one muted locator line below. On sent
    quotes the AGE/urgency line is the loud, color-coded element (the #1 unmet
@@ -817,12 +836,22 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 .search-empty{padding:32px;text-align:center;color:var(--text-3);font-size:14px}
 
 /* ── Modals ── */
-.zmodal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;animation:fadein .18s ease;overflow-y:auto}
+/* align-items:flex-start + margin:auto on the card, NOT align-items:center: a
+   centred flex child taller than the overlay has its top clipped with no way to
+   scroll to it. margin:auto still centres a short modal. Safe-area padding keeps
+   the card out from under the Dynamic Island / status bar (owner screenshot
+   2026-08-15: the Get paid title sat under the clock). */
+.zmodal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:max(20px,calc(env(safe-area-inset-top,0px) + 12px)) 20px max(20px,calc(env(safe-area-inset-bottom,0px) + 12px));animation:fadein .18s ease;overflow-y:auto;overscroll-behavior:contain}
 /* §8.4 modal entrance: the card fades + slides up + settles from a slight scale
    while the dim layer fades, no more hard pop. One rule covers every popup
    (zAlert/zConfirm/collect/complete-job/…, all ~57 creation sites use .zmodal). */
 @keyframes td-modal-in{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
-.zmodal{background:var(--bg-card);border-radius:var(--r-xl);padding:24px 22px;width:100%;max-width:360px;box-shadow:var(--shadow-modal);animation:td-modal-in .24s cubic-bezier(.22,1,.36,1) both}
+/* margin:auto on EVERY overlay child, not just .zmodal: several overlays build
+   their own sheet element, and with align-items:flex-start those would pin to the
+   top. auto margins centre whatever is in there, and collapse to zero when the
+   child is taller than the overlay so its top stays reachable. */
+.zmodal-overlay>*{margin:auto}
+.zmodal{background:var(--bg-card);border-radius:var(--r-xl);padding:24px 22px;width:100%;max-width:360px;margin:auto;box-shadow:var(--shadow-modal);animation:td-modal-in .24s cubic-bezier(.22,1,.36,1) both}
 @media (prefers-reduced-motion:reduce){.zmodal{animation:none}}
 .zmodal-title{font-size:16px;font-weight:800;margin-bottom:8px}
 .zmodal-msg{font-size:14px;color:var(--text-2);line-height:1.5;margin-bottom:18px}
@@ -837,6 +866,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 .toast{position:fixed;bottom:24px;right:24px;background:var(--ink);color:var(--text-cream);border-radius:12px;padding:14px 18px;font-size:13px;font-weight:600;box-shadow:var(--shadow-modal);z-index:9997;display:flex;align-items:center;gap:10px;max-width:320px;animation:toast-in .25s ease;transform-origin:bottom right}
 .toast-icon{font-size:18px;flex-shrink:0}
 .toast-close{background:none;border:none;color:var(--text-cream-2);cursor:pointer;font-size:16px;margin-left:8px;padding:0;line-height:1}
+/* Update-available toast: has a real tap target instead of a keyboard-shortcut
+   instruction, so it's actionable on a phone with no keyboard (owner report,
+   2026-08-19: the old text-only "press Ctrl+Shift+R" toast is a dead end on mobile). */
+.toast-update-btn{background:var(--green,#0E6B39);color:#fff;border:none;border-radius:9px;padding:9px 14px;font-size:13px;font-weight:700;flex-shrink:0;-webkit-tap-highlight-color:transparent}
 /* Boot exit: the overlay LIFTS AWAY, gentle zoom + blur dissolve, not a flat fade.
    Paired with the card waterfall underneath, the whole reveal reads as one motion. */
 #supa-boot-overlay.td-fadeout{opacity:0;transform:scale(1.05);filter:blur(10px);transition:opacity .75s cubic-bezier(.4,0,.2,1),transform .75s cubic-bezier(.4,0,.2,1),filter .75s cubic-bezier(.4,0,.2,1)}
@@ -985,7 +1018,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   .cal-cell{min-height:64px;padding:4px}
   .tbl th,.tbl td{padding:8px;font-size:11px}
   #proposals-list .tbl th:nth-child(3),#proposals-list .tbl td:nth-child(3){display:none}
-  .zmodal-overlay{padding:10px}
+  .zmodal-overlay{padding:max(10px,calc(env(safe-area-inset-top,0px) + 8px)) 10px max(10px,calc(env(safe-area-inset-bottom,0px) + 8px))}
   .tbar-r{width:100%;flex-wrap:wrap}
 }
 @media(max-width:380px){
@@ -1094,6 +1127,45 @@ body.dark .cal-cell.other{background:var(--cream)}
 .bk-day-body{display:block;padding:2px 8px 8px}
 .bk-day:not(.open) .bk-day-body{display:none}
 @media(max-width:767px){.bk-day-body{padding:2px 6px 6px}}
+/* Week-level accordion, nested inside a month (Time Log unified report). */
+.bk-week{border-top:1px solid var(--line);background:var(--bg-card)}
+.bk-week:first-child{border-top:none}
+.bk-week-hd{display:flex;align-items:center;justify-content:space-between;padding:10px 14px 10px 20px;background:var(--bg-card);cursor:pointer;width:100%;text-align:left;border:none;font-family:var(--font-ui);gap:12px;transition:background .1s}
+.bk-week-hd:hover{background:var(--cream)}
+.bk-week-title{font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.1px}
+.bk-week-sub{font-size:11px;color:var(--text-3);font-weight:500;margin-top:2px}
+.bk-week-chev{font-size:11px;color:var(--text-3);width:14px;text-align:center;transition:transform .15s;flex-shrink:0}
+.bk-week:not(.open) .bk-week-chev{transform:rotate(-90deg)}
+.bk-week-body{border-top:1px solid var(--line);overflow:hidden;display:none;padding:2px 8px 10px 14px}
+.bk-week.open .bk-week-body{display:block}
+/* Time Log: Me/Team toggle + the per-week day picker (owner: "need the day
+   picker to change what day we're looking at") + Team-scope employee rows. */
+.tl-scope-toggle{display:flex;gap:6px;background:var(--bg-card);border:1px solid var(--line-2);border-radius:11px;padding:4px;margin-bottom:10px}
+.tl-scope-btn{flex:1;height:34px;border:none;border-radius:8px;background:transparent;font-family:inherit;font-size:12.5px;font-weight:800;color:var(--text3);cursor:pointer}
+.tl-scope-btn.active{background:var(--ink);color:#fff}
+.tl-picker{display:flex;gap:5px;padding:10px 0}
+.tl-chip{flex:1;height:32px;border-radius:9px;border:1.5px solid var(--line-2);background:var(--bg-card);font-family:inherit;font-size:11px;font-weight:800;color:var(--text2);display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer}
+.tl-chip.wk{flex:1.6}
+.tl-chip .tl-dot{position:absolute;left:50%;top:auto;bottom:4px;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:var(--blue)}
+.tl-chip.active{background:var(--ink);border-color:var(--ink);color:#fff}
+.tl-chip.active .tl-dot{background:#fff}
+.tl-scope-hd{display:flex;justify-content:space-between;align-items:center;padding:0 2px 4px}
+.tl-scope-ttl{font-size:12.5px;font-weight:800;color:var(--text)}
+.tl-scope-amt{font-size:14px;font-weight:900;font-variant-numeric:tabular-nums;color:var(--text)}
+.tl-emp-row{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line)}
+.tl-emp-row:last-child{border-bottom:none}
+.tl-emp-row.ot{background:linear-gradient(90deg,var(--c-amber-soft),transparent 45%);margin:0 -4px;padding-left:8px;border-radius:8px}
+.tl-avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0}
+.tl-emp-mid{flex:1;min-width:0}
+.tl-emp-name-row{display:flex;align-items:center;gap:6px}
+.tl-emp-name{font-size:13px;font-weight:700;color:var(--text)}
+.tl-ot-badge{font-size:9px;font-weight:800;color:var(--c-amber-deep);background:var(--bg-card);border:1px solid var(--c-amber);padding:1px 5px;border-radius:4px}
+.tl-split{margin-top:4px}
+.tl-split-bar{display:flex;height:4px;border-radius:2px;overflow:hidden;background:var(--line-2);margin-bottom:3px}
+.tl-split-bar span{display:block;height:100%}
+.tl-split-legend{font-size:10px;color:var(--text3)}
+.tl-emp-total{font-size:13.5px;font-weight:800;font-variant-numeric:tabular-nums;flex-shrink:0;color:var(--text)}
+.tl-empty{padding:18px 4px;text-align:center;color:var(--text3);font-size:12px}
 /* ── Mileage: trip rows ── */
 .mil-day-trip{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line)}
 .mil-day-trip:last-child{border-bottom:none}
@@ -1358,6 +1430,10 @@ body.dark .cal-cell.other{background:var(--cream)}
        onboarding starting-odometer step); more setup tasks land here as they move
        out of the wizard (§9.9). -->
   <div id="dash-setup-todo" style="display:none"></div>
+  <!-- Held supply runs: pinned above the money tiles exactly like the setup
+       checklist (owner 2026-08-17: "first thing they see, clear it out and
+       it's gone"). Renders only while a store run is unanswered. -->
+  <div id="dash-supply-hold" style="display:none"></div>
   <div id="dash-geo-perm" style="display:none"></div>
   <div id="dash-widget-root">
     <!-- Every REAL card is its own widget (data-dw) so it can be held-and-moved
@@ -1382,6 +1458,9 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
     <div class="td-dw" data-dw="contracts">
       <div id="dash-contracts" style="display:none;margin-bottom:10px"></div>
+    </div>
+    <div class="td-dw" data-dw="readyQueue">
+      <div id="dash-ready-queue" style="margin-bottom:10px"></div>
     </div>
     <div class="td-dw" data-dw="goal">
       <div id="dash-goal" style="margin-bottom:10px"></div>
@@ -2337,6 +2416,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-title">Time Log</div>
     <div id="tl-total" style="font-size:12px;font-weight:700;color:var(--text3)"></div>
   </div>
+  <div id="tl-scope-toggle" class="tl-scope-toggle" style="display:none"></div>
   <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Year</div>
   <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
     <select id="tl-year-sel" onchange="setTimeLogYear(parseInt(this.value))" class="btn btn-sm" style="flex:1;min-width:0;justify-content:flex-start;cursor:pointer"></select>
@@ -2346,6 +2426,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div style="padding:0 12px 80px">
     <div id="tl-open" style="display:none"></div>
     <div id="tl-list"></div>
+    <div id="tl-share" style="display:none"></div>
   </div>
 </div>
 <div class="pg" id="pg-dispatch"></div>
@@ -2549,6 +2630,9 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div style="font-family:Geist,sans-serif;font-size:28px;font-weight:900;letter-spacing:-1px;line-height:1">Settings</div>
           <div id="set-index-meta" style="font-size:12px;color:var(--text3);margin-top:5px;font-weight:500"></div>
         </div>
+        <!-- Dual-hat switcher entry (§9.10 slice 1): only visible when this login is
+             ALSO an active crew member somewhere (_applyEmployeeNavGating toggles it). -->
+        <button id="set-hat-btn" class="btn btn-sm" onclick="_hatSwitcherMenu()" style="flex-shrink:0;display:none">Switch business</button>
         <button class="btn btn-sm" onclick="if(supaEnabled())supaSignOut()" style="flex-shrink:0">Sign out</button>
       </div>
     </div>
@@ -2659,6 +2743,15 @@ body.dark .cal-cell.other{background:var(--cream)}
             <div class="set-idx-sub">Email + push for new leads, signed proposals, payments</div>
           </div>
           <div class="set-idx-meta" id="set-meta-notifications"></div>
+          <div class="set-idx-chev">›</div>
+        </div>
+        <div class="set-idx-row" data-search="truemeasure truescan rate library lidar measure scan area roof square distance wall ceiling trim door window outlet switch gfci" onclick="_openSetDetail('truerates')">
+          <div class="set-idx-icon"><span data-ico="📐" data-ico-size="18"></span></div>
+          <div class="set-idx-body">
+            <div class="set-idx-title">TrueSuite rate library</div>
+            <div class="set-idx-sub">Preset $ rates for TrueMeasure &amp; TrueScan</div>
+          </div>
+          <div class="set-idx-meta" id="set-meta-truerates"></div>
           <div class="set-idx-chev">›</div>
         </div>
       </div>
@@ -2973,6 +3066,45 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
   </div>
 
+  <!-- TrueSuite rate library detail -->
+  <div class="set-detail" id="setd-truerates">
+    <div class="set-detail-hd">
+      <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="📐" data-ico-size="18"></span></div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">TrueSuite rate library</div><div style="font-size:11px;color:var(--text3)">Set your $ rates once, they auto-fill on every measured line</div></div>
+    </div>
+    <div style="padding:16px">
+      <div class="tip" style="margin-bottom:14px">Fill these in now and TrueMeasure (map tracing) and TrueScan (LiDAR room scan) both pre-fill the rate the next time you confirm a measured line, instead of asking you to type it live on-site.</div>
+      <div id="set-rates-tm" style="margin-bottom:14px">
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">TrueMeasure rates</div>
+        <div class="fg fg2">
+          <div class="f"><label>Area ($/sq ft)</label><input type="number" id="tr-tm-area" min="0" step="0.01" placeholder="0"></div>
+          <div class="f"><label>Roofing ($/square)</label><input type="number" id="tr-tm-roof" min="0" step="1" placeholder="0"></div>
+          <div class="f"><label>Distance / run ($/ln ft)</label><input type="number" id="tr-tm-dist" min="0" step="0.01" placeholder="0"></div>
+        </div>
+      </div>
+      <div id="set-rates-scan" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">TrueScan rates &middot; surfaces</div>
+        <div class="fg fg2">
+          <div class="f"><label>Walls ($/sq ft)</label><input type="number" id="tr-scan-wall" min="0" step="0.01" placeholder="0"></div>
+          <div class="f"><label>Ceiling ($/sq ft)</label><input type="number" id="tr-scan-ceiling" min="0" step="0.01" placeholder="0"></div>
+          <div class="f"><label>Trim ($/ln ft)</label><input type="number" id="tr-scan-trim" min="0" step="0.01" placeholder="0"></div>
+          <div class="f"><label>Doors ($/door)</label><input type="number" id="tr-scan-door" min="0" step="1" placeholder="0"></div>
+          <div class="f"><label>Windows ($/window)</label><input type="number" id="tr-scan-window" min="0" step="1" placeholder="0"></div>
+        </div>
+      </div>
+      <div id="set-rates-scan-elec" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">TrueScan rates &middot; electrical</div>
+        <div class="fg fg2">
+          <div class="f"><label>Outlets ($/outlet)</label><input type="number" id="tr-scan-outlet" min="0" step="1" placeholder="0"></div>
+          <div class="f"><label>Switches ($/switch)</label><input type="number" id="tr-scan-sw" min="0" step="1" placeholder="0"></div>
+          <div class="f"><label>GFCI protection ($/lot)</label><input type="number" id="tr-scan-gfci" min="0" step="1" placeholder="0"></div>
+        </div>
+      </div>
+      <button class="btn btn-p" onclick="saveTrueRates()" style="width:100%;margin-top:16px;padding:13px">Save</button>
+    </div>
+  </div>
+
   <!-- Legal & terms detail -->
   <div class="set-detail" id="setd-legal">
     <div class="set-detail-hd">
@@ -3076,28 +3208,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
         <button class="btn btn-p" onclick="saveSettings()" style="width:100%;margin-top:8px;padding:13px">Save</button>
       </div>
-      <!-- Stripe CC surcharge settings (shown when Stripe is connected) -->
-      <div id="stripe-surcharge-wrap" style="display:none">
-        <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Stripe settings</div>
-        <div class="set-form-card">
-          <div style="padding:14px 16px">
-            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none">
-              <input type="checkbox" id="set-cc-surcharge-enabled" onchange="document.getElementById('set-cc-surcharge-pct-wrap').style.display=this.checked?'block':'none'" style="width:18px;height:18px;margin-top:1px;accent-color:var(--blue);flex-shrink:0">
-              <div>
-                <div style="font-size:13px;font-weight:700">Pass credit card fee to client</div>
-                <div style="font-size:11px;color:var(--text3);margin-top:2px">Clients see a fee breakdown and confirm total before paying online. Credit cards only, debit and ACH are unaffected.</div>
-              </div>
-            </label>
-            <div id="set-cc-surcharge-pct-wrap" style="display:none;margin-top:10px;padding-left:28px">
-              <div style="display:flex;align-items:center;gap:8px">
-                <input type="number" id="set-cc-surcharge-pct" min="0.5" max="4" step="0.1" style="width:72px;padding:7px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-family:inherit" value="3">
-                <span style="font-size:12px;color:var(--text3)">% fee added (max 4% per card network rules)</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <button class="btn btn-p" onclick="saveSettings()" style="width:100%;margin-top:8px;padding:13px">Save</button>
-      </div>
+
       <!-- Legacy Stripe Connect status div (used by existing cloud.js) -->
       <div id="stripe-connect-status-ui" style="display:none"></div>
     </div>
@@ -3178,6 +3289,13 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="display:flex;flex-direction:column;gap:8px">
         <button class="btn btn-p" onclick="if(supaEnabled())supaSignOut()" style="width:100%;padding:13px">Sign out of cloud sync</button>
         <button id="location-settings-btn" class="btn" onclick="resetLocationPermission()" style="width:100%;padding:13px;font-size:13px"><span data-ico="📍" data-ico-size="14"></span> Location access</button>
+        <!-- No Location diagnostics button here. An ungated copy (set-geo-diag-btn2)
+             lived on this line from 2026-08-21 so the panel stayed reachable on the
+             plain UAT web link; the owner removed it 2026-08-25 ("put it under the
+             advanced developer tools section, it needs to be there"), with the
+             downside stated: diagnostics is now Developer-only, so it needs is_dev
+             in the database AND the native shell. Do not re-add this copy citing the
+             08-21 note, that decision was superseded. See js/geo-track.js. -->
         <button class="btn" onclick="resetSettings()" style="width:100%;padding:13px;font-size:13px">Reset all settings to defaults</button>
       </div>
     </div>
@@ -3253,6 +3371,16 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div style="display:flex;flex-direction:column;gap:8px">
           <button id="set-geo-diag-btn" class="btn" onclick="_geoDiagPanel()" style="width:100%;padding:13px;font-size:13px">Location diagnostics</button>
           <button id="set-geo-shadow-btn" class="btn" onclick="_shadowPanel()" style="width:100%;padding:13px;font-size:13px">Engine comparison</button>
+          <!-- Permission lab (owner ask 2026-08-26): a place to drive the iOS
+               location prompt and watch what it reports back, without
+               reinstalling the app between tries. Dev-gated twice over, by the
+               Developer section itself and by dev-geo-tools only unhiding on a
+               native shell. -->
+          <button id="set-geo-perm-btn" class="btn" onclick="_geoPermLab()" style="width:100%;padding:13px;font-size:13px">Permission lab</button>
+          <!-- The undo for every sweep in js/mileage.js. Owner-invoked only: a
+               recovery that ran on its own would be the same mistake as the
+               sweep that caused the loss. Scans and shows before it writes. -->
+          <button id="set-mile-restore-btn" class="btn" onclick="_mileRestorePanel()" style="width:100%;padding:13px;font-size:13px">Recover swept mileage</button>
         </div>
       </div>
 
@@ -3615,11 +3743,14 @@ body.dark .cal-cell.other{background:var(--cream)}
 </div><!-- end #nav -->
 <!-- ── Mobile top header ── -->
 <div id="mobile-topbar">
-  <div id="mobile-topbar-brand">
+  <div id="mobile-topbar-brand" onclick="if(typeof _eggLogoTap==='function')_eggLogoTap()">
     <div class="mobile-topbar-icon">
       <svg viewBox="0 0 24 24" fill="none" stroke="rgba(245,239,226,.9)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
     </div>
     <span class="brand-logo-slot mobile-topbar-name">TradeDesk</span>
+    <!-- Dual-hat affordance (§9.10): shown only when this login has 2+ hats, the
+         brand then opens the business switcher instead of the logo easter egg. -->
+    <svg id="topbar-hat-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="rgba(245,239,226,.75)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="display:none;flex-shrink:0;margin-left:-2px"><polyline points="6 9 12 15 18 9"/></svg>
     <span class="mobile-topbar-pro">PRO</span>
   </div>
   <div class="mobile-topbar-actions">
@@ -3734,6 +3865,12 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/day-map.js"></script>
 <script src="js/drive.js"></script>
 <script src="js/notify.js"></script>
+<!-- push.js is the server-driven sibling of notify.js: local notifications can
+     only announce what the phone already knew, this one carries what happened
+     on the server. live-activity.js reads the clock and drive state that
+     jobs.js and geo-track.js own, so it loads after both. -->
+<script src="js/push.js"></script>
+<script src="js/live-activity.js"></script>
 <script src="js/handoff.js"></script>
 <script src="js/voice.js"></script>
 <script src="js/equipment.js"></script>
@@ -3741,6 +3878,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/bg-upload.js"></script>
 <script src="js/scan.js"></script>
 <script src="js/scan-estimate.js"></script>
+<script src="js/true-measure.js"></script>
 <script src="js/scan-3d.js"></script>
 <script src="js/legal.js"></script>
 <script src="js/proposals.js"></script>
@@ -3756,9 +3894,29 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/agreements.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/fleet.js"></script>
+<script src="js/vehicle-verdict.js"></script>
+<script src="js/milestones.js"></script>
 <script src="js/e2e.js"></script>
 <script src="js/pwa.js"></script>
 <script>
+// Persistent, actionable replacement for the old "press Ctrl+Shift+R" toast:
+// that instruction is a dead end on a phone with no keyboard, so this gives
+// every device (mobile included) a real tap target that does the same
+// cache-wipe-and-reload _autoSaveAndReload() already does automatically.
+// Deduped by id so repeat 15s poll firings don't stack copies.
+function _showUpdateToast(){
+  if(document.getElementById('update-toast'))return;
+  const t=document.createElement('div');
+  t.id='update-toast';
+  t.className='toast';
+  t.style.cssText='max-width:none;right:16px;left:16px;bottom:24px';
+  // A close button (§15.1: fixed elements never cover content with no way
+  // out), not a permanent overlay: dismissing removes it, and the 15s poll
+  // above recreates it on its next firing since the update is still true,
+  // so declining now just means "ask me again shortly," never "never."
+  t.innerHTML='<span class="toast-icon">🔄</span><span style="flex:1">New version available</span><button class="toast-update-btn" onclick="_autoSaveAndReload()">Update</button><button class="toast-close" onclick="this.parentElement.remove()">×</button>';
+  document.body.appendChild(t);
+}
 // ── Service Worker, always-current version enforcement ───────────────────
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('/sw.js').catch(()=>{});
@@ -3783,7 +3941,7 @@ if('serviceWorker' in navigator){
         const raw=localStorage.getItem('_rv');
         const rec=raw?JSON.parse(raw):{n:0,t:Date.now()};
         if(Date.now()-rec.t>300000){rec.n=0;rec.t=Date.now();} // reset after 5 min
-        if(rec.n>=3){showToast('New version available, press Ctrl+Shift+R to update','🔄');return;}
+        if(rec.n>=3){_showUpdateToast();return;}
         rec.n++;
         localStorage.setItem('_rv',JSON.stringify(rec));
         _autoSaveAndReload();

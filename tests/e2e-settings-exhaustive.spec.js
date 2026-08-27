@@ -52,7 +52,6 @@ test.describe('settings.js: exhaustive coverage', () => {
       ensureEl('set-brandcolor', 'input');
       ensureEl('set-subdomain-status');
       ensureEl('integrations-list');
-      ensureEl('stripe-surcharge-wrap');
       ensureEl('lic-page-body');
     });
   });
@@ -64,7 +63,7 @@ test.describe('settings.js: exhaustive coverage', () => {
         'set-index-view','set-meta-biz','set-meta-branding','set-meta-rates',
         'set-meta-legal','set-meta-taxes','set-meta-cloud','set-meta-notifications',
         'set-meta-integrations','set-index-meta','set-brand-swatches','set-brand-selected',
-        'set-brandcolor','set-subdomain-status','integrations-list','stripe-surcharge-wrap',
+        'set-brandcolor','set-subdomain-status','integrations-list',
         'lic-page-body'
       ];
       ids.forEach(id => { const el = document.getElementById(id); if (el) el.remove(); });
@@ -890,6 +889,16 @@ test.describe('settings.js: exhaustive coverage', () => {
         const savedUser = window._supaUser;
         const savedEnabled = window.supaEnabled;
         const savedSupa = window._supa;
+        // The partial _supa below has no .from: if the cloud sync heartbeat
+        // (js/cloud.js _heartbeatTick -> _cursorCheckReconcile ->
+        // supaLoadFromCloud) fires inside this test's ~280ms window, it
+        // throws "_supa.from is not a function" as a real console.error and
+        // fails the suite's assertNoErrors (seen in CI 2026-08-24, shard 3).
+        // Park both sync entry points for the duration; restored below.
+        const savedLoad = window.supaLoadFromCloud;
+        const savedCursor = window._cursorCheckReconcile;
+        window.supaLoadFromCloud = async () => {};
+        if (savedCursor) window._cursorCheckReconcile = () => {};
         window._supaUser = { id: 'e2e-user' };
         window.supaEnabled = () => true;
         window._supa = { auth: { getSession: async () => ({ data: { session: { access_token: 't' } } }) } };
@@ -907,6 +916,8 @@ test.describe('settings.js: exhaustive coverage', () => {
         window._supaUser = savedUser;
         window.supaEnabled = savedEnabled;
         window._supa = savedSupa;
+        window.supaLoadFromCloud = savedLoad;
+        if (savedCursor) window._cursorCheckReconcile = savedCursor;
         return { threw, connected: !!(status && status.connected) };
       });
       expect(r.threw).toBe(null);

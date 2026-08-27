@@ -17,6 +17,20 @@ function getJobScopes(jobId){
       else if(es?.id&&!baseIds.has(es.id)){base.push(es);baseIds.add(es.id);}
     });
   }
+  // Owner request: scope order must be reorderable per job, not fixed to the
+  // estimate's order (drag-to-reorder in the clock-in sheet, _initScopeDrag
+  // below). Absent field = untouched, the default order above stands exactly
+  // as it always has, so every job created before this shipped keeps working
+  // with zero migration. Present field wins, and anything not IN it (a scope
+  // added after the order was set) is appended at the end in its natural
+  // default-order position rather than getting silently dropped.
+  if(j?.scopeOrder?.length){
+    const byId=new Map(base.map(s=>[s.id,s]));
+    const ordered=[];
+    j.scopeOrder.forEach(id=>{const s=byId.get(id);if(s){ordered.push(s);byId.delete(id);}});
+    byId.forEach(s=>ordered.push(s));
+    base=ordered;
+  }
   return base;
 }
 
@@ -73,6 +87,18 @@ function _locPromptClockIn(jobId){
   clockIn(jobId,null,null);
   renderDash&&renderDash();
 }
+
+// Home dashboard's always-there manual fallback (owner 2026-08-19: "one that
+// allows manual with gps geofence override... nothing dependent on
+// anything"). No job picker, deliberately: General time (jobId===null) is
+// the only thing this button does. If the geofence later confirms a real
+// job or place, the SAME open entry gets relabeled in place (js/geo-track.js
+// fence transition), it never spawns a second, competing clock.
+function _dashManualClockIn(){
+  clockIn(null,null,null);
+  renderDash&&renderDash();
+}
+
 // Which jobs to offer when standing somewhere that isn't a job site.
 //
 // NOT _geoMyJobs(): that is today's ACTIVE jobs, which is exactly right for
@@ -141,6 +167,12 @@ function openClockInSheet(jobId){
   window._cksRebuild=function(){
     const scopes=getJobScopes(jobId);
     const bd=getJobScopeBreakdown(jobId);
+    // A grip per row, same interaction as the dispatch board's day-reorder
+    // (js/cloud.js _initDispatchDrag, CLAUDE.md §7.3: reuse the existing
+    // pattern, don't hand-roll a parallel one): pointer events on a handle,
+    // reordered in the DOM as the pointer crosses each neighbour's midpoint.
+    // Only worth showing once there's more than one thing to put in order.
+    const canReorder=scopes.length>1;
     let rows='';
     for(const s of scopes){
       const logged=bd[s.id]||0;
@@ -154,13 +186,22 @@ function openClockInSheet(jobId){
         :'<span style="width:8px;height:8px;border-radius:50%;background:var(--border2);flex-shrink:0;display:inline-block"></span>';
       const sid=s.id.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       const slabel=s.label.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      rows+='<button onclick="clockIn('+jobId+',\''+sid+'\',\''+slabel+'\');setTimeout(()=>window._cksRebuild&&window._cksRebuild(),80)" '+
-        'style="display:flex;align-items:center;gap:10px;width:100%;padding:12px 16px;border:none;border-bottom:1px solid var(--border);'+bg+bl+' text-align:left;font-family:inherit;cursor:pointer;font-size:14px;color:var(--text)">'+
-        dot+
-        '<span style="font-size:18px;flex-shrink:0">'+svgIcon(s.icon,{size:18})+'</span>'+
-        '<span style="font-weight:600;flex:1">'+escHtml(s.label)+'</span>'+
-        (logged>0?'<span style="font-size:11px;color:var(--text3)">'+_fmtMin(logged)+'</span>':'')+
-      '</button>';
+      // touch-action:none on the grip ONLY, same reasoning as the dispatch
+      // board: the sheet must still scroll normally everywhere else.
+      const grip=canReorder
+        ?'<div class="scope-grip" data-scope="'+escHtml(s.id)+'" title="Drag to reorder" style="touch-action:none;cursor:grab;padding:12px 4px 12px 12px;color:var(--text3);flex-shrink:0;line-height:0">'+
+           '<svg width="12" height="18" viewBox="0 0 14 18" fill="currentColor" aria-hidden="true"><circle cx="4" cy="4" r="1.6"/><circle cx="10" cy="4" r="1.6"/><circle cx="4" cy="9" r="1.6"/><circle cx="10" cy="9" r="1.6"/><circle cx="4" cy="14" r="1.6"/><circle cx="10" cy="14" r="1.6"/></svg></div>'
+        :'';
+      rows+='<div class="scope-row" data-scope="'+escHtml(s.id)+'" style="display:flex;align-items:stretch;border-bottom:1px solid var(--border);'+bg+bl+'">'+
+        grip+
+        '<button onclick="clockIn('+jobId+',\''+sid+'\',\''+slabel+'\');setTimeout(()=>window._cksRebuild&&window._cksRebuild(),80)" '+
+          'style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;padding:12px 16px 12px '+(canReorder?'8px':'16px')+';border:none;background:none;text-align:left;font-family:inherit;cursor:pointer;font-size:14px;color:var(--text)">'+
+          dot+
+          '<span style="font-size:18px;flex-shrink:0">'+svgIcon(s.icon,{size:18})+'</span>'+
+          '<span style="font-weight:600;flex:1;min-width:0">'+escHtml(s.label)+'</span>'+
+          (logged>0?'<span style="font-size:11px;color:var(--text3);flex-shrink:0">'+_fmtMin(logged)+'</span>':'')+
+        '</button>'+
+      '</div>';
     }
     rows+='<button onclick="_clockAddTask('+jobId+')" '+
       'style="display:flex;align-items:center;gap:10px;width:100%;padding:11px 16px;border:none;background:none;border-bottom:1px solid var(--border);text-align:left;font-family:inherit;cursor:pointer;font-size:13px;color:var(--text3)">'+
@@ -171,19 +212,96 @@ function openClockInSheet(jobId){
       '<div style="display:flex;justify-content:space-between;align-items:center;padding:16px 16px 12px;border-bottom:1px solid var(--border)">'+
         '<div>'+
           '<div style="font-size:16px;font-weight:800">Select task</div>'+
-          '<div style="font-size:12px;color:var(--text3);margin-top:1px">'+escHtml(clientName)+' · '+escHtml(j.name)+'</div>'+
+          '<div style="font-size:12px;color:var(--text3);margin-top:1px">'+escHtml(clientName)+' · '+escHtml(j.name)+
+            (canReorder?' · <span style="color:var(--text3)">drag '+svgIcon('⠿',{size:10})+' to reorder</span>':'')+
+          '</div>'+
         '</div>'+
         '<button onclick="document.getElementById(\'_cks-ov\')?.remove()" style="background:var(--bg2);border:none;color:var(--text2);font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-family:inherit">✕</button>'+
       '</div>'+
-      rows+
+      '<div id="_cks-list">'+rows+'</div>'+
       '<div style="padding:12px 16px;display:flex;flex-direction:column;gap:8px">'+
         (bid&&getBidBalance(bid)>0.01
           ?'<button onclick="openPayPanel('+bid.id+')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('💰')+' Collect '+fmt(getBidBalance(bid))+'</button>'
           :'')+
         '<button onclick="_markJobComplete('+jobId+')" style="width:100%;padding:13px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">'+svgIcon('🏁')+' Mark job complete</button>'+
       '</div>';
+    if(typeof _initScopeDrag==='function')_initScopeDrag(jobId);
   };
   window._cksRebuild();
+}
+
+// ── Drag a scope to reorder a job's task list (owner request: order must be
+// per-job, not fixed to the estimate) ───────────────────────────────────────
+// Pointer events on the sheet, delegated (like _initDispatchDrag, js/cloud.js):
+// one implementation covers finger, stylus and mouse, and it survives the
+// sheet's full innerHTML rebuild on every clock-in because it's bound to the
+// sheet element itself, not to the rows, and re-guarded so a rebuild never
+// double-binds it.
+let _scopeDrag=null;
+function _initScopeDrag(jobId){
+  const sheet=document.getElementById('_cks-sheet');
+  if(!sheet||sheet._scopeDragBound)return;
+  sheet._scopeDragBound=true;
+
+  sheet.addEventListener('pointerdown',e=>{
+    const grip=e.target.closest&&e.target.closest('.scope-grip');
+    if(!grip)return;
+    const row=grip.closest('.scope-row');
+    const list=row&&row.parentElement;
+    if(!row||!list)return;
+    e.preventDefault();
+    _scopeDrag={row,list,moved:false};
+    try{grip.setPointerCapture(e.pointerId);}catch(_e){}
+    row.style.transition='none';
+    row.style.opacity='.9';
+    row.style.boxShadow='0 6px 20px rgba(0,0,0,.18)';
+    row.style.position='relative';
+    row.style.zIndex='5';
+    row.style.background='var(--bg2)';
+    _tdHaptic('thud');
+  });
+
+  sheet.addEventListener('pointermove',e=>{
+    if(!_scopeDrag)return;
+    e.preventDefault();
+    _scopeDrag.moved=true;
+    const{row,list}=_scopeDrag;
+    const rows=[...list.querySelectorAll(':scope > .scope-row')];
+    const i=rows.indexOf(row);
+    const y=e.clientY;
+    const prev=rows[i-1],next=rows[i+1];
+    if(prev){
+      const pr=prev.getBoundingClientRect();
+      if(y<pr.top+pr.height/2){list.insertBefore(row,prev);return;}
+    }
+    if(next){
+      const nr=next.getBoundingClientRect();
+      if(y>nr.top+nr.height/2){list.insertBefore(next,row);return;}
+    }
+  });
+
+  const end=()=>{
+    if(!_scopeDrag)return;
+    const{row,list,moved}=_scopeDrag;
+    _scopeDrag=null;
+    row.style.opacity='';row.style.boxShadow='';row.style.zIndex='';
+    row.style.position='';row.style.transition='';row.style.background='';
+    if(!moved)return;
+    // The DOM is the order now, so read it back rather than tracking indices.
+    const ids=[...list.querySelectorAll(':scope > .scope-row')].map(r=>r.getAttribute('data-scope'));
+    _setJobScopeOrder(jobId,ids);
+  };
+  sheet.addEventListener('pointerup',end);
+  sheet.addEventListener('pointercancel',end);
+}
+// Writes the order the sheet is showing. Any scope not dragged over (there
+// shouldn't be one, every row in the sheet has a grip) is simply absent from
+// the array, and getJobScopes appends anything scopeOrder doesn't mention.
+function _setJobScopeOrder(jobId,scopeIds){
+  if(!Array.isArray(scopeIds)||!scopeIds.length)return;
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  j.scopeOrder=scopeIds;
+  saveAll();
 }
 
 function _clockAddTask(jobId){
@@ -240,10 +358,12 @@ function _markJobComplete(jobId){
       try{if(typeof logLifecycle==='function')logLifecycle('job_completed',{jobId:j.id,bidId:j.bid_id,clientId:j.client_id});}catch(_e){}
       // mirror onto the bid so the client timeline can stamp the exact completion time
       if(j.bid_id){const _b=bids.find(x=>x.id===j.bid_id);if(_b)_b.completedAt=j.completedAt;}
-      // Where the job was actually finished. Corroborates the client address
-      // rather than duplicating it: the address is where the client lives, this
-      // is where the crew stood. Fire-and-forget, never blocks the save.
-      if(typeof _stampGeo==='function')_stampGeo(j);
+      // Where the job was actually finished, kept SEPARATE from j.lat/j.lon
+      // (the address geocode day-map.js/geo-track.js cache and every map/
+      // geofence lookup reads). Stamping the live-GPS completion fix onto the
+      // same fields used to clobber the address cache with wherever the crew
+      // happened to be standing, corrupting it for the rest of the job's life.
+      if(typeof _stampGeo==='function')_stampGeo(j,null,'completed');
       saveAll();}
     document.getElementById('_cks-ov')?.remove();
     showToast('Job marked complete 🏁','✅');
@@ -266,8 +386,21 @@ function _isMyTimeEntry(e){
   return(e.logged_by_uid||null)===loggedByUid;
 }
 
+// jobId===null (not undefined/an unmatched id, an explicit null) means
+// "General time": no client, no job, nothing set up yet. This is the
+// always-on Home clock bar's fallback so it truly works with an empty
+// account. Deliberately NOT the _nearbyClockIn pattern of auto-creating a
+// walk-up job (js/jobs.js:55-62): that pattern fits a REAL client with no
+// job record yet, a job genuinely belongs in their history. General time
+// has no one to belong to, inventing a fake job for it would just leak a
+// phantom entry into the Jobs tab, calendar, and dispatch board for no
+// reason. timeEntries already tolerates an unmatched job_id gracefully
+// (crew-cost falls back to "Other"), so this rides that same tolerance
+// instead of a new data shape.
 function clockIn(jobId,scopeId,scopeLabel){
-  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const general=jobId===null;
+  const j=general?null:jobs.find(x=>x.id===jobId);
+  if(!general&&!j)return;
   // The clock is the most physical moment in the app: the crew is standing on
   // the site with the phone in a glove. It gets its own tap regardless of
   // which toast (if any) follows.
@@ -275,7 +408,7 @@ function clockIn(jobId,scopeId,scopeLabel){
   // Defense in depth: openClockInSheet() already refuses to open on a
   // closed job, but clockIn() is reachable directly too, never let a
   // completed/cancelled job accept a new time entry either way.
-  if(_jobClosedToClockIn(j)){showToast('This job is already marked complete, nothing left to clock into.','✅');return;}
+  if(j&&_jobClosedToClockIn(j)){showToast('This job is already marked complete, nothing left to clock into.','✅');return;}
   if(_activeTimer){
     if(_activeTimer.jobId===jobId&&_activeTimer.scopeId===(scopeId||null)){
       showToast('Already tracking '+(scopeLabel||'this task'),'⏱');return;
@@ -291,8 +424,8 @@ function clockIn(jobId,scopeId,scopeLabel){
       return;
     }
   }
-  const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
-  const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
+  const bid=j&&j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  const c=bid?getClientById(bid.client_id):(j?getClientById(j.client_id):null);
   // Owner request 2026-07-11 ("bulletproof"): persist the entry the INSTANT the
   // clock starts, not only when it stops. Before this, clockOut() was the only
   // place a timeEntries row was ever created, a crashed tab, a dead phone, or
@@ -302,21 +435,31 @@ function clockIn(jobId,scopeId,scopeLabel){
   // creating a new one. This open row is also what makes force-clock-out and
   // reload-survival possible, it's the one source of truth for "is anyone
   // still clocked in," visible to every device, not just the one that's running.
+  const jobName=general?'General time':j.name;
   const{loggedByUid,loggedByName}=_tlLoggedByInfo();
   const entryId=Date.now();
   timeEntries.push({id:entryId,job_id:jobId,date:todayKey(),start_time:new Date().toISOString(),end_time:null,minutes:null,scope_id:scopeId||null,scope_label:scopeLabel||null,logged_by_uid:loggedByUid,logged_by_name:loggedByName,open:true});
   saveAll();
-  _activeTimer={jobId,jobName:j.name,clientName:c?c.name:j.name,scopeId:scopeId||null,scopeLabel:scopeLabel||null,startTime:Date.now(),timerInterval:null,entryId};
+  _activeTimer={jobId,jobName,clientName:c?c.name:jobName,scopeId:scopeId||null,scopeLabel:scopeLabel||null,startTime:Date.now(),timerInterval:null,entryId};
   _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
   showClockBanner();
+  // Same clock on the lock screen and in the Dynamic Island. Started once;
+  // iOS ticks it on-device with the app closed, so nothing updates it per
+  // second (js/live-activity.js).
+  if(typeof _liveActClockIn==='function')_liveActClockIn(_activeTimer);
   renderJobsPage&&renderJobsPage();
-  showToast('Clocked in · '+(scopeLabel||j.name),'⏱');
+  renderDash&&renderDash();
+  showToast('Clocked in · '+(scopeLabel||jobName),'⏱');
 }
 
 function clockOut(saveEntry,silent){
   if(!_activeTimer)return;
   _tdHaptic('thud');   // day's work banked, same weight as clocking in
   clearInterval(_activeTimer.timerInterval);
+  // Clear the lock-screen card FIRST, before any of the save paths below can
+  // return early: a clock card outliving the clock is worse than never having
+  // shown one, it tells the contractor they are still on the meter.
+  if(typeof _liveActClockOut==='function')_liveActClockOut();
   const minutes=Math.max(1,Math.round((Date.now()-_activeTimer.startTime)/60000));
   const jobId=_activeTimer.jobId;
   const jobName=_activeTimer.jobName;
@@ -369,6 +512,10 @@ function _rehydrateActiveTimer(){
   _activeTimer={jobId:j.id,jobName:j.name,clientName:c?c.name:j.name,scopeId:mine.scope_id||null,scopeLabel:mine.scope_label||null,startTime:new Date(mine.start_time).getTime(),timerInterval:null,entryId:mine.id};
   _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
   showClockBanner();
+  // A reload mid-shift restores the lock-screen card too, or the contractor
+  // reopens the app to find the clock running in-app and gone from the lock
+  // screen, which reads as the tracking having stopped.
+  if(typeof _liveActClockIn==='function')_liveActClockIn(_activeTimer);
 }
 
 // Owner request 2026-07-11 ("bulletproof", matches Jobber's #1 timesheet
@@ -385,6 +532,11 @@ function forceClockOutEntry(entryId){
   const j=jobs.find(x=>x.id===e.job_id);
   if(j)j.actualHours=Math.round(((j.actualHours||0)+minutes/60)*10)/10;
   saveAll();
+  // The crew phone's lock-screen card is still saying CLOCKED IN and ticking,
+  // with the app closed. End it through the server (update-live-activity), or
+  // the lock screen keeps telling them they are on the meter until the next
+  // time they open the app. Fire-and-forget: the entry above is already saved.
+  if(typeof _liveActRemoteEnd==='function'&&e.logged_by_uid)_liveActRemoteEnd(e.logged_by_uid,'clock');
   showToast('Clocked out · '+_fmtMin(minutes),'⏱');
   typeof renderTimeLog==='function'&&renderTimeLog();
 }
@@ -550,6 +702,72 @@ function _geocodeAddr(addr){
 const _NEARBY_GEOCODE_BUDGET=8;
 function _nearbyGeoCache(){try{return JSON.parse(localStorage.getItem('zp3_nearby_geo')||'{}');}catch(_e){return{};}}
 function _saveNearbyGeoCache(cache){try{localStorage.setItem('zp3_nearby_geo',JSON.stringify(cache));}catch(_e){}}
+// Eager geocode: fires the moment a client's address is created or changed
+// (called from saveClient, js/clients.js), instead of waiting for the passive
+// checkNearbyJob trickle to reach this client in its per-heartbeat budget.
+// This is the actual fix for "brand-new client's first visit can be missed"
+// (see the comment above checkNearbyJob and _geoClientAt in geo-track.js):
+// a client added same-day, then visited same-day, no longer depends on the
+// dashboard having rendered enough times first to warm the cache.
+async function _eagerGeocodeClient(clientId,addr){
+  if(!addr)return;
+  const cache=_nearbyGeoCache();
+  if(cache[clientId]&&cache[clientId].addr===addr)return; // already warm for this exact address
+  const coords=await _geocodeAddr(addr);
+  if(!coords)return;
+  const fresh=_nearbyGeoCache(); // re-read: a concurrent sweep may have written meanwhile
+  fresh[clientId]={lat:coords.lat,lon:coords.lon,addr};
+  _saveNearbyGeoCache(fresh);
+}
+// Shared by every throttled geocode loop that touches zp3_nearby_geo
+// (checkNearbyJob's own uncached-client sweep below, and the backfill sweep
+// after it): only one may run its Nominatim throttle at a time, or two
+// interleaved ~1.1s loops together breach Nominatim's ~1 req/sec policy AND
+// each holds its own now-stale full-cache snapshot, so whichever finishes
+// last silently overwrites whatever the other just wrote.
+let _nearbyGeoSweepRunning=false;
+// Background backfill: warms every EXISTING client's cache entry that predates
+// this fix (or whose address changed offline/via import, bypassing saveClient's
+// eager hook). Fire-and-forget from boot, resumable: each call only geocodes
+// whatever is still uncached, so an interrupted sweep just finishes on the next
+// boot instead of losing progress. A larger budget than checkNearbyJob's is
+// safe here because this runs once per boot in the background, not on every
+// dashboard render.
+const _NEARBY_BACKFILL_BUDGET=40;
+async function _backfillNearbyGeoCache(){
+  if(typeof clients==='undefined')return;
+  // checkNearbyJob's own throttled sweep (below) may already be mid-flight from
+  // this same boot; wait for it to clear rather than run two Nominatim loops at
+  // once. Gives up after 30s and just skips this boot's backfill, the next
+  // boot's run resumes wherever the cache actually ended up (nothing is lost,
+  // this is a cache warm, not a write of record).
+  for(let waited=0;_nearbyGeoSweepRunning&&waited<30000;waited+=1000)await new Promise(r=>setTimeout(r,1000));
+  if(_nearbyGeoSweepRunning)return;
+  _nearbyGeoSweepRunning=true;
+  try{
+    const _startCache=_nearbyGeoCache();
+    const uncached=clients.filter(c=>c.addr&&(!_startCache[c.id]||_startCache[c.id].addr!==c.addr));
+    let budget=_NEARBY_BACKFILL_BUDGET;
+    for(const c of uncached){
+      if(budget<=0)break;
+      budget--;
+      const coords=await _geocodeAddr(c.addr);
+      if(coords){
+        // Re-read and write ONE entry per client, never a whole-cache snapshot
+        // held across the loop: _eagerGeocodeClient (a client saved mid-sweep)
+        // or checkNearbyJob could otherwise write in between and get clobbered
+        // when this loop's stale copy saves at the end (the exact John Doe
+        // shape this whole PR exists to close).
+        const fresh=_nearbyGeoCache();
+        fresh[c.id]={lat:coords.lat,lon:coords.lon,addr:c.addr};
+        _saveNearbyGeoCache(fresh);
+      }
+      if(budget>0)await new Promise(r=>setTimeout(r,1100)); // stay under Nominatim's ~1 req/sec
+    }
+  }finally{
+    _nearbyGeoSweepRunning=false;
+  }
+}
 function _nearbyResolveClient(c,myLat,myLon,tk){
   const addrShort=c.addr.split(',')[0];
   const bid=bids.filter(b=>b.client_id===c.id&&b.status==='Closed Won').sort((a,b2)=>(b2.bid_date||'').localeCompare(a.bid_date||''))[0];
@@ -573,9 +791,30 @@ async function checkNearbyJob(){
   // production fires it and moves on, resolves only once the async callback
   // below has actually run, not the instant geoIfGranted's sync half returns.
   return geoIfGranted(async pos=>{
-    const{latitude:myLat,longitude:myLon}=pos.coords;
+    const{latitude:myLat,longitude:myLon,accuracy}=pos.coords;
     const tk=todayKey();
     const geoCache=_nearbyGeoCache();
+    // Match radius: ServiceTitan's own documented "Arrive by GPS" threshold
+    // (125m / ~410ft), the tightest of the industry numbers researched, owner
+    // chose to match it directly rather than TradeDesk's own driving-fence
+    // constant (600ft). The old 0.5km (1,640ft) here was 4x that and easily
+    // spanned a next-door neighbor's address on a normal residential block
+    // (owner report 2026-08-19: matched to "2011 SW Randolph", his own
+    // neighbor, while working an actual job nearby).
+    //
+    // Flat 125m turned out too tight the other direction (owner report
+    // 2026-08-20: standing at the actual job address, no nearby-job match at
+    // all). A flat radius can't win both ways: it either fits a good fix
+    // (accuracy well under 125m, the common case) or it doesn't, and on a
+    // fix with real uncertainty (tree cover, between buildings, a phone
+    // that hasn't settled yet) the reported position can legitimately sit
+    // outside 125m of a true on-site location. Grow the radius by exactly
+    // that fix's own reported accuracy instead of guessing a bigger flat
+    // number: still 125m on a good fix (accuracy doesn't add anything worth
+    // opening the door for), wider only when the device itself says it isn't
+    // sure, capped at 250m so a genuinely bad fix still can't reopen the
+    // 1,640ft neighbor-misattribution bug this radius exists to prevent.
+    const _matchKm=Math.min(0.25,0.125+Math.max(0,accuracy||0)/1000);
     // Root cause of the old 5s+ banner delay: a single loop interleaved cached
     // (instant) and uncached (network geocode + 1.1s throttle sleep) clients in
     // raw array order, so ANY uncached client positioned before the real match
@@ -583,40 +822,56 @@ async function checkNearbyJob(){
     // checked. Cached clients are the common case (same client book every day)
     // and cost nothing, check ALL of them first, with zero network/delay, before
     // ever touching the throttled uncached path.
+    //
+    // Nearest match wins, not first match: the old code returned on the FIRST
+    // cached client under the radius in raw array order, so two addresses
+    // both inside the (now-tighter, but still real) radius let whichever one
+    // happened to sort earlier in the client list win regardless of which was
+    // actually closer, the other half of the neighbor-misattribution bug.
     const uncached=[];
+    let best=null,bestKm=Infinity;
     for(const c of clients){
       if(!c.addr)continue;
       const cached=geoCache[c.id];
       if(cached&&cached.addr===c.addr){
-        if(_haversineKm(myLat,myLon,cached.lat,cached.lon)<0.5){
-          _nearbyJob=_nearbyResolveClient(c,myLat,myLon,tk);
-          renderDash&&renderDash();
-          return;
-        }
+        const d=_haversineKm(myLat,myLon,cached.lat,cached.lon);
+        if(d<_matchKm&&d<bestKm){best=c;bestKm=d;}
       }else{
         uncached.push(c);
       }
+    }
+    if(best){
+      _nearbyJob=_nearbyResolveClient(best,myLat,myLon,tk);
+      renderDash&&renderDash();
+      return;
     }
     // No cached client is nearby, fall back to throttled geocoding of the rest.
     // Still respects Nominatim's ~1 req/sec limit, but this path only runs (and
     // only costs real seconds) the first time a client's address is seen, not
     // on every dashboard load once the cache is warm.
+    // _nearbyGeoSweepRunning: shared with _backfillNearbyGeoCache so the two
+    // throttled loops never run at once (double Nominatim traffic, and two
+    // stale snapshots racing to clobber each other's writes).
+    _nearbyGeoSweepRunning=true;
     let geocodeBudget=_NEARBY_GEOCODE_BUDGET,cacheDirty=false;
-    for(const c of uncached){
-      if(geocodeBudget<=0)break;
-      geocodeBudget--;
-      const coords=await _geocodeAddr(c.addr);
-      if(coords){geoCache[c.id]={lat:coords.lat,lon:coords.lon,addr:c.addr};cacheDirty=true;}
-      if(coords&&_haversineKm(myLat,myLon,coords.lat,coords.lon)<0.5){
-        if(cacheDirty)_saveNearbyGeoCache(geoCache);
-        _nearbyJob=_nearbyResolveClient(c,myLat,myLon,tk);
-        renderDash&&renderDash();
-        return;
+    try{
+      for(const c of uncached){
+        if(geocodeBudget<=0)break;
+        geocodeBudget--;
+        const coords=await _geocodeAddr(c.addr);
+        if(coords){
+          geoCache[c.id]={lat:coords.lat,lon:coords.lon,addr:c.addr};cacheDirty=true;
+          const d=_haversineKm(myLat,myLon,coords.lat,coords.lon);
+          if(d<_matchKm&&d<bestKm){best=c;bestKm=d;}
+        }
+        if(geocodeBudget>0)await new Promise(r=>setTimeout(r,1100)); // stay under Nominatim's ~1 req/sec
       }
-      if(geocodeBudget>0)await new Promise(r=>setTimeout(r,1100)); // stay under Nominatim's ~1 req/sec
+      if(cacheDirty)_saveNearbyGeoCache(geoCache);
+      if(best){_nearbyJob=_nearbyResolveClient(best,myLat,myLon,tk);renderDash&&renderDash();}
+      else if(_nearbyJob){_nearbyJob=null;renderDash&&renderDash();}
+    }finally{
+      _nearbyGeoSweepRunning=false;
     }
-    if(cacheDirty)_saveNearbyGeoCache(geoCache);
-    if(_nearbyJob){_nearbyJob=null;renderDash&&renderDash();}
   },()=>{},{maximumAge:60000,timeout:8000});
 }
 
@@ -1133,6 +1388,34 @@ function openJobSheet(clientId){
       '</div>';
   }
 
+  // ── What we used (owner 2026-08-16) ──────────────────────────
+  // Spec recall: colors, sheens, model numbers, logged while the crew is
+  // standing on site, because "type it in later" never happens. Feeds the
+  // Past work rows on the property card, where a callback two years out
+  // starts with "what did we put in here." Rides the same job record the
+  // photos do, so it syncs with td_jobs for free.
+  let specHtml='';
+  if(photoJobId){
+    const specs=Array.isArray(jobForPhotos.specUsed)?jobForPhotos.specUsed:[];
+    specHtml=
+      '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">'+svgIcon('🎨')+' What we used</div>'+
+        (specs.length?specs.map((s,si)=>
+          '<div style="display:flex;align-items:baseline;gap:8px;padding:6px 0;border-bottom:1px solid var(--border2);font-size:13px">'+
+            (s.where?'<span style="color:var(--text3);flex-shrink:0">'+escHtml(s.where)+'</span>':'')+
+            '<span style="font-weight:700;flex:1;min-width:0;word-break:break-word">'+escHtml(s.item||'')+(s.finish?'<span style="font-weight:500;color:var(--text2)">, '+escHtml(s.finish)+'</span>':'')+'</span>'+
+            '<button onclick="removeJobSpec('+photoJobId+','+si+','+clientId+')" style="background:none;border:none;color:var(--text3);font-size:15px;cursor:pointer;padding:0 2px;font-family:inherit;flex-shrink:0">×</button>'+
+          '</div>').join('')
+        :'<div style="font-size:12px;color:var(--text3);margin-bottom:2px">Colors, sheens, model numbers. Logged now, remembered on every callback.</div>')+
+        '<div style="display:flex;gap:6px;margin-top:8px">'+
+          '<input type="text" id="_specWhere-'+photoJobId+'" maxlength="40" placeholder="Where" style="width:76px;flex-shrink:0;padding:8px 9px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;font-family:inherit">'+
+          '<input type="text" id="_specItem-'+photoJobId+'" maxlength="80" placeholder="What (SW 7015 Repose Gray)" style="flex:1;min-width:0;padding:8px 9px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;font-family:inherit">'+
+          '<input type="text" id="_specFin-'+photoJobId+'" maxlength="30" placeholder="Finish" style="width:66px;flex-shrink:0;padding:8px 9px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;font-family:inherit">'+
+          '<button onclick="addJobSpec('+photoJobId+','+clientId+')" style="padding:8px 12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">Add</button>'+
+        '</div>'+
+      '</div>';
+  }
+
   // ── Actual material costs vs estimated ──────────────────────
   const clientExpenses=expenses.filter(e=>e.client_id===clientId);
   let actualCostsHtml='';
@@ -1345,7 +1628,7 @@ function openJobSheet(clientId){
         '<div style="font-size:10px;color:var(--text3);margin-top:6px">Includes 10% waste · '+_coats+' coat'+(_coats!==1?'s':'')+' · Verify with SW rep for dark colors</div>'+
       '</div>';
   }
-  body.innerHTML=payHtml+schedHtml+assignedEmpHtml+coHistoryHtml+supplyHtml+scopeHtml+photosHtml+paintOrderHtml+actualCostsHtml+subsHtml+visitNotesHtml+tasksHtml+actionsHtml;
+  body.innerHTML=payHtml+schedHtml+assignedEmpHtml+coHistoryHtml+supplyHtml+scopeHtml+photosHtml+specHtml+paintOrderHtml+actualCostsHtml+subsHtml+visitNotesHtml+tasksHtml+actionsHtml;
   box.appendChild(body);
   ov.appendChild(box);
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
@@ -1710,6 +1993,29 @@ function addJobPhoto(jobId,input,type,caption){
   };
   reader.readAsDataURL(file);
 }
+// "What we used" entries live on the same job record the photos do. Reopen the
+// sheet after a change, matching the photo buttons' own refresh pattern.
+function addJobSpec(jobId,clientId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const g=id=>document.getElementById(id);
+  const item=(g('_specItem-'+jobId)?.value||'').trim();
+  if(!item){showToast('Type what you used first','🎨');return;}
+  const where=(g('_specWhere-'+jobId)?.value||'').trim();
+  const finish=(g('_specFin-'+jobId)?.value||'').trim();
+  if(!Array.isArray(j.specUsed))j.specUsed=[];
+  j.specUsed.push({where,item,finish});
+  saveAll();
+  document.querySelector('.zmodal-overlay')?.remove();
+  openJobSheet(clientId);
+}
+function removeJobSpec(jobId,idx,clientId){
+  const j=jobs.find(x=>x.id===jobId);
+  if(!j||!Array.isArray(j.specUsed))return;
+  j.specUsed.splice(idx,1);
+  saveAll();
+  document.querySelector('.zmodal-overlay')?.remove();
+  openJobSheet(clientId);
+}
 async function _drainPhotoQueue(){
   if(!supaEnabled()||!_supaUser||!_supa)return;
   let dirty=false;
@@ -1799,7 +2105,7 @@ function _renderJobTasks(jobId){
   }).join('');
 }
 function _fmtTaskTime(iso){
-  try{const d=new Date(iso);return d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}catch(e){return'';}
+  try{const d=new Date(iso);return d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' '+bizTime(d);}catch(e){return'';}
 }
 function _contractorToggleTask(jobId,taskId){
   const j=jobs.find(x=>x.id===jobId);if(!j||!j.tasks)return;

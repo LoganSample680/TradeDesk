@@ -310,24 +310,71 @@ test.describe('Geo banner + ping, _geoPermissionBanner / _geoRequestPermission /
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_geoPermissionBanner: hides banner for non-employee (display:none)', async () => {
+  // BEHAVIOUR CHANGED 2026-08-26 (CLAUDE.md 10.4), owner ask: "banner on their
+  // login if they disable it."
+  //
+  // OLD RULE: hide the banner for anyone who is not an employee. That was
+  // deliberate when the banner existed purely so crew could fix their own
+  // phone without the owner chasing them, and it was correct at the time.
+  //
+  // NEW RULE: the owner sees it too. They are the one person who could switch
+  // off their own tracking and never be told, and it is their mileage
+  // deduction. The banner is now hidden by STATE (location is fine) rather
+  // than by ROLE.
+  //
+  // What survives unchanged: an employee on an account with crew tracking off
+  // still sees nothing, since tracking is not running for them at all.
+  test('_geoPermissionBanner: an owner with a healthy phone still sees nothing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof _geoPermissionBanner !== 'function') return { skip: true };
       let el = document.getElementById('dash-geo-perm');
       if (!el) { el = document.createElement('div'); el.id = 'dash-geo-perm'; document.body.appendChild(el); }
       el.style.display = 'block';
-      const origEmp = window._isEmployee;
-      window._isEmployee = false; // non-employee → banner must hide
+      const orig = { emp: window._isEmployee, cap: window.Capacitor,
+                     nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined };
+      window._isEmployee = false;
+      // iOS reporting a perfectly healthy phone: nothing to warn about, so
+      // nothing shows. Hidden by state, not by who is looking.
+      window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = { status: 'always', accuracy: 'full', servicesEnabled: true };
       try {
         await _geoPermissionBanner();
-        const disp = el.style.display;
-        window._isEmployee = origEmp;
-        return { ok: true, disp };
-      } catch (e) { window._isEmployee = origEmp; return { ok: false, error: e.message }; }
+        return { ok: true, disp: el.style.display };
+      } catch (e) { return { ok: false, error: e.message }; }
+      finally {
+        window._isEmployee = orig.emp; window.Capacitor = orig.cap;
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = orig.nat;
+      }
     });
     if (!result.skip) {
       expect(result.ok).toBe(true);
       expect(result.disp).toBe('none');
+    }
+  });
+
+  test('_geoPermissionBanner: an owner whose location is OFF now gets warned', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _geoPermissionBanner !== 'function') return { skip: true };
+      let el = document.getElementById('dash-geo-perm');
+      if (!el) { el = document.createElement('div'); el.id = 'dash-geo-perm'; document.body.appendChild(el); }
+      el.style.display = 'none';
+      const orig = { emp: window._isEmployee, cap: window.Capacitor,
+                     nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined };
+      window._isEmployee = false;
+      window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = { status: 'denied', accuracy: 'full', servicesEnabled: true };
+      try {
+        await _geoPermissionBanner();
+        return { ok: true, disp: el.style.display };
+      } catch (e) { return { ok: false, error: e.message }; }
+      finally {
+        window._isEmployee = orig.emp; window.Capacitor = orig.cap;
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = orig.nat;
+      }
+    });
+    if (!result.skip) {
+      expect(result.ok).toBe(true);
+      expect(result.disp, 'the owner used to be the one person never told').toBe('block');
     }
   });
 
@@ -1032,25 +1079,67 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     localStorage.removeItem('zp3_geo_queue'); localStorage.removeItem('zp3_geo_open');
     localStorage.removeItem('zp3_geo_manual'); localStorage.removeItem('zp3_geo_prune_day');
     _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
-    _geoDriveStartedAt = null; _geoGapHiddenAt = null; _geoGapExitPending = null;
+    _geoDriveStartedAt = null; _geoGapHiddenAt = null; _geoExitPending = null;
     _geoLastPingTs = 0; _geoPingBusy = false;
     window._isEmployee = false;
     window._supaUser = { id: 'geo-hard-user-1', email: 'g@t.com' };
     window.__rec = { upserts: [], inserts: [], deletes: [] };
     window.__supaMode = 'ok'; // 'ok' | 'fail' | 'no-conflict' | 'no-column'
     window.__origSupa = window.__origSupa || window._supa;
+    // Every test in this block awaits something (a setTimeout, a drain) while
+    // this narrow mock is active, and the app's own background reconnect pull
+    // (_onReconnect's routine "pull latest on any online/reconnect signal"
+    // case, js/cloud.js) is not gated on anything this file controls, so it
+    // can genuinely fire mid-test and call _supa.from(...).select(...). A
+    // mock with no .select() then throws a real TypeError, which
+    // _classifyCloudError correctly reports as a console.error and trips
+    // assertNoErrors on an entirely unrelated test. This mock only cares
+    // about writes, so give it a harmless, infinitely-chainable read stub
+    // instead of leaving it a landmine for an incidental background pull.
+    // A hardcoded method whitelist here is a landmine of its own (CI already
+    // caught it missing .is(), used by cloud.js's ".eq(...).is('deleted_at',
+    // null)" pattern) — a Proxy makes every PostgREST filter method, present
+    // or future, chainable without this file having to track the real
+    // client's method list.
+    const _noopQuery = () => {
+      const q = new Proxy({}, {
+        get(_t, prop) {
+          if (prop === 'then') return (resolve) => resolve({ data: null, error: null });
+          if (prop === 'catch') return () => q;
+          return () => q;
+        },
+      });
+      return q;
+    };
+    // Chainable AND directly awaitable, same shape as _noopQuery above: real
+    // app code (js/cloud.js supaSaveToCloud, the periodic whole-account save,
+    // unrelated to anything this file is testing) can fire mid-test and chain
+    // .select('updated_at').single() off its own zj_data upsert. A bare
+    // Promise has no .select, that TypeError is a real console.error and
+    // fails assertNoErrors() (seen in CI). Every branch below still resolves
+    // the SAME {data,error} shape the mode-specific tests assert on, .select()
+    // and friends are just no-ops layered on top so an unrelated chain never
+    // throws.
+    const _mkResult = (result) => {
+      const q = {
+        select: () => q, single: () => Promise.resolve(result), maybeSingle: () => Promise.resolve(result),
+        then: (res, rej) => Promise.resolve(result).then(res, rej),
+      };
+      return q;
+    };
     window._supa = {
       from: (tbl) => ({
+        select: () => _noopQuery(),
         upsert: (row, opts) => {
-          if (window.__supaMode === 'fail') return Promise.resolve({ error: { message: 'network down' } });
-          if (window.__supaMode === 'no-conflict') return Promise.resolve({ error: { message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification' } });
-          if (window.__supaMode === 'no-column') return Promise.resolve({ error: { message: "Could not find the 'client_key' column of 'job_time_entries' in the schema cache" } });
-          window.__rec.upserts.push({ tbl, row, opts }); return Promise.resolve({ error: null });
+          if (window.__supaMode === 'fail') return _mkResult({ error: { message: 'network down' } });
+          if (window.__supaMode === 'no-conflict') return _mkResult({ error: { message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification' } });
+          if (window.__supaMode === 'no-column') return _mkResult({ error: { message: "Could not find the 'client_key' column of 'job_time_entries' in the schema cache" } });
+          window.__rec.upserts.push({ tbl, row, opts }); return _mkResult({ data: null, error: null });
         },
         insert: (row) => {
-          if (window.__supaMode === 'fail') return Promise.resolve({ error: { message: 'network down' } });
-          if (window.__supaMode === 'no-column' && row.client_key !== undefined) return Promise.resolve({ error: { message: "Could not find the 'client_key' column" } });
-          window.__rec.inserts.push({ tbl, row }); return Promise.resolve({ error: null });
+          if (window.__supaMode === 'fail') return _mkResult({ error: { message: 'network down' } });
+          if (window.__supaMode === 'no-column' && row.client_key !== undefined) return _mkResult({ error: { message: "Could not find the 'client_key' column" } });
+          window.__rec.inserts.push({ tbl, row }); return _mkResult({ data: null, error: null });
         },
         delete: () => ({ eq: () => ({ lt: (col, val) => ({ then: (res) => { window.__rec.deletes.push({ tbl, col, val }); res && res({}); return { catch: () => {} }; } }) }) }),
       }),
@@ -1121,19 +1210,20 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
       _geoCurrentJob = jobId; _geoArrivedAt = arrived;
       _geoPersistOpen(hidden); // what the visibilitychange→hidden handler does
       _geoCurrentJob = null; _geoArrivedAt = null; _geoGapHiddenAt = null;
+      window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
       _geoRestoreOpen();
       // ONE post-gap ping lands far outside the fence: not enough to confirm.
       await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 8 } });
       await new Promise(res => setTimeout(res, 50));
       const row = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries' && String(u.row.job_id) === String(jobId)) || {}).row || null;
-      const out = { row, cur: _geoCurrentJob, gap: _geoGapHiddenAt, pending: _geoGapExitPending };
+      const out = { row, cur: _geoCurrentJob, gap: _geoGapHiddenAt, pending: _geoExitPending };
       jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
       return out;
     });
     expect(r.row).toBeNull();                    // nothing written yet, unconfirmed
     expect(String(r.cur)).toBe('883001');         // entry stays open
     expect(r.gap).not.toBeNull();                 // still resolving the gap
-    expect(r.pending && String(r.pending.jobId)).toBe('883001'); // first candidate noted
+    expect(r.pending && r.pending.key).toBe('job:883001'); // first candidate noted
     await geoRestore();
   });
 
@@ -1149,6 +1239,7 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
       _geoCurrentJob = jobId; _geoArrivedAt = arrived;
       _geoPersistOpen(hidden);
       _geoCurrentJob = null; _geoArrivedAt = null; _geoGapHiddenAt = null;
+      window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
       _geoRestoreOpen();
       await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 8 } }); // 1st: pending
       const beforeConfirm = new Date().toISOString();
@@ -1181,6 +1272,7 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
       _geoCurrentJob = jobId; _geoArrivedAt = arrived;
       _geoPersistOpen(hidden);
       _geoCurrentJob = null; _geoArrivedAt = null; _geoGapHiddenAt = null;
+      window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
       _geoRestoreOpen();
       // Three low-accuracy fixes in a row, the classic "just woke up" cell/wifi fix.
       for (let i = 0; i < 3; i++) {
@@ -1188,7 +1280,7 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
       }
       await new Promise(res => setTimeout(res, 50));
       const row = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries' && String(u.row.job_id) === String(jobId)) || {}).row || null;
-      const out = { row, cur: _geoCurrentJob, pending: _geoGapExitPending };
+      const out = { row, cur: _geoCurrentJob, pending: _geoExitPending };
       jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
       return out;
     });
@@ -1246,6 +1338,90 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     expect(r.busyAfter).toBe(false);         // guard released after the first ping finished
     await geoRestore();
   });
+
+  // _removeBootOverlay (js/cloud.js) has success, retry-recovery, and timeout-
+  // fallback call sites; each schedules its own _geoTrackInit(). Two firings in
+  // one page session used to re-restore the same persisted snapshot into live
+  // state twice, producing two divergent drive/geofence chains for one real
+  // dwell (owner audit, 2026-08-23: duplicate td_mileage legs and job_time_entries
+  // rows, timestamps ms apart, same real event split two different ways).
+  test('_geoTrackInit: a second firing in the same session does not re-restore/re-drain (twin-write guard)', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      if (typeof _geoTrackInit !== 'function' || typeof _geoRestoreOpen !== 'function') return { skip: true };
+      S.teamTracking = true;
+      _geoResumedOnce = false; // simulate a fresh page session
+      let restoreCalls = 0, drainCalls = 0;
+      const origRestore = _geoRestoreOpen, origDrain = _geoDrainQueue;
+      _geoRestoreOpen = function () { restoreCalls++; return origRestore.apply(this, arguments); };
+      _geoDrainQueue = function () { drainCalls++; return origDrain.apply(this, arguments); };
+      _geoTrackInit(); // 1st firing: e.g. the timeout-fallback boot path
+      _geoTrackInit(); // 2nd firing: e.g. the retry-recovery path landing moments later
+      _geoRestoreOpen = origRestore;
+      _geoDrainQueue = origDrain;
+      return { restoreCalls, drainCalls, resumedOnce: _geoResumedOnce };
+    });
+    if (!r.skip) {
+      expect(r.restoreCalls).toBe(1);
+      expect(r.drainCalls).toBe(1);
+      expect(r.resumedOnce).toBe(true);
+    }
+    await geoRestore();
+  });
+
+  // _geoRestoreOpen has its OWN one-shot latch (window._geoOpenRestored,
+  // set the first time it actually runs) separate from _geoResumedOnce, the
+  // guard around its call site in _geoTrackInit. Resetting only
+  // _geoResumedOnce re-opens the outer gate but leaves the inner one shut,
+  // so a second account signing in on the same page session (sign-out/in,
+  // exactly what stopGeoTracking is for) never got ITS persisted open entry
+  // restored — bug #39's scenario, one layer deeper. Both must reset together.
+  test('stopGeoTracking: resets both restore guards, so a real new session restores again', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      if (typeof stopGeoTracking !== 'function') return { skip: true };
+      _geoResumedOnce = true;          // as if a session already restored once
+      window._geoOpenRestored = true;  // as if _geoRestoreOpen already ran once
+      stopGeoTracking();
+      return { resumedOnce: _geoResumedOnce, openRestored: window._geoOpenRestored };
+    });
+    if (!r.skip) {
+      expect(r.resumedOnce).toBe(false);
+      expect(r.openRestored).toBe(false);
+    }
+    await geoRestore();
+  });
+
+  test('a second account signing in after stopGeoTracking gets ITS OWN persisted open entry restored', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      if (typeof stopGeoTracking !== 'function' || typeof _geoRestoreOpen !== 'function') return { skip: true };
+      // Account A's session already restored once.
+      window._geoOpenRestored = true;
+      stopGeoTracking(); // the sign-out boundary: also clears zp3_geo_open (A's leftover)
+      // Account B signs in on the same page afterward and has its own open
+      // job from earlier today, persisted under ITS uid by an earlier session
+      // on this device (written AFTER sign-out clears A's state, same as a
+      // real device: B's own entry was never A's to wipe).
+      _supaUser = { id: 'user-b' };
+      localStorage.setItem('zp3_geo_open', JSON.stringify({
+        job: 'job-b-1', arrivedAt: new Date(Date.now() - 10 * 60000).toISOString(),
+        uid: 'user-b', day: new Date().toISOString().slice(0, 10),
+      }));
+      _geoRestoreOpen();
+      return { currentJob: _geoCurrentJob, arrivedAt: _geoArrivedAt };
+    });
+    if (!r.skip) {
+      expect(String(r.currentJob)).toBe('job-b-1');
+      expect(r.arrivedAt).not.toBeNull();
+    }
+    await geoRestore();
+  });
+
+  // The home-dwell stale-minutes regression test lives in
+  // tests/e2e-geo-home-office.spec.js ("a quick return before the second
+  // away-ping does not inherit the closed dwell's minutes"), alongside the
+  // existing tests for this exact tally and its HOME/ROAD fixtures.
 
   test('manual bookends, Arrived opens, Done writes a source:manual entry through the queue; job-switch closes the previous', async () => {
     await geoReset();

@@ -1416,9 +1416,12 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       window._qrHasSourceCached = () => false;
       // 'location' is the 7th item and, like QR, is noSkip: drive mileage and job
       // hours are the whole time-tracking product and neither works without the
-      // permission. Pin the cache to 'prompt' (not granted) so the fresh-account
-      // case renders it as outstanding, the same way the QR cache is pinned.
+      // permission. 'motion' is the 8th, skippable but still shown outstanding
+      // by default. Pin both caches to 'prompt' (not granted) so the fresh-
+      // account case renders them as outstanding, the same way the QR cache is
+      // pinned.
       const _origPerm = _geoPermCache; _geoPermCache = 'prompt';
+      const _origMotionPerm = _motionPermCache; _motionPermCache = 'prompt';
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const ctas = card ? [...card.querySelectorAll('.td-setup-row button.td-setup-cta')] : [];
@@ -1432,11 +1435,12 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       places.length = 0; _savedPlaces.forEach(p => places.push(p));
       window._qrHasSourceCached = _origQrCache;
       _geoPermCache = _origPerm;
+      _motionPermCache = _origMotionPerm;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
       return out;
     });
     if (r.skip) return;
-    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 7 CTAs (5 optional + QR + location)').toBe(7);
+    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 8 CTAs (5 optional + QR + location + motion)').toBe(8);
     expect(r.allHaveClass, 'Add vehicle / Add places / Connect / Add logo / Set up / Create / Turn on all carry the transition class').toBe(true);
     expect(r.hasTransition, 'the CTA button has a real, non-zero CSS transition').toBe(true);
   });
@@ -1475,11 +1479,13 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedDone = S.setupDone, _origSave = window.saveAll;
       const _origQrCache = window._qrHasSourceCached;
       window.saveAll = () => {};
-      // Vehicle added (done); the four optional items skipped; QR and location
-      // marked done via their caches (NEITHER can be skipped, so "everything
-      // clear" requires done:true for both, not skipped) → nothing left.
+      // Vehicle added (done); the optional (skippable) items skipped; QR and
+      // location marked done via their caches (NEITHER can be skipped, so
+      // "everything clear" requires done:true for both, not skipped) →
+      // nothing left. Motion is skippable like places/getpaid/logo/team, so
+      // it joins the skipped list rather than needing its own cache pinned.
       _setVehicles([{ id: 1, name: '2019 F-150' }]); S.vehiclesTs = Date.now();
-      S.setupSkipped = ['places', 'getpaid', 'logo', 'team']; S.setupDone = false;
+      S.setupSkipped = ['places', 'getpaid', 'logo', 'team', 'motion']; S.setupDone = false;
       window._qrHasSourceCached = () => true;
       const _origPerm2 = _geoPermCache; _geoPermCache = 'granted';
       _renderDashSetupTodo();
@@ -4023,11 +4029,20 @@ test.describe('Workforce time intelligence', () => {
     const r = await page.evaluate(async () => {
       if (typeof _fetchCrewLabor !== 'function') return null;
       const orig = window._supa;
+      // `is` added 2026-08-26: the time-table reads now carry
+      // .is('deleted_at',null), and a builder that only knows the filters it was
+      // written against turns a new one into "is is not a function".
       const makeQ = () => {
         const q = { _data: { data: [] } };
         q.then = (res, rej) => Promise.resolve(q._data).then(res, rej);
         q.gte = () => q;
         q.eq  = () => q;
+        q.is  = () => q;
+        q.lt  = () => q;
+        q.lte = () => q;
+        q.not = () => q;
+        q.order = () => q;
+        q.limit = () => q;
         q.select = () => q;
         return q;
       };
@@ -4067,7 +4082,7 @@ test.describe('Workforce time intelligence', () => {
       timeEntries = timeEntries.filter(e => e.id !== 8970002);
       timeEntries.push({ id: 8970002, job_id: 1, date: now.toISOString().slice(0, 10), start_time: now.toISOString(), end_time: now.toISOString(), minutes: 60, logged_by_uid: null, logged_by_name: 'Owner (me)' });
       S.ownerPayType = 'hourly'; S.ownerPayRate = 25;
-      const makeQ = () => { const q = { _data: { data: [] } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.select = () => q; return q; };
+      const makeQ = () => { const q = { _data: { data: [] } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.is = () => q; q.lt = () => q; q.lte = () => q; q.not = () => q; q.order = () => q; q.limit = () => q; q.select = () => q; return q; };
       window._supa = { from: () => makeQ() };
       window.supaEnabled = () => true;
       window._supaUser = window._supaUser || { id: 'test-uid' };
@@ -4096,8 +4111,25 @@ test.describe('Workforce time intelligence', () => {
   test('crew cost: a manual job clock-in overlapping automatic shop time is not paid twice', async () => {
     const r = await page.evaluate(async () => {
       if (typeof _crewCostRender !== 'function') return null;
-      const orig = { timeEntries, supa: window._supa, supaEnabled: window.supaEnabled, supaUser: window._supaUser };
-      const T0 = Date.now() - 3 * 3600000;   // 3h ago, safely inside "today"
+      // Save and restore the BARE bindings this test actually overwrites.
+      // Reading `window._supa` here captured undefined, and restoring that
+      // bare at the end wiped the real signed-in client for every test that
+      // ran after this one in the file.
+      const orig = { timeEntries, supa: _supa, supaEnabled: window.supaEnabled, supaUser: _supaUser };
+      // "3 hours ago" is NOT safely inside today. Between midnight and 03:00
+      // Central it lands on YESTERDAY's CT date, and _crewCostRender filters
+      // every row by CT date (js/finance.js), so the entire fixture vanished
+      // and the modal rendered "No tracked time today yet". That is how this
+      // test failed at 00:40 CT and passed at noon, which reads as a shard
+      // flake and is really a clock. Clamp the anchor into today's CT date so
+      // the hour the runner happens to start can never decide the result.
+      let T0 = Date.now() - 3 * 3600000;
+      {
+        const today = _ctDateStr(new Date());
+        let mid = Date.now();
+        while (_ctDateStr(new Date(mid - 900000)) === today) mid -= 900000;
+        if (T0 < mid) T0 = mid + 60000;
+      }
       const EMP = 'emp-shopoverlap-1';
       // Shop dwell: 2 real hours, T0 to T0+120m.
       const shopRow = { employee_user_id: EMP, minutes: 120, arrived_at: new Date(T0).toISOString() };
@@ -4110,8 +4142,8 @@ test.describe('Workforce time intelligence', () => {
         start_time: new Date(T0 + 30 * 60000).toISOString(), end_time: new Date(T0 + 90 * 60000).toISOString(),
         minutes: 60, logged_by_uid: EMP, logged_by_name: 'Test Crew',
       });
-      const makeQ = (rows) => { const q = { _data: { data: rows } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.select = () => q; return q; };
-      window._supa = {
+      const makeQ = (rows) => { const q = { _data: { data: rows } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.is = () => q; q.lt = () => q; q.lte = () => q; q.not = () => q; q.order = () => q; q.limit = () => q; q.select = () => q; return q; };
+      _supa = {
         from: (tbl) => {
           if (tbl === 'team_members') return makeQ([{ employee_user_id: EMP, name: 'Test Crew', email: '', pay_type: 'hourly', pay_rate: 30 }]);
           if (tbl === 'shop_time_entries') return makeQ([shopRow]);
@@ -4119,7 +4151,13 @@ test.describe('Workforce time intelligence', () => {
         },
       };
       window.supaEnabled = () => true;
-      window._supaUser = window._supaUser || { id: 'owner-test' };
+      // BARE bindings, not window.*. js/cloud.js:638 declares these as
+      // `let _supa=null,_supaUser=null`, and a top-level let lives in the
+      // global LEXICAL environment, so `window._supa = x` creates an unrelated
+      // property while _fetchCrewLabor keeps reading the real binding. The
+      // boot already signs a _supaUser in, so that line is only a safety net,
+      // but the _supa stub above is load-bearing and must be assigned bare.
+      _supaUser = _supaUser || { id: 'owner-test' };
       document.getElementById('_crew-cost-ov')?.remove();
       let paidMin = null, html = '';
       try {
@@ -4127,7 +4165,7 @@ test.describe('Workforce time intelligence', () => {
         html = document.getElementById('_crew-cost-body')?.innerHTML || '';
       } catch (e) { return { error: e.message }; }
       document.getElementById('_crew-cost-ov')?.remove();
-      timeEntries = orig.timeEntries; window._supa = orig.supa; window.supaEnabled = orig.supaEnabled; window._supaUser = orig.supaUser;
+      timeEntries = orig.timeEntries; _supa = orig.supa; window.supaEnabled = orig.supaEnabled; _supaUser = orig.supaUser;
       // 2h loaded cost at $30 wage would show as $60 wage-only; 3h (the bug)
       // would show $90. Read the rendered hours figure directly rather than
       // re-deriving it, so the test proves what the OWNER actually sees.
@@ -4136,9 +4174,87 @@ test.describe('Workforce time intelligence', () => {
     });
     if (r && !r.error) {
       expect(r.hours, 'rendered hours, html=' + r.html).not.toBeNull();
-      // 2.0h exactly: the 1h overlap must be subtracted from the shop side
-      // once, never doubled and never dropped entirely.
-      expect(r.hours).toBeCloseTo(2.0, 1);
+      // Was 2.0h before the workday window landed (owner rules 2026-08-24,
+      // js/geo-track.js _geoShopCutoffs). Both numbers are right for their own
+      // rule set, and this fixture sits exactly on the seam:
+      //   old: 120m dwell - 60m manual overlap = 60m shop + 60m manual = 2.0h
+      //   new: the day's ONLY work anchor is that manual clock, T0+30m to
+      //        T0+90m, so the workday is that hour. Dwell outside it is not a
+      //        shift, and inside it the manual clock already covers every
+      //        minute, so shop adds 0 and the day is the 60m manual = 1.0h.
+      // The 60 minutes that changed are dwell before the day's first move and
+      // after its last, which is precisely what the owner asked to stop
+      // paying. The 1h double-pay guard this test exists for is untouched and
+      // still proves itself: without the overlap subtraction it reads 2.0h.
+      // The companion test below pays that hour back with the allowances.
+      expect(r.hours).toBeCloseTo(1.0, 1);
+    }
+  });
+
+  // The other half of that rule: the two allowances (S.shopPrepMin for load-up
+  // before the first move, S.shopWrapMin for unload after the last) are how a
+  // contractor pays the ends of the day instead of losing them. Same fixture,
+  // 30 minutes on each side, proving the knobs actually reach Crew Cost and
+  // are not display-only.
+  //
+  // 1.5h, not the 2.0h this asserted before the departure rule landed
+  // (js/geo-track.js, owner 2026-08-24). Nothing in this fixture follows the
+  // dwell, so nobody was ever observed leaving the yard, and a session like
+  // that is credited the wrap-up allowance and no more: 30 minutes of dwell
+  // plus the 60-minute manual clock. That is the allowance doing exactly its
+  // job. The double-pay guard the sibling test exists for is untouched.
+  test('crew cost: the prep and wrap-up allowances pay the ends of the day', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _crewCostRender !== 'function') return null;
+      // Bare bindings, same reason as the sibling test above.
+      const orig = { timeEntries, supa: _supa, supaEnabled: window.supaEnabled, supaUser: _supaUser, wrap: S.shopWrapMin, prep: S.shopPrepMin };
+      // Same CT-date clamp as the sibling test above.
+      let T0 = Date.now() - 3 * 3600000;
+      {
+        const today = _ctDateStr(new Date());
+        let mid = Date.now();
+        while (_ctDateStr(new Date(mid - 900000)) === today) mid -= 900000;
+        if (T0 < mid) T0 = mid + 60000;
+      }
+      const EMP = 'emp-shopwrap-1';
+      const shopRow = { employee_user_id: EMP, minutes: 120, arrived_at: new Date(T0).toISOString() };
+      timeEntries = timeEntries.filter(e => e.id !== 8970098);
+      timeEntries.push({
+        id: 8970098, job_id: 1, date: dateKey(new Date(T0)),
+        start_time: new Date(T0 + 30 * 60000).toISOString(), end_time: new Date(T0 + 90 * 60000).toISOString(),
+        minutes: 60, logged_by_uid: EMP, logged_by_name: 'Test Crew',
+      });
+      const makeQ = (rows) => { const q = { _data: { data: rows } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.is = () => q; q.lt = () => q; q.lte = () => q; q.not = () => q; q.order = () => q; q.limit = () => q; q.select = () => q; return q; };
+      _supa = {
+        from: (tbl) => {
+          if (tbl === 'team_members') return makeQ([{ employee_user_id: EMP, name: 'Test Crew', email: '', pay_type: 'hourly', pay_rate: 30 }]);
+          if (tbl === 'shop_time_entries') return makeQ([shopRow]);
+          return makeQ([]);
+        },
+      };
+      window.supaEnabled = () => true;
+      // BARE bindings, not window.*. js/cloud.js:638 declares these as
+      // `let _supa=null,_supaUser=null`, and a top-level let lives in the
+      // global LEXICAL environment, so `window._supa = x` creates an unrelated
+      // property while _fetchCrewLabor keeps reading the real binding. The
+      // boot already signs a _supaUser in, so that line is only a safety net,
+      // but the _supa stub above is load-bearing and must be assigned bare.
+      _supaUser = _supaUser || { id: 'owner-test' };
+      S.shopWrapMin = 30; S.shopPrepMin = 30;
+      document.getElementById('_crew-cost-ov')?.remove();
+      let html = '';
+      try {
+        _openCrewCost(); await _crewCostRender('today');
+        html = document.getElementById('_crew-cost-body')?.innerHTML || '';
+      } catch (e) { return { error: e.message }; }
+      document.getElementById('_crew-cost-ov')?.remove();
+      timeEntries = orig.timeEntries; _supa = orig.supa; window.supaEnabled = orig.supaEnabled; _supaUser = orig.supaUser; S.shopWrapMin = orig.wrap; S.shopPrepMin = orig.prep;
+      const hoursMatch = html.match(/(\d+(?:\.\d+)?)h/);
+      return { html, hours: hoursMatch ? parseFloat(hoursMatch[1]) : null };
+    });
+    if (r && !r.error) {
+      expect(r.hours, 'rendered hours, html=' + r.html).not.toBeNull();
+      expect(r.hours, 'the allowance pays the unload on a session nobody left').toBeCloseTo(1.5, 1);
     }
   });
 
@@ -4164,7 +4280,7 @@ test.describe('Workforce time intelligence', () => {
       timeEntries = timeEntries.filter(e => e.job_id !== 87801);
       timeEntries.push({ id: 8970001, job_id: 87801, date: '2026-01-01', start_time: '2026-01-01T09:00:00Z', end_time: '2026-01-01T11:00:00Z', minutes: 120, logged_by_uid: null, logged_by_name: 'Owner (me)' });
       S.ownerPayType = 'hourly'; S.ownerPayRate = 30;
-      const makeQ = (data) => { const q = { _data: { data } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.select = () => q; return q; };
+      const makeQ = (data) => { const q = { _data: { data } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.is = () => q; q.lt = () => q; q.lte = () => q; q.not = () => q; q.order = () => q; q.limit = () => q; q.select = () => q; return q; };
       window._supa = { from: (t) => makeQ([]) }; // no GPS-tracked entries or team_members at all
       window.supaEnabled = () => true;
       window._supaUser = window._supaUser || { id: 'test-uid' };

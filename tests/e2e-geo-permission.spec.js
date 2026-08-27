@@ -50,7 +50,24 @@ test.describe('Crew location permission', () => {
   }, s);
 
   let snap;
-  test.beforeEach(async () => { snap = await snapshot(); });
+  // The notice sheet is DOM, and restore() only ever put the state variables
+  // back, so a test that opened the sheet left it standing in the page for
+  // whoever ran next. That is what turned "an employee who already
+  // acknowledged is tracked without re-prompting" red on webkit CI
+  // 2026-08-25: it asserts no sheet is present, and it was reading the sheet
+  // the un-acknowledged test above it had opened and never cleared.
+  //
+  // Cleared in beforeEach, NOT afterEach, and that distinction is the whole
+  // fix. The sheet renders ASYNCHRONOUSLY: measured in this app, it is absent
+  // the instant _geoTrackInit() returns and present ~600ms later. So the test
+  // that opens it never sees it, and an afterEach would just as easily run
+  // before it landed and miss it too. By the next test's beforeEach it has
+  // long since arrived, so that is the only point where removing it is
+  // reliable. Chromium hid the leak by being slower to paint; webkit is not.
+  test.beforeEach(async () => {
+    await page.evaluate(() => document.getElementById('_geo-notice-ov')?.remove());
+    snap = await snapshot();
+  });
   test.afterEach(async () => { await restore(snap); });
 
   // ── 1. The fabricated-consent write is gone ────────────────────────────────
@@ -273,6 +290,1038 @@ test.describe('Crew location permission', () => {
     expect(out.c.dot).toBe('⚪');
   });
 
+  // ── 4b. iOS's own word, in plain English (owner ask 2026-08-26) ───────────
+  //
+  // The flattened status hid the two failures that cost the most: While Using
+  // and Always-but-reduced both arrived as 'granted' and lit the roster GREEN
+  // for a phone that logs nothing in a pocket, or that can never fire a job
+  // fence. These lock in that each one now reads as its own problem, and
+  // names the single Settings path that fixes it.
+  const rosterIos = (ios, rest) => page.evaluate(([i, r]) => {
+    S.teamTracking = true;
+    _teamGeo = { 'a@b.co': Object.assign({ status: null, checkedAt: null, ackAt: null, lastPing: null, ios: i }, r || {}) };
+    return _geoRosterStatus('a@b.co');
+  }, [ios, rest]);
+  const NOW = () => new Date().toISOString();
+
+  test('While Using is amber and says drives will not log, never a green light', async () => {
+    const out = await rosterIos({ location_status: 'wheninuse', location_accuracy: 'full', checked_at: NOW() });
+    expect(out.dot, 'granted-but-useless is not green').toBe('🟠');
+    expect(out.label).toContain('Only tracks with the app open');
+    expect(out.fix, 'the owner cannot fix this remotely, so it names the tap').toContain('Always');
+  });
+
+  test('Always with reduced accuracy is amber and points at Precise Location', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'reduced', checked_at: NOW() });
+    expect(out.dot).toBe('🟠');
+    expect(out.label).toContain('not precise enough');
+    expect(out.fix).toContain('Precise Location');
+  });
+
+  test('device-wide Location Services off is called out as the whole phone', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: false, checked_at: NOW() });
+    expect(out.dot).toBe('🔴');
+    expect(out.label, 'app-level Always is irrelevant when the master switch is off').toContain('whole phone');
+    expect(out.fix).toContain('Location Services');
+  });
+
+  test('restricted names the cause, since no amount of tapping TradeDesk fixes it', async () => {
+    const out = await rosterIos({ location_status: 'restricted', checked_at: NOW() });
+    expect(out.dot).toBe('🔴');
+    expect(out.label).toMatch(/screen time|device policy/i);
+  });
+
+  test('notdetermined is grey and unanswered, not a refusal', async () => {
+    const out = await rosterIos({ location_status: 'notdetermined', checked_at: NOW() });
+    expect(out.dot).toBe('⚪');
+    expect(out.label).toMatch(/answered/i);
+  });
+
+  // ASSERTION MOVED 2026-08-26 (CLAUDE.md 10.4). The handset name used to be
+  // glued onto the end of the label; it is its own line now, so that the name
+  // appears on BROKEN rows too (knowing which phone is broken is the point)
+  // and so it can sit beside the battery bar. The rule is unchanged, only
+  // which field carries it. This one was missed when the rest were updated,
+  // which is precisely the "grep for every other test asserting the same
+  // behaviour" step 10.4 exists for.
+  test('Always with full accuracy reads as all set, and names the handset', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, device_label: 'iPhone', checked_at: NOW() });
+    expect(out.dot).toBe('🟢');
+    expect(out.label).toContain('all set');
+    expect(out.device, 'the name moved off the label onto its own line').toContain('iPhone');
+    expect(out.label, 'and must not be duplicated back onto it').not.toContain('iPhone');
+  });
+
+  // ── The iOS reading is the present; a ping is the past ────────────────────
+  //
+  // RULE CHANGED 2026-08-26 (CLAUDE.md 10.4). This asserted that a 20-hour-old
+  // "While Using" loses to pings arriving now, on a "newest evidence wins"
+  // theory where the two were the same kind of fact separated only by age.
+  //
+  // The owner broke that theory: location set to Never, everything else
+  // screaming fix it, and the roster still said "Tracking". A ping from
+  // shortly before they hit Never was newer than the permission row, so it won.
+  //
+  // Two reasons the old theory was wrong. A permission is the GATE on every
+  // future ping, so once iOS says denied no further ping can arrive and recent
+  // breadcrumbs say nothing about now. And ping recency is not even a reliable
+  // liveness signal in this app: the geo engine buffers fixes to disk and
+  // replays them through drainBuffer, so a row can land long after the moment
+  // it describes.
+  //
+  // A fresh iOS reading now wins outright. "Fresh" still means inside
+  // _GEO_FRESH_MS, and since the row is rewritten on every foreground, a
+  // reading older than that means the app has not been opened in a day and a
+  // half, which is the genuinely stale case the ping rule exists for (see the
+  // stale test below, unchanged).
+  test('a day-old While Using still wins over breadcrumbs arriving now', async () => {
+    const old = new Date(Date.now() - 20 * 3600 * 1000).toISOString();
+    const out = await rosterIos({ location_status: 'wheninuse', checked_at: old }, { lastPing: NOW() });
+    expect(out.dot, 'a While Using phone sends pings whenever the app is open, so they prove nothing')
+      .toBe('🟠');
+    expect(out.fix).toContain('Always');
+  });
+
+  test('a fresh While Using DOES override an older ping', async () => {
+    const old = new Date(Date.now() - 20 * 3600 * 1000).toISOString();
+    const out = await rosterIos({ location_status: 'wheninuse', checked_at: NOW() }, { lastPing: old });
+    expect(out.dot, 'a green ping from this morning must not hide a switch flipped since').toBe('🟠');
+  });
+
+  test('an iOS row older than the freshness window is ignored entirely', async () => {
+    const ancient = new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString();
+    const out = await rosterIos({ location_status: 'wheninuse', checked_at: ancient },
+      { status: 'granted', checkedAt: ancient, ackAt: ancient });
+    expect(out.dot, 'stale is unknown, never a colour that claims to know').toBe('⚪');
+    expect(out.label).toContain('No recent activity');
+  });
+
+  // REGRESSION GUARD: a phone that never reported to device_status (an
+  // Android, a browser, anyone on a build older than this one) must keep the
+  // exact behaviour it had before, or this change would blank the roster for
+  // every existing crew member until they next open the app.
+  test('no iOS row at all leaves the old flattened behaviour untouched', async () => {
+    const now = NOW();
+    const out = await page.evaluate((n) => {
+      S.teamTracking = true;
+      _teamGeo = { 'a@b.co': { status: 'granted', checkedAt: n, ackAt: n, lastPing: null } };
+      return _geoRosterStatus('a@b.co');
+    }, now);
+    expect(out.dot).toBe('🟢');
+    expect(out.label).toContain('Location on');
+  });
+
+  test('a state the owner cannot fix carries no fix line to tap', async () => {
+    const out = await rosterIos({ location_status: 'restricted', checked_at: NOW() });
+    expect(out.fix, 'Screen Time is not a TradeDesk setting, so pointing at one would be a lie').toBeUndefined();
+  });
+
+  // ── Fleet vs personal handsets (owner ask 2026-08-26) ─────────────────────
+  test('a personal phone is named plainly, with no shared wording', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, device_label: 'iPhone', shared: false, checked_at: NOW() });
+    expect(out.device).toBe('iPhone');
+  });
+
+  test('a shared fleet device says so and says when THEY last used it', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, device_label: 'Shop iPad', shared: true,
+      checked_at: new Date(Date.now() - 2 * 3600 * 1000).toISOString() });
+    expect(out.device, 'three crew rows all reading "iPad" look like three iPads').toContain('shared');
+    expect(out.device).toContain('Shop iPad');
+    expect(out.device, 'the only per-person fact a shared handset can report').toMatch(/last used it/i);
+  });
+
+  test('the handset is named on a BROKEN state too, not just the green one', async () => {
+    const out = await rosterIos({ location_status: 'wheninuse', device_label: 'Shop iPad',
+      shared: true, checked_at: NOW() });
+    expect(out.dot).toBe('🟠');
+    expect(out.device, 'knowing WHICH phone is broken is the whole point').toContain('Shop iPad');
+  });
+
+  test('a device that never reported a label adds no empty line', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, checked_at: NOW() });
+    expect(out.device).toBeNull();
+  });
+
+  // ── Battery and last ping (owner ask 2026-08-26) ──────────────────────────
+  //
+  // A dead phone and a phone with location switched off look IDENTICAL on a
+  // roster that shows neither, and the owner chases them completely
+  // differently: one is a conversation, the other is a charger.
+  // ASSERTION MOVED 2026-08-26 (CLAUDE.md 10.4). These asserted on `device`,
+  // the text line, and that was right while the battery WAS text. It is a bar
+  // now, on purpose: a number is read, a bar is seen, and the whole point is
+  // that an owner scanning nine rows spots the dead phone without reading any
+  // of them. The rules below are unchanged, they just look at `battBar`. The
+  // device NAME stays on `device` and stays escaped, because it is whatever
+  // the user called their phone.
+  test('a low battery gets a bar, because "his phone died" is a real explanation', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, device_label: 'iPhone', battery_level: 0.09,
+      battery_charging: false, checked_at: NOW() });
+    expect(out.battBar).toContain('9%');
+    expect(out.battBar, 'under 15 is the row that explains a missing afternoon').toContain('#DC2626');
+    expect(out.device, 'the name is still text, and still escaped').toBe('iPhone');
+  });
+
+  test('a healthy battery draws no bar at all, so the roster stays readable', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, device_label: 'iPhone', battery_level: 0.82,
+      battery_charging: false, checked_at: NOW() });
+    expect(out.battBar, 'nine battery bars is a roster nobody reads').toBe('');
+    expect(out.device).toBe('iPhone');
+  });
+
+  test('a low battery on a charger reads as recovering, a healthy one draws nothing', async () => {
+    const low = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, battery_level: 0.11, battery_charging: true, checked_at: NOW() });
+    const high = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, device_label: 'iPhone', battery_level: 0.95,
+      battery_charging: true, checked_at: NOW() });
+    expect(low.battBar).toContain('charging');
+    expect(low.battBar, 'charging back up is good news, not a warning').toContain('16a34a');
+    expect(high.battBar).toBe('');
+  });
+
+  test('an unknown battery draws nothing, never a 0% bar', async () => {
+    for (const lvl of [null, undefined, -1, 'abc', NaN]) {
+      const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+        location_services_enabled: true, device_label: 'iPhone', battery_level: lvl, checked_at: NOW() });
+      expect(out.battBar, String(lvl) + ': a phone that could not answer is not a flat phone').toBe('');
+    }
+  });
+
+  // CLAUDE.md 7: the text version of this was replaced by the bar, so it is
+  // deleted rather than left defined and uncalled.
+  test('the replaced text battery helper is gone, not orphaned', async () => {
+    const still = await page.evaluate(() => typeof _geoBattLabel === 'function');
+    expect(still).toBe(false);
+  });
+
+  test('a nearly dead phone still draws a visible bar, not a sliver of nothing', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, battery_level: 0.01, checked_at: NOW() });
+    expect(out.battBar).toContain('1%');
+    // width:1% would be invisible, making the most urgent row on the screen
+    // the least visible one.
+    expect(out.battBar).not.toMatch(/width:[0-5]%/);
+  });
+
+  test('a device name can never inject markup through the bar line', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, device_label: '<img src=x onerror=alert(1)>',
+      battery_level: 0.09, checked_at: NOW() });
+    // The name rides on `device` (escaped at render); only the bar we built
+    // ourselves is ever trusted as markup.
+    expect(out.device).toBe('<img src=x onerror=alert(1)>');
+    expect(out.battBar).not.toContain('onerror');
+  });
+
+  test('last ping shows on a BROKEN row, which is where it matters most', async () => {
+    const out = await rosterIos({ location_status: 'wheninuse', checked_at: NOW() },
+      { lastPing: new Date(Date.now() - 50 * 3600 * 1000).toISOString() });
+    expect(out.dot).toBe('🟠');
+    expect(out.ping,
+      '"he flipped it this morning" and "nothing since Tuesday" are different problems').toMatch(/Last ping/);
+  });
+
+  test('a row that never reported says so plainly', async () => {
+    const out = await rosterIos({ location_status: 'denied', checked_at: NOW() });
+    expect(out.ping).toBe('No pings yet');
+  });
+
+  test('the green ping row never says it twice', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, checked_at: NOW() },
+      { lastPing: new Date(Date.now() - 5 * 60000).toISOString() });
+    expect(out.label).toContain('last ping');
+    expect(out.ping, 'the label already carries it').toBeUndefined();
+  });
+
+  // The BEST handset decides, not the newest. Somebody with a working iPhone
+  // and a forgotten iPad on While Using does not have a problem, and a roster
+  // that says otherwise sends the owner chasing a phantom.
+  test('the most capable device wins when someone has several', async () => {
+    const out = await page.evaluate(async () => {
+      const saved = { supa: window._supa, user: window._supaUser, emp: window._isEmployee,
+                      cid: window._contractorUserId, en: window.supaEnabled, geo: window._teamGeo };
+      const now = new Date().toISOString();
+      const rows = {
+        team_members: [{ email: 'A@b.co', employee_user_id: 'u1', location_status: 'granted',
+                         location_checked_at: now, location_device: 'phone', location_ack_at: now }],
+        location_pings: [],
+        device_status: [
+          { user_id: 'u1', device_id: 'd-ipad', device_label: 'iPad', location_status: 'wheninuse',
+            location_accuracy: 'full', location_services_enabled: true, checked_at: now },
+          { user_id: 'u1', device_id: 'd-phone', device_label: 'iPhone', location_status: 'always',
+            location_accuracy: 'full', location_services_enabled: true, checked_at: now },
+        ],
+      };
+      window.supaEnabled = () => true;
+      window._supaUser = { id: 'owner-1' };
+      window._isEmployee = false;
+      window._contractorUserId = 'owner-1';
+      window._supa = { from: (t) => { const q = { select: () => q, eq: () => q, in: () => q, gte: () => q,
+        order: () => q, limit: () => q, then: (res) => Promise.resolve({ data: rows[t] || [], error: null }).then(res) }; return q; } };
+      try {
+        await _loadTeamGeo();
+        const g = _teamGeo['a@b.co'];
+        S.teamTracking = true;
+        return { label: g && g.ios && g.ios.device_label, status: g && g.ios && g.ios.location_status,
+                 roster: _geoRosterStatus('a@b.co') };
+      } finally {
+        window._supa = saved.supa; window._supaUser = saved.user; window._isEmployee = saved.emp;
+        window._contractorUserId = saved.cid; window.supaEnabled = saved.en; window._teamGeo = saved.geo;
+      }
+    });
+    expect(out.status, 'the iPad must not drag down the phone that works').toBe('always');
+    expect(out.label).toBe('iPhone');
+    expect(out.roster.dot).toBe('🟢');
+  });
+
+  // ── 4c. The checklist stops lying about While Using ───────────────────────
+  //
+  // _geoPermDone() treated the FLATTENED 'granted' as finished, so a phone on
+  // While Using (or reduced accuracy) ticked the task off and the card
+  // cleared, while logging nothing. The notification that tells somebody to
+  // go fix it would have landed on a checklist already claiming all set.
+  const withNat = (nat, fn) => page.evaluate(([n, body]) => {
+    const saved = (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined;
+    const savedCap = window.Capacitor;
+    window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+    if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = n;
+    try { return (new Function('return (' + body + ')()'))(); }
+    finally {
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved;
+      window.Capacitor = savedCap;
+    }
+  }, [nat, fn.toString()]);
+
+  test('While Using does NOT complete the location task', async () => {
+    const out = await withNat({ status: 'wheninuse', accuracy: 'full', servicesEnabled: true }, () => {
+      _geoPermCache = 'granted';
+      const p = _geoNatProblem();
+      return { done: _geoPermDone(), kind: p && p.kind, title: p && p.title };
+    });
+    expect(out.done, 'a phone that logs nothing in a pocket is not finished').toBe(false);
+    expect(out.kind).toBe('wheninuse');
+    expect(out.title, '"turn on location" is useless advice when it IS on').toContain('Always');
+  });
+
+  test('reduced accuracy does NOT complete the location task', async () => {
+    const out = await withNat({ status: 'always', accuracy: 'reduced', servicesEnabled: true }, () => {
+      _geoPermCache = 'granted';
+      return { done: _geoPermDone(), kind: (_geoNatProblem() || {}).kind };
+    });
+    expect(out.done).toBe(false);
+    expect(out.kind).toBe('precise');
+  });
+
+  test('device-wide Location Services off outranks an app-level Always', async () => {
+    const out = await withNat({ status: 'always', accuracy: 'full', servicesEnabled: false }, () => {
+      _geoPermCache = 'granted';
+      return { done: _geoPermDone(), kind: (_geoNatProblem() || {}).kind };
+    });
+    expect(out.done).toBe(false);
+    expect(out.kind).toBe('services');
+  });
+
+  test('Always with full accuracy completes it, so nobody is nagged for free', async () => {
+    const out = await withNat({ status: 'always', accuracy: 'full', servicesEnabled: true }, () => {
+      _geoPermCache = 'granted';
+      return { done: _geoPermDone(), problem: _geoNatProblem() };
+    });
+    expect(out.done).toBe(true);
+    expect(out.problem).toBeNull();
+  });
+
+  // REGRESSION GUARD: a browser has none of these axes and must behave
+  // exactly as it did before, or every PWA user gets a task they can never
+  // finish.
+  test('with no native answer at all the old behaviour is untouched', async () => {
+    const out = await withNat(null, () => {
+      _geoPermCache = 'granted'; const g = _geoPermDone();
+      _geoPermCache = 'prompt';  const p = _geoPermDone();
+      return { g, p, problem: _geoNatProblem() };
+    });
+    expect(out.g).toBe(true);
+    expect(out.p).toBe(false);
+    expect(out.problem).toBeNull();
+  });
+
+  // ── 4c-2. A temporary Precise grant is not a finished task ────────────────
+  //
+  // requestTemporaryFullAccuracyAuthorization is the only thing that can lift
+  // a reduced-accuracy user to Precise from inside the app, and what it hands
+  // back LAPSES on the next app launch. So iOS reports accuracy 'full' for the
+  // rest of this session while the underlying problem is untouched. If the
+  // checklist took that at face value the task would tick off, the card would
+  // clear, and job arrivals would silently stop registering again tomorrow.
+  //
+  // Uses the same withNat harness as 4c above: _geoPreciseTemp is a top-level
+  // `let` in js/geo-track.js, reachable from the page's global scope exactly
+  // the way _geoPermCache and _geoNativeAuth already are here.
+  test('the temporary-grant flag and its asker both exist', async () => {
+    const out = await page.evaluate(() => ({
+      ask: typeof _geoRequestPreciseTemp,
+      peek: typeof _geoPreciseTempPeek,
+      key: typeof _GEO_PRECISE_PURPOSE_KEY === 'string' ? _GEO_PRECISE_PURPOSE_KEY : null,
+    }));
+    // Without these the two tests below would be asserting against nothing.
+    expect(out.ask).toBe('function');
+    expect(out.peek).toBe('function');
+    expect(out.key, 'the purpose key has to be a named constant the plist test can read').toBeTruthy();
+  });
+
+  test('a session-scoped Precise grant does NOT complete the location task', async () => {
+    const out = await withNat({ status: 'always', accuracy: 'full', precise: true, servicesEnabled: true }, () => {
+      const saved = _geoPreciseTemp;
+      _geoPreciseTemp = true;
+      _geoPermCache = 'granted';
+      const p = _geoNatProblem();
+      const r = { done: _geoPermDone(), kind: p && p.kind, title: p && p.title, sub: p && p.sub,
+                  peek: _geoPreciseTempPeek() };
+      _geoPreciseTemp = saved;
+      return r;
+    });
+    expect(out.peek, 'the flag must actually be readable, or this test proves nothing').toBe(true);
+    expect(out.done, 'a grant that dies on relaunch cannot finish the task').toBe(false);
+    expect(out.kind).toBe('precisetemp');
+    expect(out.title, 'the copy must not read as done').toContain('permanent');
+    expect(out.sub, 'it has to say plainly that this lapses').toMatch(/restart/i);
+  });
+
+  test('a permanent Precise grant still completes it, so nobody is nagged for free', async () => {
+    const out = await withNat({ status: 'always', accuracy: 'full', precise: true, servicesEnabled: true }, () => {
+      const saved = _geoPreciseTemp;
+      _geoPreciseTemp = false;
+      _geoPermCache = 'granted';
+      const r = { done: _geoPermDone(), problem: _geoNatProblem() };
+      _geoPreciseTemp = saved;
+      return r;
+    });
+    expect(out.done).toBe(true);
+    expect(out.problem).toBeNull();
+  });
+
+  // The lapse itself: iOS reports reduced again, so the flag describing a
+  // grant that no longer exists has to go with it, and the hard complaint
+  // comes back. Cleared off iOS's own answer, never a timer, because iOS is
+  // the only thing that knows.
+  test('when the grant lapses the flag clears and the hard complaint returns', async () => {
+    const out = await page.evaluate(async () => {
+      const saved = { plug: window._geoTdPlugin, nat: _geoNativeAuth, tmp: _geoPreciseTemp, cache: _geoPermCache };
+      try {
+        _geoPreciseTemp = true;
+        _geoPermCache = 'granted';
+        window._geoTdPlugin = () => ({
+          locationPermStatus: () => Promise.resolve({ status: 'always', accuracy: 'reduced', precise: false, servicesEnabled: true }),
+        });
+        await _geoRefreshNativeAuth();
+        const p = _geoNatProblem();
+        return { peek: _geoPreciseTempPeek(), kind: p && p.kind, done: _geoPermDone() };
+      } finally {
+        window._geoTdPlugin = saved.plug; _geoNativeAuth = saved.nat;
+        _geoPreciseTemp = saved.tmp; _geoPermCache = saved.cache;
+      }
+    });
+    expect(out.peek, 'a flag that outlives the grant it describes is a lie').toBe(false);
+    expect(out.kind).toBe('precise');
+    expect(out.done).toBe(false);
+  });
+
+  // A temporary grant means tracking IS working right now, so the break
+  // notification must not fire for it, and a pending 'precise' buzz from
+  // before the tap has to be cancelled rather than left to arrive two minutes
+  // after somebody already fixed it.
+  test('a temporary grant cancels the break buzz instead of firing another one', async () => {
+    const out = await page.evaluate(async () => {
+      const saved = { nat: _geoNativeAuth, tmp: _geoPreciseTemp, cache: _geoPermCache,
+                      sched: window._notifySchedule, cancel: window._notifyCancel, cap: window.Capacitor };
+      const calls = { scheduled: [], cancelled: [] };
+      try {
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+        window._notifySchedule = (id, title, body) => { calls.scheduled.push(id); return Promise.resolve(true); };
+        window._notifyCancel = (ids) => { calls.cancelled.push(ids); };
+        try { localStorage.setItem('zp3_geo_break_notified', 'precise'); } catch (e) {}
+        _geoNativeAuth = { status: 'always', accuracy: 'full', precise: true, servicesEnabled: true };
+        _geoPreciseTemp = true;
+        _geoPermCache = 'granted';
+        const fired = _geoNotifyBreak();
+        let flag = null; try { flag = localStorage.getItem('zp3_geo_break_notified'); } catch (e) {}
+        return { fired, calls, flag };
+      } finally {
+        _geoNativeAuth = saved.nat; _geoPreciseTemp = saved.tmp; _geoPermCache = saved.cache;
+        window._notifySchedule = saved.sched; window._notifyCancel = saved.cancel; window.Capacitor = saved.cap;
+        try { localStorage.removeItem('zp3_geo_break_notified'); } catch (e) {}
+      }
+    });
+    expect(out.fired, 'nothing is broken this session, so nothing to tell them').toBe(false);
+    expect(out.calls.scheduled).toEqual([]);
+    expect(out.calls.cancelled.length, 'the pending buzz for the state they just fixed is dropped').toBe(1);
+    expect(out.flag, 'forgetting it makes the NEXT lapse a fresh transition with its own one notification').toBeNull();
+  });
+
+  // ── 4d. One notification per break, never a nag (Apple 4.5.4 / 5.1.1) ─────
+  const breakRun = (nat, pre) => page.evaluate(([n, p]) => {
+    const saved = (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined;
+    const savedCap = window.Capacitor, savedSched = window._notifySchedule, savedCancel = window._notifyCancel;
+    const calls = { scheduled: [], cancelled: [] };
+    window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+    window._notifySchedule = (id, title, body) => { calls.scheduled.push({ id, title, body }); return Promise.resolve(true); };
+    window._notifyCancel = (ids) => { calls.cancelled.push(ids); };
+    if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = n;
+    try { localStorage.removeItem('zp3_geo_break_notified'); } catch (e) {}
+    if (p) { try { localStorage.setItem('zp3_geo_break_notified', p); } catch (e) {} }
+    try {
+      const first = _geoNotifyBreak();
+      const again = _geoNotifyBreak();
+      let mark = null; try { mark = localStorage.getItem('zp3_geo_break_notified'); } catch (e) {}
+      return { first, again, mark, calls };
+    } finally {
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved;
+      window.Capacitor = savedCap; window._notifySchedule = savedSched; window._notifyCancel = savedCancel;
+      try { localStorage.removeItem('zp3_geo_break_notified'); } catch (e) {}
+    }
+  }, [nat, pre === undefined ? null : pre]);
+
+  test('a break fires exactly one notification, and calling again fires nothing', async () => {
+    const out = await breakRun({ status: 'wheninuse', accuracy: 'full', servicesEnabled: true });
+    expect(out.first).toBe(true);
+    expect(out.again, 'once per transition, never once per foreground').toBe(false);
+    expect(out.calls.scheduled.length).toBe(1);
+    expect(out.mark).toBe('wheninuse');
+  });
+
+  test('the copy names the feature, never claims the app is broken', async () => {
+    const out = await breakRun({ status: 'wheninuse', accuracy: 'full', servicesEnabled: true });
+    const n = out.calls.scheduled[0];
+    // Apple 5.1.1: scoped to the feature, and it says plainly that the rest
+    // still works. "The app will not work" is what gets this rejected.
+    expect(n.title).toMatch(/mileage|time log/i);
+    expect(n.body).toMatch(/While Using/i);
+    expect(n.body.toLowerCase()).not.toMatch(/app (is )?(broken|won.t work|will not work)/);
+  });
+
+  test('a DIFFERENT break is a new transition and does get told', async () => {
+    const out = await breakRun({ status: 'always', accuracy: 'reduced', servicesEnabled: true }, 'wheninuse');
+    expect(out.first, 'losing Precise is a different problem with a different fix').toBe(true);
+    expect(out.mark).toBe('precise');
+  });
+
+  test('fixing it cancels the pending buzz and forgets, so the next break tells them again', async () => {
+    const out = await breakRun({ status: 'always', accuracy: 'full', servicesEnabled: true }, 'wheninuse');
+    expect(out.first).toBe(false);
+    expect(out.calls.scheduled.length, 'nothing to say when nothing is wrong').toBe(0);
+    expect(out.calls.cancelled.length, 'fixing it inside the window earns no pointless buzz').toBe(1);
+    expect(out.mark).toBeNull();
+  });
+
+  test('a healthy phone that was never broken schedules and cancels nothing', async () => {
+    const out = await breakRun({ status: 'always', accuracy: 'full', servicesEnabled: true });
+    expect(out.calls.scheduled.length).toBe(0);
+    expect(out.calls.cancelled.length).toBe(0);
+  });
+
+  // ── 4e. The notifications task itself ─────────────────────────────────────
+  // Source scan, because the checklist array is a local inside
+  // _renderDashSetupTodo and cannot be called from here. A test that guards
+  // itself with typeof and passes vacuously would look like coverage while
+  // asserting nothing, which is worse than no test at all.
+  test('notifications is skippable, because Apple 4.5.4 forbids requiring it', () => {
+    const fs = require('fs'), path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'dashboard.js'), 'utf8');
+    const item = (id) => {
+      const i = src.indexOf("{id:'" + id + "'");
+      expect(i, 'checklist item ' + id + ' must exist').toBeGreaterThan(-1);
+      return src.slice(i, src.indexOf('},', i));
+    };
+    expect(item('notify').includes('noSkip'),
+      'a notification the user cannot decline is a rejected app (Apple 4.5.4)').toBe(false);
+    expect(item('location').includes('noSkip:true'),
+      'auto mileage genuinely cannot exist without location, so that one stays required').toBe(true);
+  });
+
+  test('granted/unsupported finish the notifications task; prompt and denied do not', async () => {
+    const out = await page.evaluate(() => {
+      const saved = _notifyPermCache;
+      const r = {};
+      ['granted', 'unsupported', 'prompt', 'denied'].forEach(s => { _notifyPermCache = s; r[s] = _notifyPermDone(); });
+      _notifyPermCache = saved;
+      return r;
+    });
+    expect(out.granted).toBe(true);
+    expect(out.unsupported, 'a browser must not be nagged forever').toBe(true);
+    expect(out.prompt).toBe(false);
+    expect(out.denied).toBe(false);
+  });
+
+  // ── 4f. Never default to approximate (owner rule 2026-08-26) ──────────────
+  //
+  // "We need the tightest location services upfront at all times. Never can
+  // default to approximates."
+  //
+  // enableHighAccuracy:false lets the browser answer from wifi or cell
+  // triangulation instead of GPS, and a maximumAge lets it answer from a
+  // cache. Three call sites were doing both on data that is not cosmetic: the
+  // job-fence match in checkNearbyJob (which even reads pos.coords.accuracy to
+  // decide whether to trust the fix), the start coordinate of a deductible
+  // drive, and the address written onto a mileage row. Coarse is still
+  // allowed where it is genuinely right, but it now has to be asked for and
+  // justified, and this scan is what keeps that true as new call sites appear.
+  test('every coarse geolocation call carries a written reason', () => {
+    const fs = require('fs'), path = require('path');
+    const dir = path.join(__dirname, '..', 'js');
+    const offenders = [];
+    fs.readdirSync(dir).filter(f => f.endsWith('.js')).forEach(f => {
+      const lines = fs.readFileSync(path.join(dir, f), 'utf8').split('\n');
+      lines.forEach((ln, i) => {
+        if (/^\s*(\/\/|\*|\/\*)/.test(ln)) return;   // prose describing it, not a call
+        if (!/enableHighAccuracy\s*:\s*false/.test(ln)) return;
+        const back = lines.slice(Math.max(0, i - 12), i + 1).join('\n');
+        if (!/COARSE OK/.test(back)) offenders.push('js/' + f + ':' + (i + 1));
+      });
+    });
+    expect(offenders,
+      'mark it "COARSE OK: <why>" if approximate really is right here, otherwise drop the flag').toEqual([]);
+  });
+
+  test('the shared helper defaults to the tightest fix, with no stale cache', async () => {
+    const out = await page.evaluate(() => {
+      const saved = { g: navigator.geolocation, lg: S.locationGranted };
+      let opts = null;
+      try {
+        Object.defineProperty(navigator, 'geolocation', {
+          configurable: true,
+          value: { getCurrentPosition: (cb, err, o) => { opts = o; } },
+        });
+        S.locationGranted = true;
+        geoIfGranted(() => {});
+        return opts;
+      } finally {
+        Object.defineProperty(navigator, 'geolocation', { configurable: true, value: saved.g });
+        S.locationGranted = saved.lg;
+      }
+    });
+    expect(out.enableHighAccuracy, 'a job fence cannot be matched against a wifi fix').toBe(true);
+    expect(out.maximumAge, 'a cached fix stamps a drive that already moved on').toBe(0);
+  });
+
+  test('a caller can still ask for coarse explicitly', async () => {
+    const out = await page.evaluate(() => {
+      const saved = { g: navigator.geolocation, lg: S.locationGranted };
+      let opts = null;
+      try {
+        Object.defineProperty(navigator, 'geolocation', {
+          configurable: true,
+          value: { getCurrentPosition: (cb, err, o) => { opts = o; } },
+        });
+        S.locationGranted = true;
+        geoIfGranted(() => {}, null, { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 });
+        return opts;
+      } finally {
+        Object.defineProperty(navigator, 'geolocation', { configurable: true, value: saved.g });
+        S.locationGranted = saved.lg;
+      }
+    });
+    expect(out.enableHighAccuracy, 'weather does not need GPS and should not spin the radio').toBe(false);
+    expect(out.maximumAge).toBe(600000);
+  });
+
+  // ── 4g. The owner and their managers get told (owner ask 2026-08-26) ──────
+  const alertRun = (opts) => page.evaluate(async (o) => {
+    const saved = { emp: window._isEmployee, rec: window._employeeRecord, f: window.fetch,
+                    supa: window._supa, url: window.SUPA_URL };
+    const calls = [];
+    try {
+      window._isEmployee = o.isEmployee;
+      window._employeeRecord = o.record || null;
+      window.SUPA_URL = 'https://x.test';
+      window._supa = { auth: { getSession: () => Promise.resolve({ data: { session: { access_token: 't' } } }) } };
+      window.fetch = (url, init) => {
+        calls.push({ url, body: JSON.parse((init && init.body) || '{}') });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      };
+      const out = _geoAlertManagers(o.kind);
+      // The fetch fires inside _supa.auth.getSession().then(...), a microtask.
+      // Returning here would hand back an empty list every time and make every
+      // assertion below pass without testing anything.
+      for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0));
+      return { out, calls };
+    } finally {
+      window._isEmployee = saved.emp; window._employeeRecord = saved.rec;
+      window.fetch = saved.f; window._supa = saved.supa; window.SUPA_URL = saved.url;
+    }
+  }, opts);
+
+  test('the alert names the person, the exact problem, and lands on the roster', async () => {
+    const r = await alertRun({ isEmployee: true, record: { name: 'Danny Kwon' }, kind: 'wheninuse' });
+    expect(r.out).toBe(true);
+    expect(r.calls.length, 'the manager alert must actually be sent').toBe(1);
+    const body = r.calls[0].body;
+    expect(r.calls[0].url).toContain('/functions/v1/send-push');
+    expect(body.toRole, 'a crew device cannot enumerate managers, so it asks for the role').toBe('managers');
+    expect(body.to, 'and it must never hand the server a recipient list').toBeUndefined();
+    expect(body.title).toContain('Danny Kwon');
+    expect(body.body).toMatch(/While Using/i);
+    expect(body.route, 'the roster is the only screen that says who and on which phone').toBe('team');
+  });
+
+  test('each break kind says what actually broke, not one generic line', async () => {
+    const kinds = ['wheninuse', 'precise', 'services', 'restricted'];
+    const seen = [];
+    for (const k of kinds) {
+      const r = await alertRun({ isEmployee: true, record: { name: 'Danny' }, kind: k });
+      expect(r.calls.length, k).toBe(1);
+      seen.push(r.calls[0].body.body);
+    }
+    expect(new Set(seen).size, 'four different problems need four different fixes').toBe(4);
+    expect(seen[1]).toMatch(/precise/i);
+    expect(seen[2]).toMatch(/whole phone/i);
+  });
+
+  test('the owner on their own phone sends nothing, they already got the local buzz', async () => {
+    const r = await alertRun({ isEmployee: false, kind: 'wheninuse' });
+    expect(r.out).toBe(false);
+    expect(r.calls.length).toBe(0);
+  });
+
+  // Who may LOOK. All three layers have to agree (client gate, RLS policy,
+  // and the server's recipient list) or a manager gets notified about
+  // something they cannot then open.
+  test('owner and managers may load the roster; ordinary crew may not', async () => {
+    const out = await page.evaluate(() => {
+      const saved = { emp: window._isEmployee, rec: window._employeeRecord };
+      const check = (isEmp, perms) => {
+        window._isEmployee = isEmp;
+        window._employeeRecord = perms ? { permissions: perms } : null;
+        return _teamGeoAllowed();
+      };
+      try {
+        return {
+          owner: check(false, null),
+          payroll: check(true, { payroll: true }),
+          team: check(true, { team: true }),
+          plainCrew: check(true, { estimate: true }),
+          noPerms: check(true, {}),
+        };
+      } finally { window._isEmployee = saved.emp; window._employeeRecord = saved.rec; }
+    });
+    expect(out.owner).toBe(true);
+    expect(out.payroll).toBe(true);
+    expect(out.team).toBe(true);
+    expect(out.plainCrew,
+      "where a colleague's phone is, is not general staff information").toBe(false);
+    expect(out.noPerms).toBe(false);
+  });
+
+  test('the three layers name the same two permissions', () => {
+    const fs = require('fs'), path = require('path');
+    const root = path.join(__dirname, '..');
+    const fn = fs.readFileSync(path.join(root, 'supabase', 'functions', 'send-push', 'index.ts'), 'utf8');
+    const mig = fs.readFileSync(path.join(root, 'supabase', 'migrations',
+      '20260828_device_status_manager_read.sql'), 'utf8');
+    const cli = fs.readFileSync(path.join(root, 'js', 'cloud.js'), 'utf8');
+    // Server picks recipients, RLS decides who may read, client decides who
+    // even tries. A drift between any two is a manager notified about a screen
+    // that stays empty, or worse, one that should have stayed shut.
+    expect(fn.includes('p.payroll') && fn.includes('p.team'), 'send-push recipients').toBe(true);
+    expect(mig.includes("'payroll'") && mig.includes("'team'"), 'RLS policy').toBe(true);
+    expect(cli.includes('p.payroll||p.team'), 'client gate').toBe(true);
+  });
+
+  test('a manager tapping the alert lands on the team page', async () => {
+    const out = await page.evaluate(() => {
+      const saved = window.goPg;
+      let went = null;
+      try { window.goPg = (p) => { went = p; }; _pushRoute({ route: 'team' }); return went; }
+      finally { window.goPg = saved; }
+    });
+    expect(out).toBe('pg-team');
+  });
+
+  // The whole reason the token gap existed: _notifyAsk asks the SAME iOS
+  // dialog but never registers for remote notifications, so asking with it
+  // would spend the one prompt iOS shows and still leave the account
+  // unreachable from a server.
+  test('the checklist asks with pushEnable, so a token actually lands', () => {
+    const fs = require('fs'), path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'dashboard.js'), 'utf8');
+    const i = src.indexOf("if(id==='notify')");
+    expect(i).toBeGreaterThan(-1);
+    const blk = src.slice(i, i + 1600);
+    const pe = blk.indexOf('pushEnable'), na = blk.indexOf('_notifyAsk');
+    expect(pe, 'pushEnable must be in the notify branch').toBeGreaterThan(-1);
+    expect(pe < na || na === -1,
+      'pushEnable is tried FIRST; _notifyAsk is only the browser fallback').toBe(true);
+  });
+
+  // ── The owner's own row (owner ask 2026-08-26) ────────────────────────────
+  //
+  // It used to be skipped outright, on the grounds that the dashboard
+  // checklist already tells the owner about their own phone. That does not
+  // survive a solo shop, where the owner IS the crew and the roster would list
+  // everyone except the only person on it, and it never covered a second
+  // handset, which the checklist cannot see because it only reads THIS phone.
+  // REWRITTEN 2026-08-26 (CLAUDE.md 10.4). This asserted the owner-skip line
+  // inside the crew loop carried an _isEmployee check. That was the right rule
+  // in the wrong place: S.employees is people you HIRE and never contains the
+  // owner at all, so the geo line had nothing to attach to and the owner's row
+  // simply did not appear (owner report: "don't see owner me under team"). The
+  // owner is now its OWN row, and the who-is-looking check moved there.
+  test("the owner gets their own row, and a manager never sees it", () => {
+    const fs = require('fs'), path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+    const i = src.indexOf('const _ownerRowHtml=');
+    expect(i, 'the owner must be rendered as its own row, not fished out of S.employees')
+      .toBeGreaterThan(-1);
+    const blk = src.slice(i, i + 900);
+    expect(blk.includes('_isEmployee'),
+      "a manager is trusted with the crew, not with where the boss's phone is").toBe(true);
+    expect(blk.includes('S.teamTracking'),
+      'and nothing shows at all when crew tracking is off for the account').toBe(true);
+    // It must be rendered, not just built.
+    expect(src.includes('_reqHtml+_ownerRowHtml+empHtml'),
+      'built but never inserted is exactly the bug this replaces').toBe(true);
+  });
+
+  // ── Precise on every session (owner rule 2026-08-26) ──────────────────────
+  //
+  // "In this next build we better have precise location at all times."
+  // iOS has no permanent override, so this is delivered the only way it can
+  // be: ask on every session that opens with reduced accuracy, rather than
+  // waiting for somebody to notice a checklist item and tap it.
+  const autoPrecise = (nat) => page.evaluate((n) => {
+    const saved = { nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined,
+                    req: window._geoRequestPreciseTemp, cap: window.Capacitor,
+                    asked: (typeof _geoAutoPreciseAsked !== 'undefined') ? _geoAutoPreciseAsked : undefined };
+    let calls = 0;
+    try {
+      window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+      window._geoRequestPreciseTemp = () => { calls++; return Promise.resolve({ ok: true }); };
+      // BARE binding, not window.*: a top-level `let` in a classic script lives
+      // in the global LEXICAL environment, so window._geoAutoPreciseAsked=false
+      // creates an unrelated property and the real once-per-session flag stays
+      // set from the previous test. That made every test after the first one
+      // silently assert against an already-used flag.
+      _geoAutoPreciseAsked = false;
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = n;
+      const first = _geoAutoPrecise();
+      const second = _geoAutoPrecise();
+      return { first, second, calls };
+    } finally {
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+      window._geoRequestPreciseTemp = saved.req; window.Capacitor = saved.cap;
+      if (saved.asked !== undefined) _geoAutoPreciseAsked = saved.asked;
+    }
+  }, nat);
+
+  test('a session that opens on reduced accuracy asks for the upgrade unprompted', async () => {
+    const r = await autoPrecise({ status: 'always', accuracy: 'reduced', servicesEnabled: true });
+    expect(r.first, 'a phone would otherwise run all day at mile-wide accuracy').toBe(true);
+    expect(r.calls).toBe(1);
+  });
+
+  test('While Using plus reduced also gets asked, since accuracy is the separate switch', async () => {
+    const r = await autoPrecise({ status: 'wheninuse', accuracy: 'reduced', servicesEnabled: true });
+    expect(r.first).toBe(true);
+  });
+
+  test('it asks ONCE per session, never repeatedly', async () => {
+    const r = await autoPrecise({ status: 'always', accuracy: 'reduced', servicesEnabled: true });
+    expect(r.second, 'repeating inside one session is the nagging Apple 5.1.1 targets').toBe(false);
+    expect(r.calls).toBe(1);
+  });
+
+  test('an already-precise phone is never asked anything', async () => {
+    const r = await autoPrecise({ status: 'always', accuracy: 'full', servicesEnabled: true });
+    expect(r.first).toBe(false);
+    expect(r.calls).toBe(0);
+  });
+
+  test('denied and not-yet-asked are left alone: different problems, different fixes', async () => {
+    for (const st of ['denied', 'restricted', 'notdetermined']) {
+      const r = await autoPrecise({ status: st, accuracy: 'reduced' });
+      expect(r.first, st + ' must not draw an accuracy prompt on top of it').toBe(false);
+      expect(r.calls).toBe(0);
+    }
+  });
+
+  test('no iOS answer at all is a no-op, never a throw', async () => {
+    const r = await autoPrecise(null);
+    expect(r.first).toBe(false);
+    expect(r.calls).toBe(0);
+  });
+
+  // ── The login banner (owner ask 2026-08-26) ───────────────────────────────
+  //
+  // "Banner on their login if they disable it."
+  //
+  // Two things were wrong with the banner that already existed. It was gated
+  // on _isEmployee, so the one person who could turn their own tracking off
+  // and never be told was the owner, whose mileage deduction it is. And it
+  // read navigator.permissions, which cannot see accuracy at all, so a phone
+  // dropped to Approximate sailed straight past it reporting 'granted'.
+  const bannerFor = (nat) => page.evaluate((n) => {
+    const saved = { nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined,
+                    emp: window._isEmployee, cap: window.Capacitor, tt: S.teamTracking };
+    try {
+      window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+      window._isEmployee = false;              // the OWNER, the case that was skipped
+      S.teamTracking = true;
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = n;
+      let el = document.getElementById('dash-geo-perm');
+      if (!el) { el = document.createElement('div'); el.id = 'dash-geo-perm'; document.body.appendChild(el); }
+      el.innerHTML = ''; el.style.display = 'none';
+      return Promise.resolve(_geoPermissionBanner()).then(() => ({
+        shown: el.style.display !== 'none', html: el.innerHTML,
+      }));
+    } finally {
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+      window._isEmployee = saved.emp; window.Capacitor = saved.cap; S.teamTracking = saved.tt;
+    }
+  }, nat);
+
+  test('the OWNER gets the banner too, not just crew', async () => {
+    const r = await bannerFor({ status: 'denied', accuracy: 'full', servicesEnabled: true });
+    expect(r.shown, 'it is the owner\'s own mileage deduction').toBe(true);
+  });
+
+  // _geoNatProblem covers the four "granted but useless" states and
+  // deliberately NOT denied or never-asked, which the setup checklist routes
+  // through _geoPermState instead. The banner needs all six, so it asks iOS
+  // directly for the two the helper skips. Missing that swallowed the loudest
+  // case of all.
+  test('never-asked raises a soft banner, denied raises a hard one', async () => {
+    const nd = await bannerFor({ status: 'notdetermined' });
+    expect(nd.shown).toBe(true);
+    expect(nd.html).toMatch(/Turn on location/i);
+    const dn = await bannerFor({ status: 'denied', accuracy: 'full', servicesEnabled: true });
+    expect(dn.html).toMatch(/Location is off/i);
+  });
+
+  test('Approximate raises the banner, which the old web-only check could never see', async () => {
+    const r = await bannerFor({ status: 'always', accuracy: 'reduced', servicesEnabled: true });
+    expect(r.shown).toBe(true);
+    expect(r.html).toMatch(/precise/i);
+  });
+
+  test('While Using raises it, and names Always as the fix', async () => {
+    const r = await bannerFor({ status: 'wheninuse', accuracy: 'full', servicesEnabled: true });
+    expect(r.shown).toBe(true);
+    expect(r.html).toMatch(/Always/);
+  });
+
+  test('device-wide Location Services off raises it', async () => {
+    const r = await bannerFor({ status: 'always', accuracy: 'full', servicesEnabled: false });
+    expect(r.shown).toBe(true);
+  });
+
+  test('a healthy phone shows nothing at all', async () => {
+    const r = await bannerFor({ status: 'always', accuracy: 'full', servicesEnabled: true });
+    expect(r.shown, 'a banner on a working phone is noise').toBe(false);
+  });
+
+  test('a session-upgraded phone shows nothing, because it IS working right now', async () => {
+    const r = await page.evaluate(() => {
+      const saved = { nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined,
+                      emp: window._isEmployee, cap: window.Capacitor, tt: S.teamTracking,
+                      tmp: (typeof _geoPreciseTemp !== 'undefined') ? _geoPreciseTemp : undefined };
+      try {
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+        window._isEmployee = false; S.teamTracking = true;
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = { status: 'always', accuracy: 'full', servicesEnabled: true };
+        if (typeof _geoPreciseTemp !== 'undefined') _geoPreciseTemp = true;
+        let el = document.getElementById('dash-geo-perm');
+        if (!el) { el = document.createElement('div'); el.id = 'dash-geo-perm'; document.body.appendChild(el); }
+        el.style.display = 'none';
+        return Promise.resolve(_geoPermissionBanner()).then(() => ({ shown: el.style.display !== 'none' }));
+      } finally {
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+        if (typeof _geoPreciseTemp !== 'undefined') _geoPreciseTemp = saved.tmp;
+        window._isEmployee = saved.emp; window.Capacitor = saved.cap; S.teamTracking = saved.tt;
+      }
+    });
+    expect(r.shown, 'a red banner on a phone that is tracking fine is a lie').toBe(false);
+  });
+
+  test('the banner button uses the same fix path as the checklist, never a second one', () => {
+    const fs = require('fs'), path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'geo-track.js'), 'utf8');
+    const i = src.indexOf('function _geoBannerHtml');
+    expect(i).toBeGreaterThan(-1);
+    const blk = src.slice(i, i + 1200);
+    // _geoRequestPermission cannot re-prompt a settled iOS decision and knows
+    // nothing about accuracy. Two buttons with two ideas of how to fix this is
+    // how one of them becomes a dead button.
+    expect(/_setupTodoGo\(\\?'location\\?'\)/.test(blk),
+      'one fix path, shared with the setup checklist').toBe(true);
+  });
+
+  // ── A denied phone is never "Tracking" (owner report 2026-08-26) ──────────
+  //
+  // "Location set to never allow and it still said tracking when everything
+  // else screamed fix it."
+  //
+  // The old rule made a fresh iOS reading win only if it was NEWER than the
+  // last ping. A ping from twenty minutes before they hit Never was more
+  // recent than the permission row, so it won and the row went green. The two
+  // are not the same kind of evidence: a ping is the past, the permission is
+  // the present and the gate on every future ping.
+  test('a fresh denial beats a ping that arrived just before it', async () => {
+    const out = await rosterIos({ location_status: 'denied', checked_at: NOW() },
+      { lastPing: new Date(Date.now() - 20 * 60000).toISOString() });
+    expect(out.dot, 'no further ping can arrive once iOS says denied').toBe('🔴');
+    expect(out.label).toMatch(/off/i);
+  });
+
+  test('so do the other hard-off states', async () => {
+    const recent = { lastPing: new Date(Date.now() - 10 * 60000).toISOString() };
+    const services = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: false, checked_at: NOW() }, recent);
+    const restricted = await rosterIos({ location_status: 'restricted', checked_at: NOW() }, recent);
+    expect(services.dot).toBe('🔴');
+    expect(restricted.dot).toBe('🔴');
+  });
+
+  test('and a fresh While Using beats a newer ping too', async () => {
+    const out = await rosterIos({ location_status: 'wheninuse', checked_at: NOW() },
+      { lastPing: new Date(Date.now() - 60000).toISOString() });
+    expect(out.dot, 'the app was open for that ping; the pocket is the problem').toBe('🟠');
+  });
+
+  // UNCHANGED, and the case the rule was written for: a permission row that
+  // went quiet while data kept landing. Silence from the phone must never
+  // outrank breadcrumbs that are actually arriving.
+  test('a STALE iOS row still loses to live pings', async () => {
+    const ancient = new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString();
+    const out = await rosterIos({ location_status: 'denied', checked_at: ancient },
+      { lastPing: new Date(Date.now() - 5 * 60000).toISOString() });
+    expect(out.dot, 'rows are landing, so something is working whatever the old row said').toBe('🟢');
+    expect(out.label).toContain('last ping');
+  });
+
+  test('the roster re-fetches when the screen is reopened, not once per session', () => {
+    const fs = require('fs'), path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+    const i = src.indexOf('Crew location status');
+    expect(i).toBeGreaterThan(-1);
+    const blk = src.slice(i, i + 1200);
+    // A bare !_teamGeoLoaded latch is the bug: it pins the roster to whatever
+    // was true at boot, and somebody who just changed a permission and opened
+    // Team to check is the one person who must not see stale rows.
+    expect(blk.includes('_teamGeoAt'), 'staleness has to be time-based, not a one-shot latch').toBe(true);
+    expect(blk.includes('_TEAM_GEO_MIN_GAP_MS'), 'with a floor so tab-flipping does not re-query').toBe(true);
+    // And every account-reset path must clear the stamp, or the next account
+    // inherits a timestamp that blocks its first load.
+    expect((src.match(/_teamGeoAt=0/g) || []).length,
+      'declaration plus both reset paths').toBeGreaterThanOrEqual(3);
+  });
+
   // ── 5. The checklist item stays completable ────────────────────────────────
 
   test('a denied user gets a Settings walkthrough, not a button that cannot work', async () => {
@@ -287,8 +1336,178 @@ test.describe('Crew location permission', () => {
     });
     // iOS will not re-prompt from script, so the CTA must route to Settings or
     // the task becomes permanently uncompletable and the card never clears.
+    // This is the PWA/browser fallback path specifically (no _geoTdPlugin
+    // available in this offline test's window), see the next test for the
+    // native one-tap deep link.
     expect(out.alerted).toContain('Settings');
     expect(out.done).toBe(false);
+  });
+
+  // On the native shell, a denied permission must jump straight into OUR
+  // Settings page in one tap (owner ask 2026-08-17: iOS can't re-prompt
+  // after a real denial, so a text walkthrough is the fallback of last
+  // resort, not the primary experience when a real deep link is possible).
+  test('a denied user on the native shell gets a one-tap Settings deep link, not just text', async () => {
+    const out = await page.evaluate(async () => {
+      _geoPermCache = 'denied';
+      let openedSettings = false, alerted = null;
+      const realGetPlugin = window._geoTdPlugin;
+      const realAlert = zAlert;
+      window._geoTdPlugin = () => ({ openSettings: () => { openedSettings = true; return Promise.resolve({ opened: true }); } });
+      zAlert = (msg) => { alerted = msg; };
+      _setupTodoGo('location');
+      await new Promise(r => setTimeout(r, 10));
+      window._geoTdPlugin = realGetPlugin;
+      zAlert = realAlert;
+      return { openedSettings, alerted };
+    });
+    expect(out.openedSettings).toBe(true);
+    // The native deep link replaces the text walkthrough, it does not stack
+    // on top of it, a user who gets the real one-tap fix should not also
+    // see a wall of manual instructions.
+    expect(out.alerted).toBeNull();
+  });
+
+  // ── 5a. Reduced accuracy is ASKED about, not pointed at ───────────────────
+  //
+  // Owner rule 2026-08-26: "we need the tightest location services upfront at
+  // all times, never can default to approximates." Every other iOS complaint
+  // is settled and unaskable, so routing it to Settings is the only honest
+  // move. Reduced accuracy is the exception: iOS will still take the question
+  // (requestTemporaryFullAccuracyAuthorization), and sending somebody on a
+  // Settings trip for something the app could have asked in place is friction
+  // we chose not to spend.
+  //
+  // Same save/restore shape as the deep-link test above, because the routing
+  // is async here: the upgrade has to resolve before the fallback decision.
+  const precise = (opts) => page.evaluate(async (o) => {
+    const saved = { plug: window._geoTdPlugin, nat: _geoNativeAuth, tmp: _geoPreciseTemp,
+                    cache: _geoPermCache, toast: window.showToast, alert: window.zAlert,
+                    supa: window._supa, user: window._supaUser };
+    const calls = { asked: 0, settings: 0, purpose: null };
+    let toasted = null, alerted = null;
+    try {
+      // The upgrade re-reads iOS and repaints, and the repaint reports the new
+      // row. Stubbed the same way the ask helper below does it, so a live
+      // upsert can never reach the network from an offline shard.
+      window._supaUser = { id: 'precise-probe' };
+      window._supa = { from: () => ({ upsert: () => ({ then: (f) => Promise.resolve({}).then(f) }),
+                                      update: () => ({ eq: () => ({ then: (f) => Promise.resolve({}).then(f) }) }) }) };
+      _geoNativeAuth = { status: 'always', accuracy: 'reduced', precise: false, servicesEnabled: true };
+      _geoPreciseTemp = false;
+      _geoPermCache = 'granted';
+      window.showToast = (m) => { toasted = m; };
+      window.zAlert = (m) => { alerted = m; };
+      const plug = {
+        openSettings: () => { calls.settings++; return Promise.resolve({ opened: true }); },
+        locationPermStatus: () => Promise.resolve(_geoNativeAuth),
+      };
+      if (o.answer !== null) {
+        plug.requestPreciseTemp = (arg) => {
+          calls.asked++;
+          calls.purpose = arg && arg.purposeKey;
+          if (o.answer.precise) _geoNativeAuth = { status: 'always', accuracy: 'full', precise: true, servicesEnabled: true };
+          return o.reject ? Promise.reject(new Error('bridge blew up')) : Promise.resolve(o.answer);
+        };
+      }
+      window._geoTdPlugin = () => plug;
+      _setupTodoGo('location');
+      await new Promise(r => setTimeout(r, 120));
+      const p = _geoNatProblem();
+      return { calls, toasted, alerted, temp: _geoPreciseTempPeek(),
+               kind: p && p.kind, done: _geoPermDone() };
+    } finally {
+      window._geoTdPlugin = saved.plug; _geoNativeAuth = saved.nat; _geoPreciseTemp = saved.tmp;
+      _geoPermCache = saved.cache; window.showToast = saved.toast; window.zAlert = saved.alert;
+      window._supa = saved.supa; window._supaUser = saved.user;
+    }
+  }, opts);
+
+  test('a reduced-accuracy tap asks iOS to upgrade before it sends anyone to Settings', async () => {
+    const out = await precise({ answer: { supported: true, asked: true, accuracy: 'full', precise: true, temporary: true, reason: 'granted' } });
+    expect(out.calls.asked, 'the upgrade is the first move, not the fallback').toBe(1);
+    expect(out.calls.settings, 'a Settings trip nobody needed is exactly the friction this removes').toBe(0);
+    // Silent-failure guard: iOS does NOTHING at all if the purpose key has no
+    // matching Info.plist entry, so the two have to be the same string.
+    expect(out.calls.purpose).toBe('JobSiteAccuracy');
+    expect(out.alerted, 'the real ask replaces the walkthrough, it does not stack on it').toBeNull();
+  });
+
+  test('the toast never implies the temporary grant is the permanent fix', async () => {
+    const out = await precise({ answer: { supported: true, asked: true, accuracy: 'full', precise: true, temporary: true, reason: 'granted' } });
+    expect(out.toasted, 'a grant that dies on relaunch must not be reported as done').toBeTruthy();
+    expect(out.toasted).toMatch(/restart/i);
+    expect(out.toasted, 'it has to name the switch that fixes it for good').toContain('Settings');
+  });
+
+  test('a temporary grant does NOT permanently complete the checklist task', async () => {
+    const out = await precise({ answer: { supported: true, asked: true, accuracy: 'full', precise: true, temporary: true, reason: 'granted' } });
+    expect(out.temp).toBe(true);
+    expect(out.kind, 'iOS now says full, but only until the next launch').toBe('precisetemp');
+    expect(out.done, 'ticking this off would hide a job fence that stops firing tomorrow').toBe(false);
+  });
+
+  test('a shell too old to ask falls back to the Settings deep link', async () => {
+    // answer:null means the plugin has no requestPreciseTemp at all, which is
+    // every TestFlight build already on a phone today.
+    const out = await precise({ answer: null });
+    expect(out.calls.asked).toBe(0);
+    expect(out.calls.settings, 'no way to ask means the old route is still the route').toBe(1);
+    expect(out.temp).toBe(false);
+  });
+
+  test('a refusal falls back to the Settings deep link and claims nothing', async () => {
+    const out = await precise({ answer: { supported: true, asked: true, accuracy: 'reduced', precise: false, temporary: false, reason: 'declined' } });
+    expect(out.calls.asked).toBe(1);
+    expect(out.calls.settings, 'they said no to the dialog, so the permanent switch is the only way left').toBe(1);
+    expect(out.toasted, 'nothing was granted, so nothing is announced').toBeNull();
+    expect(out.temp).toBe(false);
+    expect(out.kind).toBe('precise');
+  });
+
+  test('a bridge that rejects still lands on Settings, never on a dead button', async () => {
+    const out = await precise({ answer: { supported: true, precise: false }, reject: true });
+    expect(out.calls.asked).toBe(1);
+    expect(out.calls.settings).toBe(1);
+    expect(out.temp).toBe(false);
+  });
+
+  // ── 5a-2. The silent half: the Info.plist key ─────────────────────────────
+  //
+  // requestTemporaryFullAccuracyAuthorization does NOTHING without
+  // NSLocationTemporaryUsageDescriptionDictionary carrying the exact purpose
+  // key the call passes: no dialog, no error anyone can see, the accuracy just
+  // never changes. Nothing else in this suite can catch that, because every
+  // JS-side assertion above passes against a plugin stub. This is the only
+  // check standing between a working feature and a completely silent one.
+  test('the temporary-accuracy purpose key is in Info.plist and matches the one the app sends', () => {
+    const fs = require('fs'), path = require('path');
+    const root = path.join(__dirname, '..');
+    const js = fs.readFileSync(path.join(root, 'js', 'geo-track.js'), 'utf8');
+    const m = js.match(/_GEO_PRECISE_PURPOSE_KEY\s*=\s*'([^']+)'/);
+    expect(m, 'the purpose key must be a named constant, not a literal buried in a call').toBeTruthy();
+    const wf = fs.readFileSync(path.join(root, '.github', 'workflows', 'ios-beta.yml'), 'utf8');
+    expect(wf, 'without the dictionary iOS ignores the request entirely, and says nothing')
+      .toContain('NSLocationTemporaryUsageDescriptionDictionary');
+    expect(wf, 'the plist entry and the key the app passes must be the same string')
+      .toContain('NSLocationTemporaryUsageDescriptionDictionary:' + m[1]);
+    // A bare `Add :NSLocation... dict` with no child is the same silent
+    // failure, so the entry itself must carry real consent copy.
+    const line = wf.split('\n').find(l => l.includes('NSLocationTemporaryUsageDescriptionDictionary:' + m[1]) && l.includes('string'));
+    expect(line, 'the purpose key needs a usage string, an empty dict is the same silent no-op').toBeTruthy();
+  });
+
+  test('the native side actually exposes the method the JS calls', () => {
+    const fs = require('fs'), path = require('path');
+    const swift = fs.readFileSync(path.join(__dirname, '..', 'native', 'td-geo', 'ios', 'Plugin', 'TdGeoPlugin.swift'), 'utf8');
+    expect(swift, 'the only API that can lift a reduced-accuracy user in place')
+      .toContain('requestTemporaryFullAccuracyAuthorization');
+    expect(swift).toMatch(/@objc func requestPreciseTemp\(/);
+    // An @objc method missing from pluginMethods is invisible to the bridge,
+    // and the failure looks exactly like an old shell: JS sees no such method
+    // and falls back to Settings forever.
+    expect(swift, 'unregistered means uncallable from JS')
+      .toMatch(/CAPPluginMethod\(name: "requestPreciseTemp"/);
   });
 
   test("'unsupported' counts as done so Safari users are not nagged forever", async () => {
@@ -310,6 +1529,91 @@ test.describe('Crew location permission', () => {
     expect(out.p).toBe(false);
   });
 
+  // ── 5b. Motion & Fitness, same shape as location, skippable ────────────────
+  // (owner ask 2026-08-17: "we need it allowed to get all the functionality",
+  // surfaced in the same onboarding checklist as location, reusing the exact
+  // same openSettings deep link since it isn't location-specific.)
+
+  test('motion: granted/unsupported complete the task, prompt/denied/restricted do not', async () => {
+    const out = await page.evaluate(() => {
+      const states = ['granted', 'unsupported', 'prompt', 'denied', 'restricted'];
+      const results = {};
+      states.forEach(s => { _motionPermCache = s; results[s] = _motionPermDone(); });
+      return results;
+    });
+    expect(out.granted).toBe(true);
+    expect(out.unsupported).toBe(true);
+    expect(out.prompt).toBe(false);
+    expect(out.denied).toBe(false);
+    expect(out.restricted).toBe(false);
+  });
+
+  test('motion: no native shell at all counts as unsupported, never nags a browser user', async () => {
+    const out = await page.evaluate(async () => {
+      _motionPermCache = null;
+      const realGetPlugin = window._geoTdPlugin;
+      window._geoTdPlugin = () => null;
+      _motionRefreshPermCache();
+      await new Promise(r => setTimeout(r, 10));
+      window._geoTdPlugin = realGetPlugin;
+      return { state: _motionPermState(), done: _motionPermDone() };
+    });
+    expect(out.state).toBe('unsupported');
+    expect(out.done).toBe(true);
+  });
+
+  test('motion: denied gets the one-tap Settings deep link, not a dead re-prompt button', async () => {
+    const out = await page.evaluate(async () => {
+      _motionPermCache = 'denied';
+      let openedSettings = false, queriedMotion = false;
+      const realGetPlugin = window._geoTdPlugin;
+      window._geoTdPlugin = () => ({
+        openSettings: () => { openedSettings = true; return Promise.resolve({ opened: true }); },
+        motionSince: () => { queriedMotion = true; return Promise.resolve({ available: true, transitions: [] }); },
+      });
+      _setupTodoGo('motion');
+      await new Promise(r => setTimeout(r, 10));
+      window._geoTdPlugin = realGetPlugin;
+      return { openedSettings, queriedMotion };
+    });
+    expect(out.openedSettings).toBe(true);
+    // Querying again would be the dead button, denied means Settings only.
+    expect(out.queriedMotion).toBe(false);
+  });
+
+  test('motion: never-asked fires the real query, which IS the OS prompt (no separate request API)', async () => {
+    const out = await page.evaluate(async () => {
+      _motionPermCache = 'prompt';
+      let queriedMotion = false, openedSettings = false;
+      const realGetPlugin = window._geoTdPlugin;
+      window._geoTdPlugin = () => ({
+        openSettings: () => { openedSettings = true; return Promise.resolve({ opened: true }); },
+        motionSince: () => { queriedMotion = true; return Promise.resolve({ available: true, transitions: [] }); },
+        motionPermStatus: () => Promise.resolve({ status: 'granted', available: true }),
+      });
+      _setupTodoGo('motion');
+      await new Promise(r => setTimeout(r, 10));
+      window._geoTdPlugin = realGetPlugin;
+      return { queriedMotion, openedSettings, state: _motionPermState() };
+    });
+    expect(out.queriedMotion).toBe(true);
+    expect(out.openedSettings).toBe(false);
+    // The refresh after the query landed should have picked up the new status.
+    expect(out.state).toBe('granted');
+  });
+
+  test('motion: tapping with no native shell at all is a safe no-op', async () => {
+    const out = await page.evaluate(() => {
+      const realGetPlugin = window._geoTdPlugin;
+      window._geoTdPlugin = () => null;
+      let threw = false;
+      try { _setupTodoGo('motion'); } catch (e) { threw = true; }
+      window._geoTdPlugin = realGetPlugin;
+      return threw;
+    });
+    expect(out).toBe(false);
+  });
+
   // ── 6. Employees never leak into another account's roster ──────────────────
 
   test('the crew status cache is keyed per account and resets on switch', async () => {
@@ -324,6 +1628,880 @@ test.describe('Crew location permission', () => {
     // The previous account's crew must not render against a matching email.
     expect(out.after.label).toBe('Not set up yet');
     expect(out.reloads).toBe(false);
+  });
+
+  // Owner, 2026-08-25: "it should write for all users." The reporter used to
+  // begin `if(!_isEmployee)return`, so an owner, which is most of the customer
+  // base, could never report anything even in principle. Permission lived only
+  // in localStorage and nothing on the server could answer why a brand-new
+  // account was logging no drives.
+  test.describe('every handset reports what it can do', () => {
+    // Capture the writes without a real Supabase.
+    const report = (opts) => page.evaluate(async (o) => {
+      const saved = { supa: window._supa, user: window._supaUser, emp: window._isEmployee,
+                      motion: (typeof _motionPermCache !== 'undefined' ? _motionPermCache : undefined),
+                      devices: (typeof S !== 'undefined' && S.devices) ? S.devices.slice() : null };
+      const rec = { upserts: [], updates: [] };
+      // _geoNativeAuth is module state that outlives a test. Without pinning
+      // it here, `derived` (and location_status/accuracy with it) depends on
+      // whichever test ran last, which is exactly the kind of order coupling
+      // that shows up as a shard-dependent failure months later.
+      saved.nat = (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined;
+      if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = o.nat === undefined ? null : o.nat;
+      try {
+        window._supaUser = { id: o.uid };
+        window._isEmployee = !!o.isEmp;
+        if (typeof _motionPermCache !== 'undefined') _motionPermCache = o.motion === undefined ? null : o.motion;
+        if (o.devices !== undefined) { S.devices = o.devices; }
+        window._supa = { from: (tbl) => ({
+          upsert: (row, cfg) => { rec.upserts.push({ tbl, row, cfg }); return { then: (r) => Promise.resolve({}).then(r) }; },
+          update: (patch) => ({ eq: (col, val) => { rec.updates.push({ tbl, patch, col, val }); return { then: (r) => Promise.resolve({}).then(r) }; } }),
+        }) };
+        _geoReportPermission(o.state);
+        await new Promise(r => setTimeout(r, 20));
+      } finally {
+        window._supa = saved.supa; window._supaUser = saved.user; window._isEmployee = saved.emp;
+        if (typeof _motionPermCache !== 'undefined') _motionPermCache = saved.motion;
+        if (saved.devices) S.devices = saved.devices;
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+      }
+      return rec;
+    }, opts);
+
+    test('an OWNER reports, which was the whole hole', async () => {
+      const r = await report({ uid: 'owner-1', isEmp: false, state: 'granted' });
+      const ds = r.upserts.find(u => u.tbl === 'device_status');
+      expect(ds, 'device_status row written for an owner').toBeTruthy();
+      expect(ds.row.location_status).toBe('granted');
+      expect(ds.row.user_id).toBe('owner-1');
+      // ASSERTION CHANGED 2026-08-25 (CLAUDE.md 10.4). This used to expect
+      // false with the comment "reported by the handset, not inferred", and it
+      // passed because `derived` was hardcoded false, not because anything had
+      // been reported: no plugin answers in this test, so the state here came
+      // from the web-shaped inference. The column was therefore stamping every
+      // guess as iOS's own word. Owner 2026-08-25: "don't keep inferring,
+      // build explicitly off what iOS reports." Nothing native answered, so
+      // the honest value is true, and the case the old comment described is
+      // now covered for real by the iOS-vocabulary block below.
+      expect(ds.row.derived, 'nothing native answered, so this row IS a guess').toBe(true);
+      expect(r.updates.length, 'and no team_members write: an owner has no row there').toBe(0);
+    });
+
+    test('an EMPLOYEE reports to BOTH, so the crew screens keep working', async () => {
+      const r = await report({ uid: 'emp-1', isEmp: true, state: 'denied' });
+      expect(r.upserts.some(u => u.tbl === 'device_status')).toBe(true);
+      const tm = r.updates.find(u => u.tbl === 'team_members');
+      expect(tm, 'the existing crew path is untouched').toBeTruthy();
+      expect(tm.patch.location_status).toBe('denied');
+      expect(tm.col).toBe('employee_user_id');
+    });
+
+    test('motion rides along, from the same cache the checklist renders', async () => {
+      const r = await report({ uid: 'owner-2', isEmp: false, state: 'granted', motion: 'denied' });
+      expect(r.upserts[0].row.motion_status).toBe('denied');
+    });
+
+    test('a motion state never checked is null, never a guess', async () => {
+      const r = await report({ uid: 'owner-3', isEmp: false, state: 'granted', motion: null });
+      expect(r.upserts[0].row.motion_status).toBe(null);
+    });
+
+    test('the row is keyed per handset so a second boot updates, never duplicates', async () => {
+      const r = await report({ uid: 'owner-4', isEmp: false, state: 'granted' });
+      expect(r.upserts[0].cfg && r.upserts[0].cfg.onConflict).toBe('user_id,device_id');
+      expect(typeof r.upserts[0].row.device_id).toBe('string');
+      expect(r.upserts[0].row.device_id.length).toBeGreaterThan(0);
+    });
+
+    test('no signed-in user writes nothing at all', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = { supa: window._supa, user: window._supaUser };
+        const rec = [];
+        try {
+          window._supaUser = null;
+          window._supa = { from: () => ({ upsert: (row) => { rec.push(row); return { then: (r2) => Promise.resolve({}).then(r2) }; } }) };
+          _geoReportPermission('granted');
+          await new Promise(r2 => setTimeout(r2, 20));
+        } finally { window._supa = saved.supa; window._supaUser = saved.user; }
+        return rec.length;
+      });
+      expect(r).toBe(0);
+    });
+
+    // SHIPPED BROKEN 08.25.26.9, caught on the owner's phone within the hour.
+    // The re-report lived only in the branch where the plugin answers, so a
+    // shell whose plugin predates motionPermStatus, or a query that rejects,
+    // wrote the location row with motion null and never went back. The very
+    // first row this feature ever produced had motion null for that reason.
+    test.describe('motion re-reports from every branch that settles it', () => {
+      const withMotion = (plugin) => page.evaluate(async (mode) => {
+        const saved = { cap: window.Capacitor, cache: (typeof _motionPermCache !== 'undefined' ? _motionPermCache : undefined),
+                        report: window._geoReportPermission, render: window._renderDashSetupTodo };
+        let reports = 0;
+        try {
+          window._geoReportPermission = () => { reports++; };
+          window._renderDashSetupTodo = () => {};
+          if (typeof _motionPermCache !== 'undefined') _motionPermCache = null;
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: () => (mode === 'missing' ? {}
+              : mode === 'rejects' ? { motionPermStatus: () => Promise.reject(new Error('nope')) }
+              : { motionPermStatus: () => Promise.resolve({ status: 'granted', available: true }) }),
+          };
+          _motionRefreshPermCache();
+          await new Promise(r => setTimeout(r, 40));
+        } finally {
+          window.Capacitor = saved.cap;
+          if (typeof _motionPermCache !== 'undefined') _motionPermCache = saved.cache;
+          window._geoReportPermission = saved.report; window._renderDashSetupTodo = saved.render;
+        }
+        return { reports, cache: (typeof _motionPermCache !== 'undefined' ? _motionPermCache : null) };
+      }, plugin);
+
+      test('the plugin answers: reported', async () => {
+        expect((await withMotion('answers')).reports).toBe(1);
+      });
+
+      test('a shell whose plugin predates motionPermStatus: still reported', async () => {
+        const r = await withMotion('missing');
+        expect(r.reports, 'unsupported is a real answer, not an absence of one').toBe(1);
+      });
+
+      test('a query that rejects never leaves the row half-written', async () => {
+        // Nothing settled the cache, so there is nothing new to say, but it
+        // must not throw either.
+        const r = await withMotion('rejects');
+        expect(r.reports).toBeLessThanOrEqual(1);
+      });
+
+      test('a second refresh with no change stays quiet', async () => {
+        const r = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, cache: _motionPermCache,
+                          report: window._geoReportPermission, render: window._renderDashSetupTodo };
+          let reports = 0;
+          try {
+            window._geoReportPermission = () => { reports++; };
+            window._renderDashSetupTodo = () => {};
+            _motionPermCache = null;
+            window.Capacitor = { isNativePlatform: () => true,
+              registerPlugin: () => ({ motionPermStatus: () => Promise.resolve({ status: 'granted', available: true }) }) };
+            _motionRefreshPermCache();
+            await new Promise(r2 => setTimeout(r2, 30));
+            const afterFirst = reports;
+            _motionRefreshPermCache();
+            await new Promise(r2 => setTimeout(r2, 30));
+            return { afterFirst, afterSecond: reports };
+          } finally {
+            window.Capacitor = saved.cap; _motionPermCache = saved.cache;
+            window._geoReportPermission = saved.report; window._renderDashSetupTodo = saved.render;
+          }
+        });
+        expect(r.afterFirst).toBe(1);
+        expect(r.afterSecond, 'unchanged means nothing to report').toBe(1);
+      });
+    });
+
+    // Owner, 2026-08-25: "shouldn't location and motion say always, while using
+    // app or declined in alliance with how iOS saves and asks for permissions?"
+    // The old inference read whether the watcher was delivering, which is true
+    // for whenInUse too, so the one distinction that decides whether this
+    // product works at all was invisible.
+    test.describe("iOS's own vocabulary, not a flattened granted", () => {
+      const withAuth = (auth) => page.evaluate(async (a) => {
+        const saved = { cap: window.Capacitor, supa: window._supa, user: window._supaUser };
+        const rec = [];
+        try {
+          window._supaUser = { id: 'auth-probe' };
+          window._supa = { from: () => ({
+            upsert: (row) => { rec.push(row); return { then: (r) => Promise.resolve({}).then(r) }; },
+            update: () => ({ eq: () => ({ then: (r) => Promise.resolve({}).then(r) }) }),
+          }) };
+          window.Capacitor = { isNativePlatform: () => true,
+            registerPlugin: () => (a === null ? {} : { locationPermStatus: () => Promise.resolve(a) }) };
+          const state = await _geoReadPermission();
+          _geoReportPermission(state);
+          await new Promise(r => setTimeout(r, 20));
+          return { state, row: rec[0] || null, peek: _geoNativeAuthPeek() };
+        } finally {
+          window.Capacitor = saved.cap; window._supa = saved.supa; window._supaUser = saved.user;
+        }
+      }, auth);
+
+      test('always and wheninuse are stored apart, never both as granted', async () => {
+        const always = await withAuth({ status: 'always', accuracy: 'full', precise: true });
+        const inUse = await withAuth({ status: 'wheninuse', accuracy: 'full', precise: true });
+        expect(always.row.location_status).toBe('always');
+        expect(inUse.row.location_status, 'the distinction the whole feature exists for').toBe('wheninuse');
+        expect(inUse.row.location_status).not.toBe('granted');
+      });
+
+      test('the checklist still reasons in done/not-done, so both read granted THERE', async () => {
+        expect((await withAuth({ status: 'always', accuracy: 'full' })).state).toBe('granted');
+        expect((await withAuth({ status: 'wheninuse', accuracy: 'full' })).state).toBe('granted');
+      });
+
+      test('denied and restricted are both refusals, notdetermined is not', async () => {
+        expect((await withAuth({ status: 'denied' })).state).toBe('denied');
+        expect((await withAuth({ status: 'restricted' })).state).toBe('denied');
+        expect((await withAuth({ status: 'notdetermined' })).state).toBe('prompt');
+      });
+
+      test('restricted survives to the row as itself, not as denied', async () => {
+        const r = await withAuth({ status: 'restricted' });
+        expect(r.row.location_status, 'Screen Time or MDM is not the same as saying no').toBe('restricted');
+      });
+
+      // Always plus Precise off is granted and useless at the same time.
+      test('accuracy is its own column, never folded into status', async () => {
+        const r = await withAuth({ status: 'always', accuracy: 'reduced', precise: false });
+        expect(r.row.location_status).toBe('always');
+        expect(r.row.location_accuracy, 'a 600ft fence cannot work on kilometres').toBe('reduced');
+      });
+
+      test('a shell too old to answer degrades to the old inference, never breaks', async () => {
+        const r = await withAuth(null);
+        expect(['granted', 'denied', 'prompt']).toContain(r.state);
+        expect(r.row.location_accuracy, 'nothing known means null, not a guess').toBe(null);
+      });
+
+      test('a plugin that rejects is treated as unknown, not as denied', async () => {
+        const r = await page.evaluate(async () => {
+          const saved = window.Capacitor;
+          try {
+            window.Capacitor = { isNativePlatform: () => true,
+              registerPlugin: () => ({ locationPermStatus: () => Promise.reject(new Error('nope')) }) };
+            return { state: await _geoReadPermission(), peek: _geoNativeAuthPeek() };
+          } finally { window.Capacitor = saved; }
+        });
+        expect(['granted', 'denied', 'prompt'], 'falls through to the inference').toContain(r.state);
+      });
+
+      // ── The third axis: device-wide Location Services ────────────────────
+      //
+      // Owner 2026-08-25: "device wide location services ... why do we need
+      // it?" Because the per-app grant and the global switch move
+      // independently. Flip Settings > Privacy & Security > Location Services
+      // off and this app's authorizationStatus still reads .authorizedAlways
+      // while no fix ever arrives again, so without this a dead phone and a
+      // healthy one produce byte-identical rows.
+      test('the global switch is stored apart from the app grant', async () => {
+        const on = await withAuth({ status: 'always', accuracy: 'full', precise: true, servicesEnabled: true });
+        const off = await withAuth({ status: 'always', accuracy: 'full', precise: true, servicesEnabled: false });
+        expect(on.row.location_services_enabled).toBe(true);
+        expect(off.row.location_services_enabled).toBe(false);
+        expect(off.row.location_status, 'iOS keeps saying always, which is the whole trap').toBe('always');
+        expect(off.row.location_accuracy).toBe('full');
+      });
+
+      test("a shell that cannot answer stores null, never false", async () => {
+        // The difference matters more than it looks: false means "the master
+        // switch is off, go turn it on", null means "we do not know yet".
+        // Telling a crew member to fix a switch that is already on is how you
+        // lose their trust in the whole feature.
+        for (const a of [{ status: 'always', accuracy: 'full' },
+                         { status: 'always', accuracy: 'full', servicesEnabled: undefined },
+                         { status: 'always', accuracy: 'full', servicesEnabled: null },
+                         { status: 'always', accuracy: 'full', servicesEnabled: 'yes' },
+                         { status: 'always', accuracy: 'full', servicesEnabled: 0 },
+                         { status: 'always', accuracy: 'full', servicesEnabled: 1 }]) {
+          const r = await withAuth(a);
+          expect(r.row.location_services_enabled,
+            'only a real boolean off the bridge counts: ' + JSON.stringify(a)).toBe(null);
+        }
+      });
+
+      test('the peek carries the switch too, so the row and the screen agree', async () => {
+        const r = await withAuth({ status: 'wheninuse', accuracy: 'reduced', precise: false, servicesEnabled: false });
+        expect(r.peek.servicesEnabled).toBe(false);
+        expect(r.peek.status).toBe('wheninuse');
+        expect(r.peek.precise).toBe(false);
+      });
+
+      test('the switch being off never gets flattened into the status', async () => {
+        // Tempting shortcut, deliberately not taken: reporting 'denied'
+        // because nothing can arrive would erase the fact that this app IS
+        // authorized, and send the user to the wrong settings screen.
+        const r = await withAuth({ status: 'always', accuracy: 'full', precise: true, servicesEnabled: false });
+        expect(r.state, 'the app grant is genuinely granted').toBe('granted');
+        expect(r.row.location_status).not.toBe('denied');
+      });
+
+      test('derived says which rows are iOS speaking and which are a guess', async () => {
+        const real = await withAuth({ status: 'always', accuracy: 'full', servicesEnabled: true });
+        expect(real.row.derived, "iOS answered, so this is not inferred").toBe(false);
+        const guess = await withAuth(null);   // no locationPermStatus on this shell
+        expect(guess.row.derived, 'inferred, and the row now admits it').toBe(true);
+      });
+
+      // ── On native, iOS is the only voice ─────────────────────────────────
+      //
+      // Owner 2026-08-26: "I don't want ours, ours does nothing in a true
+      // native app, go entirely off iOS since location calls capacitor
+      // plugins." Every signal below used to be able to answer this question
+      // and not one of them is what the phone thinks. They agreed with iOS
+      // often enough to look right and disagreed exactly when it mattered: a
+      // watcher spinning up read as granted while the real grant was whenInUse,
+      // so a phone that could never track from a pocket reported itself fine.
+      test.describe('no local signal can answer for iOS on a native shell', () => {
+        const onNative = (setup) => page.evaluate(async (o) => {
+          const saved = { cap: window.Capacitor, nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined,
+                          wid: (typeof _geoNativeWatcherId !== 'undefined') ? _geoNativeWatcherId : undefined,
+                          consent: localStorage.getItem('geo_owner_consent'),
+                          osd: localStorage.getItem('td_geo_os_denied') };
+          try {
+            // A native shell whose plugin cannot answer at all.
+            window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+            if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = null;
+            if (typeof _geoNativeWatcherId !== 'undefined') _geoNativeWatcherId = o.watcher === undefined ? null : o.watcher;
+            if (o.consent === null) localStorage.removeItem('geo_owner_consent');
+            else if (o.consent !== undefined) localStorage.setItem('geo_owner_consent', o.consent);
+            if (o.osDenied) localStorage.setItem('td_geo_os_denied', '1');
+            else localStorage.removeItem('td_geo_os_denied');
+            return await _geoReadPermission();
+          } finally {
+            window.Capacitor = saved.cap;
+            if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+            if (typeof _geoNativeWatcherId !== 'undefined') _geoNativeWatcherId = saved.wid;
+            if (saved.consent === null) localStorage.removeItem('geo_owner_consent');
+            else localStorage.setItem('geo_owner_consent', saved.consent);
+            if (saved.osd === null) localStorage.removeItem('td_geo_os_denied');
+            else localStorage.setItem('td_geo_os_denied', saved.osd);
+          }
+        }, setup);
+
+        test('a live watcher does not mean granted', async () => {
+          expect(await onNative({ watcher: 42 }),
+            'the tracker starting proves nothing about what iOS granted').toBe('prompt');
+        });
+
+        test('our own consent flag does not mean granted', async () => {
+          expect(await onNative({ consent: '1' }),
+            'they agreed to be tracked; that is not iOS agreeing').toBe('prompt');
+        });
+
+        test('our own os-denied flag does not mean denied', async () => {
+          expect(await onNative({ osDenied: true }),
+            'a watcher error is our reading of a failure, not a status').toBe('prompt');
+        });
+
+        test('a declined consent does not mean denied either', async () => {
+          expect(await onNative({ consent: 'declined' })).toBe('prompt');
+        });
+
+        test('every combination of local signals still answers prompt', async () => {
+          for (const w of [null, 9]) for (const c of [null, '1', 'declined']) for (const d of [false, true]) {
+            expect(await onNative({ watcher: w, consent: c, osDenied: d }),
+              JSON.stringify({ w, c, d })).toBe('prompt');
+          }
+        });
+
+        test('a real browser still uses the platform permission API', async () => {
+          const r = await page.evaluate(async () => {
+            const saved = window.Capacitor;
+            try { window.Capacitor = undefined; return await _geoReadPermission(); }
+            finally { window.Capacitor = saved; }
+          });
+          expect(['granted', 'denied', 'prompt', 'unsupported'],
+            'navigator.permissions IS the platform answer in a browser').toContain(r);
+        });
+      });
+
+      test('a junk status never invents an authorization', async () => {
+        for (const bad of [{ status: '' }, { status: 'banana' }, {}, { status: null }]) {
+          const r = await withAuth(bad);
+          expect(['granted', 'denied', 'prompt']).toContain(r.state);
+        }
+      });
+    });
+
+    // ── The row the owner's own handset produced the hour build 36 landed ────
+    //
+    // location_status 'prompt', derived true, accuracy null, servicesEnabled
+    // null, while motion_status from the SAME plugin said 'granted'. Two
+    // separate bugs produced that, and both are pinned here.
+    test.describe('the native answer actually reaches the row', () => {
+      // Bug 1: _geoPermForeground kicked off an ASYNC refresh and then reported
+      // from a SYNCHRONOUS cache in the same tick, so it wrote a derived row
+      // before its own read had landed, and the upsert clobbered any good row.
+      test('the foreground re-report waits for the native read instead of racing it', async () => {
+        const r = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, supa: window._supa, user: window._supaUser,
+                          at: (typeof _geoPermReportedAt !== 'undefined') ? _geoPermReportedAt : undefined,
+                          nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined,
+                          cache: (typeof _geoPermCache !== 'undefined') ? _geoPermCache : undefined };
+          const rows = [];
+          try {
+            window._supaUser = { id: 'fg-race' };
+            window._supa = { from: () => ({
+              upsert: (row) => { rows.push(row); return { then: (f) => Promise.resolve({}).then(f) }; },
+              update: () => ({ eq: () => ({ then: (f) => Promise.resolve({}).then(f) }) }),
+            }) };
+            // Cold start: nothing cached, exactly the state a fresh boot is in.
+            if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = null;
+            if (typeof _geoPermCache !== 'undefined') _geoPermCache = null;
+            if (typeof _geoPermReportedAt !== 'undefined') _geoPermReportedAt = 0;
+            // The plugin answers, but only after a tick, like a real bridge.
+            window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({
+              locationPermStatus: () => new Promise(res => setTimeout(() => res(
+                { status: 'always', accuracy: 'full', precise: true, servicesEnabled: true }), 30)),
+              motionPermStatus: () => Promise.resolve({ status: 'granted', available: true }),
+            }) };
+            _geoPermForeground();
+            await new Promise(res => setTimeout(res, 250));
+            return rows.map(x => ({ st: x.location_status, acc: x.location_accuracy,
+                                    svc: x.location_services_enabled, derived: x.derived }));
+          } finally {
+            window.Capacitor = saved.cap; window._supa = saved.supa; window._supaUser = saved.user;
+            if (typeof _geoPermReportedAt !== 'undefined') _geoPermReportedAt = saved.at;
+            if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+            if (typeof _geoPermCache !== 'undefined') _geoPermCache = saved.cache;
+          }
+        });
+        expect(r.length, 'the foreground return reports').toBeGreaterThan(0);
+        // EVERY row it wrote must carry iOS's answer. One derived row in the
+        // set is not harmless: the upsert key is (user_id, device_id), so a
+        // late derived write overwrites a good one.
+        for (const row of r) {
+          expect(row.derived, 'no row may be a guess once the plugin answers').toBe(false);
+          expect(row.st).toBe('always');
+          expect(row.acc).toBe('full');
+          expect(row.svc).toBe(true);
+        }
+      });
+
+      // Bug 2: reporting was gated on the FLATTENED state, which cannot change
+      // when a phone goes wheninuse -> always, loses Precise Location, or has
+      // device-wide Location Services switched off. All three still flatten to
+      // 'granted', so the three fields that decide whether this product works
+      // were learned and then never sent.
+      test('a change iOS reports is sent even when the flattened state is identical', async () => {
+        const r = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, supa: window._supa, user: window._supaUser,
+                          nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined,
+                          cache: (typeof _geoPermCache !== 'undefined') ? _geoPermCache : undefined,
+                          sig: (typeof _geoPermSig !== 'undefined') ? _geoPermSig : undefined };
+          const rows = [];
+          let answer = { status: 'wheninuse', accuracy: 'full', precise: true, servicesEnabled: true };
+          try {
+            window._supaUser = { id: 'sig-gate' };
+            window._supa = { from: () => ({
+              upsert: (row) => { rows.push(row); return { then: (f) => Promise.resolve({}).then(f) }; },
+              update: () => ({ eq: () => ({ then: (f) => Promise.resolve({}).then(f) }) }),
+            }) };
+            if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = null;
+            if (typeof _geoPermCache !== 'undefined') _geoPermCache = null;
+            if (typeof _geoPermSig !== 'undefined') _geoPermSig = null;
+            window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({
+              locationPermStatus: () => Promise.resolve(answer),
+            }) };
+            const settle = () => new Promise(res => setTimeout(res, 80));
+            _geoRefreshPermCache(); await settle();            // 1: wheninuse
+            // Measure the identical repeat in ISOLATION. Counting total rows
+            // instead would fold in any write the live app makes on its own
+            // during these settles (this page boots the FULL app, and the
+            // foreground reporter fires on its own schedule), which is a real
+            // write against the same mock but has nothing to do with the gate
+            // under test. CI caught exactly that: an extra 'wheninuse' row.
+            const before = rows.length;
+            _geoRefreshPermCache(); await settle();            // 2: identical, must NOT re-send
+            const afterRepeat = rows.length - before;
+            answer = { status: 'always', accuracy: 'full', precise: true, servicesEnabled: true };
+            _geoRefreshPermCache(); await settle();            // 3: upgraded, still flattens to granted
+            answer = { status: 'always', accuracy: 'reduced', precise: false, servicesEnabled: true };
+            _geoRefreshPermCache(); await settle();            // 4: Precise off
+            answer = { status: 'always', accuracy: 'reduced', precise: false, servicesEnabled: false };
+            _geoRefreshPermCache(); await settle();            // 5: master switch off
+            // Consecutive duplicates collapsed: what matters is that every real
+            // change appears, in order, and no state is skipped.
+            const seq = [];
+            for (const x of rows) {
+              const t = [x.location_status, x.location_accuracy, x.location_services_enabled];
+              const last = seq[seq.length - 1];
+              if (!last || last.join('|') !== t.join('|')) seq.push(t);
+            }
+            return { seq, afterRepeat };
+          } finally {
+            window.Capacitor = saved.cap; window._supa = saved.supa; window._supaUser = saved.user;
+            if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+            if (typeof _geoPermCache !== 'undefined') _geoPermCache = saved.cache;
+            if (typeof _geoPermSig !== 'undefined') _geoPermSig = saved.sig;
+          }
+        });
+        expect(r.afterRepeat, 'an identical answer sends nothing').toBe(0);
+        expect(r.seq, 'every real change reaches the row, in order, none skipped').toEqual([
+          ['wheninuse', 'full', true],
+          ['always', 'full', true],     // flattens to granted, would have been invisible before
+          ['always', 'reduced', true],  // Precise Location off
+          ['always', 'reduced', false], // device-wide Location Services off
+        ]);
+      });
+    });
+
+    // ── The dead button, and the one-shot Always upgrade behind it ───────────
+    //
+    // Owner 2026-08-26: "I want it to go to always and stay that way."
+    //
+    // _geoRequestPermission used to call getCurrentPosition first and only start
+    // tracking inside its SUCCESS callback. On the shell _geoInstallGeoShim has
+    // replaced getCurrentPosition with a plugin read carrying
+    // requestPermissions:FALSE, so on a fresh install it cannot get a fix, times
+    // out, and startGeoTracking is never reached. No dialog ever appears. That
+    // is the live "Dead control: _setupTodoGo('location')|Fix it" from 08-22.
+    //
+    // Starting the watcher IS the ask: on iOS addWatcher with
+    // requestPermissions:true calls requestAlwaysAuthorization, which is the
+    // one-shot provisional-Always upgrade. It must be spent there and nowhere
+    // else, and it must not sit behind a read.
+    test.describe('asking for location on the native shell', () => {
+      const ask = (opts) => page.evaluate(async (o) => {
+        const saved = { cap: window.Capacitor, start: window.startGeoTracking,
+                        gc: navigator.geolocation && navigator.geolocation.getCurrentPosition,
+                        nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined,
+                        wid: (typeof _geoNativeWatcherId !== 'undefined') ? _geoNativeWatcherId : undefined,
+                        supa: window._supa, user: window._supaUser };
+        const calls = { started: 0, fixes: 0 };
+        try {
+          window._supaUser = { id: 'ask-probe' };
+          window._supa = { from: () => ({ upsert: () => ({ then: (f) => Promise.resolve({}).then(f) }),
+                                          update: () => ({ eq: () => ({ then: (f) => Promise.resolve({}).then(f) }) }) }) };
+          window.Capacitor = { isNativePlatform: () => true,
+            registerPlugin: () => ({ locationPermStatus: () => Promise.resolve(o.answer || { status: 'always', accuracy: 'full', precise: true, servicesEnabled: true }) }) };
+          if (navigator.geolocation) navigator.geolocation.getCurrentPosition = () => { calls.fixes++; };
+          window.startGeoTracking = () => { calls.started++; };
+          if (typeof _geoNativeWatcherId !== 'undefined') _geoNativeWatcherId = o.watcher === undefined ? null : o.watcher;
+          if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = null;
+          const state = await new Promise(res => { _geoRequestPermission(res); setTimeout(() => res('__timeout'), 6000); });
+          return { state, calls };
+        } finally {
+          window.Capacitor = saved.cap; window.startGeoTracking = saved.start;
+          if (navigator.geolocation && saved.gc) navigator.geolocation.getCurrentPosition = saved.gc;
+          if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+          if (typeof _geoNativeWatcherId !== 'undefined') _geoNativeWatcherId = saved.wid;
+          window._supa = saved.supa; window._supaUser = saved.user;
+        }
+      }, opts || {});
+
+      test('the tap starts the watcher, which IS the prompt, and reads nothing first', async () => {
+        const r = await ask({ answer: { status: 'always', accuracy: 'full', precise: true, servicesEnabled: true } });
+        expect(r.calls.started, 'the watcher is what raises the dialog').toBe(1);
+        expect(r.calls.fixes, 'nothing is read before asking: that is what made the button dead').toBe(0);
+        expect(r.state).toBe('granted');
+      });
+
+      test('while-using is still a grant, it is just not Always', async () => {
+        const r = await ask({ answer: { status: 'wheninuse', accuracy: 'full', precise: true, servicesEnabled: true } });
+        expect(r.calls.started).toBe(1);
+        expect(r.state, 'the checklist clears either way; the row records which').toBe('granted');
+      });
+
+      test('a refusal is reported as denied, not as a retryable prompt', async () => {
+        for (const st of ['denied', 'restricted']) {
+          const r = await ask({ answer: { status: st } });
+          expect(r.state, st).toBe('denied');
+        }
+      });
+
+      test('a live watcher counts as granted on a shell too old to report status', async () => {
+        const r = await ask({ answer: null, watcher: 7 });
+        expect(r.calls.started).toBe(1);
+        expect(r.state, 'the dialog was answered yes even if we cannot read it back').toBe('granted');
+      });
+
+      test('notdetermined with no watcher stays a prompt, never a false grant', async () => {
+        const r = await ask({ answer: { status: 'notdetermined' }, watcher: null });
+        expect(r.state).toBe('prompt');
+      });
+    });
+
+    // ── Permission lab, dev-gated (owner ask 2026-08-26) ────────────────────
+    test.describe('the permission lab', () => {
+      const open = (nat) => page.evaluate((n) => {
+        const saved = { cap: window.Capacitor, nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined };
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = n;
+        _geoPermLab();
+        const ov = document.getElementById('_geo-perm-ov');
+        const text = ov ? ov.textContent : '';
+        ov && ov.remove();
+        window.Capacitor = saved.cap;
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+        return text;
+      }, nat);
+
+      // The STATUS BLOCK alone. The rule below is about what the rows report,
+      // and scanning the whole overlay for it stopped working the moment the
+      // panel grew help text that legitimately names the td_geo_os_denied
+      // flag. Scoped to the container the rows already live in, and the
+      // caller asserts the rows are really in there so a renamed or emptied
+      // container can never make the rule pass by returning nothing.
+      const openState = (nat) => page.evaluate((n) => {
+        const saved = { cap: window.Capacitor, nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined };
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = n;
+        _geoPermLab();
+        const ov = document.getElementById('_geo-perm-ov');
+        const st = document.getElementById('_geo-perm-state');
+        const text = st ? st.textContent : '';
+        ov && ov.remove();
+        window.Capacitor = saved.cap;
+        if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+        return text;
+      }, nat);
+
+      test('it shows all three iOS axes and labels what is ours', async () => {
+        const t = await open({ status: 'always', accuracy: 'full', precise: true, servicesEnabled: true });
+        expect(t).toContain('Permission lab');
+        expect(t).toContain('iOS location');
+        expect(t).toContain('Precise Location');
+        expect(t).toContain('Location Services (device)');
+        expect(t, 'our own consent record is marked as ours, not passed off as iOS').toContain('ours, not iOS');
+        expect(t, 'and it says plainly that nothing here is inferred').toContain('Nothing here is inferred');
+      });
+
+      test('it tells you up front that iOS will not re-prompt', async () => {
+        const t = await open(null);
+        expect(t, 'the limitation is on the panel, not discovered by tapping').toMatch(/only shows its dialog once per install/i);
+        expect(t).toMatch(/delete and reinstall/i);
+      });
+
+      // ASSERTION SCOPE CHANGED 2026-08-26 (CLAUDE.md 10.4). The rule is
+      // unchanged and still correct: a phone that has told us nothing must
+      // read as unknown, never as a refusal, because "denied" on this panel
+      // sends the owner to Settings to fix something that was never broken.
+      // What changed is the panel, not the rule. It now carries an
+      // explanation naming the OS-denied flag by its real name, so a
+      // whole-overlay scan fails on help copy that no user could mistake for
+      // a status. The rows are the thing under test, so the rows are what is
+      // scanned, and the first two assertions prove the block still holds
+      // them rather than being empty.
+      test('nothing known reads as unknown, never as a denial', async () => {
+        const st = await openState(null);
+        expect(st, 'the status block is really the rows, not an empty container').toContain('iOS location');
+        expect(st).toContain('not reported');
+        expect(st).not.toMatch(/\bdenied\b/i);
+      });
+
+      test('reset clears OUR state and leaves iOS alone', async () => {
+        const r = await page.evaluate(() => {
+          const saved = { c: localStorage.getItem('geo_owner_consent'), d: localStorage.getItem('td_geo_os_denied'),
+                          cap: window.Capacitor, toast: window.showToast };
+          try {
+            window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+            window.showToast = () => {};
+            localStorage.setItem('geo_owner_consent', '1');
+            localStorage.setItem('td_geo_os_denied', '1');
+            let askedNative = 0;
+            const realReq = window._geoRequestPermission;
+            window._geoRequestPermission = () => { askedNative++; };
+            _geoPermLabReset();
+            window._geoRequestPermission = realReq;
+            const out = { consent: localStorage.getItem('geo_owner_consent'),
+                          denied: localStorage.getItem('td_geo_os_denied'), askedNative };
+            document.getElementById('_geo-perm-ov')?.remove();
+            return out;
+          } finally {
+            if (saved.c === null) localStorage.removeItem('geo_owner_consent'); else localStorage.setItem('geo_owner_consent', saved.c);
+            if (saved.d === null) localStorage.removeItem('td_geo_os_denied'); else localStorage.setItem('td_geo_os_denied', saved.d);
+            window.Capacitor = saved.cap; window.showToast = saved.toast;
+          }
+        });
+        expect(r.consent, 'our consent record is cleared').toBe(null);
+        expect(r.denied, 'and our os-denied flag with it').toBe(null);
+        expect(r.askedNative, 'resetting must not fire a prompt as a side effect').toBe(0);
+      });
+
+      // Owner, within the hour of it shipping: "two presses to ask iOS now,
+      // didn't roll a thing, why?" Because his phone is already 'always', so
+      // iOS has nothing left to ask and startGeoTracking returns instantly
+      // when a watcher is live. The tap ran. The panel showed nothing either
+      // way, which is the exact dead-button shape this whole night was about,
+      // shipped inside the tool built to diagnose it.
+      test.describe('every tap says what it did', () => {
+        const tapAsk = (nat) => page.evaluate(async (n) => {
+          const saved = { cap: window.Capacitor, nat: (typeof _geoNativeAuth !== 'undefined') ? _geoNativeAuth : undefined,
+                          req: window._geoRequestPermission };
+          let asked = 0;
+          try {
+            window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({
+              locationPermStatus: () => n ? Promise.resolve(n) : Promise.reject(new Error('none')) }) };
+            if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = null;
+            window._geoRequestPermission = () => { asked++; };
+            _geoPermLab();
+            _geoPermLabAsk();
+            await new Promise(r => setTimeout(r, 300));
+            const say = (document.getElementById('_geo-perm-say') || {}).textContent || '';
+            document.getElementById('_geo-perm-ov')?.remove();
+            return { say, asked };
+          } finally {
+            window.Capacitor = saved.cap; window._geoRequestPermission = saved.req;
+            if (typeof _geoNativeAuth !== 'undefined') _geoNativeAuth = saved.nat;
+          }
+        }, nat);
+
+        test('an already-answered phone is told so, and is not asked again', async () => {
+          for (const st of ['always', 'wheninuse']) {
+            const r = await tapAsk({ status: st, accuracy: 'full', precise: true, servicesEnabled: true });
+            expect(r.say, st + ' must explain itself').toMatch(/already answered/i);
+            expect(r.say, 'and point at the only thing that can change it').toMatch(/Settings/i);
+            expect(r.asked, 'no pretend ask when the dialog is spent').toBe(0);
+          }
+        });
+
+        test('a denial says the dialog is spent rather than going quiet', async () => {
+          const r = await tapAsk({ status: 'denied' });
+          expect(r.say).toMatch(/denied/i);
+          expect(r.say).toMatch(/Settings/i);
+          expect(r.asked).toBe(0);
+        });
+
+        test('notdetermined is the one case that actually asks', async () => {
+          const r = await tapAsk({ status: 'notdetermined' });
+          expect(r.asked, 'this is the only state where a dialog can still appear').toBe(1);
+          expect(r.say).toMatch(/asking ios/i);
+        });
+
+        test('a shell that cannot answer still tries, and still says something', async () => {
+          const r = await tapAsk(null);
+          expect(r.asked).toBe(1);
+          expect(r.say.length, 'never a silent tap').toBeGreaterThan(0);
+        });
+
+        test('no tap anywhere on the panel leaves the message line empty', async () => {
+          const r = await page.evaluate(async () => {
+            const saved = { cap: window.Capacitor, td: window._geoTdPlugin };
+            const out = {};
+            try {
+              window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+              window._geoTdPlugin = () => ({ openSettings: () => Promise.resolve() });
+              _geoPermLab();
+              const line = () => (document.getElementById('_geo-perm-say') || {}).textContent || '';
+              _geoPermLabSettings(); out.settings = line();
+              _geoPermLabReread();  out.reread = line();
+              document.getElementById('_geo-perm-ov')?.remove();
+              return out;
+            } finally { window.Capacitor = saved.cap; window._geoTdPlugin = saved.td; }
+          });
+          expect(r.settings.length, 'a bridge call produces no DOM change, so it must announce itself').toBeGreaterThan(0);
+          expect(r.reread.length).toBeGreaterThan(0);
+        });
+      });
+
+      // Owner ask 2026-08-26: "what do all these buttons do? maybe an i block
+      // next to them with a popup explaining would be helpful for me."
+      test.describe('every action explains itself', () => {
+        const withPanel = (fn) => page.evaluate((body) => {
+          const saved = window.Capacitor;
+          try {
+            window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+            _geoPermLab();
+            const out = (new Function('return (' + body + ')()'))();
+            document.getElementById('_geo-perm-ov')?.remove();
+            return out;
+          } finally { window.Capacitor = saved; }
+        }, fn.toString());
+
+        test('each action has its own info control and hidden explanation', async () => {
+          const r = await withPanel(() => {
+            const ids = ['ask', 'reread', 'settings', 'reset'];
+            return ids.map(id => {
+              const n = document.getElementById('_geo-why-' + id);
+              return { id, exists: !!n, hidden: n ? n.style.display === 'none' : null,
+                       len: n ? n.textContent.trim().length : 0 };
+            });
+          });
+          for (const x of r) {
+            expect(x.exists, x.id + ' has an explanation').toBe(true);
+            expect(x.hidden, x.id + ' starts collapsed, not a wall of text').toBe(true);
+            expect(x.len, x.id + ' actually says something').toBeGreaterThan(80);
+          }
+        });
+
+        test('tapping one opens it, tapping again closes it', async () => {
+          const r = await withPanel(() => {
+            const n = () => document.getElementById('_geo-why-reset');
+            _geoPermWhy('reset'); const open = n().style.display !== 'none';
+            _geoPermWhy('reset'); const shut = n().style.display === 'none';
+            return { open, shut };
+          });
+          expect(r.open).toBe(true);
+          expect(r.shut, 'the same control closes it').toBe(true);
+        });
+
+        test('only one is open at a time, so the buttons never scroll away', async () => {
+          const r = await withPanel(() => {
+            _geoPermWhy('ask'); _geoPermWhy('reread'); _geoPermWhy('settings');
+            return ['ask', 'reread', 'settings', 'reset']
+              .filter(id => document.getElementById('_geo-why-' + id).style.display !== 'none');
+          });
+          expect(r, 'the last one tapped is the only one showing').toEqual(['settings']);
+        });
+
+        test('the reset explanation is explicit that iOS is untouched', async () => {
+          const r = await withPanel(() => document.getElementById('_geo-why-reset').textContent);
+          expect(r, 'the most misreadable button says plainly what it cannot do').toMatch(/iOS authorization is untouched/i);
+          expect(r).toMatch(/will NOT bring the system dialog back/i);
+        });
+
+        test('no nested overlay: the explanation lives inside the existing panel', async () => {
+          const r = await withPanel(() => {
+            _geoPermWhy('ask');
+            return { overlays: document.querySelectorAll('.zmodal-overlay').length,
+                     inside: !!document.getElementById('_geo-perm-ov')
+                       .contains(document.getElementById('_geo-why-ask')) };
+          });
+          expect(r.overlays, 'stacking a second overlay on a phone is how you trap someone').toBe(1);
+          expect(r.inside).toBe(true);
+        });
+      });
+
+      test('the button is dev-gated and native-gated, never loose in Settings', () => {
+        const fs = require('fs'), path = require('path');
+        const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+        const i = html.indexOf('id="set-geo-perm-btn"');
+        expect(i, 'the button exists').toBeGreaterThan(-1);
+        const grp = html.lastIndexOf('id="dev-geo-tools"', i);
+        expect(grp, 'and it sits inside the dev-geo-tools group').toBeGreaterThan(-1);
+        // dev-geo-tools ships display:none and is only unhidden on a native
+        // shell, inside a Developer section that only exists for is_dev.
+        expect(html.slice(grp, grp + 200)).toContain('display:none');
+      });
+    });
+
+    test('a write that fails never throws at the caller', async () => {
+      const threw = await page.evaluate(async () => {
+        const saved = { supa: window._supa, user: window._supaUser };
+        let t = null;
+        try {
+          window._supaUser = { id: 'boom-1' };
+          window._supa = { from: () => { throw new Error('network gone'); } };
+          try { _geoReportPermission('granted'); } catch (e) { t = String(e && e.message || e); }
+          await new Promise(r => setTimeout(r, 20));
+        } finally { window._supa = saved.supa; window._supaUser = saved.user; }
+        return t;
+      });
+      expect(threw, 'permission reporting is never allowed to break a render').toBe(null);
+    });
+
+    // The live gap: change a permission in the iOS Settings app, come back,
+    // and nothing re-checked. The checklist kept nagging and the server row
+    // stayed stale, because the only refresh ran when the dashboard rendered.
+    test('coming back to the foreground re-reads both permissions', async () => {
+      const r = await page.evaluate(async () => {
+        const calls = { geo: 0, motion: 0 };
+        const realGeo = window._geoRefreshPermCache, realMotion = window._motionRefreshPermCache;
+        try {
+          window._geoRefreshPermCache = () => { calls.geo++; };
+          window._motionRefreshPermCache = () => { calls.motion++; };
+          document.dispatchEvent(new Event('visibilitychange'));
+          await new Promise(res => setTimeout(res, 20));
+        } finally {
+          window._geoRefreshPermCache = realGeo; window._motionRefreshPermCache = realMotion;
+        }
+        return calls;
+      });
+      expect(r.geo, 'location re-read on return').toBeGreaterThanOrEqual(1);
+      expect(r.motion, 'motion re-read on return').toBeGreaterThanOrEqual(1);
+    });
   });
 
   test('zero console errors across the crew location suite', async () => {

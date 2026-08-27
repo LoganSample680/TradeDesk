@@ -22,8 +22,8 @@ test.describe('jobs.js: exhaustive coverage', () => {
   // cheap best-effort for tests that only mutate.
   const SEED_FIXTURES_FN = () => {
     clients = clients.filter(c => c.id !== 79901 && c.id !== 79902);
-    bids    = bids.filter(b => b.id !== 78801 && b.id !== 78802);
-    jobs    = jobs.filter(j => ![77701, 77702, 77703, 77704, 77705, 77706].includes(j.id));
+    bids    = bids.filter(b => b.id !== 78801 && b.id !== 78802 && b.id !== 78803);
+    jobs    = jobs.filter(j => ![77701, 77702, 77703, 77704, 77705, 77706, 77707].includes(j.id));
     timeEntries = (timeEntries || []).filter(e => e.job_id !== 77701 && e.job_id !== 77702);
 
     clients.push(
@@ -38,7 +38,14 @@ test.describe('jobs.js: exhaustive coverage', () => {
         signedAt: '2026-01-15T00:00:00Z', completion_date: null },
       { id: 78802, client_id: 79902, client_name: 'Jobs Test Beta', amount: 1200, status: 'Closed Won',
         bid_date: '2026-02-01', trade_type: 'painting', type: 'Exterior painting',
-        surfaces: [], roomScopeMap: {}, signedAt: '2026-02-05T00:00:00Z', completion_date: null }
+        surfaces: [], roomScopeMap: {}, signedAt: '2026-02-05T00:00:00Z', completion_date: null },
+      // Exactly ONE active scope, so getJobScopes(77707) returns a single
+      // item, the boundary the reorder grip must hide at (nothing to drag).
+      { id: 78803, client_id: 79901, client_name: 'Jobs Test Alpha', amount: 400, status: 'Closed Won',
+        bid_date: '2026-03-01', trade_type: 'painting', type: 'Touch-up',
+        surfaces: [{ type: 'walls', room: 'Hall', qty: 50, wallSqft: 50 }],
+        roomScopeMap: { 'Hall': { sand: { active: true, hrs: 1, rate: 45, cost: 45 } } },
+        signedAt: '2026-03-02T00:00:00Z', completion_date: null }
     );
     jobs.push(
       { id: 77701, client_id: 79901, bid_id: 78801, name: 'Alpha interior job',
@@ -56,7 +63,9 @@ test.describe('jobs.js: exhaustive coverage', () => {
       { id: 77705, client_id: 79901, bid_id: null, name: 'Cancelled job',
         eventType: 'job', status: 'scheduled', start: '2099-08-02', cancelled: true },
       { id: 77706, client_id: 79901, bid_id: null, name: 'Has a completion_date but status lagged',
-        eventType: 'job', status: 'scheduled', start: '2026-05-01', completion_date: '2026-05-03' }
+        eventType: 'job', status: 'scheduled', start: '2026-05-01', completion_date: '2026-05-03' },
+      { id: 77707, client_id: 79901, bid_id: 78803, name: 'Single-scope touch-up job',
+        eventType: 'job', status: 'scheduled', start: '2099-08-03', actualHours: 0 }
     );
     timeEntries.push(
       { id: 9990001, job_id: 77701, date: '2026-06-01', minutes: 90, scope_id: 'sand',   scope_label: 'Sanding' },
@@ -272,6 +281,82 @@ test.describe('jobs.js: exhaustive coverage', () => {
         return ok;
       });
       expect(r).toBe(5);
+    });
+
+    // Per-job custom scope order (owner request, lock-screen Next button):
+    // reorderable per job, not fixed to the estimate's order.
+    test('no scopeOrder set, default order stands (backward compatible)', async () => {
+      const r = await page.evaluate(() => {
+        window.__seedJobsFixtures();
+        const j = jobs.find(x => x.id === 77701);
+        delete j.scopeOrder;
+        const before = getJobScopes(77701).map(s => s.id);
+        return { before };
+      });
+      // sand/prime come from the bid's roomScopeMap, popcorn from extraScopes;
+      // the default merge order, unchanged by this feature.
+      expect(r.before).toEqual(['sand', 'prime', 'popcorn']);
+    });
+
+    test('scopeOrder set, reorders the result to match', async () => {
+      const r = await page.evaluate(() => {
+        window.__seedJobsFixtures();
+        const j = jobs.find(x => x.id === 77701);
+        j.scopeOrder = ['popcorn', 'sand', 'prime'];
+        const ids = getJobScopes(77701).map(s => s.id);
+        delete j.scopeOrder;
+        return ids;
+      });
+      expect(r).toEqual(['popcorn', 'sand', 'prime']);
+    });
+
+    test('scopeOrder missing an id that exists on the job, that scope is appended, never dropped', async () => {
+      const r = await page.evaluate(() => {
+        window.__seedJobsFixtures();
+        const j = jobs.find(x => x.id === 77701);
+        // Only mentions two of the three live scopes.
+        j.scopeOrder = ['prime', 'sand'];
+        const ids = getJobScopes(77701).map(s => s.id);
+        delete j.scopeOrder;
+        return ids;
+      });
+      expect(r).toEqual(['prime', 'sand', 'popcorn']);
+      expect(new Set(r).size).toBe(r.length); // no duplicates either
+    });
+
+    test('scopeOrder mentioning an id no longer on the job, that id is silently ignored', async () => {
+      const r = await page.evaluate(() => {
+        window.__seedJobsFixtures();
+        const j = jobs.find(x => x.id === 77701);
+        j.scopeOrder = ['ghost_scope_id', 'prime', 'sand', 'popcorn'];
+        const ids = getJobScopes(77701).map(s => s.id);
+        delete j.scopeOrder;
+        return ids;
+      });
+      expect(r).toEqual(['prime', 'sand', 'popcorn']);
+    });
+
+    test('empty scopeOrder array, treated the same as absent', async () => {
+      const r = await page.evaluate(() => {
+        window.__seedJobsFixtures();
+        const j = jobs.find(x => x.id === 77701);
+        j.scopeOrder = [];
+        const ids = getJobScopes(77701).map(s => s.id);
+        delete j.scopeOrder;
+        return ids;
+      });
+      expect(r).toEqual(['sand', 'prime', 'popcorn']);
+    });
+
+    test('scopeOrder on a job with no scopes at all, does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const res = getJobScopes(999999998);
+          return { ok: true, isArray: Array.isArray(res) };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.isArray).toBe(true);
     });
   });
 
@@ -679,6 +764,165 @@ test.describe('jobs.js: exhaustive coverage', () => {
       });
       expect(r.ok).toBe(5);
       expect(r.count).toBe(1);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Scope drag-to-reorder (_initScopeDrag / _setJobScopeOrder): owner request,
+  // per-job custom task order for the clock-in sheet, same pointer-event
+  // pattern as the dispatch board's day-reorder (js/cloud.js
+  // _initDispatchDrag / tests/e2e-dispatch-board.spec.js), CLAUDE.md §7.3.
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('scope drag-to-reorder', () => {
+    test('a grip renders per row once there is more than one scope to order', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_cks-ov')?.remove();
+        openClockInSheet(77701); // 3 scopes: sand, prime, popcorn
+        const rows = document.querySelectorAll('#_cks-list .scope-row').length;
+        const grips = document.querySelectorAll('#_cks-list .scope-grip').length;
+        document.getElementById('_cks-ov')?.remove();
+        return { rows, grips };
+      });
+      expect(r.rows).toBe(3);
+      expect(r.grips).toBe(3);
+    });
+
+    test('a single-scope job shows no grip: nothing to drag', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_cks-ov')?.remove();
+        openClockInSheet(77707); // exactly one active scope
+        const rows = document.querySelectorAll('#_cks-list .scope-row').length;
+        const grips = document.querySelectorAll('#_cks-list .scope-grip').length;
+        document.getElementById('_cks-ov')?.remove();
+        return { rows, grips };
+      });
+      expect(r.rows).toBe(1);
+      expect(r.grips).toBe(0);
+    });
+
+    test('the grip does not block the sheet from scrolling', async () => {
+      // touch-action:none belongs on the HANDLE only, same reasoning as the
+      // dispatch board's grip: the sheet must still scroll normally.
+      const r = await page.evaluate(() => {
+        document.getElementById('_cks-ov')?.remove();
+        openClockInSheet(77701);
+        const grip = document.querySelector('.scope-grip');
+        const row = grip.closest('.scope-row');
+        const out = { grip: getComputedStyle(grip).touchAction, row: getComputedStyle(row).touchAction };
+        document.getElementById('_cks-ov')?.remove();
+        return out;
+      });
+      expect(r.grip).toBe('none');
+      expect(r.row).not.toBe('none');
+    });
+
+    test('dragging a scope to the top rewrites the job\'s scopeOrder to match', async () => {
+      const r = await page.evaluate(async () => {
+        const j = jobs.find(x => x.id === 77701);
+        delete j.scopeOrder;
+        document.getElementById('_cks-ov')?.remove();
+        openClockInSheet(77701);
+        const sheet = document.getElementById('_cks-sheet');
+        const list = document.getElementById('_cks-list');
+        const rowsBefore = [...list.querySelectorAll('.scope-row')];
+        const third = rowsBefore[2]; // popcorn, default order
+        const grip = third.querySelector('.scope-grip');
+        const first = rowsBefore[0].getBoundingClientRect();
+        const gr = grip.getBoundingClientRect();
+        const ev = (type, y) => sheet.dispatchEvent(new PointerEvent(type, {
+          bubbles: true, clientX: gr.left + 4, clientY: y, pointerId: 1,
+        }));
+        grip.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, clientX: gr.left + 4, clientY: gr.top + 4, pointerId: 1 }));
+        ev('pointermove', first.top + 2);
+        ev('pointermove', first.top - 20);
+        ev('pointermove', first.top - 40);
+        ev('pointerup', first.top - 40);
+        await new Promise(res => setTimeout(res, 30));
+        const order = j.scopeOrder ? j.scopeOrder.slice() : null;
+        document.getElementById('_cks-ov')?.remove();
+        delete j.scopeOrder;
+        return order;
+      });
+      expect(r).not.toBeNull();
+      expect(r[0]).toBe('popcorn');
+      expect(r).toEqual(['popcorn', 'sand', 'prime']);
+    });
+
+    test('a drag that never moves writes no scopeOrder', async () => {
+      const r = await page.evaluate(async () => {
+        const j = jobs.find(x => x.id === 77701);
+        delete j.scopeOrder;
+        document.getElementById('_cks-ov')?.remove();
+        openClockInSheet(77701);
+        const sheet = document.getElementById('_cks-sheet');
+        const grip = document.querySelector('.scope-grip');
+        const gr = grip.getBoundingClientRect();
+        grip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: gr.left, clientY: gr.top, pointerId: 2 }));
+        sheet.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 2 }));
+        await new Promise(res => setTimeout(res, 20));
+        const hasOrder = 'scopeOrder' in j;
+        document.getElementById('_cks-ov')?.remove();
+        delete j.scopeOrder;
+        return hasOrder;
+      });
+      expect(r).toBe(false);
+    });
+
+    test('the sheet rebuilding on clock-in does not double-bind the drag handler', async () => {
+      // _initScopeDrag is called on every _cksRebuild(), and the sheet element
+      // itself persists across a rebuild (only its innerHTML changes), so the
+      // guard flag must survive: a second bind would fire the reorder write
+      // twice per drag.
+      const r = await page.evaluate(() => {
+        document.getElementById('_cks-ov')?.remove();
+        openClockInSheet(77701);
+        window._cksRebuild(); // simulate the rebuild a clock-in tap triggers
+        window._cksRebuild();
+        const sheet = document.getElementById('_cks-sheet');
+        const bound = sheet._scopeDragBound;
+        document.getElementById('_cks-ov')?.remove();
+        return bound;
+      });
+      expect(r).toBe(true);
+    });
+
+    // _setJobScopeOrder exhaustive input coverage (CLAUDE.md §11.1)
+    test('_setJobScopeOrder: null/undefined/empty ids array, no throw, writes nothing', async () => {
+      const r = await page.evaluate(() => {
+        const j = jobs.find(x => x.id === 77701);
+        delete j.scopeOrder;
+        try {
+          _setJobScopeOrder(77701, null);
+          _setJobScopeOrder(77701, undefined);
+          _setJobScopeOrder(77701, []);
+          const hasOrder = 'scopeOrder' in j;
+          delete j.scopeOrder;
+          return { ok: true, hasOrder };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasOrder).toBe(false);
+    });
+
+    test('_setJobScopeOrder: nonexistent jobId, no throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _setJobScopeOrder(999999999, ['sand', 'prime']); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('_setJobScopeOrder: golden path persists and getJobScopes honors it immediately', async () => {
+      const r = await page.evaluate(() => {
+        const j = jobs.find(x => x.id === 77701);
+        delete j.scopeOrder;
+        _setJobScopeOrder(77701, ['prime', 'popcorn', 'sand']);
+        const ids = getJobScopes(77701).map(s => s.id);
+        delete j.scopeOrder;
+        return ids;
+      });
+      expect(r).toEqual(['prime', 'popcorn', 'sand']);
     });
   });
 
@@ -1352,14 +1596,25 @@ test.describe('jobs.js: exhaustive coverage', () => {
       await page.evaluate(() => { _activeTimer = null; });
     });
 
-    test('null jobId, returns early without throw', async () => {
+    // Old contract: null was just another invalid id, jobs.find() found
+    // nothing, clockIn() bailed. New contract (owner 2026-08-19, "ability
+    // for somebody to clock in at all times, nothing dependent on anything"):
+    // null is now the deliberate General-time path, no job, no client, the
+    // Home dashboard's always-available manual clock. It must actually start
+    // the timer, not bail, that's the whole point of the feature.
+    test('null jobId, starts General time (no job/client required)', async () => {
       const r = await page.evaluate(() => {
         _activeTimer = null;
-        try { clockIn(null, 'sand', 'Sanding'); return { ok: true, timerNull: _activeTimer === null }; }
+        try {
+          clockIn(null, 'sand', 'Sanding');
+          return { ok: true, timerSet: _activeTimer !== null, jobIdNull: _activeTimer && _activeTimer.jobId === null, jobName: _activeTimer && _activeTimer.jobName };
+        }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.timerNull).toBe(true);
+      expect(r.timerSet).toBe(true);
+      expect(r.jobIdNull).toBe(true);
+      expect(r.jobName).toBe('General time');
     });
 
     test('undefined jobId, returns early without throw', async () => {
@@ -2125,6 +2380,63 @@ test.describe('jobs.js: exhaustive coverage', () => {
         expect(r.cached).toBeTruthy();
         expect(r.cached.lat).toBe(37.71);
         expect(r.cached.addr).toBe('40 Nearby Rd, Wichita KS');
+      });
+
+      // Regression (owner report 2026-08-19): the dashboard matched a
+      // contractor's real job to his own NEXT-DOOR NEIGHBOR's client record,
+      // wrong client shown, wrong address to clock into. Root cause was two
+      // compounding bugs: the match radius was 0.5km (1,640ft, easily spans
+      // several houses down a block) and the loop returned on the FIRST
+      // client under that radius in raw array order, not the nearest one.
+      test('the match radius is tightened to ServiceTitan\'s Arrive-by-GPS threshold (410ft), not the old 1,640ft', async () => {
+        const r = await page.evaluate(() => {
+          const orig = { clients, bids, jobs, payments };
+          // ~1,000ft away: inside the OLD 0.5km radius, outside the new
+          // ~410ft one. A real match here would prove the radius never
+          // actually tightened.
+          clients = [{ id: 79970, name: 'Down The Block', addr: '1000ft Away Rd, Wichita KS' }];
+          bids = []; jobs = []; payments = [];
+          const origGeo = window.geoIfGranted, origGeocode = window._geocodeAddr;
+          window.geoIfGranted = (cb) => cb({ coords: { latitude: 37.6872, longitude: -97.3301, accuracy: 10 } });
+          window._geocodeAddr = async () => ({ lat: 37.68994, lon: -97.3301 }); // ~0.305km / ~1,000ft north
+          return checkNearbyJob().then(() => {
+            window.geoIfGranted = origGeo; window._geocodeAddr = origGeocode;
+            const nb = _nearbyJob;
+            ({ clients, bids, jobs, payments } = orig);
+            return { nb };
+          });
+        });
+        expect(r.nb, 'a client 1,000ft away must NOT match, that distance only "worked" under the old 1,640ft radius').toBeFalsy();
+      });
+
+      test('nearest client wins, not the first one in array order', async () => {
+        const r = await page.evaluate(() => {
+          const orig = { clients, bids, jobs, payments };
+          // Farther client (~350ft, still inside the 410ft radius) listed
+          // FIRST, nearer client (~50ft) listed SECOND: under the old
+          // first-match-wins loop the farther one would win purely by array
+          // position, even though the nearer one is the obviously correct
+          // match.
+          clients = [
+            { id: 79971, name: 'Farther Neighbor', addr: 'Far Rd, Wichita KS' },
+            { id: 79972, name: 'Actual Job', addr: 'Near Rd, Wichita KS' },
+          ];
+          bids = []; jobs = []; payments = [];
+          const origGeo = window.geoIfGranted, origGeocode = window._geocodeAddr;
+          window.geoIfGranted = (cb) => cb({ coords: { latitude: 37.6872, longitude: -97.3301, accuracy: 10 } });
+          window._geocodeAddr = async (addr) => addr.startsWith('Far')
+            ? { lat: 37.6881583, lon: -97.3301 }  // ~350ft
+            : { lat: 37.6873369, lon: -97.3301 }; // ~50ft
+          return checkNearbyJob().then(() => {
+            window.geoIfGranted = origGeo; window._geocodeAddr = origGeocode;
+            const nb = _nearbyJob;
+            ({ clients, bids, jobs, payments } = orig);
+            return { nb };
+          });
+        });
+        expect(r.nb).toBeTruthy();
+        expect(r.nb.clientId, 'the nearer client must win regardless of array order').toBe(79972);
+        expect(r.nb.clientName).toBe('Actual Job');
       });
     });
   });

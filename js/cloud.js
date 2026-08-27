@@ -291,9 +291,44 @@ function _restoreIdentityFromCache(){
 }
 async function loadAccountData(){
   if(!_supa||!_supaUser)return false;
+  // Reset per-login switcher state so a previous account's hats can't leak into
+  // this session's UI (same shared-global reasoning as _isEmployee below).
+  window._hatOwnsBusiness=false;window._hatCrewLinks=[];
   try{
     const{data:u}=await _supa.from('users').select('*').eq('id',_supaUser.id).maybeSingle();
-    if(u&&u.account_id){
+    // ── DUAL-HAT (§9.10 slice 1): crew by day, owner by night, ONE login ──────
+    // The owner row used to win unconditionally, which made an owner login's crew
+    // memberships unreachable (plumber on dad's crew who runs his own landscaping
+    // business at night). Surface the links, and honor a persisted hat choice
+    // (zp3_hat_<uid> = 'owner' | 'crew:<contractor_user_id>', written by
+    // window.switchHat). When the crew hat is chosen, this block only STEERS:
+    // it aims path (1)'s deterministic multi-crew pick at the chosen boss and
+    // falls through to the standard crew-linking flow below, so a dual-hat crew
+    // session takes the exact same code path (permissions, redaction, acct
+    // cache) as a crew-only login and the two can never diverge.
+    const _hatPickCrew=await(async()=>{
+      if(!(u&&u.account_id))return false;
+      window._hatOwnsBusiness=true;
+      let _links=[];
+      try{
+        const{data:_hr}=await _supa.from('team_members').select('contractor_user_id,name,role').eq('employee_user_id',_supaUser.id).eq('active',true);
+        _links=_hr||[];
+      }catch(_e){}
+      window._hatCrewLinks=_links.map(r=>({contractor_user_id:r.contractor_user_id,name:r.name,role:r.role}));
+      let _hat=null;try{_hat=localStorage.getItem('zp3_hat_'+_supaUser.id);}catch(_e){}
+      if(!_hat||_hat.indexOf('crew:')!==0)return false;
+      const _cid=_hat.slice(5);
+      if(!_links.some(r=>String(r.contractor_user_id)===String(_cid))){
+        // The boss deactivated or removed the link: silently land in their own
+        // business (never an error, their own account is always valid) and drop
+        // the stale hat so every future boot stops re-checking it.
+        try{localStorage.removeItem('zp3_hat_'+_supaUser.id);}catch(_e){}
+        return false;
+      }
+      try{localStorage.setItem('zp3_crew_choice_'+_supaUser.id,String(_cid));}catch(_e){}
+      return true;
+    })();
+    if(u&&u.account_id&&!_hatPickCrew){
       // This account has its own accounts row, it's a real owner/co-owner account, never
       // a linked crew member. Reset explicitly: _isEmployee/_employeeRecord/_contractorUserId
       // are shared globals that stay true/set from a PREVIOUS account's sign-in earlier in
@@ -454,8 +489,39 @@ let _devSupportMode=false,_devSupportName='',_devSavedState=null;
 const _DEV_SUPPORT_USERS={
   zach:{name:'Zach',userId:'6201cb8c-c4de-4bf2-bdf7-0376f0577cc4'},
 };
+// ── Fleet support switcher (owner ask 2026-08-18) ────────────────────────────
+// The 25 seeded fleet personas (tests/flow/fleet-seed.spec.js) become viewable
+// from the support account through the SAME support-view machinery as Zach:
+// the fleet_support_roster RPC (20260818 migration) returns tag/uid/business
+// ONLY when the caller is the support account, and matching read-only RLS
+// policies let _devLoadUserAccount pull each persona's rows. The roster call
+// doubles as the authorization probe: rows back means the server said yes, so
+// the Developer settings row unlocks even without config.is_dev. Read-only by
+// design, there are no fleet write policies, so a stray save from support
+// view can never alter a persona's data.
+let _fleetRoster=null;
+async function _fleetLoadRoster(){
+  if(_fleetRoster!==null)return _fleetRoster;
+  _fleetRoster=[];
+  try{
+    if(!_supa||!_supaUser)return _fleetRoster;
+    const{data,error}=await _supa.rpc('fleet_support_roster');
+    if(!error&&Array.isArray(data)&&data.length){
+      _fleetRoster=data;
+      data.forEach(r=>{
+        if(r&&r.tag&&r.user_id)_DEV_SUPPORT_USERS[r.tag]={name:r.tag.toUpperCase()+(r.business_name?' · '+r.business_name:''),userId:r.user_id,fleet:true};
+      });
+      const devRow=document.getElementById('set-idx-row-dev');
+      if(devRow)devRow.style.display='flex';
+      if(typeof _renderDevTradeCard==='function')_renderDevTradeCard();
+    }
+  }catch(_e){}
+  return _fleetRoster;
+}
 async function _devLoadUserAccount(key){
-  if(!_config?.is_dev)return;
+  // Fleet personas don't need config.is_dev: the roster RPC already proved the
+  // caller is the support account (and RLS enforces it again on every read).
+  if(!_config?.is_dev&&!_DEV_SUPPORT_USERS[key]?.fleet)return;
   clearTimeout(_syncTimer);
   await _flushSaveNow();
   const u=_DEV_SUPPORT_USERS[key];
@@ -568,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.12.26.7';
+const APP_VERSION='08.27.26.4';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1232,6 +1298,59 @@ function _userDelete(fn){
   return ret;
 }
 
+// ── One soft delete, shared by every sweep that removes a row ───────────────
+//
+// Owner, 2026-08-26: "the logic should match time logs where they are only soft
+// deleted, that should share so we can bring things back."
+//
+// Until now nothing shared. td_mileage rows removed through supaSaveToCloud got
+// a deleted_at and were recoverable, but the mileage SWEEPS bypassed that with
+// a direct .delete(), and job_time_entries/shop_time_entries had no deleted_at
+// column at all so every sweep on them was permanent. Two real 3.2-mile legs
+// from 08-18 and 08-19 were destroyed that way on 08-25 by a rule that turned
+// out to be wrong, and there was nothing to restore.
+//
+// A sweep is a GUESS about data the user did not ask to lose. Every one of them
+// goes through here now, so being wrong costs an undo rather than the record.
+//
+// Deliberately NOT routed through here: _devHardPurge, which is the owner
+// knowingly purging a duplicate and wants the row actually gone.
+//
+// Returns the number of ids it believes it removed. Failure is silent by
+// design, an employee device holds no update grant on the time tables and must
+// not break a render over it; the contractor's own device runs the same sweep.
+async function _tdSoftDelete(tbl,ids,opts){
+  // Ids go to the server AS GIVEN. Stringifying them here changed a numeric
+  // row id into '502' on the wire, which PostgREST coerces back happily but
+  // which turned ten assertions about which row was removed into type
+  // mismatches. The local delete ledger is the only thing that genuinely wants
+  // strings, and it gets them where it is written, below.
+  const list=(Array.isArray(ids)?ids:[ids]).filter(v=>v!=null);
+  if(!list.length||!_supa)return 0;
+  const ts=new Date().toISOString();
+  let done=0;
+  for(let i=0;i<list.length;i+=50){
+    const chunk=list.slice(i,i+50);
+    try{
+      let q=_supa.from(tbl).update({deleted_at:ts}).in('id',chunk);
+      // The per-user tables are scoped by user_id; the crew tables are scoped
+      // by contractor_user_id and RLS already fences them, so the caller passes
+      // whichever it has rather than this guessing.
+      if(opts&&opts.userCol&&opts.userVal)q=q.eq(opts.userCol,opts.userVal);
+      const{error}=await q;
+      if(!error)done+=chunk.length;
+    }catch(_e){}
+  }
+  // The local delete intent still gets recorded for the per-record tables, so
+  // supaSaveToCloud's own sweep does not later try to re-remove a row this
+  // already handled.
+  if(typeof _recordLocalDelete==='function'&&_lastKnownIds&&_lastKnownIds[tbl]){
+    for(const id of list){try{_recordLocalDelete(tbl,String(id));}catch(_e){}}
+  }
+  return done;
+}
+window._tdSoftDelete=_tdSoftDelete;
+
 // DEV-ONLY DELETE GATE (owner directive): nobody deletes in normal use, they edit,
 // and old records auto-archive (kept forever). The ONE exception is the dev/owner
 // purging a rare duplicate via the hidden 3s long-press (below). is_dev comes from
@@ -1317,6 +1436,58 @@ function _isMissingTableErr(err){
   return !!err&&(err.code==='42P01'||err.code==='PGRST205'||/does not exist|could not find the table|schema cache/i.test(err.message||''));
 }
 
+// Tells a genuine connectivity loss apart from our own code throwing (auth
+// mismatch, a stale-build/backend shape mismatch, a real server error) so
+// the offline banner stops lying (owner report 2026-08-19: "getting another
+// stale cache version... seeing the offline banner every time I load").
+// supaSaveToCloud/supaLoadFromCloud wrap their WHOLE body in one catch, so
+// anything that throws in there, not just a dead network, used to land here
+// and get mislabeled "Offline: changes saved locally."
+//
+// A fetch TypeError ("Failed to fetch") is the one genuinely ambiguous case:
+// browsers give CORS failures and real network loss the EXACT SAME shape, no
+// way to tell them apart from the error object alone. Rather than guess,
+// confirm with the same active probe _probeAndSync already uses (a plain
+// same-origin fetch): if that gets through, the network is fine and
+// whatever threw wasn't connectivity, classify it as an app error instead.
+//
+// The `error` our own `if(error)throw error` sites actually receive is NOT a
+// raw fetch exception: js/vendor/supabase-js-2.112.3.min.js's PostgrestBuilder
+// catches the real fetch rejection and returns a PLAIN OBJECT instead,
+// {message:`${e.name}: ${e.message}`, details, hint, code}, with no `.name`
+// of its own and no Error prototype at all. So `err instanceof TypeError`
+// and `err.name==='AbortError'` are BOTH always false for this path, even on
+// a genuine dead network or our own request timeout, verified by reading
+// that catch handler directly. The only surviving signal is the message
+// TEXT, which always starts with the original error's name ("TypeError:
+// Failed to fetch" on Chrome, "TypeError: Load failed" on Safari,
+// "AbortError: ..." for a timeout). Matched loosely on purpose: this gate
+// only decides whether to run the confirmation probe below, so over-matching
+// costs one extra fetch, under-matching mislabels a real outage as an app
+// bug (console.error, no banner) and is the actual danger.
+//
+// err.code==='offline' is trusted as an explicit signal, no probe needed:
+// it is never a real Postgres/PostgREST error code (those are either empty
+// or a genuine SQLSTATE like '42P01'), so a caller setting it is deliberately
+// telling us "treat this as offline" rather than describing a real backend
+// error. The test suite's shared offline-simulation fixture
+// (tests/helpers.js maybeOffline/offlineResult, __offlineMode) does exactly
+// this, and production code is free to use the same convention.
+async function _classifyCloudError(err){
+  if(!err)return 'network'; // no error object at all: nothing to classify, assume the historical default
+  if(_isMissingTableErr(err))return 'app'; // schema drift, not the network, never banner for this
+  if(err.code==='offline')return 'network';
+  const msg=String(err.message||err.hint||'');
+  const looksNetwork=/typeerror|aborterror|failed to fetch|load failed|networkerror|network request failed|operation was aborted/i.test(msg);
+  if(!looksNetwork)return 'app'; // a real thrown exception in our own code, not a network shape at all
+  try{
+    await fetch('/version.json?_='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(4000)});
+    return 'app'; // network reachable: the original error wasn't actually connectivity
+  }catch(_e){
+    return 'network'; // confirmed: even a plain same-origin fetch can't get through
+  }
+}
+
 // Tables whose money fields are redacted for the CURRENT employee session, derived
 // from their team permissions (the SAME matrix the server RPC load_account_data
 // enforces). Used in TWO places that MUST agree:
@@ -1330,6 +1501,34 @@ function _isMissingTableErr(err){
 // it. window._crewChoices (set at link time when >1 active crew) lists the options.
 window.switchCrew=function(cid){
   try{if(_supaUser&&cid)localStorage.setItem('zp3_crew_choice_'+_supaUser.id,String(cid));}catch(_e){}
+  location.reload();
+};
+// Dual-hat (§9.10 slice 1): flip between "my own business" and a crew membership
+// under ONE login. Same shape as switchCrew above: persist the choice, then a hard
+// reload lets the normal boot rebuild everything for the incoming hat. The reload
+// IS the data wall, arrays, realtime channels, geo state, and offline queues all
+// reset through the exact same boot path every sign-in already exercises.
+// hat: 'owner' for their own business, or a contractor_user_id for a crew link.
+window.switchHat=async function(hat){
+  if(!_supaUser)return;
+  try{
+    // Best-effort: land any pending edits in THIS hat's business before leaving it.
+    if(_syncTimer&&typeof _flushSaveNow==='function'){try{await _flushSaveNow();}catch(_e){}}
+    localStorage.setItem('zp3_hat_'+_supaUser.id,hat==='owner'?'owner':('crew:'+hat));
+    // Hard wall: the outgoing hat's snapshot and delta cursor must be gone before
+    // the next boot resolves the incoming hat (same clearing the cross-account
+    // SIGNED_IN reset does). zp3_offline_pending is deliberately LEFT ALONE: it is
+    // _dataOwner-tagged and hat-scoped at read time (_readOwnedOfflinePending), so
+    // deleting it here could drop unsaved records the other hat still owns.
+    localStorage.removeItem('zp3_cloud_cache');
+    localStorage.removeItem('zp3_delta_meta');
+    // Teachable moment: the boot after the switch confirms it worked AND names
+    // the surface ("tap the business name"), so the switcher teaches itself the
+    // first time it's used (owner ask 2026-08-18: "how do we make it so they
+    // know that's where you switch"). sessionStorage: same tab only, gone if
+    // they close the app, never a stale toast days later.
+    sessionStorage.setItem('_hatJustSwitched','1');
+  }catch(_e){}
   location.reload();
 };
 
@@ -1537,28 +1736,48 @@ function _armBootCascade(){
   // popup (owner: blank white behind a popup looks odd; the dashboard should be
   // filling in under the popup's scrim). Delays are assigned over VISIBLE cards
   // ONLY, so hidden/empty widgets (crew/alerts/contracts with no data) leave no
-  // gaps: the ripple flows smoothly top→bottom over exactly what's on screen.
+  // gaps: the ripple flows smoothly over exactly what's on screen.
   // Backwards `both` fill keeps each card invisible until its own delay elapses,
   // so no boot-hold class (and no blank-hold) is needed.
+  //
+  // DIRECTION: top → bottom (owner 2026-08-15, after seeing the bottom-up build
+  // on UAT: "I don't want bottom up, want top down"). The greeting bar goes
+  // first, then each card in page order, so the page fills the way it is read.
+  // Each card does a gentle fade + 14px rise; scale was rejected earlier for
+  // blurring text mid-flight.
   let count=0;
   try{
     const root=d.querySelector('#dash-widget-root');
     const tbar=d.querySelector('.tbar');
-    const base=60,step=95;
-    if(tbar)tbar.style.animationDelay='0ms';
-    if(root){
-      let i=0;
-      [...root.children].forEach(el=>{
-        if(el.nodeType!==1||!el.classList.contains('td-dw'))return;
-        const visible=el.offsetHeight>2;          // read BEFORE the class → natural layout height
-        el.style.animationDelay=(base+(visible?i:Math.max(0,i-1))*step)+'ms';
-        if(visible)i++;
-      });
-      count=i;
-    }
+    // The waterfall SPANS the same 1.2s beat the shimmer holds for (owner
+    // 2026-08-15: "drop skeleton shimmer and iOS load to 1.2 seconds"), so the
+    // boot reads as one continuous piece of choreography instead of a long wait
+    // followed by a quick flick. The stagger is COMPUTED from the card count
+    // rather than fixed, because a fixed step makes the span depend on how many
+    // widgets happen to be visible: four cards would finish in half the time
+    // seven do. Clamped so a very short dashboard does not crawl and a very long
+    // one does not machine-gun. The greeting bar is the first beat of the wave,
+    // so it is counted here too. _travel MUST match the td-card-cascade duration
+    // in index.html, it is the tail every card still has to fly after it starts.
+    const base=60,_travel=620,_target=1200;
+    const cards=root?[...root.children].filter(el=>el.nodeType===1&&el.classList.contains('td-dw')):[];
+    const vis=cards.filter(el=>el.offsetHeight>2);   // read BEFORE the class → natural layout height
+    const _n=vis.length+1;                           // +1 for the tbar, which leads the wave
+    // FLOOR, not round: rounding a fractional step up pushes the last card past
+    // the target beat by a frame or two.
+    const step=Math.floor(Math.min(240,Math.max(50,(_target-base-_travel)/Math.max(1,_n-1))));
+    // The header is the top of the page, so the falling wave starts there.
+    if(tbar)tbar.style.animationDelay=base+'ms';
+    // Then page order. Hidden widgets take the delay of the visible one above
+    // them, so an empty crew/alerts card leaves no gap in the ripple.
+    cards.forEach(el=>{
+      const idx=vis.indexOf(el);
+      el.style.animationDelay=(base+((idx>=0?idx:vis.length-1)+1)*step)+'ms';
+    });
+    count=vis.length;
   }catch(_e){}
   d.classList.add('boot-cascade');
-  const total=60+Math.max(1,count)*95+720+260;    // last card start + travel + slack
+  const total=60+(Math.max(1,count)+1)*240+620+260;   // last starter + travel + slack, at the widest stagger
   setTimeout(()=>{try{
     d.classList.remove('boot-cascade');
     d.querySelectorAll('.tbar,#dash-widget-root>.td-dw').forEach(el=>{el.style.animationDelay='';});
@@ -1567,6 +1786,13 @@ function _armBootCascade(){
 // The moment the boot's first cloud sync lands: end the shimmer, render the
 // real content, pour the one cascade. Idempotent; the 15 s skeleton failsafe
 // and every later sync call it harmlessly.
+// How long the boot shimmer must be VISIBLE before the dashboard is allowed
+// to pour (owner 2026-08-14). One constant, so the beat is tunable in one
+// place instead of hiding as a magic number inside the settle gate.
+// 1200ms since 2026-08-15: 1800 held the shimmer longer than it needed to
+// once the owner had it in hand on UAT.
+const _BOOT_MIN_SHIMMER_MS=1200;
+
 function _bootSyncSettled(){
   if(window._bootSkelDone)return;
   // THE SHIMMER MUST BE SEEN (owner video 2026-08-11: the loader lifted onto
@@ -1584,7 +1810,15 @@ function _bootSyncSettled(){
     if(_ov&&!_ov.classList.contains('td-fadeout')&&Date.now()-window._bootSettleWaitT0<12000){setTimeout(_bootSyncSettled,120);return;}
     if(document.querySelector('#pg-dash .td-boot-skel-on')){
       if(!window._bootShimmerT0)window._bootShimmerT0=Date.now();
-      if(Date.now()-window._bootShimmerT0<650){setTimeout(_bootSyncSettled,130);return;}
+      // 1.8s, not 650ms (owner 2026-08-14: "they fire way too quickly and
+      // load in way too fast, it's jarring"). A shimmer that flashes past is
+      // worse than none: the eye registers movement, not information, and
+      // the pour lands before the shape it was standing in has been read.
+      // This is a MINIMUM on a state that is real (the sync genuinely has
+      // not finished), never an artificial delay on data already in hand,
+      // so it stays inside §8.3's rule: skeletons for waiting content, never
+      // a slow fade over a ready screen.
+      if(Date.now()-window._bootShimmerT0<_BOOT_MIN_SHIMMER_MS){setTimeout(_bootSyncSettled,130);return;}
     }
   }catch(_e){}
   // Hold the shimmer a beat for the FIRST geo answer, so the ON SITE / drive
@@ -1605,6 +1839,15 @@ function _bootSyncSettled(){
       if(Date.now()<window._bootGeoHoldUntil){setTimeout(_bootSyncSettled,150);return;}
     }
   }catch(_e){}
+  // Hold for the setup checklist's own Stripe/QR self-corrections (set above, near
+  // the Stripe/QR setTimeout calls): they're lightweight status fetches (~500-650ms),
+  // 2s is generous headroom. Capped the same way as the geo hold, a slow/failed
+  // fetch clears its own pending count via .finally() regardless, so this can never
+  // wait past the cap even if a network call never resolves.
+  if((window._bootChecklistPending||0)>0){
+    if(!window._bootChecklistHoldUntil)window._bootChecklistHoldUntil=Date.now()+2000;
+    if(Date.now()<window._bootChecklistHoldUntil){setTimeout(_bootSyncSettled,150);return;}
+  }
   window._bootSkelDone=true;
   try{clearTimeout(window._bootSkelTimer);}catch(_e){}
   window._bootSkelTimer=null; // next sign-in this session must arm a fresh failsafe
@@ -1628,6 +1871,20 @@ function _bootSyncSettled(){
   // heal=true: boot is the one moment the wider overlapping-clocks twin rule
   // is safe, the live sweep stays strict (see _mileSameLeg).
   try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
+  // Same idea for job_time_entries (js/geo-track.js _geoTimeEntriesSettleChain:
+  // dedup, owner rule 2026-08-21, then same-place merge and gap-absorption,
+  // owner rule 2026-08-23): a duplicate visit collapses to the longest here
+  // too, whatever wrote it and whenever, chained so each step sees the last
+  // one's writes rather than firing in parallel against a stale snapshot.
+  try{if(typeof _geoTimeEntriesSettleChain==='function')_geoTimeEntriesSettleChain();}catch(_e){}
+  // And drive-time hygiene (js/geo-track.js _geoSyncDriveTimeEntries, owner
+  // rule 2026-08-22): the dedup just above ran (heal=true, sync), so any
+  // duplicate mileage leg it merged away has already lost its legKey by the
+  // time this runs, and the matching paid drive-time row drops with it.
+  try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
+  // And shop_time_entries duplicates (js/geo-track.js _geoDedupShopTimeEntries,
+  // owner audit 2026-08-23): no other sweep touches that table at all.
+  try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
 }
 function _removeBootOverlay(immediate){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
@@ -1876,7 +2133,27 @@ async function supaInit(){
     // Surface an OAuth failure to the user once boot settles (after the overlay lifts),
     // so a failed social sign-in reads as an error, not a mysterious not-synced screen.
     if(window._oauthFailMsg){setTimeout(()=>{try{if(typeof showToast==='function')showToast(window._oauthFailMsg,'⚠️',7000);}catch(_e){}window._oauthFailMsg=null;},1200);}
-    const{data:{session}}=await _supa.auth.getSession();
+    let{data:{session}}=await _supa.auth.getSession();
+    // A stored auth token exists but getSession() came back with no session: if the
+    // access token had expired, getSession() just attempted a refresh over the
+    // network, and that attempt itself failed. On a native cold launch right after
+    // the app resumes from a suspended background state, iOS can report the radio
+    // "connected" (full bars) a beat before the network path is actually usable
+    // (DNS/TLS not yet warmed up), so a genuinely valid session can fail this FIRST
+    // check even though the device is really online (owner report: full wifi/cell
+    // bars, offline banner + stale cache anyway, specifically on the TestFlight
+    // shell, exactly the resume-from-background lifecycle event this hits). One
+    // bounded retry after a short beat catches that transient window without
+    // meaningfully slowing down a boot that's genuinely offline (the no-token case
+    // never reaches this branch at all, and a real offline device just fails again).
+    if(!session){
+      let _hadToken=false;
+      try{for(let _i=0;_i<localStorage.length;_i++){const _k=localStorage.key(_i);if(_k&&_k.indexOf('sb-')===0&&_k.indexOf('auth-token')>-1){_hadToken=true;break;}}}catch(_e){}
+      if(_hadToken){
+        await new Promise(r=>setTimeout(r,1200));
+        try{session=(await _supa.auth.getSession()).data.session;}catch(_e){}
+      }
+    }
     if(session){
       _supaUser=session.user;
       _hlcInit(); // PHASE 0 oplog: load this owner's persisted HLC so it can't go backwards across reloads
@@ -1951,6 +2228,11 @@ async function supaInit(){
           if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
           if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (no-session boot)');applySettings();_refillSettingsFormUnlessEditing();}
           _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
+          // zp3_cloud_cache never carries _user (see loadAccountData), so without this
+          // the greeting/permissions render as a nobody until a real session lands
+          // (owner report: "offline banner and no name on the greeting"). Same cache
+          // _restoreIdentityFromCache already reads for the no-SDK boot path.
+          if(typeof _restoreIdentityFromCache==='function')_restoreIdentityFromCache();
           _loadedFromCacheOnly=true;
           _mergeOnSignIn=true;
           _removeBootOverlay();renderDash();
@@ -2005,7 +2287,7 @@ async function supaInit(){
           // Crew caches are keyed by EMAIL, so without this the next account's
           // roster renders the previous account's location status against any
           // matching address. Reset the loaded flags too or they never refetch.
-          _teamGeo={};_teamGeoLoaded=false;_teamComp={};_teamCompLoaded=false;
+          _teamGeo={};_teamGeoLoaded=false;_teamGeoAt=0;_teamComp={};_teamCompLoaded=false;
           // Inbound-lead review queue lives OUTSIDE these arrays and was never cleared
           // here: the incoming account's Leads page kept rendering the outgoing
           // account's unreviewed QR/intake leads until its own poll happened to
@@ -2013,6 +2295,15 @@ async function supaInit(){
           _pendingInbound=[];_processedInboundIds.clear();
           _updateInboundBadge();
           localStorage.removeItem('zp3_offline_pending');
+          // The outgoing account's full snapshot otherwise sits in localStorage under
+          // the OLD owner until the incoming account's own load succeeds and overwrites
+          // it. Any load-failure fallback in between (this session, or a future cold
+          // boot before the incoming account ever gets a clean save) would otherwise
+          // have nothing to reject it with, painting a stranger's data as this
+          // account's own. _wipeLocalAccountData does the same on deliberate sign-out;
+          // this is the same guarantee for an in-tab account switch.
+          localStorage.removeItem('zp3_cloud_cache');
+          localStorage.removeItem('zp3_delta_meta');
           _loadedDataOwner=null;
           // Account switch: drop the outgoing account's delta cursor so it can't be
           // written into the incoming account's delta_meta (owner guards the read, but
@@ -2026,6 +2317,13 @@ async function supaInit(){
         }
         _supaUser=session.user;
         _saveSessionBackup(session);
+        // "Remember this device" (owner design 2026-08-22): every real sign-in
+        // that reaches here (onboarding signups are suppressed by the
+        // _obInProgress return above) caches WHO signed in and HOW, so the next
+        // cold launch's login gate can skip straight to a Face ID resume or, at
+        // worst, straight to the right buttons instead of a blank email box.
+        // Pure UI convenience, never a security boundary: see _rememberLogin.
+        _rememberLogin(session.user);
         document.getElementById('supa-login-overlay')?.remove();
         document.getElementById('welcome-overlay')?.remove();
         // Navigate to the dashboard NOW, before awaiting the account load below.
@@ -2044,11 +2342,20 @@ async function supaInit(){
         // dashboard render holds the FULL shimmer (every widget + greeting),
         // one swap + one waterfall when the load below fully settles, exactly
         // like a fresh boot. _bootCascadeRan resets so this load gets its pour.
-        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;
+        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;window._mileMotionHealRan=false;window._milePersonalSweepRan=false;window._mileWorkdaySweepRan=false;window._mileFlightSweepRan=false;window._geoOpenRestored=false;window._bootChecklistHoldUntil=null;window._bootChecklistPending=0;
         goPg('pg-dash');
         try{
         const hasAccount=await loadAccountData();
         if(hasAccount){
+          // A returning contractor can land here from the onboarding overlay
+          // (e.g. the identifier-first gate said "no account" off a hidden
+          // relay email, they tapped Create an account -> Continue with Apple,
+          // and Apple's own identity match, keyed on its stable id not email,
+          // correctly found their real account anyway). goPg('pg-dash') below
+          // only touches .pg elements, never this overlay, so without this the
+          // real dashboard loads UNDER a frozen-looking signup form still
+          // covering the whole screen at z-index 9999, signed in but stuck.
+          document.getElementById('onboarding-overlay')?.remove();
           // Trigger merge path if _mergeOnSignIn is set OR if zp3_offline_pending exists.
           // The flag may be false after a force-quit restart even if there is pending data,
           // checking the key directly means no offline record is ever silently dropped.
@@ -2100,17 +2407,29 @@ async function supaInit(){
           }
         } else {
           // Brand-new account (no cloud data), settings saves are safe (nothing to clobber).
-          // NOTE: onboarding routing for first-time social sign-ins lives in the BOOT
-          // path only (see the boot brand-new branch). A real Google/Apple signup always
-          // redirects away and reloads, so it lands on boot, never here. This in-tab
-          // SIGNED_IN branch is reached by same-device account switches, which must land
-          // on the dashboard, not onboarding.
-          _authSettingsLoaded=true;
-          _dashAwaitingCloud=false; // nothing to load, a new account's zeros are the truth
-          _removeBootOverlay();
-          renderDash();
-          supaSetStatus('cloud');
-          goPg('pg-dash');
+          // NOTE (corrected 2026-08-21): onboarding routing for a BROWSER-redirect
+          // social sign-in still lives in the boot path only, that one always
+          // reloads and lands there, never here. But the native Apple sheet
+          // (js/settings.js _obNativeApple, added for App Store guideline 4.8)
+          // signs in WITHOUT a reload, so a first-time native signup lands
+          // exactly here, and this branch used to assume "no reload = same-
+          // device account switch" unconditionally, silently skipping straight
+          // to an empty dashboard with no accounts/users row ever created
+          // (owner report 2026-08-21: onboarding "closed itself out"). Same
+          // one-shot flag _obOAuth sets right before the native sheet opens.
+          if(window._nativeSocialAuthPending&&!window._obInProgress&&typeof _beginOAuthOnboarding==='function'){
+            window._nativeSocialAuthPending=null;
+            _removeBootOverlay();
+            _beginOAuthOnboarding();
+          } else {
+            window._nativeSocialAuthPending=null;
+            _authSettingsLoaded=true;
+            _dashAwaitingCloud=false; // nothing to load, a new account's zeros are the truth
+            _removeBootOverlay();
+            renderDash();
+            supaSetStatus('cloud');
+            goPg('pg-dash');
+          }
         }
         }finally{_bootSyncSettled();}
         // Existing-account sub-invite: a contractor who already runs TradeDesk
@@ -2197,6 +2516,8 @@ async function supaInit(){
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (offline boot, session present)');applySettings();_refillSettingsFormUnlessEditing();}
         _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
+        // Same gap as the no-session branch above: zp3_cloud_cache carries no _user.
+        if(typeof _restoreIdentityFromCache==='function')_restoreIdentityFromCache();
         _supaCloudLoaded=true;
         _loadedFromCacheOnly=true;
         _removeBootOverlay();renderDash();
@@ -2233,14 +2554,70 @@ function _deviceLabel(){
   if(/Windows/.test(ua))return'Windows PC';
   return'Device';
 }
+function _deviceScreenSig(){
+  try{
+    let w=Math.round(window.screen.width),h=Math.round(window.screen.height);
+    if(w>h){const t=w;w=h;h=t;} // normalize to portrait regardless of current orientation
+    const dpr=Math.round((window.devicePixelRatio||1)*100)/100;
+    return{w,h,dpr};
+  }catch(_e){return null;}
+}
+// Best-effort screen-SIZE-CLASS guess, never a specific generation: Apple
+// reuses the exact same panel across multiple years (iPhone 16 Pro Max and
+// 17 Pro Max are both 440x956@3x), so identical numbers can mean either one.
+// This is only a web-layer fallback for recreating a broken viewport. When
+// the native TdDevice plugin is present it supplies the real hardware
+// identifier instead (registerDevice below never lets this override that).
+const _IOS_SCREEN_CLASSES=[
+  {w:440,h:956,dpr:3,label:'iPhone Pro Max, 6.9″ class'},
+  {w:430,h:932,dpr:3,label:'iPhone Pro Max, 6.7″ class (15 Pro Max)'},
+  {w:428,h:926,dpr:3,label:'iPhone Pro Max/Plus, 6.7″ class'},
+  {w:402,h:874,dpr:3,label:'iPhone Pro, 6.3″ class'},
+  {w:393,h:852,dpr:3,label:'iPhone Pro/standard, 6.1″ class (14 Pro or newer)'},
+  {w:390,h:844,dpr:3,label:'iPhone standard, 6.1″ class (12/13/14)'},
+  {w:375,h:812,dpr:3,label:'iPhone/mini, 5.4–5.8″ class (X/XS/11 Pro/12 mini/13 mini)'},
+  {w:414,h:896,dpr:2,label:'iPhone Plus/XR/11-class, 6.1–6.5″'},
+  {w:414,h:736,dpr:3,label:'iPhone Plus, 5.5″ class (6/7/8 Plus)'},
+  {w:375,h:667,dpr:2,label:'iPhone, 4.7″ class (6/7/8, SE 2/3-gen)'},
+  {w:320,h:568,dpr:2,label:'iPhone SE 1st-gen / 5 / 5s'},
+];
+function _resolveIOSScreenClass(sig){
+  if(!sig)return null;
+  const hit=_IOS_SCREEN_CLASSES.find(c=>c.w===sig.w&&c.h===sig.h&&Math.abs(c.dpr-sig.dpr)<0.05);
+  return hit?hit.label:null;
+}
+// Lazy-resolves the native TdDevice plugin exactly like _tdHapticNative()
+// (js/utils.js): cached on window so a real "no native shell here" answer
+// is never re-derived, and a plain web/desktop session gets a silent null.
+function _tdDeviceNative(){
+  if(window._tdDevicePlugin!==undefined)return window._tdDevicePlugin;
+  try{
+    const cap=window.Capacitor;
+    if(cap&&typeof cap.isNativePlatform==='function'&&cap.isNativePlatform()){
+      if(typeof cap.registerPlugin==='function')window._tdDevicePlugin=cap.registerPlugin('TdDevice');
+      else if(cap.Plugins&&cap.Plugins.TdDevice)window._tdDevicePlugin=cap.Plugins.TdDevice;
+      else window._tdDevicePlugin=null;
+    }else window._tdDevicePlugin=null;
+  }catch(_e){window._tdDevicePlugin=null;}
+  return window._tdDevicePlugin;
+}
 function registerDevice(updateLocation){
   const id=_initDeviceId();
   const label=_deviceLabel();
+  const sig=_deviceScreenSig();
+  const screenClass=_resolveIOSScreenClass(sig);
   const now=new Date().toISOString();
   if(!S.devices)S.devices=[];
   const idx=S.devices.findIndex(d=>d.id===id);
-  if(idx>-1){S.devices[idx].lastSeen=now;S.devices[idx].label=label;}
-  else S.devices.push({id,label,lastSeen:now,addedAt:now});
+  if(idx>-1){
+    S.devices[idx].lastSeen=now;S.devices[idx].label=label;
+    if(sig){S.devices[idx].screenW=sig.w;S.devices[idx].screenH=sig.h;S.devices[idx].dpr=sig.dpr;}
+    // Never let the coarse screen-class guess clobber a real native hwId.
+    if(screenClass&&!S.devices[idx].hwId)S.devices[idx].screenClass=screenClass;
+  }
+  else S.devices.push({id,label,lastSeen:now,addedAt:now,
+    ...(sig?{screenW:sig.w,screenH:sig.h,dpr:sig.dpr}:{}),
+    ...(screenClass?{screenClass}:{})});
   // saveAll, NOT saveSettings, this runs at every boot, before the settings
   // form is ever filled. saveSettings() here harvested the EMPTY form and wiped
   // every saved setting on each app open (then pushed the wiped copy to cloud
@@ -2262,6 +2639,26 @@ function registerDevice(updateLocation){
         if(tpl||tsl)renderTeam();
       }
     });
+  }
+  // Exact hardware id/OS device name from the native shell, when present.
+  // Overwrites the JS screen-class guess above with something unambiguous.
+  // Cheap (one sysctl call), safe to run every boot; direct S mutation +
+  // saveAll(), same pattern as the GPS capture just above, never through
+  // saveSettings()/the form.
+  const nativeDev=_tdDeviceNative();
+  if(nativeDev&&typeof nativeDev.info==='function'){
+    Promise.resolve(nativeDev.info({})).then(info=>{
+      if(!info)return;
+      const devIdx=S.devices.findIndex(d=>d.id===id);
+      if(devIdx<0)return;
+      if(info.hwId)S.devices[devIdx].hwId=info.hwId;
+      if(info.name)S.devices[devIdx].deviceName=info.name;
+      if(info.systemVersion)S.devices[devIdx].osVersion=info.systemVersion;
+      saveAll();
+      const tpl=document.getElementById('team-page-devices');
+      const tsl=document.getElementById('device-list');
+      if(tpl||tsl)renderTeam();
+    }).catch(()=>{});
   }
 }
 // ── Employee Invite Flow ─────────────────────────────────────────────────────
@@ -2462,7 +2859,7 @@ async function _dispatchLoadStatus(force){
     const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
     const since=_dispatchDayStartIso();
     const [entRes,pingRes]=await Promise.all([
-      _supa.from('job_time_entries').select('job_id,employee_user_id,arrived_at,departed_at,minutes,source')
+      _supa.from('job_time_entries').select('job_id,employee_user_id,arrived_at,departed_at,minutes,source').is('deleted_at',null)
         .eq('contractor_user_id',cid).gte('arrived_at',since),
       _supa.from('location_pings').select('employee_user_id,job_id,ts')
         .eq('contractor_user_id',cid).gte('ts',new Date(Date.now()-_DISPATCH_ONSITE_MS).toISOString()),
@@ -2509,7 +2906,7 @@ function _dispatchClock(iso){
     if(!iso)return '';
     const d=new Date(iso);
     if(isNaN(d.getTime()))return '';
-    return d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+    return bizTime(d);
   }catch(_e){return '';}
 }
 function _dispatchDur(mins){
@@ -3416,10 +3813,62 @@ function renderTeam(){
   if(_canViewComp()&&supaEnabled()&&_supaUser&&!_teamCompLoaded){
     _teamCompLoaded=true;_loadTeamComp().then(()=>renderTeam());
   }
-  // Crew location status, same lazy-load-then-rerender shape as team comp above.
-  if(!_isEmployee&&S.teamTracking&&supaEnabled()&&_supaUser&&!_teamGeoLoaded){
-    _teamGeoLoaded=true;_loadTeamGeo().then(()=>renderTeam());
+  // Crew location status. RE-FETCHED when the screen is opened, not once per
+  // session (owner report 2026-08-26: set location to Never, everything else
+  // said fix it, Team still said "Tracking"). Two things caused that; this is
+  // the second. _teamGeoLoaded latched true on the first render, so the roster
+  // kept showing whatever was true at BOOT. Somebody changing a permission and
+  // opening Team to check is the exact moment the data must not be stale, and
+  // it was the only moment it always was.
+  //
+  // 20s floor so flipping between the Fleet and Team tabs does not re-query on
+  // every tap, while any real trip back to this screen gets fresh rows.
+  if(!_isEmployee&&S.teamTracking&&supaEnabled()&&_supaUser){
+    const _age=_teamGeoAt?Date.now()-_teamGeoAt:Infinity;
+    if(!_teamGeoLoaded||_age>_TEAM_GEO_MIN_GAP_MS){
+      _teamGeoLoaded=true;_teamGeoAt=Date.now();
+      _loadTeamGeo().then(()=>renderTeam());
+    }
   }
+  // ── Your own phone, as a row (owner report 2026-08-26: "don't see owner me
+  // under team") ────────────────────────────────────────────────────────────
+  // S.employees is people you HIRE. Its own empty state says "No team members
+  // yet, just you." So the owner was never a row here, and un-skipping the geo
+  // line earlier gave that line nothing to attach to. It is rendered on its
+  // own instead of being pushed into S.employees, which would write a fake
+  // employee into saved settings and sync it to every device.
+  //
+  // Owner-only by design: a manager trusted with the crew screens is trusted
+  // with the crew, not with where the boss's phone is (same asymmetry as
+  // _teamGeoAllowed and the RLS policy).
+  //
+  // No Edit button, no invite badge, no permissions line: those belong to
+  // someone you hired, and on your own row they read as nonsense.
+  const _ownerRowHtml=(function(){
+    if(typeof _isEmployee!=='undefined'&&_isEmployee)return '';
+    if(!S.teamTracking)return '';
+    const email=String((typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.email)||'').toLowerCase();
+    if(!email)return '';
+    const g=(typeof _geoRosterStatus==='function')?_geoRosterStatus(email):null;
+    if(!g)return '';
+    const name=(S.ownerName||(typeof getOwnerName==='function'&&getOwnerName())||'You');
+    const pal=(typeof _tlAvatarPalette==='function')?_tlAvatarPalette(name):{bg:'var(--bg3)',fg:'var(--text2)'};
+    const _sub=(t,extra)=>'<div style="font-size:10px;color:var(--text3);margin-top:2px;padding-left:14px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
+      (t?'<span>'+escHtml(t)+'</span>':'')+(extra||'')+'</div>';
+    return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
+      '<div style="display:flex;align-items:center;gap:8px">'+
+        '<div style="width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;background:'+pal.bg+';color:'+pal.fg+'">'+
+          escHtml((typeof initials==='function')?initials(name):name.slice(0,2))+'</div>'+
+        '<div style="font-size:13px;font-weight:700">'+escHtml(name)+
+          ' <span style="font-size:10px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);padding:1px 7px;border-radius:8px;margin-left:2px">You</span></div>'+
+      '</div>'+
+      '<div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-top:5px;color:'+g.tone+'">'+
+        '<span style="font-size:9px">'+svgIcon(g.dot,{size:9})+'</span><span>'+escHtml(g.label)+'</span></div>'+
+      ((g.device||g.battBar)?_sub(g.device,g.battBar):'')+
+      (g.ping?_sub(g.ping):'')+
+      (g.fix?_sub(g.fix):'')+
+    '</div>';
+  })();
   const emps=S.employees||[];
   const empHtml=!emps.length
     ?'<div style="font-size:12px;color:var(--text3);padding:6px 0">No team members yet, just you. Add someone when you hire.</div>'
@@ -3443,18 +3892,42 @@ function renderTeam(){
         (e.email?'<div style="font-size:11px;color:var(--text3);margin-top:3px">'+svgIcon('📧')+' '+escHtml(e.email)+' <span style="font-size:9px;font-weight:700;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:6px">Invite sent</span></div>':'')+
         '<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.5">'+perms+'</div>'+
         (function(){
-          // Owner-facing only, and never for the owner's own row (they see their
-          // own state on the dashboard checklist instead).
+          // The owner's own row shows too now (owner ask 2026-08-26: "should
+          // individual shops show the owner under team"). It used to be
+          // skipped on the grounds that the dashboard checklist already tells
+          // them, and that reasoning does not survive a solo shop: for a
+          // one-person business the owner IS the crew, so a roster that lists
+          // everyone except the only person on it is an empty screen. It also
+          // never covered a second handset, which the checklist cannot see at
+          // all because it only ever reads THIS phone.
+          //
+          // But only to THEMSELVES. A manager trusted with the crew screens is
+          // trusted with the crew, not with where the boss's phone is, and
+          // that asymmetry has to be deliberate rather than a side effect of
+          // who happens to load the page.
+          // The owner is rendered above (_ownerRowHtml), never from this list.
           if(e.role==='owner')return '';
           const g=_geoRosterStatus(e.email);
           if(!g)return '';
+          // The problem on its own line, the tap that fixes it dimmer
+          // underneath. One line carrying both read as a single sentence and
+          // wrapped mid-path on a phone, which is exactly where the owner has
+          // to read it.
+          // `extra` is trusted markup we built ourselves (the battery bar);
+          // `t` is always escaped because a device label is whatever the user
+          // named their phone.
+          const _sub=(t,extra)=>'<div style="font-size:10px;color:var(--text3);margin-top:2px;padding-left:14px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
+            (t?'<span>'+escHtml(t)+'</span>':'')+(extra||'')+'</div>';
           return '<div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-top:5px;color:'+g.tone+'">'+
-            '<span style="font-size:9px">'+svgIcon(g.dot,{size:9})+'</span><span>'+escHtml(g.label)+'</span></div>';
+            '<span style="font-size:9px">'+svgIcon(g.dot,{size:9})+'</span><span>'+escHtml(g.label)+'</span></div>'+
+            ((g.device||g.battBar)?_sub(g.device,g.battBar):'')+
+            (g.ping?_sub(g.ping):'')+
+            (g.fix?_sub(g.fix):'');
         })()+
       '</div>';
     }).join('');
-  if(el)el.innerHTML=_reqHtml+empHtml;
-  if(el2)el2.innerHTML=_reqHtml+empHtml;
+  if(el)el.innerHTML=_reqHtml+_ownerRowHtml+empHtml;
+  if(el2)el2.innerHTML=_reqHtml+_ownerRowHtml+empHtml;
   const _psCard=document.getElementById('payroll-setup-card');
   if(_psCard){
     const _hasW2=emps.some(e=>e.role!=='owner');
@@ -3473,6 +3946,16 @@ function renderTeam(){
     const locAgo=hasLoc&&d.locAt?_timeAgo(d.locAt):'';
     const dname=escHtml(d.name||d.label);
     const typeTag=d.name?' <span style="font-size:9px;font-weight:600;background:var(--bg3,#f1f5f9);color:var(--text3);padding:1px 6px;border-radius:8px">'+escHtml(d.label)+'</span>':'';
+    // Model line: exact native OS device name + hardware id when we have them
+    // (the real thing, e.g. "Jack's iPhone" / "iPhone17,2"), falling back to
+    // the coarse JS screen-size-class guess, then to raw screen numbers so
+    // there's always enough here to recreate the exact viewport.
+    const modelBits=[];
+    if(d.deviceName&&d.deviceName!==d.name)modelBits.push(escHtml(d.deviceName));
+    if(d.hwId)modelBits.push(escHtml(d.hwId));
+    else if(d.screenClass)modelBits.push(escHtml(d.screenClass));
+    if(d.screenW&&d.screenH)modelBits.push(d.screenW+'×'+d.screenH+' @'+d.dpr+'x');
+    const modelLine=modelBits.length?'<div style="font-size:10px;color:var(--text3);margin-top:1px">'+modelBits.join(' · ')+'</div>':'';
     return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px'+(hasLoc?';cursor:pointer':'')+'" '+(hasLoc?'onclick="window.open(\''+mapUrl+'\',\'_blank\')"':'')+'>'+
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
         '<div style="display:flex;align-items:center;gap:10px">'+
@@ -3481,6 +3964,7 @@ function renderTeam(){
             '<div style="font-size:13px;font-weight:700">'+dname+(isMe?' <span style="font-size:9px;background:var(--blue);color:#fff;padding:1px 6px;border-radius:8px">This device</span>':'')+typeTag+'</div>'+
             '<div style="font-size:10px;color:'+(isActive?'var(--green-mid)':'var(--text3)')+'">'+
               (isActive?svgIcon('🟢')+' Active':svgIcon('⚪')+' Last seen '+ago)+'</div>'+
+            modelLine+
             (hasLoc?'<div style="font-size:10px;color:var(--blue);margin-top:1px">'+svgIcon('📍')+' Tap to view on map · '+locAgo+'</div>':'')+
           '</div>'+
         '</div>'+
@@ -3594,9 +4078,33 @@ function _empLoadedHourly(comp){
 // honest "haven't heard from this phone."
 let _teamGeo={};
 let _teamGeoLoaded=false;
+// When the roster rows were last fetched, so opening the screen again gets
+// current data instead of whatever was true at boot. See renderTeam.
+let _teamGeoAt=0;
+const _TEAM_GEO_MIN_GAP_MS=20000;
 const _GEO_FRESH_MS=36*3600*1000; // a phone that hasn't checked in for ~1.5 days is unknown, not OK
+// How far back a ping is worth NAMING, as opposed to trusting. Past
+// _GEO_FRESH_MS a ping no longer proves anything, but "last ping 3 days ago"
+// is still the single most useful line on a stalled row, so the fetch reaches
+// further than the trust window does.
+const _GEO_PING_LOOKBACK_MS=30*86400000;
+// Owner, or a manager they trusted with the crew screens. This used to bail on
+// any employee at all, which was fine while the owner was the only reader and
+// became a hole the moment a manager could be notified that somebody's
+// tracking broke: the notification routes here (js/push.js, route 'team'), and
+// it would have landed on a roster that loaded nothing.
+//
+// Same two permissions the server uses to pick who gets told
+// (supabase/functions/send-push) and the same pair the RLS policy allows
+// (20260828_device_status_manager_read.sql). All three have to agree, or a
+// manager is notified about something they cannot then look at.
+function _teamGeoAllowed(){
+  if(typeof _isEmployee==='undefined'||!_isEmployee)return true;
+  const p=(typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.permissions)||{};
+  return !!(p.payroll||p.team);
+}
 async function _loadTeamGeo(){
-  if(!supaEnabled()||!_supaUser||_isEmployee)return;
+  if(!supaEnabled()||!_supaUser||!_teamGeoAllowed())return;
   const cid=_contractorUserId||_supaUser.id;
   try{
     const{data,error}=await _supa.from('team_members')
@@ -3606,30 +4114,230 @@ async function _loadTeamGeo(){
     data.forEach(r=>{if(r.email)next[r.email.toLowerCase()]={
       status:r.location_status||null,checkedAt:r.location_checked_at||null,
       device:r.location_device||null,ackAt:r.location_ack_at||null,lastPing:null};});
+    // ONE uid -> roster-email map, shared by the ping fetch and the
+    // device_status fetch below, so both agree on exactly who is on this
+    // roster and neither can silently cover a different set of people.
+    const byUid={};
+    data.forEach(r=>{if(r.employee_user_id)byUid[r.employee_user_id]=(r.email||'').toLowerCase();});
+    // The owner has no team_members row of their own, so without this their
+    // roster line would read "Not set up yet" no matter how well their phone
+    // is actually reporting. Their email comes off the roster entry the Team
+    // screen is about to render, falling back to the signed-in address.
+    // Skipped for a manager: they never render the owner's row (see
+    // renderTeam), so fetching the boss's handset state would be collecting
+    // something they are never shown.
+    if(typeof _isEmployee==='undefined'||!_isEmployee){
+      let oEmail='';
+      try{
+        const own=(typeof S!=='undefined'&&(S.employees||[])).find(e=>e&&e.role==='owner'&&e.email);
+        oEmail=String((own&&own.email)||(_supaUser&&_supaUser.email)||'').toLowerCase();
+      }catch(_e){}
+      if(oEmail){
+        byUid[cid]=oEmail;
+        if(!next[oEmail])next[oEmail]={status:null,checkedAt:null,device:null,ackAt:null,lastPing:null};
+      }
+    }
+
     // Ping recency, the signal that outranks the permission API.
+    // The window is deliberately wider than _GEO_FRESH_MS: inside it a ping
+    // still PROVES tracking works, but outside it the timestamp is the most
+    // useful thing on the row ("last ping 3 days ago" is an answer, "no recent
+    // activity" is not), so it is fetched and shown rather than dropped.
     try{
-      const since=new Date(Date.now()-_GEO_FRESH_MS).toISOString();
+      const since=new Date(Date.now()-_GEO_PING_LOOKBACK_MS).toISOString();
       const{data:pings}=await _supa.from('location_pings')
         .select('employee_user_id,ts').eq('contractor_user_id',cid).gte('ts',since)
         .order('ts',{ascending:false}).limit(500);
       const byUser={};
       (pings||[]).forEach(p=>{if(p.employee_user_id&&!byUser[p.employee_user_id])byUser[p.employee_user_id]=p.ts;});
-      data.forEach(r=>{
-        const k=(r.email||'').toLowerCase();
-        if(k&&next[k]&&r.employee_user_id&&byUser[r.employee_user_id])next[k].lastPing=byUser[r.employee_user_id];
+      // Over byUid, not over `data`: the owner is in the first and not the
+      // second, and iterating team_members alone is what would leave their own
+      // row claiming no pings while their phone reported all day.
+      Object.keys(byUid).forEach(uid=>{
+        const k=byUid[uid];
+        if(k&&next[k]&&byUser[uid])next[k].lastPing=byUser[uid];
       });
+    }catch(_e){}
+    // iOS's OWN word, per handset, from device_status (owner ask 2026-08-26:
+    // "the location permissions based on team member can read from these iOS
+    // values in actual plain English").
+    //
+    // team_members.location_status only ever holds the FLATTENED answer
+    // (granted/denied/prompt/unsupported), and the flattening is what hides
+    // the two failures that matter most: While Using and Always-but-reduced
+    // both arrive here as 'granted', so the roster showed a green light for a
+    // phone that logs nothing in a pocket, or that can never fire a 600ft
+    // fence. device_status carries all three axes and is described at its
+    // writer (js/geo-track.js _geoReportPermission) as the real record, so it
+    // is read directly rather than teaching team_members a second vocabulary
+    // it would then have to keep in sync (7.3).
+    try{
+      const uids=Object.keys(byUid);
+      if(uids.length){
+        const{data:devs}=await _supa.from('device_status')
+          .select('user_id,device_id,device_label,location_status,location_accuracy,location_services_enabled,derived,checked_at,battery_level,battery_charging')
+          .eq('contractor_user_id',cid).in('user_id',uids);
+        // A FLEET handset: one device_id that more than one person has signed
+        // into (owner ask 2026-08-26: "if using fleet iPads"). A personal
+        // phone belongs to its owner and needs no explaining; a shared iPad
+        // does, because "iPad" on three different rows looks like three
+        // iPads, and the owner cannot tell whose hands it is in. The row
+        // carries who last used it and when, which is the only per-person
+        // fact a shared device can honestly report.
+        const seenBy={};
+        (devs||[]).forEach(r=>{
+          if(!r.device_id)return;
+          (seenBy[r.device_id]=seenBy[r.device_id]||new Set()).add(String(r.user_id));
+        });
+        // ONE row per person, and the BEST phone wins rather than the newest.
+        // Tracking needs one capable handset: an iPad left on While Using
+        // must never drag down the iPhone that is actually on Always, and a
+        // person carrying a working phone is not a person with a problem.
+        // Ties break on recency so the surviving row is the freshest of the
+        // equally-capable ones.
+        const rank=r=>{
+          const st=String(r.location_status||'');
+          if(r.location_services_enabled===false)return 0;
+          if(st==='denied'||st==='restricted')return 0;
+          if(st==='notdetermined'||!st)return 1;
+          if(st==='wheninuse')return 2;
+          if(st==='always')return String(r.location_accuracy||'')==='reduced'?3:4;
+          return 1;
+        };
+        (devs||[]).forEach(r=>{
+          const k=byUid[r.user_id];
+          if(!k||!next[k])return;
+          const cur=next[k].ios;
+          if(cur){
+            const a=rank(r),b=rank(cur);
+            if(a<b)return;
+            if(a===b&&(Date.parse(r.checked_at||'')||0)<=(Date.parse(cur.checked_at||'')||0))return;
+          }
+          next[k].ios=Object.assign({},r,{shared:((seenBy[r.device_id]||{size:1}).size||1)>1});
+        });
+      }
     }catch(_e){}
     _teamGeo=next;
   }catch(_e){}
 }
-// Returns {dot,label,tone} or null when crew tracking is off for the account.
+// Battery as a person would say it. Only shown when it MATTERS: a phone above
+// 30%, or one on a charger, tells the owner nothing they need, and a roster
+// that reports nine battery percentages is a roster nobody reads. Under 30% is
+// the point where "his phone died" becomes a real explanation for a missing
+// afternoon.
+const _GEO_BATT_WARN=0.30;
+function _geoBattPct(io_){
+  if(!io_||io_.battery_level==null)return null;
+  const pct=Math.round(+io_.battery_level*100);
+  // A phone that could not answer is not a flat phone. -1 is the plugin's own
+  // "could not read" and must never render as 0%.
+  if(!Number.isFinite(pct)||pct<0||pct>100)return null;
+  return pct;
+}
+// Shown only when it MATTERS: under 30%, or low and charging. A phone at 82%
+// tells the owner nothing they need, and a roster reporting nine battery
+// percentages is a roster nobody reads. Under 30% is where "his phone died"
+// becomes a real explanation for a missing afternoon.
+function _geoBattShow(io_){
+  const pct=_geoBattPct(io_);
+  if(pct==null)return false;
+  return pct<=_GEO_BATT_WARN*100;
+}
+// The bar itself. A number is read; a bar is SEEN, and the whole point of this
+// line is that an owner scanning nine rows spots the dead phone without
+// reading any of them. Red under 15 (this is why the afternoon is missing),
+// amber to 30, green while charging back up.
+//
+// Inline styles and a plain div, matching every other roster element here:
+// this renders inside a string of innerHTML, and a stylesheet class would put
+// half the rule somewhere the next person reading this function cannot see.
+function _geoBattBar(io_){
+  const pct=_geoBattPct(io_);
+  if(pct==null||!_geoBattShow(io_))return '';
+  const tone=io_.battery_charging?'var(--green-mid,#16a34a)':(pct<=15?'#DC2626':'#D97706');
+  // Never a sliver of nothing: a 1% phone still has to read as a bar with a
+  // colour, or the most urgent row on the screen is the least visible one.
+  const w=Math.max(6,Math.min(100,pct));
+  return '<span style="display:inline-flex;align-items:center;gap:4px;vertical-align:middle">'+
+      '<span style="display:inline-block;width:22px;height:9px;border:1px solid '+tone+';border-radius:2px;padding:1px;box-sizing:border-box">'+
+        '<span style="display:block;height:100%;width:'+w+'%;background:'+tone+';border-radius:1px"></span>'+
+      '</span>'+
+      '<span style="color:'+tone+';font-weight:700">'+pct+'%'+(io_.battery_charging?' charging':'')+'</span>'+
+    '</span>';
+}
+// Returns {dot,label,device,ping,fix,tone} or null when crew tracking is off.
 function _geoRosterStatus(email){
   if(!S.teamTracking)return null;
   const g=_teamGeo[(email||'').toLowerCase()];
   if(!g)return{dot:'⚪',label:'Not set up yet',tone:'var(--text3)'};
   const pingAge=g.lastPing?Date.now()-new Date(g.lastPing).getTime():null;
+  const fresh=pingAge!=null&&pingAge<_GEO_FRESH_MS;
+  // ── iOS's own word, when this person's phone has given one ────────────────
+  // Every line below names the ONE thing that fixes it, because an owner
+  // cannot change any of these remotely. All they can do is tell the person
+  // what to tap, and a red dot with no instruction just moves the confusion.
+  const io_=g.ios;
+  const ioAt=io_?(Date.parse(io_.checked_at||'')||0):0;
+  const ioFresh=ioAt>0&&(Date.now()-ioAt)<_GEO_FRESH_MS;
+  // A FRESH iOS READING ALWAYS WINS. Full stop, whatever the ping says.
+  //
+  // This used to also require the iOS row to be NEWER than the last ping, on a
+  // "newest evidence wins" theory. That theory is wrong, and the owner caught
+  // it: location set to Never, everything else screaming fix it, and the crew
+  // roster still said "Tracking". A ping that arrived twenty minutes before
+  // they hit Never was more recent than the permission row, so it won.
+  //
+  // The two are not the same KIND of evidence. A ping is the past: proof that
+  // tracking worked at that instant. The permission is the PRESENT, and it is
+  // the gate on every future ping. Once iOS says denied, no further ping can
+  // arrive, so recent breadcrumbs say nothing about whether tracking works now.
+  //
+  // The ping still wins where it always should have: when the iOS row is STALE
+  // (older than _GEO_FRESH_MS) or absent entirely. That is the case the rule
+  // was written for, a phone whose permission row went quiet while data kept
+  // landing, and it is untouched.
+  const iosWins=ioFresh;
+  // Last ping, on EVERY state rather than only the green one. On a broken row
+  // it is the thing that says how long this has been going on, which is the
+  // difference between "he flipped it this morning" and "nothing has come off
+  // that phone since Tuesday". Suppressed when the label already says it, so a
+  // green row never reads "last ping 5m ago · last ping 5m ago".
+  const _ping=g.lastPing?('Last ping '+_timeAgo(g.lastPing)):'No pings yet';
+  if(io_&&iosWins){
+    const st=String(io_.location_status||'');
+    // Which handset this verdict came off, as its own line. A personal phone
+    // is just its name; a fleet device says so and says when THIS person last
+    // used it, since that is the only thing a shared iPad can tell you about
+    // one member of the crew.
+    // The name is TEXT (escaped at render, it is user-supplied), the bar is
+    // MARKUP. Keeping them apart is what stops a device someone named
+    // "<b>Shop</b>" from injecting anything, while still letting the bar be a
+    // real element rather than an escaped string of angle brackets.
+    const dev=io_.device_label
+      ? (io_.shared
+          ? io_.device_label+' (shared) · they last used it '+_timeAgo(io_.checked_at)
+          : io_.device_label)
+      : null;
+    const battBar=_geoBattBar(io_);
+    if(io_.location_services_enabled===false)
+      return{dot:'🔴',label:'Location is off for their whole phone',fix:'Settings › Privacy › Location Services',device:dev,ping:_ping,tone:'#DC2626',battBar};
+    if(st==='denied')
+      return{dot:'🔴',label:'Location off on their phone',fix:'Settings › TradeDesk › Location',device:dev,ping:_ping,tone:'#DC2626',battBar};
+    if(st==='restricted')
+      return{dot:'🔴',label:'Blocked by Screen Time or a device policy',device:dev,ping:_ping,tone:'#DC2626',battBar};
+    if(st==='notdetermined')
+      return{dot:'⚪',label:'Hasn’t answered the location prompt yet',device:dev,ping:_ping,tone:'var(--text3)',battBar};
+    if(st==='wheninuse')
+      return{dot:'🟠',label:'Only tracks with the app open, their drives won’t log',fix:'Settings › TradeDesk › Location › Always',device:dev,ping:_ping,tone:'#D97706',battBar};
+    if(st==='always'&&String(io_.location_accuracy||'')==='reduced')
+      return{dot:'🟠',label:'On, but not precise enough for job check-ins',fix:'Settings › TradeDesk › Location › Precise Location',device:dev,ping:_ping,tone:'#D97706',battBar};
+    if(st==='always')
+      return fresh
+        ? {dot:'🟢',label:'Tracking · last ping '+_timeAgo(g.lastPing),device:dev,tone:'var(--green-mid,#16a34a)',battBar}
+        : {dot:'🟢',label:'Tracking, all set',device:dev,ping:_ping,tone:'var(--green-mid,#16a34a)',battBar};
+  }
   // A ping inside the window is proof, regardless of what the permission API said.
-  if(pingAge!=null&&pingAge<_GEO_FRESH_MS)
+  if(fresh)
     return{dot:'🟢',label:'Tracking · last ping '+_timeAgo(g.lastPing),tone:'var(--green-mid,#16a34a)'};
   if(g.status==='denied')
     return{dot:'🔴',label:'Location off on their phone',tone:'#DC2626'};
@@ -4964,7 +5672,7 @@ function _pwToggle(inputId,btnId){
   btn.innerHTML=_eyeSvg(visible);
   btn.setAttribute('aria-label',visible?'Hide password':'Show password');
 }
-function supaShowLogin(opts={}){
+async function supaShowLogin(opts={}){
   if(!supaEnabled())return;
   // Never interrupt the user with a login screen if they have a session backup
   // (setSession() will silently re-auth on the next connection probe) or cached data
@@ -5048,12 +5756,8 @@ function supaShowLogin(opts={}){
     : // ── Normal login, branded two-panel, matches the onboarding wizard ─────
       (function(){
         const _wrench=(sz,st)=>'<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+'" fill="none" stroke="'+st+'" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>';
-        // Real vendor marks, what every premium app ships, reads as legitimate.
-        const _gLogo='<svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.71H.96v2.33A9 9 0 009 18z"/><path fill="#FBBC05" d="M3.97 10.71a5.4 5.4 0 010-3.42V4.96H.96a9 9 0 000 8.08l3.01-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0A9 9 0 00.96 4.96L3.97 7.3C4.68 5.17 6.66 3.58 9 3.58z"/></svg>';
-        const _aLogo='<svg width="16" height="16" viewBox="0 0 384 512" fill="#fff"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>';
         const _fldFocus='onfocus="this.style.borderColor=\'var(--blue)\';this.style.background=\'#fff\';this.style.boxShadow=\'0 0 0 3px rgba(37,99,235,.13)\'" onblur="this.style.borderColor=\'#e3e6eb\';this.style.background=\'#f7f8fa\';this.style.boxShadow=\'none\'"';
         const _fld='font-size:15px;padding:12px 14px;border-radius:10px;border:1.5px solid #e3e6eb;background:#f7f8fa;color:var(--text);width:100%;box-sizing:border-box;outline:none;font-family:inherit;transition:border-color .15s,box-shadow .15s,background .15s';
-        const _social=(prov,label,bg,fg,bd,icon)=>'<button onclick="_obOAuth(\''+prov+'\')" onmouseover="this.style.filter=\'brightness(.97)\'" onmouseout="this.style.filter=\'none\'" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border-radius:10px;border:'+bd+';background:'+bg+';color:'+fg+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px;transition:filter .15s">'+icon+'<span>'+label+'</span></button>';
         const _bullets=[[svgIcon('📋',{size:15,color:'#fff'}),'Estimates & proposals in minutes'],[svgIcon('💰',{size:15,color:'#fff'}),'Get paid on the spot'],[svgIcon('📍',{size:15,color:'#fff'}),'Mileage, crew & taxes tracked'],[svgIcon('📊',{size:15,color:'#fff'}),'Your whole business, one place']];
         // The whole login screen enters on the standard page fade (§8): it
         // used to hard-appear the moment the boot overlay lifted.
@@ -5088,24 +5792,24 @@ function supaShowLogin(opts={}){
             '</div>'+
             '<div id="login-form-inner" style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:34px 28px;max-width:404px;width:100%;margin:0 auto;box-sizing:border-box">'+
               _inviteBanner+
-              '<div style="margin-bottom:22px"><div style="font-size:25px;font-weight:800;letter-spacing:-.025em;color:var(--text);margin-bottom:4px">Sign in</div><div style="font-size:14px;color:var(--text3)">Pick up right where you left off.</div></div>'+
-              _social('google','Continue with Google','#fff','#1f2328','1.5px solid #dadce0',_gLogo)+
-              _social('apple','Continue with Apple','#000','#fff','1.5px solid #000',_aLogo)+
-              // Email is tucked behind a button so Google/Apple lead; tapping it pops the fields out.
-              '<div id="login-email-divider" style="display:flex;align-items:center;gap:10px;margin:16px 0 14px"><div style="flex:1;height:1px;background:var(--border)"></div><span style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.05em">or</span><div style="flex:1;height:1px;background:var(--border)"></div></div>'+
-              '<button id="login-email-toggle" onclick="_loginShowEmail()" onmouseover="this.style.filter=\'brightness(.97)\'" onmouseout="this.style.filter=\'none\'" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border-radius:10px;border:1.5px solid #dadce0;background:#fff;color:#1f2328;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;transition:filter .15s"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#1f2328" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"></rect><path d="m3 6.5 9 6 9-6"></path></svg><span>Continue with email</span></button>'+
-              '<div id="login-email-block" style="display:none">'+
-                '<div class="f" style="margin:2px 0 12px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Email</label>'+
-                  '<input type="email" id="supa-email" placeholder="you@yourbusiness.com" '+_fldFocus+' style="'+_fld+'"></div>'+
-                '<div class="f" style="margin-bottom:8px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Password</label>'+
-                  '<div style="position:relative">'+
-                    '<input type="password" id="supa-pass" placeholder="••••••••" onkeydown="if(event.key===\'Enter\')supaSignIn()" '+_fldFocus+' style="'+_fld+';padding-right:42px">'+
-                    '<button type="button" id="supa-pass-eye" onclick="_pwToggle(\'supa-pass\',\'supa-pass-eye\')" aria-label="Show password" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:34px;height:34px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text3);border-radius:8px;padding:0" onmouseover="this.style.color=\'var(--text)\'" onmouseout="this.style.color=\'var(--text3)\'">'+_eyeSvg(false)+'</button>'+
-                  '</div>'+
-                '</div>'+
-                '<div style="text-align:right;margin-bottom:18px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0">Forgot password?</button></div>'+
-                '<button onclick="supaSignIn()" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 6px 20px rgba(13,17,23,.28)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'0 3px 12px rgba(13,17,23,.18)\'" style="width:100%;padding:15px;border-radius:11px;border:none;background:linear-gradient(180deg,#1c2431,#0D1117);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 12px rgba(13,17,23,.18);letter-spacing:-.01em;transition:transform .15s,box-shadow .15s">Sign in</button>'+
+              '<div style="margin-bottom:22px"><div style="font-size:25px;font-weight:800;letter-spacing:-.025em;color:var(--text);margin-bottom:4px">Sign in</div><div id="login-sub" style="font-size:14px;color:var(--text3)">Enter your email to continue.</div></div>'+
+              // Identifier-first gate (owner design 2026-08-22): social buttons no
+              // longer show blind. Type an email, THEN we surface exactly the
+              // sign-in methods actually on file for it (Face ID for a linked
+              // Apple identity, Google, or password). A brand-new person never
+              // reaches this branch, "Create your account" below skips straight
+              // to signup, still offering Apple/Google there since declaring
+              // yourself new carries no duplicate-account risk. This closes the
+              // duplicate-account root cause structurally: a returning contractor
+              // can no longer accidentally create a second account through a
+              // social button, because the button doesn't exist until we've
+              // confirmed which methods their real account actually has.
+              '<div id="login-gate">'+
+                '<div class="f" style="margin-bottom:12px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Email</label>'+
+                  '<input type="email" id="login-email" placeholder="you@yourbusiness.com" onkeydown="if(event.key===\'Enter\')_loginIdentify()" '+_fldFocus+' style="'+_fld+'"></div>'+
+                '<button id="login-continue-btn" onclick="_loginIdentify()" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 6px 20px rgba(13,17,23,.28)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'0 3px 12px rgba(13,17,23,.18)\'" style="width:100%;padding:15px;border-radius:11px;border:none;background:linear-gradient(180deg,#1c2431,#0D1117);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 12px rgba(13,17,23,.18);letter-spacing:-.01em;transition:transform .15s,box-shadow .15s">Continue</button>'+
               '</div>'+
+              '<div id="login-result" style="display:none"></div>'+
               '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:12px;text-align:center;min-height:16px"></div>'+
               '<div style="text-align:center;font-size:13.5px;color:var(--text3);margin-top:20px">New to TradeDesk? <button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="border:none;background:none;color:var(--blue);font-weight:700;cursor:pointer;font-family:inherit;padding:0;font-size:13.5px">Create your account</button></div>'+
               // Deliberate offline-only entry removed: a crash / cleared cache / new device would
@@ -5143,16 +5847,308 @@ function supaShowLogin(opts={}){
       _fi.style.justifyContent='flex-start';
     }
   }
+  // ── Cold-launch fast path: remembered device (owner design 2026-08-22,
+  // "remember this device, skip straight to Face ID") ──────────────────────
+  // The blank #login-gate above has already rendered synchronously (existing
+  // behavior, untouched): a genuinely new/unrecognized visitor sees exactly
+  // what they always have. This block only runs for the normal branded
+  // screen (never the invite/sub-referral pitches, those are unrelated
+  // flows), and only replaces that blank gate with something smarter when
+  // there's an actual remembered identity to act on. getSession() is
+  // local/instant (only network-refreshes if the stored token is stale), so
+  // in the common case this resolves before anyone could type anything.
+  if(_normalLogin){
+    let _remembered=null;
+    try{_remembered=JSON.parse(localStorage.getItem('zp3_remembered_login')||'null');}catch(_e){_remembered=null;}
+    if(_remembered&&_remembered.email&&_supa){
+      let _fpSession=null;
+      try{const{data}=await _supa.auth.getSession();_fpSession=data&&data.session||null;}catch(_e){_fpSession=null;}
+      // The overlay can be gone by the time this await settles (a real
+      // sign-in landed, or the caller tore it down some other way): never
+      // resurrect fast-path UI onto a screen nobody is looking at.
+      if(document.getElementById('supa-login-overlay')){
+        if(_fpSession){
+          _loginShowWelcomeBack(_remembered,_fpSession);
+        }else{
+          // Real re-authentication is required here, so this uses the exact
+          // same rendering _loginIdentify's RPC result would, just skipping
+          // the round trip: the cached methods ARE the answer, no network
+          // call needed to ask a question we already know the answer to.
+          _loginRenderResult(_remembered.email,{exists:true,hasApple:!!_remembered.hasApple,hasGoogle:!!_remembered.hasGoogle,hasPassword:!!_remembered.hasPassword});
+        }
+      }
+    }
+  }
 }
-// Reveal the email/password fields when the user chooses "Continue with email".
-function _loginShowEmail(){
-  const t=document.getElementById('login-email-toggle');
-  const d=document.getElementById('login-email-divider');
-  const b=document.getElementById('login-email-block');
-  if(t)t.style.display='none';
-  if(d)d.style.display='none';
-  if(b){b.style.display='block';b.style.animation='td-modal-enter .22s cubic-bezier(.22,1,.36,1) both';}
-  setTimeout(()=>document.getElementById('supa-email')?.focus(),60);
+// "Welcome back" resume screen: a remembered device AND an already-valid
+// session (confirmed by supaShowLogin's own getSession() check just above).
+// There is nothing left to authenticate, only to RESUME, so this fires
+// TdLock the instant it appears, no preliminary tap, the "glance and you're
+// in" pattern banking apps use. TdLock ONLY ever gates resuming an
+// already-valid session, here, it must never substitute for real re-auth:
+// every other branch of this feature (no session, TdLock fails/unavailable)
+// routes through _loginRenderResult's normal Apple/Google/password buttons,
+// which is real re-authentication and correctly requires it.
+function _loginShowWelcomeBack(remembered,session){
+  const gate=document.getElementById('login-gate');
+  const result=document.getElementById('login-result');
+  const sub=document.getElementById('login-sub');
+  if(gate)gate.style.display='none';
+  if(!result)return;
+  if(sub)sub.textContent='';
+  const _faceIdIconLg='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 012-2h2"/><path d="M4 16v2a2 2 0 002 2h2"/><path d="M20 8V6a2 2 0 00-2-2h-2"/><path d="M20 16v2a2 2 0 01-2 2h-2"/><circle cx="9" cy="10" r="1" fill="#fff" stroke="none"/><circle cx="15" cy="10" r="1" fill="#fff" stroke="none"/><path d="M9 15c1 1 5 1 6 0"/></svg>';
+  result.innerHTML=
+    '<div id="login-welcome-back" style="text-align:center;padding:14px 0 6px">'+
+      '<div style="width:56px;height:56px;margin:0 auto 14px;border-radius:16px;background:linear-gradient(135deg,#2563eb,#1e40af);display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(37,99,235,.35)">'+_faceIdIconLg+'</div>'+
+      '<div style="font-size:19px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Welcome back</div>'+
+      '<div style="font-size:13.5px;color:var(--text3);margin-bottom:20px">'+escHtml(remembered.email)+'</div>'+
+      '<div id="login-wb-status" style="font-size:13px;color:var(--text3);margin-bottom:18px;min-height:16px">Unlocking…</div>'+
+      '<button onclick="_loginNotYou()" style="border:none;background:none;color:var(--text3);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0">Not you? Use a different email</button>'+
+    '</div>';
+  result.style.display='block';
+  _loginRunTdLock(remembered,session);
+}
+// Fires the actual OS biometric check via TdLock (native/td-lock, reused
+// as-is per js/handoff.js's _lockPlugin resolver, never a second
+// registerPlugin('TdLock') call). Every outcome that isn't a clean success
+// falls through to the same real-re-auth screen: unavailable (no
+// biometrics/passcode on this device) never shows a dead-end prompt, and
+// fail/cancel never leaves the user stranded on a screen with nothing to
+// tap but "not you".
+async function _loginRunTdLock(remembered,session){
+  const _cachedMethods={exists:true,hasApple:!!remembered.hasApple,hasGoogle:!!remembered.hasGoogle,hasPassword:!!remembered.hasPassword};
+  const P=(typeof _lockPlugin==='function')?_lockPlugin():null;
+  if(!P||typeof P.available!=='function'||typeof P.unlock!=='function'){
+    _loginRenderResult(remembered.email,_cachedMethods);
+    return;
+  }
+  let avail=null;
+  try{avail=await P.available();}catch(_e){avail=null;}
+  if(!avail||!avail.available){
+    _loginRenderResult(remembered.email,_cachedMethods);
+    return;
+  }
+  const status=document.getElementById('login-wb-status');
+  if(status)status.textContent='Unlocking…';
+  let r=null;
+  try{r=await P.unlock({reason:'Sign in to TradeDesk'});}catch(_e){r=null;}
+  // The welcome-back screen (or the whole overlay) may already be gone by
+  // the time the OS sheet resolves, e.g. "Not you?" was tapped mid-prompt.
+  if(!document.getElementById('login-welcome-back'))return;
+  if(r&&r.ok){
+    await _loginEnterAppWithSession(session);
+  }else{
+    _loginRenderResult(remembered.email,_cachedMethods);
+  }
+}
+// Resumes an already-valid session straight into the app: the session was
+// confirmed valid before TdLock ever fired, TdLock only gated whether THIS
+// device may resume it, so there is no sign-in left to perform, only the
+// account load. Deliberately its own small function rather than reusing the
+// _supa init boot sequence's inline "session found" branch: that code
+// carries boot-only state (the boot overlay, the OAuth-return handshake,
+// _oauthRet) that has no meaning this far after boot has already finished,
+// threading it through would mean passing boot context into a function
+// invoked from a screen boot doesn't know exists. It reuses the same two
+// underlying primitives that branch does, loadAccountData() then
+// supaLoadFromCloud(), rather than inventing a third loading path.
+async function _loginEnterAppWithSession(session){
+  _supaUser=session.user;
+  _hlcInit();_opDbLoad();
+  _saveSessionBackup(session);
+  document.getElementById('supa-login-overlay')?.remove();
+  const hasAccount=await loadAccountData();
+  if(hasAccount){
+    window._bootSyncPending=true;
+    goPg('pg-dash');
+    try{await supaLoadFromCloud();}finally{_bootSyncSettled();}
+    _supaCloudLoaded=true;
+  } else {
+    // Defensive only: a remembered login implies a real account existed as
+    // of the last sign-in. If it's somehow gone now, land on the plain
+    // empty dashboard rather than stranding the user on a dead screen.
+    _authSettingsLoaded=true;
+    supaSetStatus('cloud');
+    renderDash();
+    goPg('pg-dash');
+  }
+}
+// Escape hatch from the remembered-device fast path. Deliberately does MORE
+// than the ordinary "try a different email" reset (_loginResetGate): iOS
+// does not clear a biometry-protected identity on its own, so this is the
+// explicit point that stops a shared/resold phone from whispering the last
+// person's email (and auto-offering their Face ID) forever. Reuses
+// supaSignOut() (the same function every "Sign out" button in the app
+// calls, §7.3: don't hand-roll a parallel sign-out path) rather than a raw
+// _supa.auth.signOut(), so this gets the exact same guaranteed wipe +
+// realtime-channel teardown every other sign-out gets, instead of risking
+// the involuntary-SIGNED_OUT "keep cache, show offline banner" branch a bare
+// signOut() call would fall into here.
+async function _loginNotYou(){
+  _clearRememberedLogin();
+  document.getElementById('supa-login-overlay')?.remove();
+  if(typeof supaSignOut==='function'){
+    try{await supaSignOut();}catch(_e){}
+  }
+  // Belt-and-suspenders: supaSignOut's SIGNED_OUT handler rebuilds the login
+  // overlay itself (force:true) once the wipe completes. If that somehow
+  // didn't happen (e.g. _supa never initialized), build the plain blank
+  // gate directly so "Not you" never strands the user on a removed overlay.
+  if(!document.getElementById('supa-login-overlay'))supaShowLogin({force:true});
+}
+// True only in the native iOS shell, never a browser on any platform. Google
+// Sign-In is hidden there whenever Face ID is also available for that account
+// (Face ID leads on iOS, Google stays the option everywhere else), but only
+// as a redundancy trim, never applied when Google would be someone's ONLY
+// way in, that's a dead end, not a simplification. Shared by the login gate
+// (js/cloud.js) and the onboarding social buttons (js/settings.js).
+function _isIOSShell(){
+  const cap=window.Capacitor;
+  return !!(cap&&typeof cap.isNativePlatform==='function'&&cap.isNativePlatform());
+}
+// ── Identifier-first sign-in gate (owner design 2026-08-22) ────────────────
+// Social buttons no longer show blind on the login screen: the person types
+// an email first, THEN we surface exactly the sign-in methods actually on
+// file for it, Face ID for a linked Apple identity, Google, or password.
+// A brand-new person never reaches this branch at all, "Create your
+// account" on the login screen skips straight to signup and still offers
+// Apple/Google there, declaring yourself new carries no duplicate-account
+// risk. This closes the duplicate-account problem structurally instead of
+// the escape-hatch band-aid from earlier tonight: a returning contractor
+// can no longer accidentally create a second account through a social
+// button, because the button doesn't exist until we've confirmed which
+// methods their real account has.
+async function _loginIdentify(){
+  const emailEl=document.getElementById('login-email');
+  const email=(emailEl?.value||'').trim();
+  const err=document.getElementById('supa-login-err');
+  if(err)err.textContent='';
+  if(!email||!email.includes('@')){if(err)err.textContent='Enter a valid email.';return;}
+  const btn=document.getElementById('login-continue-btn');
+  const origLabel=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='Checking…';btn.style.opacity='.7';}
+  let methods={exists:false,hasPassword:false,hasApple:false,hasGoogle:false};
+  try{
+    const{data,error}=await _supa.rpc('check_login_methods',{check_email:email});
+    // A failed RPC call resolves here, it does NOT throw (supabase-js
+    // convention), so `error` must be checked explicitly. Silently falling
+    // through to the "no account" default on a real backend failure is what
+    // caused the 2026-08-22 bug: a returning user with a genuine account got
+    // told "we don't have an account for you" whenever the lookup itself
+    // broke (e.g. the RPC not deployed yet), the exact false claim this
+    // whole gate exists to prevent. checkFailed routes _loginRenderResult to
+    // an honest "couldn't check" state instead of a confident wrong answer.
+    if(error){console.error('check_login_methods failed:',error.message||error);methods.checkFailed=true;}
+    else if(data)methods=data;
+  }catch(e){console.error('check_login_methods threw:',e.message||e);methods.checkFailed=true;}
+  if(btn){btn.disabled=false;btn.textContent=origLabel;btn.style.opacity='1';}
+  _loginRenderResult(email,methods);
+}
+// Back arrow from a result state (any outcome) to the plain email entry.
+function _loginResetGate(){
+  const gate=document.getElementById('login-gate');
+  const result=document.getElementById('login-result');
+  const sub=document.getElementById('login-sub');
+  if(result){result.style.display='none';result.innerHTML='';}
+  if(gate)gate.style.display='block';
+  if(sub)sub.textContent='Enter your email to continue.';
+  const err=document.getElementById('supa-login-err');
+  if(err)err.textContent='';
+  setTimeout(()=>document.getElementById('login-email')?.focus(),60);
+}
+// "No account found" result → straight into signup with the typed email
+// already carried over, never asked twice.
+function _loginGoToSignup(prefillEmail){
+  document.getElementById('supa-login-overlay')?.remove();
+  if(prefillEmail){_ob.step=1;_ob.email=prefillEmail;}
+  showOnboarding();
+}
+// Tracked so a render can cancel the PREVIOUS render's pending password-
+// focus timer (see the clearTimeout inside _loginRenderResult): without
+// this, two renders in quick succession let the earlier one's stale timer
+// fire against the later render's same-ID #supa-pass field.
+let _loginPwFocusTimer=null;
+function _loginRenderResult(email,methods){
+  const gate=document.getElementById('login-gate');
+  const result=document.getElementById('login-result');
+  const sub=document.getElementById('login-sub');
+  if(gate)gate.style.display='none';
+  if(!result)return;
+  const _faceIdIcon='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 012-2h2"/><path d="M4 16v2a2 2 0 002 2h2"/><path d="M20 8V6a2 2 0 00-2-2h-2"/><path d="M20 16v2a2 2 0 01-2 2h-2"/><circle cx="9" cy="10" r="1" fill="#fff" stroke="none"/><circle cx="15" cy="10" r="1" fill="#fff" stroke="none"/><path d="M9 15c1 1 5 1 6 0"/></svg>';
+  const _gLogo='<svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.71H.96v2.33A9 9 0 009 18z"/><path fill="#FBBC05" d="M3.97 10.71a5.4 5.4 0 010-3.42V4.96H.96a9 9 0 000 8.08l3.01-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0A9 9 0 00.96 4.96L3.97 7.3C4.68 5.17 6.66 3.58 9 3.58z"/></svg>';
+  // The lookup itself failed (RPC error/network), distinct from a confirmed
+  // "no account": never claim to know the answer when the check didn't
+  // actually run, that false confidence is what pushes a real returning
+  // user toward accidentally creating a duplicate account.
+  if(methods.checkFailed){
+    if(sub)sub.textContent='';
+    result.innerHTML=
+      '<div style="text-align:center;padding:8px 0 16px">'+
+      '<div style="font-size:14px;color:var(--text2);margin-bottom:16px;line-height:1.5">Couldn\'t check <strong>'+escHtml(email)+'</strong> right now. Try again.</div>'+
+      '<button onclick="_loginIdentify()" style="width:100%;padding:15px;border-radius:11px;border:none;background:linear-gradient(180deg,#1c2431,#0D1117);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Try again</button>'+
+      '<button onclick="_loginResetGate()" style="border:none;background:none;color:var(--blue);font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0">Try a different email</button>'+
+      '</div>';
+    result.style.display='block';
+    return;
+  }
+  if(!methods.exists){
+    if(sub)sub.textContent='';
+    result.innerHTML=
+      '<div style="text-align:center;padding:8px 0 16px">'+
+      '<div style="font-size:14px;color:var(--text2);margin-bottom:16px;line-height:1.5">We don\'t have an account for <strong>'+escHtml(email)+'</strong> yet.</div>'+
+      '<button onclick="_loginGoToSignup(\''+email.replace(/'/g,"\\'").replace(/"/g,'&quot;')+'\')" style="width:100%;padding:15px;border-radius:11px;border:none;background:linear-gradient(180deg,#1c2431,#0D1117);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Create an account →</button>'+
+      '<button onclick="_loginResetGate()" style="border:none;background:none;color:var(--blue);font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0">Try a different email</button>'+
+      '</div>';
+    result.style.display='block';
+    return;
+  }
+  if(sub)sub.textContent='Welcome back.';
+  let btns='';
+  if(methods.hasApple)btns+='<button onclick="_obOAuth(\'apple\')" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border-radius:10px;border:1.5px solid #000;background:#000;color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">'+_faceIdIcon+'<span>Continue with Face ID</span></button>';
+  // Google is trimmed on iOS ONLY when Face ID is also available for this
+  // account, that's a redundant second tap, never when Google is the only
+  // method on file, hiding it there would be a dead end, not a simplification.
+  const _hideGoogleHere=methods.hasGoogle&&methods.hasApple&&_isIOSShell();
+  if(methods.hasGoogle&&!_hideGoogleHere)btns+='<button onclick="_obOAuth(\'google\')" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border-radius:10px;border:1.5px solid #dadce0;background:#fff;color:#1f2328;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">'+_gLogo+'<span>Continue with Google</span></button>';
+  // A password field is the safe universal fallback: shown whenever the
+  // account has a password on file, or (edge case) when none of the three
+  // recognized methods matched anything, better than a dead end, worst
+  // case they get "wrong password" and can reset it.
+  const _showPw=methods.hasPassword||!(methods.hasApple||methods.hasGoogle);
+  const _pwBlock=_showPw?
+    ('<div class="f" style="margin:2px 0 12px">'+
+      '<input type="hidden" id="supa-email" value="'+escHtml(email)+'">'+
+      '<label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Password</label>'+
+      '<div style="position:relative">'+
+        '<input type="password" id="supa-pass" placeholder="••••••••" onkeydown="if(event.key===\'Enter\')supaSignIn()" style="font-size:16px;padding:12px 42px 12px 14px;border-radius:10px;border:1.5px solid #e3e6eb;background:#f7f8fa;color:var(--text);width:100%;box-sizing:border-box;outline:none;font-family:inherit">'+
+        '<button type="button" id="supa-pass-eye" onclick="_pwToggle(\'supa-pass\',\'supa-pass-eye\')" aria-label="Show password" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:34px;height:34px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text3);border-radius:8px;padding:0">'+_eyeSvg(false)+'</button>'+
+      '</div></div>'+
+      '<div style="text-align:right;margin-bottom:14px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0">Forgot password?</button></div>'+
+      '<button onclick="supaSignIn()" style="width:100%;padding:15px;border-radius:11px;border:none;background:linear-gradient(180deg,#1c2431,#0D1117);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Sign in</button>')
+    :'';
+  result.innerHTML=
+    '<div>'+btns+_pwBlock+
+    '<button onclick="_loginResetGate()" style="border:none;background:none;color:var(--text3);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;display:block;margin:4px auto 0">Not you? Use a different email</button>'+
+    '</div>';
+  result.style.display='block';
+  // Owner report 2026-08-22 (live device): auto-focusing here unconditionally
+  // popped the iOS keyboard even when Face ID/Google is the intended tap, and
+  // on iOS a tap on something else while the keyboard is up just dismisses
+  // the keyboard on its own, it never reaches the button underneath, so
+  // "Continue with Face ID" needed a wasted first tap to close the keyboard
+  // before a second tap actually registered. Only steal focus when password
+  // is genuinely the sole path in, exactly the same condition that decided
+  // whether to render the field at all: no Apple, no Google, nothing to tap
+  // instead.
+  //
+  // clearTimeout first: this function can render twice in quick succession
+  // (a corrected email typed within the same ~60ms window, or two tests/two
+  // renders back to back), and a PENDING timer from the earlier call looks
+  // up #supa-pass by ID when it finally fires, landing on whatever element
+  // now has that ID, the NEWER render's field, even when THIS render decided
+  // not to focus it. One tracked handle makes each render's decision final.
+  clearTimeout(_loginPwFocusTimer);
+  if(!(methods.hasApple||methods.hasGoogle))_loginPwFocusTimer=setTimeout(()=>document.getElementById('supa-pass')?.focus(),60);
 }
 
 async function supaSignIn(){
@@ -5201,6 +6197,41 @@ async function _supaEmpSignUp(){
   }
   if(err){err.style.color='var(--text3)';err.textContent='Account created, signing you in...';}
   await _supa.auth.signInWithPassword({email,password:pass});
+}
+// ── Remembered device (owner design 2026-08-22, "remember this device, skip
+// straight to Face ID") ─────────────────────────────────────────────────────
+// A small local-only record of who last signed in on THIS device and which
+// methods their account has on file. NOT a security boundary, exactly like a
+// banking app pre-filling your username: the real authority stays (1) the
+// Supabase session token itself (persistSession:true, already survives a
+// relaunch) and (2) TdLock's OS-level biometric check gating whether the
+// cold-launch fast path in supaShowLogin() is allowed to resume that token
+// without asking again. Deriving hasApple/hasGoogle/hasPassword from
+// session.user.identities is a heuristic (an 'email' identity here always
+// means password auth, since this app never offers magic-link/OTP), good
+// enough for pre-filling which buttons to show, never used to grant access.
+function _rememberLogin(user){
+  if(!user||!user.email)return;
+  try{
+    const ids=user.identities||[];
+    const has=p=>ids.some(i=>i&&i.provider===p);
+    localStorage.setItem('zp3_remembered_login',JSON.stringify({
+      email:user.email,
+      hasApple:has('apple'),
+      hasGoogle:has('google'),
+      hasPassword:has('email'),
+      ts:Date.now()
+    }));
+  }catch(_e){}
+}
+// Every real sign-out path must call this (see _wipeLocalAccountData, the
+// single deliberate-sign-out choke point, and _obAlreadyHaveAccount's
+// mid-onboarding bail-out which never reaches that function). Without it a
+// shared/resold phone would keep whispering the last person's email and
+// auto-firing Face ID for THEIR account forever, iOS does not clear a
+// biometry-protected identity like this on its own.
+function _clearRememberedLogin(){
+  try{localStorage.removeItem('zp3_remembered_login');}catch(_e){}
 }
 let _deliberateSignOut=false;
 function _saveSessionBackup(session){
@@ -5252,6 +6283,16 @@ function _wipeLocalAccountData(){
   _mergeOnSignIn=false;_loadedFromCacheOnly=false;_loadedDataOwner=null;
   localStorage.removeItem('zp3_offline_pending');
   localStorage.removeItem('zp3_cloud_cache');
+  // Deliberately NOT clearing the remembered-device record here (owner
+  // correction 2026-08-22, live test: "signed in, signed back out, had to
+  // type email address yet again, not what I want"). A routine Sign Out
+  // ends the SESSION, it does not mean this device forgot who uses it, the
+  // same distinction every bank in the original research makes: their apps
+  // still show your username/Face ID offer after signing out, "remember
+  // this device" and "you're currently authenticated" are two different
+  // things. Only _loginNotYou() (the explicit "Not you?" repudiation) is
+  // allowed to clear it, that is the actual "this isn't my device/account"
+  // signal, a normal sign-out was never that.
   // Delta cursor + its sidecar are per-account too, drop both so the next account
   // rebuilds from a full load rather than delta-ing against this account's cursor.
   _deltaCursor=null;localStorage.removeItem('zp3_delta_meta');
@@ -5264,7 +6305,7 @@ function _wipeLocalAccountData(){
   vehicles=[];
   scans=[];equipment=[];
   places=[];
-  _teamGeo={};_teamGeoLoaded=false;_teamComp={};_teamCompLoaded=false;
+  _teamGeo={};_teamGeoLoaded=false;_teamGeoAt=0;_teamComp={};_teamCompLoaded=false;
   // Inbound-lead review queue is account-scoped in-memory state that lived OUTSIDE
   // the arrays above, the next account's Leads page would keep rendering this
   // account's unreviewed QR/intake leads (and could even promote one into the
@@ -5294,6 +6335,11 @@ function _wipeLocalAccountData(){
 }
 async function supaSignOut(){
   _deliberateSignOut=true;
+  // Kill every lock-screen / Dynamic Island card before the session goes. A
+  // drive or clock card carries a client's name, and one outliving its session
+  // would leave that name readable on a locked phone after it changes hands,
+  // the same exposure the handoff lock exists to prevent.
+  if(typeof _liveActEndAll==='function'){try{await _liveActEndAll();}catch(_e){}}
   // scope:'local' clears this device only, refresh token stays valid server-side.
   // scope:'global' (the default) revokes the token on the server, so the backup key
   // can't be used to silently re-auth when the user comes back online.
@@ -5456,7 +6502,12 @@ window.addEventListener('online',()=>{try{const k=_userLayoutCacheKey();if(k&&lo
 function _offlinePendingBlob(){
   // Owner falls back to _loadedDataOwner so a blob written while offline (no _supaUser)
   // is still tagged with the account it came from, the next sign-in checks this.
-  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,places,scans,equipment,ts:Date.now()});
+  // _dataOwner: same login/business split as _writeLocalCache, a dual-hat login
+  // (§9.10) shares _owner across both hats, so _owner alone would let one hat's
+  // unsaved records merge-and-push into the OTHER hat's business on reconnect.
+  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,
+    _dataOwner:(typeof _effectiveUid==='function'&&_effectiveUid())||(_supaUser&&_supaUser.id)||_loadedDataOwner||null,
+    clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,places,scans,equipment,ts:Date.now()});
 }
 // Read offline-pending, discarding (and clearing) any blob owned by a different
 // account than the one now signed in. Returns null when nothing usable remains.
@@ -5467,6 +6518,12 @@ function _readOwnedOfflinePending(){
     localStorage.removeItem('zp3_offline_pending');
     return null; // belongs to a previous account, never merge it in
   }
+  // Same-login, different HAT (§9.10): a blob written under the crew hat holds the
+  // boss's records and must never merge into this login's own business (or the
+  // reverse). Don't delete it, the other hat may still legitimately drain it on
+  // its next session; just refuse to merge it into THIS one.
+  const _euid=(typeof _effectiveUid==='function'&&_effectiveUid())||null;
+  if(op._dataOwner&&_euid&&op._dataOwner!==_euid)return null;
   return op;
 }
 function supaSaveDebounced(){
@@ -5631,10 +6688,37 @@ async function _probeAndSync(){
     // No active user, try silent session restore regardless of _mergeOnSignIn.
     // _mergeOnSignIn is only true after involuntary SIGNED_OUT; after deliberate sign-out
     // the flag stays false, but we still want to re-auth when the backup token is present.
-    if(_supa&&!_supaUser&&!_sessionRestoreInProgress){
+    // Owner report 2026-08-22 (live device): a brand-new signup has NO session by
+    // design (_supaCloudLoaded stays false the whole time onboarding is open, so
+    // _isOfflineState() is true and this tick fires every 5s, not 30), and this
+    // block used to read that as a DEAD session with nothing left to restore and
+    // force the login screen, blowing away in-progress onboarding out from under
+    // someone still typing their name and email. No session yet is normal here,
+    // not a symptom, skip the whole recovery dance while onboarding is legitimately
+    // showing (also protects against silently restoring a DIFFERENT account's
+    // backup token mid-signup, which would be worse than doing nothing).
+    const _onboardingOpen=typeof document!=='undefined'&&!!document.getElementById('onboarding-overlay');
+    if(_supa&&!_supaUser&&!_sessionRestoreInProgress&&!_onboardingOpen){
+      _sessionRestoreInProgress=true;
+      // Try the SDK's own session store FIRST, the same source of truth the boot
+      // retry (initSupa) uses. This tick used to go STRAIGHT to the hand-maintained
+      // zp3_session_backup below and, when that was missing, did nothing at all,
+      // silently, every 5s, forever, a stuck offline boot never had any other way
+      // out (owner report: "had to sign out and back in to fix the loop, shouldn't
+      // have to"). Retrying the real session here means a connectivity blip that
+      // outlasted the boot's own 1.2s retry still gets a second chance every tick.
+      let _gsSession=null;
+      try{_gsSession=(await _supa.auth.getSession()).data.session;}catch(_e){}
+      if(_gsSession){
+        _sessionRestoreInProgress=false;
+        _supaUser=_gsSession.user;
+        _saveSessionBackup(_gsSession);
+        _mergeOnSignIn=false;
+        _onReconnect();
+        return;
+      }
       const _bk=(()=>{try{return JSON.parse(localStorage.getItem('zp3_session_backup')||'null');}catch(_e){return null;}})();
       if(_bk?.access_token&&_bk?.refresh_token){
-        _sessionRestoreInProgress=true;
         _supa.auth.setSession(_bk).then(({data:{session}})=>{
           _sessionRestoreInProgress=false;
           if(!session){
@@ -5656,9 +6740,14 @@ async function _probeAndSync(){
           // Network error during token exchange, don't show login, retry on next probe
           _sessionRestoreInProgress=false;
         });
+        return;
       }
-      // No backup, stay on current screen; don't call supaShowLogin() repeatedly from tick
-      return;
+      // Nothing left to retry: no live session, no backup. Silently ticking here
+      // forever IS the stuck loop, surface the real fix instead of a mute no-op.
+      // supaShowLogin already no-ops if the overlay is already up, so this is safe
+      // to call on every tick, not a repeated interruption.
+      _sessionRestoreInProgress=false;
+      supaShowLogin({force:true});
     }
     _onReconnect();
   }catch(e){if(_isOfflineState())_showOfflineBanner(false);}
@@ -5740,6 +6829,9 @@ function _paintCacheForDelta(uid){
   try{
     const cc=JSON.parse(localStorage.getItem('zp3_cloud_cache')||'null');
     if(!cc||cc._owner!==uid)return false;
+    // Dual-hat (§9.10): both hats share _owner (the login), but the cache holds
+    // ONE business's rows. Never paint the other hat's snapshot as this hat's base.
+    if(cc._dataOwner&&cc._dataOwner!==uid)return false;
     const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos,td_maintenance:cc.maintenance,td_vehicles:cc.vehicles,td_places:cc.places,td_equipment:cc.equipment};
     const _ptTs=Date.now();
     for(const{t,set}of _TD_TABLES){
@@ -5767,7 +6859,16 @@ function _paintCacheForDelta(uid){
 }
 function _writeLocalCache(){
   try{
-    const _snap={_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,payments,income,
+    // _owner = the LOGIN this cache belongs to (identity comparisons at boot).
+    // _dataOwner = the BUSINESS whose rows it holds: the contractor's uid for a
+    // crew session, the login's own uid for an owner session. Two different
+    // things for crew and dual-hat (§9.10) sessions, and the data guards must
+    // compare against _dataOwner: guarding on _owner alone either rejects a
+    // crew session's own legitimate cache (load uid is the boss's) or accepts
+    // the OTHER hat's cache under the same login (both hats share _owner).
+    const _snap={_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,
+      _dataOwner:(typeof _effectiveUid==='function'&&_effectiveUid())||(_supaUser&&_supaUser.id)||_loadedDataOwner||null,
+      clients,bids,jobs,payments,income,
       expenses:expenses.map(({receipt_img,...r})=>r),
       mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,vehicles,places,scans,equipment,checksState,
       settings:S,cached_at:new Date().toISOString()};
@@ -6060,10 +7161,18 @@ async function supaSaveToCloud(){
     if(_syncBroadcastChannel){try{const _bc=_syncBroadcastChannel.send({type:'broadcast',event:'data_saved',payload:{deviceId:_deviceId}});if(_bc&&typeof _bc.catch==='function')_bc.catch(()=>{});}catch(_e){}}
   }catch(e){
     _logSave('throw',{id:_attemptId,name:e?.name,code:e?.code,msg:e?.message||String(e)});
-    console.warn('Cloud save failed:',e);
     localStorage.setItem('zp3_pending_sync','1');
     try{localStorage.setItem('zp3_offline_pending',_offlinePendingBlob());}catch(_e){}
-    _showOfflineBanner();
+    // Fall back to cache/pending-sync unconditionally either way, only the
+    // BANNER (and which console channel this reaches) depends on classification,
+    // an app bug must never tell the contractor their internet is down.
+    const _kind=await _classifyCloudError(e);
+    if(_kind==='network'){
+      console.warn('Cloud save failed:',e);
+      _showOfflineBanner();
+    }else{
+      console.error('Cloud save failed (app error, not network):',e);
+    }
     supaSetStatus('error');
   }
 }
@@ -6496,7 +7605,7 @@ async function _fetchProposalViews(){
     try{
       const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
       const{data:_jte}=await _supa.from('job_time_entries')
-        .select('job_id,employee_user_id,arrived_at,departed_at,minutes,source')
+        .select('job_id,employee_user_id,arrived_at,departed_at,minutes,source').is('deleted_at',null)
         .eq('contractor_user_id',cid)
         .not('job_id','is',null)
         .order('arrived_at',{ascending:false})
@@ -6780,11 +7889,17 @@ async function supaLoadFromCloud({silent=false}={}){
   }else{
     if(_syncTimer){try{await _flushSaveNow();}catch(e){}}
     else if(_pendingSavePromise){try{await _pendingSavePromise;}catch(e){}}
-  }  try{
-    const uid=_devSupportMode
-      ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
-      :(_isEmployee?_contractorUserId:_supaUser.id);
-
+  }
+  // Effective account for this load. HOISTED OUT of the try below (it used to be
+  // a const inside it): the catch's cache-owner guard compares against uid, and
+  // block-scoped inside the try it was invisible there, so the guard threw
+  // ReferenceError and the load-failure cache fallback silently painted NOTHING
+  // for every signed-in user (caught by the dual-hat regression test's warn
+  // trace: "Cache load failed: uid is not defined").
+  const uid=_devSupportMode
+    ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
+    :(_isEmployee?_contractorUserId:_supaUser.id);
+  try{
     // ── CURSOR READ-FIRST, the other half of the read-skew fix ──
     // The save writes tables FIRST, cursor LAST ("cursor moved ⇒ all data committed").
     // The load must therefore sample the cursor BEFORE the table snapshot: a stored
@@ -6859,8 +7974,15 @@ async function supaLoadFromCloud({silent=false}={}){
         const _oSince=(window._opLogShadow&&!_isEmployee&&!_devSupportMode)?(_opsPullSince(since)||null):null;
         const{data,error}=await _supa.rpc('get_account_delta',{since:_deltaSince(since),ops_since:_oSince});
         if(error||!data||typeof data!=='object'||!data.tables)return null;
+        // A table key MISSING from the response (partial RPC bug, deploy skew) must
+        // never be read as "zero rows changed" — that's indistinguishable from a real
+        // empty delta and lets a stale _paintCacheForDelta value for that table go
+        // unmerged while the load still reports success. Only a genuinely present
+        // (possibly empty) array counts as a real answer for that table; anything
+        // else rejects the whole RPC result so the caller falls back to _deltaQuery.
+        if(!_TD_TABLES.every(({t})=>Array.isArray(data.tables[t])))return null;
         if(Array.isArray(data.ops)&&data.ops.length)_rpcOps=data.ops;
-        return _TD_TABLES.map(({t})=>({data:Array.isArray(data.tables[t])?data.tables[t]:[],error:null}));
+        return _TD_TABLES.map(({t})=>({data:data.tables[t],error:null}));
       }catch(_e){return null;}
     };
     const _deltaFetch=async(since)=>{
@@ -7096,6 +8218,56 @@ async function supaLoadFromCloud({silent=false}={}){
     // them. Healing here re-collapses any resurrection the moment it arrives;
     // the saveAll inside the sweep then propagates the deletes for real.
     try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
+    // Same reconnect-triggered heal for job_time_entries duplicates, same
+    // reasoning: a delete that never reached the cloud (offline heal) comes
+    // back the moment the cloud's copy merges in, so this re-collapses it
+    // for real, this time with a live connection to make the delete stick.
+    try{if(typeof _geoTimeEntriesSettleChain==='function')_geoTimeEntriesSettleChain();}catch(_e){}
+    // Restore _geoLastFenceLoc/_geoLastFenceAt from the persisted open-entry
+    // record BEFORE the mileage sweeps below run, not after. This used to
+    // only happen ~2.4s later via _geoTrackInit's own deliberate boot delay
+    // (js/geo-track.js _geoRestoreOpen, guarded one-shot there so calling it
+    // again from _geoTrackInit is a no-op), which meant the personal-stop
+    // sweep's pass 2 always saw a null fence and could never fire on a real
+    // boot, no matter how many times the app was relaunched (owner report
+    // 2026-08-22).
+    try{if(typeof _geoRestoreOpen==='function')_geoRestoreOpen();}catch(_e){}
+    // The retroactive walk sweep rides the same settle point: the coprocessor
+    // holds ~a week of history, so a leg that over-paid an errand's detour
+    // before the walk check existed corrects itself here (once per session,
+    // reductions only, js/mileage.js).
+    try{if(typeof _mileMotionHealSweep==='function')_mileMotionHealSweep();}catch(_e){}
+    // Promote server-provisional mileage rows (real-time geofence ingest):
+    // route the real distance, apply the commute rule, drop redundant twins.
+    // Same once-per-session settle point as the sweeps around it.
+    try{if(typeof _mileServerRefine==='function')_mileServerRefine();}catch(_e){}
+    // And re-judge named personal stops (the Casey's loop): the live decision
+    // runs once when Apple names the stop, so a day the app died through, or
+    // a day judged under an older rule, never gets a second look without this.
+    try{if(typeof _milePersonalStopSweep==='function')_milePersonalStopSweep();}catch(_e){}
+    // Same reductions-only, once-per-session shape as its sibling above, but
+    // judged against the day's WORKDAY WINDOW rather than the destination
+    // (js/mileage.js _mileWorkdaySweep): a leg driven outside the day's first
+    // and last real job or supply activity is a personal trip the tracker
+    // happened to catch, and it has no business in an IRS log. Ordered after
+    // the personal-stop sweep so a leg that one already collapsed is never
+    // re-judged here.
+    try{if(typeof _mileWorkdaySweep==='function')_mileWorkdaySweep();}catch(_e){}
+    // And clear anything already logged that a vehicle could not have driven
+    // (js/mileage.js _mileFlightSweep, owner report 2026-08-24: a flight was
+    // booking itself as several hundred deductible miles). Runs before the
+    // drive-time pass below on purpose, so the flight's paid wheel time goes
+    // with it in the same settle.
+    try{if(typeof _mileFlightSweep==='function')_mileFlightSweep();}catch(_e){}
+    // Drive-time hygiene last, after every mileage sweep above has had its
+    // turn: a leg the personal-stop sweep just collapsed away, or the motion
+    // heal just corrected, is exactly the kind of change whose paid
+    // drive-time counterpart needs re-checking (js/geo-track.js
+    // _geoSyncDriveTimeEntries, owner rule 2026-08-22).
+    try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
+    // Same reconnect-triggered heal for shop_time_entries duplicates
+    // (js/geo-track.js _geoDedupShopTimeEntries, owner audit 2026-08-23).
+    try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
 
     // ── One-time fleet lift out of the settings blob (20260809_td_vehicles) ──
     // MUST run here, after the load: only now do we know whether this account
@@ -7164,12 +8336,28 @@ async function supaLoadFromCloud({silent=false}={}){
       // Re-render the setup checklist once the Stripe status resolves: the card
       // treats unknown-Stripe as handled (no flash), so a contractor who actually
       // needs to connect only sees "Turn on card payments" appear here, cleanly.
-      setTimeout(()=>{if(_stripeConnectStatus===null)_fetchStripeConnectStatus().then(()=>{if(typeof _renderDashSetupTodo==='function')_renderDashSetupTodo();}).catch(()=>{});},500);
+      // Both checks below hold window._bootChecklistPending open (_bootSyncSettled
+      // waits on it) so the checklist's correction lands BEHIND the boot skeleton
+      // instead of as a bare, visible re-render after the card already looked settled
+      // (owner report: "9 of 10 done" reading wrong with no shimmer to explain it).
+      const _stripePending=_stripeConnectStatus===null;
+      const _qrPending=typeof _qrHasSourceCached==='function'&&_qrHasSourceCached()===null;
+      if(_stripePending)window._bootChecklistPending=(window._bootChecklistPending||0)+1;
+      if(_qrPending)window._bootChecklistPending=(window._bootChecklistPending||0)+1;
+      setTimeout(()=>{
+        if(!_stripePending)return;
+        _fetchStripeConnectStatus().then(()=>{if(typeof _renderDashSetupTodo==='function')_renderDashSetupTodo();}).catch(()=>{})
+          .finally(()=>{window._bootChecklistPending=Math.max(0,(window._bootChecklistPending||0)-1);if(typeof _bootSyncSettled==='function')_bootSyncSettled();});
+      },500);
       // Same self-heal for the QR-code checklist item: an account that already had
       // sources before this item shipped has no local cache yet, so pull the real
       // count once per boot and correct the card (covers new accounts too, since
       // _qrLoadSources writes the cache the first time it ever runs for them).
-      setTimeout(()=>{if(typeof _qrHasSourceCached==='function'&&_qrHasSourceCached()===null&&typeof _qrLoadSources==='function')_qrLoadSources().catch(()=>{});},650);
+      setTimeout(()=>{
+        if(!_qrPending)return;
+        _qrLoadSources().catch(()=>{})
+          .finally(()=>{window._bootChecklistPending=Math.max(0,(window._bootChecklistPending||0)-1);if(typeof _bootSyncSettled==='function')_bootSyncSettled();});
+      },650);
       _removeBootOverlay();goPg('pg-dash');
     }
 
@@ -7386,11 +8574,15 @@ async function supaLoadFromCloud({silent=false}={}){
         // Always (on this boot or a prior one), weather silently piggybacks
         // off it with zero extra prompt.
         setTimeout(()=>{
+          // COARSE OK: a weather forecast. The value is rounded to 4 decimals
+          // on the very next line, so a GPS-grade fix would be thrown away,
+          // and spinning the radio up for a forecast is exactly the kind of
+          // battery burn park mode exists to avoid.
           if(typeof geoIfGranted==='function')geoIfGranted(pos=>{
             S.weatherLat=Math.round(pos.coords.latitude*10000)/10000;
             S.weatherLon=Math.round(pos.coords.longitude*10000)/10000;
             S.locationGranted=true;S.settingsTs=Date.now();saveAll();
-          });
+          },null,{enableHighAccuracy:false,timeout:8000,maximumAge:600000});
         },1200);
       }else{
         setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
@@ -7400,6 +8592,12 @@ async function supaLoadFromCloud({silent=false}={}){
       // near-instantly, so this only needs to trail the location-permission
       // request above, not pad extra wait time on top of it.
       setTimeout(()=>checkNearbyJob(),1500);
+      // Warms the nearby-job/geofence cache for every EXISTING client that
+      // predates the eager-geocode hook in saveClient (js/clients.js), so the
+      // whole book gets covered without waiting on the dashboard's slower
+      // 8-per-heartbeat trickle. Delayed behind checkNearbyJob so today's
+      // actual nearby-job resolution never waits on it.
+      setTimeout(()=>{if(typeof _backfillNearbyGeoCache==='function')_backfillNearbyGeoCache();},4000);
       // Reconnects the clock banner/interval to an open (still-clocked-in) entry
       // this person owns, if this device reloaded mid-timer, see
       // _rehydrateActiveTimer (js/jobs.js) for why this is safe/necessary now
@@ -7430,11 +8628,31 @@ async function supaLoadFromCloud({silent=false}={}){
 
     if(!_realtimeSubscribed){_realtimeSubscribed=true;_initRealtimeSubscriptions(uid);}
   }catch(e){
-    console.warn('Cloud load failed:',e);
+    // Fired now, awaited later: classification needs a real network round trip
+    // (up to 4s, see _classifyCloudError), and an offline boot must still paint
+    // whatever cache it has INSTANTLY, not sit behind that probe first. Started
+    // here so it's racing in the background while the cache-restore work below
+    // runs; by the time either exit path below awaits it, it has usually
+    // already settled.
+    const _kindPromise=_classifyCloudError(e);
     const _cc=localStorage.getItem('zp3_cloud_cache');
     if(_cc){
       try{
         const _cd=JSON.parse(_cc);
+        // Cross-account guard: uid is the account THIS load was fetching for. A cache
+        // written by a different owner (a same-tab account switch whose first live
+        // load throws before it ever overwrites the cache) must never be painted as
+        // if it were this account's real data, that's a silent cross-account bleed,
+        // not an offline fallback. _paintCacheForDelta already enforces this on the
+        // normal delta path; this is the same check on the load-FAILED fallback.
+        // Compare _dataOwner (the business whose rows the cache holds), falling back
+        // to _owner only for caches written before the tag existed: for a crew
+        // session uid is the BOSS's id while _owner is the crew login's, so the
+        // bare _owner comparison wrongly rejected a crew session's own cache, and
+        // under one dual-hat login (§9.10) both hats share _owner, so it wrongly
+        // ACCEPTED the other hat's cache. _dataOwner is right in both directions.
+        const _cacheDataOwner=_cd._dataOwner||_cd._owner;
+        if(_cacheDataOwner&&_cacheDataOwner!==uid)throw new Error('cache owner mismatch');
         clients=_cd.clients||[];bids=_cd.bids||[];jobs=_cd.jobs||[];
         payments=_cd.payments||[];income=_cd.income||[];expenses=_cd.expenses||[];
         mileage=_cd.mileage||[];liens=_cd.liens||[];timeEntries=_cd.timeEntries||[];
@@ -7465,11 +8683,27 @@ async function supaLoadFromCloud({silent=false}={}){
         // answer now, so this render must be the real one.
         _dashAwaitingCloud=false;
         if(!silent){_removeBootOverlay();renderDash();}
-        _showOfflineBanner();supaSetStatus('error');return;
+        // Classify AFTER the render above: an app bug thrown mid-load must
+        // reach console.error (so it feeds the observability/self-heal
+        // pipeline, §13) and must never tell the contractor their internet
+        // is down when it's actually fine, but neither check may delay the
+        // cache already painting on screen.
+        {
+          const _kind=await _kindPromise;
+          if(_kind==='network'){console.warn('Cloud load failed:',e);_showOfflineBanner();}
+          else console.error('Cloud load failed (app error, not network):',e);
+        }
+        supaSetStatus('error');return;
       }catch(_ce){console.warn('Cache load failed:',_ce);}
     }
     _dashAwaitingCloud=false; // nothing more is coming, zeros are now the truth
-    _removeBootOverlay();renderDash();supaSetStatus('error');
+    _removeBootOverlay();renderDash();
+    {
+      const _kind=await _kindPromise;
+      if(_kind==='network')console.warn('Cloud load failed:',e);
+      else console.error('Cloud load failed (app error, not network):',e);
+    }
+    supaSetStatus('error');
   }finally{
     _loadInProgress=false;
     _dashAwaitingCloud=false; // load settled either way, whatever we have is what shows
@@ -7549,7 +8783,19 @@ function _initRealtimeSubscriptions(uid){
     _supa.channel('sig-feed-'+_supaUser.id)
       .on('postgres_changes',{event:'*',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{checkNewSignatures('push');})
       .on('postgres_changes',{event:'*',schema:'public',table:'proposal_views',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{_fetchProposalViews();})
-      .on('postgres_changes',{event:'*',schema:'public',table:'job_time_entries',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{_fetchProposalViews();})
+      .on('postgres_changes',{event:'*',schema:'public',table:'job_time_entries',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{
+        _fetchProposalViews();
+        // A peer's own offline dedup can leave a delete stranded locally (it
+        // never reached the cloud), so its duplicate rides back in over
+        // realtime the moment that peer reconnects. Re-collapse shortly
+        // after the burst settles, same debounce shape as td_mileage above.
+        clearTimeout(window._rtTimeDedupTimer);
+        window._rtTimeDedupTimer=setTimeout(()=>{
+          try{if(typeof _geoTimeEntriesSettleChain==='function')_geoTimeEntriesSettleChain();}catch(_e){}
+          try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
+          try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
+        },1500);
+      })
       .subscribe(_sigFeedStatus);
   }catch(_sf){}
   try{
@@ -7662,7 +8908,14 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   // after the burst settles; the heal is a no-op when nothing matches.
   if(tbl==='td_mileage'){
     clearTimeout(window._rtMileHealTimer);
-    window._rtMileHealTimer=setTimeout(()=>{try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}},1500);
+    window._rtMileHealTimer=setTimeout(()=>{
+      try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
+      // A peer's mileage collapse/dedup just landed here too: whatever legKey
+      // it dropped needs its paid drive-time counterpart re-checked (owner
+      // rule 2026-08-22, js/geo-track.js _geoSyncDriveTimeEntries).
+      try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
+      try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
+    },1500);
   }
   if(fromRealtime&&Date.now()-_lastLocalSaveAt<5000)return;
   if(fromRealtime){

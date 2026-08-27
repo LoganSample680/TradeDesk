@@ -40,3 +40,27 @@ jobs:
           supabase functions deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --no-verify-jwt
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Sync Stripe webhook subscribed events
+        # Owner ask (2026-08-19): keep the webhook endpoint's event list in code, not
+        # clicked together by hand in the Stripe Dashboard. scripts/sync-stripe-webhooks.js
+        # parses the required list straight out of stripe-webhook/index.ts's own
+        # `event.type === '...'` checks (so it can never drift), then makes the live
+        # Stripe endpoint match exactly. Idempotent — a no-op run just says so.
+        #
+        # TEST mode always runs (STRIPE_TEST_SECRET_KEY already exists as a repo
+        # secret). LIVE mode runs only once STRIPE_LIVE_RESTRICTED_KEY_WEBHOOKS has
+        # been added (a Stripe restricted key scoped to Webhook Endpoints read/write
+        # only) — the script logs a clear skip line and exits 0 for that mode until then,
+        # it never fails the deploy over a secret that hasn't been added yet.
+        run: |
+          npm install --no-save stripe@14
+          node scripts/sync-stripe-webhooks.js
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          STRIPE_TEST_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          STRIPE_LIVE_RESTRICTED_KEY_WEBHOOKS: ${{ secrets.STRIPE_LIVE_RESTRICTED_KEY_WEBHOOKS }}

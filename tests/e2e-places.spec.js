@@ -324,6 +324,107 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.onlyExpenses).toEqual(['expense']);
   });
 
+  // ── A job-linked expense plots at the job site, not where it was logged ────
+
+  test('geoFeed uses the linked job\'s address coords for a job expense, not its own GPS fix', async () => {
+    const out = await page.evaluate(() => {
+      const today = todayKey();
+      jobs.push({ id: 60, client_name: 'Site Job', start: today, lat: 40.0, lon: -80.0 });
+      // Logged from the office, nowhere near the job, on purpose.
+      expenses.push({ id: 61, date: today, vendor: 'Lowes', amount: 5, job_id: 60, lat: 39.0, lon: -79.0, geoAcc: 10 });
+      const feed = geoFeed({ types: ['expense'] });
+      jobs.length = 0;
+      return feed[0];
+    });
+    expect(out.lat).toBe(40.0);
+    expect(out.lon).toBe(-80.0);
+  });
+
+  test('geoFeed falls back to the expense\'s own GPS fix when the linked job has no coords yet', async () => {
+    const out = await page.evaluate(() => {
+      const today = todayKey();
+      jobs.push({ id: 62, client_name: 'Ungeocoded Job', start: today });
+      expenses.push({ id: 63, date: today, vendor: 'Lowes', amount: 5, job_id: 62, lat: 39.0, lon: -79.0, geoAcc: 10 });
+      const feed = geoFeed({ types: ['expense'] });
+      jobs.length = 0;
+      return feed[0];
+    });
+    expect(out.lat).toBe(39.0);
+    expect(out.lon).toBe(-79.0);
+  });
+
+  test('geoFeed uses a standalone (no job_id) expense\'s own GPS fix as before', async () => {
+    const out = await page.evaluate(() => {
+      const today = todayKey();
+      expenses.push({ id: 64, date: today, vendor: 'Home Depot', amount: 5, lat: 39.5, lon: -79.5, geoAcc: 10 });
+      return geoFeed({ types: ['expense'] })[0];
+    });
+    expect(out.lat).toBe(39.5);
+    expect(out.lon).toBe(-79.5);
+  });
+
+  test('geoFeed prefers a resolved vendor location over the expense\'s own GPS fix', async () => {
+    const out = await page.evaluate(() => {
+      const today = todayKey();
+      // Loose fix (would fail the geoAcc floor on its own) logged nowhere near
+      // the store, e.g. receipt done from the truck that night.
+      expenses.push({ id: 65, date: today, vendor: 'Ferguson', amount: 5, lat: 30.0, lon: -70.0, geoAcc: 5000, vendorLat: 41.2, vendorLon: -96.2 });
+      return geoFeed({ types: ['expense'] })[0];
+    });
+    expect(out.lat).toBe(41.2);
+    expect(out.lon).toBe(-96.2);
+  });
+
+  // ── _expenseVendorGeocode: resolve a receipt to the real business, not home ─
+
+  test('_expenseVendorGeocode matches an already-known place first, no network call', async () => {
+    const out = await page.evaluate(async () => {
+      const realResolve = window._resolveCoords;
+      let called = false;
+      window._resolveCoords = async () => { called = true; return { lat: 1, lng: 1 }; };
+      savePlace({ name: 'Ferguson Plumbing Supply', kind: 'supply', lat: 41.5, lon: -96.5 });
+      expenses.push({ id: 70, date: todayKey(), vendor: 'Ferguson', amount: 5, lat: 39.0, lon: -79.0 });
+      await _expenseVendorGeocode();
+      window._resolveCoords = realResolve;
+      const e = expenses.find(x => x.id === 70);
+      return { called, vendorLat: e.vendorLat, vendorLon: e.vendorLon };
+    });
+    expect(out.called).toBe(false);
+    expect(out.vendorLat).toBe(41.5);
+    expect(out.vendorLon).toBe(-96.5);
+  });
+
+  test('_expenseVendorGeocode falls back to a business-name search when no place matches', async () => {
+    const out = await page.evaluate(async () => {
+      const realResolve = window._resolveCoords;
+      window._resolveCoords = async (q) => (q === 'Lowes' ? { lat: 42.0, lng: -95.0 } : null);
+      expenses.push({ id: 71, date: todayKey(), vendor: 'Lowes', amount: 5, lat: 39.0, lon: -79.0 });
+      await _expenseVendorGeocode();
+      window._resolveCoords = realResolve;
+      const e = expenses.find(x => x.id === 71);
+      return { vendorLat: e.vendorLat, vendorLon: e.vendorLon };
+    });
+    expect(out.vendorLat).toBe(42.0);
+    expect(out.vendorLon).toBe(-95.0);
+  });
+
+  test('_expenseVendorGeocode skips job-linked and already-resolved expenses', async () => {
+    const out = await page.evaluate(async () => {
+      const realResolve = window._resolveCoords;
+      let calls = 0;
+      window._resolveCoords = async () => { calls++; return { lat: 9, lng: 9 }; };
+      expenses.push({ id: 72, date: todayKey(), vendor: 'Skip Job', amount: 5, job_id: 999 });
+      expenses.push({ id: 73, date: todayKey(), vendor: 'Skip Resolved', amount: 5, vendorLat: 5, vendorLon: 5 });
+      expenses.push({ id: 74, date: todayKey(), vendor: '', amount: 5 });
+      await _expenseVendorGeocode();
+      window._resolveCoords = realResolve;
+      return { calls, e72: expenses.find(x => x.id === 72).vendorLat, e73: expenses.find(x => x.id === 73).vendorLat };
+    });
+    expect(out.calls).toBe(0);
+    expect(out.e72).toBeUndefined();
+    expect(out.e73).toBe(5);
+  });
+
   // ── The map renders ───────────────────────────────────────────────────────
 
   test('the map renders a dot per point and an empty state with none', async () => {
@@ -357,6 +458,25 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.hasDot).toBe(true);
     // A zero-span bounding box is the obvious crash here.
     expect(out.hasNaN).toBe(false);
+  });
+
+  test('openGeoMap paints immediately, then repaints once vendor resolution lands', async () => {
+    const out = await page.evaluate(async () => {
+      const realResolve = window._resolveCoords;
+      window._resolveCoords = async () => { await new Promise(r => setTimeout(r, 20)); return { lat: 44.0, lng: -93.0 }; };
+      expenses.push({ id: 80, date: todayKey(), vendor: 'Late Night Receipt', amount: 5, lat: 39.0, lon: -79.0, geoAcc: 10 });
+      openGeoMap();
+      const immediateHtml = document.getElementById('tr-map-body').innerHTML;
+      await new Promise(r => setTimeout(r, 80));
+      window._resolveCoords = realResolve;
+      const e = expenses.find(x => x.id === 80);
+      return {
+        paintedImmediately: /maps\?q=/.test(immediateHtml),
+        vendorResolved: e.vendorLat === 44.0,
+      };
+    });
+    expect(out.paintedImmediately).toBe(true);
+    expect(out.vendorResolved).toBe(true);
   });
 
   test('the type filter toggles points off and back on', async () => {
@@ -613,23 +733,77 @@ test.describe('Places, drive attribution and the map', () => {
   });
 
   // ── Proposals are stamped (the map layer used to be permanently empty) ─────
+  //
+  // Was: _commitProposalSent called _stampGeo(bid) directly, live GPS at the
+  // moment "Send" was tapped. A follow-up sent from the truck, the office, or
+  // home that night put the pin there instead of at the job, which is the bug
+  // the owner reported (2026-08-17): the Proposals layer showed where the
+  // proposal was CREATED, not the client's address. Now: _stampBidAddrGeo
+  // geocodes the client's address instead, same non-empty goal, right pin.
 
-  test('_commitProposalSent stamps the bid, so the Proposals layer is not always empty', async () => {
+  test('_commitProposalSent geocodes the client address, not a live GPS fix', async () => {
     const out = await page.evaluate(() => {
       const src = String(_commitProposalSent);
       return {
         // The stamp must live in the same function that sets sentAt, or a
         // proposal sent from the driveway records no location and the map's
         // Proposals layer reads zero forever.
-        stampsGeo: /_stampGeo/.test(src),
+        stampsAddr: /_stampBidAddrGeo/.test(src),
+        stampsLiveGeo: /(?<!_stampBidAddr)_stampGeo\(/.test(src),
         setsSentAt: /sentAt/.test(src),
-        // Fire-and-forget, never awaited: a slow GPS lock must not delay a send.
-        notAwaited: !/await\s+_stampGeo/.test(src),
+        // Fire-and-forget, never awaited: a slow geocode must not delay a send.
+        notAwaited: !/await\s+_stampBidAddrGeo/.test(src),
       };
     });
     expect(out.setsSentAt).toBe(true);
-    expect(out.stampsGeo).toBe(true);
+    expect(out.stampsAddr).toBe(true);
+    expect(out.stampsLiveGeo).toBe(false);
     expect(out.notAwaited).toBe(true);
+  });
+
+  test('_stampBidAddrGeo resolves the client address onto bid.lat/lon', async () => {
+    const out = await page.evaluate(async () => {
+      const realResolve = window._resolveCoords;
+      window._resolveCoords = async (addr) => (addr === '123 Main St' ? { lat: 41.0, lng: -96.0 } : null);
+      clients.push({ id: 'geo-c1', name: 'Geo Client', addr: '123 Main St' });
+      const bid = { id: 'geo-b1', client_id: 'geo-c1' };
+      bids.push(bid);
+      _stampBidAddrGeo(bid);
+      await new Promise(r => setTimeout(r, 30));
+      window._resolveCoords = realResolve;
+      return { lat: bid.lat, lon: bid.lon };
+    });
+    expect(out.lat).toBe(41.0);
+    expect(out.lon).toBe(-96.0);
+  });
+
+  test('_stampBidAddrGeo never overwrites a bid already geocoded', async () => {
+    const out = await page.evaluate(async () => {
+      const realResolve = window._resolveCoords;
+      let called = false;
+      window._resolveCoords = async () => { called = true; return { lat: 99, lng: 99 }; };
+      const bid = { id: 'geo-b2', client_id: 'geo-c1', lat: 41.0, lon: -96.0 };
+      _stampBidAddrGeo(bid);
+      await new Promise(r => setTimeout(r, 30));
+      window._resolveCoords = realResolve;
+      return { lat: bid.lat, lon: bid.lon, called };
+    });
+    expect(out.called).toBe(false);
+    expect(out.lat).toBe(41.0);
+    expect(out.lon).toBe(-96.0);
+  });
+
+  test('_stampBidAddrGeo is a no-op with no resolvable address, never throws', async () => {
+    const out = await page.evaluate(async () => {
+      clients.push({ id: 'geo-c2', name: 'No Addr Client' });
+      const bid = { id: 'geo-b3', client_id: 'geo-c2' };
+      let threw = false;
+      try { _stampBidAddrGeo(bid); } catch (e) { threw = true; }
+      await new Promise(r => setTimeout(r, 30));
+      return { threw, lat: bid.lat };
+    });
+    expect(out.threw).toBe(false);
+    expect(out.lat).toBeUndefined();
   });
 
   // ── The Places screen ─────────────────────────────────────────────────────
@@ -1118,6 +1292,11 @@ test.describe('Places, drive attribution and the map', () => {
       const mk = (tbl) => {
         const q = { _eq: {}, _gte: null, _lt: null };
         q.select = () => q;
+        // .is added 2026-08-26: the time-table reads carry
+        // .is('deleted_at',null) now, and a builder that only knows the filters
+        // it was written against turns a new one into "is is not a function",
+        // which surfaces as a missing place name three layers away.
+        q.is = () => q;
         q.eq = (c, v) => { q._eq[c] = v; return q; };
         q.gte = (c, v) => { q._gte = v; return q; };
         q.lt = (c, v) => { q._lt = v; return q; };
@@ -1299,6 +1478,81 @@ test.describe('Places, drive attribution and the map', () => {
       expect(r.inPane).toBe(true);
       expect(r.rendered).toBe(true);
       await restorePtr();
+    });
+  });
+
+  test.describe('saving a place renames the Stop trips it explains', () => {
+    // Owner 2026-08-26: "we should never miss saved geofence places". Every
+    // drive that ended at this pin before it had a name was written "Stop",
+    // because that was all anyone knew. Naming the pin is the missing fact
+    // arriving late, so savePlace now runs the same rename the POI path
+    // applies when Apple answers late (_autoNameStopTrip's loop), with the
+    // contractor's own answer, which outranks Apple's.
+    test('savePlace renames Stop endpoints at the pin, sets the purpose, and touches nothing else', async () => {
+      const out = await page.evaluate(() => {
+        const realMileage = mileage.slice(), realPlaces = places.slice();
+        mileage.length = 0;
+        mileage.push(
+          { id: 71, gps: true, from_name: 'Stop', from: 'Stop', fromCoord: { lat: 44.61, lng: -100.61 },
+            to_name: 'Job A', to: '1 Job Rd', toCoord: { lat: 44.7, lng: -100.7 }, purpose: 'Job site', date: '2026-08-20' },
+          { id: 72, gps: true, from_name: 'Shop', from: 'Shop Rd', fromCoord: { lat: 44.0, lng: -100.0 },
+            to_name: 'Stop', to: 'Stop', toCoord: { lat: 44.61, lng: -100.61 }, purpose: 'Other', date: '2026-08-21' },
+          // A human-entered row is never touched, GPS or not.
+          { id: 73, gps: false, from_name: 'Stop', from: 'Stop', fromCoord: { lat: 44.61, lng: -100.61 },
+            to_name: 'Home', to: 'Home', purpose: 'Other', date: '2026-08-21' },
+          // A Stop somewhere ELSE stays a Stop.
+          { id: 74, gps: true, from_name: 'Stop', from: 'Stop', fromCoord: { lat: 45.9, lng: -101.9 },
+            to_name: 'Job B', to: '2 Job Rd', toCoord: { lat: 45.8, lng: -101.8 }, purpose: 'Job site', date: '2026-08-22' },
+          // An endpoint a human already renamed is never overwritten.
+          { id: 75, gps: true, from_name: 'Depot', from: 'Depot Rd', fromCoord: { lat: 44.61, lng: -100.61 },
+            to_name: 'Job C', to: '3 Job Rd', toCoord: { lat: 44.7, lng: -100.7 }, purpose: 'Job site', date: '2026-08-22' },
+        );
+        try {
+          savePlace({ name: 'ProBuild Yard', kind: 'supply', lat: 44.61, lon: -100.61, addr: '900 Yard Rd' });
+          const by = id => mileage.find(m => m.id === id);
+          return {
+            r71: { from_name: by(71).from_name, from: by(71).from, purpose: by(71).purpose },
+            r72: { to_name: by(72).to_name, to: by(72).to, purpose: by(72).purpose },
+            r73: { from_name: by(73).from_name },
+            r74: { from_name: by(74).from_name },
+            r75: { from_name: by(75).from_name },
+            again: _placeRetroNameTrips(places.find(pl => pl.name === 'ProBuild Yard')),
+          };
+        } finally {
+          mileage.length = 0; realMileage.forEach(x => mileage.push(x));
+          places.length = 0; realPlaces.forEach(x => places.push(x));
+          saveAll();
+        }
+      });
+      expect(out.r71.from_name).toBe('ProBuild Yard');
+      expect(out.r71.from).toBe('900 Yard Rd');
+      // The origin rename never rewrites the trip's purpose: purpose describes
+      // the DESTINATION, and this row already knows it went to a job.
+      expect(out.r71.purpose).toBe('Job site');
+      expect(out.r72.to_name).toBe('ProBuild Yard');
+      expect(out.r72.to).toBe('900 Yard Rd');
+      // The destination rename upgrades the anonymous default to the kind's
+      // purpose, the same mapping every fence arrival uses.
+      expect(out.r72.purpose).toBe('Supply run');
+      expect(out.r73.from_name).toBe('Stop');
+      expect(out.r74.from_name).toBe('Stop');
+      expect(out.r75.from_name).toBe('Depot');
+      // Idempotent: a second sweep finds nothing left to rename.
+      expect(out.again).toBe(0);
+    });
+
+    test('_placeRetroNameTrips survives junk without throwing', async () => {
+      const out = await page.evaluate(() => {
+        try {
+          return {
+            nullPl: _placeRetroNameTrips(null),
+            noCoord: _placeRetroNameTrips({ name: 'X', kind: 'supply' }),
+          };
+        } catch (e) { return { threw: e.message }; }
+      });
+      expect(out.threw).toBeUndefined();
+      expect(out.nullPl).toBe(0);
+      expect(out.noCoord).toBe(0);
     });
   });
 

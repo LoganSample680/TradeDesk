@@ -646,40 +646,119 @@ test.describe('TdScan web half', () => {
       expect(r.order, 'selling the plan is the side hustle, not the point').toBe(true);
     });
 
-    test('a room takes a name the contractor types, not one off a list', async () => {
+    // The old OS prompt() is gone: rename now opens the app's own centered
+    // .zmodal-overlay/.zmodal picker (§7.3), never a hand-rolled sheet.
+    test('the rename picker is the app\'s real centered-modal convention, with an alphabetized common-name list', async () => {
       await seed();
       const r = await page.evaluate(() => {
-        const real = window.prompt;
-        window.prompt = () => "Zach's office";
-        try { _scanRenameRoom('s-name', 1); } finally { window.prompt = real; }
+        _scanRenameRoom('s-name', 1);
+        const ov = document.getElementById('_scan-rename-ov');
+        // Not a document-wide singleton check: seed() already leaves the scan
+        // viewer's own .zmodal-overlay (#_scan-view-ov) open in the DOM, so
+        // asserting this is literally document.querySelector('.zmodal-overlay')
+        // would just match whichever one happens to come first, not prove
+        // anything about the rename picker itself.
+        const isRealZmodal = ov.classList.contains('zmodal-overlay') &&
+                              !!ov.querySelector('.zmodal');
+        const names = Array.from(document.querySelectorAll('#_scan-rename-list ._scan-rename-row'))
+          .map(r => r.textContent);
+        const hasInput = !!document.getElementById('_scan-rename-inp');
+        ov.remove();
+        return { isRealZmodal, names, hasInput };
+      });
+      expect(r.isRealZmodal, 'built on .zmodal-overlay/.zmodal, not a new shell').toBe(true);
+      expect(r.hasInput, 'a custom-name fallback input is always present').toBe(true);
+      ['Kitchen', 'Primary Bedroom', 'Bedroom', 'Primary Bathroom', 'Bathroom', 'Living Room', 'Garage']
+        .forEach(name => expect(r.names, `list offers ${name}`).toContain(name));
+      expect(r.names.length, 'a real list of common names, not one or two').toBeGreaterThanOrEqual(10);
+      const sorted = [...r.names].sort((a, b) => a.localeCompare(b));
+      expect(r.names, 'alphabetized, not an arbitrary order').toEqual(sorted);
+    });
+
+    test('tapping a row renames the room immediately and closes the picker', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        _scanRenameRoom('s-name', 1);
+        const row = Array.from(document.querySelectorAll('#_scan-rename-list ._scan-rename-row'))
+          .find(el => el.textContent === 'Garage');
+        row.click();
+        return { label: scans[0].rooms[1].label, gone: !document.getElementById('_scan-rename-ov') };
+      });
+      expect(r.label).toBe('Garage');
+      expect(r.gone, 'a row tap applies and closes in one action, same effect as the old prompt').toBe(true);
+    });
+
+    test('the custom-name input still takes any name the contractor types', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        _scanRenameRoom('s-name', 1);
+        const inp = document.getElementById('_scan-rename-inp');
+        inp.value = "Zach's office";
+        document.getElementById('_scan-rename-ok').click();
         _scanToEstimate('s-name');
         return { label: scans[0].rooms[1].label,
+                 gone: !document.getElementById('_scan-rename-ov'),
                  seed: (window._scanEstimateSeed?.rooms || []).map(x => x.name) };
       });
       expect(r.label).toBe("Zach's office");
+      expect(r.gone, 'saving closes the picker').toBe(true);
       // The label feeds the plan drawing, the takeoff and the line items, so a
       // rename has to survive all the way into the estimate.
       expect(r.seed, 'the name the contractor chose is the one on the estimate')
         .toContain("Zach's office");
     });
 
-    test('cancelling or clearing the prompt never wipes a name', async () => {
+    test('cancel, a blank save, and a backdrop tap never wipe a name', async () => {
       await seed();
       const r = await page.evaluate(() => {
-        const real = window.prompt;
-        window.prompt = () => 'Kitchen';
-        try { _scanRenameRoom('s-name', 0); } finally { window.prompt = real; }
+        _scanRenameRoom('s-name', 0);
+        document.getElementById('_scan-rename-inp').value = 'Kitchen';
+        document.getElementById('_scan-rename-ok').click();
         const named = scans[0].rooms[0].label;
-        window.prompt = () => null;
-        try { _scanRenameRoom('s-name', 0); } finally { window.prompt = real; }
+
+        _scanRenameRoom('s-name', 0);
+        document.querySelector('#_scan-rename-ov .zmodal-cancel').click();
         const afterCancel = scans[0].rooms[0].label;
-        window.prompt = () => '   ';
-        try { _scanRenameRoom('s-name', 0); } finally { window.prompt = real; }
-        return { named, afterCancel, afterBlank: scans[0].rooms[0].label };
+        const goneAfterCancel = !document.getElementById('_scan-rename-ov');
+
+        _scanRenameRoom('s-name', 0);
+        document.getElementById('_scan-rename-inp').value = '   ';
+        document.getElementById('_scan-rename-ok').click();
+        const afterBlank = scans[0].rooms[0].label;
+
+        _scanRenameRoom('s-name', 0);
+        document.getElementById('_scan-rename-ov').click(); // tap the backdrop itself
+        const afterBackdrop = scans[0].rooms[0].label;
+        const goneAfterBackdrop = !document.getElementById('_scan-rename-ov');
+
+        return { named, afterCancel, goneAfterCancel, afterBlank, afterBackdrop, goneAfterBackdrop };
       });
       expect(r.named).toBe('Kitchen');
-      expect(r.afterCancel, 'a cancel is not an edit').toBe('Kitchen');
+      expect(r.afterCancel, 'Cancel is not an edit').toBe('Kitchen');
+      expect(r.goneAfterCancel, 'Cancel closes the picker').toBe(true);
       expect(r.afterBlank, 'blank is not a name').toBe('Kitchen');
+      expect(r.afterBackdrop, 'tapping outside the modal is not an edit').toBe('Kitchen');
+      expect(r.goneAfterBackdrop, 'a backdrop tap closes it, same as every other zmodal').toBe(true);
+    });
+
+    test('an invalid or missing scan id / room index never throws and opens nothing', async () => {
+      await seed();
+      const r = await page.evaluate(() => {
+        const before = scans[0].rooms[0].label;
+        let threw = false;
+        try {
+          _scanRenameRoom();                 // no args at all
+          _scanRenameRoom(null, 0);
+          _scanRenameRoom(undefined, undefined);
+          _scanRenameRoom('does-not-exist', 0);
+          _scanRenameRoom('s-name', 99);     // room index out of range
+          _scanRenameRoom('s-name', -1);
+        } catch (e) { threw = true; }
+        return { threw, before, after: scans[0].rooms[0].label, opened: !!document.getElementById('_scan-rename-ov') };
+      });
+      expect(r.threw, 'an invalid id/idx must never throw').toBe(false);
+      expect(r.after, 'nothing else in the scan is touched').toBe(r.before);
+      expect(r.opened, 'no picker opens for a target that does not exist').toBe(false);
     });
 
     // The Floor tabs sit directly above this list and the plan below draws one
@@ -1836,57 +1915,66 @@ test.describe('TdScan web half', () => {
   // it, so the card greys out and explains itself instead of failing on tap.
   // Capability comes from RoomPlan's own probe, cached; there is deliberately
   // no hardcoded model list anywhere in the logic.
-  test('the estimate-type chooser leads with Scan Estimate on a phone that can scan', async () => {
+  // TrueBid is the flagship proposal type (owner 2026-08-18), powered by the
+  // TrueSuite: scanning and aerial tracing are two tools under it, not two
+  // competing cards. A phone that can scan sees a method picker (TrueScan /
+  // TrueMeasure) once it opens TrueBid; a phone that can't skips straight
+  // to the only real option, since there's nothing to choose between.
+  test('the chooser offers TrueBid, which offers TrueScan, on a phone that can scan', async () => {
     const r = await page.evaluate(() => {
       const real = window._scanCapable;
       window._scanCapable = () => true;
+      const c = { id: 901, name: 'Chooser Client' };
       try {
-        _showEstimateStylePicker({ id: 901, name: 'Chooser Client' });
-        const ov = document.getElementById('_style-pick-ov');
-        const html = ov ? ov.innerHTML : '';
+        _showEstimateStylePicker(c);
+        const html = document.getElementById('_style-pick-ov')?.innerHTML || '';
+        _stylePickState = { c };
+        _pickEstStyle('truebid');
+        const methodHtml = document.getElementById('_tm-method-ov')?.innerHTML || '';
         return {
-          hasScanCard: /Scan Estimate/.test(html) && /Measured by LiDAR/.test(html),
-          scanFirst: html.indexOf('Scan Estimate') < html.indexOf('Build Your Own'),
-          notGreyed: !/grayscale/.test(html),
+          pickerHasTrueBid: /TrueBid/.test(html),
+          noStandaloneScanCard: !/Scan Estimate/.test(html),
+          offersScan: /TrueScan/.test(methodHtml),
+          offersAerial: /TrueMeasure/.test(methodHtml),
         };
       } finally {
         window._scanCapable = real;
+        document.getElementById('_tm-method-ov')?.remove(); window._tmMethodState = null;
         document.getElementById('_style-pick-ov')?.remove(); window._stylePickState = null;
       }
     });
-    expect(r.hasScanCard).toBe(true);
-    expect(r.scanFirst, 'the flagship type leads the chooser').toBe(true);
-    expect(r.notGreyed).toBe(true);
+    expect(r.pickerHasTrueBid).toBe(true);
+    expect(r.noStandaloneScanCard, 'Scan Estimate is folded into TrueBid, one door not two').toBe(true);
+    expect(r.offersScan).toBe(true);
+    expect(r.offersAerial).toBe(true);
   });
 
-  test('no LiDAR: the scan card greys out, explains itself, and never opens the builder', async () => {
+  test('no LiDAR: TrueBid skips straight to TrueMeasure, no scan option offered, the builder never opens', async () => {
     const r = await page.evaluate(() => {
       const realOpen = window.openScanEstimate;
       let opened = 0;
       window.openScanEstimate = () => { opened++; };
+      const c = { id: 902, name: 'No LiDAR Client' };
       try {
         // A plain browser has no scanner plugin, so _scanCapable() is already false.
-        _showEstimateStylePicker({ id: 902, name: 'No LiDAR Client' });
+        _showEstimateStylePicker(c);
         const html = document.getElementById('_style-pick-ov')?.innerHTML || '';
-        const greyed = /grayscale/.test(html) && /Needs a Pro iPhone/.test(html);
-        const routesToWhy = /_scanWhyNoLidar\(\)/.test(html) && !/_pickEstStyle\('scan'\)/.test(html);
-        // The one entry point refuses too, even if something calls it directly.
-        _pickEstStyle('scan');
-        const why = document.getElementById('_scan-why-ov');
-        const explains = !!why && /12 Pro/.test(why.textContent) && /Pro Max/.test(why.textContent);
+        _stylePickState = { c };
+        _pickEstStyle('truebid');
+        const skippedMethodPicker = !document.getElementById('_tm-method-ov');
+        const wentToAerial = !!document.getElementById('_tm-ov');
         // The other two types are untouched.
         const othersLive = /_pickEstStyle\('freeform'\)/.test(html) && /_pickEstStyle\('tm'\)/.test(html);
-        return { greyed, routesToWhy, opened, explains, othersLive };
+        return { skippedMethodPicker, wentToAerial, opened, othersLive };
       } finally {
         window.openScanEstimate = realOpen;
-        document.getElementById('_scan-why-ov')?.remove();
+        document.getElementById('_tm-ov')?.remove(); window._tmState = null;
         document.getElementById('_style-pick-ov')?.remove(); window._stylePickState = null;
       }
     });
-    expect(r.greyed, 'the card is visibly disabled, not silently broken').toBe(true);
-    expect(r.routesToWhy, 'tapping it explains rather than starting a scan').toBe(true);
-    expect(r.opened, 'the builder never opens without a scanner').toBe(0);
-    expect(r.explains, 'the explainer names the phones that work').toBe(true);
+    expect(r.skippedMethodPicker, 'nothing to choose between with no LiDAR, so no fork is shown').toBe(true);
+    expect(r.wentToAerial, 'goes straight to TrueMeasure instead').toBe(true);
+    expect(r.opened, 'the scan builder never opens without a scanner').toBe(0);
     expect(r.othersLive, 'Build Your Own and T&M stay fully available').toBe(true);
   });
 

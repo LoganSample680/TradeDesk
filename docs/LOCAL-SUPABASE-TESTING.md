@@ -123,3 +123,35 @@ Pages env; `functions/api/property.js` forwards `/api/property` → there.
   null, the durable fix is a licensed property API (Rentcast/Estated), tracked separately.
 - Manage: `systemctl status td-property-proxy td-property-tunnel`,
   `journalctl -u td-property-tunnel -f`.
+
+## Hosted-runner mode — no jarvis needed (added 2026-08-21)
+
+`.github/workflows/local-stack-hosted.yml` runs the same local-stack harness on
+GitHub's own `ubuntu-latest` runners: the job boots a disposable Supabase stack
+from `supabase/migrations/` with `supabase start`, reads the service/anon keys
+from `supabase status` at run time (ZERO GitHub secrets), provisions the
+per-worker pool + crew pool, and additionally seeds the **showcase account**:
+
+- `e2e+showcase@tradedesk.local` owns "Showcase Painting" AND is an active
+  `team_members` employee of worker 0's business — the dual-hat shape.
+- One seeded workday: client, job, two GPS mileage legs (shop→job→shop), the
+  matching drive + geofence rows in `job_time_entries`, and a manual clock
+  entry — so Dashboard, Time Log, and Mileage all render real content.
+- **`e2e+messy@tradedesk.local`** (added 2026-08-21): the SAME day, SAME job
+  and coordinates, seeded chaotic instead of clean — 10 fragmented/jittery
+  mileage legs instead of 2 (stop-start drives, near-zero jitter blips at
+  lights), a dead-phone gap followed by a GPS-drift blip on reconnect, and
+  the on-site stay logged as 5 separate fence exit/re-entry `job_time_entries`
+  rows instead of one window, plus a manual clock entry overlapping the mess.
+  Owner ask: prove the live reconcile/dedup sweep (`_geoReconcileFromMileage`
+  → `_geoDedupTimeEntries`, `js/geo-track.js`) survives real-phone messiness
+  against real Supabase rows, not just synthetic objects in an offline mock.
+
+Default spec filter is `local-visual`, which matches BOTH
+`tests/flow/local-visual.spec.js` (clean showcase day) and
+`tests/flow/local-visual-messy.spec.js` (the messy comparison day, asserting
+zero console errors and that the job still renders through the mess), so a
+default run uploads clean and messy screenshots side by side in the same
+`local-visual-shots` artifact. Dispatch with any other spec filter to run
+that subset against the local stack instead. On-demand only (workflow_dispatch);
+it pulls ~2GB of images, so it never runs per-push.

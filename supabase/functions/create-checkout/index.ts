@@ -13,6 +13,11 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, content-type, x-client-info, apikey',
 };
 
+// Wallet-domain registrations already confirmed by this warm instance, keyed
+// account|host, so the Apple Pay check below costs zero Stripe calls on the
+// common path.
+const _walletDomainOk = new Set<string>();
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
@@ -23,13 +28,24 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const {
       amount, currency, paymentMethod, paymentType,
-      surchargeAmount,
+      surchargeAmount: _ignoredSurcharge,
       proposalKey, clientName, clientEmail, businessName,
       bidId, contractorUserId, notifyEmail,
       signatureDataUrl, signerName,
       successUrl, cancelUrl,
       embedded,
     } = body;
+
+    // TradeDesk never adds a fee to what the client pays (owner rule 2026-08-15:
+    // "we can't allow passing fees to the person until stripe natively does it").
+    // The client UI no longer sends one, but this is the gate that matters: a stale
+    // cached sign.html or client.html can still POST here for a long time, and only
+    // the server can refuse it. Surcharging is banned outright in CT, MA, ME and PR,
+    // capped at 2% in CO, capped at 3% by the card networks everywhere else, and can
+    // never exceed actual cost of acceptance. Rather than carry that map, we charge
+    // the amount owed and nothing else.
+    if (_ignoredSurcharge) console.warn('surchargeAmount ignored, surcharging is disabled');
+    const surchargeAmount = 0;
 
     // Validate signatureDataUrl to prevent arbitrary blob storage
     if (signatureDataUrl) {
@@ -149,6 +165,37 @@ Deno.serve(async (req) => {
 
     // Embedded: PaymentIntent + Payment Element (accordion layout, all payment methods)
     if (embedded) {
+      // Apple Pay / Google Pay in the Payment Element only appear when the
+      // PAGE'S domain is registered as a Stripe payment method domain on the
+      // account the PaymentIntent lives on, which for a direct charge is the
+      // CONTRACTOR'S connected account, so one global registration cannot cover
+      // it: it has to be ensured per connected account. Without this, every
+      // client on an iPhone was typing a 16-digit card number the whole time
+      // (owner report 2026-08-17: no Apple Pay button on the hub).
+      // Cached per warm instance so the common case costs zero extra calls;
+      // never blocks a payment: a registration failure just means no wallet
+      // button, exactly what happens today.
+      const originHost = (() => {
+        try { return new URL(req.headers.get('origin') || successUrl || '').hostname; } catch { return ''; }
+      })();
+      if (originHost && !originHost.endsWith('localhost') && !_walletDomainOk.has(stripeAccountId + '|' + originHost)) {
+        try {
+          const reqOpts: Stripe.RequestOptions | undefined = stripeAccountId ? { stripeAccount: stripeAccountId } : undefined;
+          const list = await stripe.paymentMethodDomains.list({ domain_name: originHost, limit: 1 }, reqOpts);
+          const dom = list.data[0];
+          if (!dom) {
+            await stripe.paymentMethodDomains.create({ domain_name: originHost }, reqOpts);
+          } else if (dom.apple_pay?.status !== 'active') {
+            // The domain exists but Apple's check failed earlier (the
+            // association file was not being served before this change).
+            // Re-validate now that /.well-known answers.
+            await stripe.paymentMethodDomains.validate(dom.id, reqOpts);
+          }
+          _walletDomainOk.add(stripeAccountId + '|' + originHost);
+        } catch (e) {
+          console.warn('wallet domain registration skipped:', (e as Error).message);
+        }
+      }
       const totalAmt = amount + (surchargeAmount || 0);
       const piParams: Stripe.PaymentIntentCreateParams = {
         amount: totalAmt,
@@ -194,21 +241,6 @@ Deno.serve(async (req) => {
       },
       quantity: 1,
     }];
-
-    if (surchargeAmount && surchargeAmount > 0) {
-      const surchargePct = Math.round((surchargeAmount / amount) * 100);
-      lineItems.push({
-        price_data: {
-          currency: currency || 'usd',
-          product_data: {
-            name: 'Credit card processing fee',
-            description: `${surchargePct}% fee — covers card processing costs`,
-          },
-          unit_amount: surchargeAmount,
-        },
-        quantity: 1,
-      });
-    }
 
     const explicitMethodTypes = paymentMethod === 'us_bank_account'
       ? (['us_bank_account'] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[])

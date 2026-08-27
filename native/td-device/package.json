@@ -1,0 +1,13 @@
+{
+  "name": "td-device",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TradeDesk device-identity bridge. The web layer can only ever see navigator.userAgent (which iOS deliberately collapses to a generic \"iPhone\") plus screen.width/height, so a broken layout on a new phone can't be tied to the exact hardware. This exposes the real sysctl hardware identifier (e.g. iPhone17,2) and the OS device name (e.g. \"Jack's iPhone\"). Raw capability only: which identifier maps to which marketing name, if any, lives in JS.",
+  "main": "index.js",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "files": ["index.js", "ios/", "TdDevice.podspec"]
+}

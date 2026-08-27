@@ -250,11 +250,24 @@ function _mdYToYmd(s){
 // Silent GPS grab, only fires if OS permission is already 'granted'.
 // Never triggers the OS permission dialog. Use requestLocationPermission()
 // for any flow that needs to ask the user.
+// DEFAULT IS THE TIGHTEST FIX AVAILABLE (owner rule 2026-08-26: "we need the
+// tightest location services upfront at all times, never can default to
+// approximates"). This defaulted to enableHighAccuracy:false with a 30-second
+// cache, and its callers are not cosmetic: checkNearbyJob (js/jobs.js) matches
+// a position against a job fence and reads pos.coords.accuracy to decide
+// whether to trust it, and startDrive (js/mileage.js) stamps the start of a
+// deductible trip. Both were being handed a wifi-derived fix that could be
+// half a minute stale.
+//
+// Coarse is still available, but it now has to be ASKED for, with a reason.
+// A caller that genuinely wants cheap and approximate (weather, a permission
+// probe that throws the position away) passes opts and says why in a comment;
+// the tests scan for that justification.
 function geoIfGranted(cb, errCb, opts){
   if(!navigator.geolocation)return;
   const doGet=()=>navigator.geolocation.getCurrentPosition(
     cb, errCb||function(){},
-    opts||{enableHighAccuracy:false,timeout:5000,maximumAge:30000}
+    opts||{enableHighAccuracy:true,timeout:15000,maximumAge:0}
   );
   if(S.locationGranted){doGet();return;}
   if(!navigator.permissions||!navigator.permissions.query)return;
@@ -472,13 +485,139 @@ function _tdHaptic(kind){
 // ── Shimmer skeleton rows (§8.4) ──────────────────────────────────────────────
 // The app-wide loading treatment: any async surface renders these instead of a
 // "Loading..." string, and real content replaces them in ONE swap when data
-// lands, never a second stacked reveal. Widths vary so a list of them reads
-// like content, not stripes.
+// lands, never a second stacked reveal.
+//
+// Row widths (owner report 2026-08-25: the old 88/72/56 sawtooth "reads as a
+// machine placeholder"). Facebook, YouTube and X all sell the same illusion the
+// same way: no two neighbouring placeholder lines are the same length, the
+// lengths do not march up or down in an even step, and the final line of a
+// block is noticeably short, because that is what the last line of a real
+// sentence looks like when it stops mid-column.
+//
+// So: a fixed 5-width cycle, DELIBERATELY not random. Math.random() would
+// reshuffle every single repaint (a skeleton that redraws while it shimmers
+// flickers), and it would make the widths untestable. A fixed cycle indexed by
+// row number is stable across repaints for free: the same row always gets the
+// same width, so a re-render is pixel-identical to the paint before it.
+// Length 5 (coprime with the 2-5 row counts every real caller uses) means a
+// normal skeleton never shows the cycle repeat, and the values are non-monotonic
+// with uneven gaps so no run of rows reads as a staircase.
+const _TD_SKEL_W=[94,71,86,62,79];
+// The last row is the tell. Real text ends short, so the closing row gets a
+// stub width well under anything in the cycle. Only when there IS a row above
+// it: a lone skeleton row is not the end of a paragraph, it is the whole thing,
+// so a single row uses the full cycle width instead of looking truncated.
+const _TD_SKEL_W_LAST=42;
 function _tdSkelRows(n,h){
   let out='';
-  const count=n||3,ht=h||12;
+  // Defensive count: no args / non-numeric → 3 (the historic default), 0 or a
+  // negative → no rows at all, never a thrown error or an infinite loop. And a
+  // nonsense count out of a bad computation is capped, so a skeleton can never
+  // lock the main thread building a million nodes nobody will ever see.
+  const bad=(n==null||typeof n!=='number'||!isFinite(n));
+  const count=bad?3:Math.max(0,Math.min(200,Math.floor(n)));
+  const ht=h||12;
   for(let i=0;i<count;i++){
-    out+='<div class="td-skel" style="height:'+ht+'px;width:'+(88-(i%3)*16)+'%;margin:10px 0"></div>';
+    const last=(count>1&&i===count-1);
+    const w=last?_TD_SKEL_W_LAST:_TD_SKEL_W[i%_TD_SKEL_W.length];
+    out+='<div class="td-skel" style="height:'+ht+'px;width:'+w+'%;margin:10px 0"></div>';
   }
   return out;
+}
+
+// ── The business's clock (owner rule 2026-08-24) ──────────────────────────────
+// "It needs fixed to contractor time zone when setup off the shop business
+// address, that should solve it permanently."
+//
+// Every time-of-day the app shows a contractor is a fact about THEIR business:
+// when the crew clocked in, when the truck rolled, when the trip was logged.
+// None of it is a fact about where the phone happens to be right now. Reading
+// the device clock meant the owner's Monday redrew itself from 8:00-10:30 to
+// 7:00-9:30 the moment he landed in Denver, and the CSV export moved with him.
+//
+// So the zone is derived once from the business ADDRESS, not asked for and not
+// taken from whatever device did the setup. State plus the shop's longitude is
+// enough: most states sit in one zone, and the dozen that do not are split on a
+// line the shop's own coordinates land cleanly on either side of.
+//
+// Known ragged edge, stated rather than hidden: Indiana and a handful of single
+// counties elsewhere follow county lines no longitude can trace. Those resolve
+// to their state's majority zone, which is right for almost everyone in them
+// and wrong for a few. S.bizTz is writable, so a contractor in one of those
+// counties can be corrected once and it sticks.
+const _TZ_BY_STATE={
+  AL:'America/Chicago',AK:'America/Anchorage',AZ:'America/Phoenix',AR:'America/Chicago',
+  CA:'America/Los_Angeles',CO:'America/Denver',CT:'America/New_York',DE:'America/New_York',
+  DC:'America/New_York',FL:'America/New_York',GA:'America/New_York',HI:'Pacific/Honolulu',
+  ID:'America/Boise',IL:'America/Chicago',IN:'America/Indiana/Indianapolis',IA:'America/Chicago',
+  KS:'America/Chicago',KY:'America/New_York',LA:'America/Chicago',ME:'America/New_York',
+  MD:'America/New_York',MA:'America/New_York',MI:'America/Detroit',MN:'America/Chicago',
+  MS:'America/Chicago',MO:'America/Chicago',MT:'America/Denver',NE:'America/Chicago',
+  NV:'America/Los_Angeles',NH:'America/New_York',NJ:'America/New_York',NM:'America/Denver',
+  NY:'America/New_York',NC:'America/New_York',ND:'America/Chicago',OH:'America/New_York',
+  OK:'America/Chicago',OR:'America/Los_Angeles',PA:'America/New_York',RI:'America/New_York',
+  SC:'America/New_York',SD:'America/Chicago',TN:'America/Chicago',TX:'America/Chicago',
+  UT:'America/Denver',VT:'America/New_York',VA:'America/New_York',WA:'America/Los_Angeles',
+  WV:'America/New_York',WI:'America/Chicago',WY:'America/Denver'
+};
+// States a longitude actually splits, with the line and what lies west of it.
+// (Idaho splits on LATITUDE instead: the panhandle is Pacific.)
+const _TZ_SPLIT={
+  KS:{lon:-101.5,west:'America/Denver'},   NE:{lon:-101.5,west:'America/Denver'},
+  ND:{lon:-100.6,west:'America/Denver'},   SD:{lon:-100.3,west:'America/Denver'},
+  TX:{lon:-104.9,west:'America/Denver'},   FL:{lon:-85.0, west:'America/Chicago'},
+  MI:{lon:-87.3, west:'America/Chicago'},  KY:{lon:-85.4, west:'America/Chicago'},
+  TN:{lon:-85.3, west:'America/Chicago',east:'America/New_York'}
+};
+function _tzUsable(tz){
+  if(!tz)return false;
+  try{new Intl.DateTimeFormat('en-US',{timeZone:tz});return true;}catch(_e){return false;}
+}
+// state: two-letter code. lon/lat: the shop's own coordinates when known, which
+// is what decides a split state. Returns null when there is nothing to go on,
+// so the caller can fall back rather than guess a zone off nothing.
+function tzForBusiness(state,lon,lat){
+  const st=String(state||'').trim().toUpperCase().slice(0,2);
+  if(!_TZ_BY_STATE[st])return null;
+  if(st==='ID'&&typeof lat==='number'&&lat>45.5)return 'America/Los_Angeles';
+  const sp=_TZ_SPLIT[st];
+  if(sp&&typeof lon==='number'&&isFinite(lon)){
+    if(lon<sp.lon)return sp.west;
+    if(sp.east)return sp.east;
+  }
+  return _TZ_BY_STATE[st];
+}
+// The zone every clock time in the app is rendered in. Resolved once and kept
+// on S so it survives a trip, a new device, and a contractor who set the
+// business up while visiting somewhere else.
+function bizTz(){
+  if(typeof S==='undefined'||!S)return 'America/Chicago';
+  if(_tzUsable(S.bizTz))return S.bizTz;
+  let lon=null,lat=null;
+  try{
+    const shop=(typeof places!=='undefined'&&Array.isArray(places))
+      ? places.find(p=>p&&p.kind==='shop'&&p.lon!=null&&p.lat!=null) : null;
+    if(shop){lon=Number(shop.lon);lat=Number(shop.lat);}
+  }catch(_e){}
+  const derived=tzForBusiness(S.state,lon,lat);
+  if(derived){
+    // Cached, not recomputed per render: the address is not going to move, and
+    // this is called from every row of every list that shows a time.
+    S.bizTz=derived;
+    return derived;
+  }
+  // Nothing on record yet (mid-onboarding, or an account older than the
+  // business address). The device's own zone is the best available guess and
+  // is right for the overwhelming majority, who set up where they work.
+  try{const dev=Intl.DateTimeFormat().resolvedOptions().timeZone;if(_tzUsable(dev))return dev;}catch(_e){}
+  return 'America/Chicago';
+}
+// One formatter for every clock time the contractor reads, so no two screens
+// can ever disagree about when something happened.
+function bizTime(iso){
+  if(!iso)return '';
+  const d=iso instanceof Date?iso:new Date(iso);
+  if(isNaN(d.getTime()))return '';
+  try{return d.toLocaleTimeString('en-US',{timeZone:bizTz(),hour:'numeric',minute:'2-digit'});}
+  catch(_e){return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
 }

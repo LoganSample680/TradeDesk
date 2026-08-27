@@ -129,6 +129,66 @@ function _applyEmployeeNavGating(){
   if(_mmiSignout)_mmiSignout.style.display=_isEmployee?'':'none';
   const nr=document.getElementById('nav-user-role');
   if(nr&&_isEmployee)nr.textContent=(_employeeRecord?.role||'employee').charAt(0).toUpperCase()+(_employeeRecord?.role||'employee').slice(1);
+  // Dual-hat switcher entry (§9.10 slice 1): an owner who is ALSO on someone's
+  // crew gets a switch button in the Settings header. The crew hat's entry lives
+  // in _employeeSignOutMenu below (employees can't reach Settings at all).
+  const _hatBtn=document.getElementById('set-hat-btn');
+  if(_hatBtn)_hatBtn.style.display=(!_isEmployee&&(window._hatCrewLinks||[]).length)?'':'none';
+  // The PRIMARY switcher surface (owner ask 2026-08-18): tapping the business
+  // name in the top-left opens the switcher, the Slack-workspace pattern, always
+  // in reach instead of buried in Settings. Only when this login actually has
+  // 2+ hats; a single-hat login keeps the logo easter egg the brand tap fires
+  // today, and the chevron only renders when the tap actually switches, so the
+  // affordance never lies.
+  const _brand=document.getElementById('mobile-topbar-brand');
+  const _chev=document.getElementById('topbar-hat-chev');
+  const _multiHat=(!_isEmployee&&(window._hatCrewLinks||[]).length>0)||(!!_isEmployee&&!!window._hatOwnsBusiness);
+  if(_brand)_brand.onclick=_multiHat
+    ?()=>{if(typeof _hatSwitcherMenu==='function')_hatSwitcherMenu();}
+    :()=>{if(typeof _eggLogoTap==='function')_eggLogoTap();};
+  if(_chev)_chev.style.display=_multiHat?'':'none';
+  if(_multiHat)_hatTeachOnce();
+}
+
+// Discoverability for the brand-tap switcher (owner ask 2026-08-18): a chevron
+// alone doesn't announce itself. Two one-time teachers, never a recurring nag:
+//  • The boot right after a switch shows a toast confirming it AND naming the
+//    surface, the exact teachable moment (sessionStorage flag set by switchHat).
+//  • The FIRST time a login ever renders with two hats, a small coach bubble
+//    points at the business name. Shown once per login (localStorage flag),
+//    dismissed by any tap or on its own after 8s.
+function _hatTeachOnce(){
+  try{
+    const uid=(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||'';
+    if(!uid)return;
+    if(sessionStorage.getItem('_hatJustSwitched')){
+      sessionStorage.removeItem('_hatJustSwitched');
+      // They just used the switcher (any surface), no coach bubble needed ever.
+      localStorage.setItem('zp3_hat_coach_'+uid,'1');
+      if(typeof showToast==='function'){
+        const where=_isEmployee?'crew view':'your business';
+        showToast('Switched to '+where+'. Tap the business name up top to switch back anytime.','🔁',6000);
+      }
+      return;
+    }
+    if(localStorage.getItem('zp3_hat_coach_'+uid))return;
+    if(document.getElementById('_hat-coach'))return;
+    // Never fight the boot overlay for attention; retry after it lifts.
+    if(document.getElementById('supa-boot-overlay')){setTimeout(_hatTeachOnce,1200);return;}
+    localStorage.setItem('zp3_hat_coach_'+uid,'1');
+    const brand=document.getElementById('mobile-topbar-brand');
+    if(!brand)return;
+    const r=brand.getBoundingClientRect();
+    const tip=document.createElement('div');
+    tip.id='_hat-coach';
+    tip.style.cssText='position:fixed;left:'+Math.max(8,Math.round(r.left))+'px;top:'+Math.round(r.bottom+8)+'px;z-index:9500;background:var(--blue);color:#fff;font-size:12.5px;font-weight:600;line-height:1.45;padding:10px 13px;border-radius:10px;max-width:250px;box-shadow:0 6px 20px rgba(0,0,0,.25);animation:td-pg-enter .25s cubic-bezier(.22,1,.36,1) both';
+    tip.innerHTML='<div style="position:absolute;top:-5px;left:22px;width:10px;height:10px;background:var(--blue);transform:rotate(45deg)"></div>'+
+      'Two businesses, one login. Tap your business name here to switch.';
+    document.body.appendChild(tip);
+    const dismiss=()=>{tip.remove();document.removeEventListener('pointerdown',dismiss,true);};
+    setTimeout(()=>document.addEventListener('pointerdown',dismiss,true),400);
+    setTimeout(dismiss,8000);
+  }catch(_e){}
 }
 function _employeeSignOutMenu(){
   closeMobileMore();
@@ -140,10 +200,46 @@ function _employeeSignOutMenu(){
   box.innerHTML=
     '<div style="font-size:16px;font-weight:800;margin-bottom:2px">'+escHtml(name)+'</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:18px">'+escHtml(role.charAt(0).toUpperCase()+role.slice(1))+'</div>'+
+    // Dual-hat (§9.10 slice 1): a crew session whose login ALSO owns a business
+    // gets the flip back to it right here, employees can't reach Settings, so
+    // this menu is their only account surface.
+    (window._hatOwnsBusiness?'<button onclick="this.closest(\'.zmodal-overlay\').remove();switchHat(\'owner\')" style="width:100%;padding:12px;margin-bottom:10px;border-radius:var(--r);border:1.5px solid var(--blue);background:rgba(45,93,168,.08);color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Switch to my business</button>':'')+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove();if(supaEnabled())supaSignOut();" style="flex:1;padding:12px;border-radius:var(--r);border:none;background:#A32D2D;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Sign out</button>'+
     '</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+
+// Dual-hat switcher (§9.10 slice 1): lists every hat this login can wear, their
+// own business plus each active crew membership. Tapping another hat calls
+// switchHat (cloud.js): persist the choice, hard-reload, clean boot into it.
+// Same .zmodal shell as _employeeSignOutMenu above (§7.3: reuse the pattern).
+function _hatSwitcherMenu(){
+  if(typeof closeMobileMore==='function')closeMobileMore();
+  document.getElementById('_hat-switch-ov')?.remove();
+  const links=window._hatCrewLinks||[];
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_hat-switch-ov';
+  const box=document.createElement('div');box.className='zmodal';
+  const row=(label,sub,current,click)=>
+    '<button '+(current?'disabled':'onclick="'+click+'"')+' style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:13px 14px;margin-bottom:8px;border-radius:var(--r);border:1.5px solid '+(current?'var(--blue)':'var(--border2)')+';background:'+(current?'rgba(45,93,168,.08)':'var(--bg2)')+';cursor:'+(current?'default':'pointer')+';font-family:inherit">'+
+      '<span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+label+'</span>'+
+      '<span style="display:block;font-size:11px;color:var(--text3)">'+sub+'</span></span>'+
+      (current?'<span style="flex-shrink:0;font-size:10px;font-weight:800;letter-spacing:.05em;color:var(--blue)">CURRENT</span>':'')+
+    '</button>';
+  // Under the crew hat, S holds crew-visible state, not this login's own business
+  // settings, so the own-business label only trusts S.bname on the owner hat.
+  const ownLabel=escHtml(((!_isEmployee&&S.bname)||'My business').trim()||'My business');
+  let html='<div style="font-size:16px;font-weight:800;margin-bottom:2px">Switch business</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">One login, separate businesses. Each keeps its own clients, money, and tracking.</div>'+
+    row(ownLabel,'Owner',!_isEmployee,'switchHat(\'owner\')');
+  links.forEach(l=>{
+    const cur=!!(_isEmployee&&typeof _contractorUserId!=='undefined'&&String(_contractorUserId)===String(l.contractor_user_id));
+    html+=row('Crew','Signed on as '+escHtml(l.role||'crew'),cur,'switchHat(\''+String(l.contractor_user_id).replace(/[^\w-]/g,'')+'\')');
+  });
+  html+='<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>';
+  box.innerHTML=html;
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }

@@ -823,3 +823,150 @@ test.describe('Fleet mutations + photo handlers', () => {
     assertNoErrors(page, 'fleet mutations + photo handlers');
   });
 });
+
+// ── IRS method-flip trapdoors (owner 2026-08-14: "flip trap doors need to be
+// closed") ────────────────────────────────────────────────────────────────────
+// Year-by-year flipping is legal only on the right history. Three doors:
+// actual-first permanently kills the standard rate; a leased vehicle on the
+// standard rate is locked for the lease; standard-first → actual is legal but
+// forces straight-line depreciation. Unknown history WARNS, never blocks: the
+// app must not invent a lockout it cannot know.
+test.describe('Vehicle deduction method: IRS flip guards', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('_vehFlipGuard: the full legality matrix', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _vehFlipGuard !== 'function') return { skip: true };
+      const g = (v, target) => { const o = _vehFlipGuard(v, target); return { ok: o.ok, short: o.short || '', hasMsg: !!o.msg }; };
+      return {
+        // Door 1: first year filed actual → standard rate is gone forever.
+        actualFirstToMileage: g({ deductionMethod: 'actual', firstYearMethod: 'actual' }, 'mileage'),
+        // Door 2: leased + on the standard rate → locked for the lease.
+        leasedToActual: g({ deductionMethod: 'mileage', firstYearMethod: 'mileage', isLeased: true }, 'actual'),
+        // Door 3: standard-first → actual is legal, with the depreciation caveat.
+        mileageFirstToActual: g({ deductionMethod: 'mileage', firstYearMethod: 'mileage' }, 'actual'),
+        // Unknown history: allowed, but says what would make it illegal.
+        unknownToMileage: g({ deductionMethod: 'actual', firstYearMethod: '' }, 'mileage'),
+        unknownToActual: g({ deductionMethod: 'mileage', firstYearMethod: '' }, 'actual'),
+        // Owned (not leased) mileage-first vehicle going back to mileage: no-op.
+        noChange: g({ deductionMethod: 'mileage', firstYearMethod: 'mileage' }, 'mileage'),
+        // A leased vehicle may still return TO the standard rate if it began there.
+        leasedToMileage: g({ deductionMethod: 'actual', firstYearMethod: 'mileage', isLeased: true }, 'mileage'),
+      };
+    });
+    if (r.skip) return;
+    expect(r.actualFirstToMileage.ok, 'actual-first vehicles can never use the standard rate again').toBe(false);
+    expect(r.actualFirstToMileage.short).toContain('permanently unavailable');
+    expect(r.leasedToActual.ok, 'a leased vehicle on the standard rate is locked for the lease').toBe(false);
+    expect(r.leasedToActual.short).toContain('lease');
+    expect(r.mileageFirstToActual.ok, 'standard-first → actual is legal').toBe(true);
+    expect(r.mileageFirstToActual.short, 'and carries the straight-line caveat').toContain('straight-line');
+    expect(r.unknownToMileage.ok, 'unknown history warns, never blocks').toBe(true);
+    expect(r.unknownToMileage.hasMsg).toBe(true);
+    expect(r.unknownToActual.ok).toBe(true);
+    expect(r.noChange.ok, 'no method change is always fine').toBe(true);
+    expect(r.leasedToMileage.ok, 'a lease that began on the standard rate may return to it').toBe(true);
+  });
+
+  test('an illegal flip never saves: the method reverts and the rule is stated', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof saveFleetVehicle !== 'function' || typeof openAddVehicleModal !== 'function') return { skip: true };
+      const keepV = vehicles.slice(), keepAlert = window.zAlert;
+      let alerted = '';
+      window.zAlert = (msg) => { alerted += String(msg); };
+      try {
+        vehicles.length = 0;
+        vehicles.push({ id: 'v-lock', name: 'Locked Truck', status: 'active',
+          deductionMethod: 'actual', firstYearMethod: 'actual', bizUse: 100 });
+        // Open the editor on it, flip the radio to mileage, save.
+        openAddVehicleModal(0);
+        const radio = document.querySelector('input[name="fv-deduct"][value="mileage"]');
+        if (radio) radio.checked = true;
+        const first = document.getElementById('fv-first-method');
+        if (first) first.value = 'actual';           // history says: actual in year one
+        saveFleetVehicle();
+        const after = (getVehicles().find(v => v.id === 'v-lock') || {}).deductionMethod;
+        return { after, alerted };
+      } finally {
+        window.zAlert = keepAlert;
+        try { document.getElementById('fleet-veh-overlay').style.display = 'none'; } catch (e) {}
+        vehicles.length = 0; keepV.forEach(v => vehicles.push(v));
+      }
+    });
+    if (r.skip) return;
+    expect(r.after, 'the illegal flip is reverted at the door').toBe('actual');
+    expect(r.alerted, 'and the reason is stated in plain English').toContain('standard mileage rate');
+  });
+
+  test('a legal-with-caveat flip saves AND says the caveat out loud', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof saveFleetVehicle !== 'function' || typeof openAddVehicleModal !== 'function') return { skip: true };
+      const keepV = vehicles.slice(), keepAlert = window.zAlert;
+      let alerted = '';
+      window.zAlert = (msg) => { alerted += String(msg); };
+      try {
+        vehicles.length = 0;
+        vehicles.push({ id: 'v-ok', name: 'Flexible Truck', status: 'active',
+          deductionMethod: 'mileage', firstYearMethod: 'mileage', bizUse: 100 });
+        openAddVehicleModal(0);
+        const radio = document.querySelector('input[name="fv-deduct"][value="actual"]');
+        if (radio) radio.checked = true;
+        saveFleetVehicle();
+        const after = (getVehicles().find(v => v.id === 'v-ok') || {}).deductionMethod;
+        return { after, alerted };
+      } finally {
+        window.zAlert = keepAlert;
+        try { document.getElementById('fleet-veh-overlay').style.display = 'none'; } catch (e) {}
+        vehicles.length = 0; keepV.forEach(v => vehicles.push(v));
+      }
+    });
+    if (r.skip) return;
+    expect(r.after, 'the legal flip goes through').toBe('actual');
+    expect(r.alerted, 'with the straight-line depreciation caveat').toContain('straight-line');
+  });
+
+  test('the winner card never suggests a switch the vehicle cannot legally make', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _vehSchedC !== 'function') return { skip: true };
+      const keepV = vehicles.slice(), keepM = mileage.slice(), keepE = expenses.slice();
+      try {
+        const yr = String(new Date().getFullYear());
+        vehicles.length = 0;
+        // Actual-method truck, locked out of the standard rate by its first year,
+        // whose numbers make mileage the winner.
+        vehicles.push({ id: 'v-locked', name: 'Locked', status: 'active',
+          deductionMethod: 'actual', firstYearMethod: 'actual', bizUse: 100 });
+        mileage.length = 0;
+        mileage.push({ id: 9001, date: yr + '-03-02', miles: 4000, vehicleId: 'v-locked', vehicle: 'Locked', purpose: 'Job site' });
+        expenses.length = 0;
+        expenses.push({ id: 9002, date: yr + '-03-02', cat: 'fuel', amount: 300, vehicleId: 'v-locked', vehicleName: 'Locked' });
+        const vd = _vehSchedC(yr);
+        const p = vd.perVehicle[0] || {};
+        const g = _vehFlipGuard({ deductionMethod: p.method, firstYearMethod: p.firstYearMethod, isLeased: p.isLeased }, p.winner);
+        return { winner: p.winner, method: p.method, first: p.firstYearMethod, guardOk: g.ok, short: g.short || '' };
+      } finally {
+        vehicles.length = 0; keepV.forEach(v => vehicles.push(v));
+        mileage.length = 0; keepM.forEach(m => mileage.push(m));
+        expenses.length = 0; keepE.forEach(e => expenses.push(e));
+      }
+    });
+    if (r.skip) return;
+    expect(r.winner, 'the numbers say mileage wins').toBe('mileage');
+    expect(r.method).toBe('actual');
+    expect(r.first, 'the history rides along on perVehicle for the verdict surfaces').toBe('actual');
+    expect(r.guardOk, 'but the switch is illegal, so the card must say locked, not "switch"').toBe(false);
+    expect(r.short).toContain('permanently unavailable');
+  });
+
+  test('no console errors during flip-guard tests', async () => {
+    assertNoErrors(page, 'vehicle flip guards');
+  });
+});

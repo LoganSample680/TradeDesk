@@ -191,7 +191,9 @@ test.describe('Dispatch board', () => {
           { job_id: '801', employee_user_id: 'u-dave', arrived_at: at(12, 0), departed_at: at(12, 45), minutes: 45, source: 'stop' },
         ];
         const realSupa = _supa;
-        _supa = { from: (t) => ({ select: () => ({ eq: () => ({ gte: async () => ({ data: t === 'job_time_entries' ? rows : [] }) }) }) }) };
+        const _q = (data) => { const q = new Proxy(function(){}, { get: (_, k) =>
+          k === 'then' ? (res, rej) => Promise.resolve({ data, error: null }).then(res, rej) : () => q }); return q; };
+        _supa = { from: (t) => ({ select: () => _q(t === 'job_time_entries' ? rows : []) }) };
         const realUser = _supaUser; _supaUser = { id: 'u-owner' };
         try {
           _dispatchStatusAt = 0;
@@ -207,8 +209,9 @@ test.describe('Dispatch board', () => {
       const out = await page.evaluate(async () => {
         const realSupa = _supa, realUser = _supaUser;
         _supaUser = { id: 'u-owner' };
-        _supa = { from: (t) => ({ select: () => ({ eq: () => ({ gte: async () => ({
-          data: t === 'location_pings' ? [{ employee_user_id: 'u-luis', job_id: '810', ts: new Date().toISOString() }] : [] }) }) }) }) };
+        const _q = (data) => { const q = new Proxy(function(){}, { get: (_, k) =>
+          k === 'then' ? (res, rej) => Promise.resolve({ data, error: null }).then(res, rej) : () => q }); return q; };
+        _supa = { from: (t) => ({ select: () => _q(t === 'location_pings' ? [{ employee_user_id: 'u-luis', job_id: '810', ts: new Date().toISOString() }] : []) }) };
         try {
           _dispatchStatusAt = 0;
           await _dispatchLoadStatus(true);

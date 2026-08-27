@@ -33,10 +33,34 @@ test.describe('QR lead tracking: js/qr-leads.js', () => {
     window._supa = {
       from: (tbl) => ({
         select: () => ({
-          eq: (col, val) => ({
-            order: () => Promise.resolve({ data: tbl === 'qr_sources' ? window.__qrSourcesData : [] }),
-            then: (cb) => cb({ data: tbl === 'qr_sources' ? window.__qrSourcesData : [] }),
-          }),
+          eq: (col, val) => {
+            const data = tbl === 'qr_sources' ? window.__qrSourcesData : [];
+            const base = {
+              order: () => Promise.resolve({ data }),
+              then: (cb) => cb({ data }),
+            };
+            // A background pull the app can genuinely fire mid-test (same
+            // class as e2e-geo-send-coverage.spec.js's _noopQuery, fixed
+            // tonight) can chain a filter this narrow mock never
+            // anticipated, e.g. .eq(...).maybeSingle() on an unrelated
+            // table. A mock with no such method throws a real TypeError,
+            // which trips assertNoErrors() on this file's own unrelated
+            // test. Proxy so any method this mock doesn't know about
+            // resolves harmlessly instead, while order()/then() above keep
+            // their real, asserted-on behavior untouched. Chainable calls
+            // must return the PROXY, not the bare base — CI caught cloud.js
+            // chaining .is(...).is(...) where the second call landed on the
+            // unproxied base object and threw the very TypeError this
+            // exists to prevent.
+            const proxy = new Proxy(base, {
+              get(target, prop) {
+                if (prop in target) return target[prop];
+                if (prop === 'maybeSingle' || prop === 'single') return () => Promise.resolve({ data: data[0] || null, error: null });
+                return () => proxy;
+              },
+            });
+            return proxy;
+          },
           in: (col, ids) => Promise.resolve({ data: tbl === 'qr_events' ? window.__qrEventsData.filter(e => ids.includes(e.qr_source_id)) : [] }),
         }),
         insert: (row) => {
@@ -327,8 +351,28 @@ test.describe('QR lead tracking: js/qr-leads.js', () => {
         window._supaUser = { id: 'auth-uid-not-the-account-id', email: 'q@t.com' };
         _account = { id: 'acct-row-uuid-0001' };
         let captured = null;
+        // Proxied for the SAME reason the beforeAll mock above is, and it was
+        // the one place that never got the treatment: the periodic
+        // whole-account cloud save (js/cloud.js supaSaveToCloud) can fire
+        // while this narrow stub is installed and calls
+        // _supa.from('zj_data').upsert(...).select(...).single(). A stub with
+        // no upsert throws a real TypeError, which lands as a console error
+        // and fails this file's own unrelated "zero console errors" test.
+        // Caught on webkit CI 2026-08-25.
+        //
+        // The asserted path (select().in()) keeps its exact behavior; every
+        // other call resolves to an inert chainable, so nothing this stub was
+        // never designed to answer can throw.
+        const inert = () => {
+          const g = new Proxy({
+            then: (res) => Promise.resolve({ data: [], error: null }).then(res),
+            single: () => Promise.resolve({ data: null, error: null }),
+            maybeSingle: () => Promise.resolve({ data: null, error: null }),
+          }, { get(t, prop) { return (prop in t) ? t[prop] : () => g; } });
+          return g;
+        };
         window._supa = {
-          from: (tbl) => ({
+          from: (tbl) => new Proxy({
             select: () => ({
               in: (col, ids) => {
                 captured = { tbl, col, ids };
@@ -337,7 +381,7 @@ test.describe('QR lead tracking: js/qr-leads.js', () => {
                 ] }) }) };
               },
             }),
-          }),
+          }, { get(t, prop) { return (prop in t) ? t[prop] : () => inert(); } }),
         };
         _pendingInbound = [];
         await _loadPendingInbound();

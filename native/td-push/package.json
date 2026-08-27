@@ -1,0 +1,9 @@
+{
+  "name": "td-push",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TradeDesk remote push (APNs). The half td-notify cannot do: notifications about things that happen on the SERVER (a client signed, a payment landed, a crew member was dispatched), not just what the phone already knew. Raw capability only: permission, device token, taps. Copy and routing live in js/push.js and the send-push Edge Function.",
+  "main": "index.js",
+  "capacitor": { "ios": { "src": "ios" } },
+  "files": ["index.js", "ios/", "TdPush.podspec"]
+}

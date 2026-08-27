@@ -11,7 +11,8 @@
  *   checkGoalPrompt, renderGoal, renderLeadSources, closeSourceDetail,
  *   showSourceDetail, renderPipeline, openIntakeFormModal, _copyIntakeUrl,
  *   renderLeadsPage, _pfToggleYr, _pfToggleMo, openBidDetail, _bddView,
- *   setProposalFilter
+ *   setProposalFilter, renderReadyQueue, _readyQueueBids, _sortReadyQueue,
+ *   _readyQueueSetOrder
  *
  * Requirements per function:
  *   1. null/undefined input, must not throw
@@ -1590,7 +1591,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
           if (typeof _nearbyHideTimer !== 'undefined' && _nearbyHideTimer) { clearTimeout(_nearbyHideTimer); _nearbyHideTimer = null; }
           renderDash();
           const el = document.getElementById('dash-nearby');
-          return { ok: true, display: el ? el.style.display : '' };
+          return { ok: true, display: el ? el.style.display : '', html: el ? el.innerHTML : '' };
         } catch (e) { return { ok: false, err: e.message }; }
         finally {
           _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
@@ -1598,7 +1599,14 @@ test.describe('dashboard.js: exhaustive coverage', () => {
         }
       });
       expect(r.ok, r.err).toBe(true);
-      expect(r.display).not.toBe('block');
+      // Old contract: under the dwell floor meant the whole card stayed
+      // hidden. New contract (owner 2026-08-19, "nothing dependent on
+      // anything"): this card never hides anymore, it falls back to the
+      // plain manual clock control. The actual thing this test guards, a
+      // drive-through must not nag with a location PROMPT, still holds.
+      expect(r.display).toBe('block');
+      expect(r.html).not.toContain('At the shop');
+      expect(r.html).toContain('Not clocked in');
     });
 
     test('a re-stamped arrival never blinks an already-open card off', async () => {
@@ -1682,7 +1690,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       expect(r.html).not.toContain('At the shop');
     });
 
-    test('no eligible jobs, the whole card stays hidden rather than an empty shell', async () => {
+    test('no eligible jobs, the location prompt does not show (falls back to the manual clock card, not an empty shell)', async () => {
       const r = await page.evaluate(() => {
         const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, jobs: jobs.slice() };
         _nearbyJob = null; _activeTimer = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
@@ -1698,7 +1706,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
           if (typeof _nearbyHideTimer !== 'undefined' && _nearbyHideTimer) { clearTimeout(_nearbyHideTimer); _nearbyHideTimer = null; }
           renderDash();
           const el = document.getElementById('dash-nearby');
-          return { ok: true, display: el ? el.style.display : '' };
+          return { ok: true, display: el ? el.style.display : '', html: el ? el.innerHTML : '' };
         } catch (e) { return { ok: false, err: e.message }; }
         finally {
           _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
@@ -1706,7 +1714,9 @@ test.describe('dashboard.js: exhaustive coverage', () => {
         }
       });
       expect(r.ok, r.err).toBe(true);
-      expect(r.display).not.toBe('block');
+      expect(r.display).toBe('block');
+      expect(r.html).not.toContain('At the shop');
+      expect(r.html).toContain('Not clocked in');
     });
   });
 
@@ -2138,6 +2148,196 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     });
     expect(r.ok).toBe(true);
     expect(r.count).toBe(1);
+  });
+
+  // ── Ready to schedule queue (owner 2026-08-18) ────────────────────────────
+  test.describe('the Ready to schedule queue', () => {
+    test('a won bid with no job renders one card, sorted by signed date', async () => {
+      const r = await page.evaluate(() => {
+        const c1 = { id: 78101, name: 'Queue Older', addr: '1 Old St' };
+        const c2 = { id: 78102, name: 'Queue Newer', addr: '2 New St' };
+        const b1 = { id: 78101, client_id: 78101, status: 'Closed Won', amount: 500, signedAt: '2026-08-01T00:00:00.000Z' };
+        const b2 = { id: 78102, client_id: 78102, status: 'Closed Won', amount: 700, signedAt: '2026-08-10T00:00:00.000Z' };
+        clients.unshift(c1, c2); bids.unshift(b1, b2);
+        try {
+          renderReadyQueue();
+          const html = document.getElementById('dash-ready-queue').innerHTML;
+          return { ok: true, html, olderFirst: html.indexOf('Queue Older') < html.indexOf('Queue Newer') };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          bids.splice(bids.findIndex(b => b.id === 78101), 1);
+          bids.splice(bids.findIndex(b => b.id === 78102), 1);
+          clients.splice(clients.findIndex(c => c.id === 78101), 1);
+          clients.splice(clients.findIndex(c => c.id === 78102), 1);
+          renderReadyQueue();
+        }
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.html).toContain('Queue Older');
+      expect(r.html).toContain('Queue Newer');
+      expect(r.olderFirst, 'default order is oldest signed first').toBe(true);
+    });
+
+    test('a bid that already has a job is excluded from the queue', async () => {
+      const r = await page.evaluate(() => {
+        const c1 = { id: 78201, name: 'Queue Has Job', addr: '3 Job St' };
+        const b1 = { id: 78201, client_id: 78201, status: 'Closed Won', amount: 500, signedAt: '2026-08-01T00:00:00.000Z' };
+        const j1 = { id: 78201, bid_id: 78201, client_id: 78201, name: 'Queue Has Job', start: todayKey(), status: 'upcoming' };
+        clients.unshift(c1); bids.unshift(b1); jobs.unshift(j1);
+        try {
+          renderReadyQueue();
+          const el = document.getElementById('dash-ready-queue');
+          return { ok: true, html: el.innerHTML };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          bids.splice(bids.findIndex(b => b.id === 78201), 1);
+          jobs.splice(jobs.findIndex(j => j.id === 78201), 1);
+          clients.splice(clients.findIndex(c => c.id === 78201), 1);
+          renderReadyQueue();
+        }
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.html).not.toContain('Queue Has Job');
+    });
+
+    test('no queued bids clears the card rather than leaving stale HTML', async () => {
+      const r = await page.evaluate(() => {
+        const c1 = { id: 78301, name: 'Queue Solo', addr: '4 Solo St' };
+        const b1 = { id: 78301, client_id: 78301, status: 'Closed Won', amount: 500, signedAt: '2026-08-01T00:00:00.000Z' };
+        clients.unshift(c1); bids.unshift(b1);
+        renderReadyQueue();
+        const before = document.getElementById('dash-ready-queue').innerHTML;
+        bids.splice(bids.findIndex(b => b.id === 78301), 1);
+        clients.splice(clients.findIndex(c => c.id === 78301), 1);
+        renderReadyQueue();
+        const after = document.getElementById('dash-ready-queue').innerHTML;
+        return { hadCard: before.includes('Queue Solo'), clearedAfter: after === '' };
+      });
+      expect(r.hadCard).toBe(true);
+      expect(r.clearedAfter).toBe(true);
+    });
+
+    test('_readyQueueSetOrder persists queueOrder and later renders honor it', async () => {
+      const r = await page.evaluate(() => {
+        const c1 = { id: 78401, name: 'Queue Z', addr: '5 Z St' };
+        const c2 = { id: 78402, name: 'Queue A', addr: '6 A St' };
+        // Z signed AFTER A, so default (signed-date) order would put A first.
+        const b1 = { id: 78401, client_id: 78401, status: 'Closed Won', amount: 500, signedAt: '2026-08-01T00:00:00.000Z' };
+        const b2 = { id: 78402, client_id: 78402, status: 'Closed Won', amount: 500, signedAt: '2026-08-05T00:00:00.000Z' };
+        clients.unshift(c1, c2); bids.unshift(b1, b2);
+        try {
+          _readyQueueSetOrder(['78401', '78402']); // explicit drag override: Z first
+          renderReadyQueue();
+          const html = document.getElementById('dash-ready-queue').innerHTML;
+          return { ok: true, zFirst: html.indexOf('Queue Z') < html.indexOf('Queue A'), order1: b1.queueOrder, order2: b2.queueOrder };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          bids.splice(bids.findIndex(b => b.id === 78401), 1);
+          bids.splice(bids.findIndex(b => b.id === 78402), 1);
+          clients.splice(clients.findIndex(c => c.id === 78401), 1);
+          clients.splice(clients.findIndex(c => c.id === 78402), 1);
+          renderReadyQueue();
+        }
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.order1).toBe(0);
+      expect(r.order2).toBe(1);
+      expect(r.zFirst, 'explicit queueOrder overrides the signed-date default').toBe(true);
+    });
+
+    test('_readyQueueSetOrder: null/undefined/empty/unknown ids never throw', async () => {
+      const r = await page.evaluate(() => {
+        const out = [];
+        try { _readyQueueSetOrder(null); out.push('null-ok'); } catch (e) { out.push('null-threw:' + e.message); }
+        try { _readyQueueSetOrder(undefined); out.push('undef-ok'); } catch (e) { out.push('undef-threw:' + e.message); }
+        try { _readyQueueSetOrder([]); out.push('empty-ok'); } catch (e) { out.push('empty-threw:' + e.message); }
+        try { _readyQueueSetOrder(['no-such-bid-id']); out.push('unknown-ok'); } catch (e) { out.push('unknown-threw:' + e.message); }
+        return out;
+      });
+      expect(r).toEqual(['null-ok', 'undef-ok', 'empty-ok', 'unknown-ok']);
+    });
+
+    test('renderReadyQueue: no #dash-ready-queue element returns gracefully', async () => {
+      const r = await page.evaluate(() => {
+        const el = document.getElementById('dash-ready-queue');
+        const parent = el && el.parentNode, next = el && el.nextSibling;
+        if (el) el.remove();
+        try { renderReadyQueue(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { if (el && parent) parent.insertBefore(el, next); }
+      });
+      expect(r.ok, r.err).toBe(true);
+    });
+
+    test('renderReadyQueue: 5 concurrent calls, no crash, no duplicate cards', async () => {
+      const r = await page.evaluate(() => {
+        const c1 = { id: 78501, name: 'Queue Concurrent', addr: '7 Con St' };
+        const b1 = { id: 78501, client_id: 78501, status: 'Closed Won', amount: 500, signedAt: '2026-08-01T00:00:00.000Z' };
+        clients.unshift(c1); bids.unshift(b1);
+        try {
+          renderReadyQueue(); renderReadyQueue(); renderReadyQueue(); renderReadyQueue(); renderReadyQueue();
+          const html = document.getElementById('dash-ready-queue').innerHTML;
+          return { ok: true, count: (html.match(/Queue Concurrent/g) || []).length };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          bids.splice(bids.findIndex(b => b.id === 78501), 1);
+          clients.splice(clients.findIndex(c => c.id === 78501), 1);
+          renderReadyQueue();
+        }
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.count).toBe(1);
+    });
+  });
+
+  // ── Client-tier purpose upgrade for a queued (unscheduled) job ────────────
+  test.describe('a queued bid labels the drive as a job, not a consult', () => {
+    test('_geoHasQueuedBid: true for a won bid with no job, false once a job exists, false for null/unknown client', async () => {
+      const r = await page.evaluate(() => {
+        const c1 = { id: 78601, name: 'Fence Queue Co', addr: '8 Fence St' };
+        const b1 = { id: 78601, client_id: 78601, status: 'Closed Won', amount: 500 };
+        clients.unshift(c1); bids.unshift(b1);
+        const out = {};
+        try {
+          out.nullClient = _geoHasQueuedBid(null);
+          out.unknownClient = _geoHasQueuedBid(999999);
+          out.beforeJob = _geoHasQueuedBid(78601);
+          jobs.unshift({ id: 78601, bid_id: 78601, client_id: 78601, name: 'Fence Queue Co' });
+          out.afterJob = _geoHasQueuedBid(78601);
+          return { ok: true, ...out };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          bids.splice(bids.findIndex(b => b.id === 78601), 1);
+          const ji = jobs.findIndex(j => j.id === 78601);
+          if (ji !== -1) jobs.splice(ji, 1);
+          clients.splice(clients.findIndex(c => c.id === 78601), 1);
+        }
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.nullClient).toBe(false);
+      expect(r.unknownClient).toBe(false);
+      expect(r.beforeJob, 'won, unscheduled bid: queued').toBe(true);
+      expect(r.afterJob, 'a real job now exists: no longer queued').toBe(false);
+    });
+
+    test('_autoTripPurpose: Job site when queuedJob is set, Client Consult otherwise, Other for null/unknown kind', async () => {
+      const r = await page.evaluate(() => {
+        return {
+          queued: _autoTripPurpose({ kind: 'client', queuedJob: true }),
+          plain: _autoTripPurpose({ kind: 'client', queuedJob: false }),
+          untagged: _autoTripPurpose({ kind: 'client' }),
+          nullInput: _autoTripPurpose(null),
+          undefinedInput: _autoTripPurpose(undefined),
+          unknownKind: _autoTripPurpose({ kind: 'nonsense-kind-xyz' }),
+        };
+      });
+      expect(r.queued).toBe('Job site');
+      expect(r.plain).toBe('Client Consult');
+      expect(r.untagged).toBe('Client Consult');
+      expect(r.nullInput).toBe('Other');
+      expect(r.undefinedInput).toBe('Other');
+      expect(r.unknownKind).toBe('Other');
+    });
   });
 
   test('renderTodayFeed: a bids[] draft renders exactly one card', async () => {
@@ -3226,6 +3426,32 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     expect(r.ok).toBe(true);
     expect(r.exists).toBe(true);
     expect(r.hasBidPane).toBe(true);
+  });
+
+  // Owner report 2026-08-20: on iOS the sticky "Close / Our proposal / Client
+  // view" header rendered at the very top of the fixed-position overlay with
+  // no top inset, so it collided with the status bar/Dynamic Island. Fixed
+  // with the same env(safe-area-inset-top) treatment every other full-screen
+  // overlay in this app already uses (see js/clients.js's proposal viewer).
+  test('openBidDetail: sticky header reserves the iOS safe-area top inset (Dynamic Island regression)', async () => {
+    const r = await page.evaluate(() => {
+      document.querySelector('[data-bdov]')?.remove();
+      const fakeBid = { id: 80009, status: 'Closed Won', client_id: 80009, amount: 1200, proposalHtml: '<p>x</p>' };
+      const fakeClient = { id: 80009, name: 'Safe Area Client' };
+      bids.unshift(fakeBid);
+      clients.unshift(fakeClient);
+      try {
+        openBidDetail(80009, 'bid');
+        const ov = document.querySelector('[data-bdov]');
+        const header = ov?.firstElementChild;
+        return { hasInset: !!header && header.getAttribute('style').includes('env(safe-area-inset-top)') };
+      } finally {
+        bids.shift();
+        clients.shift();
+        document.querySelector('[data-bdov]')?.remove();
+      }
+    });
+    expect(r.hasInset).toBe(true);
   });
 
   test('openBidDetail: view defaults to bid tab', async () => {

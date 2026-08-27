@@ -1089,6 +1089,14 @@ async function expSave(){
     deductible:catInfo.deductible!==false,meals_50:!!(catInfo.meals_50),
   });
   expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
+  // A supply-run card launched this flow (hidden field, js/mileage.js
+  // _supplyRunScan): the saved receipt/expense is the proof that commits the
+  // held mileage, both books settled in one save. Read BEFORE closeExpenseFlow
+  // below removes the modal, and the field with it.
+  const _srRun=document.getElementById('qe-supply-run');
+  if(_srRun&&_srRun.value&&typeof resolveSupplyRun==='function'){
+    resolveSupplyRun(_srRun.value,'receipt',expId);
+  }
   // Where it was logged. Fire-and-forget: this never blocks or delays the save,
   // and silently does nothing if location was never granted.
   if(typeof _stampGeo==='function')_stampGeo(expenses.find(e=>e.id===expId));
@@ -1486,8 +1494,9 @@ function saveQuickExpense(clientId){
   const _qeDateEl=document.getElementById('qe-date');
   const _qeDateVal=_qeDateEl?_qeDateEl.value||todayKey():todayKey();
   const _qeVeh=document.getElementById('qe-vehicle');
+  const _qeExpId=_newId();
   expenses.unshift({
-    id:_newId(),
+    id:_qeExpId,
     date:_qeDateVal,
     loggedAt:new Date().toISOString(),
     cat,
@@ -1871,7 +1880,7 @@ function setTrTab(tab,btn){
   if(tab==='jobs')renderJobsHistory();
   if(tab==='summary'){renderSummary();renderJobSummary();renderMonthlyPL();}
   if(tab==='hiring')renderHiringCalc();
-  if(tab==='map'&&typeof renderGeoMap==='function')renderGeoMap();
+  if(tab==='map'&&typeof openGeoMap==='function')openGeoMap();
 }
 function getTrackerYears(){
   const allDates=[
@@ -2076,6 +2085,7 @@ async function openExportPanel(){
         '</select>'+
       '</div>'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Choose format</div>'+
+      exportOptionHTML('openVehicleVerdict(getExportYear())','🚗','Year-end vehicle verdict','Mileage rate vs actual expenses, worked out per truck, with the IRS switching rules applied. See which method wins before you file, then generate the full report.')+
       exportOptionHTML('exportAllDataCSV()','📦','Everything: one CSV','Every client, lead, proposal, job, payment, income, expense, mileage, and time entry in one file. Clients, leads, proposals, jobs, payments, income, expenses, mileage, all labeled sections.')+
       exportOptionHTML('exportAllXLSX()','📊','Income · Expenses · Mileage, Excel','One workbook, three sheets. All years of income, expenses, and mileage, dollar columns formatted, SUM totals at the bottom of each sheet.')+
       exportOptionHTML('exportPLCSV()','📈','Profit & Loss CSV','Income vs expenses vs mileage deduction, net profit at the bottom. Hand straight to your accountant.')+
@@ -2932,7 +2942,7 @@ async function _openJobProfit(){
     (tm||[]).forEach(r=>{if(r.employee_user_id)rateByUid[r.employee_user_id]=(typeof _empLoadedHourly==='function')?_empLoadedHourly(r):(r.pay_type==='salary'?(r.pay_rate||0)/2080:(r.pay_rate||0))*(S.laborBurden||1.3);});
     // Owner's own tracked time (bills under cid), cost it with the owner's pay rate
     rateByUid[cid]=(typeof _empLoadedHourly==='function')?_empLoadedHourly({pay_type:S.ownerPayType,pay_rate:S.ownerPayRate}):0;
-    const{data:te}=await _supa.from('job_time_entries').select('employee_user_id,job_id,minutes,source').eq('contractor_user_id',cid);
+    const{data:te}=await _supa.from('job_time_entries').select('employee_user_id,job_id,minutes,source').is('deleted_at',null).eq('contractor_user_id',cid);
     entries=te||[];
   }catch(_e){}
   // Fold in manually-clocked time (js/jobs.js clockOut → timeEntries), without
@@ -3018,6 +3028,32 @@ function _ctDateStr(d){
   try{return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);}
   catch(_e){return dateKey(d);}
 }
+// Central-time clock stamps, same purpose as _ctDateStr just above (owner
+// ask 2026-08-23: the on-device location diagnostics panel, js/geo-track.js
+// _geoDiagPanel, showed raw UTC event times, confusing to read against a
+// phone that's on Central time). America/Chicago carries CDT/CST itself, so
+// this stays correct across the DST boundary without a hand-maintained
+// offset. 'MM-DDTHH:MM:SS' is the same compact shape the diagnostics log
+// already used, just in the right timezone now.
+function _ctStamp(d){
+  try{
+    const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(d);
+    const g=t=>(parts.find(p=>p.type===t)||{}).value||'';
+    let hh=g('hour');if(hh==='24')hh='00'; // some engines return '24' at midnight under hour12:false
+    return g('month')+'-'+g('day')+'T'+hh+':'+g('minute')+':'+g('second');
+  }catch(_e){return dateKey(d)+'T??:??:??';}
+}
+// HH:MM only, for a window's END clock (the reconciler's own recon-win tags
+// show a full start stamp, then just the time on the other side of the
+// arrow when it's the same day, see _wTag in _geoReconcileFromMileage).
+function _ctHM(d){
+  try{
+    const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d);
+    const g=t=>(parts.find(p=>p.type===t)||{}).value||'';
+    let hh=g('hour');if(hh==='24')hh='00';
+    return hh+':'+g('minute');
+  }catch(_e){return '??:??';}
+}
 // Fetch pay rates (loaded + wage) and tracked time entries since an ISO instant.
 async function _fetchCrewLabor(sinceISO){
   const out={loaded:{},wage:{},name:{},entries:[],shopEntries:[]};
@@ -3036,11 +3072,29 @@ async function _fetchCrewLabor(sinceISO){
     out.loaded[cid]=(typeof _empLoadedHourly==='function')?_empLoadedHourly(_oc):0;
     out.wage[cid]=(typeof _empEffectiveHourly==='function')?_empEffectiveHourly(_oc):0;
     out.name[cid]=S.ownerName||(typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)';
-    let q=_supa.from('job_time_entries').select('employee_user_id,job_id,minutes,arrived_at,departed_at,source').eq('contractor_user_id',cid);
+    // dest_place carries the actual place/client name for a job_id:null row
+    // (a supply house, a home office, an unscheduled client visit): without
+    // it the Time Log has nothing to show but a bare '-' for every one of
+    // those rows (owner report, the JOB SITE line reading as unlabeled
+    // noise). Additive column, every other _fetchCrewLabor consumer (Crew
+    // Cost, Books) already ignores fields it doesn't use.
+    // client_key: a drive-sourced row's own deterministic legKey (js/geo-track.js
+    // _geoDriveEntry stamps the SAME key on the mileage row and this one), the
+    // only way to look the leg back up and show its real from/to locations on
+    // the Time Log Job Site line (owner request 2026-08-23) instead of just the
+    // bare destination a drive row shows today.
+    // id: the Time Log's Edit button needs to address the actual row to
+    // correct a wrong GPS clock-out (owner rule 2026-08-24). Additive, every
+    // other _fetchCrewLabor consumer ignores fields it doesn't use.
+    let q=_supa.from('job_time_entries').select('id,employee_user_id,job_id,minutes,arrived_at,departed_at,source,dest_place,client_key').is('deleted_at',null).eq('contractor_user_id',cid);
     if(sinceISO)q=q.gte('arrived_at',sinceISO);
     const{data:te}=await q;
     out.entries=te||[];
-    let sq=_supa.from('shop_time_entries').select('employee_user_id,minutes,arrived_at').eq('contractor_user_id',cid);
+    // departed_at rides along for the Time Log's stop-anchor rule
+    // (js/timelog.js _tlStopAnchored): a shop session is one of the "real
+    // location events" an unpaid stop must sit between. Additive, every
+    // other consumer ignores it.
+    let sq=_supa.from('shop_time_entries').select('employee_user_id,minutes,arrived_at,departed_at').is('deleted_at',null).eq('contractor_user_id',cid);
     if(sinceISO)sq=sq.gte('arrived_at',sinceISO);
     const{data:se}=await sq;
     out.shopEntries=se||[];
@@ -3074,6 +3128,23 @@ async function _openCrewCost(){
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   _crewCostRender('week');
+}
+// The motion history covering every shop session in the range, or null when
+// there is none. Mirrors _tlShopTape (js/timelog.js) deliberately: Crew Cost
+// and the Time Log must never disagree about a paid minute, so both read the
+// same tape and both hand it to the one function that owns the rule.
+async function _ccShopTape(byUid){
+  try{
+    if(typeof _geoMotionTape!=='function')return null;
+    let lo=0,hi=0;
+    Object.keys(byUid||{}).forEach(uid=>(byUid[uid]||[]).forEach(e=>{
+      const a=Date.parse((e&&e.arrived_at)||'')||0,b=Date.parse((e&&e.departed_at)||'')||0;
+      if(a>0&&(!lo||a<lo))lo=a;
+      if(b>hi)hi=b;
+    }));
+    if(!(lo>0&&hi>lo))return null;
+    return await _geoMotionTape(lo,hi);
+  }catch(_e){return null;}
 }
 async function _crewCostRender(range){
   const body=document.getElementById('_crew-cost-body');if(!body)return;
@@ -3130,8 +3201,19 @@ async function _crewCostRender(range){
   });
   const _ccOverlapMs=(aStart,aEnd,windows)=>windows.reduce((sum,[bStart,bEnd])=>
     sum+Math.max(0,Math.min(aEnd,bEnd)-Math.max(aStart,bStart)),0);
+  // Computed before anything is aggregated: both the drive filter just below
+  // and the shop spans further down need the day's workday window.
+  const shopCut=(typeof _geoShopCutoffs==='function')?_geoShopCutoffs(ents):{};
   ents.forEach(en=>{
     const uid=en.employee_user_id;if(!uid)return;
+    // Same workday bound the Time Log applies: a drive leg outside the day's
+    // first and last real job/supply activity is a personal trip the tracker
+    // caught, never paid labor (js/geo-track.js _geoRowInWorkday). Applied
+    // here too so Crew Cost and the Time Log cannot disagree about a day.
+    if(_geoIsDriveSource(en.source)&&typeof _geoRowInWorkday==='function'&&en.arrived_at){
+      const dd=_ctDateStr(new Date(en.arrived_at));
+      if(!_geoRowInWorkday(en.arrived_at,en.departed_at,((shopCut[uid]||{})[dd])||null))return;
+    }
     const e=_emp(uid);let m=en.minutes||0;
     // Off-job time (lunch, an errand) is shown but never PAID: it stays out of
     // e.min, which drives loaded cost and wage, and out of dayMins, which drives
@@ -3157,15 +3239,48 @@ async function _crewCostRender(range){
     }
     const day=_ctDateStr(new Date(en.arrived_at));e.dayMins[day]=(e.dayMins[day]||0)+m;
   });
+  // The day auto clocks out at its last real work event, so yard dwell after
+  // the last job or supply run (and yard dwell on a day with no work fence at
+  // all) is worth zero paid minutes: js/geo-track.js _geoShopCutoffs carries
+  // the full rule. Applied HERE as well as on the Time Log on purpose, Crew
+  // Cost is where those minutes turn into money, and two screens disagreeing
+  // about what a day paid is worse than either answer alone.
+  // Per person, in order: the clock-out bound AND the no-minute-paid-twice
+  // clip between overlapping sessions both live in _geoShopPaidSpans
+  // (js/geo-track.js), so this screen and the Time Log cannot drift apart.
+  const shopByUid={};
   shopEnts.forEach(en=>{
-    const uid=en.employee_user_id;if(!uid)return;
-    const e=_emp(uid);const raw=en.minutes||0;
-    const a=Date.parse(en.arrived_at),b=en.departed_at?Date.parse(en.departed_at):a+raw*60000;
-    const overlapMin=Math.round(_ccOverlapMs(a,b,manualWindows[uid]||[])/60000);
-    const m=Math.max(0,raw-Math.min(raw,overlapMin));   // never below 0, never over raw
-    e.min+=m;e.shopMin+=m;
-    const day=_ctDateStr(new Date(en.arrived_at));e.dayMins[day]=(e.dayMins[day]||0)+m;
+    if(!en||!en.employee_user_id||!en.arrived_at)return;
+    const a=Date.parse(en.arrived_at);
+    const b=en.departed_at?Date.parse(en.departed_at):a+(en.minutes||0)*60000;
+    (shopByUid[en.employee_user_id]=shopByUid[en.employee_user_id]||[])
+      .push({arrived_at:en.arrived_at,departed_at:new Date(b).toISOString()});
   });
+  // Same tape the Time Log reads, for the same reason: at a home shop the
+  // paid span is the walking part (js/geo-track.js _geoActiveTrim). Crew Cost
+  // and the Time Log must never disagree about a number, so both fetch it and
+  // both hand it to the one function that owns the rule.
+  const shopTape=await _ccShopTape(shopByUid);
+  for(const uid of Object.keys(shopByUid)){
+    const mine=ents.filter(x=>x&&String(x.employee_user_id)===String(uid));
+    const spans=(typeof _geoShopPaidSpans==='function')?_geoShopPaidSpans(shopByUid[uid],shopCut[uid]||{},mine,shopTape):[];
+    shopByUid[uid].forEach((en,i)=>{
+      const sp=spans[i];if(!sp)return;
+      const bounded=sp.minutes||0;
+      // Overlap is measured against the BOUNDED window, not the raw one: a
+      // manual clock outside the workday would otherwise be subtracted from
+      // minutes the clock-out already removed, double-docking the same time.
+      const overlapMin=Math.round(_ccOverlapMs(sp.startMs,sp.endMs,manualWindows[uid]||[])/60000);
+      const m=Math.max(0,bounded-Math.min(bounded,overlapMin));   // never below 0, never over the bounded span
+      // Bucket created only once the session actually pays something, otherwise
+      // a person whose whole week was after-hours yard dwell renders as a 0.0h row.
+      if(m<1)return;
+      const e=_emp(uid);
+      const day=_ctDateStr(new Date(sp.startMs));
+      e.min+=m;e.shopMin+=m;
+      e.dayMins[day]=(e.dayMins[day]||0)+m;
+    });
+  }
   // Revenue attribution + overtime per employee
   Object.keys(byEmp).forEach(uid=>{
     const bidsSeen=new Set(Object.keys(byEmp[uid].jobs).filter(k=>k!=='unknown'));
@@ -3241,7 +3356,7 @@ function viewSavedProposal(bidId){
       '<span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span>'+
     '</div>':'';
   ov.innerHTML=
-    '<div style="position:sticky;top:0;background:#1a365d;color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;z-index:1">'+
+    '<div style="position:sticky;top:0;background:#1a365d;color:#fff;padding:14px 16px;padding-top:max(14px,env(safe-area-inset-top));display:flex;justify-content:space-between;align-items:center;z-index:1">'+
       '<div style="font-size:15px;font-weight:800">Signed Proposal</div>'+
       '<button onclick="document.querySelector(\'[data-pov]\').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 14px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Close</button>'+
     '</div>'+
@@ -3547,6 +3662,32 @@ function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor,sumFn,fmtFn
       '</div>'+
     '</div>';
   }).join('');
+}
+// Week-level accordion nested inside a month (Time Log unified report: Year →
+// Month → Week). Same shell/toggle shape as _bkTogMonth/_bkMonthAcc one tier
+// down, keyed by (tab,mo,wk) since a week id must be unique within its month.
+function _bkTogWeek(tab,mo,wk){
+  const el=document.getElementById('bk-'+tab+'-wk-'+mo+'-'+wk);
+  if(!el)return;
+  const body=el.querySelector('.bk-week-body');
+  const opening=!el.classList.contains('open');
+  el.classList.toggle('open');
+  if(body)body.style.display=opening?'block':'none';
+}
+function _bkWeekAcc(tab,mo,wk,wkLabel,subLabel,totalHtml,inner,isOpen){
+  return '<div id="bk-'+tab+'-wk-'+mo+'-'+wk+'" class="bk-week'+(isOpen?' open':'')+'">'+
+    '<button class="bk-week-hd" onclick="_bkTogWeek(\''+tab+'\',\''+mo+'\',\''+wk+'\')">'+
+      '<div style="flex:1;text-align:left">'+
+        '<div class="bk-week-title">'+wkLabel+'</div>'+
+        '<div class="bk-week-sub">'+subLabel+'</div>'+
+      '</div>'+
+      '<div style="display:flex;align-items:center;gap:10px">'+
+        (totalHtml||'')+
+        '<div class="bk-week-chev">▸</div>'+
+      '</div>'+
+    '</button>'+
+    '<div class="bk-week-body"'+(isOpen?'':' style="display:none"')+'>'+inner+'</div>'+
+  '</div>';
 }
 function renderIncome(){
   const el=document.getElementById('inc-table');if(!el)return;

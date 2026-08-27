@@ -1501,18 +1501,69 @@ function openScanViewer(id){
 // The label is what feeds the plan drawing, the takeoff rows, and the estimate
 // line items, so renaming here renames it everywhere downstream, which is why
 // it lives on the scan record rather than on the estimate.
+// ── Name a room whatever it actually is ──────────────────────────────────────
+// Owner call (2026-08-10): "the ability to name a room is a click through
+// rather than a custom name, I want a custom name."
+//
+// The capture chip cycles a fixed list, which is right WHILE scanning (you are
+// holding the phone up walking the walls, and typing there is miserable), and
+// wrong afterwards, because half of every real house is "Master bath", "Zach's
+// office", "Back bedroom, the one with the bay window". So every room name in
+// the viewer is tappable and takes free text.
+//
+// The label is what feeds the plan drawing, the takeoff rows, and the estimate
+// line items, so renaming here renames it everywhere downstream, which is why
+// it lives on the scan record rather than on the estimate.
+//
+// Owner call (2026-08-19): the common-name picker started as tap-to-pick chips
+// but that read as a scattered, wrapped cluster of pills, not clean. A single
+// alphabetized list of rows covers the same common-name case in the same one
+// tap, without the wrap. The text input underneath is still the fallback for
+// "Zach's office" / "back bedroom with the bay window", same custom-name
+// freedom the old prompt() gave. Built on .zmodal-overlay/.zmodal (see zAlert/
+// zConfirm/zPrompt in utils.js and _tmConfirmScreen in true-measure.js), the
+// app's one centered-modal convention (§7.3), not a hand-rolled sheet.
+const _SCAN_RENAME_NAMES=['Attic','Basement','Bathroom','Bedroom','Closet','Dining Room','Exterior','Family Room','Garage','Hallway','Kitchen','Laundry Room','Living Room','Office','Primary Bathroom','Primary Bedroom'];
 function _scanRenameRoom(id,idx){
   const sc=getScans().find(x=>String(x.id)===String(id));
   if(!sc||!sc.rooms||!sc.rooms[idx])return;
+  document.getElementById('_scan-rename-ov')?.remove(); // never stack a stale one
   const cur=sc.rooms[idx].label||'';
-  const next=prompt('Name this room',cur);
-  if(next===null)return;                    // cancelled: leave it alone
-  const name=String(next).trim();
-  if(!name||name===cur)return;              // blank is not a name
-  sc.rooms[idx].label=name;
-  saveScan(sc);
-  openScanViewer(id);
-  if(typeof showToast==='function')showToast('Renamed to '+name,'✏️');
+  const apply=(raw)=>{
+    const name=String(raw||'').trim();
+    document.getElementById('_scan-rename-ov')?.remove();
+    if(!name||name===cur)return;             // blank/unchanged is not a rename
+    sc.rooms[idx].label=name;
+    saveScan(sc);
+    openScanViewer(id);
+    if(typeof showToast==='function')showToast('Renamed to '+name,'✏️');
+  };
+  const ov=document.createElement('div');
+  ov.className='zmodal-overlay';ov.id='_scan-rename-ov';
+  ov.innerHTML=
+    '<div class="zmodal">'+
+      '<div class="zmodal-title">Name this room</div>'+
+      '<div class="zmodal-msg" style="margin-bottom:6px">Tap a common name, or type your own.</div>'+
+      '<div id="_scan-rename-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--border2);border-radius:var(--r);margin-bottom:14px">'+
+        _SCAN_RENAME_NAMES.map((n,i)=>'<div class="_scan-rename-row" data-name="'+escHtml(n)+'" style="padding:12px 14px;font-size:14px;font-weight:600;color:var(--text);cursor:pointer;'+(i<_SCAN_RENAME_NAMES.length-1?'border-bottom:1px solid var(--border2)':'')+'">'+escHtml(n)+'</div>').join('')+
+      '</div>'+
+      '<label style="font-size:11.5px;font-weight:700;color:var(--text3)">Custom name</label>'+
+      '<input id="_scan-rename-inp" value="'+escHtml(cur)+'" style="width:100%;padding:10px;font-size:14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;margin:6px 0 14px">'+
+      '<div class="zmodal-btns">'+
+        '<button class="btn zmodal-cancel" style="font-size:14px;padding:10px 16px">Cancel</button>'+
+        '<button id="_scan-rename-ok" class="btn btn-p" style="font-size:14px;padding:10px 16px">Save</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(ov);
+  ov.querySelectorAll('#_scan-rename-list ._scan-rename-row').forEach(row=>{
+    row.onclick=()=>apply(row.getAttribute('data-name'));
+  });
+  const inp=ov.querySelector('#_scan-rename-inp');
+  ov.querySelector('#_scan-rename-ok').onclick=()=>apply(inp.value);
+  ov.querySelector('.zmodal-cancel').onclick=()=>ov.remove();
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter')apply(inp.value);});
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  setTimeout(()=>inp.focus(),100);
 }
 // A room name, rendered as the button it now is. One helper so the plan, paint,
 // electrical and HVAC lists cannot drift apart on how a rename is offered.

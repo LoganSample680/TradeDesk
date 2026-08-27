@@ -12,6 +12,7 @@ function _openSetDetail(key) {
   _renderSetIndex();
   if (key === 'integrations') _renderIntegrations();
   if (key === 'branding') _renderBrandSwatches(S.brandColor||'#2D5DA8');
+  if (key === 'truerates') loadTrueRatesForm();
 }
 
 function _closeSetDetail() {
@@ -53,6 +54,16 @@ function _renderSetIndex() {
   // Legal & terms meta
   const legalMeta = document.getElementById('set-meta-legal');
   if (legalMeta) legalMeta.innerHTML = '';
+  // TrueSuite rate library meta: how many of the 11 rate fields are set
+  const trueRatesMeta = document.getElementById('set-meta-truerates');
+  if (trueRatesMeta) {
+    const tm = (typeof _tmRates === 'function') ? _tmRates() : (S.trueMeasureRates || {});
+    const sr = (typeof _scanRates === 'function') ? _scanRates() : (S.scanRates || {});
+    const er = (typeof _scanElecRates === 'function') ? _scanElecRates() : (S.scanElecRates || {});
+    const vals = [tm.areaSqFt, tm.roofSquare, tm.distanceLf, sr.wall, sr.ceiling, sr.trimLf, sr.door, sr.window, er.outlet, er.sw, er.gfci];
+    const setCount = vals.filter(n => +n > 0).length;
+    trueRatesMeta.innerHTML = setCount ? `<strong>${setCount} of ${vals.length}</strong><br>set` : '';
+  }
   // Taxes meta
   const taxMeta = document.getElementById('set-meta-taxes');
   if (taxMeta) {
@@ -91,9 +102,12 @@ function _renderSetIndex() {
   if (verEl && typeof APP_VERSION !== 'undefined') verEl.textContent = APP_VERSION;
   const verSub = document.getElementById('set-about-version-sub');
   if (verSub && typeof APP_VERSION !== 'undefined') verSub.textContent = 'v' + APP_VERSION;
-  // Dev row visibility
+  // Dev row visibility: is_dev accounts, plus the support account once the
+  // fleet roster RPC has authorized it (the RPC returns rows only for the
+  // support login; _fleetLoadRoster re-shows the row when they land).
   const devRow = document.getElementById('set-idx-row-dev');
-  if (devRow) devRow.style.display = _config?.is_dev ? 'flex' : 'none';
+  if (devRow) devRow.style.display = (_config?.is_dev || (typeof _fleetRoster !== 'undefined' && _fleetRoster && _fleetRoster.length)) ? 'flex' : 'none';
+  if (typeof _fleetLoadRoster === 'function' && typeof _fleetRoster !== 'undefined' && _fleetRoster === null) _fleetLoadRoster();
 }
 
 const _BRAND_SWATCHES = ['#2D5DA8','#166534','#92400e','#991b1b','#6d28d9','#18181b'];
@@ -158,9 +172,6 @@ function _renderIntegrations() {
       </div>
       <button class="btn btn-sm" onclick="${r.onclick}" style="flex-shrink:0;font-size:12px">${r.action}</button>
     </div>`).join('');
-  // Show Stripe surcharge wrap when Stripe is connected
-  const sw = document.getElementById('stripe-surcharge-wrap');
-  if (sw) sw.style.display = stripeOk ? 'block' : 'none';
 }
 function _openStripeConnect() {
   const el = document.getElementById('stripe-connect-status-ui');
@@ -705,9 +716,9 @@ function _getSmsDefaults(){
   return {
     hub:`Hi {name}, here's your project hub from {business}: {url}`,
     followup:`Hey {name}!\n\nJust following up, your proposal is still ready to go. Tap the link below to review and sign:\n\n{url}\n\nAny questions, just reply!\n\n- {business}`,
-    reminder:`Hi {name}, this is {business}. Just a friendly reminder that a balance of {amount} is outstanding for the work at {address}. Please let us know when you're ready to take care of this. Thank you!`,
-    second:`Hi {name}, this is a second notice from {business}. A balance of {amount} remains outstanding for work completed at {address}. Please respond within 5 business days to arrange payment and avoid further collection steps.`,
-    intent:`{name}, this is formal written notice from {business} of our intent to file a Mechanic's Lien against the property at {address} for unpaid services totaling {amount}. You have 7 days to remit full payment before we proceed with filing. Please contact us immediately.`,
+    reminder:`Hi {name}, this is {business}. Just a friendly reminder that a balance of {amount} is outstanding for the work at {address}. You can pay securely here: {url}\n\nThank you!`,
+    second:`Hi {name}, this is a second notice from {business}. A balance of {amount} remains outstanding for work completed at {address}. Please respond within 5 business days to arrange payment and avoid further collection steps. Pay securely here: {url}`,
+    intent:`{name}, this is formal written notice from {business} of our intent to file a Mechanic's Lien against the property at {address} for unpaid services totaling {amount}. You have 7 days to remit full payment before we proceed with filing. Pay now: {url}\n\nPlease contact us immediately.`,
   };
 }
 function _smsApply(template,vars){
@@ -810,8 +821,6 @@ function loadSettingsForm(){
   const _pmLater=document.getElementById('set-allow-pay-later');if(_pmLater)_pmLater.checked=S.allowPayLater!==false;
   const _scanP=document.getElementById('set-scan-price');if(_scanP)_scanP.value=(S.scanDefaultPrice!=null?S.scanDefaultPrice:99);
   const _scanR=document.getElementById('set-scan-rate');if(_scanR)_scanR.value=(S.scanRateSqFt!=null?S.scanRateSqFt:0);
-  const ccEl=document.getElementById('set-cc-surcharge-enabled');if(ccEl){ccEl.checked=!!S.ccSurchargeEnabled;const pctWrap=document.getElementById('set-cc-surcharge-pct-wrap');if(pctWrap)pctWrap.style.display=S.ccSurchargeEnabled?'block':'none';}
-  const ccPctEl=document.getElementById('set-cc-surcharge-pct');if(ccPctEl)ccPctEl.value=S.ccSurchargePct||3;
   const fcPctEl=document.getElementById('set-finance-charge-pct');if(fcPctEl)fcPctEl.value=S.financeChargePct!=null?S.financeChargePct:1.5;
   const wpEl=document.getElementById('set-warranty-period');if(wpEl)wpEl.value=S.warrantyPeriod||'1 year';
   _renderLogoPreviewBiz();
@@ -822,6 +831,12 @@ function saveSettings(){
   // never filled this session (loadSettingsForm not yet run), harvesting would
   // rebuild S from empty inputs and wipe every saved value, exactly the bug
   // where registerDevice() wiped settings on every boot. Persist S as-is instead.
+  // Accounts that had "pass the card fee to the client" switched on before it was
+  // removed still carry these two keys in their saved settings, and S={...S,...}
+  // would round-trip them forever. Nothing reads them any more, but a stale key is
+  // how a removed feature comes back to life by accident (§7). Cleared here, ABOVE
+  // the form guard, so it also happens for accounts that never open Settings.
+  delete S.ccSurchargeEnabled;delete S.ccSurchargePct;
   if(!window._settingsFormFilled){saveAll();return;}
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
   setOwnerName(gs('set-owner-name')||getOwnerName()||'');
@@ -845,8 +860,6 @@ function saveSettings(){
     allowPayLater:document.getElementById('set-allow-pay-later')?document.getElementById('set-allow-pay-later').checked:(S.allowPayLater!==false),
     scanDefaultPrice:document.getElementById('set-scan-price')?Math.max(0,Math.round(+document.getElementById('set-scan-price').value||0)):(S.scanDefaultPrice!=null?S.scanDefaultPrice:99),
     scanRateSqFt:document.getElementById('set-scan-rate')?Math.max(0,+document.getElementById('set-scan-rate').value||0):(S.scanRateSqFt!=null?S.scanRateSqFt:0),
-    ccSurchargeEnabled:!!(document.getElementById('set-cc-surcharge-enabled')?document.getElementById('set-cc-surcharge-enabled').checked:false),
-    ccSurchargePct:parseFloat((document.getElementById('set-cc-surcharge-pct')?document.getElementById('set-cc-surcharge-pct').value:'3')||'3')||3,
     financeChargePct:parseFloat((document.getElementById('set-finance-charge-pct')?document.getElementById('set-finance-charge-pct').value:'1.5')||'1.5')||1.5,
     warrantyPeriod:document.getElementById('set-warranty-period')?.value||'1 year',
     salesTaxRate:(()=>{const _sr=v('set-sales-tax-rate').trim();return _sr===''?0:parseFloat(_sr)||0;})(),
@@ -877,6 +890,35 @@ function saveSettings(){
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
   // Propagate branding/settings to all live client hubs in the background
   if(supaEnabled()&&_supaUser)clients.filter(c=>c.clientToken).forEach(c=>{_uploadClientHub(c.id).catch(()=>{});});
+}
+// ── TrueSuite rate library ───────────────────────────────────────────────
+// Fills the "Save your $ rates once" screen from whatever TrueMeasure/
+// TrueScan already read, S.trueMeasureRates / S.scanRates / S.scanElecRates
+// (js/true-measure.js _tmRates, js/scan-estimate.js _scanRates/_scanElecRates).
+// Calling those readers here (rather than reading S.* directly) means this
+// screen always agrees with the confirm screens on field names AND on the
+// zero default, one source of truth, no parallel shape (§7.3).
+function loadTrueRatesForm(){
+  const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=(+val||0)||'';};
+  const tm=(typeof _tmRates==='function')?_tmRates():(S.trueMeasureRates||{});
+  sf('tr-tm-area',tm.areaSqFt);sf('tr-tm-roof',tm.roofSquare);sf('tr-tm-dist',tm.distanceLf);
+  const sr=(typeof _scanRates==='function')?_scanRates():(S.scanRates||{});
+  sf('tr-scan-wall',sr.wall);sf('tr-scan-ceiling',sr.ceiling);sf('tr-scan-trim',sr.trimLf);sf('tr-scan-door',sr.door);sf('tr-scan-window',sr.window);
+  const er=(typeof _scanElecRates==='function')?_scanElecRates():(S.scanElecRates||{});
+  sf('tr-scan-outlet',er.outlet);sf('tr-scan-sw',er.sw);sf('tr-scan-gfci',er.gfci);
+}
+// Writes the SAME S.* keys _tmRates()/_scanRates()/_scanElecRates() already
+// read, a blank field saves as 0 (never NaN/undefined), matching the
+// Math.max(0,...) guard those readers already apply to every field.
+function saveTrueRates(){
+  const gf=id=>{const el=document.getElementById(id);return Math.max(0,parseFloat(el&&el.value)||0);};
+  S.trueMeasureRates={areaSqFt:gf('tr-tm-area'),roofSquare:gf('tr-tm-roof'),distanceLf:gf('tr-tm-dist')};
+  S.scanRates={wall:gf('tr-scan-wall'),ceiling:gf('tr-scan-ceiling'),trimLf:gf('tr-scan-trim'),door:gf('tr-scan-door'),window:gf('tr-scan-window')};
+  S.scanElecRates={outlet:gf('tr-scan-outlet'),sw:gf('tr-scan-sw'),gfci:gf('tr-scan-gfci')};
+  saveAll();
+  if(typeof supaSaveToCloud==='function')supaSaveToCloud();
+  _renderSetIndex();
+  const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
 }
 function _renderLogoPreview(){
   const el=document.getElementById('set-logo-preview');if(!el)return;
@@ -959,8 +1001,7 @@ function clearLogoSetting(){
 // Crew "today"/contractor labor isn't a local store, it's cloud time-tracking
 // (job_time_entries + shop_time_entries) and raw GPS (location_pings), keyed by
 // contractor_user_id. "Clear all data" hard-deletes those so the Crew Today tile
-// empties too. team_members (the crew roster / invited accounts) is deliberately
-// left intact, that's identity, not tracking, and wiping it would break invites.
+// empties too.
 async function _clearCrewTrackingCloud(){
   if(typeof supaEnabled!=='function'||!supaEnabled()||typeof _supa==='undefined'||!_supa||!_supaUser)return;
   const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
@@ -968,8 +1009,22 @@ async function _clearCrewTrackingCloud(){
     try{await _supa.from(t).delete().eq('contractor_user_id',cid);}catch(_e){}
   }
 }
+// team_members (the crew roster) used to be left intact on purpose ("that's
+// identity, not tracking"), but "start fresh" reads as start fresh: a
+// contractor who clears everything does not expect their invited crew to
+// silently survive it (owner, 2026-08-17, after a stale link outlived a
+// clear and kept routing test writes to their real account). Scoped to rows
+// THIS account owns as contractor (RLS only allows a contractor to delete
+// their own roster, never someone else's), so this is a no-op for an
+// employee clearing their own local data, they cannot unlink themselves from
+// an employer's roster, only the employer can, same as removing them by hand
+// in Team settings. crew_invites cascade-delete with their team_members row.
+async function _clearTeamLinksCloud(){
+  if(typeof supaEnabled!=='function'||!supaEnabled()||typeof _supa==='undefined'||!_supa||!_supaUser)return;
+  try{await _supa.from('team_members').delete().eq('contractor_user_id',_supaUser.id);}catch(_e){}
+}
 function clearAllData(){
-  zConfirm('This will permanently delete ALL clients, proposals, jobs, income, expenses, and mileage. This cannot be undone.',()=>{
+  zConfirm('This will permanently delete ALL clients, proposals, jobs, income, expenses, mileage, and your invited team. This cannot be undone.',()=>{
     zConfirm('Last chance, are you absolutely sure you want to delete everything?',async()=>{
       // Deliberate wipe, bypass supaSaveToCloud's accidental-wipe sanity guard so the
       // soft-delete actually reaches the cloud (otherwise the cleared rows, e.g. the
@@ -993,13 +1048,28 @@ function clearAllData(){
         estLinkedClientId=null;editingBidId=null;
         gps={active:false,startCoords:null,startTime:null,clientId:null,clientName:'',timerInt:null,vehicle:'',purpose:''};
         if(_activeTimer){clearInterval(_activeTimer.timerInterval);_activeTimer=null;hideClockBanner();}
-        hideDriveBanner();saveAll();
+        hideDriveBanner();
+        // Every deleted job/client that had a fence armed (native region
+        // monitoring included) needs that fence disarmed, or it keeps firing
+        // for a client that no longer exists. stopGeoTracking() is the ONLY
+        // function that tears this down (previously sign-out only), so a
+        // "Clear all data" while staying signed in left it fully armed. Restart
+        // cleanly afterward if tracking is still enabled, same as a fresh
+        // sign-in would. _geoJobCoords, _geoCurrentClient etc. are internal to
+        // stopGeoTracking's own reset, not duplicated here.
+        if(typeof stopGeoTracking==='function')stopGeoTracking();
+        // Repeated-stop detection (supply-house learning) is local-only
+        // bookkeeping, never synced, so the array wipe above never touches it.
+        try{localStorage.removeItem('zp3_place_stops');localStorage.removeItem('zp3_place_day_anchor');}catch(_e){}
+        if(typeof _geoTrackInit==='function')_geoTrackInit();
+        saveAll();
       });
       // AWAIT the flush so the soft-delete lands in the cloud BEFORE we re-render or any
       // realtime reload fires, this is what stops the cleared rows from re-hydrating.
       try{ if(typeof _flushSaveNow==='function') await _flushSaveNow(); }catch(_e){}
       if(typeof _setDeliberateWipe==='function')_setDeliberateWipe(false);
       await _clearCrewTrackingCloud();
+      await _clearTeamLinksCloud();
       // Inbound QR/intake leads live in their own cloud table (inbound_leads),
       // outside the sync fabric, so the wipe above never touched them: they
       // re-surfaced in the review queue on the next 30s poll.
@@ -1485,7 +1555,8 @@ function _renderSettingsTradeSections(){
   if(lgTitle){const meta=TRADE_META[trade]||{icon:'🔧',label:'Trade'};lgTitle.innerHTML=(svgIcon(meta.icon)+' '+meta.label+' Labor Rates').trim();}
 }
 function _renderDevTradeCard(){
-  if(!_config?.is_dev)return;
+  const _hasFleet=typeof _fleetRoster!=='undefined'&&_fleetRoster&&_fleetRoster.length;
+  if(!_config?.is_dev&&!_hasFleet)return;
   const current=_config?.business_type||'painting';
   const trades=[
     {id:'painting',icon:'🎨',label:'Painting'},
@@ -1500,14 +1571,28 @@ function _renderDevTradeCard(){
   const grid=document.getElementById('dev-trade-grid');
   if(!grid)return;
   grid.innerHTML=trades.map(t=>`<button onclick="devSwitchTrade('${t.id}')" style="padding:10px 6px;border-radius:var(--r);border:2px solid ${t.id===current?'var(--blue)':'var(--border2)'};background:${t.id===current?'var(--blue-lt)':'var(--bg2)'};cursor:pointer;font-family:inherit;text-align:center;font-size:12px;font-weight:${t.id===current?'700':'400'}"><div style="font-size:18px">${svgIcon(t.icon,{size:18})}</div>${t.label}</button>`).join('');
+  // Fleet switcher (owner ask 2026-08-18): every seeded persona, tap to view
+  // its live data through the same support-view machinery Zach's button uses.
+  // Owners (with a business name) listed before crew-only logins.
+  const _fleetGrid=_hasFleet?`
+  <div style="margin-top:12px">
+    <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:8px">Test fleet · ${_fleetRoster.length} accounts (read-only)</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+      ${_fleetRoster.slice().sort((a,b)=>((b.business_name?1:0)-(a.business_name?1:0))||String(a.tag).localeCompare(String(b.tag))).map(r=>`
+      <button onclick="_devLoadUserAccount('${escHtml(String(r.tag).replace(/[^\w-]/g,''))}')" style="padding:8px 6px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;min-width:0">
+        <div style="font-size:11px;font-weight:800">${escHtml(String(r.tag).toUpperCase())}</div>
+        <div style="font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(r.business_name||'crew only')}</div>
+      </button>`).join('')}
+    </div>
+  </div>`:'';
   const sup=document.getElementById('dev-support-section');
   if(sup)sup.innerHTML=`
 <div style="padding-top:12px;border-top:1px solid var(--border2)">
   <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:8px">Support View</div>
-  <button onclick="_devLoadUserAccount('zach')" style="width:100%;padding:9px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">${svgIcon('👁',{size:13})} View Zach's account</button>
-
+  ${_config?.is_dev?`<button onclick="_devLoadUserAccount('zach')" style="width:100%;padding:9px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">${svgIcon('👁',{size:13})} View Zach's account</button>`:''}
   ${_devSupportMode?`<div style="margin-top:8px;padding:8px 10px;background:var(--amber-lt);border-radius:var(--r);font-size:11px;color:#856404;display:flex;justify-content:space-between;align-items:center"><span>${svgIcon('👁',{size:11})} Viewing: ${escHtml(_devSupportName)}</span><button onclick="_devExitSupportMode()" style="font-size:10px;padding:3px 8px;border:1px solid #856404;border-radius:4px;background:none;color:#856404;cursor:pointer;font-family:inherit">Exit</button></div>`:''}
-  ${_devRenderSnapshots('zach')}
+  ${_fleetGrid}
+  ${_config?.is_dev?_devRenderSnapshots('zach'):''}
 </div>`;
   // Init legal inspector with current state and today's date
   const _lsEl=document.getElementById('dev-legal-state');
@@ -1557,7 +1642,12 @@ function _beginOAuthOnboarding(){
     if(typeof _supaUser!=='undefined'&&_supaUser){
       const m=_supaUser.user_metadata||{};
       _ob.name=m.full_name||m.name||m.given_name||'';
-      _ob.email=_supaUser.email||'';
+      // Owner report 2026-08-22 (live device, real signup): prefilling Apple's
+      // own email here was the confusing part, a private-relay address (or any
+      // address that isn't obviously "theirs") landing pre-typed in the field
+      // read as broken. Leave it blank, the field is still right there, they
+      // just type the one they actually want, nothing pre-guessed for them.
+      _ob.email='';
     }
     showOnboarding();
   }catch(_e){if(typeof console!=='undefined')console.warn('OAuth onboarding launch failed:',_e);}
@@ -1608,7 +1698,11 @@ function renderObStep(){
     // Right panel, form content
     '<div style="flex:1;display:flex;flex-direction:column;background:#fff;min-height:100%;overflow-y:auto">'+
       // Mobile header
-      '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)" id="ob-mobile-hdr">'+
+      // padding-top clears the Dynamic Island / notch safe area (owner report
+      // 2026-08-22: header rendered UNDER the status bar/Dynamic Island on a real
+      // device, a flat 16px is nowhere near env(safe-area-inset-top) on a Pro
+      // iPhone). max() keeps the old 16px on devices with no inset to clear.
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:max(16px,env(safe-area-inset-top)) 20px 16px;border-bottom:1px solid var(--border)" id="ob-mobile-hdr">'+
         '<div style="display:flex;align-items:center;gap:8px">'+
           '<div style="width:28px;height:28px;background:var(--blue);border-radius:7px;display:flex;align-items:center;justify-content:center">'+
             '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>'+
@@ -1634,7 +1728,15 @@ function renderObStep(){
   else if(_ob.step===3)obStep8(body);   // get paid
 }
 
+// Three weights now (owner 2026-08-26). 'quiet' is a bordered-off, soft grey
+// text button for a decline that must not read as an equal choice: on the
+// location step a full secondary button sat right under the primary with the
+// same footprint, so the two looked like a coin flip when one of them is the
+// thing the whole product runs on.
 function obBtn(label,onclick,secondary){
+  if(secondary==='quiet'){
+    return '<button onclick="'+onclick+'" style="width:100%;padding:12px 18px;border-radius:9px;border:none;background:transparent;color:var(--text3);font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;margin-top:4px;letter-spacing:-.01em;transition:opacity .15s" onmousedown="this.style.opacity=\'.6\'" onmouseup="this.style.opacity=\'1\'">'+label+'</button>';
+  }
   return '<button onclick="'+onclick+'" style="width:100%;padding:13px 18px;border-radius:9px;border:'+(secondary?'1.5px solid #e0dfd8':'none')+';background:'+(secondary?'#fff':'#0D1117')+';color:'+(secondary?'#5f5e5a':'#fff')+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px;letter-spacing:-.01em;box-shadow:'+(secondary?'none':'0 2px 8px rgba(0,0,0,.15)')+';transition:opacity .15s" onmousedown="this.style.opacity=\'.85\'" onmouseup="this.style.opacity=\'1\'">'+label+'</button>';
 }
 function obInput(id,label,placeholder,type,value){
@@ -1647,25 +1749,39 @@ function obInput(id,label,placeholder,type,value){
 // Step 1 (§9.9 restructure): account + core business in one screen. Everything a
 // contractor knows off the top of their head, email, password, business name,
 // phone, state, so a branded proposal can go out the moment they're in. Social
-// sign-in on top collapses this to near-nothing (name/email come from the provider).
+// sign-in on top collapses this to near-nothing (password gone, name prefilled;
+// email is left blank on purpose, see _beginOAuthOnboarding's own comment).
 const OB_STATE_OPTS=['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
 function obStepAccount(el){
-  // OAuth mode: the provider already handled sign-in, so no social buttons, no
-  // email, no password, just their name (prefilled) + business details.
+  // OAuth mode: the provider already handled sign-in, so no social buttons and
+  // no password, just their name (prefilled), a blank editable email, and
+  // business details.
   const oauth=!!_ob.oauth;
   const _stateOpts='<option value="">- Select your state -</option>'+OB_STATE_OPTS.map(s=>'<option value="'+s+'"'+(_ob.state===s?' selected':'')+'>'+s+'</option>').join('');
-  const _socialBtn=(prov,label,bg,fg,bd)=>'<button onclick="_obOAuth(\''+prov+'\')" style="display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:12px;border-radius:9px;border:'+bd+';background:'+bg+';color:'+fg+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">'+label+'</button>';
   el.innerHTML=
     (oauth
-      ?'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Finish setting up</div><div style="font-size:14px;color:var(--text3)">You\'re signed in'+(_ob.email?' as '+escHtml(_ob.email):'')+'. Just your business details and you\'re in.</div></div>'
-      :'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Create your account</div><div style="font-size:14px;color:var(--text3)">Takes about a minute, you can add the rest later.</div></div>'+
-        // Social sign-in (primary). Activates once the provider is configured in Supabase.
-        _socialBtn('google','Continue with Google','#fff','#1f2328','1.5px solid #dadce0')+
-        _socialBtn('apple','Continue with Apple','#000','#fff','1.5px solid #000')+
-        '<div style="display:flex;align-items:center;gap:10px;margin:14px 0 16px"><div style="flex:1;height:1px;background:var(--border)"></div><span style="font-size:11px;color:var(--text3);font-weight:600">or sign up with email</span><div style="flex:1;height:1px;background:var(--border)"></div></div>')+
+      ?'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Finish setting up</div><div style="font-size:14px;color:var(--text3)">You\'re signed in. Enter the email you want for your business, then add your details.</div>'+
+          // Escape hatch (owner decision 2026-08-21): Apple/Google sign-in can't be
+          // reliably matched to an existing account by email (a private-relay or
+          // otherwise different address defeats any text match), so instead of
+          // guessing, a contractor who recognizes their own account mid-flow gets
+          // an obvious way out right here, before they finish creating a second one.
+          '<div style="margin-top:10px;font-size:13px"><a href="#" id="ob-already-have-account" onclick="_obAlreadyHaveAccount();return false" style="color:var(--blue);text-decoration:underline">Already have a TradeDesk account? Sign in instead</a></div>'+
+        '</div>'
+      // Owner decision 2026-08-22: brand-new signups are email-only now, no
+      // social buttons on account creation at all. Apple/Google sign-in only
+      // ever shows for a RETURNING contractor whose account already has that
+      // method linked (the identifier-first login gate, js/cloud.js
+      // _loginRenderResult), never as a way to CREATE an account. That closes
+      // off the whole class of problem tonight was spent chasing (prefilled
+      // relay emails, duplicate accounts, matching text against a hidden
+      // address): if social sign-in can never create a new account, none of
+      // that can happen, full stop, not just mitigated.
+      :'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Create your account</div><div style="font-size:14px;color:var(--text3)">Takes about a minute, you can add the rest later.</div></div>')+
     obInput('ob-name','Your full name','John Smith','text',_ob.name)+
-    (oauth?'':obInput('ob-email','Email','you@yourbusiness.com','email',_ob.email)+
-    obInput('ob-pass','Password (min 6 chars)','••••••••','password',''))+
+    obInput('ob-email','Email','you@yourbusiness.com','email',_ob.email)+
+    (oauth&&/@privaterelay\.appleid\.com$/i.test(_ob.email||'')?'<div style="font-size:12px;color:var(--text3);margin:-12px 0 18px">Apple hid your real email behind that address, it still forwards to your inbox, or enter the one you\'d rather use here.</div>':'')+
+    (oauth?'':obInput('ob-pass','Password (min 6 chars)','••••••••','password',''))+
     obInput('ob-bname','Business name','Smith Painting Co','text',_ob.businessName)+
     '<div class="f" style="margin-bottom:18px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Phone</label>'+
     '<input type="tel" id="ob-bphone" placeholder="316-555-0100" value="'+((_ob.phone)||'')+'" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,10).replace(/^(\\d{3})(\\d{3})(\\d{1,4})$/,\'$1-$2-$3\').replace(/^(\\d{3})(\\d{1,3})$/,\'$1-$2\')" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit"></div>'+
@@ -1676,6 +1792,26 @@ function obStepAccount(el){
     obBtn('Continue','obNextAccount()');
 }
 function _obShowTos(e){if(e)e.preventDefault();if(typeof zAlert==='function')zAlert('TradeDesk is an organizational tool for running your trade business, proposals, jobs, payments, mileage, and tax summaries. It is NOT tax, legal, or financial advice: consult a qualified professional for those. You are responsible for authorization to store client data. Data is stored securely via Supabase; keep your own backups of critical records. Provided "as is" with no warranty.',{title:'Terms of Service'});}
+// Owner decision 2026-08-21: Apple/Google sign-in has no reliable way to detect
+// a returning contractor whose provider email doesn't textually match their
+// existing account (a private-relay address, or just a different inbox), that's
+// not a bug to matching harder, there is no shared identifier to match on across
+// a password account and a fresh Apple/Google identity. Rather than silently
+// risk a second account, the oauth onboarding screen offers this escape hatch:
+// the contractor bails out and signs in with whatever method their real account
+// actually uses. Mirrors the password path's own "already registered" recovery
+// (sign out the just-created session, drop to login, point them at it).
+async function _obAlreadyHaveAccount(){
+  try{if(typeof _supa!=='undefined'&&_supa&&_supa.auth&&_supa.auth.signOut)await _supa.auth.signOut();}catch(_e){}
+  // The just-created throwaway session's identity must never linger as a
+  // "remembered device" (js/cloud.js _clearRememberedLogin): otherwise the
+  // supaShowLogin() called two lines down would immediately offer to resume
+  // the very account this bail-out is trying to get away from.
+  if(typeof _clearRememberedLogin==='function')_clearRememberedLogin();
+  document.getElementById('onboarding-overlay')?.remove();
+  if(typeof supaShowLogin==='function')supaShowLogin();
+  setTimeout(()=>{const el=document.getElementById('supa-login-err');if(el){el.textContent='Sign in with your original method below.';el.style.color='var(--blue)';}},150);
+}
 // ── Native Sign in with Apple (shell only) ──────────────────────────────────
 // The browser OAuth redirect leaves the WebView for appleid.apple.com and
 // never comes back to the app (owner report 2026-08-07: "routed to website").
@@ -1714,13 +1850,43 @@ function _obOAuth(provider){
     // Shell + Apple: the native sheet, never the browser redirect.
     const _cap=window.Capacitor;
     if(provider==='apple'&&_cap&&typeof _cap.isNativePlatform==='function'&&_cap.isNativePlatform()){
+      // The browser-redirect path marks itself with _oauthPending (localStorage,
+      // survives the reload it causes) so the boot handler knows to open
+      // onboarding for a brand-new signup instead of treating it as a same-
+      // device account switch. The native sheet never reloads, so it lands in
+      // the IN-TAB SIGNED_IN handler instead of boot, and that handler had no
+      // way to tell "first native social signup" apart from "account switch"
+      // (owner report 2026-08-21: onboarding "closed itself out," every
+      // native-Apple signup silently skipped straight to an empty dashboard).
+      // Same idea, in-memory since there is no reload to survive it across:
+      // set right before the sheet opens, consumed once by the SIGNED_IN
+      // handler the moment it fires.
+      // Re-entry guard, same flag: the native sheet can take a few real
+      // seconds (Face ID prompt), long enough for an impatient double-tap.
+      // Two overlapping attempts would race this flag's own cleanup, a
+      // losing first attempt's .catch() nulling out a second attempt's still-
+      // in-flight flag and reproducing the exact "closed itself out" bug this
+      // exists to fix. One attempt in flight at a time, full stop.
+      if(window._nativeSocialAuthPending)return;
+      window._nativeSocialAuthPending=provider;
       _obNativeApple().then(handled=>{
+        // Root cause of the "Continue with Face ID does nothing" report
+        // (owner live device, 2026-08-22): this used to only clear the flag
+        // in the handled===false branch, never on a genuine SUCCESS. A
+        // successful sign-in left it stuck at 'apple' for the rest of the
+        // page's life, silently no-oping the re-entry guard above on every
+        // later tap, no error, no feedback, just nothing, exactly what a
+        // sign-out-then-sign-back-in-again cycle (no reload in between) now
+        // does routinely. Clear it on every settle, not just the failure
+        // paths.
+        window._nativeSocialAuthPending=null;
         if(handled===false){
           const errEl=document.getElementById('supa-login-err');
           if(errEl)errEl.textContent='Update TradeDesk Beta in TestFlight for Apple sign-in, or use email.';
           if(typeof showToast==='function')showToast('Update TradeDesk Beta in TestFlight for Apple sign-in, or use email','⚠️',5000);
         }
       }).catch(e=>{
+        window._nativeSocialAuthPending=null;
         // User-cancelled sheets stay quiet. EVERYTHING else says exactly what
         // broke (owner 2026-08-10: a swallowed error read as a dead click and
         // left nothing to diagnose from), and console.error feeds the live
@@ -1758,16 +1924,18 @@ function obNextAccount(){
   const phone=document.getElementById('ob-bphone')?.value.trim();
   const state=document.getElementById('ob-state')?.value||'';
   if(!name){if(err)err.textContent='Enter your name.';return;}
-  // Email + password only exist (and are only required) on the email signup path.
-  // OAuth users are already authenticated, those fields aren't on the screen.
+  // Email is always on screen now (owner decision 2026-08-21: the provider's
+  // email, private-relay or otherwise, is never silently trusted, the
+  // contractor confirms/edits the real one their business uses). Password
+  // stays gated to the email signup path, OAuth users are already authenticated.
+  if(!email||!email.includes('@')){if(err)err.textContent='Enter a valid email.';return;}
   if(!oauth){
-    if(!email||!email.includes('@')){if(err)err.textContent='Enter a valid email.';return;}
     if(!pass||pass.length<6){if(err)err.textContent='Password must be at least 6 characters.';return;}
   }
   if(!bname){if(err)err.textContent='Enter your business name.';return;}
   if(!phone){if(err)err.textContent='Enter a phone number.';return;}
   if(!state){if(err)err.textContent='Select your state.';return;}
-  _ob.name=name;if(!oauth){_ob.email=email;_ob.password=pass;}_ob.businessName=bname;_ob.phone=phone;_ob.state=state;
+  _ob.name=name;_ob.email=email;if(!oauth){_ob.password=pass;}_ob.businessName=bname;_ob.phone=phone;_ob.state=state;
   // Prefill sales tax from state base, contractor refines later.
   if(state&&typeof lookupSalesTaxRate==='function'&&!(parseFloat(S.salesTaxRate)>0)){
     lookupSalesTaxRate('',state).then(r=>{if(r.rate>0){S.salesTaxRate=r.rate;S.salesTaxRateSource='onboarding';}}).catch(()=>{});
@@ -1859,9 +2027,10 @@ function obTogglePay(key,on){
   _ob[key]=!!on;
   const row=document.getElementById('obpay-'+key);
   if(!row)return;
-  // The "take cards" card is green; the cash/check/later rows are blue.
-  if(key==='wantCards'){row.style.borderColor=on?'#86efac':'var(--border2)';}
-  else{row.style.borderColor=on?'var(--blue)':'var(--border2)';row.style.background=on?'var(--blue-lt)':'var(--bg2)';}
+  // Every payment row is the same row now (owner 2026-08-26), so no per-key
+  // branch is left: the green "take cards" variant is gone.
+  row.style.borderColor=on?'var(--blue)':'var(--border2)';
+  row.style.background=on?'var(--blue-lt)':'var(--bg2)';
 }
 function obStep8(el){
   el.innerHTML=
@@ -1872,15 +2041,81 @@ function obStep8(el){
     obPayRow('acceptCheck','Check','Client can tell you they\'ll pay by check.')+
     obPayRow('allowPayLater','Pay later','Client signs now and settles up any way that works before the job\'s done, no money due at signing.')+
     '<div style="border-top:1px solid var(--border);margin:20px 0 16px"></div>'+
-    '<label id="obpay-wantCards" style="display:flex;align-items:flex-start;gap:12px;padding:14px;border:1.5px solid '+(_ob.wantCards!==false?'#86efac':'var(--border2)')+';border-radius:var(--r);background:#f0fdf4;margin-bottom:8px;cursor:pointer;user-select:none">'+
-      '<input type="checkbox" '+(_ob.wantCards!==false?'checked':'')+' onchange="obTogglePay(\'wantCards\',this.checked)" style="width:19px;height:19px;margin-top:1px;accent-color:#16a34a;flex-shrink:0">'+
-      '<div><div style="font-size:14px;font-weight:700;color:#166534">Take cards & bank transfers</div>'+
-      '<div style="font-size:12px;color:#166534;margin-top:2px;line-height:1.6">Clients pay their deposit straight to your bank. Card fee 2.9% + $0.30, auto-logged as a deductible expense. Leave this on and <strong>Turn on card payments</strong> will be waiting on your dashboard, connect Stripe in ~2 min whenever you\'ve got your EIN and bank info handy. Cash & check work right now without it.</div></div>'+
-    '</label>'+
+    // SAME ROW AS THE OTHER THREE (owner, 2026-08-26). This was hand-rolled in
+    // green (#f0fdf4 fill, #86efac border, #166534 text) while cash, check and
+    // pay-later used the shared blue obPayRow. The odd colour did not read as
+    // "recommended", it read as a warning, and it cost a real signup: Jack
+    // stopped on it, read it, and switched card payments OFF. A payment option
+    // that looks like an alert is a conversion bug, and hand-rolling a row an
+    // existing helper already renders is what 7.3 exists to stop.
+    // COPY, owner 2026-08-26: "Take cards and bank transfers sounds
+    // intimidating as fuck, how do we narrow it down to them wanting to use
+    // it, not seeing the fee ticking tail and checking it off."
+    //
+    // The old row led with the mechanism and put the fee in the second
+    // sentence, so the first thing a contractor read was a percentage. Nobody
+    // opts INTO a fee. They opt into getting paid without chasing anyone. So
+    // the label is now the outcome in three words, the body leads with the
+    // money arriving, and the fee stays, because hiding it would be worse,
+    // but it sits last and reads as the ordinary cost of business it is.
+    // Nothing here commits them to anything: Stripe is still connected later
+    // from the dashboard, which the copy says plainly so the checkbox does
+    // not feel like a contract.
+    obPayRow('wantCards','Get paid online',
+      'Your deposit lands in your bank the moment they sign, so you can start the job instead of chasing a check. Nothing to set up now, <strong>Turn on card payments</strong> waits on your dashboard until you have your bank info handy, about 2 minutes. Cash and check keep working either way. The usual card fee is 2.9% + 30&cent;, and it logs itself as a write-off.')+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     '<div id="ob-progress" style="display:none;font-size:12px;color:var(--text3);text-align:center;margin-bottom:8px"></div>'+
     obBtn('Create my account','obSubmit()')+
     obBtn('Back','_ob.step=2;renderObStep()',true);
+}
+
+// The signup location ask. Resolves true if they said yes, false if they
+// skipped. Renders into the SAME onboarding body every other step uses and
+// reuses obBtn, per 7.3: this is another onboarding screen, not a new kind of
+// thing. No OS prompt fires from here, the caller does that once the overlay is
+// down (see the note at the call site).
+function obStepLocation(){
+  return new Promise(resolve=>{
+    const body=document.getElementById('ob-body');
+    if(!body){resolve(false);return;}
+    window._obGeoAnswer=(yes)=>{
+      try{delete window._obGeoAnswer;}catch(_e){window._obGeoAnswer=null;}
+      resolve(!!yes);
+    };
+    // Actions sit at the BOTTOM, and the decline recedes (owner 2026-08-26:
+    // "turn on location needs to be at bottom and not now a soft grey where
+    // turn on screams at ya"). Previously both buttons sat directly under the
+    // copy with an empty half-screen below them, and 'Not now' was a full
+    // bordered secondary the same size as the primary, so the two read as a
+    // coin flip. A column that pushes the actions down puts the thumb where
+    // the thumb already is, and the quiet weight makes the real choice obvious
+    // without taking the other one away.
+    body.innerHTML=
+      '<div style="display:flex;flex-direction:column;min-height:calc(100vh - 96px)">'+
+      '<div style="margin-bottom:24px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('\ud83d\udccd',{size:28})+'</div>'+
+      '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Log your miles and hours automatically</div>'+
+      '<div style="font-size:14px;color:var(--text3)">This is the part that saves you the most time, so it is worth 10 seconds now.</div></div>'+
+      '<div style="border:1.5px solid var(--blue);background:var(--blue-lt);border-radius:var(--r);padding:14px;margin-bottom:10px">'+
+        '<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:6px">What you get</div>'+
+        '<div style="font-size:12px;color:var(--text3);line-height:1.6">'+
+          'Every drive between jobs logs itself as deductible mileage, and your time on each job site clocks in and out on its own. No timesheets, no odometer photos, no writing anything down.'+
+        '</div></div>'+
+      '<div style="font-size:12px;color:var(--text3);line-height:1.6">'+
+        'Your phone will ask next. Choose <strong>Always</strong> so it still works with the app closed and in your pocket, which is where it lives on a work day. '+
+        'Tracking only runs during your work hours, and you can turn it off any time in Settings.'+
+      '</div>'+
+      '<div style="flex:1;min-height:24px"></div>'+
+      // THUMB ORDER, not reading order (owner 2026-08-26: "turn on location
+      // should be the bottom most button in onboarding and not now higher
+      // right, physiological needs have to be met here"). On a phone the
+      // bottom-most control is the one the thumb already rests on, so the
+      // action we want takes that slot and the decline sits above it. Reading
+      // order says primary-then-secondary; reach says the opposite, and reach
+      // is what actually gets tapped.
+      obBtn('Not now','_obGeoAnswer(false)','quiet')+
+      obBtn('Turn on location','_obGeoAnswer(true)')+
+      '</div>';
+  });
 }
 
 async function obSubmit(){
@@ -1892,11 +2127,28 @@ async function obSubmit(){
   try{
     let uid;
     if(_ob.oauth&&typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id){
-      // Social sign-in already created the auth user AND a live session (RLS works),
-      // so there is nothing to signUp/signInWithPassword. Use the session we have and
-      // pull the email from the provider (there was no email field on the screen).
+      // Social sign-in already created the auth user AND a live session (RLS
+      // works), so there is nothing to signUp/signInWithPassword. Use the
+      // session we have; _ob.email is the contractor's own confirmed/edited
+      // value from the account step, not blindly whatever the provider sent
+      // (that used to be a private-relay address with nothing typed to override
+      // it). Provider email is only a last-resort fallback if the field somehow
+      // arrived empty.
       uid=_supaUser.id;
-      _ob.email=_supaUser.email||_ob.email||'';
+      _ob.email=_ob.email||_supaUser.email||'';
+      // Owner decision 2026-08-22: sync the confirmed email into Supabase's own
+      // Auth record too, not just our accounts/users tables. Reason: if this
+      // contractor later tries to sign in with email+password using the REAL
+      // address typed here, Supabase matches against auth.users.email, if
+      // that's still stuck on Apple's private-relay address, a real-email
+      // sign-in would silently miss this account entirely. Best-effort: Supabase
+      // requires the new address to confirm via email before the change
+      // actually takes effect, and a collision with another auth user is
+      // possible, neither should ever block finishing a signup that already
+      // succeeded, so failures here are swallowed, not surfaced.
+      if(_ob.email&&_ob.email!==_supaUser.email){
+        try{await _supa.auth.updateUser({email:_ob.email});}catch(_e){}
+      }
       setProgress('Setting up your business...');
     } else {
       setProgress('Creating your account...');
@@ -1984,9 +2236,32 @@ async function obSubmit(){
 
     setProgress('All done! Loading TradeDesk...');
     await new Promise(r=>setTimeout(r,600));
+    // ── Ask for location HERE, not on the dashboard afterwards ─────────────
+    // Owner, 2026-08-26, after watching a real signup: "never got prompted to
+    // do location when we onboarded him." He was right, there was no location
+    // step anywhere in signup. The only ask lived in the dashboard checklist,
+    // and for that user it was broken: on a build that could not read iOS's
+    // real answer the app fell back to the WebView's own geolocation
+    // permission, which a Capacitor shell never grants, read that as "denied",
+    // showed him "Fix it", and sent him to an iOS Settings page with no
+    // Location row on it because the app had never actually asked. Dead end.
+    //
+    // So the ask moves into signup, where the whole pitch is made. Placed
+    // after Get paid on the owner's call, and after the account exists so the
+    // consent, the permission read and the device_status row all have a real
+    // user to hang on. Skipping is a first-class answer: it leaves the
+    // checklist item standing exactly as before, it does not nag twice.
+    const _wantedGeo=await obStepLocation();
     document.getElementById('onboarding-overlay')?.remove();
     window._obInProgress=false;
     saveAll();applyPermissions();renderDash();goPg('pg-dash');
+    // AFTER the overlay is gone: iOS renders its permission alert over the top
+    // window, and firing it under a full-screen overlay that is about to be
+    // removed is how a prompt ends up dismissed by the teardown rather than by
+    // the person. Same reason the checklist fires it from a plain tap.
+    if(_wantedGeo){
+      try{if(typeof _geoSetConsent==='function')_geoSetConsent(true);}catch(_e){}
+    }
     // No Stripe auto-redirect (owner 2026-07-15): yanking a new contractor into an
     // EIN/bank form the instant they sign up is the exact high-friction moment we
     // defer everywhere else. Card setup lives ONLY on the dashboard checklist
@@ -2035,6 +2310,8 @@ function runSearch(q){
   const el=document.getElementById('search-results');if(!el)return;
   q=(q||'').toLowerCase().trim();
   if(!q){el.innerHTML='<div class="search-empty">Start typing to search...</div>';return;}
+  const _rival=(typeof _eggRivalResult==='function')?_eggRivalResult(q):'';
+  if(_rival){el.innerHTML=_rival;return;}
   const results=[];
 
   // Clients

@@ -156,6 +156,35 @@ async function processGalleryUpload(input){
 }
 
 // ── Client Hub ──────────────────────────────────────────────────────────────
+// A bid's scope as plain description lines, the estimate's own words with no
+// numbers: paint estimates group surfaces by room, generic/BYO carry scope
+// chips and free text, a diagnostic carries desc. Used by the hub invoice's
+// "Work performed" and the property card's Past work rows.
+function _bidScopeLines(b){
+  const out=[];
+  const _surf=Array.isArray(b.surfaces)?b.surfaces:[];
+  if(_surf.length){
+    const byRoom={};
+    _surf.forEach(sf=>{
+      const _r=String(sf&&sf.room||'').trim()||'Work area';
+      const _t=String(sf&&sf.type||'').trim();
+      (byRoom[_r]=byRoom[_r]||[]).push(_t||'surface');
+    });
+    Object.keys(byRoom).forEach(r=>{
+      const kinds=[...new Set(byRoom[r])];
+      out.push(kinds.length?r+': '+kinds.join(', '):r);
+    });
+  }
+  (Array.isArray(b.scopeChips)?b.scopeChips:[]).forEach(c=>{
+    const _c=typeof c==='string'?c:(c&&(c.label||c.name||''));
+    if(_c&&out.indexOf(_c)===-1)out.push(String(_c));
+  });
+  String(b.geiDesc||b.desc||'').split(/\r?\n/).forEach(l=>{
+    const _l=l.trim().replace(/^[-•*]\s*/,'');
+    if(_l&&out.indexOf(_l)===-1)out.push(_l);
+  });
+  return out.slice(0,40);
+}
 function _buildClientHubSnapshot(clientId){
   const c=clients.find(x=>x.id===clientId);if(!c)return null;
   const cbids=bids.filter(b=>b.client_id===clientId);
@@ -176,7 +205,12 @@ function _buildClientHubSnapshot(clientId){
     const _fcRate=(S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5)/100/30;
     const financeCharge=balance>0.01&&_fcDaysOverdue>0?Math.round(balance*_fcRate*_fcDaysOverdue*100)/100:0;
     const daysOverdue=balance>0.01?_fcDaysOverdue:0;
-    return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',
+    // SCOPE for the invoice's "Work performed" list: the estimate's own scope, in
+    // the estimate's own words, DESCRIPTIONS ONLY. No qty, no rate, no amount, the
+    // same one-price rule the document follows (owner 2026-08-16). Shared with the
+    // property card's Past work rows via _bidScopeLines below.
+    const _hubScope=_bidScopeLines(b);
+    return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',scope:_hubScope,
       // Signed-document fields (diagnostic charges + any bid signed in person):
       // the hub renders these through the shared esign signed-doc block.
       kind:b.kind||'',desc:b.desc||'',signed:!!b.signed,signerName:b.signerName||'',sigData:b.sigData||'',
@@ -214,7 +248,6 @@ function _buildClientHubSnapshot(clientId){
   const _snapUserId=_effectiveUid()||'';
   const _snapUserEmail=_supaUser?_supaUser.email||'':'';
   const _snapStripeOn=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
-  const _snapSurchargeOn=!!(S.ccSurchargeEnabled&&_snapStripeOn);
   const _snapAddrM=(c.addr||'').toUpperCase().match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
   const _snapState=(_snapAddrM?_snapAddrM[1]:null)||S.state||'KS';
   const _snapCancelDays=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].days:3;
@@ -222,7 +255,25 @@ function _buildClientHubSnapshot(clientId){
   return {
     clientId,clientName:c.name,clientEmail:c.email||'',clientPhone:c.phone||'',clientAddr:c.addr||'',
     scans:snapshotScans,
-    contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
+    // WHITE LABEL: never our name on their document. The old fallback printed
+    // "TradeDesk" as the business name to a client whose contractor had not set one,
+    // which is the one string that must never reach a client-facing invoice or
+    // proposal. Falls back to the owner's own name, then to nothing at all.
+    contractorName:S.bname||((typeof getOwnerName==='function'&&getOwnerName())||''),
+    contractorPhone:S.bphone||'',
+    // Letterhead facts an invoice is expected to carry (research 2026-08-16: a
+    // trade invoice is expected to show the business address, email and LICENSE
+    // NUMBER, not just a name and a phone). trustLicense above is the marketing
+    // chip; this is the number itself, and it renders only when it is a real
+    // entry rather than the "Licensed & Insured" default marker.
+    contractorAddr:[S.baddr,[S.bcity,S.bzip].filter(Boolean).join(' ')].filter(Boolean).join(', '),
+    contractorEmail:S.bemail||'',
+    contractorLicense:(()=>{
+      const _b=String(S.blic||'').trim();
+      if(!_b||/^licensed (&|and) insured$/i.test(_b))return '';
+      return _b;
+    })(),
+    salesTaxRate:parseFloat(S.salesTaxRate)||0,
     brandColor:adaBrand(S.brandColor)||'',
     // logoUrl when the CURRENT logo is confirmed uploaded (hash match); base64
     // logoData only as the fallback so the snapshot stays small in the normal
@@ -263,8 +314,6 @@ function _buildClientHubSnapshot(clientId){
     reviewUrl:S.reviewUrl||'',
     contractorUserId:_snapUserId,notifyEmail:S.bemail||_snapUserEmail,
     stripeEnabled:_snapStripeOn,
-    ccSurchargeEnabled:_snapSurchargeOn,
-    ccSurchargePct:Math.min(4,Math.max(0.5,parseFloat(S.ccSurchargePct||3)||3)),
     yearBuilt:c.yearBuilt||null,
     epaRequired:!!(c.yearBuilt&&c.yearBuilt<1978&&(c.rrpDisturb==='yes'||_rrpPaintAnswer==='yes')),
     rrpFirmCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_firm'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
@@ -587,6 +636,20 @@ function _proposalShareData(){
   const d=_pendingShareData;
   return d?{url:d.url||'',cname:d.cname||'Client',bname:d.bname||defBname,cphone:d.cphone||'',cemail:d.cemail||''}:{url:'',cname:'Client',bname:defBname,cphone:'',cemail:''};
 }
+// Geocodes the bid's client address onto bid.lat/bid.lon, same pattern as
+// day-map.js's _dayMapGeocode for jobs. Skips a bid already geocoded (an
+// address doesn't move) and any bid with no resolvable address.
+function _stampBidAddrGeo(bid){
+  if(!bid||bid.lat!=null||typeof _resolveCoords!=='function')return;
+  const c=(typeof clients!=='undefined'&&bid.client_id)?clients.find(x=>x.id===bid.client_id):null;
+  const addr=bid.addr||(c&&c.addr)||'';
+  if(!addr)return;
+  _resolveCoords(addr).then(r=>{
+    if(!r||r.lat==null)return;
+    bid.lat=r.lat;bid.lon=r.lng;
+    if(typeof saveAll==='function')saveAll();
+  }).catch(()=>{});
+}
 // Called when user actually taps SMS or Email, THIS is when the bid moves to "Sent proposals"
 function _commitProposalSent(){
   if(!_pendingSignToken)return;
@@ -601,11 +664,13 @@ function _commitProposalSent(){
     // which drives follow-up scheduling; the audit timeline and the exported
     // report need the time the client was actually sent the proposal.
     bid.sentAt=new Date().toISOString();
-    // Where the proposal was sent from. A contractor sends most of these standing
-    // in the driveway right after the walkthrough, so this is the site visit, and
-    // it is what makes 'where do I win vs lose' answerable by area. Without it the
-    // map's Proposals layer would always be empty. Fire-and-forget, never blocks.
-    if(typeof _stampGeo==='function')_stampGeo(bid);
+    // Where the job actually is, not wherever the phone was when the button
+    // was tapped (a follow-up sent from the truck, the office, home that
+    // night, all land the pin somewhere that isn't the job). The map's
+    // Proposals layer answers 'where do I win vs lose' by area, so it needs
+    // the client's address geocoded, the same pattern jobs use (day-map.js
+    // _dayMapGeocode), not a live GPS fix. Fire-and-forget, never blocks.
+    if(typeof _stampBidAddrGeo==='function')_stampBidAddrGeo(bid);
     try{if(typeof logLifecycle==='function')logLifecycle('proposal_sent',{bidId:bid.id,clientId:bid.client_id});}catch(_e){}
     if(!bid.followupStage)bid.followupStage=1;
     bid.followup=addDays(todayKey(),3);
@@ -795,6 +860,8 @@ function _grabLocCoords(onGranted,onDenied){
     S.weatherLon=Math.round(pos.coords.longitude*10000)/10000;
     S.locationDenied=false;S.locationGranted=true;S.settingsTs=Date.now();saveAll();
     if(onGranted)onGranted();
+  // COARSE OK: weather again, rounded to 4 decimals three lines up. Same
+  // reasoning as the piggyback grab in js/cloud.js.
   },()=>{S.locationDenied=true;S.settingsTs=Date.now();saveAll();if(onDenied)onDenied();},{enableHighAccuracy:false,timeout:10000});
 }
 function _showLocModal(onGranted,onDenied){

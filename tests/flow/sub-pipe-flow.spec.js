@@ -52,7 +52,9 @@ const A_BIZ_MARK = `PipeFlow GC ${RUN}`;
 // Open the app fresh and sign in as a specific account, like launching it.
 async function openAs(page, acct) {
   await page.goto('/');
-  await page.waitForSelector('#supa-email', { state: 'attached', timeout: 30000 });
+  // Identifier-first login gate (2026-08-22): #login-email is the always-attached
+  // element now, #supa-email only exists after a matched-account response.
+  await page.waitForSelector('#login-email', { state: 'attached', timeout: 30000 });
   await signIn(page, acct);
   await page.waitForFunction(() => typeof _supaCloudLoaded === 'undefined' || _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});
   await page.waitForTimeout(600);

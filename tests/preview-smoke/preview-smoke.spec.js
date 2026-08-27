@@ -82,9 +82,10 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     // App shell rendered (the login screen) = the deployed JS actually ran, not a blank
-    // page / 500 / wrong-root deploy. The email field is now behind "Continue with
-    // email", so assert the always-visible toggle instead.
-    await expect(page.locator('#login-email-toggle')).toBeVisible({ timeout: 20000 });
+    // page / 500 / wrong-root deploy. Identifier-first gate (2026-08-22): the email
+    // input is the always-visible element now, social buttons only appear after
+    // identifying which sign-in methods an account actually has.
+    await expect(page.locator('#login-email')).toBeVisible({ timeout: 20000 });
 
     const liveVersion = await page.evaluate(() => (typeof APP_VERSION !== 'undefined' ? APP_VERSION : null));
     const jsonRes = await page.request.get('/version.json');
@@ -116,6 +117,40 @@ test.describe('preview deploy smoke, the BUILT artifact on the real origin', () 
     const headers = process.env.E2E_BYPASS_SECRET ? { 'x-e2e-bypass': process.env.E2E_BYPASS_SECRET } : {};
     const res = await page.request.get('/api/auth/v1/health', { failOnStatusCode: false, headers });
     expect([200, 401], `/api/auth/v1/health returned ${res.status()}: the /api proxy worker is down or not reaching Supabase`).toContain(res.status());
+  });
+
+  // Apple's crawler fetches this exact path before Apple Pay may appear on the
+  // hub's Payment Element, and only a live deploy can prove the Pages Function
+  // route answers on the real origin, the same reason the /api check exists.
+  test('the Apple Pay domain association answers on the deployed origin', async ({ page }) => {
+    const headers = process.env.E2E_BYPASS_SECRET ? { 'x-e2e-bypass': process.env.E2E_BYPASS_SECRET } : {};
+    const res = await page.request.get('/.well-known/apple-developer-merchantid-domain-association', { failOnStatusCode: false, headers });
+    expect(res.status(), 'the .well-known Pages Function is not serving: Apple Pay cannot validate this domain').toBe(200);
+    const body = await res.text();
+    expect(body.length, 'association file suspiciously small, upstream fetch likely failed').toBeGreaterThan(500);
+  });
+
+  // Universal Links (owner 2026-08-17): iOS fetches this exact path before it
+  // will honor com.apple.developer.associated-domains for this host. The
+  // Team ID comes from a Cloudflare Pages env var (functions/.well-known/
+  // apple-app-site-association.js), never hardcoded, so 404 is the correct,
+  // expected answer until that one-time dashboard step is done: assert the
+  // FUNCTION is deployed and reachable (never a platform 404/522), not that
+  // Universal Links are fully configured yet. Once APPLE_TEAM_ID is set on
+  // the Pages project, 200 is required and the body shape is checked.
+  test('the apple-app-site-association route is deployed and reachable', async ({ page }) => {
+    const headers = process.env.E2E_BYPASS_SECRET ? { 'x-e2e-bypass': process.env.E2E_BYPASS_SECRET } : {};
+    const res = await page.request.get('/.well-known/apple-app-site-association', { failOnStatusCode: false, headers });
+    if (res.status() === 404) {
+      console.log('AASA route reachable but APPLE_TEAM_ID not yet set on the Cloudflare Pages project (expected until that one-time step is done)');
+      return;
+    }
+    expect(res.status(), 'the AASA Pages Function is not serving: Universal Links cannot validate this domain').toBe(200);
+    expect(res.headers()['content-type'] || '', 'AASA must be served as JSON, not text/plain or octet-stream').toContain('application/json');
+    const body = await res.json();
+    const paths = (body.applinks?.details?.[0]?.components || []).map(c => c['/']);
+    expect(paths).toContain('/sign.html*');
+    expect(paths).toContain('/client.html*');
   });
 
   // 3. MapKit authorizes + initializes on the deployed hostname. The token is domain-

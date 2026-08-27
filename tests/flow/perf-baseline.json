@@ -59,5 +59,9 @@
   "crew-mileage-sync/employee-view": {
     "clicks": 1,
     "note": "What the crew member's own device is handed by the server, captured live 2026-08-03. One tap to open the mileage page."
+  },
+  "truebid/truemeasure-to-byo": {
+    "clicks": 32,
+    "note": "HAND-DERIVED, not yet live-confirmed (written 2026-08-19, no network/creds/Playwright available in the authoring sandbox to actually run it, see CLAUDE.md §12.3: act() returns are deterministic so this is legitimate without a live run). Breakdown: open client 1 + New proposal 1 + Build Your Own card 1 + back out (abandon empty draft) 1 + TrueBid card 1 = 5, real-map check 0, force Area mode 1 + 4 map-trace taps 4 = 5, open confirm screen 1, type 20-char description + Add to estimate 1 = 21. Correct this to the exact CI-reported number on the first real green run (tap()/type() can add +1 each for an unanticipated scroll)."
   }
 }

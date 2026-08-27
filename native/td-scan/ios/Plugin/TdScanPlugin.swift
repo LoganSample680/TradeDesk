@@ -247,6 +247,10 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     private var currentStory = 1
     private var finishing = false
     private var discarding = false
+    private var cancelled = false
+    // The live pin sheet, so the keyboard's Done key can drive it.
+    private var pinAlert: UIAlertController?
+    private var pinDrop: ((String) -> Void)?
     private var headingDeg: Double = -1
     private var lastGeomCount = 0
     private let locMgr = CLLocationManager()
@@ -426,14 +430,9 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         let n = pins.filter { $0.story == currentStory }.count + 1
         let fallback = "Room \(n)"
         let a = UIAlertController(title: "Pin this room", message: nil, preferredStyle: .alert)
-        a.addTextField { tf in
-            tf.placeholder = fallback
-            tf.autocapitalizationType = .words
-            tf.clearButtonMode = .whileEditing
-            tf.returnKeyType = .done
-        }
         let drop: (String) -> Void = { [weak self] name in
             guard let self = self else { return }
+            self.pinAlert = nil; self.pinDrop = nil
             let t = name.trimmingCharacters(in: .whitespacesAndNewlines)
             let final = t.isEmpty ? fallback : t
             self.pins.append(TdPin(x: x, z: z, story: self.currentStory, name: final))
@@ -441,14 +440,38 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             self.saveDraft()
         }
+        a.addTextField { tf in
+            tf.placeholder = fallback
+            tf.autocapitalizationType = .words
+            tf.clearButtonMode = .whileEditing
+            tf.returnKeyType = .done
+            // Keyboard Done = the pin drops (owner 2026-08-16: "once we get
+            // done typing it should just drop the pin"). Typing a name IS the
+            // decision; no second tap on the alert button.
+            tf.addTarget(self, action: #selector(self.pinFieldDone(_:)), for: .editingDidEndOnExit)
+        }
         a.addAction(UIAlertAction(title: "Drop pin", style: .default) { _ in
             drop(a.textFields?.first?.text ?? "")
         })
         for l in labels.prefix(6) {
             a.addAction(UIAlertAction(title: l, style: .default) { _ in drop(l) })
         }
-        a.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        a.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+            self?.pinAlert = nil; self?.pinDrop = nil
+        })
+        pinAlert = a
+        pinDrop = drop
         present(a, animated: true)
+    }
+
+    // Return key inside the pin sheet: dismiss the alert and drop the pin with
+    // whatever was typed (blank still falls back to "Room N" inside drop).
+    @objc private func pinFieldDone(_ tf: UITextField) {
+        let name = tf.text ?? ""
+        let drop = pinDrop
+        pinAlert?.dismiss(animated: true)
+        pinAlert = nil; pinDrop = nil
+        drop?(name)
     }
 
     // Tap = up a floor, long-press = back down. Deterministic on purpose:
@@ -540,6 +563,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     }
 
     @objc private func cancelTapped() {
+        cancelled = true
         kfTimer?.invalidate(); kfTimer = nil
         captureView.captureSession.stop()
         for k in keyframes { try? FileManager.default.removeItem(atPath: k.path) }
@@ -629,21 +653,45 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         let wasFinishing = finishing
         let wasDiscarding = discarding
         discarding = false
+        // An explicit Cancel stops the session too; nothing to rescue or restart.
+        if cancelled { return }
         // Redo reserved no slot: restart the same room, name kept, done.
         if wasDiscarding {
             DispatchQueue.main.async { self.startRoom() }
             return
         }
+        var slot = pendingSlots.isEmpty ? nil : pendingSlots.removeFirst()
+        // RESCUE (owner 2026-08-16: phone set down too long, scan vanished).
+        // RoomPlan can end the session by ITSELF when tracking dies (camera
+        // face-up on a table long enough, covered, iOS reclaim). No tap meant
+        // no reserved slot, so this data, the entire floor walked so far in
+        // continuous pin mode, was silently dropped. Bank it exactly like a
+        // floor change instead: reserve a slot now, build into it, and keep
+        // walking on the restarted capture.
+        let unexpected = slot == nil && !wasFinishing
+        if unexpected {
+            slot = rooms.count
+            rooms.append(nil)
+            roomLabels.append("Floor \(currentStory)")
+            roomStories.append(currentStory)
+        }
         // The label/story were captured into a slot at tap time (the chip is
         // the source of truth). Restart the capture IMMEDIATELY, the builder
         // fills the slot in the background while the next room is walked.
-        let slot = pendingSlots.isEmpty ? nil : pendingSlots.removeFirst()
         if !wasFinishing {
-            DispatchQueue.main.async { self.startRoom() }
+            DispatchQueue.main.async {
+                self.startRoom()
+                if unexpected {
+                    self.hint.text = "Tracking got interrupted. Everything walked so far is saved, keep scanning."
+                }
+            }
         }
         Task { [weak self] in
             guard let self = self else { return }
-            if let slot = slot, error == nil, let room = try? await self.builder.capturedRoom(from: data) {
+            // Build even when RoomPlan reports an error: an interrupted
+            // session usually still delivers usable geometry, and the builder
+            // throws on genuinely bad data (the nil slot then compacts out).
+            if let slot = slot, let room = try? await self.builder.capturedRoom(from: data) {
                 self.rooms[slot] = room
                 // Interruption insurance: every finished room lands in the
                 // draft on disk, a lock/crash/kill mid-scan loses at most the

@@ -39,7 +39,14 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
     page = await ctx.newPage();
-    await mockAllExternal(page);
+    // clock:'off' because this file owns time itself: page.clock.install below
+    // pins the simulated day to 9:00am and every dwell is driven by
+    // fastForward. The suite-wide pin in helpers.js replaces window.Date too,
+    // and two owners of window.Date means fastForward moves one clock while
+    // the assertions read the other ("fake clock refused to advance"). Opting
+    // out costs nothing here: a day that names its own start hour was never
+    // exposed to the midnight class in the first place.
+    await mockAllExternal(page, { clock: 'off' });
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
     await page.evaluate((G) => {
@@ -97,7 +104,30 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
   // ── The day engine ────────────────────────────────────────────────────────
   const ping = (c, spd) => page.evaluate(([c2, s]) =>
     _geoOnPing({ coords: { latitude: c2.lat, longitude: c2.lon, accuracy: 8, speed: s } }), [c, spd || 0]);
-  const ff = async (mins) => { await page.clock.fastForward(Math.round(mins * 60000)); };
+  // Fast-forward that VERIFIES the clock actually moved, because
+  // page.clock.fastForward can silently no-op on a starved CI runner (observed
+  // locally under CPU stress, 2026-08-21: fastForward(300000) advanced Date.now()
+  // by 6ms). A lost tick inside a dwell shrinks the measured minutes and flips
+  // threshold decisions: the day-6 CI flake was one lost 48s tick inside the
+  // pizza sit, 3.2min of dwell measured as 2.4min, under the 2.5min pause floor,
+  // so the observed-miles floor collected (got 4.2 want 3). The loop re-issues
+  // the remainder until the page clock really advanced the full amount.
+  // _ffLossy is the regression hook: when armed, the first attempt of every call
+  // is treated as lost, simulating the CI race deterministically.
+  let _ffLossy = false;
+  async function ffMs(ms) {
+    let left = Math.round(ms);
+    let dropNext = _ffLossy;
+    for (let tries = 0; left > 0 && tries < 25; tries++) {
+      const before = await page.evaluate(() => Date.now());
+      if (dropNext) dropNext = false;                  // simulated silent no-op
+      else await page.clock.fastForward(left);
+      const after = await page.evaluate(() => Date.now());
+      left -= Math.max(0, after - before);             // the clock also ticks real time; count what actually landed
+    }
+    if (left > 0) throw new Error('fake clock refused to advance, ' + left + 'ms still owed');
+  }
+  const ff = (mins) => ffMs(Math.round(mins * 60000));
   const mid = (a, b, f) => ({ lat: a.lat + (b.lat - a.lat) * f, lon: a.lon + (b.lon - a.lon) * f });
 
   // A drive is fixes: parked at the origin, two road fixes, parked at the door.
@@ -114,7 +144,15 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
     for (let t = 0; t < mins; t += step) { await ping(at, 0); await ff(step); }
   }
   async function newDay() {
-    await page.clock.setSystemTime(_day0());   // every day begins at the same 9:00am
+    // Every day begins at the same 9:00am. Verified for the same reason ffMs
+    // exists: a clock protocol call can be silently lost on a starved runner,
+    // and a day inheriting the previous day's late clock drifts every dwell.
+    const target = _day0().getTime();
+    for (let tries = 0; tries < 25; tries++) {
+      await page.clock.setSystemTime(new Date(target));
+      const now = await page.evaluate(() => Date.now());
+      if (Math.abs(now - target) < 5000) break;
+    }
     await page.evaluate((G) => {
       mileage.length = 0; window.__enq.length = 0;
       _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
@@ -135,7 +173,7 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
   }
   async function closeDay() {
     await page.evaluate(async () => { await _retryPendingTrips(); await new Promise(r => setTimeout(r, 5)); });
-    await page.clock.fastForward(2000);
+    await ffMs(2000);   // verified advance, same reason as ff() above
     return page.evaluate(() => ({
       rows: mileage.map(m => ({
         from: m.from_name || m.from, to: m.to_name || m.to, miles: m.miles,
@@ -244,6 +282,7 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
       _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null; _geoLastFenceAt = null;
       _geoStopAnchor = null; _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
       _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoCurrentClient = null; _geoClientArrivedAt = null;
+      window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
       _geoRestoreOpen();
     });
     await ping(mid(GEO.HOMEOFF, GEO.JOB1, 0.7), 13); await ff(6);
@@ -319,6 +358,141 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
     expect(Math.abs(rB.miles - routeMiles(GEO.SHOP, GEO.SUP2)), `blowup capped, the route saves, got ${rB.miles}`).toBeLessThanOrEqual(0.15);
   });
 
+  test('day 6: a pizza-pickup PAUSE disqualifies the detour floor; a pauseless detour still collects observed miles', async () => {
+    test.setTimeout(120000);
+    // Owner's Domino's run, 2026-08-13: John Doe -> 3-minute pizza pickup ->
+    // Shop logged 5.3 mi (the full driven path) instead of the 3.2-mile
+    // direct route. A sub-5-minute errand is not a STOP (that threshold
+    // protects red lights), so the leg stayed whole, and the observed-miles
+    // floor then paid the errand's extra driving as if it were a forced
+    // detour. The fix judges POSITION DWELL, never iOS speed: a 2.5-minute
+    // sit at one kerb marks the leg paused, and a paused leg's floor stands
+    // down, the direct route saves (the CPA's direct-miles rule). The
+    // control leg proves the floor itself still works: same dogleg with no
+    // pause is a real detour and the observed miles save.
+    const d = await playPizzaDay();
+    expectPizzaDay(d);
+  });
+
+  // The day-6 journey and its assertions, shared with the lossy-clock
+  // regression below so both runs prove the identical behavior.
+  async function playPizzaDay() {
+    await newDay();
+    const PIZZA = { lat: 39.0350, lon: -95.7000 };
+    const OUT = [
+      { lat: 39.0260, lon: -95.7300 }, { lat: 39.0300, lon: -95.7240 }, { lat: 39.0330, lon: -95.7160 },
+      { lat: 39.0345, lon: -95.7080 },
+    ];
+    const BACK = [
+      { lat: 39.0290, lon: -95.7000 }, { lat: 39.0220, lon: -95.7000 }, { lat: 39.0150, lon: -95.7000 },
+      { lat: 39.0080, lon: -95.7000 }, { lat: 39.0040, lon: -95.7000 },
+    ];
+    await dwell(GEO.JOB1, 8);
+    await ping(GEO.JOB1, 0); await ff(1);
+    for (const p of OUT) { await ping(p, 13); await ff(0.7); }
+    // The pickup: five fixes at the same kerb, ~3.2 minutes of anchor dwell.
+    for (let i = 0; i < 5; i++) { await ping(PIZZA, 0); await ff(0.8); }
+    for (const p of BACK) { await ping(p, 13); await ff(0.7); }
+    await ping(GEO.SHOP, 0); await ff(0.5);
+    await dwell(GEO.SHOP, 8);
+    // Control: the same dogleg home, no pause anywhere.
+    await ping(GEO.SHOP, 0); await ff(1);
+    for (const p of [...BACK].reverse()) { await ping(p, 13); await ff(0.7); }
+    await ping(PIZZA, 13); await ff(0.7);
+    for (const p of [...OUT].reverse()) { await ping(p, 13); await ff(0.7); }
+    await ping(GEO.JOB1, 0); await ff(0.5);
+    await dwell(GEO.JOB1, 8);
+    return closeDay();
+  }
+  function expectPizzaDay(d) {
+    const routeJS = routeMiles(GEO.JOB1, GEO.SHOP);
+    expect(d.rows.length, JSON.stringify(d.rows)).toBe(2);
+    const [pA, pB] = d.rows;
+    expect(String(pA.from)).toContain('John');
+    expect(String(pA.to)).toContain('Shop');
+    expect(Math.abs(pA.miles - routeJS), `paused leg takes the DIRECT route, got ${pA.miles} want ${routeJS}`).toBeLessThanOrEqual(0.15);
+    expect(String(pB.from)).toContain('Shop');
+    expect(String(pB.to)).toContain('John');
+    expect(pB.miles, `the pauseless dogleg is a real detour, observed saves, got ${pB.miles} vs route ${routeJS}`).toBeGreaterThan(routeJS + 0.5);
+  }
+
+  test('day 6 again on a clock that silently loses fastForwards: the pause still registers (CI flake regression, 2026-08-21)', async () => {
+    test.setTimeout(120000);
+    // The CI failure this pins: on a starved runner, page.clock.fastForward
+    // occasionally no-ops (measured: fastForward(300000) advanced Date.now()
+    // by 6ms). One lost 48s tick inside the pizza sit measured the 3.2-minute
+    // dwell as 2.4 minutes, under the 2.5-minute pause floor (_GEO_PAUSE_MS,
+    // js/geo-track.js), so the leg was never marked paused and the
+    // observed-miles floor collected: "got 4.2 want 3", identical on webkit
+    // and chromium because the wrong branch is deterministic once the tick is
+    // lost. _ffLossy makes ffMs treat the FIRST attempt of every fast-forward
+    // as silently lost; the verify-and-retry loop must recover every tick, so
+    // this day plays out with the exact timeline the baseline day 6 gets.
+    // Red before the ffMs fix, green after, forever.
+    _ffLossy = true;
+    try {
+      const d = await playPizzaDay();
+      expectPizzaDay(d);
+    } finally { _ffLossy = false; }
+  });
+
+  test('day 7: a 90-second pickup the time rule cannot see is caught by the coprocessor walk record', async () => {
+    test.setTimeout(120000);
+    // Owner 2026-08-14: "time isn't a good enough factor, is there something
+    // better in Apple's toolkit?" There is: the motion coprocessor records
+    // driving/walking/still around the clock, and TdGeo.motionSince already
+    // queries it. A walk inside the leg is the bulletproof errand signal: a
+    // red light or a jam never produces walking, a counter pickup always
+    // does, however fast. The measurement asks before the detour floor
+    // collects; walking disqualifies it (direct route saves), a driving-only
+    // record leaves the floor collecting (the control leg), and no signal at
+    // all falls back to the 2.5-minute time rule (day 6).
+    await newDay();
+    const OUT7 = [
+      { lat: 39.0260, lon: -95.7300 }, { lat: 39.0300, lon: -95.7240 }, { lat: 39.0330, lon: -95.7160 }, { lat: 39.0345, lon: -95.7080 },
+    ];
+    const BACK7 = [
+      { lat: 39.0290, lon: -95.7000 }, { lat: 39.0220, lon: -95.7000 }, { lat: 39.0150, lon: -95.7000 }, { lat: 39.0080, lon: -95.7000 }, { lat: 39.0040, lon: -95.7000 },
+    ];
+    await dwell(GEO.JOB1, 8);
+    // Leg A: walked. The motion stub answers relative to the query window.
+    await page.evaluate(() => {
+      window.__realTd = window._geoTdPlugin;
+      window._geoTdPlugin = () => ({ motionSince: async (o) => ({ available: true, transitions: [
+        { kind: 'driving', ts: (o.sinceMs || 0) + 130000 },
+        { kind: 'onFoot', ts: (o.sinceMs || 0) + 6 * 60000 },
+        { kind: 'still', ts: (o.sinceMs || 0) + 6 * 60000 + 30000 },
+        { kind: 'driving', ts: (o.sinceMs || 0) + 8 * 60000 },
+      ] }) });
+    });
+    await ping(GEO.JOB1, 0); await ff(1);
+    for (const p of OUT7) { await ping(p, 13); await ff(0.7); }
+    await ping({ lat: 39.0350, lon: -95.7000 }, 0); await ff(0.8);   // 96 seconds at the counter,
+    await ping({ lat: 39.0350, lon: -95.7000 }, 0); await ff(0.8);   // invisible to the time rule
+    for (const p of BACK7) { await ping(p, 13); await ff(0.7); }
+    await ping(GEO.SHOP, 0); await ff(0.5);
+    await dwell(GEO.SHOP, 8);
+    // Leg B control: same dogleg back, motion record driving-only.
+    await page.evaluate(() => {
+      window._geoTdPlugin = () => ({ motionSince: async (o) => ({ available: true, transitions: [
+        { kind: 'driving', ts: (o.sinceMs || 0) + 130000 },
+      ] }) });
+    });
+    await ping(GEO.SHOP, 0); await ff(1);
+    for (const p of [...BACK7].reverse().concat([{ lat: 39.0350, lon: -95.7000 }], [...OUT7].reverse())) { await ping(p, 13); await ff(0.7); }
+    await ping(GEO.JOB1, 0); await ff(0.5);
+    await dwell(GEO.JOB1, 8);
+    const d = await closeDay();
+    await page.evaluate(() => { window._geoTdPlugin = window.__realTd || (() => null); delete window.__realTd; });
+    const routeJS = routeMiles(GEO.JOB1, GEO.SHOP);
+    expect(d.rows.length, JSON.stringify(d.rows)).toBe(2);
+    const [wA, wB] = d.rows;
+    expect(String(wA.to)).toContain('Shop');
+    expect(Math.abs(wA.miles - routeJS), `the walk disqualifies the floor, direct saves, got ${wA.miles} want ${routeJS}`).toBeLessThanOrEqual(0.15);
+    expect(String(wB.to)).toContain('John');
+    expect(wB.miles, `driving-only record: the observed detour still collects, got ${wB.miles} vs route ${routeJS}`).toBeGreaterThan(routeJS + 0.5);
+  });
+
   test('fuzz days: six seeded random days, oracle-checked, every combination of stop, manual, crash, echo, phantom', async () => {
     test.setTimeout(300000);
     // The generator composes days from the same building blocks the real
@@ -343,6 +517,7 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
       _geoStopAnchor = null; _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
       _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoCurrentClient = null; _geoClientArrivedAt = null;
       _geoCurrentJob = null; _geoArrivedAt = null;
+      window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
       _geoRestoreOpen();
     });
     const echoAttack = async (prevPoint, atPoint) => {

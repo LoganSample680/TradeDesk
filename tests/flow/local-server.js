@@ -33,7 +33,11 @@ const ROOT = path.resolve(__dirname, '..', '..'); // repo root (where index.html
 // Both map to the single local publishable key below.
 // ─────────────────────────────────────────────────────────────────────────────
 const LOCAL_STACK = process.env.E2E_LOCAL_STACK === '1';
-const LOCAL_PUBLISHABLE_KEY = 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH';
+// Env-overridable for the GitHub-HOSTED runner (local-stack-hosted.yml), which
+// creates its stack fresh in-job and reads the anon key from `supabase status`
+// at run time. Default stays the jarvis stack's key, so the self-hosted path
+// is byte-for-byte unchanged.
+const LOCAL_PUBLISHABLE_KEY = process.env.LOCAL_PUBLISHABLE_KEY || 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH';
 const CLOUD_PUBLISHABLE_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
 const CLOUD_ANON_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
 

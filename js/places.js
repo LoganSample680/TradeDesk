@@ -97,7 +97,10 @@ function placeAt(coord){
   if(!coord||coord.lat==null)return null;
   let best=null,bestFt=Infinity;
   (places||[]).forEach(pl=>{
-    if(pl.lat==null||pl.lon==null)return;
+    // Element-guarded: one hole in the array used to throw straight out
+    // of here, and placeAt sits on the visit-close path, so a single
+    // malformed place row took a whole stop down with it.
+    if(!pl||pl.lat==null||pl.lon==null)return;
     const ft=_placeDistFt(coord,pl);
     if(ft<=(pl.fenceFt||PLACE_MATCH_FT)&&ft<bestFt){best=pl;bestFt=ft;}
   });
@@ -131,6 +134,33 @@ function _expenseVendorMatches(vendor,name){
   const a=norm(vendor),b=norm(name);
   if(a.length<3||b.length<3)return false;
   return a===b||a.indexOf(b)>=0||b.indexOf(a)>=0;
+}
+// The map's Expenses layer used to fall back to the live GPS fix (where the
+// receipt was LOGGED) for anything not tied to a job, which put a lot of
+// contractors' own houses on their own map (receipts get done in the truck
+// at 5pm, or Sunday at the kitchen table, same reason expenseForStop above
+// can't trust geo for a late receipt). Resolve the vendor's real location
+// instead, in order: an already-confirmed supply house (places, no network
+// call, a contractor already vetted it), else an Apple Maps business-name
+// search (_resolveCoords, the same one address geocoding already uses)
+// biased to the business's home area. Written to vendorLat/vendorLon, kept
+// separate from lat/lon on purpose: lat/lon stays the live fix expenseAt()
+// and mileage.js's detour matching depend on.
+async function _expenseVendorGeocode(){
+  if(typeof expenses==='undefined')return false;
+  let filled=false;
+  for(const e of expenses){
+    if(!e||e.job_id||e.vendorLat!=null||!e.vendor)continue;
+    const known=(places||[]).find(pl=>pl.lat!=null&&pl.lon!=null&&_expenseVendorMatches(e.vendor,pl.name));
+    if(known){e.vendorLat=known.lat;e.vendorLon=known.lon;filled=true;continue;}
+    if(typeof _resolveCoords!=='function')continue;
+    try{
+      const r=await _resolveCoords(e.vendor);
+      if(r&&r.lat!=null){e.vendorLat=r.lat;e.vendorLon=r.lng;filled=true;}
+    }catch(_e){}
+  }
+  if(filled&&typeof saveAll==='function')saveAll();
+  return filled;
 }
 // Did the contractor buy something for the business at this stop? Two signals,
 // and it takes only one, because they answer at different times:
@@ -169,6 +199,10 @@ function savePlace(pl){
     places.push(pl);
   }
   if(typeof saveAll==='function')saveAll();
+  // The trips that predate the name catch up (mileage.js): every "Stop" row at
+  // this pin becomes this place, which is the whole payoff of promoting a
+  // repeat-stop suggestion. Idempotent, only anonymous endpoints move.
+  if(typeof _placeRetroNameTrips==='function')_placeRetroNameTrips(existing||pl);
   return existing||pl;
 }
 function deletePlace(id){
@@ -307,12 +341,30 @@ function geoFeed(opts){
                 label:(typeof label==='function'?label(r):label)||type,amount:r.amount});
     });
   };
-  push(expenses,'expense',r=>r.vendor||'Expense','date');
+  // Expenses keep their own lat/lon as a live GPS fix (supply-house detection
+  // in places.js expenseAt() and mileage.js's detour-receipt matching both
+  // depend on it staying that way). But a receipt shouldn't plot at wherever
+  // the paperwork got done (often home, on the couch that night, owner
+  // 2026-08-17), so prefer, in order: the linked job's address-geocoded
+  // coords, then the vendor's own geocoded coords (_expenseVendorGeocode),
+  // and only fall back to the live GPS fix when neither is known.
+  (expenses||[]).forEach(r=>{
+    const linkedJob=r.job_id&&typeof jobs!=='undefined'?jobs.find(j=>j.id===r.job_id):null;
+    const atJob=linkedJob&&linkedJob.lat!=null&&linkedJob.lon!=null;
+    const atVendor=!atJob&&r.vendorLat!=null&&r.vendorLon!=null;
+    let lat,lon;
+    if(atJob){lat=linkedJob.lat;lon=linkedJob.lon;}
+    else if(atVendor){lat=r.vendorLat;lon=r.vendorLon;}
+    else{lat=r.lat;lon=r.lon;}
+    if(lat==null||lon==null)return;
+    if(!atJob&&!atVendor&&r.geoAcc!=null&&r.geoAcc>PLACE_MAX_ACC_M)return;
+    out.push({type:'expense',id:r.id,lat,lon,date:r.date,label:r.vendor||'Expense',amount:r.amount});
+  });
   push(jobs,'job',r=>r.client_name||r.name||'Job','start');
   push(bids,'estimate',r=>r.client_name||'Estimate','date');
   push(payments,'payment',r=>r.client_name||'Payment','date');
   (places||[]).forEach(pl=>{
-    if(pl.lat==null||pl.lon==null)return;
+    if(!pl||pl.lat==null||pl.lon==null)return;
     out.push({type:'place',id:pl.id,lat:pl.lat,lon:pl.lon,label:pl.name,kind:pl.kind});
   });
   const types=o.types&&o.types.length?o.types:null;
@@ -352,6 +404,19 @@ const _GEO_MAP_STYLE={
 function toggleGeoMapType(t){
   _geoMapTypes=_geoMapTypes.includes(t)?_geoMapTypes.filter(x=>x!==t):_geoMapTypes.concat(t);
   renderGeoMap();
+}
+// Entry point when the tracker's Map tab is opened. Paints immediately with
+// whatever is already known, then resolves any un-geocoded receipt vendors
+// and repaints once, never a spinner in front of a map (CLAUDE.md 8.3).
+let _geoMapVendorLoading=false;
+function openGeoMap(){
+  renderGeoMap();
+  if(_geoMapVendorLoading||typeof _expenseVendorGeocode!=='function')return;
+  _geoMapVendorLoading=true;
+  _expenseVendorGeocode().catch(()=>false).then(()=>{
+    _geoMapVendorLoading=false;
+    renderGeoMap();
+  });
 }
 function _geoMapKitReady(){
   return typeof mapkit!=='undefined'&&typeof _mapkitReady!=='undefined'&&_mapkitReady;
@@ -630,9 +695,9 @@ async function _ptrFetch(year){
   const lo=year+'-01-01T00:00:00Z',hi=(year+1)+'-01-01T00:00:00Z';
   try{
     const[pRes,sRes]=await Promise.all([
-      _supa.from('job_time_entries').select('employee_user_id,dest_place,minutes,arrived_at,departed_at')
+      _supa.from('job_time_entries').select('employee_user_id,dest_place,minutes,arrived_at,departed_at').is('deleted_at',null)
         .eq('contractor_user_id',cid).eq('source','place').gte('arrived_at',lo).lt('arrived_at',hi),
-      _supa.from('shop_time_entries').select('employee_user_id,minutes,arrived_at,departed_at')
+      _supa.from('shop_time_entries').select('employee_user_id,minutes,arrived_at,departed_at').is('deleted_at',null)
         .eq('contractor_user_id',cid).gte('arrived_at',lo).lt('arrived_at',hi),
     ]);
     ((pRes&&pRes.data)||[]).forEach(r=>{if(r.dest_place)out.rows.push({place:r.dest_place,uid:r.employee_user_id||'',mins:r.minutes||0,arrivedAt:r.arrived_at,departedAt:r.departed_at,date:_ptrDateKey(r.arrived_at)});});

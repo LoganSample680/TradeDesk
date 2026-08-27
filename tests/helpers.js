@@ -62,6 +62,75 @@ const MOCK_PROPOSAL = {
 async function mockAllExternal(page, opts = {}) {
   const { alreadySigned = false, proposalData = MOCK_PROPOSAL, bidId = FAKE_BID_ID_1 } = opts;
 
+  // ── PIN THE CLOCK ──────────────────────────────────────────────────────────
+  // The wall clock was an undeclared input to the whole suite, and it cost a
+  // full night. On 2026-08-26 three separate tests failed in CI and passed
+  // locally for one reason: CI ran them at 00:05, 00:08 and 00:25 Central and
+  // their fixtures were written as "3 hours ago" or "50 minutes ago", so the
+  // scenario silently moved to the previous day. Nothing was wrong with the
+  // code, the browser, or the shard. The hour decided the result.
+  //
+  // So the page's idea of "now" is pinned to a fixed time of day. Local and CI
+  // then agree by construction rather than by luck, and CI goes back to being
+  // where bugs are CONFIRMED instead of where they are discovered.
+  //
+  // Only the wall-clock READING moves. This is a fixed offset, not a frozen or
+  // faked timer: time still flows at 1x, setTimeout still fires when it should,
+  // and every debounce and poll in the app behaves exactly as it does in
+  // production. Freezing time would have been a far bigger change to reason
+  // about, and none of the failures needed it.
+  //
+  // The shift stays inside the same Central DAY (it only moves the time of
+  // day), so anything comparing against "today" is untouched.
+  //
+  //   TD_CLOCK_AT=HH:MM   pin to that Central time (default 10:00)
+  //   TD_CLOCK_AT=off     no pin, the raw machine clock, for reproducing a
+  //                       time-of-day bug by hand
+  //
+  // CI also runs the suite a second time at TD_CLOCK_AT=00:20 (see
+  // .github/workflows/test.yml), which is what turns "fails after midnight"
+  // into a finding on the PR that introduces it rather than a red board at 1am.
+  // opts.clock === 'off' is for a spec that drives page.clock itself: two
+  // things owning window.Date is one too many, and such a spec is already
+  // immune to the class this pin exists for, because it names its own time.
+  const clockAt = (opts.clock === 'off') ? 'off' : (process.env.TD_CLOCK_AT || '10:00');
+  if (clockAt !== 'off') {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(clockAt);
+    if (!m) throw new Error('TD_CLOCK_AT must be HH:MM or "off", got: ' + clockAt);
+    const targetMin = (+m[1]) * 60 + (+m[2]);
+    await page.addInitScript((tgt) => {
+      try {
+        const RealDate = Date;
+        // Where the machine's clock currently sits in Central, to the second.
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/Chicago', hour: '2-digit', minute: '2-digit',
+          second: '2-digit', hour12: false,
+        }).formatToParts(new RealDate());
+        const g = (t) => +(((parts.find((x) => x.type === t) || {}).value) || 0);
+        let hh = g('hour'); if (hh === 24) hh = 0;   // some engines say 24 at midnight
+        const nowMin = hh * 60 + g('minute') + g('second') / 60;
+        const OFFSET = Math.round((tgt - nowMin) * 60000);
+        if (!OFFSET) return;
+        const nowFn = () => RealDate.now() + OFFSET;
+        function PinnedDate(...args) {
+          // Called as a function, not a constructor: Date() returns a string.
+          if (!(this instanceof PinnedDate)) return new RealDate(nowFn()).toString();
+          // Only a BARE `new Date()` reads the clock. Every explicit argument
+          // is passed through untouched, so a fixture that names an instant
+          // still means exactly that instant.
+          return args.length === 0 ? new RealDate(nowFn()) : new RealDate(...args);
+        }
+        // Shared prototype keeps `instanceof Date` true for both, which matters
+        // because app code and the Supabase shim both hand real Dates around.
+        PinnedDate.prototype = RealDate.prototype;
+        PinnedDate.now = nowFn;
+        PinnedDate.parse = RealDate.parse;
+        PinnedDate.UTC = RealDate.UTC;
+        window.Date = PinnedDate;
+      } catch (_e) { /* never let the pin break a boot */ }
+    }, targetMin);
+  }
+
   // Set __mockProposalData BEFORE any page scripts run so the shim's fetch interceptor
   // serves the correct custom proposal (not the default stub) for sign.html tests.
   if (proposalData) {
@@ -343,6 +412,18 @@ function _supabaseShim() {
           stopAutoRefresh:  () => {},
         },
         from: (table) => queryBuilder(),
+        // No offline test mocks the account-load RPCs (load_account_data /
+        // get_account_delta), but any test that leaves _supaUser set can have
+        // the app's background reconnect-pull fire loadAccountData mid-test.
+        // With no rpc at all that throws a real TypeError, which
+        // _classifyCloudError reports as an APP error (console.error) and
+        // trips an unrelated test's assertNoErrors — CI caught exactly this
+        // in e2e-timelog. code:'offline' is the classifier's documented
+        // explicit test-suite signal (js/cloud.js _classifyCloudError): the
+        // load aborts as a network failure — warn, not error, and crucially
+        // WITHOUT clobbering test-seeded in-memory arrays the way an
+        // empty-success response would.
+        rpc: (fn, args) => Promise.resolve({ data: null, error: { code: 'offline', message: 'offline shim: rpc(' + fn + ') not mocked' } }),
         storage: {
           from: (bucket) => ({
             upload:   (path, data, opts) => noopResult({ path }),

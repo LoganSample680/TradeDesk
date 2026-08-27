@@ -93,7 +93,14 @@ test.describe('Home office: presence is not work', () => {
         if (_geoPlaceArrivedAt) _geoPlaceArrivedAt = startIso;
 
         rows.length = 0;                     // ignore whatever the arrival logged
-        await ping(a.road);                  // pull out: this ping closes the visit
+        // Pull out: two pings, not one. A place/client fence now needs the
+        // pending-then-confirming pair every departure does (owner mandate
+        // 2026-08-20) before it closes; the shop-dwell mechanism this same
+        // helper also drives (S.officeLat / _geoWasInShop) is unaffected and
+        // still closes on the very first one, so the second is a harmless
+        // no-op there.
+        await ping(a.road);
+        await ping(a.road);
         if (hiddenDesc) Object.defineProperty(document, 'hidden', hiddenDesc);
         return rows;
       } finally {
@@ -196,6 +203,58 @@ test.describe('Home office: presence is not work', () => {
       const m = shopMins(rows);
       expect(m).toBeGreaterThanOrEqual(55);
       expect(m).toBeLessThanOrEqual(65);      // NOT the 120 minutes of wall clock
+    });
+
+    // Owner audit finding, 2026-08-23: a live account (Shop == the contractor's
+    // house, exactly this describe's scenario) showed a 9-second
+    // shop_time_entries dwell billed as 5 minutes. Root cause: returning home
+    // before the sampler's "second consecutive away ping" ever got to null the
+    // old dwell object handed the new, unrelated visit the old one's
+    // already-billed activeMs. The closer marking the object `.closed`
+    // (instead of nulling it outright, which would have broken "the tally
+    // survives exactly the ping that closes the visit" below) and the sampler
+    // starting fresh on `.closed` is the fix; this proves it holds. Uses the
+    // Shop departure path deliberately, not a saved PLACE: a place/client exit
+    // into open road now needs two confirming pings (owner mandate
+    // 2026-08-20), but Shop still closes on the very first one (see
+    // "backgrounded for half of it" above), so this stays a clean one-ping
+    // close-then-reopen, same shape as the production data.
+    test('a quick return before the second away-ping does not inherit the closed dwell\'s minutes', async () => {
+      const rows = await page.evaluate(async (a) => {
+        const realEnq = _geoEnqueue, realUser = _supaUser, realNow = Date.now;
+        const out = [];
+        _supaUser = { id: 'u-home' };
+        _geoEnqueue = (tbl, row) => out.push(Object.assign({ _tbl: tbl }, row));
+        let cursor = realNow.call(Date);
+        Date.now = () => cursor;
+        try {
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false;
+          _geoHomeDwell = null; _geoWasAtHome = false;
+          const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+          // Dwell #1: real paperwork, ~5 active minutes, tapping the whole time.
+          for (let i = 0; i < 5; i++) { _geoLastInteractAt = cursor; await ping(a.HOME); cursor += 60000; }
+          if (_geoShopArrivedAt) _geoShopArrivedAt = new Date(cursor - 5 * 60000).toISOString();
+          out.length = 0;
+          await ping(a.ROAD);   // closes dwell #1, one ping, same as "backgrounded for half of it"
+          cursor += 1000;
+          const afterFirstClose = out.slice();
+          out.length = 0;
+          await ping(a.HOME);   // right back home, one ping, no tap this time
+          cursor += 1000;
+          await ping(a.ROAD);   // closes dwell #2 almost immediately
+          return { afterFirstClose, afterSecondClose: out.slice() };
+        } finally { Date.now = realNow; _geoEnqueue = realEnq; _supaUser = realUser; }
+      }, { HOME, ROAD });
+      const firstMins = shopMins(rows.afterFirstClose);
+      expect(firstMins).toBeGreaterThanOrEqual(4);
+      expect(firstMins).toBeLessThanOrEqual(5);
+      // Dwell #2 was one ping with no interaction: effectively zero active ms,
+      // under the 2-minute floor. It must bill NOTHING, not dwell #1's 5 minutes.
+      expect(shopMins(rows.afterSecondClose)).toBe(0);
+      expect(rows.afterSecondClose.filter(r => r._tbl === 'shop_time_entries').length).toBe(0);
     });
   });
 
@@ -305,6 +364,15 @@ test.describe('Home office: presence is not work', () => {
       expect(out.firstOut).toBe(true);
       expect(out.secondOut).toBe(false);
     });
+
+    // The home-dwell stale-minutes regression test lives in "the shop is the
+    // house" describe above, on the Shop departure path: a place/client exit
+    // into open road now needs two confirming pings (owner mandate
+    // 2026-08-20) and this describe's HOME/ROAD pings never carry a speed
+    // reading, so a single ping here no longer closes the visit the way it
+    // did when that test was first written. Shop still closes on one ping
+    // (see "backgrounded for half of it" in that describe), which is also
+    // the exact path the live account's anomaly was found in.
   });
 
   test('no console errors', async () => { await assertNoErrors(page); });

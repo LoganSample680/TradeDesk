@@ -22,6 +22,11 @@ test.describe('sub referral invite, exhaustive coverage', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The 5s reconnect tick (_probeAndSync → _onReconnect) can fire a silent
+    // cloud load mid-test and replace the seeded in-memory arrays out from under
+    // an assertion (the same wipe that made the fleet specs flake, observed here
+    // live: the hostile-GC test's freshly stamped client card gone by read time).
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
   });
 
   test.afterAll(async () => { await page.close(); });
@@ -1165,10 +1170,12 @@ test.describe('sub referral invite, exhaustive coverage', () => {
       const html = document.getElementById('supa-login-overlay')?.innerHTML || '';
       document.getElementById('supa-login-overlay')?.remove();
       return {
-        // Plain login is defined by its email/password form (present in every
+        // Plain login is defined by its identifier-first gate (present in every
         // copy revision), not by any one headline string, the redesigned login
-        // dropped the old "Sign in to sync your data" subtitle.
-        plainLogin: html.includes('id="supa-email"') && html.includes('id="supa-pass"'),
+        // dropped the old "Sign in to sync your data" subtitle. supa-email/
+        // supa-pass no longer exist in the initial render (2026-08-22 redesign),
+        // they're injected into #login-result only after _loginIdentify resolves.
+        plainLogin: html.includes('id="login-email"') && html.includes('id="login-continue-btn"'),
         noPitch: !html.includes('Claim my account'),
         stashKept: !!localStorage.getItem('_pendingSubInvite'),
         // The deliberate offline-only entry was removed (data-loss risk): the login

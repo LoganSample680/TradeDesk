@@ -329,6 +329,64 @@ const _VEH_EXP_QUICK_LABELS=['Vehicle (fuel)','Vehicle (maintenance)']; // quick
 function _isVehicleExpense(e){
   return !!e&&(_VEH_EXP_CATS.includes(e.cat)||_VEH_EXP_QUICK_LABELS.includes(e.cat));
 }
+// The IRS flip trapdoors (owner 2026-08-14: "flip trap doors need to be
+// closed"). Year-by-year method flipping is legal ONLY on the right history:
+//   1. A vehicle whose FIRST year filed actual expenses can never use the
+//      standard mileage rate again, in any year (Pub 463).
+//   2. A leased vehicle on the standard rate stays on it for the whole lease.
+//   3. Standard-first flipping TO actual is legal but locks depreciation to
+//      straight-line, no accelerated methods, no Section 179 or bonus.
+// The history lives on the vehicle record: firstYearMethod ('' unknown,
+// 'mileage', 'actual') and isLeased, both set in the vehicle form. Unknown
+// history warns instead of blocking, the app must never invent a lockout.
+// Vehicle money that is INSIDE the standard mileage rate does not appear in
+// the money views at all (owner rule 2026-08-15: "vehicle shit for expenses
+// don't show at all on dashboard or the cards if mileage deduction is being
+// utilized, if it's not then they show"). Not deleted, HIDDEN: the year-end
+// verdict can only tell you which method wins if both sides were tracked all
+// year, so the rows stay in the data and keep feeding _vehSchedC, the Fleet
+// screens, and the comparison. Flip a vehicle to actual expenses and its
+// costs reappear everywhere, because there they are a real deduction.
+//
+// The id list comes from _vehSchedC itself (excludedIds), the same engine
+// that decides what leaves the Schedule C, so a row can never be hidden in
+// one place and counted in another. Cached per year+signature: renderDash
+// and the ledgers all ask on every paint.
+function _expHiddenByMileage(e){
+  try{
+    if(!e||typeof _isVehicleExpense!=='function'||!_isVehicleExpense(e))return false;
+    const vehs=(typeof getVehicles==='function')?getVehicles():[];
+    if(!vehs.length)return false;
+    const hit=(typeof _vehLinkMatches==='function')?vehs.find(v=>_vehLinkMatches(e,v)):null;
+    // Money nobody linked to a truck stays VISIBLE when there is more than one
+    // truck it could belong to: that is a loose end the contractor should see
+    // and fix, not something the app quietly buries. With a single vehicle
+    // there is nothing ambiguous, so it follows that vehicle's method, exactly
+    // as the deduction engine already treats it.
+    const veh=hit||(vehs.length===1?vehs[0]:null);
+    if(!veh)return false;
+    return (veh.deductionMethod||'mileage')!=='actual';
+  }catch(_e){return false;}
+}
+function _vehFlipGuard(v,target){
+  const first=(v&&v.firstYearMethod)||'';
+  const cur=(v&&v.deductionMethod)||'mileage';
+  if(target===cur)return {ok:true};
+  if(target==='mileage'&&first==='actual')return {ok:false,
+    short:'first year filed actual, standard rate is permanently unavailable',
+    msg:'This vehicle\'s FIRST tax year was filed on actual expenses, so the IRS never allows the standard mileage rate for it again, in any year. Actual expenses is its only method now. Not tax advice, verify with your tax professional.'};
+  if(target==='actual'&&v&&v.isLeased)return {ok:false,
+    short:'leased on the standard rate, locked for the whole lease',
+    msg:'A leased vehicle using the standard mileage rate must keep it for the ENTIRE lease period, no mid-lease switch to actual expenses. The choice reopens on a new lease or an owned vehicle. Not tax advice, verify with your tax professional.'};
+  if(target==='actual')return {ok:true,
+    short:'legal, but depreciation must be straight-line only',
+    msg:(first===''?'Heads up: if this vehicle\'s FIRST tax year was filed on actual expenses, this is its only legal method anyway. Set the first-year method on the vehicle so the app can guard the rules properly. ':'')+
+      'Switching to actual expenses after the standard rate is allowed, but depreciation must use straight-line only: no accelerated methods, no Section 179, no bonus depreciation. Not tax advice, verify with your tax professional.'};
+  if(target==='mileage'&&first==='')return {ok:true,
+    short:'legal only if its first year filed the standard rate',
+    msg:'Switching back to the standard mileage rate is only legal if this vehicle\'s FIRST tax year was filed on the standard rate. If its first year used actual expenses, the standard rate is permanently unavailable. Set the first-year method on the vehicle so the app can guard this. Not tax advice, verify with your tax professional.'};
+  return {ok:true};
+}
 function _vehSchedC(yr){
   yr=String(yr||new Date().getFullYear());
   const rate=(typeof _getIrsRateForYear==='function')?_getIrsRateForYear(yr):((S&&S.irsRate)||0.7);
@@ -384,7 +442,10 @@ function _vehSchedC(yr){
       miles:+b.miles.toFixed(1),bizUse:Math.round(b.bizPct*100),expTotal:+expTotal.toFixed(2),
       costTotal,actualCmp,
       mileDed,actualDed,winner:mileDed>=actualCmp?'mileage':'actual',
-      delta:+Math.abs(mileDed-actualCmp).toFixed(2)});
+      delta:+Math.abs(mileDed-actualCmp).toFixed(2),
+      // The flip-guard inputs ride along so every verdict surface can say
+      // whether switching to the winner is even legal for THIS vehicle.
+      firstYearMethod:b.v.firstYearMethod||'',isLeased:!!b.v.isLeased});
   });
   out.mileDed=+out.mileDed.toFixed(2);
   out.vehExpDed=+out.vehExpDed.toFixed(2);
@@ -406,7 +467,14 @@ function _vehWinnerAlert(yr){
       if(p.miles>0&&p.costTotal===0)return svgIcon('🚗',{size:14})+' '+escHtml(p.label)+': mileage '+fmt(p.mileDed)+', but NO vehicle costs logged this year. Log gas, parts, and service too so next year we can prove which method wins.';
       if(p.costTotal>0&&p.miles===0)return svgIcon('🚗',{size:14})+' '+escHtml(p.label)+': actual costs '+fmt(p.actualCmp)+', but NO trips logged. Track your drives so the mileage side is real.';
       const winLbl=p.winner==='mileage'?'Standard mileage':'Actual expenses';
-      return svgIcon('🚗',{size:14})+' '+escHtml(p.label)+' ('+p.bizUse+'% business): mileage '+fmt(p.mileDed)+' vs actual '+fmt(p.actualCmp)+' → <strong>'+winLbl+' wins by '+fmt(p.delta)+'</strong>'+(p.winner===p.method?', you\'re already on the winning method '+svgIcon('✓',{size:13}):', you\'re set to '+p.method+'; switching could save '+fmt(p.delta)+'/yr (IRS switching rules apply, confirm with your tax pro).');
+      let switchNote='';
+      if(p.winner!==p.method&&typeof _vehFlipGuard==='function'){
+        const g=_vehFlipGuard({deductionMethod:p.method,firstYearMethod:p.firstYearMethod,isLeased:p.isLeased},p.winner);
+        switchNote=g.ok
+          ?', you\'re set to '+p.method+'; switching could save '+fmt(p.delta)+'/yr'+(g.short?' ('+g.short+')':'')+', confirm with your tax pro.'
+          :', you\'re set to '+p.method+' and this vehicle CANNOT legally switch: '+g.short+'.';
+      }
+      return svgIcon('🚗',{size:14})+' '+escHtml(p.label)+' ('+p.bizUse+'% business): mileage '+fmt(p.mileDed)+' vs actual '+fmt(p.actualCmp)+' → <strong>'+winLbl+' wins by '+fmt(p.delta)+'</strong>'+(p.winner===p.method?', you\'re already on the winning method '+svgIcon('✓',{size:13}):switchNote);
     });
     if(!parts.length)return;
     zAlert(parts.join('<br><br>')+'<br><br><span style="font-size:10px;color:var(--text3)">Not tax advice, verify with your tax professional.</span>',{title:(vd.yr)+' vehicle deduction, which method won'});
@@ -903,6 +971,19 @@ function openAddVehicleModal(idx) {
               </div>
             </div>
           </div>
+          <div style="margin-top:10px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end">
+            <div>
+              <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:4px">First tax year filed as <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0">(guards the IRS switch rules)</span></div>
+              <select id="fv-first-method" style="width:100%;padding:9px 10px;border-radius:var(--r);font-size:13px">
+                <option value="" ${!(v.firstYearMethod)?'selected':''}>Not sure</option>
+                <option value="mileage" ${v.firstYearMethod==='mileage'?'selected':''}>Standard mileage</option>
+                <option value="actual" ${v.firstYearMethod==='actual'?'selected':''}>Actual expenses</option>
+              </select>
+            </div>
+            <label style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:var(--text);padding:9px 4px;cursor:pointer;text-transform:none;letter-spacing:0">
+              <input type="checkbox" id="fv-leased" ${v.isLeased?'checked':''} style="width:16px;height:16px;accent-color:var(--blue)"> Leased
+            </label>
+          </div>
         </div>
       </div>
       <button class="btn btn-p" onclick="saveFleetVehicle()" style="width:100%;padding:14px;font-size:16px;font-weight:700">${isEdit?'Save changes':'Add vehicle'}</button>
@@ -975,6 +1056,8 @@ function saveFleetVehicle() {
     bizUse:   oldV.bizUse||100, // updated by year-end odometer report, not manual entry
     gvwr:     document.getElementById('fv-gvwr')?document.getElementById('fv-gvwr').value:'',
     deductionMethod: deductEl ? deductEl.value : (oldV.deductionMethod||'mileage'),
+    firstYearMethod: document.getElementById('fv-first-method')?document.getElementById('fv-first-method').value:(oldV.firstYearMethod||''),
+    isLeased: !!(document.getElementById('fv-leased')&&document.getElementById('fv-leased').checked),
     purchaseDate:  _mdYToYmd(document.getElementById('fv-pdate')?document.getElementById('fv-pdate').value:'')||'',
     purchasePrice: _moneyVal('fv-pprice'),
     purchaseOdo:   parseInt(document.getElementById('fv-podo')?document.getElementById('fv-podo').value:0)||0,
@@ -982,6 +1065,22 @@ function saveFleetVehicle() {
     downtimeLog: oldV.downtimeLog||[],
     addedDate: oldV.addedDate||todayKey(),
   };
+
+  // ── The flip trapdoors, enforced at the door ─────────────────────────────
+  // An ILLEGAL method change never saves (reverted right here, before the
+  // purchase-expense logic below keys off the method); a legal-with-caveat
+  // change saves and says the caveat out loud. History (first-year method,
+  // lease) is judged as just entered on THIS save, so correcting the history
+  // and flipping in one edit behaves like the corrected truth.
+  if((oldV.deductionMethod||'mileage')!==newV.deductionMethod&&typeof _vehFlipGuard==='function'){
+    const _g=_vehFlipGuard({deductionMethod:oldV.deductionMethod||'mileage',firstYearMethod:newV.firstYearMethod,isLeased:newV.isLeased},newV.deductionMethod);
+    if(!_g.ok){
+      newV.deductionMethod=oldV.deductionMethod||'mileage';
+      try{zAlert(_g.msg,{title:'IRS method rules'});}catch(_e){}
+    }else if(_g.msg){
+      try{zAlert(_g.msg,{title:'IRS method rules'});}catch(_e){}
+    }
+  }
 
   // Auto-create expense if purchase price is new or changed, only for actual expense method
   const newPrice = newV.purchasePrice;

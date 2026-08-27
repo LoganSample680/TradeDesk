@@ -547,6 +547,69 @@ test.describe('Collection and lifecycle flow functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // ── Pay link in every collection text (owner ask 2026-08-18) ────────────────
+  // A collection text that names a balance but hands no way to PAY it makes the
+  // client do homework. Every stage now carries the client-hub link (card/Apple
+  // Pay checkout lives there) when the client has a hub token, and degrades to
+  // link-free wording (no dangling "Pay securely here:") when they don't.
+  test('collSendSMS: the preview carries the client-hub pay link when the client has one', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof collSendSMS !== 'function' || typeof getClientById !== 'function') return { skip: true };
+      const bid = bids.find(b => b.id === 40001);
+      const c = getClientById ? (clients.find(x => x.id === bid?.client_id) || clients.find(x => x.id === 'c-coll-001')) : null;
+      if (!bid || !c) return { skip: true };
+      const savedTok = c.clientToken; const savedUser = window._supaUser;
+      const savedGetClient = window.getClientById;
+      try {
+        // collSendSMS resolves the client via getClientById(bid.client_id); the
+        // seed bids use clientId, so pin the lookup at our seeded client.
+        window.getClientById = () => c;
+        c.clientToken = 'hub-tok-123';
+        window._supaUser = window._supaUser || { id: 'coll-uid-1' };
+        collSendSMS(bid, 'reminder');
+        const ov = [...document.querySelectorAll('.zmodal-overlay')].pop();
+        const txt = ov ? ov.textContent : '';
+        ov?.remove();
+        return { skip: false, hasLink: txt.includes('client.html?t=hub-tok-123'), hasPayWord: /[Pp]ay/.test(txt) };
+      } finally {
+        c.clientToken = savedTok; window._supaUser = savedUser; window.getClientById = savedGetClient;
+        document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+      }
+    });
+    if (r.skip) return;
+    expect(r.hasLink, 'the hub pay link rides the reminder text').toBe(true);
+    expect(r.hasPayWord).toBe(true);
+  });
+
+  test('collSendSMS: no hub token degrades to link-free wording, never a dangling "pay here:"', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof collSendSMS !== 'function') return { skip: true };
+      const bid = bids.find(b => b.id === 40001);
+      const c = clients.find(x => x.id === 'c-coll-001');
+      if (!bid || !c) return { skip: true };
+      const savedTok = c.clientToken; const savedGetClient = window.getClientById;
+      try {
+        window.getClientById = () => c;
+        delete c.clientToken;
+        collSendSMS(bid, 'reminder');
+        const ov = [...document.querySelectorAll('.zmodal-overlay')].pop();
+        const txt = ov ? ov.textContent : '';
+        ov?.remove();
+        return {
+          skip: false,
+          noDangling: !/here:\s*(Thank|$)/.test(txt.replace(/\s+/g, ' ')) || !txt.includes('client.html'),
+          noHubUrl: !txt.includes('client.html'),
+        };
+      } finally {
+        if (savedTok !== undefined) c.clientToken = savedTok;
+        window.getClientById = savedGetClient;
+        document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+      }
+    });
+    if (r.skip) return;
+    expect(r.noHubUrl, 'no token means no link in the text').toBe(true);
+  });
+
   test('markFUWon: marks bid as Closed Won without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof markFUWon !== 'function') return { skip: true };
@@ -2410,6 +2473,62 @@ test.describe('Finance and mileage extra render functions', () => {
       } catch (e) { return { ok: false, error: e.message }; }
     });
     if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test.describe('_bkWeekAcc / _bkTogWeek: week-level accordion tier (Time Log unified report)', () => {
+    test('_bkWeekAcc: renders a closed shell by default, id keyed by tab/mo/wk', async () => {
+      const r = await page.evaluate(() => _bkWeekAcc('tl', '2026-03', '20260309', 'Week of Mar 9 – 15', '3 employees', '<b>$2,340</b>', '<div>inner</div>', false));
+      expect(r).toContain('id="bk-tl-wk-2026-03-20260309"');
+      expect(r).toContain('class="bk-week"');
+      expect(r).not.toContain('class="bk-week open"');
+      expect(r).toContain('style="display:none"');
+      expect(r).toContain('Week of Mar 9 – 15');
+      expect(r).toContain('3 employees');
+      expect(r).toContain('$2,340');
+      expect(r).toContain('<div>inner</div>');
+    });
+
+    test('_bkWeekAcc: isOpen renders the open class and a visible body (no inline display:none)', async () => {
+      const r = await page.evaluate(() => _bkWeekAcc('tl', '2026-03', '20260309', 'Week', 'sub', '', 'inner', true));
+      expect(r).toContain('class="bk-week open"');
+      expect(r).not.toContain('style="display:none"');
+    });
+
+    test('_bkTogWeek: toggles the open class and shows/hides the body', async () => {
+      const r = await page.evaluate(() => {
+        document.body.insertAdjacentHTML('beforeend', _bkWeekAcc('tl', '2026-03', '20260309', 'Week', 'sub', '', 'body content', false));
+        const el = document.getElementById('bk-tl-wk-2026-03-20260309');
+        const before = { open: el.classList.contains('open'), display: el.querySelector('.bk-week-body').style.display };
+        _bkTogWeek('tl', '2026-03', '20260309');
+        const after = { open: el.classList.contains('open'), display: el.querySelector('.bk-week-body').style.display };
+        _bkTogWeek('tl', '2026-03', '20260309'); // toggle back closed
+        const afterAgain = { open: el.classList.contains('open'), display: el.querySelector('.bk-week-body').style.display };
+        el.remove();
+        return { before, after, afterAgain };
+      });
+      expect(r.before.open).toBe(false);
+      expect(r.after.open).toBe(true);
+      expect(r.after.display).toBe('block');
+      expect(r.afterAgain.open).toBe(false);
+      expect(r.afterAgain.display).toBe('none');
+    });
+
+    test('_bkTogWeek: missing element, returns gracefully, no throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _bkTogWeek('tl', 'does-not', 'exist'); return { ok: true }; }
+        catch (e) { return { ok: false, error: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('_bkWeekAcc: missing totalHtml/isOpen args, no throw, defaults sensibly', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, html: _bkWeekAcc('tl', '2026-03', '1', 'Week', 'sub', null, 'x') }; }
+        catch (e) { return { ok: false, error: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.html).not.toContain('null');
+    });
   });
 
   test('_milRenderSummary: renders mileage summary without throwing', async () => {

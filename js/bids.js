@@ -839,7 +839,11 @@ function openPayPanel(bidId, autoType){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const balance=getBidBalance(bid);
   const total=bid.amount||0;
-  const deposit25=Math.round(Math.min(total*.25,balance)*100)/100;
+  // The deposit THIS CONTRACT calls for, not a hardcoded 25%. A bid that set its own
+  // deposit (50% up front, a flat $2,000, a state-capped figure) must offer that number,
+  // otherwise the panel silently records the wrong amount.
+  const depositDue=Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
+  const depositPct=total>0?Math.round(depositDue/total*100):25;
   const rawPaid=getBidPaid(bidId);
   const overpaidAmt=Math.round((rawPaid-total)*100)/100;
   const _payClient=getClientById(bid.client_id);
@@ -852,7 +856,7 @@ function openPayPanel(bidId, autoType){
   const overlay=document.createElement('div');
   overlay.className='zmodal-overlay pay-modal-overlay';
 
-  const refundBtn='<button type="button" data-ptype="refund" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:11px 14px;border-radius:var(--r);border:1.5px solid var(--red-lt,#FEE2E2);background:var(--red-lt,#FFF0F0);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
+  const refundBtn='<button type="button" data-pmethod="refund" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:11px 14px;border-radius:var(--r);border:1.5px solid var(--red-lt,#FEE2E2);background:var(--red-lt,#FFF0F0);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
     '<div style="font-size:13px;font-weight:700;color:#A32D2D">'+svgIcon('↩',{size:13})+' Issue refund to client</div>'+
     '<div style="font-size:12px;font-weight:700;color:#A32D2D">'+(overpaidAmt>0.01?'-'+fmt(overpaidAmt):'')+'</div>'+
   '</button>';
@@ -867,104 +871,121 @@ function openPayPanel(bidId, autoType){
         '<div style="font-size:11px;color:#856404">Client paid '+fmt(rawPaid)+' but proposal is now '+fmt(total)+'. Refund: <strong>'+fmt(overpaidAmt)+'</strong></div></div>'+
       '</div>'
     :'';
-  const showFinalOnly=autoType==='final';
-  // Compact send-to-client buttons (Stripe + QR side by side)
-  const hasStripe=!!(_stripeConnectStatus?.charges_enabled&&balance>0.50);
-  const hasQr=!!(_hubUrl&&balance>0.50);
-  const stripeCompact=hasStripe
-    ?'<button type="button" data-ptype="stripe" onclick="selectPayType(this,'+bidId+')" style="padding:12px 8px;border-radius:var(--r);border:1.5px solid #635BFF;background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px">'+
-        '<span style="font-size:20px">'+svgIcon('💳',{size:20})+'</span>'+
-        '<span style="font-size:12px;font-weight:700;color:#635BFF">Card link</span>'+
-        '<span style="font-size:11px;color:var(--text3)">'+fmt(balance)+'</span>'+
-      '</button>'
+  // THREE ways to get paid, nothing else (owner directive 2026-08-15), and they
+  // sit on ONE ROW. The stacked full-width option cards that replaced the old
+  // pile of buttons were still 330px of chrome above the thing the contractor
+  // actually came here to do, which is type a number and hit record ("it's still
+  // a damn mess"). Now: a three-across picker on the app's existing .seg
+  // pattern, one explanatory line under it that follows the selection, then the
+  // form. Refunds stay tucked behind one text link at the bottom.
+  //
+  // BOTH card routes are gated on Stripe (owner rule 2026-08-15): the hub charges
+  // the client's card through the connected account, and tap-to-pay will run on
+  // the same account, so neither can do anything until Stripe is connected. They
+  // render greyed and locked until then, never hidden, the contractor should see
+  // what they're missing. Greyed is not DEAD (§13.1): tapping a locked one walks
+  // them to Connect.
+  const stripeOn=!!(_stripeConnectStatus&&_stripeConnectStatus.charges_enabled);
+  // A route the account can't use yet is simply GREY (owner 2026-08-15: no LOCKED
+  // badge, no COMING SOON badge). Tapping it is what explains itself: both greyed
+  // routes open the Connect-Stripe prompt, so the control is never dead, it just
+  // doesn't wear its status on its face.
+  const _opt=(pm,icon,label,off,onclick)=>
+    '<button type="button" '+(off?'data-plocked="'+pm+'"':'data-pmethod="'+pm+'"')+
+      ' onclick="'+(onclick||('selectPayType(this,'+bidId+')'))+'"'+
+      ' style="flex:1;min-width:0;padding:10px 4px;border-radius:10px;border:none;background:none;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:5px;transition:background .14s ease'+(off?';opacity:.38':'')+'">'+
+      '<span style="display:flex;align-items:center;justify-content:center;width:26px;height:26px">'+icon+'</span>'+
+      '<span style="font-size:11.5px;font-weight:800;letter-spacing:-.15px;white-space:nowrap">'+label+'</span>'+
+    '</button>';
+  const _needStripe=balance>0.50&&!stripeOn;
+  const methodRow=
+    '<div id="mpay-type-btns" style="display:flex;gap:3px;padding:4px;border-radius:13px;background:var(--cream);box-shadow:inset 0 0 0 1px var(--border2)">'+
+      _opt('manual',svgIcon('💵',{size:19,color:'var(--green)'}),'Log it',false)+
+      (balance>0.50?_opt('stripe',svgIcon('🔗',{size:19,color:'var(--denim)'}),'Send link',_needStripe,_needStripe?'_mpayNeedStripe()':null):'')+
+      (balance>0.50?_opt('tap',svgIcon('📶',{size:19,color:'#C0720A'}),'Tap to pay',true,stripeOn?'_tapToPaySoon()':'_mpayNeedStripe()'):'')+
+    '</div>'+
+    '<div id="mpay-hint" style="font-size:11.5px;color:var(--text3);text-align:center;margin:9px 0 14px"></div>';
+  // Amount presets: the deposit this contract calls for and the whole balance.
+  // They only fill the field, they never lock it. Shown only when there is a real
+  // CHOICE, one lone chip repeating the number above it is noise.
+  const _chip=(id,pt,label)=>'<button type="button" id="'+id+'" data-ptype="'+pt+'" onclick="selectPayType(this,'+bidId+')" style="flex:1;padding:8px 10px;border-radius:99px;border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:12px;font-weight:700;color:var(--text)">'+label+'</button>';
+  // Whole-dollar figures drop the ".00" so each chip holds one line.
+  const _chipAmt=v=>fmt(v).replace(/\.00$/,'');
+  const chipRow=(rawPaid<0.01&&depositDue>0.01&&Math.abs(depositDue-balance)>0.01&&balance>0.01)
+    ?'<div style="display:flex;gap:6px;margin-top:8px">'+
+       _chip('mpay-btn-deposit','deposit','Deposit '+_chipAmt(depositDue))+
+       _chip('mpay-btn-final','final','Balance '+_chipAmt(balance))+
+     '</div>'
     :'';
-  const qrCompact=hasQr
-    ?'<button type="button" onclick="showPayQr('+bidId+')" style="padding:12px 8px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px">'+
-        '<span style="font-size:20px">'+svgIcon('📱',{size:20})+'</span>'+
-        '<span style="font-size:12px;font-weight:700">QR code</span>'+
-        '<span style="font-size:11px;color:var(--text3)">Client scans</span>'+
-      '</button>'
-    :'';
-  const sendClientRow=(hasStripe||hasQr)
-    ?'<div style="display:flex;align-items:center;gap:8px;margin:6px 0 4px">'+
-        '<div style="flex:1;height:1px;background:var(--border2)"></div>'+
-        '<span style="font-size:10px;font-weight:600;color:var(--text3);white-space:nowrap">or send to client</span>'+
-        '<div style="flex:1;height:1px;background:var(--border2)"></div>'+
-      '</div>'+
-      '<div style="display:grid;grid-template-columns:'+(hasStripe&&hasQr?'1fr 1fr':'1fr')+';gap:8px">'+
-        stripeCompact+qrCompact+
-      '</div>'
-    :'';
-  // Tap their card in person, the reader-driven flow ships with the native app
-  // (owner decision 2026-07-10). Reserving the slot now so the native build only
-  // has to swap this handler for the real one, not design new pay-panel UI.
-  const tapToPayRow=balance>0.50
-    ?'<button type="button" onclick="_tapToPaySoon()" style="width:100%;margin-top:6px;padding:10px 12px;border-radius:var(--r);border:1.5px dashed var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;opacity:.75">'+
-        '<span style="font-size:16px">'+svgIcon('📶',{size:16})+'</span>'+
-        '<span style="font-size:12px;font-weight:700">Tap to pay</span>'+
-        '<span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;border-radius:10px;background:var(--border2);color:var(--text3)">Coming soon</span>'+
-      '</button>'
-    :'';
-  // Secondary: deposit + custom as small 2-col row
-  const depositSecondary=rawPaid<0.01
-    ?'<button type="button" id="mpay-btn-deposit" data-ptype="deposit" onclick="selectPayType(this,'+bidId+')" style="flex:1;padding:10px 12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left">'+
-        '<div style="font-size:12px;font-weight:700">Deposit 25%</div>'+
-        '<div style="font-size:13px;font-weight:800;color:var(--blue);margin-top:2px">'+fmt(deposit25)+'</div>'+
-      '</button>'
-    :'';
-  const customSecondary='<button type="button" data-ptype="custom" onclick="selectPayType(this,'+bidId+')" style="flex:1;padding:10px 12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left">'+
-    '<div style="font-size:12px;font-weight:700">Custom amount</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-top:2px">Enter exact amount</div>'+
-  '</button>';
-  const secondaryRow='<div style="display:flex;gap:8px;margin-top:4px">'+(depositSecondary||'')+customSecondary+'</div>';
-  // Primary collect button, big green, full width
-  const collectBtn='<button type="button" id="mpay-btn-final" data-ptype="final" onclick="selectPayType(this,'+bidId+')" style="width:100%;padding:16px 18px;border-radius:var(--r);border:none;background:var(--green);color:#fff;cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center;box-sizing:border-box">'+
-    '<div style="text-align:left"><div style="font-size:17px;font-weight:800">Collect '+fmt(balance)+'</div>'+
-    '<div style="font-size:12px;opacity:.75;margin-top:2px">Full balance · tap to log payment</div></div>'+
-    '<div style="font-size:24px;font-weight:900;opacity:.85">&#8594;</div>'+
-  '</button>';
-  const typeButtons=collectBtn+tapToPayRow+sendClientRow+(showFinalOnly?'':secondaryRow);
+  // How they paid: pills, not a <select>. One tap instead of open-scroll-confirm,
+  // and every option is readable at a glance. #mpay-method stays a real field (now
+  // hidden) so logPayment and every caller still read it the same way.
+  const payMethods=['Cash','Check','Venmo','Zelle','Card','Other'];
+  const methodPills='<div id="mpay-method-pills" style="display:flex;flex-wrap:wrap;gap:6px">'+
+    payMethods.map(m=>'<button type="button" data-pmeth="'+m+'" onclick="_mpayPickMethod(\''+m+'\')" style="flex:1 1 30%;padding:9px 6px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--text)">'+m+'</button>').join('')+
+  '</div>';
 
+  // The sheet leads with an INK BAND, the same dark surface as the nav and the tab
+  // bar, with the money reversed out of it. A white form-card headed by a 19px
+  // title read like a settings screen; the number is the reason this screen exists,
+  // so it gets the weight. The band shows what is OWED, the field below shows what
+  // is being COLLECTED, which are different figures on a partial payment.
   overlay.innerHTML=
-    '<div class="zmodal">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'+
-        '<div style="font-size:17px;font-weight:800">'+(showFinalOnly?'Collect payment':'Log payment')+'</div>'+
-        '<button onclick="closePayPanel()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">'+svgIcon('✕',{size:20})+'</button>'+
+    '<div class="zmodal" style="padding:0;overflow:hidden">'+
+      '<div style="background:var(--ink);color:var(--text-cream);padding:18px 22px 20px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">'+
+          '<div style="min-width:0">'+
+            '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.13em;color:var(--text-cream-3)">Get paid</div>'+
+            '<div style="font-size:15px;font-weight:700;color:var(--text-cream-2);margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(bid.client_name||'')+'</div>'+
+          '</div>'+
+          '<button onclick="closePayPanel()" style="flex-shrink:0;border:none;background:rgba(245,239,226,.10);border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-cream-2);padding:0">'+svgIcon('✕',{size:17,color:'currentColor'})+'</button>'+
+        '</div>'+
+        '<div style="display:flex;align-items:baseline;gap:9px;margin-top:12px">'+
+          '<div style="font-family:var(--font-display,inherit);font-size:38px;font-weight:900;letter-spacing:-1.6px;line-height:1">'+fmt(balance)+'</div>'+
+          '<div style="font-size:11.5px;font-weight:700;color:var(--text-cream-3);text-transform:uppercase;letter-spacing:.08em">owed</div>'+
+        '</div>'+
+        (total>balance+0.01?'<div style="font-size:11.5px;color:var(--text-cream-3);margin-top:4px">'+fmt(total-balance)+' of '+fmt(total)+' already paid</div>':'')+
       '</div>'+
+      '<div style="padding:16px 22px 22px">'+
       overpaidBanner+
-      '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+bid.client_name+' · '+fmt(total)+' total · '+fmt(balance)+' balance</div>'+
       '<input type="hidden" id="mpay-type">'+
-      '<div style="display:grid;gap:8px;margin-bottom:8px" id="mpay-type-btns">'+typeButtons+'</div>'+
-      '<button type="button" onclick="_mpayToggleAdj()" style="background:none;border:none;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;color:var(--text3);padding:4px 0;margin-bottom:8px;text-align:left">⋯ Adjustments & refunds</button>'+
-      '<div id="_mpay-adj-btns" style="display:none">'+refundBtn+(rawPaid>0.01?cancelRefundBtn:'')+'</div>'+
+      methodRow+
       '<div id="mpay-detail-fields" style="display:none">'+
-        '<div id="mpay-amount-row" style="display:none" class="f">'+
-          '<label>Amount ($) <span id="mpay-max-hint" style="font-weight:400;color:var(--text3);font-size:11px"></span></label>'+
-          '<input type="text" id="mpay-amount" placeholder="0.00" inputmode="decimal" oninput="_fmtMoneyInput(this)"'+
-            ' style="font-size:22px;font-weight:800;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit;text-align:center">'+
+        '<div id="mpay-amount-row" style="display:none">'+
+          '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.11em;color:var(--text3);margin-bottom:7px">Collecting</div>'+
+          '<div style="position:relative">'+
+            '<span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:20px;font-weight:800;color:var(--text3);pointer-events:none">$</span>'+
+            '<input type="text" id="mpay-amount" placeholder="0.00" inputmode="decimal" oninput="_fmtMoneyInput(this)"'+
+              ' style="font-size:26px;font-weight:800;padding:14px 14px 14px 34px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit;text-align:center">'+
+          '</div>'+
+          '<span id="mpay-max-hint" style="display:none"></span>'+
+          chipRow+
         '</div>'+
-        '<div class="f" style="margin-bottom:10px">'+
-          '<label id="mpay-date-label">Date received</label>'+
-          '<input type="date" id="mpay-date" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit">'+
+        '<div id="mpay-method-row" style="margin-top:12px">'+
+          '<input type="hidden" id="mpay-method" value="Check">'+
+          methodPills+
         '</div>'+
-        '<div id="mpay-method-row" class="f" style="margin-bottom:10px">'+
-          '<label>Payment method</label>'+
-          '<select id="mpay-method" onchange="_mpayMethodChange()" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit">'+
-            '<option value="Check">Check</option>'+
-            '<option value="Cash">Cash</option>'+
-            '<option value="Zelle">Zelle</option>'+
-            '<option value="Venmo">Venmo</option>'+
-            '<option value="Card">Card</option>'+
-            '<option value="Other">Other</option>'+
-          '</select>'+
+        '<div style="display:flex;gap:8px;margin-top:8px">'+
+          '<input id="mpay-ref" placeholder="Check # (optional)" style="flex:1;min-width:0;font-size:13px;padding:11px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);box-sizing:border-box;color:var(--text);font-family:inherit">'+
+          '<input type="date" id="mpay-date" style="flex:0 0 148px;font-size:13px;padding:11px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);box-sizing:border-box;color:var(--text);font-family:inherit">'+
         '</div>'+
-        '<div class="f" style="margin-bottom:14px">'+
-          '<label id="mpay-ref-label">Check # <span style="font-weight:400;color:var(--text3)">(optional)</span></label>'+
-          '<input id="mpay-ref" placeholder="Optional" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit">'+
-        '</div>'+
+        '<span id="mpay-date-label" style="display:none"></span>'+
+        '<span id="mpay-ref-label" style="display:none"></span>'+
       '</div>'+
-      '<div id="mpay-err" style="display:none;font-size:12px;color:#A32D2D;background:#FEE8E8;border-radius:var(--r);padding:8px 10px;margin-bottom:8px"></div>'+
-      '<button id="mpay-submit-btn" onclick="logPayment()" style="display:none;width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Record payment</button>'+
+      // The hub option's own detail: what the client sees, plus the in-person QR.
+      '<div id="mpay-hub-fields" style="display:none">'+
+        '<div style="font-size:12.5px;color:var(--text2);background:var(--bg2);border-radius:var(--r);padding:11px 12px;line-height:1.45">'+
+          escHtml((bid.client_name||'They').split(' ')[0])+' gets a link to their hub showing '+fmt(balance)+' owed, and pays by card right there.'+
+        '</div>'+
+        (_hubUrl?'<button type="button" onclick="showPayQr('+bidId+')" style="width:100%;margin-top:8px;padding:11px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;color:var(--text)">'+svgIcon('📱',{size:13})+' Show a QR code instead</button>':'')+
+      '</div>'+
+      '<div id="mpay-err" style="display:none;font-size:12px;color:#A32D2D;background:#FEE8E8;border-radius:var(--r);padding:8px 10px;margin:10px 0 0"></div>'+
+      '<button id="mpay-submit-btn" onclick="logPayment()" style="display:none;width:100%;margin-top:14px;padding:15px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">Record payment</button>'+
+      '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border2)">'+
+        '<button type="button" onclick="_mpayToggleAdj()" style="background:none;border:none;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;color:var(--text3);padding:2px 0;text-align:left">Adjustments &amp; refunds</button>'+
+        '<div id="_mpay-adj-btns" style="display:none">'+refundBtn+cancelRefundBtn+'</div>'+
+      '</div>'+
+      '</div>'+
     '</div>';
 
   document.body.appendChild(overlay);
@@ -972,20 +993,81 @@ function openPayPanel(bidId, autoType){
   document.getElementById('mpay-date').value=todayKey();
   document.getElementById('mpay-amount').value='';
   document.getElementById('mpay-ref').value='';
+  _mpayPickMethod('Check');
 
-  // Auto-select the right payment type
-  const autoBtn=autoType==='deposit'?document.getElementById('mpay-btn-deposit')
-    :autoType==='final'?document.getElementById('mpay-btn-final'):null;
-  if(autoBtn)setTimeout(()=>selectPayType(autoBtn,bidId),50);
+  // Manual is pre-selected: it is what the contractor is doing nine times out of ten,
+  // and pre-selecting it means the collect card costs the same taps it always did.
+  // autoType only decides which amount is pre-filled, never what they're allowed to do.
+  _mpayPrefill=autoType==='deposit'?depositDue:balance;
+  const manualBtn=document.querySelector('#mpay-type-btns button[data-pmethod="manual"]');
+  if(manualBtn)selectPayType(manualBtn,bidId);
 }
+// The amount openPayPanel wants pre-filled when the manual option is selected. Set on
+// every open so a 'deposit' entry point lands on the deposit and everything else lands
+// on the whole balance.
+let _mpayPrefill=0;
 function autoFillPayAmount(){
   // No-op: amounts are entered manually, not pre-filled
 }
 // Reader-driven tap-to-pay ships with the native app (owner decision 2026-07-10),
 // native NFC requires a native shell, not buildable as a web app. This keeps the
 // pay-panel slot reserved now so native only has to swap this handler.
+// The locked card routes are not dead buttons: tapping one says why it's locked and
+// walks straight to the Connect screen, which is the single thing standing between the
+// contractor and both of them.
+function _mpayNeedStripe(){
+  zConfirm('Card payments run through Stripe, so the client hub and tap to pay stay locked until your account is connected. It takes a couple of minutes.',
+    ()=>{
+      closePayPanel();
+      goPg('pg-settings');
+      setTimeout(()=>{if(typeof _openStripeConnect==='function')_openStripeConnect();},250);
+    },
+    {title:'Connect Stripe first',yes:'Connect Stripe',no:'Not now',danger:false});
+}
 function _tapToPaySoon(){
   zAlert('Tap to pay is coming with the TradeDesk app. For now, tap Collect for cash/check, or send the client the QR code to pay by card.',{title:'Coming soon'});
+}
+// The invoice the client sees IS the hub's invoice view, deep-linked with
+// #invoice-<bidId>, so there is no second document to build or keep in sync. It
+// already carries the paid-in-full state; _refreshClientHub (called at the end of
+// logPayment) publishes the payment that flips it. This is just the send action,
+// offered on the banner the moment a payment lands.
+function _invoiceBannerBtn(bidId,paidInFull){
+  if(!bidId)return '';
+  return '<div style="background:'+(paidInFull?'#0B3A06':'#14304A')+';padding:9px 16px;text-align:center">'+
+    '<button onclick="_sendPaidInvoice('+bidId+')" style="background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.34);color:#fff;font-size:13px;font-weight:800;padding:7px 16px;border-radius:6px;cursor:pointer;font-family:inherit">'+
+      (paidInFull?'Send the paid invoice':'Send the receipt')+
+    '</button></div>';
+}
+// Publish first, THEN hand over the link: sending a client a link to an invoice
+// that has not been re-uploaded yet shows them a stale balance, which is the one
+// thing an invoice must never do.
+async function _sendPaidInvoice(bidId){
+  const bid=bids.find(b=>b.id===bidId);if(!bid)return;
+  const c=getClientById(bid.client_id);
+  if(!c){showToast('No client on this job.','⚠');return;}
+  document.querySelectorAll('[data-invbanner]').forEach(e=>e.remove());
+  try{
+    if(typeof _uploadClientHub==='function')await _uploadClientHub(c.id);
+  }catch(_e){}
+  if(!c.clientToken||!_supaUser){zAlert('This client has no hub link yet. Send them a proposal or a payment link first and the invoice will ride along.');return;}
+  const url=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+c.id+'#invoice-'+bidId;
+  const paid=getBidBalance(bid)<0.01;
+  const first=(c.name||'').split(' ')[0]||'there';
+  const body=paid
+    ?'Hi '+first+', thanks again! Here is your paid invoice for '+fmt(bid.amount)+': '+url
+    :'Hi '+first+', here is your updated invoice: '+url;
+  const ov=document.createElement('div');ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('📄')+(paid?' Paid invoice ready':' Invoice ready')+'</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'')+' &middot; '+(paid?'marked paid in full':fmt(getBidBalance(bid))+' still owed')+'</div>'+
+    '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:12px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+escHtml(url)+'</div>'+
+    (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:'+String(c.phone).replace(/\D/g,'')+'?body=\'+encodeURIComponent('+JSON.stringify(body)+')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Text it to them</button>':'')+
+    '<button onclick="navigator.clipboard.writeText('+JSON.stringify(url)+').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📋')+' Copy link</button>'+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 function closePayPanel(){document.querySelectorAll('.pay-modal-overlay').forEach(e=>e.remove());const cdp=document.getElementById('cd-pay-panel');if(cdp)cdp.style.display='none';activePayBidId=null;}
 function showPayQr(bidId){
@@ -1147,73 +1229,92 @@ function reopenEstimate(bidId){
   showToast('Proposal reopened, back to awaiting signature','↩');
 }
 function selectPayType(btn, bidId){
-  // Deselect all, keep collect button green but dimmed
-  const typeContainer=document.getElementById('mpay-type-btns');
-  if(typeContainer)typeContainer.querySelectorAll('button[data-ptype]').forEach(b=>{
-    if(b.dataset.ptype==='final'){b.style.background='var(--green)';b.style.border='none';b.style.color='#fff';b.style.opacity='.45';}
-    else{b.style.borderColor='var(--border2)';b.style.background='var(--bg2)';b.style.color='var(--text)';b.style.opacity='';}
-  });
-  const ptype=btn.dataset.ptype;
-  if(ptype==='final'){btn.style.opacity='1';}
-  else{btn.style.borderColor='var(--blue)';btn.style.background='var(--blue-lt)';btn.style.color='var(--text)';}
+  // ONE entry point for both rows of the panel:
+  //   data-pmethod = how they are paying (manual / send their link / refund)
+  //   data-ptype   = which amount to pre-fill (deposit / full balance)
+  // The amount chips never change the selected method, they only fill the field, so
+  // picking "Deposit" can no longer trap you on the deposit (owner report 2026-08-15).
+  const kind=btn&&btn.dataset?(btn.dataset.pmethod||btn.dataset.ptype||''):'';
   const bid=bids.find(b=>b.id==bidId);if(!bid)return;
   const balance=getBidBalance(bid);
   const total=bid.amount||0;
-  const deposit25=Math.round(total*.25*100)/100;
-  const tf=document.getElementById('mpay-type');if(tf)tf.value=ptype==='custom'?'partial':ptype;
+  const depositDue=Math.round(Math.min((bid.deposit>0?bid.deposit:total*.25),balance)*100)/100;
   const amtRow=document.getElementById('mpay-amount-row');
   const amtEl=document.getElementById('mpay-amount');
   const hint=document.getElementById('mpay-max-hint');
   const submitBtn=document.getElementById('mpay-submit-btn');
   const dateLabel=document.getElementById('mpay-date-label');
-  const mRow=document.getElementById('mpay-method-row');
-  if(ptype==='deposit'){
-    const depositAmt=Math.min(deposit25,balance);
-    if(amtEl)amtEl.value=_moneyStr(depositAmt);
-    if(amtRow)amtRow.style.display='block';
-    if(hint)hint.textContent='25% of '+fmt(total);
-    if(amtEl){amtEl.readOnly=true;amtEl.style.background='var(--bg2)';amtEl.style.color='var(--text3)';}
-    if(submitBtn){submitBtn.textContent='Record payment';submitBtn.style.background='var(--green)';}
-    if(dateLabel)dateLabel.textContent='Date received';
-  } else if(ptype==='final'){
-    if(amtEl)amtEl.value=_moneyStr(balance);
-    if(amtRow)amtRow.style.display='block';
-    if(hint)hint.textContent='remaining balance';
-    if(amtEl){amtEl.readOnly=true;amtEl.style.background='var(--bg2)';amtEl.style.color='var(--text3)';}
-    if(submitBtn){submitBtn.textContent='Record payment';submitBtn.style.background='var(--green)';}
-    if(dateLabel)dateLabel.textContent='Date received';
-  } else if(ptype==='stripe'){
-    if(amtRow)amtRow.style.display='none';
-    if(hint)hint.textContent='';
-    if(dateLabel)dateLabel.textContent='';
-  } else if(ptype==='refund'){
-    const rawBidPaid=getBidPaid(bidId);
-    const rawBidTotal=(bids.find(b=>b.id==bidId)||{}).amount||0;
-    const refAmt=Math.max(0,Math.round((rawBidPaid-rawBidTotal)*100)/100);
-    if(amtEl){amtEl.value=refAmt>0?_moneyStr(refAmt):'';amtEl.readOnly=false;amtEl.style.background='';amtEl.style.color='';}
+  const df=document.getElementById('mpay-detail-fields');
+  const hf=document.getElementById('mpay-hub-fields');
+  const tf=document.getElementById('mpay-type');
+  const isAmountChip=(kind==='deposit'||kind==='final');
+
+  // An amount chip: fill the field, mark the chip, leave everything else alone.
+  if(isAmountChip){
+    document.querySelectorAll('#mpay-amount-row button[data-ptype]').forEach(c=>{
+      c.style.borderColor='var(--border2)';c.style.background='var(--bg2)';c.style.color='var(--text)';
+    });
+    btn.style.borderColor='var(--green)';btn.style.background='var(--green-lt,#E8F5EE)';btn.style.color='var(--green)';
+    if(amtEl)amtEl.value=_moneyStr(kind==='deposit'?depositDue:balance);
+    if(tf)tf.value=kind;
+    return;
+  }
+
+  // A method: raise the chosen segment, flatten the others (the app's .seg look).
+  const typeContainer=document.getElementById('mpay-type-btns');
+  if(typeContainer)typeContainer.querySelectorAll('button[data-pmethod]').forEach(b=>{
+    b.style.background='none';b.style.boxShadow='';b.style.color='var(--text3)';
+  });
+  if(btn&&btn.dataset&&btn.dataset.pmethod){
+    btn.style.background='var(--bg-card,#fff)';btn.style.boxShadow='0 1px 3px rgba(0,0,0,.12)';btn.style.color='var(--text)';
+  }
+  // One line under the row explains the SELECTED route, so the three buttons stay
+  // one row instead of three paragraphs.
+  const hintLine=document.getElementById('mpay-hint');
+
+  if(kind==='stripe'){
+    if(tf)tf.value='stripe';
+    if(df)df.style.display='none';
+    if(hf)hf.style.display='';
+    if(hintLine)hintLine.textContent='They pay by card in their hub';
+    if(submitBtn){submitBtn.style.display='';submitBtn.textContent='Send the link';submitBtn.style.background='#635BFF';}
+    return;
+  }
+  if(hf)hf.style.display='none';
+
+  if(kind==='refund'){
+    const refAmt=Math.max(0,Math.round((getBidPaid(bidId)-total)*100)/100);
+    if(tf)tf.value='refund';
+    if(amtEl){amtEl.value=refAmt>0?_moneyStr(refAmt):'';amtEl.readOnly=false;}
     if(amtRow)amtRow.style.display='block';
     if(hint)hint.textContent='refund amount';
-    if(submitBtn){submitBtn.textContent='Issue refund';submitBtn.style.background='#A32D2D';}
+    if(submitBtn){submitBtn.style.display='';submitBtn.textContent='Issue refund';submitBtn.style.background='#A32D2D';}
     if(dateLabel)dateLabel.textContent='Date issued';
-    setTimeout(()=>amtEl&&amtEl.focus(),50);
-  } else {
-    if(amtEl){amtEl.value='';amtEl.readOnly=false;amtEl.style.background='';amtEl.style.color='';}
-    if(amtRow)amtRow.style.display='block';
-    if(hint)hint.textContent='max: '+fmt(balance);
-    if(submitBtn){submitBtn.textContent='Record payment';submitBtn.style.background='var(--green)';}
-    if(dateLabel)dateLabel.textContent='Date received';
-    setTimeout(()=>amtEl&&amtEl.focus(),50);
-  }
-  // Reveal detail fields and submit button for all types except direct actions
-  const df=document.getElementById('mpay-detail-fields');
-  const sb=document.getElementById('mpay-submit-btn');
-  if(ptype==='stripe'){
-    if(df)df.style.display='none';
-    if(sb){sb.style.display='';sb.textContent='Send Stripe payment link →';sb.style.background='#635BFF';}
-  }else{
+    if(hintLine)hintLine.textContent='Money going back to the client';
     if(df)df.style.display='';
-    if(sb)sb.style.display='';
+    setTimeout(()=>amtEl&&amtEl.focus(),50);
+    return;
   }
+
+  // Manual: money already in hand. The amount is PRE-FILLED and always editable, so a
+  // client who hands over the whole job, or half of it, can be recorded either way.
+  const pre=(typeof _mpayPrefill==='number'&&_mpayPrefill>0)?_mpayPrefill:balance;
+  if(tf)tf.value=(Math.abs(pre-balance)<0.01?'final':'deposit');
+  if(amtEl){amtEl.value=pre>0?_moneyStr(pre):'';amtEl.readOnly=false;amtEl.style.background='';amtEl.style.color='';}
+  if(amtRow)amtRow.style.display='block';
+  if(hint)hint.textContent='tap to change';
+  if(dateLabel)dateLabel.textContent='Date received';
+  if(hintLine)hintLine.textContent='Money you already have in hand';
+  if(submitBtn){submitBtn.style.display='';submitBtn.textContent='Record payment';submitBtn.style.background='var(--green)';}
+  if(df)df.style.display='';
+  // Mark whichever chip matches the pre-filled amount.
+  document.querySelectorAll('#mpay-amount-row button[data-ptype]').forEach(c=>{
+    const match=(c.dataset.ptype==='deposit'?depositDue:balance);
+    const on=Math.abs(match-pre)<0.01;
+    c.style.borderColor=on?'var(--green)':'var(--border2)';
+    c.style.background=on?'var(--green-lt,#E8F5EE)':'var(--bg2)';
+    c.style.color=on?'var(--green)':'var(--text)';
+  });
 }
 
 function _mpayToggleAdj(){
@@ -1222,14 +1323,27 @@ function _mpayToggleAdj(){
   if(d.style.display==='none'){d.style.display='grid';d.style.gap='8px';d.style.marginBottom='10px';}
   else d.style.display='none';
 }
+// Pick how they paid. The pills write to the hidden #mpay-method field, so
+// logPayment and every existing caller/test still read one plain value.
+function _mpayPickMethod(m){
+  const f=document.getElementById('mpay-method');
+  if(f)f.value=m;
+  document.querySelectorAll('#mpay-method-pills button[data-pmeth]').forEach(b=>{
+    const on=b.dataset.pmeth===m;
+    b.style.borderColor=on?'var(--green)':'var(--border2)';
+    b.style.background=on?'var(--green-lt,#E8F5EE)':'var(--bg2)';
+    b.style.color=on?'var(--green)':'var(--text)';
+  });
+  _mpayMethodChange();
+}
 function _mpayMethodChange(){
   const m=document.getElementById('mpay-method')?.value||'';
-  const lbl=document.getElementById('mpay-ref-label');
-  if(!lbl)return;
-  const isCheck=m==='Check';
-  lbl.innerHTML=(isCheck?'Check #':'Reference')+' <span style="font-weight:400;color:var(--text3)">(optional)</span>';
+  // The reference field is unlabelled now, its placeholder IS the label, so it has
+  // to say the right thing for the method that's selected.
   const ref=document.getElementById('mpay-ref');
-  if(ref)ref.placeholder=isCheck?'e.g. 1042':'Optional';
+  if(ref)ref.placeholder=m==='Check'?'Check # (optional)':m==='Cash'?'Note (optional)':'Reference (optional)';
+  const lbl=document.getElementById('mpay-ref-label');
+  if(lbl)lbl.textContent=(m==='Check'?'Check #':'Reference')+' (optional)';
 }
 function _mpayErr(msg){
   const e=document.getElementById('mpay-err');
@@ -1376,9 +1490,10 @@ function logPayment(){
       '</div>'+
       '<div style="background:#1A4A0A;color:#fff;padding:10px 16px;text-align:center;font-size:13px">'+
         svgIcon('💰',{size:13})+' Set aside <strong>'+fmt(reserveFromThis)+'</strong> from this payment for taxes ('+reserveRate+'%)'+
-      '</div>';
+      '</div>'+
+      _invoiceBannerBtn(_savedBidId,true);
     document.body.appendChild(banner);
-    setTimeout(()=>banner.remove(),5000);
+    setTimeout(()=>banner.remove(),9000);
     // NOTE: do NOT auto-log to income here, payments array is the source of truth for bid revenue.
     // Income array is for manual non-bid entries only. Auto-logging caused dashboard double-counting.
   } else {
@@ -1391,11 +1506,12 @@ function logPayment(){
       '<div style="background:#1A3A5A;color:#fff;padding:8px 16px;text-align:center;font-size:12px">'+
         '&#128176; Set aside <strong>'+fmt(reserveFromThis)+'</strong> from this payment for taxes ('+reserveRate+'%)'+
       '</div>'+
+      _invoiceBannerBtn(_savedBidId,false)+
       (bid.surfaces?.length?'<div style="background:#2D4A1A;color:#fff;padding:8px 16px;text-align:center;font-size:12px">'+
         '&#128230; Deposit received, <button onclick="this.closest(\'div\').parentElement.remove();showSupplyList('+bid.id+')" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:4px;cursor:pointer;font-family:inherit">Order materials now →</button>'+
       '</div>':'');
     document.body.appendChild(banner);
-    setTimeout(()=>banner.remove(),4000);
+    setTimeout(()=>banner.remove(),9000);
   }
   renderCDBids();renderDash();renderMoneyPage();refreshCollectLabel();
   _refreshClientHub(bid.client_id);
@@ -1579,12 +1695,21 @@ function collSendSMS(bid,stageKey){
   const biz=S.bname||'TradeDesk';
   const bal=getBidBalance(bid);
   const addr=bid.addr||c.addr||'the property';
+  // The client-hub link IS the collection tool (owner ask 2026-08-18): the hub's
+  // checkout takes card/Apple Pay, so every stage's text hands the client the way
+  // to pay, not just the news that they owe. Null (no hub token yet) degrades to
+  // the old link-free wording; the dangling-line cleanup below covers custom
+  // templates that reference {url} on a client with no link.
+  const payUrl=(typeof _clientHubUrl==='function'?_clientHubUrl(c):null)||'';
   const tplKey={reminder:'smsReminder',second:'smsSecond',intent:'smsIntent'}[stageKey];
   const defaults=_getSmsDefaults();
   const defKey={reminder:'reminder',second:'second',intent:'intent'}[stageKey];
-  const msg=tplKey&&S[tplKey]
-    ?_smsApply(S[tplKey],{name:c.name,business:biz,amount:fmt(bal),address:addr})
-    :(COLL_SMS[stageKey]?COLL_SMS[stageKey](c.name,bal,addr,biz,(typeof detectStateFromAddr==='function'&&typeof STATE_LIEN!=='undefined'&&STATE_LIEN[detectStateFromAddr(bid.addr||c.addr||'')||S?.state])?STATE_LIEN[detectStateFromAddr(bid.addr||c.addr||'')||S.state].statute:'applicable state law'):_smsApply(defaults[defKey]||'',{name:c.name,business:biz,amount:fmt(bal),address:addr}));
+  let msg=tplKey&&S[tplKey]
+    ?_smsApply(S[tplKey],{name:c.name,business:biz,amount:fmt(bal),address:addr,url:payUrl})
+    :(COLL_SMS[stageKey]?COLL_SMS[stageKey](c.name,bal,addr,biz,(typeof detectStateFromAddr==='function'&&typeof STATE_LIEN!=='undefined'&&STATE_LIEN[detectStateFromAddr(bid.addr||c.addr||'')||S?.state])?STATE_LIEN[detectStateFromAddr(bid.addr||c.addr||'')||S.state].statute:'applicable state law',payUrl):_smsApply(defaults[defKey]||'',{name:c.name,business:biz,amount:fmt(bal),address:addr,url:payUrl}));
+  // A template's pay-link sentence left hanging with no link reads broken
+  // ("Pay securely here: "), drop the empty offer rather than send it.
+  if(!payUrl)msg=msg.replace(/[^.\n]*(?:pay|Pay)[^.\n]*here:\s*(\n|$)/g,'$1').replace(/Pay now:\s*(\n|$)/g,'$1').replace(/\n{3,}/g,'\n\n').trim();
   const phone=c.phone.replace(/\D/g,'');
   const newStage=stageKey==='reminder'?'reminder':stageKey==='second'?'second':'intent';
   const stageLabel={reminder:'Reminder',second:'2nd Notice',intent:'Intent to Lien'}[stageKey]||stageKey;

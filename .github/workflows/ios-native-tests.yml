@@ -1,0 +1,139 @@
+# Native plugin adversarial test harness (TdNativeTests)
+#
+# Runs the plugin-level XCTest suite (native/tests/*Tests.swift) against the
+# iOS Simulator. This is DELIBERATELY separate from ios-beta.yml and never
+# touches it: no archive, no export, no code signing, no App Store Connect
+# key, no fastlane upload. It never produces or uploads a TestFlight build,
+# so it is NOT "firing a build" under CLAUDE.md §3.2 and needs no owner
+# approval, it can run on every PR that touches native code.
+#
+# Scope, on purpose: plugin-level XCTest only, not XCUITest/simulator UI
+# automation of the WKWebView shell. "Keep native dumb" (§3.2) means the
+# Swift layer is capability-only (arm a region, buffer an event, report a
+# fix); that IS the surface worth stressing adversarially, and it's cheap
+# to test directly. The app's on-screen behavior is already covered by the
+# Playwright flow-test harness (tests/flow/*.spec.js).
+name: iOS Native Plugin Tests
+
+on:
+  pull_request:
+    paths:
+      - 'native/**'
+      - 'scripts/ios-add-native-tests.rb'
+      - '.github/workflows/ios-native-tests.yml'
+
+jobs:
+  native-tests:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Capacitor
+        run: npm install
+
+      - name: Generate the iOS project (fresh every run, nothing checked in)
+        run: npx cap add ios
+
+      - name: Sync config and plugins into the iOS project
+        run: npx cap sync ios
+
+      # Same gate ios-beta.yml runs before it will build anything: a plugin
+      # missing from the Podfile means its Swift never made it into the
+      # project at all, and the test target would silently test nothing.
+      - name: Every native plugin must have reached the Podfile
+        run: |
+          MISSING=0
+          for d in td-*/; do
+            d="${d%/}"
+            if [ ! -f "$d/package.json" ]; then
+              echo "::error::$d has no package.json (check .gitignore, it blanket-ignores package.json)"
+              MISSING=1; continue
+            fi
+            if ! grep -q "\"$d\"" package.json; then
+              echo "::error::$d is not a dependency in native/package.json"
+              MISSING=1; continue
+            fi
+            if ! grep -q "$d" ios/App/Podfile; then
+              echo "::error::$d never reached the Podfile: Capacitor did not see it as a plugin"
+              MISSING=1; continue
+            fi
+            echo "ok: $d"
+          done
+          exit $MISSING
+
+      # TdGeoPlugin.mgr() unconditionally sets allowsBackgroundLocationUpdates
+      # = true, which is a hard CoreLocation crash (NSInternalInconsistency-
+      # Exception, "Invalid parameter... CLClientIsBackgroundable") unless the
+      # host app's Info.plist declares the 'location' background mode.
+      # ios-beta.yml's real build always sets this; this workflow generates
+      # its own minimal project and never did, so the very first test that
+      # touched TdGeo crashed the whole test process, not a plugin bug, a
+      # gap in this harness's own setup. Only the keys CoreLocation actually
+      # asserts on are needed here, not ios-beta.yml's full plist (camera,
+      # mic, Face ID, etc.), those plugins don't get exercised by XCTest.
+      - name: Configure Info.plist (background location, required or TdGeo crashes)
+        run: |
+          PLIST=ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :NSLocationWhenInUseUsageDescription string 'Test run: background location'" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSLocationAlwaysAndWhenInUseUsageDescription string 'Test run: background location'" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$PLIST" || true
+          # CoreMotion needs its usage key too or the HOST APP crashes the
+          # moment TdGeo's motion stream starts, killing the whole suite
+          # mid-run (observed 2026-08-27: the crash surfaced as failures in
+          # unrelated burst/flush tests that happened to be in flight). The
+          # real app's plist already carries this via ios-beta.yml.
+          /usr/libexec/PlistBuddy -c "Add :NSMotionUsageDescription string 'Test run: motion activity'" "$PLIST" || true
+
+      - name: Add the TdNativeTests target
+        run: |
+          gem install xcodeproj --no-document || sudo gem install xcodeproj --no-document
+          ruby ../scripts/ios-add-native-tests.rb
+
+      # TEST_HOST/BUNDLE_LOADER (set inside ios-add-native-tests.rb) only
+      # cover RUNTIME loading into the App process. The test target's
+      # `import Capacitor` / `import TdGeo` need those modules linked at
+      # COMPILE time, which only CocoaPods' own integration can wire
+      # correctly, hence the script also appends a `target 'TdNativeTests'`
+      # block to the Podfile, and this second install is what actually
+      # generates its Pods-TdNativeTests.xcconfig and link phase.
+      - name: Re-run pod install for the test target's own pod linkage
+        run: cd ios/App && pod install
+
+      - name: Pick a simulator that exists on this runner image
+        id: sim
+        run: |
+          NAME=$(xcrun simctl list devices available -j \
+            | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8'));let pick='';for(const rt in d.devices){const found=(d.devices[rt]||[]).find(x=>/^iPhone/.test(x.name));if(found){pick=found.name;break;}}console.log(pick);")
+          if [ -z "$NAME" ]; then echo "::error::no iPhone simulator found on this runner image"; exit 1; fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "picked simulator: $NAME"
+
+      - name: Run the adversarial plugin test suite
+        run: |
+          xcodebuild test \
+            -workspace ios/App/App.xcworkspace \
+            -scheme TdNativeTests \
+            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
+            -resultBundlePath build/TdNativeTests.xcresult
+
+      - name: Upload test results
+        if: always()
+        # Diagnostics only, never the gate: the xcresult bundle helps debug a red
+        # run, but the check's verdict is xcodebuild's exit code above. Observed
+        # live 2026-08-18: all 16 tests PASSED and the job still went red because
+        # GitHub's artifact service timed out on this upload.
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: td-native-tests-results
+          path: native/build/TdNativeTests.xcresult
+          retention-days: 14
+          if-no-files-found: ignore

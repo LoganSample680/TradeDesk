@@ -47,6 +47,37 @@ jobs:
       - name: Sync config and plugins into the iOS project
         run: npx cap sync ios
 
+      # Silent pushes (content-available) are delivered ONLY to
+      # application(_:didReceiveRemoteNotification:fetchCompletionHandler:),
+      # and the stock Capacitor AppDelegate does not implement it, so without
+      # this patch the geo-ping cron's pushes evaporate. The method forwards
+      # the payload to TdGeo via NotificationCenter and holds the completion
+      # 15s so the fix + background upload get off the ground. The project is
+      # regenerated fresh every build, so this patches every build.
+      - name: Wire silent pushes into the AppDelegate (geo-ping)
+        run: |
+          python3 - <<'EOF'
+          import sys
+          p = 'ios/App/App/AppDelegate.swift'
+          s = open(p).read()
+          if 'TdSilentPush' in s:
+              print('already patched'); sys.exit(0)
+          method = '''
+              // TdGeo geo-ping (workflow-injected, see ios-beta.yml): iOS hands
+              // content-available pushes to this exact selector and nothing else.
+              func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+                  NotificationCenter.default.post(name: Notification.Name("TdSilentPush"), object: nil, userInfo: userInfo as? [String: Any] ?? [:])
+                  DispatchQueue.main.asyncAfter(deadline: .now() + 15) { completionHandler(.newData) }
+              }
+          '''
+          i = s.rfind('}')
+          if i < 0:
+              print('::error::AppDelegate.swift has no closing brace to anchor on'); sys.exit(1)
+          open(p, 'w').write(s[:i] + method + '\n' + s[i:])
+          print('patched')
+          EOF
+          grep -q "TdSilentPush" ios/App/App/AppDelegate.swift || { echo "::error::AppDelegate silent-push patch did not apply"; exit 1; }
+
       # Build 19 shipped without six plugins and said nothing: their
       # package.json files were caught by a blanket .gitignore rule, so npm
       # linked empty folders and Capacitor found 6 plugins instead of 12. The
@@ -80,6 +111,17 @@ jobs:
             /usr/libexec/PlistBuddy -c "Set :NSLocationWhenInUseUsageDescription 'TradeDesk logs your work drives and time on site for your business records.'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :NSLocationAlwaysAndWhenInUseUsageDescription string 'Choose Always so drives and job-site time keep logging while your phone is in your pocket. Tracking follows your business-hours and consent settings.'" "$PLIST" || \
             /usr/libexec/PlistBuddy -c "Set :NSLocationAlwaysAndWhenInUseUsageDescription 'Choose Always so drives and job-site time keep logging while your phone is in your pocket. Tracking follows your business-hours and consent settings.'" "$PLIST"
+          # Precise Location, asked for from inside the app (TdGeo
+          # requestPreciseTemp). requestTemporaryFullAccuracyAuthorization
+          # REQUIRES this dictionary with the exact purpose key the call
+          # passes, and without it iOS does NOTHING: no dialog, no visible
+          # error, the accuracy just never changes. The key name below must
+          # stay in step with _GEO_PRECISE_PURPOSE_KEY in js/geo-track.js, and
+          # a test in tests/e2e-geo-permission.spec.js pins the two together
+          # so the silent version can never ship.
+          /usr/libexec/PlistBuddy -c "Add :NSLocationTemporaryUsageDescriptionDictionary dict" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSLocationTemporaryUsageDescriptionDictionary:JobSiteAccuracy string 'Precise Location lets TradeDesk tell you arrived at a job, so your hours start on their own. Approximate is about a mile wide and never registers.'" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSLocationTemporaryUsageDescriptionDictionary:JobSiteAccuracy 'Precise Location lets TradeDesk tell you arrived at a job, so your hours start on their own. Approximate is about a mile wide and never registers.'" "$PLIST"
           # TdScan (RoomPlan): ARKit uses the camera; missing this string crashes on scan start.
           /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'TradeDesk uses the camera and LiDAR to scan rooms into floor plans for your estimates.'" "$PLIST" || \
             /usr/libexec/PlistBuddy -c "Set :NSCameraUsageDescription 'TradeDesk uses the camera and LiDAR to scan rooms into floor plans for your estimates.'" "$PLIST"
@@ -91,8 +133,28 @@ jobs:
             /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription 'TradeDesk turns what you say into job notes, so you can record details without stopping work.'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :NSSpeechRecognitionUsageDescription string 'Your voice notes are transcribed on this iPhone. The audio never leaves your device.'" "$PLIST" || \
             /usr/libexec/PlistBuddy -c "Set :NSSpeechRecognitionUsageDescription 'Your voice notes are transcribed on this iPhone. The audio never leaves your device.'" "$PLIST"
+          # TdLock (handoff lock): LocalAuthentication with Face ID CRASHES the
+          # app without this string, and it fires at the worst possible moment,
+          # the phone already in the client's hands to sign. Touch ID and
+          # passcode devices never needed it, which is why it went unnoticed.
+          /usr/libexec/PlistBuddy -c "Add :NSFaceIDUsageDescription string 'Face ID locks TradeDesk to the signing screen while a client holds your phone, so the rest of your business stays private.'" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSFaceIDUsageDescription 'Face ID locks TradeDesk to the signing screen while a client holds your phone, so the rest of your business stays private.'" "$PLIST"
+          # Photo pickers that are not camera-only (logo upload, gallery upload,
+          # job-note photo). Modern PHPicker does not demand these, but an older
+          # path or a future direct-library read would crash without them.
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string 'Pick job photos and your business logo from your library.'" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryUsageDescription 'Pick job photos and your business logo from your library.'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryAddUsageDescription string 'Save job photos and shared before/after cards back to your library.'" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryAddUsageDescription 'Save job photos and shared before/after cards back to your library.'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$PLIST" || true
+          # TdPush: without the remote-notification mode iOS delivers alerts but
+          # never wakes the app for a silent/data push.
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:1 string remote-notification" "$PLIST" || true
+          # TdLive: ActivityKit refuses to start an activity without this key,
+          # and it fails silently, so the lock screen just never shows anything.
+          /usr/libexec/PlistBuddy -c "Add :NSSupportsLiveActivities bool true" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSSupportsLiveActivities true" "$PLIST"
           # Standard HTTPS only: answers TestFlight's export-compliance question
           # permanently so builds never sit in "Missing Compliance".
           /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" || true
@@ -114,6 +176,55 @@ jobs:
           <dict>
             <key>com.apple.developer.applesignin</key>
             <array><string>Default</string></array>
+            <!-- TdPush. "development" is correct for TestFlight: those builds
+                 talk to the APNs SANDBOX gateway. The send-push function's
+                 APNS_ENV must agree, or every device returns BadDeviceToken
+                 and it looks exactly like a broken token list. Flip both
+                 together when the App Store build ships. -->
+            <key>aps-environment</key>
+            <string>development</string>
+            <!-- Universal Links (owner 2026-08-17): a contractor who already
+                 has the app taps a sign/client-hub link (from a text, email,
+                 or their own share) and it opens IN the app instead of
+                 Safari. ASSOCIATED_DOMAINS is a confirmed App Store Connect
+                 API capability, asc-ensure-ids.mjs enables it on the App ID
+                 automatically (unlike the three below). Both the UAT domain
+                 the TestFlight shell actually loads (§3.2) and the eventual
+                 production domain are listed; an entry with no live
+                 apple-app-site-association file yet just never activates,
+                 it can't break anything. -->
+            <key>com.apple.developer.associated-domains</key>
+            <array>
+              <string>applinks:uat.tradedesk-cyp.pages.dev</string>
+              <string>applinks:tradedeskpro.app</string>
+            </array>
+            <!-- Scanner mesh quality + urgent alerts (owner ask 2026-08-17).
+                 ALL FOUR below need a MANUAL one-time portal step before the
+                 next build: developer.apple.com -> Certificates, Identifiers
+                 & Profiles -> Identifiers -> app.tradedesk.beta -> enable
+                 "Increased Memory Limit", "Extended Virtual Addressing",
+                 "Background GPU Access", and "Time Sensitive Notifications".
+                 None of the four are confirmed present in the documented App
+                 Store Connect API capabilityType enum (Increased Memory
+                 Limit and Extended Virtual Addressing confirmed absent;
+                 Time Sensitive Notifications confirmed a SEPARATE portal
+                 capability from Push Notifications; Background GPU Access is
+                 brand new as of iOS 26 and likely isn't in the API at all),
+                 so asc-ensure-ids.mjs cannot be trusted to turn them on the
+                 way it does Push/Sign-in/App Groups/Associated Domains.
+                 Adding an entitlement WITHOUT the matching App ID capability
+                 is exactly what broke cloud signing for 5 days over the App
+                 Group ("Authentication failed / No profiles", builds 19-29):
+                 do the portal step FIRST, or comment these four back out
+                 before firing a build. -->
+            <key>com.apple.developer.kernel.increased-memory-limit</key>
+            <true/>
+            <key>com.apple.developer.kernel.extended-virtual-addressing</key>
+            <true/>
+            <key>com.apple.developer.background-tasks.continued-processing.gpu</key>
+            <true/>
+            <key>com.apple.developer.usernotifications.time-sensitive</key>
+            <true/>
           </dict>
           </plist>
           EOF
@@ -126,9 +237,64 @@ jobs:
         # is regenerated every build, so the target is rebuilt every build too
         # (idempotent, safe on a retry). Runs AFTER the entitlements step
         # because it appends the App Group to the file that step writes.
+        #
+        # RE-SKIPPED 2026-08-17 (attempt 2): owner registered the App Group
+        # (group.app.tradedesk.beta) in the portal by hand, but re-enabling
+        # this still hit the exact same historical failure, 3 export
+        # retries, every one "Authentication failed" / "No profiles for
+        # 'app.tradedesk.beta.share' were found". The App Group and the
+        # share extension's own App ID (app.tradedesk.beta.share) are TWO
+        # separate portal objects: registering the App Group alone doesn't
+        # create the App ID it attaches to. Next attempt needs, in
+        # developer.apple.com -> Certificates, Identifiers & Profiles ->
+        # Identifiers: confirm app.tradedesk.beta.share EXISTS as its own
+        # App ID (not just referenced by the group), with App Groups
+        # capability checked and group.app.tradedesk.beta assigned to it.
+        # Skipping again so the rest of tonight's changes (Associated
+        # Domains, the 4 manual-portal entitlements, App Intents) ship on a
+        # clean build instead of blocking behind this.
+        #
+        # RE-ENABLED 2026-08-26 (attempt 3). The owner reports registering
+        # app.tradedesk.beta.share as its own App ID with App Groups checked,
+        # which is the exact thing attempts 1 and 2 were missing. There is no
+        # way to verify that from CI: a build IS the test, and the failure mode
+        # is loud (export fails, "No profiles for ... were found"), not silent.
+        #
+        # WHAT IT COSTS IF THE PORTAL IS STILL WRONG: this step runs before the
+        # archive, so a failure takes the whole build with it and the other
+        # native changes riding along (precise-location, the extra permission
+        # reads) do not ship either. Accepted deliberately: the alternative
+        # guarantees two builds, this has a real chance of needing one.
+        #
+        # ATTEMPT 3 FAILED, 2026-08-26, build 37. Same pair as attempts 1 and 2:
+        # "Authentication failed" plus "No profiles for 'app.tradedesk.beta.share'
+        # were found", three export retries, all identical.
+        #
+        # NEW EVIDENCE from this run, which narrows it: the log shows
+        # IDEProvisioningRepair(ShareExt.appex) finding "1 certificates on
+        # portal for purpose distribution" and "is managed and has a portal
+        # certificate". So the CERTIFICATE resolves fine for the extension. What
+        # fails is creating a PROFILE for that bundle id, and the App Store
+        # Connect API returns 401.
+        #
+        # That leaves exactly two causes, and they need different fixes:
+        #   1. app.tradedesk.beta.share still does not exist as its own App ID
+        #      in the portal (registering the App Group does NOT create it).
+        #   2. It exists, but the App Store Connect API key lacks the role to
+        #      create identifiers/profiles. Automatic signing tries to REGISTER
+        #      the id, and a key without App Manager (or Admin) gets 401. The
+        #      main app and LiveExt sign fine because their profiles already
+        #      exist, so a working key is not proof it can create a new one.
+        #
+        # Back to skipped so the rest of the build ships.
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SKIP_SHARE_EXT: '1'
         run: |
+          if [ "$SKIP_SHARE_EXT" = "1" ]; then
+            echo "::notice::share extension SKIPPED for signing isolation (see step comment)"
+            exit 0
+          fi
           gem install xcodeproj --no-document || sudo gem install xcodeproj --no-document
           ruby ../scripts/ios-add-share-target.rb
           # Same build number as the app, stamped from the same place. An
@@ -136,6 +302,31 @@ jobs:
           # by App Store Connect after the whole archive has been built.
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" ios/App/ShareExt/Info.plist
           /usr/libexec/PlistBuddy -c "Print" ios/App/App/App.entitlements
+
+      - name: Live Activity widget target
+        # A Live Activity's UI MUST live in a widget extension; ActivityKit will
+        # not render one from the app target. Same regenerate-every-build
+        # reasoning as the share target above, so it is rebuilt here each run.
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Installs its own gem: the share step used to, but that step can be
+          # skipped (see SKIP_SHARE_EXT above) and this one must not care.
+          gem install xcodeproj --no-document || sudo gem install xcodeproj --no-document
+          ruby ../scripts/ios-add-live-target.rb
+          # Same build number as the app: an extension whose CFBundleVersion
+          # differs from its host is rejected after the whole archive is built.
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" ios/App/LiveExt/Info.plist
+
+      - name: Siri / Shortcuts App Intents
+        # Unlike the share/Live-Activity extensions, App Intents are only
+        # discovered by Siri/Shortcuts/Spotlight when declared IN the host
+        # app, so this adds a file to the EXISTING App target rather than a
+        # new one (scripts/ios-add-app-intents.rb). No entitlement, no
+        # capability, no new bundle id: this needs nothing from the portal.
+        run: |
+          gem install xcodeproj --no-document || sudo gem install xcodeproj --no-document
+          ruby ../scripts/ios-add-app-intents.rb
 
       - name: App icon from the repo's PWA icon
         # The generated project ships Capacitor's placeholder icon (owner:
@@ -161,6 +352,44 @@ jobs:
         run: |
           mkdir -p ~/private_keys
           printf '%s' "$APPSTORE_API_KEY" > ~/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
+
+      - name: Select a known-good Xcode
+        # Build 27: exportArchive said "Authentication failed" while the SAME
+        # ASC key passed raw REST calls in the step below minutes earlier, and
+        # the runner image had rolled to Xcode 26.6 since the last good build
+        # (Aug 11). Suspect the new toolchain's cloud signing first: pin the
+        # newest OLDER Xcode present on the image. Remove this pin once a
+        # build succeeds on the default toolchain again.
+        run: |
+          ls -d /Applications/Xcode_*.app || true
+          CURRENT=$(xcode-select -p)
+          PICK=""
+          for v in 26.5 26.4 26.3 26.2; do
+            if [ -d "/Applications/Xcode_$v.app" ]; then PICK="/Applications/Xcode_$v.app"; break; fi
+          done
+          if [ -n "$PICK" ]; then
+            sudo xcode-select -s "$PICK"
+            echo "::notice::pinned $PICK (was $CURRENT)"
+          else
+            echo "::warning::no older Xcode found on this image, staying on $CURRENT"
+          fi
+          xcodebuild -version
+
+      - name: Portal identifiers exist with the capabilities the entitlements need
+        # Cloud signing can DOWNLOAD profiles but has twice proven unable to
+        # CREATE portal records here (the share extension's bundle id, then
+        # builds 25/26: the Live extension id + the new push capability on the
+        # app id, all dying as "Authentication failed / No profiles"). This
+        # does those registrations through the ASC API with the same key the
+        # upload uses, idempotently, so a new extension or entitlement never
+        # again asks a human to click through the developer portal. If the
+        # key's role cannot manage identifiers, it fails with the exact
+        # manual steps instead of three opaque export retries.
+        env:
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: node ../scripts/asc-ensure-ids.mjs
 
       - name: Archive (ad-hoc signed; real signing happens at export)
         # Automatic signing at ARCHIVE time demands a DEVELOPMENT profile,
@@ -217,6 +446,23 @@ jobs:
               -authenticationKeyIssuerID ${{ secrets.APPSTORE_ISSUER_ID }}; then
               break
             fi
+            # The one-line "Authentication failed" is xcodebuild's SUMMARY; the
+            # real error (which capability a profile rejected, which auth call
+            # 401ed) lives in the xcdistributionlogs bundle it prints the path
+            # of and nobody ever opens. Surface it every time: the meaningful
+            # lines into the job log, and the first few as ANNOTATIONS, which
+            # survive log truncation and are readable from the run page.
+            DLOGS=$(find /private/var/folders /var/folders -type d -name 'App_*.xcdistributionlogs' 2>/dev/null | head -1)
+            if [ -n "$DLOGS" ]; then
+              echo "── distribution log: $DLOGS ──"
+              ls -la "$DLOGS" || true
+              grep -rhiE 'error|fail|denied|unauthorized|forbidden|missing|not permitted|401|403|status code' "$DLOGS" 2>/dev/null | sort -u | head -50 || true
+              grep -rhiE 'error|denied|unauthorized|forbidden|not permitted|status code' "$DLOGS" 2>/dev/null | sort -u | head -8 | while IFS= read -r line; do
+                echo "::warning::sign: $(echo "$line" | cut -c1-220)"
+              done
+            else
+              echo "::warning::sign: no xcdistributionlogs bundle found to dump"
+            fi
             if [ "$attempt" = 3 ]; then
               echo "::error::export failed 3 times. If every attempt said 'Authentication failed' plus 'No profiles for app.tradedesk.beta.share', the App Store Connect key cannot register that new bundle id and it has to be created by hand in the developer portal."
               exit 1
@@ -237,6 +483,71 @@ jobs:
           APP=$(ls -d build/ipa/unpacked/Payload/*.app | head -1)
           codesign -d --entitlements :- "$APP" | tee /tmp/ents.plist
           grep -q 'com.apple.developer.applesignin' /tmp/ents.plist
+
+      - name: Verify every other entitlement survived signing (and App Intents compiled in)
+        # This is the general form of the check directly above, extended
+        # 2026-08-17 to cover every key the "Sign in with Apple entitlement"
+        # step now writes into App.entitlements. It exists specifically
+        # because of the four capabilities added tonight (increased-memory-
+        # limit, extended-virtual-addressing, background-tasks.continued-
+        # processing.gpu, usernotifications.time-sensitive): none of the four
+        # are confirmed present in the App Store Connect API's capabilityType
+        # enum, so asc-ensure-ids.mjs cannot be trusted to enable them on the
+        # app.tradedesk.beta App ID the way it does Push/Sign-in/App
+        # Groups/Associated Domains. An entitlement asked for in source but
+        # NOT enabled as a capability on the App ID is exactly what broke
+        # cloud signing for 5 days over the App Group (builds 19-29,
+        # "Authentication failed / No profiles"), except that failure mode is
+        # slow and cryptic: three retried "Authentication failed" export
+        # attempts before anyone even suspects the portal. Checking the
+        # SIGNED binary right here is instant and unambiguous: codesign
+        # either shows the key or it doesn't.
+        #
+        # /tmp/ents.plist is a FILE written by the step above, so it survives
+        # onto this step (files on the runner's disk persist across steps in
+        # the same job). $APP does NOT: shell variables set inside one step's
+        # `run:` block do not carry into the next step's `run:` block (each
+        # is its own shell), so this step recomputes it the same way the step
+        # above does, from the same already-unzipped build/ipa/unpacked dir.
+        run: |
+          APP=$(ls -d build/ipa/unpacked/Payload/*.app | head -1)
+          MISSING=0
+          for key in \
+            com.apple.developer.applesignin \
+            aps-environment \
+            com.apple.developer.associated-domains \
+            com.apple.developer.kernel.increased-memory-limit \
+            com.apple.developer.kernel.extended-virtual-addressing \
+            com.apple.developer.background-tasks.continued-processing.gpu \
+            com.apple.developer.usernotifications.time-sensitive; do
+            if grep -q "$key" /tmp/ents.plist; then
+              echo "ok: $key present in the signed binary"
+            else
+              echo "::error::$key is written into App.entitlements but is MISSING from the SIGNED binary. This means the app.tradedesk.beta App ID does not have the matching capability enabled: go to developer.apple.com -> Certificates, Identifiers & Profiles -> Identifiers -> app.tradedesk.beta and turn it on (see CLAUDE.md and the 'Sign in with Apple entitlement' step's comment for which portal toggle maps to this key), then rerun the build. Do not ignore this, it is the exact failure that cost 5 days on the App Group incident."
+              MISSING=1
+            fi
+          done
+
+          # App Intents (Siri/Shortcuts/Spotlight) only work if
+          # ios-add-app-intents.rb actually got TdAppIntents.swift compiled
+          # into the App target. Xcode's build system proves that happened by
+          # running an App Intents metadata-extraction build phase that
+          # writes a Metadata.appintents bundle at the TOP LEVEL of the .app
+          # (same level as Info.plist, not nested), containing
+          # extract.actionsdata + version.json. This is documented Xcode
+          # behavior for any target declaring App Intents on iOS 16+, but has
+          # not yet been directly confirmed against a TradeDesk build archive,
+          # so treat a failure here as a strong signal to go read the "Siri /
+          # Shortcuts App Intents" step's log, not necessarily proof the
+          # script itself is broken.
+          if [ -d "$APP/Metadata.appintents" ]; then
+            echo "ok: Metadata.appintents present, App Intents compiled into the App target"
+          else
+            echo "::error::Metadata.appintents is missing from the exported .app ($APP). TdAppIntents.swift likely did not make it into the App target's compile sources (ios-add-app-intents.rb ran but the file wasn't built), or Xcode's App Intents metadata extraction did not run. Check the 'Siri / Shortcuts App Intents' step's log for the actual cause before assuming this check is wrong."
+            MISSING=1
+          fi
+
+          exit $MISSING
 
       - name: Upload to TestFlight
         env:

@@ -1,0 +1,134 @@
+name: Local Supabase (hosted runner)
+
+# The GitHub-HOSTED twin of flow-tests-selfhosted.yml's local-stack mode: spins
+# up a DISPOSABLE Supabase stack from supabase/migrations INSIDE the job
+# (ubuntu-latest has Docker natively), seeds synthetic accounts via
+# tests/flow/global-setup.js (per-worker pool + the dual-hat showcase account),
+# and runs flow specs against the real app served by tests/flow/local-server.js.
+#
+# ZERO secrets: the stack is created fresh in-job, so the service_role and anon
+# keys are read from `supabase status` at run time — nothing to provision,
+# nothing real to leak, no jarvis required. Default spec filter is
+# local-visual, which matches BOTH local-visual.spec.js (clean showcase day:
+# dashboard / Time Log / Mileage / dual-hat switcher) and
+# local-visual-messy.spec.js (the SAME day seeded chaotic: GPS jitter,
+# fragmented stop-start drives, a dead-phone gap + reconnect drift, and fence
+# exit/re-entry churn), uploaded together as the local-visual-shots artifact
+# so the clean and messy renders sit side by side.
+#
+# On-demand, plus a TIGHTLY-SCOPED push trigger: GitHub refuses to dispatch a
+# workflow that is not yet on the default branch (404), and merges to main are
+# owner-gated, so until this file lands there the harness fires itself when a
+# push touches its own five files, exactly the moments an iteration needs a
+# run, and nothing else (app pushes never pay the ~2GB image pull).
+on:
+  workflow_dispatch:
+    inputs:
+      spec:
+        description: 'Playwright filter (path substring or grep). Default: the visual capture spec.'
+        type: string
+        required: false
+        default: 'local-visual'
+  push:
+    paths:
+      - '.github/workflows/local-stack-hosted.yml'
+      - 'tests/flow/local-visual.spec.js'
+      - 'tests/flow/local-visual-messy.spec.js'
+      - 'tests/flow/global-setup.js'
+      - 'tests/flow/local-server.js'
+
+concurrency:
+  group: local-stack-hosted-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  local-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      LOCAL_PORT: '8788'
+      E2E_LOCAL_STACK: '1'
+      SUPABASE_UPSTREAM: 'http://127.0.0.1:54321'
+      E2E_BASE_URL: 'http://localhost:8788'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase stack (migrations applied on first boot)
+        run: |
+          supabase start -x studio,imgproxy,inbucket,logflare,vector,edge-runtime
+          supabase migration list 2>&1 | tail -15 || true
+
+      # The stack is brand-new, so its keys exist only inside this job. Read
+      # them from `supabase status` and export for every later step:
+      #   service_role → SUPABASE_LOCAL_KEY  (global-setup account provisioning)
+      #   anon         → LOCAL_PUBLISHABLE_KEY (local-server key swap)
+      # Names vary across CLI generations (SERVICE_ROLE_KEY/SECRET_KEY,
+      # ANON_KEY/PUBLISHABLE_KEY), so both forms are tried.
+      - name: Export local stack keys
+        run: |
+          eval "$(supabase status -o env 2>/dev/null | sed 's/^/export /')"
+          SVC="${SERVICE_ROLE_KEY:-${SECRET_KEY:-}}"
+          ANON="${ANON_KEY:-${PUBLISHABLE_KEY:-}}"
+          [ -n "$SVC" ]  || { echo "::error::could not read service key from supabase status"; supabase status || true; exit 1; }
+          [ -n "$ANON" ] || { echo "::error::could not read anon key from supabase status"; supabase status || true; exit 1; }
+          echo "::add-mask::$SVC"
+          echo "SUPABASE_LOCAL_KEY=$SVC" >> "$GITHUB_ENV"
+          echo "LOCAL_PUBLISHABLE_KEY=$ANON" >> "$GITHUB_ENV"
+          echo "keys exported (service masked, anon ${#ANON} chars)"
+
+      - name: Install test deps
+        run: |
+          npm install --no-save @playwright/test@1.56.0 http-proxy
+          npx playwright install --with-deps chromium
+
+      - name: Start local /api server
+        run: |
+          PORT="$LOCAL_PORT" SUPABASE_UPSTREAM="$SUPABASE_UPSTREAM" \
+            node tests/flow/local-server.js > /tmp/local-server.log 2>&1 &
+          echo $! > /tmp/local-server.pid
+          for i in $(seq 1 30); do
+            curl -sf "http://localhost:$LOCAL_PORT/" >/dev/null && { echo "local server up"; break; }
+            sleep 1
+          done
+          curl -sf "http://localhost:$LOCAL_PORT/" >/dev/null || { echo "local server failed"; cat /tmp/local-server.log; exit 1; }
+
+      - name: Probe app + /api → local stack passthrough
+        run: |
+          APP=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$LOCAL_PORT/")
+          HEALTH=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$LOCAL_PORT/api/auth/v1/health")
+          echo "app=$APP  /api/auth/v1/health=$HEALTH"
+          [ "$APP" = "200" ] || { echo "::error::app did not serve (got $APP)"; exit 1; }
+          case "$HEALTH" in 200|401) ;; *) echo "::error::/api did not reach the local stack (got $HEALTH)"; cat /tmp/local-server.log; exit 1;; esac
+
+      - name: Run flow specs against the local stack
+        run: npx playwright test -c playwright.flow.config.js --project=chromium ${{ github.event.inputs.spec || 'local-visual' }}
+
+      - name: Stop local server
+        if: always()
+        run: kill "$(cat /tmp/local-server.pid)" 2>/dev/null || true
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-visual-shots
+          path: local-visual-shots/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload flow report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-stack-report
+          path: |
+            playwright-report/
+            flow-results.json
+            /tmp/local-server.log
+          retention-days: 14
+          if-no-files-found: ignore

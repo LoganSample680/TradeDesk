@@ -363,7 +363,14 @@ function loadAll(){
   try{['zp3_clients','zp3_bids','zp3_jobs','zp3_inc','zp3_exp','zp3_mil','zp3_pay','zp3_lien','zp3_te'].forEach(k=>localStorage.removeItem(k));}catch(e){}
 }
 
-function getClientById(id){return clients.find(c=>c.id===id);}
+// Element-guarded: `clients` is a global that sync, restore and a dozen call
+// sites write, and one hole in it throws "Cannot read properties of undefined
+// (reading 'id')" out of this callback. That lands wherever the caller happens
+// to be, including inside other people's try blocks, where it reads as "no
+// result" rather than as a crash (js/geo-track.js _geoMergeAdjacentVisits
+// reaches here through _tlJobClientInfo and had an entire merge sweep aborted
+// by it, 2026-08-24). A lookup should return nothing for a bad row, not die.
+function getClientById(id){return (Array.isArray(clients)?clients:[]).find(c=>c&&c.id===id);}
 // ── Per-property internal site notes ──────────────────────────────────────
 // Gate code, dog, parking, lockbox: crew-only, never on the client's proposal.
 // Keyed by PROPERTY address (street line) on client.siteNotes{}, so a client
@@ -462,14 +469,50 @@ function getPropertyHistory(client,addr){
   const cid=client.id,k=_addrKey(addr||client.addr);
   const match=a=>_addrKey(a||client.addr)===k;
   const jobIds={};
-  (typeof bids!=='undefined'?bids:[]).forEach(b=>{if(b.client_id===cid&&match(b.addr))res.proposals.push(b);});
-  (typeof jobs!=='undefined'?jobs:[]).forEach(j=>{if(j.client_id===cid&&match(j.addr)){res.jobs.push(j);res.billed+=Number(j.value||0);jobIds[j.id]=1;}});
+  // BILLED is the money contracted at this address, and that lives on the WON BID,
+  // not on the job. Jobs created from a bid carry value 0 (the money stays on the
+  // proposal), so summing only j.value made a property with a signed $772.88 job and
+  // no schedule read "$0.00 of $0.00 paid" (owner screenshot 2026-08-16). Won bids
+  // count; a job linked to one of them does NOT add again, or the same contract
+  // would be counted twice; a standalone job with its own value still counts.
+  const wonBidIds={};
+  (typeof bids!=='undefined'?bids:[]).forEach(b=>{
+    if(b.client_id!==cid||!match(b.addr))return;
+    res.proposals.push(b);
+    if(b.status==='Closed Won'){res.billed+=Number(b.amount||0);wonBidIds[b.id]=1;}
+  });
+  (typeof jobs!=='undefined'?jobs:[]).forEach(j=>{
+    if(j.client_id!==cid||!match(j.addr))return;
+    res.jobs.push(j);
+    if(!(j.bid_id&&wonBidIds[j.bid_id]))res.billed+=Number(j.value||0);
+    jobIds[j.id]=1;
+  });
   (typeof payments!=='undefined'?payments:[]).forEach(p=>{
     if(p.client_id!==cid)return;
     if(p.job_id!=null&&jobIds[p.job_id])res.paid+=Number(p.amount||0);
     else if(p.bid_id!=null&&res.proposals.some(b=>b.id===p.bid_id))res.paid+=Number(p.amount||0);
   });
   return res;
+}
+// Warranty status for a completed job: the shop's warranty period (Settings,
+// already printed on every proposal's Terms) counted from the completion date.
+// Returns null when there is no completion date; otherwise {active, until,
+// label} where label is ready-to-render ("Under warranty until Aug 2027").
+function getWarrantyStatus(completionDate){
+  if(!completionDate)return null;
+  const start=new Date(completionDate);
+  if(isNaN(start))return null;
+  const period=String((typeof S!=='undefined'&&S.warrantyPeriod)||'1 year');
+  const m=period.match(/(\d+)\s*(day|month|year)/i);
+  const n=m?parseInt(m[1],10):1;
+  const unit=m?m[2].toLowerCase():'year';
+  const until=new Date(start);
+  if(unit==='day')until.setDate(until.getDate()+n);
+  else if(unit==='month')until.setMonth(until.getMonth()+n);
+  else until.setFullYear(until.getFullYear()+n);
+  const active=Date.now()<=until.getTime();
+  const when=until.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+  return {active,until,label:active?('Under warranty until '+when):('Warranty ended '+when)};
 }
 function getClientTier(c){
   if(!c)return 'C';
@@ -540,9 +583,16 @@ function _applyScopeRates(rates) {
 
 function _fetchScopeRates() {
   if (typeof _supa === 'undefined' || !_supa) return;
-  _supa.from('td_scope_rates').select('*').then(({ data }) => {
-    if (data && data.length) _applyScopeRates(data);
-  }).catch(() => {});
+  // Best-effort background poll, never a critical path: try/catch the whole
+  // call, not just the promise chain. _supa.from(...) itself can throw
+  // SYNCHRONOUSLY (a truthy but incomplete client, e.g. a narrow test double
+  // missing .from), which a chained .catch() never sees since the promise
+  // chain never gets constructed.
+  try {
+    _supa.from('td_scope_rates').select('*').then(({ data }) => {
+      if (data && data.length) _applyScopeRates(data);
+    }).catch(() => {});
+  } catch (_e) {}
 }
 
 // Upload debrief data for one job and trigger re-aggregation.
