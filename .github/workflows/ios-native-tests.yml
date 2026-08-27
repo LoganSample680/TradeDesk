@@ -85,6 +85,12 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :NSLocationAlwaysAndWhenInUseUsageDescription string 'Test run: background location'" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$PLIST" || true
+          # CoreMotion needs its usage key too or the HOST APP crashes the
+          # moment TdGeo's motion stream starts, killing the whole suite
+          # mid-run (observed 2026-08-27: the crash surfaced as failures in
+          # unrelated burst/flush tests that happened to be in flight). The
+          # real app's plist already carries this via ios-beta.yml.
+          /usr/libexec/PlistBuddy -c "Add :NSMotionUsageDescription string 'Test run: motion activity'" "$PLIST" || true
 
       - name: Add the TdNativeTests target
         run: |

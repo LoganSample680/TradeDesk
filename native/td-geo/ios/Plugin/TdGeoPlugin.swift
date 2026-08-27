@@ -634,6 +634,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // are deduped here only because they are literally the same fact.
     private func startMotionStream() {
         guard CMMotionActivityManager.isActivityAvailable() else { return }
+        // iOS TERMINATES a process that touches CoreMotion without this plist
+        // key: no error, no callback, a straight kill (it took the whole
+        // native test suite down mid-run, 2026-08-27). The shipped app always
+        // has the key (ios-beta.yml); this guard is for any host that lacks
+        // it, where silently not streaming beats crashing the process.
+        guard Bundle.main.object(forInfoDictionaryKey: "NSMotionUsageDescription") != nil else { return }
         lastMotionKind = ""
         motionMgr.startActivityUpdates(to: .main) { [weak self] act in
             guard let self = self, let a = act else { return }
