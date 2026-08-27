@@ -47,14 +47,29 @@ jobs:
       - name: Sync config and plugins into the iOS project
         run: npx cap sync ios
 
-      # Silent pushes (content-available) are delivered ONLY to
-      # application(_:didReceiveRemoteNotification:fetchCompletionHandler:),
-      # and the stock Capacitor AppDelegate does not implement it, so without
-      # this patch the geo-ping cron's pushes evaporate. The method forwards
-      # the payload to TdGeo via NotificationCenter and holds the completion
-      # 15s so the fix + background upload get off the ground. The project is
-      # regenerated fresh every build, so this patches every build.
-      - name: Wire silent pushes into the AppDelegate (geo-ping)
+      # THE APNs BRIDGE. Capacitor 7's generated AppDelegate implements NONE
+      # of the three remote-notification methods, and every one of them is
+      # load-bearing here:
+      #
+      #   didRegisterForRemoteNotificationsWithDeviceToken -> this is the one
+      #     that was missing and broke everything. Apple returns the device
+      #     token to this exact selector; with no implementation the OS
+      #     discards it, TdPushPlugin's listener on
+      #     capacitorDidRegisterForRemoteNotifications never fires, and no
+      #     token is ever saved. Observed live 2026-08-27: every permission
+      #     granted, "granted, still waiting on Apple" forever, device_tokens
+      #     empty account-wide since the project began. No JS can fix this.
+      #   didFailToRegisterForRemoteNotificationsWithError -> why the failure
+      #     was also SILENT. The error path was missing too, so a rejection
+      #     (bad entitlement, no network) looked identical to success-pending.
+      #   didReceiveRemoteNotification:fetchCompletionHandler -> silent
+      #     (content-available) pushes are delivered here and nowhere else, so
+      #     the geo-ping cron's 30-minute nudges evaporate without it.
+      #
+      # The first two post the notification names Capacitor's own plugins
+      # expect, which is what TdPushPlugin already listens for. The project is
+      # regenerated fresh every build, so this runs every build.
+      - name: Wire the APNs bridge into the AppDelegate (token + silent push)
         run: |
           python3 - <<'EOF'
           import sys
@@ -62,9 +77,24 @@ jobs:
           s = open(p).read()
           if 'TdSilentPush' in s:
               print('already patched'); sys.exit(0)
-          method = '''
-              // TdGeo geo-ping (workflow-injected, see ios-beta.yml): iOS hands
-              // content-available pushes to this exact selector and nothing else.
+          methods = '''
+              // ── APNs bridge (workflow-injected, see ios-beta.yml) ──────────
+              // Apple hands the device token to THIS selector and nowhere else.
+              // Capacitor 7's template omits it, so without this the token is
+              // discarded by the OS and no push ever reaches the phone.
+              func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+                  NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
+              }
+
+              // The matching failure path, so a refusal is loud instead of
+              // looking exactly like a token that has not arrived yet.
+              func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+                  NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
+              }
+
+              // TdGeo geo-ping: iOS delivers content-available pushes to this
+              // exact selector and nothing else. Holds the completion handler
+              // long enough for the fix and its background upload to start.
               func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
                   NotificationCenter.default.post(name: Notification.Name("TdSilentPush"), object: nil, userInfo: userInfo as? [String: Any] ?? [:])
                   DispatchQueue.main.asyncAfter(deadline: .now() + 15) { completionHandler(.newData) }
@@ -73,10 +103,15 @@ jobs:
           i = s.rfind('}')
           if i < 0:
               print('::error::AppDelegate.swift has no closing brace to anchor on'); sys.exit(1)
-          open(p, 'w').write(s[:i] + method + '\n' + s[i:])
+          open(p, 'w').write(s[:i] + methods + '\n' + s[i:])
           print('patched')
           EOF
-          grep -q "TdSilentPush" ios/App/App/AppDelegate.swift || { echo "::error::AppDelegate silent-push patch did not apply"; exit 1; }
+          # Each one is load-bearing and each one is checked by name: a patch
+          # that half-applied must fail the build, not ship a phone that can
+          # never be reached.
+          for m in didRegisterForRemoteNotificationsWithDeviceToken didFailToRegisterForRemoteNotificationsWithError TdSilentPush; do
+            grep -q "$m" ios/App/App/AppDelegate.swift || { echo "::error::AppDelegate APNs patch missing $m"; exit 1; }
+          done
 
       # Build 19 shipped without six plugins and said nothing: their
       # package.json files were caught by a blanket .gitignore rule, so npm
