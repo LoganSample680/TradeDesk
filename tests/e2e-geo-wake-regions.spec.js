@@ -223,5 +223,55 @@ test.describe('Wake region set for the dead app', () => {
     expect(src.includes('td_geo_armed'), 'the armed state must persist for the relaunch to restore').toBe(true);
   });
 
+  // ── Liveness + motion events (build 39) ────────────────────────────────────
+  test('a heartbeat event never reaches the fence machine', async () => {
+    // Its fix is 3km-accuracy keepalive garbage; through _geoOnPing it could
+    // false-exit a fence. Liveness lives in the flush lane, not in position.
+    const r = await page.evaluate(async () => {
+      const saved = { ping: window._geoOnPing };
+      let pings = 0;
+      try {
+        window._geoOnPing = async () => { pings++; };
+        await _geoTdEvent({ type: 'heartbeat', ts: Date.now(), lat: 39.0, lng: -94.0, acc: 3000 });
+        return { pings };
+      } finally { window._geoOnPing = saved.ping; }
+    });
+    expect(r.pings).toBe(0);
+  });
+
+  test('motion into movement while parked buys ONE burst, throttled, and only live', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { td: window._geoTdPlugin, parked: _geoParkModeOn };
+      let bursts = 0;
+      try {
+        window._geoTdPlugin = () => ({ burstFix: async () => { bursts++; } });
+        _geoParkModeOn = true; _geoMotionBurstAt = 0;
+        await _geoTdEvent({ type: 'motion', ts: Date.now(), kind: 'automotive' });
+        const first = bursts;
+        // Second transition 10 seconds later: inside the 3-minute throttle.
+        await _geoTdEvent({ type: 'motion', ts: Date.now(), kind: 'walking' });
+        const throttled = bursts;
+        // A REPLAYED transition is history, never a reason to fire radio now.
+        _geoMotionBurstAt = 0;
+        await _geoTdEvent({ type: 'motion', ts: Date.now(), kind: 'automotive' }, true);
+        const replayed = bursts;
+        // 'still' is the phone settling, not a departure.
+        await _geoTdEvent({ type: 'motion', ts: Date.now(), kind: 'still' });
+        const still = bursts;
+        // Not parked: the live watcher already owns the radio.
+        _geoParkModeOn = false; _geoMotionBurstAt = 0;
+        await _geoTdEvent({ type: 'motion', ts: Date.now(), kind: 'automotive' });
+        return { first, throttled, replayed, still, unparked: bursts };
+      } finally {
+        window._geoTdPlugin = saved.td; _geoParkModeOn = saved.parked; _geoMotionBurstAt = 0;
+      }
+    });
+    expect(r.first).toBe(1);
+    expect(r.throttled).toBe(1);
+    expect(r.replayed).toBe(1);
+    expect(r.still).toBe(1);
+    expect(r.unparked).toBe(1);
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });

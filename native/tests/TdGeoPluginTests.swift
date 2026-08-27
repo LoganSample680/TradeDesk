@@ -829,4 +829,74 @@ final class TdGeoPluginTests: XCTestCase {
         XCTAssertEqual(d.double(forKey: "td_geo_flush_ts"), 3000.0)
         d.removeObject(forKey: "td_geo_flush_ts")
     }
+
+    // ── startHeartbeat / stopHeartbeat (build 39: shift liveness) ───────────
+
+    func testHeartbeatClampsIntervalAndTtl() {
+        // JS owns the numbers but the plugin still refuses garbage: a 1-second
+        // interval would burn the battery the whole design exists to protect,
+        // and a week-long ttl outlives any shift.
+        let done = expectation(description: "startHeartbeat resolves")
+        plugin.startHeartbeat(makeCall(
+            options: ["intervalMs": 1000, "ttlMs": 999999999999],
+            onSuccess: { data in
+                XCTAssertEqual(data?["intervalMs"] as? Double, 60000, "floor is one minute")
+                XCTAssertEqual(data?["ttlMs"] as? Double, 86400000, "ceiling is 24h")
+                done.fulfill()
+            }
+        ))
+        wait(for: [done], timeout: 30)
+        let stopped = expectation(description: "teardown stopHeartbeat")
+        plugin.stopHeartbeat(makeCall(onSuccess: { _ in stopped.fulfill() }))
+        wait(for: [stopped], timeout: 30)
+    }
+
+    func testHeartbeatDoubleStartIsReplaceNotStack() {
+        // Same guard-race shape as §11.2: N rapid starts must leave ONE timer,
+        // provable by a single stop returning the session to off cleanly.
+        for i in 1...5 {
+            let done = expectation(description: "start #\(i)")
+            plugin.startHeartbeat(makeCall(
+                options: ["intervalMs": 60000],
+                onSuccess: { data in
+                    XCTAssertEqual(data?["on"] as? Bool, true)
+                    done.fulfill()
+                }
+            ))
+            wait(for: [done], timeout: 30)
+        }
+        let stopped = expectation(description: "one stop turns it off")
+        plugin.stopHeartbeat(makeCall(onSuccess: { data in
+            XCTAssertEqual(data?["on"] as? Bool, false)
+            stopped.fulfill()
+        }))
+        wait(for: [stopped], timeout: 30)
+    }
+
+    func testStopHeartbeatWithoutStartIsAGracefulNoOp() {
+        let done = expectation(description: "unstarted stop resolves")
+        plugin.stopHeartbeat(makeCall(onSuccess: { data in
+            XCTAssertEqual(data?["on"] as? Bool, false)
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+    }
+
+    func testStopAllTearsDownHeartbeat() {
+        // stopAll is the tracking kill switch; a heartbeat surviving it would
+        // keep a location session alive after the user turned tracking off.
+        let started = expectation(description: "heartbeat on")
+        plugin.startHeartbeat(makeCall(options: ["intervalMs": 60000], onSuccess: { _ in started.fulfill() }))
+        wait(for: [started], timeout: 30)
+        let cleared = expectation(description: "stopAll resolves")
+        plugin.stopAll(makeCall(onSuccess: { _ in cleared.fulfill() }))
+        wait(for: [cleared], timeout: 30)
+        // A second explicit stop after stopAll must read already-off.
+        let after = expectation(description: "post-stopAll stop is off")
+        plugin.stopHeartbeat(makeCall(onSuccess: { data in
+            XCTAssertEqual(data?["on"] as? Bool, false)
+            after.fulfill()
+        }))
+        wait(for: [after], timeout: 30)
+    }
 }

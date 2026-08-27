@@ -33,7 +33,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         CAPPluginMethod(name: "motionPermStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "locationPermStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestPreciseTemp", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "configureFlush", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "configureFlush", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startHeartbeat", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopHeartbeat", returnType: CAPPluginReturnPromise)
     ]
 
     private var locationManager: CLLocationManager?
@@ -55,6 +57,18 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // arriving after a relaunch can still advance the watermark.
     private let flushInflightKey = "td_geo_flush_inflight"
     private var flushPending = false
+    // ── Shift heartbeat + motion stream (owner 2026-08-27) ──────────────────
+    // The heartbeat holds a LOW-POWER location session (3km accuracy, huge
+    // distance filter, so effectively no fixes and no meaningful radio) whose
+    // only job is keeping this process alive in the background so a timer can
+    // prove liveness every intervalMs. JS decides when a shift starts and
+    // ends and passes every number; ttlMs is the self-destruct so a phone
+    // left at the shop over a weekend stops proving anything by itself.
+    private var heartbeatTimer: Timer?
+    private var heartbeatOn = false
+    private var heartbeatStartedAt: Date?
+    private var heartbeatTtlMs: Double = 0
+    private var lastMotionKind = ""
 
     // THE WAKE HANDLER. iOS relaunches even a force-quit app, silently and in
     // the background, when a monitored region trips, a visit closes, or the
@@ -149,6 +163,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 armed += 1
             }
             m.startMonitoringSignificantLocationChanges()
+            self.startMotionStream()
             UserDefaults.standard.set(["mode": "parked", "visits": false], forKey: self.armedKey)
             call.resolve(["armed": armed])
         }
@@ -185,6 +200,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             }
             m.startMonitoringSignificantLocationChanges()
             m.startMonitoringVisits()
+            self.startMotionStream()
             UserDefaults.standard.set(["mode": "events", "visits": true], forKey: self.armedKey)
             call.resolve(["armed": armed, "visits": true])
         }
@@ -217,7 +233,16 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         burstStartedAt = nil
         burstTimer?.invalidate()
         burstTimer = nil
-        mgr().stopUpdatingLocation()
+        let m = mgr()
+        if heartbeatOn {
+            // The burst borrowed the manager; hand it back to the heartbeat's
+            // low-power keepalive instead of going dark and suspending us.
+            m.desiredAccuracy = kCLLocationAccuracyThreeKilometers
+            m.distanceFilter = 99999
+            m.startUpdatingLocation()
+        } else {
+            m.stopUpdatingLocation()
+        }
     }
 
     // motionSince({sinceMs}) : the motion coprocessor's own history. It has
@@ -487,6 +512,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         DispatchQueue.main.async {
             let m = self.mgr()
             self.endBurst()
+            self.hbStop()
+            self.motionMgr.stopActivityUpdates()
+            self.lastMotionKind = ""
             m.stopMonitoringSignificantLocationChanges()
             m.stopMonitoringVisits()
             for r in m.monitoredRegions { m.stopMonitoring(for: r) }
@@ -527,6 +555,102 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         }
         if let rid = regionId { ev["regionId"] = rid }
         return ev
+    }
+
+    // MARK: - Shift heartbeat + motion stream (owner 2026-08-27)
+
+    // startHeartbeat({intervalMs, ttlMs}) : prove this phone is alive every
+    // intervalMs while a shift is on. Holds a 3km-accuracy, huge-filter
+    // location session purely to keep the process running in the background;
+    // each tick records a heartbeat event (which the flush lane then posts).
+    // Re-asserting startUpdatingLocation every tick self-heals whatever a
+    // burst or the OS did to the session in between. All numbers come from
+    // JS; ttlMs self-stops a heartbeat nobody turned off.
+    @objc func startHeartbeat(_ call: CAPPluginCall) {
+        let intervalMs = min(max(self.num(call.getValue("intervalMs")) ?? 1800000, 60000), 3600000)
+        let ttlMs = min(max(self.num(call.getValue("ttlMs")) ?? 43200000, intervalMs), 86400000)
+        DispatchQueue.main.async {
+            self.heartbeatTimer?.invalidate()
+            self.heartbeatOn = true
+            self.heartbeatStartedAt = Date()
+            self.heartbeatTtlMs = ttlMs
+            let m = self.mgr()
+            if self.burstStartedAt == nil {
+                m.desiredAccuracy = kCLLocationAccuracyThreeKilometers
+                m.distanceFilter = 99999
+            }
+            m.startUpdatingLocation()
+            self.heartbeatTimer = Timer.scheduledTimer(withTimeInterval: intervalMs / 1000, repeats: true) { [weak self] _ in
+                self?.heartbeatTick()
+            }
+            call.resolve(["on": true, "intervalMs": intervalMs, "ttlMs": ttlMs])
+        }
+    }
+
+    @objc func stopHeartbeat(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.hbStop()
+            call.resolve(["on": false])
+        }
+    }
+
+    private func hbStop() {
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
+        heartbeatOn = false
+        heartbeatStartedAt = nil
+        // Only release the radio if no burst still owns it.
+        if burstStartedAt == nil { mgr().stopUpdatingLocation() }
+    }
+
+    private func heartbeatTick() {
+        if let started = heartbeatStartedAt,
+           Date().timeIntervalSince(started) * 1000 > heartbeatTtlMs {
+            hbStop()
+            return
+        }
+        let m = mgr()
+        if burstStartedAt == nil {
+            m.desiredAccuracy = kCLLocationAccuracyThreeKilometers
+            m.distanceFilter = 99999
+        }
+        m.startUpdatingLocation()   // idempotent; re-arms a session the OS shed
+        var ev: [String: Any] = [
+            "type": "heartbeat",
+            "ts": Double(Date().timeIntervalSince1970 * 1000)
+        ]
+        if let l = m.location {
+            ev["lat"] = l.coordinate.latitude
+            ev["lng"] = l.coordinate.longitude
+            ev["acc"] = l.horizontalAccuracy
+        }
+        countWake("heartbeat")
+        record(ev)
+    }
+
+    // The motion coprocessor's LIVE stream, on only while a fence set is
+    // armed. Emits a buffered event per activity transition; JS decides what
+    // a transition means (a burst, nothing). Consecutive same-kind reports
+    // are deduped here only because they are literally the same fact.
+    private func startMotionStream() {
+        guard CMMotionActivityManager.isActivityAvailable() else { return }
+        lastMotionKind = ""
+        motionMgr.startActivityUpdates(to: .main) { [weak self] act in
+            guard let self = self, let a = act else { return }
+            if a.confidence == .low { return }
+            let kind = a.automotive ? "automotive"
+                : a.cycling ? "cycling"
+                : a.running ? "running"
+                : a.walking ? "walking"
+                : a.stationary ? "still" : ""
+            if kind.isEmpty || kind == self.lastMotionKind { return }
+            self.lastMotionKind = kind
+            self.record([
+                "type": "motion",
+                "ts": Double(Date().timeIntervalSince1970 * 1000),
+                "kind": kind
+            ])
+        }
     }
 
     // MARK: - Real-time flush (owner 2026-08-27: rows land force-closed)

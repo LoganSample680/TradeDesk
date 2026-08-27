@@ -3521,6 +3521,7 @@ function _geoInstallGeoShim(){
 // next boot, so a drive that started with the app killed still logs.
 let _geoParkTimer=null;         // countdown from fence entry to GPS-off
 let _geoParkModeOn=false;       // TdGeo regions armed, continuous watcher removed
+let _geoMotionBurstAt=0;        // one motion-triggered burst per 3 min
 let _geoFenceEnteredAtMs=null;  // when the CURRENT fence was entered (dwell clock)
 const _GEO_PARK_AFTER_MS=4*60*1000;  // parked this long inside a fence => GPS off
 // "Parked" means NOT DRIVING, not "not moving". A phone in the pocket of
@@ -3637,6 +3638,19 @@ function _geoEnterParkMode(spot){
     .then((r)=>{
       _geoParkModeOn=true;
       _geoParkNote('park-on','armed='+((r&&r.armed)!=null?r.armed:'?'));
+      // The shift heartbeat (owner 2026-08-27: catch the phone left in the
+      // truck or set down all day). A park at a WORK spot keeps a 30-minute
+      // liveness tick alive; a park at the likely-home pin is the end of the
+      // shift and turns it off. Timing lives here in JS; the plugin only
+      // holds the low-power session and fires the tick. ttl self-stops a
+      // heartbeat nobody turned off (phone left at the shop over a weekend).
+      try{
+        if(typeof Td.startHeartbeat==='function'){
+          const _atHome=(typeof _placeIsLikelyHome==='function')&&_placeIsLikelyHome({lat:_at.lat,lng:_at.lng},0);
+          if(_atHome){if(typeof Td.stopHeartbeat==='function')Td.stopHeartbeat();}
+          else Td.startHeartbeat({intervalMs:30*60000,ttlMs:12*3600000});
+        }
+      }catch(_e){}
       if(_geoNativeWatcherId!=null){
         const BG=_geoNativePlugin();
         try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id:_geoNativeWatcherId});}catch(_e){}
@@ -3974,6 +3988,26 @@ async function _geoTdEvent(ev,replay){
   // not the sensor. It can only ever write to its own local journal.
   if(!replay&&typeof shadowIngest==='function'){try{shadowIngest(ev);}catch(_e){}}
   const hasFix=typeof ev.lat==='number'&&typeof ev.lng==='number';
+  // Liveness and motion events are NOT position truth and must never reach
+  // the fence machine: a heartbeat fix is 3km-accuracy keepalive garbage
+  // that could false-exit a fence, and a motion transition has no fix at
+  // all. The heartbeat's whole job happens in the native flush lane
+  // (device_status liveness); locally it is only journaled. A motion
+  // transition INTO movement while parked buys one precise burst so the
+  // departure pin lands at the kerb instead of half a mile out at the
+  // significant-change wake (owner 2026-08-27: pin at the first footstep).
+  if(ev.type==='heartbeat'){if(!replay)_geoParkNote('heartbeat',ev.acc!=null?Math.round(ev.acc)+'m':'no fix');return;}
+  if(ev.type==='motion'){
+    if(!replay&&_geoParkModeOn&&ev.kind&&ev.kind!=='still'){
+      const now=Date.now();
+      if(now-_geoMotionBurstAt>180000){
+        _geoMotionBurstAt=now;
+        _geoParkNote('motion-burst',String(ev.kind));
+        try{const Td=_geoTdPlugin();if(Td&&typeof Td.burstFix==='function')Td.burstFix({seconds:12});}catch(_e){}
+      }
+    }
+    return;
+  }
   if(!replay&&_geoParkModeOn){
     const out=ev.type==='regionExit'||
       (hasFix&&_geoLastFenceLoc&&_geoDistFt({lat:ev.lat,lng:ev.lng},_geoLastFenceLoc)>_geoFenceFt());
