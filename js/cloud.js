@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.27.26.10';
+const APP_VERSION='08.27.26.11';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2590,6 +2590,28 @@ function _resolveIOSScreenClass(sig){
   const hit=_IOS_SCREEN_CLASSES.find(c=>c.w===sig.w&&c.h===sig.h&&Math.abs(c.dpr-sig.dpr)<0.05);
   return hit?hit.label:null;
 }
+// Apple's hardware identifiers do NOT track the marketing generation (the
+// iPhone 17 Pro Max is iPhone18,2, not iPhone17,x), so this is a lookup of
+// CONFIRMED pairs only, never a pattern. An id that is not in the table
+// returns '' and every caller falls back to showing the raw identifier,
+// which is honest and still reportable. Lives in JS on purpose (§3.2): new
+// hardware ships every year and this must never cost an iOS build to extend.
+const _TD_MODEL_NAMES={
+  'iPhone14,4':'iPhone 13 mini','iPhone14,5':'iPhone 13',
+  'iPhone14,2':'iPhone 13 Pro','iPhone14,3':'iPhone 13 Pro Max',
+  'iPhone14,7':'iPhone 14','iPhone14,8':'iPhone 14 Plus',
+  'iPhone15,2':'iPhone 14 Pro','iPhone15,3':'iPhone 14 Pro Max',
+  'iPhone15,4':'iPhone 15','iPhone15,5':'iPhone 15 Plus',
+  'iPhone16,1':'iPhone 15 Pro','iPhone16,2':'iPhone 15 Pro Max',
+  'iPhone17,3':'iPhone 16','iPhone17,4':'iPhone 16 Plus',
+  'iPhone17,1':'iPhone 16 Pro','iPhone17,2':'iPhone 16 Pro Max',
+  'iPhone17,5':'iPhone 16e',
+  'iPhone18,3':'iPhone 17','iPhone18,1':'iPhone 17 Pro','iPhone18,2':'iPhone 17 Pro Max',
+  'iPhone14,6':'iPhone SE (3rd gen)',
+};
+function _tdModelName(hwId){
+  try{return _TD_MODEL_NAMES[String(hwId||'')]||'';}catch(_e){return '';}
+}
 // Lazy-resolves the native TdDevice plugin exactly like _tdHapticNative()
 // (js/utils.js): cached on window so a real "no native shell here" answer
 // is never re-derived, and a plain web/desktop session gets a silent null.
@@ -4199,7 +4221,7 @@ async function _loadTeamGeo(){
       const uids=Object.keys(byUid);
       if(uids.length){
         const{data:devs}=await _supa.from('device_status')
-          .select('user_id,device_id,device_label,location_status,location_accuracy,location_services_enabled,derived,checked_at,battery_level,battery_charging')
+          .select('user_id,device_id,device_label,hw_id,os_version,location_status,location_accuracy,location_services_enabled,derived,checked_at,battery_level,battery_charging')
           .eq('contractor_user_id',cid).in('user_id',uids);
         // A FLEET handset: one device_id that more than one person has signed
         // into (owner ask 2026-08-26: "if using fleet iPads"). A personal
@@ -4337,10 +4359,15 @@ function _geoRosterStatus(email){
     // MARKUP. Keeping them apart is what stops a device someone named
     // "<b>Shop</b>" from injecting anything, while still letting the bar be a
     // real element rather than an escaped string of angle brackets.
-    const dev=io_.device_label
+    // The real handset when the row carries one: "iPhone" describes every
+    // iPhone ever made and told a manager nothing about whose phone is
+    // misbehaving or what it is running.
+    const _hw=(typeof _tdModelName==='function'&&io_.hw_id)?(_tdModelName(io_.hw_id)||io_.hw_id):'';
+    const _base=_hw||io_.device_label;
+    const dev=_base
       ? (io_.shared
-          ? io_.device_label+' (shared) · they last used it '+_timeAgo(io_.checked_at)
-          : io_.device_label)
+          ? _base+' (shared) · they last used it '+_timeAgo(io_.checked_at)
+          : _base+(io_.os_version?' · iOS '+io_.os_version:''))
       : null;
     const battBar=_geoBattBar(io_);
     if(io_.location_services_enabled===false)

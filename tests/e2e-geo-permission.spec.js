@@ -2448,6 +2448,64 @@ test.describe('Crew location permission', () => {
         expect(t).toContain('NOT saved to the server');
       });
 
+      // ── Which handset (owner 2026-08-27) ───────────────────────────────
+      // Two phones behaved differently on the same build and both reported as
+      // the string "iPhone", so the server could not tell them apart.
+      test('the lab names the handset and its iOS version', async () => {
+        const t = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, devs: S.devices ? S.devices.slice() : [] };
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          const id = (typeof _initDeviceId === 'function') ? _initDeviceId() : null;
+          S.devices = [{ id, label: 'iPhone', hwId: 'iPhone17,2', osVersion: '18.6' }];
+          _geoPermLab();
+          await new Promise(r => setTimeout(r, 120));
+          const st = document.getElementById('_geo-perm-state');
+          const text = st ? st.textContent : '';
+          document.getElementById('_geo-perm-ov')?.remove();
+          window.Capacitor = saved.cap; S.devices = saved.devs;
+          return text;
+        });
+        expect(t).toContain('Handset');
+        expect(t).toContain('iPhone 16 Pro Max');   // mapped marketing name
+        expect(t).toContain('iPhone17,2');          // raw id kept alongside
+        expect(t).toContain('iOS 18.6');
+      });
+
+      test('an unmapped identifier still shows, never blank or a guess', async () => {
+        const t = await page.evaluate(async () => {
+          const saved = { cap: window.Capacitor, devs: S.devices ? S.devices.slice() : [] };
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          const id = (typeof _initDeviceId === 'function') ? _initDeviceId() : null;
+          S.devices = [{ id, label: 'iPhone', hwId: 'iPhone99,9', osVersion: '26.0' }];
+          _geoPermLab();
+          await new Promise(r => setTimeout(r, 120));
+          const st = document.getElementById('_geo-perm-state');
+          const text = st ? st.textContent : '';
+          document.getElementById('_geo-perm-ov')?.remove();
+          window.Capacitor = saved.cap; S.devices = saved.devs;
+          return text;
+        });
+        expect(t).toContain('iPhone99,9');
+        expect(t).toContain('iOS 26.0');
+      });
+
+      test('_tdModelName maps only confirmed pairs and never guesses', async () => {
+        const r = await page.evaluate(() => ({
+          proMax16: _tdModelName('iPhone17,2'),
+          proMax17: _tdModelName('iPhone18,2'),   // NOT iPhone17,x: the trap
+          unknown: _tdModelName('iPhone99,9'),
+          empty: _tdModelName(''),
+          nul: _tdModelName(null),
+          undef: _tdModelName(undefined),
+        }));
+        expect(r.proMax16).toBe('iPhone 16 Pro Max');
+        expect(r.proMax17).toBe('iPhone 17 Pro Max');
+        expect(r.unknown, 'an unknown id must never be given a made-up name').toBe('');
+        expect(r.empty).toBe('');
+        expect(r.nul).toBe('');
+        expect(r.undef).toBe('');
+      });
+
       test('the lab offers a Register for push action', async () => {
         const t = await open({ status: 'always', accuracy: 'full', servicesEnabled: true });
         expect(t).toContain('Register for push');

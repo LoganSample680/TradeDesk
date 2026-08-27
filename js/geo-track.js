@@ -3238,11 +3238,22 @@ async function _geoRefreshBattery(){
 function _geoReportPermission(state){
   if(!_supa||!_supaUser)return;
   const now=new Date().toISOString();
-  let devId=null,devLabel=null;
+  let devId=null,devLabel=null,devHw=null,devOs=null;
   try{
     devId=(typeof _initDeviceId==='function')?_initDeviceId():null;
     const d=(typeof S!=='undefined'&&S.devices||[]).find(x=>x&&x.id===devId);
     devLabel=(d&&(d.name||d.label))||((typeof _deviceLabel==='function')?_deviceLabel():null);
+    // WHICH HANDSET, exactly (owner 2026-08-27). device_label is
+    // UIDevice.current.model, which iOS collapses to the bare string "iPhone"
+    // for every iPhone ever made, so two phones behaving differently were
+    // indistinguishable from the server: Jack's uploaded nothing in the
+    // background while the owner's uploaded in seconds, same build, and there
+    // was no way to ask what either one WAS. The native TdDevice plugin has
+    // read the real sysctl identifier and OS version since the Pro Max layout
+    // bug; it lands in S.devices and stopped there. Carried onto the row now,
+    // so the next divergence names itself.
+    devHw=(d&&d.hwId)||null;
+    devOs=(d&&d.osVersion)||null;
   }catch(_e){}
   // ONE read of the native cache for the whole row: three separate
   // _geoNativeAuthPeek() calls could each see a different refresh landing
@@ -3256,6 +3267,10 @@ function _geoReportPermission(state){
         user_id:_supaUser.id,
         device_id:devId,
         device_label:devLabel||null,
+        // Nullable on purpose: a shell too old to answer, or a browser, must
+        // read as "not reported" rather than claim a model it does not know.
+        hw_id:devHw||null,
+        os_version:devOs||null,
         contractor_user_id:(typeof _geoCid==='function')?_geoCid():_supaUser.id,
         // iOS's own word when the shell can give one: always / wheninuse /
         // denied / restricted / notdetermined. Falls back to the flattened
@@ -3772,6 +3787,22 @@ function _geoPermLab(){
       row('Precise Location',nat&&nat.accuracy?nat.accuracy:'not reported')+
       row('Location Services (device)',!nat?'unknown':(nat.servicesEnabled===true?'ON':(nat.servicesEnabled===false?'OFF':'unknown')))+
       row('Motion',(typeof _motionPermCache!=='undefined'&&_motionPermCache)?_motionPermCache:'not checked')+
+      // The handset itself. "iPhone" is what iOS says about every iPhone ever
+      // made, so the lab said nothing useful about WHICH phone it was reading.
+      (function(){
+        let d=null;
+        try{
+          const id=(typeof _initDeviceId==='function')?_initDeviceId():null;
+          d=(typeof S!=='undefined'&&S.devices||[]).find(x=>x&&x.id===id)||null;
+        }catch(_e){}
+        const hw=(d&&d.hwId)||'';
+        const os=(d&&d.osVersion)||'';
+        if(!hw&&!os)return '';
+        // The identifier raw AND its marketing name when we know it, never the
+        // name alone: an unmapped model must still be readable and reportable.
+        const nice=(typeof _tdModelName==='function')?_tdModelName(hw):'';
+        return row('Handset',nice||hw||'unknown',(nice&&hw?hw+' · ':'')+(os?'iOS '+os:''));
+      })()+
       row('Tracker watcher',_geoNativeWatcherId!=null?'running':'off')+
       // ── Push, the half this panel was missing ──────────────────────────
       // Owner 2026-08-27: location read perfect on every row here while
