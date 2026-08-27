@@ -169,6 +169,62 @@ final class TdGeoPluginTests: XCTestCase {
 
     // MARK: - stopAll / drainBuffer as no-ops when nothing is armed
 
+    // MARK: - relaunch survival (the force-close story, owner 2026-08-27)
+
+    func testStartParked_persistsTheArmedFlagWithoutVisits() {
+        let exp = expectation(description: "startParked flag")
+        plugin.startParked(makeCall(options: ["regions": [region("r1")]], onSuccess: { _ in
+            let armed = UserDefaults.standard.dictionary(forKey: "td_geo_armed")
+            XCTAssertNotNil(armed, "a relaunched process must know something was armed")
+            XCTAssertEqual(armed?["visits"] as? Bool, false)
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 30)
+    }
+
+    func testStartEvents_persistsTheArmedFlagWithVisits() {
+        let exp = expectation(description: "startEvents flag")
+        plugin.startEvents(makeCall(options: ["regions": [region("r1")]], onSuccess: { _ in
+            let armed = UserDefaults.standard.dictionary(forKey: "td_geo_armed")
+            XCTAssertEqual(armed?["visits"] as? Bool, true)
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 30)
+    }
+
+    func testStopAll_clearsTheArmedFlagSoARelaunchStaysDark() {
+        let started = expectation(description: "start")
+        plugin.startEvents(makeCall(options: ["regions": []], onSuccess: { _ in started.fulfill() }))
+        wait(for: [started], timeout: 30)
+        let stopped = expectation(description: "stop")
+        plugin.stopAll(makeCall(onSuccess: { _ in
+            XCTAssertNil(UserDefaults.standard.dictionary(forKey: "td_geo_armed"),
+                         "tracking off means a relaunch must arm nothing")
+            stopped.fulfill()
+        }))
+        wait(for: [stopped], timeout: 30)
+    }
+
+    func testLoad_withTheArmedFlagCountsTheRelaunchWakeAndDoesNotCrash() {
+        UserDefaults.standard.set(["mode": "events", "visits": true], forKey: "td_geo_armed")
+        let before = ((UserDefaults.standard.dictionary(forKey: "td_geo_wakes") as? [String: Int]) ?? [:])["relaunch"] ?? 0
+        plugin.load()
+        let after = ((UserDefaults.standard.dictionary(forKey: "td_geo_wakes") as? [String: Int]) ?? [:])["relaunch"] ?? 0
+        XCTAssertEqual(after, before + 1, "a system relaunch with tracking armed is a counted wake")
+        // Give the async main-queue re-arm a beat, then confirm nothing threw.
+        let settle = expectation(description: "settle")
+        DispatchQueue.main.async { settle.fulfill() }
+        wait(for: [settle], timeout: 30)
+    }
+
+    func testLoad_withNoArmedFlagIsACompleteNoOp() {
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+        let before = ((UserDefaults.standard.dictionary(forKey: "td_geo_wakes") as? [String: Int]) ?? [:])["relaunch"] ?? 0
+        plugin.load()
+        let after = ((UserDefaults.standard.dictionary(forKey: "td_geo_wakes") as? [String: Int]) ?? [:])["relaunch"] ?? 0
+        XCTAssertEqual(after, before, "no armed flag means the launch does nothing at all")
+    }
+
     func testStopAll_whenNothingWasEverStartedResolvesCleanly() {
         let exp = expectation(description: "stopAll idle")
         plugin.stopAll(makeCall(onSuccess: { _ in exp.fulfill() }))

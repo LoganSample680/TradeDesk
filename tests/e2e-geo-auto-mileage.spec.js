@@ -2606,18 +2606,19 @@ test.describe('Automatic mileage from drive legs', () => {
   // lift. A false deduction is worse than a blank, because a blank claims
   // nothing and a false one goes on the return.
   test.describe('the vehicle answer that survives midnight', () => {
-    // todayKey() is a BROWSER global. These fixtures are built in Node, where it
-    // does not exist, so the date has to be computed here. Matches dateKey()'s
-    // LOCAL-time construction rather than toISOString(), which is UTC and would
-    // disagree with the app for part of every day.
-    const todayLocal = () => {
-      const d = new Date();
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    };
-    // The day is computed ONCE in Node and passed in, so nothing inside the
-    // browser body reaches for a date function at all. Two commits in a row
-    // broke on this boundary: first todayKey() called in Node, then todayLocal()
-    // called in the browser. Passing the value removes the question.
+    // "Today" comes from the PAGE, never from Node. This is the third and,
+    // structurally, the last form of the boundary bug this comment block has
+    // chronicled: first todayKey() was called in Node where it does not
+    // exist, then a Node-defined helper was called in the browser, and then
+    // the fix, computing the date in Node, was itself broken by the harness
+    // clock pin (tests/helpers.js): the app now runs on a page clock pinned
+    // to 10:00 Central while Node keeps the runner's real clock, so from
+    // 19:00 Central to midnight (runner UTC one day ahead) every fixture
+    // keyed to Node's "today" landed on the app's TOMORROW. The truck seeded
+    // as down-today was not down yet on the app's calendar, and nine tests
+    // failed for the hour of day. The page's own todayKey() reads the pinned
+    // clock, which is the only clock the code under test can see.
+    const todayLocal = () => page.evaluate(() => todayKey());
     const setup = (o) => page.evaluate((a) => {
       S.employees = [{ id: 'e-danny', name: 'Danny' }, { id: 'e-sam', name: 'Sam' }];
       vehicles.length = 0;
@@ -2627,10 +2628,10 @@ test.describe('Automatic mileage from drive legs', () => {
       jobs.length = 0;
       jobs.push({ id: 8801, name: 'Job', status: 'upcoming', start: a.today, days: 1, assignedTo: 'e-danny' });
       return true;
-    }, Object.assign({ today: todayLocal() }, o));
+    }, o);
 
     test('a usual truck answers for today with nobody touching anything', async () => {
-      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' } });
+      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' }, today: await todayLocal() });
       const r = await page.evaluate(() => _crewVehicleForDay('e-danny'));
       expect(r.mode).toBe('truck');
       expect(r.vehicleId).toBe('v-250');
@@ -2638,8 +2639,9 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('the usual truck being in the shop does NOT quietly keep deducting', async () => {
-      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' },
-                    down: [{ start: todayLocal(), end: null }] });   // open end = still in
+      const day = await todayLocal();
+      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' }, today: day,
+                    down: [{ start: day, end: null }] });   // open end = still in
       const r = await page.evaluate(() => _crewVehicleForDay('e-danny'));
       // Not 'truck'. This is the whole point.
       expect(r.mode).toBe('none');
@@ -2648,8 +2650,9 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('with the truck down and another free, dispatch offers that one', async () => {
-      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' },
-                    down: [{ start: todayLocal(), end: null }], vanDrivable: true });
+      const day = await todayLocal();
+      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' }, today: day,
+                    down: [{ start: day, end: null }], vanDrivable: true });
       const need = await page.evaluate(() => crewNeedingVehicleAnswer());
       expect(need.length).toBe(1);
       expect(need[0].name).toBe('Danny');
@@ -2661,9 +2664,10 @@ test.describe('Automatic mileage from drive legs', () => {
     test('with EVERY truck down, no truck is offered at all', async () => {
       // Only what is true. Their own vehicle or riding with somebody are the
       // honest answers left, and the board must not pretend otherwise.
-      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' },
-                    down: [{ start: todayLocal(), end: null }],
-                    vanDrivable: true, vanDown: [{ start: todayLocal(), end: null }] });
+      const day = await todayLocal();
+      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' }, today: day,
+                    down: [{ start: day, end: null }],
+                    vanDrivable: true, vanDown: [{ start: day, end: null }] });
       const need = await page.evaluate(() => crewNeedingVehicleAnswer());
       expect(need[0].options).toEqual(['own', 'rider']);
       expect(need[0].offer).toEqual([]);
@@ -2685,7 +2689,7 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('nobody set yet is reported as unset, not guessed', async () => {
-      await setup({});
+      await setup({ today: await todayLocal() });
       const r = await page.evaluate(() => _crewVehicleForDay('e-danny'));
       expect(r.reason).toBe('unset');
       const need = await page.evaluate(() => crewNeedingVehicleAnswer());
@@ -2693,7 +2697,7 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('somebody not working today is not a gap', async () => {
-      await setup({});
+      await setup({});   // deliberately NO today: the job lands on no valid day
       const need = await page.evaluate(() => crewNeedingVehicleAnswer());
       expect(need.map(n => n.name)).not.toContain('Sam');
     });
@@ -2714,10 +2718,9 @@ test.describe('Automatic mileage from drive legs', () => {
   // trucks, truck deducts miles on personal cars), so the app asks rather than
   // guesses, and until it is answered those drives claim nothing.
   test.describe('the dispatch gap card', () => {
-    const dayLocal = () => {
-      const d = new Date();
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    };
+    // Same rule as the describe above: the day comes from the PAGE's pinned
+    // clock, because Node's clock is a different clock since the harness pin.
+    const dayLocal = () => page.evaluate(() => todayKey());
     const seed = (o) => page.evaluate((a) => {
       S.employees = [{ id: 'e-danny', name: 'Danny' }];
       vehicles.length = 0;
@@ -2726,10 +2729,10 @@ test.describe('Automatic mileage from drive legs', () => {
       jobs.length = 0;
       jobs.push({ id: 8811, name: 'Job', status: 'upcoming', start: a.today, days: 1, assignedTo: 'e-danny' });
       return true;
-    }, Object.assign({ today: dayLocal() }, o));
+    }, o);
 
     test('somebody with no answer shows on the card', async () => {
-      await seed({});
+      await seed({ today: await dayLocal() });
       const html = await page.evaluate(() => _dispatchVehicleGapHtml());
       expect(html).toContain('Danny');
       expect(html).toContain('No usual vehicle set yet');
@@ -2737,7 +2740,7 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('answering it once clears the card', async () => {
-      await seed({});
+      await seed({ today: await dayLocal() });
       const out = await page.evaluate(() => {
         setUsualVehicle('e-danny', 'v-250');
         const e = S.employees[0];
@@ -2748,7 +2751,7 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('"their own vehicle" is a real answer, not an absence', async () => {
-      await seed({});
+      await seed({ today: await dayLocal() });
       const out = await page.evaluate(() => {
         setUsualVehicle('e-danny', 'own');
         return { usual: S.employees[0].usualVehicle, html: _dispatchVehicleGapHtml() };
@@ -2758,7 +2761,7 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('clearing it back to unset is allowed, and reopens the question', async () => {
-      await seed({ usual: { mode: 'truck', vehicleId: 'v-250' } });
+      await seed({ usual: { mode: 'truck', vehicleId: 'v-250' }, today: await dayLocal() });
       const out = await page.evaluate(() => {
         setUsualVehicle('e-danny', '');
         return { usual: S.employees[0].usualVehicle, html: _dispatchVehicleGapHtml() };
@@ -2768,13 +2771,13 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('a usual truck in the shop shows WHY, by name', async () => {
-      await seed({ usual: { mode: 'truck', vehicleId: 'v-250' }, down: [{ start: dayLocal(), end: null }] });
+      const day = await dayLocal(); await seed({ usual: { mode: 'truck', vehicleId: 'v-250' }, today: day, down: [{ start: day, end: null }] });
       const html = await page.evaluate(() => _dispatchVehicleGapHtml());
       expect(html).toContain('F-250 is in the shop');
     });
 
     test('with every truck down the card offers no truck at all', async () => {
-      await seed({ usual: { mode: 'truck', vehicleId: 'v-250' }, down: [{ start: dayLocal(), end: null }] });
+      const day = await dayLocal(); await seed({ usual: { mode: 'truck', vehicleId: 'v-250' }, today: day, down: [{ start: day, end: null }] });
       const html = await page.evaluate(() => _dispatchVehicleGapHtml());
       expect(html).toContain('Their own vehicle');
       // The only crew-drivable truck is the one in the shop, so it must not be
@@ -2783,7 +2786,7 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('nothing to ask means no card', async () => {
-      await seed({ usual: { mode: 'truck', vehicleId: 'v-250' } });
+      await seed({ usual: { mode: 'truck', vehicleId: 'v-250' }, today: await dayLocal() });
       const html = await page.evaluate(() => _dispatchVehicleGapHtml());
       expect(html).toBe('');
     });
@@ -2795,7 +2798,7 @@ test.describe('Automatic mileage from drive legs', () => {
       // when a real person picked an answer. So this one parses the HTML into
       // the DOM and dispatches a real change event; asserting on the markup is
       // not asserting on the control.
-      await seed({});
+      await seed({ today: await dayLocal() });
       const out = await page.evaluate(() => {
         const realRD = window.renderDispatch;
         window.renderDispatch = () => {};   // setUsualVehicle repaints the board; not under test here
@@ -2817,7 +2820,7 @@ test.describe('Automatic mileage from drive legs', () => {
     });
 
     test('setting a vehicle for somebody who does not exist is a no-op', async () => {
-      await seed({});
+      await seed({ today: await dayLocal() });
       const out = await page.evaluate(() => setUsualVehicle('nobody', 'v-250'));
       expect(out).toBeNull();
     });

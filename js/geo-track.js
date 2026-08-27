@@ -2314,6 +2314,51 @@ function _geoWriteStopResolved(a,ms,stopLoc){
   if(stopLoc&&stopLoc.clientId){_geoCloseClientEntry(stopLoc.clientId,a.at,a.lastAt);return;}
   _geoWriteStop(a);
 }
+// The region set a dead app wakes on (owner 2026-08-27: work like Life360,
+// log mileage and time even force-closed). Not just the kerb we parked at:
+// every location the working day could plausibly touch. The shop, today's and
+// tomorrow's job sites, the saved places, active clients with a warmed
+// geocode. iOS grants 20 monitored regions per app; 18 leaves headroom and
+// the native side caps again. Priority order decides who survives the cap,
+// strongest fence first, mirroring the ping path's own precedence.
+function _geoParkRegions(spot,spotRadius){
+  const out=[];const seen=new Set();
+  const baseM=_geoFenceFt()*0.3048+60;
+  const push=(id,lat,lng,radius)=>{
+    if(out.length>=18||lat==null||lng==null)return;
+    const k=Number(lat).toFixed(4)+','+Number(lng).toFixed(4);
+    if(seen.has(k))return;seen.add(k);
+    out.push({id:String(id),lat:Number(lat),lng:Number(lng),radius:radius||baseM});
+  };
+  if(spot)push('fence',spot.lat,spot.lng,spotRadius);
+  if(S.officeLat&&S.officeLon)push('shop',S.officeLat,S.officeLon);
+  try{
+    const tk=todayKey(),tm=addDays(tk,1);
+    (typeof jobs!=='undefined'&&Array.isArray(jobs)?jobs:[]).forEach(j=>{
+      if(!j||!j.start||j.status==='canceled')return;
+      const d=parseInt(j.days)||1;
+      let hits=false;
+      for(let i=0;i<d;i++){const day=addDays(j.start,i);if(day===tk||day===tm){hits=true;break;}}
+      if(!hits)return;
+      const c=_geoJobCoords[j.id];
+      if(c)push('job-'+j.id,c.lat,c.lng);
+    });
+  }catch(_e){}
+  try{
+    (typeof places!=='undefined'&&Array.isArray(places)?places:[]).forEach(pl=>{
+      if(pl&&pl.lat!=null&&pl.lon!=null)push('place-'+pl.id,pl.lat,pl.lon,pl.fenceFt?pl.fenceFt*0.3048+60:undefined);
+    });
+  }catch(_e){}
+  try{
+    const cache=(typeof _nearbyGeoCache==='function')?_nearbyGeoCache():{};
+    (typeof clients!=='undefined'&&Array.isArray(clients)?clients:[]).forEach(c=>{
+      if(!c||!c.addr)return;
+      const hit=cache[c.id];
+      if(hit&&hit.addr===c.addr)push('client-'+c.id,hit.lat,hit.lon);
+    });
+  }catch(_e){}
+  return out;
+}
 // SETTLE THE LEG WHEN THEY PARK, NOT WHEN THEY LEAVE (owner report
 // 2026-08-09: FBC -> lunch -> home logged nothing).
 //
@@ -3563,7 +3608,17 @@ function _geoEnterParkMode(spot){
     ?Math.max(_geoFenceFt()*0.3048+60,250)
     :_geoFenceFt()*0.3048+60;
   _geoParkNote('park-try',_at.name||'stop');
-  Promise.resolve(Td.startParked({regions:[{id:'fence',lat:_at.lat,lng:_at.lng,radius:radiusM}]}))
+  // The full wake set, not just this kerb: a force-closed app's ONLY way to
+  // learn about tomorrow morning's drive is a region it armed tonight.
+  // startEvents also turns on iOS visit monitoring (arrival/departure
+  // reports with real timestamps, no radio), the piece that stamps unfenced
+  // stops while the app is dead. Older shells without it fall back to the
+  // single-region park arm, exactly the old behavior.
+  const _regs=_geoParkRegions(_at,radiusM);
+  const _armCall=(typeof Td.startEvents==='function')
+    ?Td.startEvents({regions:_regs})
+    :Td.startParked({regions:_regs.slice(0,1)});
+  Promise.resolve(_armCall)
     .then((r)=>{
       _geoParkModeOn=true;
       _geoParkNote('park-on','armed='+((r&&r.armed)!=null?r.armed:'?'));
@@ -4056,6 +4111,20 @@ function startGeoTracking(){
         if(typeof _shadowLiveGpsStart==='function')_shadowLiveGpsStart();
         if(typeof startShadowEngine==='function'){try{startShadowEngine();}catch(_e){}}
         _geoParkNote('watcher-on',String(id||''));
+        // THE FORCE-CLOSE NET (owner 2026-08-27: "log mileage and time even
+        // if the app is dead"). The live watcher above dies with the process
+        // and iOS relaunches nobody for continuous GPS. Visits, regions and
+        // significant-change DO relaunch a force-quit app, so that baseline
+        // is armed alongside the watcher from the first minute of tracking,
+        // not only at park time. It costs no radio of its own while the
+        // watcher runs, and it is the only thing still standing if the app
+        // is killed mid-drive: the native buffer catches the wakes and the
+        // replay rebuilds the day on next open.
+        try{
+          const _TdN=_geoTdPlugin();
+          if(_TdN&&typeof _TdN.startEvents==='function')
+            Promise.resolve(_TdN.startEvents({regions:_geoParkRegions(null)})).catch(()=>{});
+        }catch(_e){}
         // Chain the Motion & Fitness ask right behind the location grant
         // (owner 2026-08-14): one consent flow, prompts in sequence, never
         // stacked. The first coprocessor query is what surfaces the dialog;

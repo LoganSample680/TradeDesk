@@ -38,6 +38,34 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     private var locationManager: CLLocationManager?
     private let bufferKey = "td_geo_fix_buffer"
     private let bufferCap = 600
+    // What JS last armed, persisted so a system relaunch can restore it.
+    // {mode:"parked"|"events", visits:Bool}. Cleared by stopAll.
+    private let armedKey = "td_geo_armed"
+
+    // THE WAKE HANDLER. iOS relaunches even a force-quit app, silently and in
+    // the background, when a monitored region trips, a visit closes, or the
+    // phone moves significantly, and delivers the event ONLY to a
+    // CLLocationManager that exists with a delegate at that moment. Creating
+    // the manager lazily on the first JS call meant a wake with nobody
+    // listening: the event that caused the relaunch evaporated, and a
+    // force-closed app stayed dark until somebody opened it. Recreating the
+    // manager here, at every launch of any kind, is what makes tracking
+    // survive a force close, the same mechanism every consumer tracker runs
+    // on. Monitored regions persist system-side across relaunches;
+    // significant-change and visit monitoring do not, so they are re-armed
+    // from the persisted flag. Still dumb (CLAUDE.md 3.2): this replays the
+    // configuration JS last asked for, it decides nothing.
+    override public func load() {
+        let d = UserDefaults.standard
+        guard let armed = d.dictionary(forKey: armedKey) else { return }
+        countWake("relaunch")
+        let visits = (armed["visits"] as? Bool) == true
+        DispatchQueue.main.async {
+            let m = self.mgr()
+            m.startMonitoringSignificantLocationChanges()
+            if visits { m.startMonitoringVisits() }
+        }
+    }
     // ── Radio-time accounting ────────────────────────────────────────────────
     // Battery cost from location is almost entirely "how many seconds was the
     // GPS receiver powered", and that IS attributable per engine even when two
@@ -104,6 +132,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 armed += 1
             }
             m.startMonitoringSignificantLocationChanges()
+            UserDefaults.standard.set(["mode": "parked", "visits": false], forKey: self.armedKey)
             call.resolve(["armed": armed])
         }
     }
@@ -139,6 +168,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             }
             m.startMonitoringSignificantLocationChanges()
             m.startMonitoringVisits()
+            UserDefaults.standard.set(["mode": "events", "visits": true], forKey: self.armedKey)
             call.resolve(["armed": armed, "visits": true])
         }
     }
@@ -444,6 +474,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             m.stopMonitoringVisits()
             for r in m.monitoredRegions { m.stopMonitoring(for: r) }
             m.stopUpdatingLocation()
+            UserDefaults.standard.removeObject(forKey: self.armedKey)
             call.resolve()
         }
     }
