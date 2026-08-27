@@ -306,6 +306,47 @@ test.describe('Wake region set for the dead app', () => {
     expect(r.pings).toBe(0);
   });
 
+  test('lifecycle and push-ping events never reach the fence machine', async () => {
+    // Same rule as the heartbeat above: liveness bookkeeping must not carry
+    // position authority. An app-background row has no fix, and a push-ping
+    // fix can be minutes-stale cache; either through _geoOnPing could
+    // false-exit a fence.
+    const r = await page.evaluate(async () => {
+      const saved = { ping: window._geoOnPing };
+      let pings = 0;
+      try {
+        window._geoOnPing = async () => { pings++; };
+        await _geoTdEvent({ type: 'app-background', ts: Date.now() });
+        await _geoTdEvent({ type: 'app-active', ts: Date.now() });
+        await _geoTdEvent({ type: 'app-relaunch', ts: Date.now() });
+        await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39.0, lng: -94.0, acc: 800 });
+        return { pings };
+      } finally { window._geoOnPing = saved.ping; }
+    });
+    expect(r.pings).toBe(0);
+  });
+
+  test('the geo-ping cron chain is wired end to end (source guarantee)', async () => {
+    // Three files have to agree for the 30-minute nudge to exist at all:
+    // the cron workflow, the edge function it calls, and the AppDelegate
+    // patch that lets iOS deliver the push to TdGeo. Any one missing and
+    // the others are dead weight that LOOKS shipped.
+    const root = path.join(__dirname, '..');
+    const cron = fs.readFileSync(path.join(root, '.github', 'workflows', 'geo-ping-cron.yml'), 'utf8');
+    expect(cron.includes('*/30 * * * *'), 'the cron must tick every 30 minutes').toBe(true);
+    expect(cron.includes('push-geo-ping'), 'the cron must call the push function').toBe(true);
+    const fn = fs.readFileSync(path.join(root, 'supabase', 'functions', 'push-geo-ping', 'index.ts'), 'utf8');
+    expect(fn.includes('"content-available": 1'), 'the push must be silent').toBe(true);
+    expect(fn.includes('"apns-push-type": "background"'), 'Apple rejects background payloads sent as alerts').toBe(true);
+    expect(fn.includes('cron_watermarks'), 'the open endpoint must be rate-gated').toBe(true);
+    const beta = fs.readFileSync(path.join(root, '.github', 'workflows', 'ios-beta.yml'), 'utf8');
+    expect(beta.includes('didReceiveRemoteNotification'), 'without the AppDelegate patch silent pushes evaporate').toBe(true);
+    expect(beta.includes('TdSilentPush'), 'the AppDelegate must forward to TdGeo').toBe(true);
+    const swift = fs.readFileSync(path.join(root, 'native', 'td-geo', 'ios', 'Plugin', 'TdGeoPlugin.swift'), 'utf8');
+    expect(swift.includes('TdSilentPush'), 'TdGeo must listen for the forward').toBe(true);
+    expect(swift.includes('app-background'), 'lifecycle tracking must record backgrounding').toBe(true);
+  });
+
   test('motion into movement while parked buys ONE burst, throttled, and only live', async () => {
     const r = await page.evaluate(async () => {
       const saved = { td: window._geoTdPlugin, parked: _geoParkModeOn };

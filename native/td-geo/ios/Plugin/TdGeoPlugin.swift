@@ -70,6 +70,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // prove liveness every intervalMs. JS decides when a shift starts and
     // ends and passes every number; ttlMs is the self-destruct so a phone
     // left at the shop over a weekend stops proving anything by itself.
+    private var lifecycleObserversOn = false
     private var heartbeatTimer: Timer?
     private var heartbeatOn = false
     private var heartbeatStartedAt: Date?
@@ -90,9 +91,29 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // from the persisted flag. Still dumb (CLAUDE.md 3.2): this replays the
     // configuration JS last asked for, it decides nothing.
     override public func load() {
+        // Lifecycle + silent-push observers register on EVERY launch, before
+        // the armed guard: whether the app is open, backgrounded, or being
+        // torn down is exactly the record the owner asked for (2026-08-27,
+        // "need a way to track if it's open, backgrounded or force closed"),
+        // and a silent push has to be heard even on a launch that has nothing
+        // to re-arm. Recording itself still gates on armed (see
+        // lifecycleEvent), so an account with tracking off writes nothing.
+        if !lifecycleObserversOn {
+            lifecycleObserversOn = true
+            let nc = NotificationCenter.default
+            nc.addObserver(self, selector: #selector(appActive), name: UIApplication.didBecomeActiveNotification, object: nil)
+            nc.addObserver(self, selector: #selector(appBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
+            nc.addObserver(self, selector: #selector(appTerminate), name: UIApplication.willTerminateNotification, object: nil)
+            nc.addObserver(self, selector: #selector(silentPush(_:)), name: Notification.Name("TdSilentPush"), object: nil)
+        }
         let d = UserDefaults.standard
         guard let armed = d.dictionary(forKey: armedKey) else { return }
         countWake("relaunch")
+        // The relaunch is itself a lifecycle fact: after a force close or an
+        // OS kill this row is the first sign of life, and the gap behind it
+        // is exactly how long the app was dead. record() persists to
+        // UserDefaults synchronously, so even a launch iOS cuts short keeps it.
+        record(["type": "app-relaunch", "ts": Double(Date().timeIntervalSince1970 * 1000)])
         let visits = (armed["visits"] as? Bool) == true
         DispatchQueue.main.async {
             let m = self.mgr()
@@ -588,6 +609,54 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         }
         if let rid = regionId { ev["regionId"] = rid }
         return ev
+    }
+
+    // MARK: - App lifecycle + silent push (owner 2026-08-27)
+
+    // Open / backgrounded / force-closed, as data. active and background are
+    // direct observations; a force close is INFERRED (iOS gives a suspended
+    // app no death callback): the next app-relaunch row marks the rebirth and
+    // the silence before it is the kill. All of it rides the existing buffer
+    // and flush lane, so it lands in geo_events like every other event and
+    // reporting is a SQL query, not a new table.
+    private func trackingArmed() -> Bool {
+        UserDefaults.standard.dictionary(forKey: armedKey) != nil
+    }
+    private func lifecycleEvent(_ t: String) {
+        guard trackingArmed() else { return }
+        countWake(t)
+        record(["type": t, "ts": Double(Date().timeIntervalSince1970 * 1000)])
+    }
+    @objc private func appActive() { lifecycleEvent("app-active") }
+    @objc private func appBackground() {
+        lifecycleEvent("app-background")
+        // Backgrounding is the last reliable moment to get the buffer out
+        // before iOS decides this process's fate.
+        scheduleFlush()
+    }
+    @objc private func appTerminate() { lifecycleEvent("app-terminate") }
+
+    // A server cron nudges every registered phone with a content-available
+    // push (supabase/functions/push-geo-ping); the AppDelegate forwards it
+    // here as TdSilentPush. The point is a liveness fix from a BACKGROUNDED
+    // app between organic wakes. Apple does not deliver these to a force-quit
+    // app, so the region/SLC wake net stays the only net for that case.
+    @objc private func silentPush(_ note: Notification) {
+        guard trackingArmed() else { return }
+        countWake("push-ping")
+        var ev: [String: Any] = [
+            "type": "push-ping",
+            "ts": Double(Date().timeIntervalSince1970 * 1000)
+        ]
+        let m = mgr()
+        if let l = m.location {
+            ev["lat"] = l.coordinate.latitude
+            ev["lng"] = l.coordinate.longitude
+            ev["acc"] = l.horizontalAccuracy
+        }
+        // record() persists and schedules the flush; the AppDelegate holds
+        // the completion handler open long enough for the upload to start.
+        record(ev)
     }
 
     // MARK: - Shift heartbeat + motion stream (owner 2026-08-27)

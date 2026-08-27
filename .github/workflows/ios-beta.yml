@@ -47,6 +47,37 @@ jobs:
       - name: Sync config and plugins into the iOS project
         run: npx cap sync ios
 
+      # Silent pushes (content-available) are delivered ONLY to
+      # application(_:didReceiveRemoteNotification:fetchCompletionHandler:),
+      # and the stock Capacitor AppDelegate does not implement it, so without
+      # this patch the geo-ping cron's pushes evaporate. The method forwards
+      # the payload to TdGeo via NotificationCenter and holds the completion
+      # 15s so the fix + background upload get off the ground. The project is
+      # regenerated fresh every build, so this patches every build.
+      - name: Wire silent pushes into the AppDelegate (geo-ping)
+        run: |
+          python3 - <<'EOF'
+          import sys
+          p = 'ios/App/App/AppDelegate.swift'
+          s = open(p).read()
+          if 'TdSilentPush' in s:
+              print('already patched'); sys.exit(0)
+          method = '''
+              // TdGeo geo-ping (workflow-injected, see ios-beta.yml): iOS hands
+              // content-available pushes to this exact selector and nothing else.
+              func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+                  NotificationCenter.default.post(name: Notification.Name("TdSilentPush"), object: nil, userInfo: userInfo as? [String: Any] ?? [:])
+                  DispatchQueue.main.asyncAfter(deadline: .now() + 15) { completionHandler(.newData) }
+              }
+          '''
+          i = s.rfind('}')
+          if i < 0:
+              print('::error::AppDelegate.swift has no closing brace to anchor on'); sys.exit(1)
+          open(p, 'w').write(s[:i] + method + '\n' + s[i:])
+          print('patched')
+          EOF
+          grep -q "TdSilentPush" ios/App/App/AppDelegate.swift || { echo "::error::AppDelegate silent-push patch did not apply"; exit 1; }
+
       # Build 19 shipped without six plugins and said nothing: their
       # package.json files were caught by a blanket .gitignore rule, so npm
       # linked empty folders and Capacitor found 6 plugins instead of 12. The

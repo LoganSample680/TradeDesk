@@ -4026,6 +4026,14 @@ async function _geoTdEvent(ev,replay){
   // departure pin lands at the kerb instead of half a mile out at the
   // significant-change wake (owner 2026-08-27: pin at the first footstep).
   if(ev.type==='heartbeat'){if(!replay)_geoParkNote('heartbeat',ev.acc!=null?Math.round(ev.acc)+'m':'no fix');return;}
+  // Lifecycle rows (app-active/background/terminate/relaunch) and the cron's
+  // push-ping are liveness bookkeeping, exactly like the heartbeat above:
+  // they exist for the server record and must never reach the fence machine,
+  // where a fixless or 3km-cached event could false-exit a fence.
+  if(ev.type==='push-ping'||/^app-/.test(String(ev.type||''))){
+    if(!replay)_geoParkNote(String(ev.type),ev.acc!=null?Math.round(ev.acc)+'m':'');
+    return;
+  }
   if(ev.type==='motion'){
     if(!replay&&_geoParkModeOn&&ev.kind&&ev.kind!=='still'){
       const now=Date.now();

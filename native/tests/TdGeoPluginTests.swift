@@ -882,6 +882,74 @@ final class TdGeoPluginTests: XCTestCase {
         wait(for: [done], timeout: 30)
     }
 
+    // ── App lifecycle + silent push (owner 2026-08-27) ──────────────────────
+
+    private func bufferCount(ofType t: String) -> Int {
+        let buf = (UserDefaults.standard.array(forKey: "td_geo_fix_buffer") as? [[String: Any]]) ?? []
+        return buf.filter { ($0["type"] as? String) == t }.count
+    }
+
+    func testLifecycleEventsRecordOnlyWhenArmed() {
+        // Armed: backgrounding writes an app-background row. record() persists
+        // synchronously, so no waiting on a flush.
+        UserDefaults.standard.set(["mode": "events", "visits": true], forKey: "td_geo_armed")
+        plugin.load()
+        let before = bufferCount(ofType: "app-background")
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        let armed = expectation(description: "armed background recorded")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            XCTAssertGreaterThan(self.bufferCount(ofType: "app-background"), before,
+                                 "an armed device must record backgrounding")
+            armed.fulfill()
+        }
+        wait(for: [armed], timeout: 30)
+        // Unarmed: the same notification must write nothing. Tracking off
+        // means no lifecycle surveillance, full stop.
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+        let quiet = bufferCount(ofType: "app-background")
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        let off = expectation(description: "unarmed background ignored")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            XCTAssertEqual(self.bufferCount(ofType: "app-background"), quiet,
+                           "tracking off must record nothing")
+            off.fulfill()
+        }
+        wait(for: [off], timeout: 30)
+    }
+
+    func testRelaunchRecordsALifecycleRowWhenArmed() {
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: "td_geo_armed")
+        let before = bufferCount(ofType: "app-relaunch")
+        plugin.load()
+        XCTAssertGreaterThan(bufferCount(ofType: "app-relaunch"), before,
+                             "an armed relaunch is the first sign of life after a kill and must be recorded")
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+    }
+
+    func testSilentPushRecordsAPushPingOnlyWhenArmed() {
+        UserDefaults.standard.set(["mode": "events", "visits": false], forKey: "td_geo_armed")
+        plugin.load()
+        let before = bufferCount(ofType: "push-ping")
+        NotificationCenter.default.post(name: Notification.Name("TdSilentPush"), object: nil, userInfo: ["td": "geo-ping"])
+        let armed = expectation(description: "push-ping recorded")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            XCTAssertGreaterThan(self.bufferCount(ofType: "push-ping"), before,
+                                 "a silent push on an armed device must record a liveness event")
+            armed.fulfill()
+        }
+        wait(for: [armed], timeout: 30)
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+        let quiet = bufferCount(ofType: "push-ping")
+        NotificationCenter.default.post(name: Notification.Name("TdSilentPush"), object: nil, userInfo: ["td": "geo-ping"])
+        let off = expectation(description: "unarmed push ignored")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            XCTAssertEqual(self.bufferCount(ofType: "push-ping"), quiet,
+                           "tracking off must ignore the nudge")
+            off.fulfill()
+        }
+        wait(for: [off], timeout: 30)
+    }
+
     func testHeartbeatPersistsStateAndStopClearsIt() {
         // The whole point of the persisted dict: a force-quit or OS kill must
         // not silently end the shift's 30-minute beat (owner report

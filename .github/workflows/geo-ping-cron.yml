@@ -1,0 +1,31 @@
+# The 30-minute geo nudge (owner 2026-08-27). Calls push-geo-ping, which
+# silent-pushes every registered device so a backgrounded app wakes, grabs a
+# fix, and posts it (TdGeoPlugin.swift silentPush -> ingest-geo).
+#
+# - Scheduled workflows only run from the DEFAULT branch: this cron starts
+#   ticking when the branch merges to main, not before. workflow_dispatch
+#   exists for testing it from any branch.
+# - GitHub crons drift by a few minutes under load; the function's own
+#   20-minute watermark makes double-fires harmless.
+# - No secrets: the function deploys --no-verify-jwt like every function in
+#   this repo and self-limits via cron_watermarks.
+name: Geo ping cron
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch: {}
+concurrency:
+  group: geo-ping-cron
+  cancel-in-progress: false
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Nudge every tracked phone for a background fix
+        run: |
+          OUT=$(curl -sS -m 30 -X POST \
+            "https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/push-geo-ping" \
+            -H "Content-Type: application/json" -d '{}') || { echo "::warning::push-geo-ping unreachable"; exit 0; }
+          echo "$OUT"
+          echo "$OUT" | grep -q '"ok":true' || echo "::warning::push-geo-ping reported failure: $OUT"
