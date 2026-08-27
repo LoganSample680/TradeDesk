@@ -811,6 +811,40 @@ async function _mileMotionHealSweep(){
 //      indistinguishable from a live-derived row.
 // Idempotent by construction: refined rows lose the flag, deleted rows are
 // recorded via _recordLocalDelete, so a second session finds nothing to do.
+// ── ONE DRIVE, TWO WRITERS ──────────────────────────────────────────────────
+// The phone's own engine and the server deriver (supabase/functions/ingest-geo)
+// both write the same drive. They were supposed to dedup on legKey, and they
+// never could: the key is base36 of the START MILLISECOND, the phone dates the
+// leg from the ping where JS noticed the departure and the server dates it from
+// the raw regionExit in geo_events, and those are seconds apart. Two keys, no
+// match, two rows. Observed on all three of the owner's drives 2026-08-27 (the
+// 17:28 leg: phone 17:28:11 -> mtc3gart, server 17:28:08 -> mtc3g8xt), and it
+// was worse than a no-op: the refine below then PROMOTED the orphan instead of
+// dropping it, so the duplicate became permanent.
+//
+// So identity stops being the key and becomes the drive itself: the same
+// journey, whoever wrote it. Two rows are one drive when their time windows
+// genuinely overlap AND they end in the same place. Both halves are required.
+// Overlap alone would merge a there-and-back pair that shares a boundary
+// minute; the destination alone would merge every trip to the same shop all
+// week. _MILE_DEDUP_DEST_FT is the fence-plus-scatter radius this file already
+// uses for exactly this question (7.3).
+function _mileSameDrive(a,b){
+  try{
+    if(!a||!b||a===b)return false;
+    const A1=Date.parse(a.startedIso||'')||0,A2=Date.parse(a.endedIso||'')||0;
+    const B1=Date.parse(b.startedIso||'')||0,B2=Date.parse(b.endedIso||'')||0;
+    if(!(A1&&A2&&B1&&B2)||A2<=A1||B2<=B1)return false;
+    const ov=Math.min(A2,B2)-Math.max(A1,B1);
+    if(ov<=0)return false;
+    // Half of the SHORTER window, so a genuinely brief leg can still match a
+    // longer one that contains it, while two legs that merely touch cannot.
+    if(ov<Math.min(A2-A1,B2-B1)*0.5)return false;
+    const near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&typeof _geoDistFt==='function'&&
+      _geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=_MILE_DEDUP_DEST_FT);
+    return near(a.toCoord,b.toCoord);
+  }catch(_e){return false;}
+}
 async function _mileServerRefine(){
   try{
     if(window._mileServerRefineRan)return 0;
@@ -827,8 +861,12 @@ async function _mileServerRefine(){
       try{if(typeof _geoParkNote==='function')_geoParkNote('srv-refine',String(m.id)+' dropped: '+why);}catch(_e){}
     };
     for(const m of cands.slice(0,20)){
-      // 1. The client engine already owns this leg.
-      if(mileage.some(x=>x&&x!==m&&x.legKey===m.legKey&&!x.provisional)){kill(m,'client row exists');continue;}
+      // 1. The client engine already owns this leg. Matched on the DRIVE, not
+      // the legKey: the two writers date the same departure differently, so an
+      // exact-key test never fired and the duplicate got promoted instead.
+      // The key check stays first as the cheap exact case.
+      if(mileage.some(x=>x&&x!==m&&!x.provisional&&
+         (x.legKey===m.legKey||_mileSameDrive(x,m)))){kill(m,'client row exists');continue;}
       // 2. Commute out of home, exactly the live rule: only the OWNER with a
       // declared home office keeps a leg that starts at the likely-home pin.
       const likelyHome=(typeof _placeIsLikelyHome==='function')&&_placeIsLikelyHome({lat:m.fromCoord.lat,lng:m.fromCoord.lng},0);

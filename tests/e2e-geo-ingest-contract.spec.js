@@ -144,6 +144,70 @@ test.describe('geofence ingest contract', () => {
     expect(r.deleteRecorded).toBe(true);
   });
 
+  // ── The real duplicate: two writers, two legKeys, one drive ───────────────
+  // Owner 2026-08-27, live: every drive that day was written twice. The phone
+  // dates the leg from the ping where JS noticed the departure, the server
+  // from the raw regionExit; seconds apart, so the legKey test never fired and
+  // the refine PROMOTED the orphan instead of dropping it.
+  test('a DIFFERENT legKey for the same drive is still one drive, and the phone row wins', async () => {
+    const r = await page.evaluate(async (row) => {
+      // The exact shape observed: client start 3s later, its own key, real
+      // name and mileage, same destination.
+      const clientRow = { id: 1787870093125087, legKey: 'abcdefgh-leg-OTHER', gps: true, miles: 3.4,
+        calc_method: 'auto_route', from_name: 'John Doe', to_name: 'Shop',
+        fromCoord: row.fromCoord, toCoord: { lat: 39.0501, lng: -95.6501 },
+        startedIso: '2026-08-27T14:00:03.000Z', endedIso: '2026-08-27T14:30:16.000Z' };
+      const saved = { mileage: mileage.slice(), route: window._routeDistance, home: window._placeIsLikelyHome };
+      mileage.length = 0; mileage.push(row, clientRow);
+      window._mileServerRefineRan = false;
+      _routeDistance = async () => ({ miles: 4.4, mins: 11 });
+      _placeIsLikelyHome = () => false;
+      await _mileServerRefine();
+      const out = {
+        count: mileage.length,
+        survivorId: mileage[0] && mileage[0].id,
+        survivorName: mileage[0] && mileage[0].from_name,
+        deleteRecorded: !!(_locallyDeletedIds && _locallyDeletedIds.td_mileage && _locallyDeletedIds.td_mileage.has(String(row.id))),
+      };
+      _locallyDeletedIds.td_mileage.delete(String(row.id));
+      mileage.length = 0; saved.mileage.forEach(m => mileage.push(m));
+      _routeDistance = saved.route; _placeIsLikelyHome = saved.home;
+      window._mileServerRefineRan = false;
+      return out;
+    }, SRV_ROW());
+    expect(r.count, 'the server orphan must be dropped, not promoted').toBe(1);
+    expect(r.survivorId).toBe(1787870093125087);
+    expect(r.survivorName, 'the phone row keeps the real name, never "Stop"').toBe('John Doe');
+    expect(r.deleteRecorded).toBe(true);
+  });
+
+  test('_mileSameDrive: overlap AND destination, never either alone', async () => {
+    const r = await page.evaluate(() => {
+      const A = { startedIso: '2026-08-27T14:00:00Z', endedIso: '2026-08-27T14:30:00Z', toCoord: { lat: 39.05, lng: -95.65 } };
+      const same = { startedIso: '2026-08-27T14:00:03Z', endedIso: '2026-08-27T14:30:16Z', toCoord: { lat: 39.0501, lng: -95.6501 } };
+      // A there-and-back pair sharing only a boundary minute is TWO drives.
+      const backToBack = { startedIso: '2026-08-27T14:30:00Z', endedIso: '2026-08-27T15:00:00Z', toCoord: { lat: 39.05, lng: -95.65 } };
+      // Same shop, different afternoon: same destination, no overlap.
+      const laterSameDest = { startedIso: '2026-08-27T18:00:00Z', endedIso: '2026-08-27T18:30:00Z', toCoord: { lat: 39.05, lng: -95.65 } };
+      // Overlapping in time but ending miles apart: two crew, two drives.
+      const elsewhere = { startedIso: '2026-08-27T14:01:00Z', endedIso: '2026-08-27T14:29:00Z', toCoord: { lat: 39.40, lng: -95.20 } };
+      return {
+        same: _mileSameDrive(A, same),
+        backToBack: _mileSameDrive(A, backToBack),
+        laterSameDest: _mileSameDrive(A, laterSameDest),
+        elsewhere: _mileSameDrive(A, elsewhere),
+        self: _mileSameDrive(A, A),
+        junk: _mileSameDrive(null, A) || _mileSameDrive(A, {}) || _mileSameDrive({}, {}),
+      };
+    });
+    expect(r.same, 'seconds apart, same destination: one drive').toBe(true);
+    expect(r.backToBack, 'a shared boundary minute is not an overlap').toBe(false);
+    expect(r.laterSameDest, 'same shop later is a second trip').toBe(false);
+    expect(r.elsewhere, 'overlapping in time but ending elsewhere').toBe(false);
+    expect(r.self, 'a row is never its own duplicate').toBe(false);
+    expect(r.junk, 'null and empty input never claim a match').toBe(false);
+  });
+
   test('a provisional home-origin leg is a commute: dropped unless the owner declared a home office', async () => {
     const r = await page.evaluate(async (row) => {
       const saved = { mileage: mileage.slice(), route: window._routeDistance, home: window._placeIsLikelyHome, ho: S.homeOffice };
