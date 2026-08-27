@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.27.26.6';
+const APP_VERSION='08.27.26.7';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -4162,6 +4162,26 @@ async function _loadTeamGeo(){
         if(k&&next[k]&&byUser[uid])next[k].lastPing=byUser[uid];
       });
     }catch(_e){}
+    // CAN THE SERVER REACH THIS PHONE AT ALL (owner 2026-08-27). A device
+    // token is what lets the 30-minute nudge, dispatch pushes and every other
+    // server-sent message land; without one the phone is write-only, it
+    // reports when iOS happens to wake it and can never be asked anything.
+    // That gap was invisible until it was queried by hand, and it was
+    // account-wide: every device_tokens row on the project was missing while
+    // the roster showed green. A state nobody can see is a state that stays
+    // broken, so it gets a line on the row like every other one.
+    try{
+      const uids=Object.keys(byUid);
+      if(uids.length){
+        const{data:toks}=await _supa.from('device_tokens')
+          .select('user_id').eq('contractor_user_id',cid).is('invalid_at',null).in('user_id',uids);
+        const reach=new Set((toks||[]).map(r=>String(r.user_id)));
+        Object.keys(byUid).forEach(uid=>{
+          const k=byUid[uid];
+          if(k&&next[k])next[k].reachable=reach.has(String(uid));
+        });
+      }
+    }catch(_e){}
     // iOS's OWN word, per handset, from device_status (owner ask 2026-08-26:
     // "the location permissions based on team member can read from these iOS
     // values in actual plain English").
@@ -4335,10 +4355,20 @@ function _geoRosterStatus(email){
       return{dot:'🟠',label:'Only tracks with the app open, their drives won’t log',fix:'Settings › TradeDesk › Location › Always',device:dev,ping:_ping,tone:'#D97706',battBar};
     if(st==='always'&&String(io_.location_accuracy||'')==='reduced')
       return{dot:'🟠',label:'On, but not precise enough for job check-ins',fix:'Settings › TradeDesk › Location › Precise Location',device:dev,ping:_ping,tone:'#D97706',battBar};
-    if(st==='always')
+    if(st==='always'){
+      // Location is perfect and the server still cannot reach it. Amber, not
+      // red: what it HAS is working, tracking logs and drives record. What it
+      // cannot do is be woken, so the 30-minute nudge never arrives and the
+      // day has holes wherever iOS did not volunteer a wake. Only ever shown
+      // on an otherwise-healthy row, because a phone with location off has a
+      // louder problem and a second line would bury it.
+      if(g.reachable===false)
+        return{dot:'🟠',label:'Tracking, but the server can’t wake this phone',
+               fix:'Open TradeDesk and allow notifications',device:dev,ping:_ping,tone:'#D97706',battBar};
       return fresh
         ? {dot:'🟢',label:'Tracking · last ping '+_timeAgo(g.lastPing),device:dev,tone:'var(--green-mid,#16a34a)',battBar}
         : {dot:'🟢',label:'Tracking, all set',device:dev,ping:_ping,tone:'var(--green-mid,#16a34a)',battBar};
+    }
   }
   // A ping inside the window is proof, regardless of what the permission API said.
   if(fresh)

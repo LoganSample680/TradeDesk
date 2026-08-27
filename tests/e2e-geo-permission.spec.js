@@ -254,6 +254,76 @@ test.describe('Crew location permission', () => {
     expect(out.label).toContain('No recent activity');
   });
 
+  // ── Reachability: location perfect, server still cannot wake the phone ────
+  // Owner 2026-08-27. Every device_tokens row on the project was missing and
+  // the roster showed solid green the whole time. A state nobody can see is a
+  // state that stays broken.
+  test('an unreachable phone reads amber even with Always + Precise', async () => {
+    const out = await page.evaluate(() => {
+      S.teamTracking = true;
+      const now = new Date().toISOString();
+      _teamGeo = { 'a@b.co': { status: 'granted', checkedAt: now, ackAt: now, lastPing: null, reachable: false,
+        ios: { location_status: 'always', location_accuracy: 'full', checked_at: now, device_label: 'iPhone' } } };
+      return _geoRosterStatus('a@b.co');
+    });
+    expect(out.dot).toBe('🟠');
+    expect(out.label).toContain('can’t wake this phone');
+    expect(out.fix).toContain('allow notifications');
+  });
+
+  test('a reachable phone is plain green, no extra line', async () => {
+    const out = await page.evaluate(() => {
+      S.teamTracking = true;
+      const now = new Date().toISOString();
+      _teamGeo = { 'a@b.co': { status: 'granted', checkedAt: now, ackAt: now, lastPing: null, reachable: true,
+        ios: { location_status: 'always', location_accuracy: 'full', checked_at: now, device_label: 'iPhone' } } };
+      return _geoRosterStatus('a@b.co');
+    });
+    expect(out.dot).toBe('🟢');
+    expect(out.label).not.toContain('wake');
+  });
+
+  test('unknown reachability never invents a warning', async () => {
+    // undefined is not false. A roster loaded before the token fetch resolved,
+    // or a manager whose query returned nothing, must not paint every phone
+    // amber on the strength of a missing field.
+    const out = await page.evaluate(() => {
+      S.teamTracking = true;
+      const now = new Date().toISOString();
+      _teamGeo = { 'a@b.co': { status: 'granted', checkedAt: now, ackAt: now, lastPing: null,
+        ios: { location_status: 'always', location_accuracy: 'full', checked_at: now, device_label: 'iPhone' } } };
+      return _geoRosterStatus('a@b.co');
+    });
+    expect(out.dot).toBe('🟢');
+  });
+
+  test('a broken phone keeps its LOUDER problem, reachability never buries it', async () => {
+    const out = await page.evaluate(() => {
+      S.teamTracking = true;
+      const now = new Date().toISOString();
+      _teamGeo = { 'a@b.co': { status: 'denied', checkedAt: now, ackAt: now, lastPing: null, reachable: false,
+        ios: { location_status: 'denied', checked_at: now, device_label: 'iPhone' } } };
+      return _geoRosterStatus('a@b.co');
+    });
+    expect(out.dot).toBe('🔴');
+    expect(out.label).toContain('Location off');
+  });
+
+  test('a NEW user granting location also registers for push (source guarantee)', async () => {
+    // _pushResume covers a phone that already granted notifications, on every
+    // boot. This covers the other half, the new user answering the location
+    // prompt for the first time, whose only other route to a token is a
+    // checklist row they may never tap.
+    const fs = require('fs'); const path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'geo-track.js'), 'utf8');
+    const i = src.indexOf("_geoParkNote('watcher-on'");
+    expect(i).toBeGreaterThan(-1);
+    const after = src.slice(i, i + 3000);
+    expect(after.includes('motionSince'), 'the motion ask must still be chained').toBe(true);
+    expect(after.includes('pushEnable'), 'push registration must ride the same chain').toBe(true);
+    expect(after.indexOf('motionSince')).toBeLessThan(after.indexOf('pushEnable'));
+  });
+
   test('denied shows red', async () => {
     const out = await page.evaluate(() => {
       S.teamTracking = true;

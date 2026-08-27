@@ -4259,6 +4259,21 @@ function startGeoTracking(){
           const _Td=_geoTdPlugin();
           if(_Td&&typeof _Td.motionSince==='function')Promise.resolve(_Td.motionSince({sinceMs:Date.now()-60000})).catch(()=>{});
         }catch(_e){}
+        // ...and push registration behind THAT, same chain, same reason
+        // (owner 2026-08-27: "why cant that be the same opt in on location
+        // when they setup location services in the beginning for new users").
+        // _pushResume (js/push.js) covers a phone that ALREADY granted
+        // notifications, on every boot. This covers the other half: a NEW
+        // user answering the location prompt for the first time, who has
+        // granted nothing yet and whose only other route to a token is a
+        // setup-checklist row they may never tap. One flow at setup, prompts
+        // in sequence, never stacked: location, then motion, then push.
+        //
+        // pushEnable, not _pushResume: this is the moment it is correct to
+        // ASK, the person is consenting to tracking right now. Idempotent for
+        // everyone else, iOS answers an already-granted request with no
+        // dialog and the listener upserts on the token.
+        try{if(typeof pushEnable==='function')Promise.resolve(pushEnable()).catch(()=>{});}catch(_e){}
         // The watcher running IS the shell's 'granted' state: refresh the
         // dashboard's permission cache so "Turn on location" clears itself.
         try{if(typeof _geoRefreshBattery==='function')_geoRefreshBattery();}catch(_e){}
