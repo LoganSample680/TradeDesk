@@ -1150,13 +1150,24 @@ function closeImportModal(){
 
 async function _importPhoneContacts(){
   try{
-    const raw=await navigator.contacts.select(['name','tel','email'],{multiple:true});
+    // 'address' was never requested, so this route dropped it even where the
+    // API supports it (owner 2026-08-28). Requested separately and tolerantly:
+    // the property is optional in the spec and a picker that does not offer it
+    // REJECTS the whole call rather than returning the rest, which would take
+    // the entire import down to gain one field.
+    let raw=null;
+    try{raw=await navigator.contacts.select(['name','tel','email','address'],{multiple:true});}
+    catch(_e){raw=await navigator.contacts.select(['name','tel','email'],{multiple:true});}
     if(!raw||!raw.length){showToast('No contacts selected','ℹ️');return;}
     const parsed=raw.map(c=>({
       name:(c.name&&c.name[0])||'',
       phone:(c.tel&&c.tel[0])||'',
       email:(c.email&&c.email[0])||'',
-      addr:'',city:'',state:'',zip:''
+      // ContactAddress, when the picker gave one: its own shape, not ours.
+      addr:((c.address&&c.address[0]&&(c.address[0].addressLine||[])[0])||''),
+      city:((c.address&&c.address[0]&&c.address[0].city)||''),
+      state:((c.address&&c.address[0]&&c.address[0].region)||''),
+      zip:((c.address&&c.address[0]&&c.address[0].postalCode)||'')
     })).filter(c=>c.name&&c.phone);
     _showImportPreview(parsed);
   }catch(e){showToast('Contact access denied','⚠️');}

@@ -49,10 +49,50 @@ async function _shareInRead(path){
     }
   }catch(_e){return null;}
   if(!parts.length)return null;
-  const type=/\.(png)$/i.test(path)?'image/png':(/\.pdf$/i.test(path)?'application/pdf':'image/jpeg');
+  // A shared CONTACT arrives as .vcf and is text, not an image. Typing it
+  // image/jpeg was harmless for Blob.text() but made it invisible to any
+  // branch that routes on type, which is exactly the branch added below.
+  const type=/\.vcf$/i.test(path)?'text/vcard'
+    :(/\.(png)$/i.test(path)?'image/png'
+    :(/\.pdf$/i.test(path)?'application/pdf':'image/jpeg'));
   return new Blob(parts,{type});
 }
 
+// A CONTACT shared from the iOS Contacts app (owner 2026-08-28: "lead import
+// can also throw in existing contact import"). Every downstream piece already
+// existed and none of it was reachable from a phone: _parseVCard has parsed
+// the ADR line into street/city/state/zip since the vCard-upload route was
+// built, and _showImportPreview/_doImport already dedupe against the roster
+// and write the address onto the client.
+//
+// This matters because the OTHER contacts route is dead on iOS. The "from
+// your phone contacts" button uses the Web Contact Picker API, which has
+// never shipped in Safari or WKWebView, so js/clients.js feature-detects it
+// and hides the button. An iPhone contractor had no way to import a contact
+// at all short of exporting a file to a laptop. The share sheet is the way in.
+async function _shareInAsContacts(items){
+  try{
+    if(typeof _parseVCard!=='function'||typeof _showImportPreview!=='function')return 0;
+    const all=[];
+    for(const it of items){
+      const b=await _shareInRead(it.path);
+      if(!b)continue;
+      let text='';
+      try{text=await b.text();}catch(_e){continue;}
+      if(!/BEGIN:VCARD/i.test(text))continue;
+      // One share can carry several cards, and one .vcf can hold several
+      // contacts; both flatten into the same list the preview expects.
+      _parseVCard(text).forEach(c=>all.push(c));
+    }
+    if(!all.length)return 0;
+    // Cleared only after the preview is up: a parse that produced nothing
+    // must leave the file in the inbox to try again, same rule the receipt
+    // fork follows.
+    _showImportPreview(all);
+    await _shareInClear(items.map(i=>i.path));
+    return all.length;
+  }catch(_e){return 0;}
+}
 async function _shareInClear(paths){
   const P=_shareInPlugin();
   if(!P||typeof P.clear!=='function')return;
@@ -152,6 +192,9 @@ function _shareInPrompt(items){
   const ov=document.createElement('div');ov.id='_sharein-ov';ov.className='zmodal-overlay';
   const m=document.createElement('div');m.className='zmodal';m.style.maxWidth='420px';
   const n=items.length;
+  // Does this share actually contain a contact card? Decides whether the
+  // contact fork is offered at all.
+  const hasVcf=items.some(i=>/\.vcf$/i.test((i&&i.path)||''));
   // Today's and recent jobs first: a shared photo is almost always about work
   // happening right now, and a 400-job list is not a picker.
   const tk=(typeof todayKey==='function')?todayKey():'';
@@ -187,6 +230,13 @@ function _shareInPrompt(items){
       '<span style="display:block;font-size:14px;font-weight:800">'+(n===1?'A receipt':'Pages of one receipt')+'</span>'+
       '<span style="display:block;font-size:11.5px;font-weight:500;opacity:.85;margin-top:2px">Reads the total off it and opens a filled-in expense</span>'+
     '</button>'+
+    // Only when a contact is actually in the share. Offering "add as a client"
+    // for a photo of a water heater is noise, and 15.1 is explicit that a
+    // control whose value is not wired must not ship.
+    (hasVcf?'<button id="_si-contact" class="btn btn-p" style="display:block;box-sizing:border-box;width:100%;height:auto;padding:13px;margin-bottom:8px;text-align:left;white-space:normal">'+
+      '<span style="display:block;font-size:14px;font-weight:800">'+(n===1?'A contact':'Contacts')+'</span>'+
+      '<span style="display:block;font-size:11.5px;font-weight:500;opacity:.85;margin-top:2px">Adds them as a client, with the address off the contact card</span>'+
+    '</button>':'')+
     '<div style="font-size:12px;color:var(--text3);margin:12px 0 6px;font-weight:700">Or attach to a job</div>'+
     (pick.length?'<div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r)">'+pick.map(row).join('')+'</div>'
                 :'<div class="tip tip-w" style="font-size:13px">No open jobs to attach to. Create the job first, then share again.</div>')+
@@ -208,6 +258,15 @@ function _shareInPrompt(items){
       if(added)showToast(added===1?'Receipt added, check the total':added+' pages added, check the total','🧾');
       else showToast('Could not read the shared file','⚠️');
     }
+  };
+  const ctBtn=document.getElementById('_si-contact');
+  if(ctBtn)ctBtn.onclick=async()=>{
+    ctBtn.disabled=true;ctBtn.style.opacity='.5';
+    // Closed first: _showImportPreview raises its own modal, and stacking two
+    // overlays on a phone is how you end up unable to dismiss either (7.3).
+    close();
+    const found=await _shareInAsContacts(items.filter(i=>/\.vcf$/i.test(i.path||'')));
+    if(typeof showToast==='function'&&!found)showToast('No contact details in that file','⚠️');
   };
   document.getElementById('_si-discard').onclick=async()=>{
     await _shareInClear(items.map(i=>i.path));

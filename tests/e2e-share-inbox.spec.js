@@ -362,6 +362,96 @@ test.describe('Share inbox', () => {
     expect(r.n).toBe(0);
   });
 
+  // ── A contact shared from iOS Contacts (owner 2026-08-28) ─────────────────
+  // The other contacts route is dead on iOS: the Web Contact Picker API has
+  // never shipped in Safari or WKWebView, so js/clients.js hides that button
+  // and an iPhone contractor had no way to import a contact at all. The share
+  // sheet is the way in, and _parseVCard already read the address.
+  // Real newlines, not escaped ones: _parseVCard anchors on ^FN / ^ADR with
+  // the multiline flag, so a fixture carrying literal backslash-n parses as
+  // one long line and silently matches nothing.
+  const VCF = [
+    'BEGIN:VCARD', 'VERSION:3.0', 'FN:Dana Reyes', 'TEL:785-555-0142',
+    'EMAIL:dana@example.com', 'ADR;TYPE=HOME:;;418 SW Oakley Ave;Topeka;KS;66606;USA',
+    'END:VCARD',
+  ].join('\n');
+
+  test('a shared .vcf becomes a client WITH the address off the contact card', async () => {
+    const r = await page.evaluate(async (vcf) => {
+      const realCap = window.Capacitor, realPrev = window._showImportPreview;
+      let seen = null;
+      try {
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: (n) => n === 'TdShare' ? {
+          inbox: () => Promise.resolve({ items: [{ path: '/x/td_share_1_a.vcf' }] }),
+          read: () => Promise.resolve({ b64: btoa(vcf), size: vcf.length }),
+          clear: (o) => { window.__cleared = (o && o.paths) || []; return Promise.resolve(); },
+        } : null };
+        window._showImportPreview = (parsed) => { seen = parsed; };
+        const n = await _shareInAsContacts([{ path: '/x/td_share_1_a.vcf' }]);
+        return { n, seen, cleared: window.__cleared || [] };
+      } finally { window.Capacitor = realCap; window._showImportPreview = realPrev; delete window.__cleared; }
+    }, VCF);
+    expect(r.n).toBe(1);
+    expect(r.seen[0].name).toBe('Dana Reyes');
+    expect(r.seen[0].phone).toContain('555-0142');
+    expect(r.seen[0].addr, 'the whole point: the street off the contact').toBe('418 SW Oakley Ave');
+    expect(r.seen[0].city).toBe('Topeka');
+    expect(r.seen[0].state).toBe('KS');
+    expect(r.seen[0].zip).toBe('66606');
+    expect(r.cleared, 'a successful import clears the inbox').toContain('/x/td_share_1_a.vcf');
+  });
+
+  test('a file with no contact in it is NEVER cleared: it stays to try again', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor, realPrev = window._showImportPreview;
+      let called = 0;
+      try {
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: (n) => n === 'TdShare' ? {
+          inbox: () => Promise.resolve({ items: [] }),
+          read: () => Promise.resolve({ b64: btoa('not a contact at all'), size: 20 }),
+          clear: (o) => { window.__cleared = (o && o.paths) || []; return Promise.resolve(); },
+        } : null };
+        window._showImportPreview = () => { called++; };
+        const n = await _shareInAsContacts([{ path: '/x/td_share_2_b.vcf' }]);
+        return { n, called, cleared: window.__cleared };
+      } finally { window.Capacitor = realCap; window._showImportPreview = realPrev; delete window.__cleared; }
+    });
+    expect(r.n).toBe(0);
+    expect(r.called, 'nothing parsed means no preview').toBe(0);
+    expect(r.cleared, 'the file must survive for a retry').toBeUndefined();
+  });
+
+  test('a shared .vcf is typed as a contact, not as a JPEG', async () => {
+    const t = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      try {
+        window.Capacitor = { isNativePlatform: () => true, registerPlugin: (n) => n === 'TdShare' ? {
+          read: () => Promise.resolve({ b64: btoa('BEGIN:VCARD'), size: 11 }),
+        } : null };
+        const b = await _shareInRead('/x/td_share_3_c.vcf');
+        return b && b.type;
+      } finally { window.Capacitor = realCap; }
+    });
+    expect(t).toBe('text/vcard');
+  });
+
+  test('the contact fork is offered ONLY when a contact is actually shared', async () => {
+    const r = await page.evaluate(() => {
+      const out = {};
+      for (const [k, items] of [['vcf', [{ path: '/x/a.vcf' }]], ['photo', [{ path: '/x/a.jpg' }]]]) {
+        document.getElementById('_si-ov')?.remove();
+        _shareInAsking = false;
+        _shareInPrompt(items);
+        out[k] = !!document.getElementById('_si-contact');
+        document.getElementById('_si-ov')?.remove();
+        _shareInAsking = false;
+      }
+      return out;
+    });
+    expect(r.vcf, 'a shared contact must offer the client import').toBe(true);
+    expect(r.photo, 'a photo must not offer "add as a client"').toBe(false);
+  });
+
   test('no console errors during share inbox tests', async () => {
     assertNoErrors(page, 'share inbox');
   });
