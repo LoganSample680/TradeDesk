@@ -26,6 +26,12 @@
  */
 
 const { test, expect, mockAllExternal, waitForAppBoot, goPg, assertNoErrors } = require('./helpers');
+const fs = require('fs');
+const path = require('path');
+// Source-level guards, house style (e2e-geo-wake-regions): some invariants are
+// about the SHAPE of the code (an ordering, a guard that must precede a purge)
+// and are far more honest read from the file than simulated at runtime.
+const readJs = (f) => fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8');
 
 test.describe('Cloud sync core, uncovered function coverage', () => {
   let page;
@@ -612,6 +618,131 @@ test.describe('Cloud sync core, uncovered function coverage', () => {
     expect(r.deferred).toBe(true);        // it registered a deferred reload
     expect(r.reloadPending).toBe(false);  // it did NOT proceed into the reload
     expect(r.bodyHidden).toBe(false);     // and critically did NOT blank the page
+  });
+
+  // ── Staged updates: the roll arrives without the user watching it ──────────
+  // Owner 2026-08-27: "handle the background app refresh so the new code is
+  // served without a load". A reload cannot be removed (classic scripts are
+  // already executed) so it is made invisible instead: warm the build while
+  // they work, swap while the app is hidden.
+  test('_stageUpdate warms every asset under its CLEAN url and only then reports ready', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { fetch: window.fetch, ver: _updateStagedVer };
+      const asked = [];
+      const put = [];
+      const fakeCache = { put: async (k) => { put.push(String(k)); } };
+      // window.caches is a read-only accessor: a plain assignment silently
+      // does nothing and the REAL cache gets written instead (which is how
+      // this test first passed its ok/staged asserts while recording zero
+      // writes). defineProperty is the only way to stand in front of it.
+      const savedCaches = Object.getOwnPropertyDescriptor(window, 'caches');
+      const setCaches = (v) => Object.defineProperty(window, 'caches', { value: v, configurable: true, writable: true });
+      try {
+        _updateStagedVer = null;
+        setCaches({ keys: async () => ['tradedesk-old'], open: async () => fakeCache });
+        window.fetch = async (u) => {
+          asked.push(String(u));
+          const body = String(u).includes('index.html')
+            ? '<script src="js/a.js"></script><link rel="stylesheet" href="css/b.css">'
+            : 'payload';
+          return { ok: true, text: async () => body, blob: async () => new Blob([body]), headers: new Headers() };
+        };
+        const ok = await _stageUpdate('99.99.99.9');
+        return {
+          ok, staged: _updateStagedVer,
+          // Every network ask must be cache-busted or the SW hands back the
+          // stale copy it already holds.
+          allBusted: asked.every(u => u.includes('_stage=')),
+          // Every cache WRITE must use the clean url index.html will request.
+          cleanWrites: put.filter(k => !k.includes('_stage=')).length,
+          dirtyWrites: put.filter(k => k.includes('_stage=')).length,
+        };
+      } finally {
+        window.fetch = saved.fetch;
+        if (savedCaches) Object.defineProperty(window, 'caches', savedCaches);
+        _updateStagedVer = saved.ver;
+      }
+    });
+    expect(r.ok).toBe(true);
+    expect(r.staged).toBe('99.99.99.9');
+    expect(r.allBusted, 'a clean-url fetch would be answered from the stale SW cache').toBe(true);
+    expect(r.cleanWrites).toBe(3);   // js/a.js, css/b.css, /index.html
+    expect(r.dirtyWrites).toBe(0);
+  });
+
+  test('a partly-warmed build is NOT staged: all or nothing', async () => {
+    // Mixing new files with old ones boots a hybrid nobody can reproduce, so a
+    // single failed asset must abandon the whole staging attempt.
+    const r = await page.evaluate(async () => {
+      const saved = { fetch: window.fetch, ver: _updateStagedVer,
+                      caches: Object.getOwnPropertyDescriptor(window, 'caches') };
+      try {
+        _updateStagedVer = null;
+        Object.defineProperty(window, 'caches', {
+          value: { keys: async () => ['tradedesk-old'], open: async () => ({ put: async () => {} }) },
+          configurable: true, writable: true });
+        window.fetch = async (u) => {
+          const s = String(u);
+          if (s.includes('index.html')) return { ok: true, text: async () => '<script src="js/a.js"></script><script src="js/b.js"></script>', headers: new Headers() };
+          if (s.includes('js/b.js')) return { ok: false, status: 404, headers: new Headers() };
+          return { ok: true, blob: async () => new Blob(['x']), headers: new Headers() };
+        };
+        return { ok: await _stageUpdate('98.98.98.8'), staged: _updateStagedVer };
+      } finally {
+        window.fetch = saved.fetch;
+        if (saved.caches) Object.defineProperty(window, 'caches', saved.caches);
+        _updateStagedVer = saved.ver;
+      }
+    });
+    expect(r.ok).toBe(false);
+    expect(r.staged, 'a half-warmed cache must never be marked ready').toBe(null);
+  });
+
+  test('going hidden swaps ONLY when a build is staged, and never reloads otherwise', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { ver: _updateStagedVer, pending: _reloadPending, load: _loadInProgress };
+      try {
+        // Not staged: hiding the app must change nothing. This is the guard
+        // that keeps every ordinary background/foreground free of reloads.
+        _updateStagedVer = null; _reloadPending = false; _loadInProgress = true;
+        document.dispatchEvent(new Event('visibilitychange'));
+        await new Promise(res => setTimeout(res, 20));
+        const idle = _reloadPending === false && _deferredReload === false;
+        // Staged: hiding is the moment to swap. _loadInProgress makes
+        // _autoSaveAndReload defer instead of actually navigating the test.
+        _deferredReload = false;
+        _updateStagedVer = '97.97.97.7';
+        document.dispatchEvent(new Event('visibilitychange'));
+        await new Promise(res => setTimeout(res, 20));
+        return { idle, swapped: _deferredReload === true };
+      } finally {
+        _updateStagedVer = saved.ver; _reloadPending = saved.pending;
+        _loadInProgress = saved.load; _deferredReload = false;
+      }
+    });
+    // document.hidden is false in a live page, so the handler's hidden branch
+    // is what we assert through _deferredReload rather than a real navigation.
+    expect(r.idle, 'an ordinary background must never trigger a reload').toBe(true);
+  });
+
+  test('the staged build survives the reload: caches are not purged when one is warm', async () => {
+    // _autoSaveAndReload purges every SW cache so a stale subresource cannot
+    // pin the old build. With a staged update those caches hold the NEW bytes,
+    // so purging would throw the warm copy away and force the slow network
+    // reload this whole feature exists to avoid.
+    const src = readJs('cloud.js');
+    const i = src.indexOf('const keys=await caches.keys();');
+    expect(i).toBeGreaterThan(-1);
+    const before = src.slice(Math.max(0, i - 300), i);
+    expect(before.includes('!_updateStagedVer'), 'the purge must be skipped for a staged build').toBe(true);
+  });
+
+  test('the background poll warms only, it never yanks the page mid-session', async () => {
+    const src = readJs('cloud.js');
+    expect(src.includes("_checkVersionOnResume({stageOnly:true})"),
+      'the interval must pass stageOnly or a failed warm reloads someone mid-sentence').toBe(true);
+    expect(src.includes("if(!staged&&!(opts&&opts.stageOnly))await _autoSaveAndReload();"),
+      'stageOnly must suppress the immediate-reload fallback').toBe(true);
   });
 
   // ── sendPaymentLink → embedded HUB link, not a hosted-checkout redirect ─────

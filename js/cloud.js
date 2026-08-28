@@ -9519,6 +9519,17 @@ function _showUpdateOverlay(){
 }
 let _reloadPending=false;
 let _deferredReload=false; // a version/SW reload asked to fire mid cold-load, held until the load settles
+// ── Staged updates (owner 2026-08-27: "served without a load") ──────────────
+// A UAT roll used to be felt: the next foreground fetched version.json, saw a
+// mismatch, PURGED every service-worker cache and reloaded, so the user sat
+// through 50 files coming down the wire behind an overlay. Classic scripts
+// cannot be hot-swapped, so a reload is unavoidable; what IS avoidable is the
+// user ever seeing one. The new build is fetched into the cache while they
+// keep working, and the swap happens while the app is out of sight, off warm
+// caches, in milliseconds. They come back to the new version having watched
+// nothing.
+let _updateStagedVer=null;   // version whose assets are warmed and ready
+let _updateStaging=false;    // one warm at a time
 function _snapshotForms(){
   // Capture all visible form inputs so unsaved data (client form, expense
   // modal, log-trip modal, etc.) survives the auto-update reload.
@@ -9581,8 +9592,11 @@ async function _autoSaveAndReload(){
   // leaving the app pinned to the old version forever. Deleting the caches here
   // forces every subresource on the next load to miss and fetch fresh from the
   // network, so the new code actually takes effect.
+  // ...UNLESS a staged update already overwrote those entries with the NEW
+  // build's bytes. Purging then would throw the warm copy away and force
+  // exactly the slow network reload staging exists to prevent.
   try{
-    if(window.caches){
+    if(window.caches&&!_updateStagedVer){
       const keys=await caches.keys();
       await Promise.all(keys.map(k=>caches.delete(k)));
     }
@@ -9640,14 +9654,77 @@ document.addEventListener('visibilitychange',()=>{
 // browser HTTP cache) and compares the live server version to the running
 // APP_VERSION. version.json is the single source of truth, APP_VERSION lives in
 // js/cloud.js, not in index.html, so grepping the HTML never worked.
-async function _checkVersionOnResume(){
+// Pull the new build into the cache the running app will read on its next
+// load. Every fetch carries a one-off ?_stage= so the service worker's
+// cache-first branch MISSES and goes to the network (asking for the clean URL
+// would just hand back the stale copy it already has); the fresh bytes are
+// then written back under the clean URL, which is what index.html will
+// actually request after the reload.
+async function _stageUpdate(ver){
+  if(_updateStagedVer===ver)return true;
+  if(_updateStaging||!window.caches)return false;
+  _updateStaging=true;
+  try{
+    const bust='?_stage='+encodeURIComponent(ver);
+    const r=await fetch('/index.html'+bust,{cache:'reload'});
+    if(!r.ok)return false;
+    const html=await r.text();
+    // Same-origin js/css only. A CDN script is not ours to warm, and an
+    // opaque cross-origin response written into the cache would serve an
+    // unreadable body to the next load.
+    const urls=new Set();
+    const re=/(?:src|href)\s*=\s*"((?!https?:|\/\/|data:)[^"?#]+\.(?:js|css))"/gi;
+    let m;while((m=re.exec(html)))urls.add(m[1].replace(/^\.?\//,''));
+    if(!urls.size)return false;
+    const keys=await caches.keys();
+    const name=keys.find(k=>k.indexOf('tradedesk-')===0)||('tradedesk-staged-'+ver);
+    const c=await caches.open(name);
+    let ok=0;
+    await Promise.all([...urls].map(async u=>{
+      try{
+        const rr=await fetch(u+bust,{cache:'reload'});
+        if(!rr.ok)return;
+        await c.put(u,new Response(await rr.blob(),{status:200,headers:rr.headers}));
+        ok++;
+      }catch(_e){}
+    }));
+    // ALL or nothing. A half-warmed cache is worse than none: the reload
+    // would mix new files with old ones, which is how you get a build that
+    // boots into a broken hybrid nobody can reproduce.
+    if(ok!==urls.size)return false;
+    await c.put('/index.html',new Response(html,{status:200,headers:{'Content-Type':'text/html'}}));
+    _updateStagedVer=ver;
+    return true;
+  }catch(_e){return false;}
+  finally{_updateStaging=false;}
+}
+// stageOnly: the periodic poll may WARM a build but must never yank the page
+// out from under someone mid-sentence. Only a foreground transition (where a
+// reload was already the old behavior) still falls back to reloading on the
+// spot when warming failed.
+async function _checkVersionOnResume(opts){
   try{
     const r=await fetch('version.json?_='+Date.now(),{cache:'no-store'});
     if(!r.ok)return;
     const d=await r.json();
-    if(d&&d.version&&d.version!==APP_VERSION)await _autoSaveAndReload();
+    if(!d||!d.version||d.version===APP_VERSION)return;
+    const staged=await _stageUpdate(d.version);
+    if(!staged&&!(opts&&opts.stageOnly))await _autoSaveAndReload();
   }catch(e){}
 }
-// Fires on foreground resume, SW navigate handler covers fresh opens
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)_checkVersionOnResume();});
+// Poll while the app is up so a roll landing mid-session is warm long before
+// the user next puts the phone down. Warming only; nothing visible happens.
+setInterval(()=>{if(!document.hidden)_checkVersionOnResume({stageOnly:true});},60000);
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){
+    // THE SWAP, and the whole point: the app just went out of sight, the new
+    // build is already on disk, so reload now and it completes off cache in
+    // milliseconds. The overlay still paints (free while hidden) so a reload
+    // iOS suspends before it finishes is covered by a boot screen rather than
+    // a blank page on return.
+    if(_updateStagedVer&&!_reloadPending)_autoSaveAndReload();
+    return;
+  }
+  _checkVersionOnResume();
+});
 
