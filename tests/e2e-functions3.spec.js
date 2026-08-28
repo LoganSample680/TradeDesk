@@ -6497,6 +6497,33 @@ test.describe('Finance tracker, export, and calendar functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // The test above cannot catch a regression here: it wraps the call in a
+  // catch that returns ok:true, so a throw reads as a pass. That is how a
+  // start-less job shipped a crash that took the whole cloud load down
+  // (CI shard 4, 2026-08-28). This one lets the throw land.
+  test('renderCalUpcoming: a job with no start date cannot crash the calendar', async () => {
+    const r = await page.evaluate(() => {
+      const saved = jobs.slice();
+      try {
+        jobs.length = 0;
+        // The exact shape a malformed sync response produces: no start at
+        // all. addDays(undefined,...) returns the string 'NaN-NaN-NaN' and
+        // 'NaN-NaN-NaN' >= todayKey() is TRUE, so this row used to reach a
+        // sort that assumes start is a string.
+        jobs.push({ id: 90001, name: 'No start', days: 1, color: '#185FA5' });
+        jobs.push({ id: 90002, name: 'Null start', start: null, days: 1, color: '#185FA5' });
+        jobs.push({ id: 90003, name: 'Real', start: todayKey(), days: 1, color: '#185FA5' });
+        let threw = null;
+        try { renderCalUpcoming(); } catch (e) { threw = e.message; }
+        const html = document.getElementById('cal-upcoming')?.innerHTML || '';
+        return { threw, showsReal: html.includes('Real'), showsNoStart: html.includes('No start') };
+      } finally { jobs.length = 0; saved.forEach(j => jobs.push(j)); }
+    });
+    expect(r.threw, 'a dateless job must not throw').toBe(null);
+    expect(r.showsReal, 'the good job still renders').toBe(true);
+    expect(r.showsNoStart, 'a job with no date has nothing to show on a calendar').toBe(false);
+  });
+
   test('pullClient: calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof pullClient !== 'function') return { skip: true };
