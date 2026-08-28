@@ -4133,6 +4133,24 @@ async function _geoTdEvent(ev,replay){
   // where a fixless or 3km-cached event could false-exit a fence.
   if(ev.type==='push-ping'||/^app-/.test(String(ev.type||''))){
     if(!replay)_geoParkNote(String(ev.type),ev.acc!=null?Math.round(ev.acc)+'m':'');
+    // THE UPDATE RIDES THE WAKE (owner 2026-08-28). Until now new web code
+    // reached a phone only when somebody opened the app: the version check
+    // fires on foreground resume (js/cloud.js _checkVersionOnResume), so a
+    // backgrounded phone sat on old JS until it was picked up, and then the
+    // owner watched it reload in his hand. Three quick fixes in a row was
+    // three forced reloads on whatever device he was holding.
+    //
+    // The silent push already wakes this app every 30 minutes for a location.
+    // The same wake can carry the update, for one extra tiny request: check
+    // the live version, and if it moved, reload NOW while nobody is looking.
+    // The app is simply already current when they next open it.
+    //
+    // ONLY when hidden. A visible app keeps the existing foreground path,
+    // which is the one that knows how to warn and how to land the user back
+    // where they were. _autoSaveAndReload owns every guard either way: it
+    // defers during an in-flight cold load, snapshots open forms, and saves
+    // before it goes.
+    if(!replay&&ev.type==='push-ping')_geoBgUpdateCheck();
     return;
   }
   if(ev.type==='motion'){
@@ -4235,6 +4253,28 @@ async function _geoConfigureFlush(){
       userId:_supaUser.id,deviceId:devId,key
     });
     window._geoFlushCfgDone=true;
+  }catch(_e){}
+}
+// One version probe per wake, and never while the user is watching. Throttled
+// because a wake can deliver several buffered events at once and each would
+// otherwise fire its own fetch.
+let _geoBgUpdAt=0;
+async function _geoBgUpdateCheck(){
+  try{
+    if(typeof document==='undefined'||!document.hidden)return;   // foreground owns its own path
+    if(Date.now()-_geoBgUpdAt<60000)return;
+    _geoBgUpdAt=Date.now();
+    if(typeof APP_VERSION==='undefined'||!APP_VERSION)return;
+    const r=await fetch('version.json?_='+Date.now(),{cache:'no-store'});
+    if(!r.ok)return;
+    const d=await r.json();
+    if(!d||!d.version||d.version===APP_VERSION)return;
+    // Re-check visibility: the fetch is a round trip and the user may have
+    // opened the app inside it. Reloading in their face is exactly what this
+    // exists to avoid, and the foreground path will catch it a moment later.
+    if(!document.hidden)return;
+    _geoParkNote('bg-update',APP_VERSION+' -> '+d.version);
+    if(typeof _autoSaveAndReload==='function')await _autoSaveAndReload();
   }catch(_e){}
 }
 function _geoTdInit(){

@@ -326,6 +326,84 @@ test.describe('Wake region set for the dead app', () => {
     expect(r.pings).toBe(0);
   });
 
+  // ── The update rides the wake (owner 2026-08-28) ──────────────────────────
+  // New web code used to reach a phone only when somebody opened the app, so
+  // a backgrounded phone sat on old JS and then reloaded in the owner's hand.
+  const bgUpd = (opts) => page.evaluate(async (o) => {
+    const saved = { fetch: window.fetch, reload: window._autoSaveAndReload, hidden: Object.getOwnPropertyDescriptor(Document.prototype, 'hidden') };
+    let reloads = 0, fetches = 0;
+    try {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => o.hidden });
+      window.fetch = async () => { fetches++; return { ok: true, json: async () => ({ version: o.serverVersion }) }; };
+      window._autoSaveAndReload = async () => { reloads++; };
+      _geoBgUpdAt = 0;
+      await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39, lng: -95, acc: 20 });
+      await new Promise(r => setTimeout(r, 60));
+      return { reloads, fetches, running: APP_VERSION };
+    } finally {
+      window.fetch = saved.fetch; window._autoSaveAndReload = saved.reload;
+      delete document.hidden;
+      if (saved.hidden) Object.defineProperty(Document.prototype, 'hidden', saved.hidden);
+      _geoBgUpdAt = 0;
+    }
+  }, opts);
+
+  test('a backgrounded phone on an old version reloads on the push wake', async () => {
+    const r = await bgUpd({ hidden: true, serverVersion: '99.99.99.9' });
+    expect(r.fetches, 'the wake must check the live version').toBe(1);
+    expect(r.reloads, 'a version that moved must reload while nobody is looking').toBe(1);
+  });
+
+  test('a backgrounded phone already current never reloads', async () => {
+    const cur = await page.evaluate(() => APP_VERSION);
+    const r = await bgUpd({ hidden: true, serverVersion: cur });
+    expect(r.fetches).toBe(1);
+    expect(r.reloads, 'same version, nothing to do').toBe(0);
+  });
+
+  test('a VISIBLE app is never reloaded from the wake: the foreground path owns that', async () => {
+    const r = await bgUpd({ hidden: false, serverVersion: '99.99.99.9' });
+    expect(r.fetches, 'a visible app must not even probe').toBe(0);
+    expect(r.reloads, 'reloading in the user\'s face is the thing this avoids').toBe(0);
+  });
+
+  test('several buffered events in one wake cost ONE probe, not one each', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { fetch: window.fetch, reload: window._autoSaveAndReload };
+      let fetches = 0;
+      try {
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+        const cur = APP_VERSION;
+        window.fetch = async () => { fetches++; return { ok: true, json: async () => ({ version: cur }) }; };
+        window._autoSaveAndReload = async () => {};
+        _geoBgUpdAt = 0;
+        for (let i = 0; i < 5; i++) await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39, lng: -95, acc: 20 });
+        await new Promise(r => setTimeout(r, 60));
+        return { fetches };
+      } finally {
+        window.fetch = saved.fetch; window._autoSaveAndReload = saved.reload;
+        delete document.hidden; _geoBgUpdAt = 0;
+      }
+    });
+    expect(r.fetches).toBe(1);
+  });
+
+  test('a REPLAYED buffer never triggers an update: those events are history', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { fetch: window.fetch };
+      let fetches = 0;
+      try {
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+        window.fetch = async () => { fetches++; return { ok: true, json: async () => ({ version: '99.99.99.9' }) }; };
+        _geoBgUpdAt = 0;
+        await _geoTdEvent({ type: 'push-ping', ts: Date.now(), lat: 39, lng: -95, acc: 20 }, true);
+        await new Promise(r => setTimeout(r, 60));
+        return { fetches };
+      } finally { window.fetch = saved.fetch; delete document.hidden; _geoBgUpdAt = 0; }
+    });
+    expect(r.fetches).toBe(0);
+  });
+
   test('the geo-ping cron chain is wired end to end (source guarantee)', async () => {
     // Three files have to agree for the 30-minute nudge to exist at all:
     // the cron workflow, the edge function it calls, and the AppDelegate
