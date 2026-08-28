@@ -177,10 +177,54 @@ test.describe('Wake region set for the dead app', () => {
     // And they beat the FARTHEST places specifically: the tail of the far
     // list must be what fell off the cap, not the nearby homes.
     expect(out.ids).not.toContain('place-far19');
-    // Order inside the pool is nearest-first: the kerb fence leads, then the
-    // three homes before any 7-mile place.
+    // Order changed deliberately (owner 2026-08-27, the parts run). This
+    // fixture's 20 far places are all kind:'supply', so six of them now arm
+    // in the reserved supply tier AHEAD of the pool. Old behavior: the kerb
+    // fence then the three homes, because nothing outranked distance. New
+    // behavior: the kerb fence, six nearest supply houses, then the pool
+    // nearest-first. Both rules still hold and that is the point of the
+    // reservation being six rather than unlimited: every near client keeps
+    // its fence (asserted above) AND a parts run is catchable.
     expect(out.ids[0]).toBe('fence');
-    expect(out.ids.slice(1, 4).sort()).toEqual(['client-901', 'client-902', 'client-903']);
+    expect(out.ids.slice(1, 7).every((id) => /^place-far/.test(id)),
+      'the reserved supply tier arms directly after the kerb: ' + out.ids.join(',')).toBe(true);
+    // Immediately after the reservation, the pool resumes nearest-first, so
+    // the three homes still beat every remaining 7-mile place.
+    expect(out.ids.slice(7, 10).sort()).toEqual(['client-901', 'client-902', 'client-903']);
+  });
+
+  test('the supply tier is reserved, never unlimited: near clients are not starved', async () => {
+    // The failure mode the reservation exists to prevent. Twenty suppliers
+    // with an unbounded tier would take all 18 slots and the client two
+    // blocks away would lose its fence, re-creating the exact bug the pooled
+    // tier was written to fix.
+    const out = await page.evaluate(() => {
+      const savedPlaces = places.slice(), savedClients = clients.slice(), savedJobs = jobs.slice();
+      const savedCache = window._nearbyGeoCache;
+      const savedLat = S.officeLat, savedLon = S.officeLon;
+      try {
+        S.officeLat = null; S.officeLon = null;
+        jobs.length = 0;
+        places.length = 0;
+        for (let i = 0; i < 20; i++) places.push({ id: 'sup' + i, kind: 'supply', lat: 39.1 + i * 0.01, lon: -94.5 });
+        clients.length = 0;
+        clients.push({ id: 911, name: 'Two blocks', addr: '1 Close St' });
+        window._nearbyGeoCache = () => ({ 911: { addr: '1 Close St', lat: 39.001, lon: -94.001 } });
+        const regs = _geoParkRegions({ lat: 39.0, lng: -94.0 }, 200);
+        const ids = regs.map(r => r.id);
+        return { ids, supplyCount: ids.filter(i => /^place-sup/.test(i)).length };
+      } finally {
+        places.length = 0; savedPlaces.forEach(p => places.push(p));
+        clients.length = 0; savedClients.forEach(c => clients.push(c));
+        jobs.length = 0; savedJobs.forEach(j => jobs.push(j));
+        window._nearbyGeoCache = savedCache;
+        S.officeLat = savedLat; S.officeLon = savedLon;
+      }
+    });
+    expect(out.ids, 'the nearby client must keep its fence').toContain('client-911');
+    // Six reserved, and the rest only via the pool: the tier itself cannot
+    // grow past its reservation.
+    expect(out.ids.slice(1, 7).every((id) => /^place-sup/.test(id))).toBe(true);
   });
 
   test('junk input cannot break the builder', async () => {
@@ -304,6 +348,57 @@ test.describe('Wake region set for the dead app', () => {
       } finally { window._geoOnPing = saved.ping; }
     });
     expect(r.pings).toBe(0);
+  });
+
+  // The parts run (owner 2026-08-27). It happens WHILE parked, with live GPS
+  // shut down, so a fence at the counter is the only thing that can catch it.
+  test('a far-off supply house still gets a wake fence, ahead of nearer places', async () => {
+    const out = await page.evaluate(() => {
+      const savedPlaces = places.slice(), savedClients = clients.slice(), savedJobs = jobs.slice();
+      try {
+        places.length = 0; clients.length = 0; jobs.length = 0;
+        // 20 ordinary places right on top of the park spot: more than the
+        // 18-region cap, so without its own tier the supply house 30 miles
+        // away loses every slot and the parts run logs nothing.
+        for (let i = 0; i < 20; i++) {
+          places.push({ id: 'near-' + i, kind: 'other', lat: 39.0 + i * 0.0001, lon: -95.7 });
+        }
+        places.push({ id: 'sup-far', kind: 'supply', lat: 39.5, lon: -95.7 });
+        const regs = _geoParkRegions({ lat: 39.0, lng: -95.7 });
+        return {
+          ids: regs.map(r => r.id),
+          hasSupply: regs.some(r => r.id === 'place-sup-far'),
+          count: regs.length,
+        };
+      } finally {
+        places.length = 0; savedPlaces.forEach(p => places.push(p));
+        clients.length = 0; savedClients.forEach(c => clients.push(c));
+        jobs.length = 0; savedJobs.forEach(j => jobs.push(j));
+      }
+    });
+    expect(out.hasSupply, 'a saved supply house must always get a fence: ' + out.ids.join(',')).toBe(true);
+    expect(out.count, 'the region cap still holds').toBeLessThanOrEqual(18);
+  });
+
+  test('many supply houses arm nearest-first, and none is ever duplicated', async () => {
+    const out = await page.evaluate(() => {
+      const savedPlaces = places.slice(), savedClients = clients.slice(), savedJobs = jobs.slice();
+      try {
+        places.length = 0; clients.length = 0; jobs.length = 0;
+        places.push({ id: 'sup-far', kind: 'supply', lat: 39.9, lon: -95.7 });
+        places.push({ id: 'sup-near', kind: 'supply', lat: 39.01, lon: -95.7 });
+        places.push({ id: 'sup-mid', kind: 'supply', lat: 39.2, lon: -95.7 });
+        const regs = _geoParkRegions({ lat: 39.0, lng: -95.7 });
+        const sup = regs.map(r => r.id).filter(id => id.startsWith('place-sup'));
+        return { sup, uniq: new Set(regs.map(r => r.id)).size === regs.length };
+      } finally {
+        places.length = 0; savedPlaces.forEach(p => places.push(p));
+        clients.length = 0; savedClients.forEach(c => clients.push(c));
+        jobs.length = 0; savedJobs.forEach(j => jobs.push(j));
+      }
+    });
+    expect(out.sup).toEqual(['place-sup-near', 'place-sup-mid', 'place-sup-far']);
+    expect(out.uniq, 'the supply tier must not re-add what the pool already armed').toBe(true);
   });
 
   test('lifecycle and push-ping events never reach the fence machine', async () => {

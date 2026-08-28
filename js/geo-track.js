@@ -2347,6 +2347,35 @@ function _geoParkRegions(spot,spotRadius){
       if(c)push('job-'+j.id,c.lat,c.lng);
     });
   }catch(_e){}
+  // SUPPLY HOUSES ARE THEIR OWN TIER (owner 2026-08-27: "parts run would work
+  // as long as there is a saved place listed as supply house, that's what I
+  // want"). A parts run is the one errand that happens WHILE parked with the
+  // live GPS shut down, so the only thing that can catch it is a fence at the
+  // counter. In the pooled tier below, a supply house thirty miles gone loses
+  // every slot to nearer places and the run logs nothing: no arrival, no
+  // deductible miles, no time off the job. Arming them ahead of the pool is
+  // what makes the parts run work at all.
+  //
+  // RESERVED, NOT UNLIMITED. An account with twenty saved suppliers would
+  // otherwise eat all 18 slots and starve the client home two blocks away,
+  // which is the exact starvation the pooled tier below exists to prevent.
+  // Six is the reservation: more than any contractor's real rotation of
+  // regular suppliers, small enough that jobs, clients and the kerb keep
+  // room. Distance-ordered among themselves, so the six armed are the ones
+  // actually reachable, and any leftovers still compete in the pool below.
+  const _SUPPLY_SLOTS=6;
+  try{
+    const sup=(typeof places!=='undefined'&&Array.isArray(places)?places:[])
+      .filter(pl=>pl&&pl.kind==='supply'&&pl.lat!=null&&pl.lon!=null)
+      .map(pl=>({id:'place-'+pl.id,lat:pl.lat,lng:pl.lon,
+                 radius:pl.fenceFt?pl.fenceFt*0.3048+60:undefined}));
+    const a0=spot||_geoLastFenceLoc||null;
+    if(a0&&a0.lat!=null){
+      sup.forEach(p=>{p._ft=_geoDistFt({lat:p.lat,lng:p.lng},{lat:a0.lat,lng:a0.lng});});
+      sup.sort((a,b)=>a._ft-b._ft);
+    }
+    sup.slice(0,_SUPPLY_SLOTS).forEach(p=>push(p.id,p.lat,p.lng,p.radius));
+  }catch(_e){}
   // Places and clients compete for whatever slots the tiers above left, and
   // NEAREST TO THE PARK SPOT WINS, pooled together (owner question
   // 2026-08-27: a day with no scheduled jobs, just driving to client homes).
