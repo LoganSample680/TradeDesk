@@ -289,6 +289,57 @@ test.describe('Home office: presence is not work', () => {
     });
   });
 
+  test.describe('a home office that is NOT the shop', () => {
+    // The configuration the first beta user actually has: a home_office place
+    // at the house and the business address ten miles away. The describes
+    // above all put the shop ON the house, where the shop fence wins and the
+    // place path never runs at all, which is exactly why they stayed green
+    // through the defect below for nine days.
+    test.beforeEach(async () => {
+      await page.evaluate((d) => {
+        S.officeLat = 41.0; S.officeLon = -92.0;      // yard far away, out of the picture
+        S.teamTracking = true;
+        if (typeof places !== 'undefined') places.length = 0;
+        savePlace({ id: 'ho-2ping', name: 'Home Office', kind: 'home_office',
+                    lat: d.HOME.lat, lon: d.HOME.lon, confirmedBy: 'manual' });
+      }, { HOME });
+    });
+
+    test('the office minutes survive a two-ping exit, which is the only kind a place fence has', async () => {
+      // Caught by the live flow test on the self-hosted runner, 2026-08-29:
+      // the Loading row landed and the Office row did not exist at all.
+      //
+      // The sampler's comment said the tally "deliberately SURVIVES the first
+      // ping outside the fence... the closers run later in this same ping".
+      // True when written, wrong from 2026-08-20, when a place/client exit
+      // started requiring the pending-then-confirming PAIR: the place closer
+      // then ran on the SECOND outside ping, by which time `!_geoWasAtHome`
+      // had already nulled the tally. Every home-office visit closed through
+      // the place path silently lost its paperwork minutes.
+      // Ten pings across forty minutes, so each sample is four minutes and the
+      // sampler's five-minute per-sample cap never binds: nine credited gaps of
+      // four minutes is 36, and that is the number the row must carry. (At five
+      // pings the same forty minutes correctly credits only 20, because the cap
+      // is what stops a phone pocketed for an hour dumping the hour in on one
+      // tap. Worth knowing before reading this number as a bug.)
+      const rows = await occupy({ origin: HOME, dwellMins: 40, pings: 10, interact: true });
+      const place = rows.filter(r => r._tbl === 'job_time_entries' && /^place/.test(r.source || ''));
+      expect(place.length, 'the place path wrote a row at all').toBeGreaterThan(0);
+      const office = place.find(r => r.source === 'place-office');
+      expect(office, 'the paperwork row exists').toBeTruthy();
+      expect(office.minutes).toBeGreaterThanOrEqual(34);
+      expect(office.minutes).toBeLessThanOrEqual(38);
+    });
+
+    test('and the night still bills nothing through that same two-ping exit', async () => {
+      // The other half: the fix must not have bought the office minutes back
+      // by handing the closer a wall-clock fallback again.
+      const rows = await occupy({ origin: HOME, dwellMins: 14 * 60, pings: 6, interact: false });
+      const place = rows.filter(r => r._tbl === 'job_time_entries' && /^place/.test(r.source || ''));
+      expect(place.length).toBe(0);
+    });
+  });
+
   test.describe('the two predicates', () => {
     test('home office is recognised only where the contractor tagged one', async () => {
       const out = await page.evaluate((d) => {
@@ -338,9 +389,16 @@ test.describe('Home office: presence is not work', () => {
 
     test('the tally survives exactly the ping that closes the visit', async () => {
       // The ordering trap: the sampler runs BEFORE the fence machine, so if it
-      // cleared on first sight of an outside coordinate, the closer running later
-      // in that same ping would read null and fall straight back to wall clock,
-      // putting the whole night back. One ping of carry-over, then gone.
+      // cleared on first sight of an outside coordinate, the closer running
+      // later in that same ping would read null and fall straight back to wall
+      // clock, putting the whole night back.
+      //
+      // "One ping of carry-over, then gone" is what this used to assert, and
+      // that fixed ping count is the assumption the 2026-08-29 defect was made
+      // of: a place exit takes TWO outside pings to confirm, so the closer runs
+      // on the second and the tally was already gone. The tally now lives as
+      // long as the VISIT does. It survives every ping the exit confirmation
+      // takes, and goes once the visit is closed and we are still away.
       const out = await page.evaluate((d) => {
         places.length = 0;
         savePlace({ name: 'Home Office', kind: 'home_office', lat: d.HOME.lat, lon: d.HOME.lon, confirmedBy: 'manual' });
@@ -354,15 +412,18 @@ test.describe('Home office: presence is not work', () => {
             const atHome = !!_geoHomeDwell;
             await ping(d.ROAD);
             const firstOut = !!_geoHomeDwell;
-            await ping(d.ROAD);
+            await ping(d.ROAD);          // this one confirms the exit and closes the visit
             const secondOut = !!_geoHomeDwell;
-            return { atHome, firstOut, secondOut };
+            await ping(d.ROAD);          // nothing open any more
+            const thirdOut = !!_geoHomeDwell;
+            return { atHome, firstOut, secondOut, thirdOut };
           })();
         } finally { _geoEnqueue = realEnq; _supaUser = realUser; }
       }, { HOME, ROAD });
       expect(out.atHome).toBe(true);
       expect(out.firstOut).toBe(true);
-      expect(out.secondOut).toBe(false);
+      expect(out.secondOut, 'the ping that CLOSES the visit must still see it').toBe(true);
+      expect(out.thirdOut, 'and once nothing is open it goes').toBe(false);
     });
 
     // The home-dwell stale-minutes regression test lives in "the shop is the

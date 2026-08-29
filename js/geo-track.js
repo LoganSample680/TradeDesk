@@ -889,10 +889,28 @@ async function _geoOnPing(pos){
   // (phone pocketed for an hour, then reopened) dumping that whole hour in as
   // active on the strength of one tap.
   //
-  // The tally deliberately SURVIVES the first ping outside the fence. That ping
-  // is the one that closes the visit, and the closers run later in this same
-  // ping, so clearing on sight would hand them a null and they would silently
-  // fall back to wall-clock: the whole night back again.
+  // The tally deliberately SURVIVES leaving the fence, because the ping that
+  // closes the visit is itself an outside ping and the closers run later in
+  // that same ping. Clearing on sight would hand them a null.
+  //
+  // "The first ping outside" is what this used to wait for, and it was right
+  // when it was written and wrong from 2026-08-20, when a place/client exit
+  // started requiring the pending-then-confirming PAIR. From then on the place
+  // closer ran on the SECOND outside ping, by which time `!_geoWasAtHome` had
+  // already nulled the tally, so every home-office visit closed through the
+  // place path silently lost its paperwork minutes. The shop path hid it for
+  // nine days: the shop still closes on the first outside ping, so every test
+  // in this file above ran green straight through the defect. The live flow
+  // test on the self-hosted runner is what found it (2026-08-29: the Loading
+  // row landed, the Office row did not exist).
+  //
+  // So the tally now lives as long as the VISIT does, which is the thing it
+  // actually belongs to, rather than for a fixed number of pings. While a
+  // place visit is still open (_geoPlaceArrivedAt is only cleared in section 4
+  // below, AFTER the closers have run) it survives however many pings the exit
+  // confirmation takes. A stale object can still never be inherited by a later
+  // visit: the re-arm check below starts a fresh tally whenever the one it
+  // finds has been read.
   const _atHome=_geoAtHomeOffice(here);
   if(_atHome){
     // .closed (set by the closer once it has read this dwell, see
@@ -916,7 +934,7 @@ async function _geoOnPing(pos){
       }
       _geoHomeDwell.lastSampleMs=nowMs;
     }
-  }else if(!_geoWasAtHome)_geoHomeDwell=null;   // a ping later, nothing left to close
+  }else if(!_geoWasAtHome&&!_geoPlaceArrivedAt)_geoHomeDwell=null;  // away, and nothing left to close
   _geoWasAtHome=_atHome;
   // ── ONE fence state machine ───────────────────────────────────────────────
   // Four things can contain a truck: a JOB fence, the SHOP, a saved PLACE (a
