@@ -39,6 +39,17 @@ const FLOW = 'geo/home-office-time';
 // place fence, and the whole walk stays in open Kansas farmland well away from
 // every seeded client and job.
 const RUNSLOT = (Date.now() / 60000 | 0) % 100;
+// AND A DIFFERENT NAME EVERY RUN, for the same §12.7 reason and a different
+// sweep. _geoDedupTimeEntries dedupes on (employee, dest_place, overlapping
+// window), and its `onSite` predicate matches /^(place)-/, so it sees both new
+// sources. Every run writes its rows at the same offsets from "now" under the
+// same place name, so run N+1's window overlaps run N's leftovers and the
+// sweep correctly soft-deletes one about a second after it lands. Every
+// deletion observed on 2026-08-29 is accounted for by that rule and none of
+// them was a product defect: the sweep was right, the spec was manufacturing
+// its own duplicates. A per-run name makes sameTarget false across runs, so
+// each run only ever dedupes against itself.
+const HOME_NAME = 'E2E Home Office ' + RUNSLOT;
 const HOME = { lat: 38.4211 + RUNSLOT * 0.01, lon: -96.1877 };
 const ROAD = { lat: 38.4211 + RUNSLOT * 0.01 + 0.27, lon: -96.5400 };
 
@@ -84,13 +95,13 @@ test.describe('home office: loading up and office work', () => {
       ruleText: 'a place saved as a home office must come back as one, because every rule below keys off that kind',
       expected: 'places[] carries kind home_office at these coords',
       act: async (p) => {
-        await p.evaluate(({ placeId, HOME }) => {
-          savePlace({ id: placeId, name: 'E2E Home Office', kind: 'home_office',
+        await p.evaluate(({ placeId, HOME, HOME_NAME }) => {
+          savePlace({ id: placeId, name: HOME_NAME, kind: 'home_office',
                       lat: HOME.lat, lon: HOME.lon, confirmedBy: 'manual' });
           // The yard is elsewhere, so shop dwell can never claim these pings.
           S.officeLat = 39.9; S.officeLon = -94.9;
           if (typeof jobs !== 'undefined') { window.__origJobs = jobs.slice(); jobs.length = 0; }
-        }, { placeId: savedId, HOME });
+        }, { placeId: savedId, HOME, HOME_NAME });
         return 1;
       },
       rule: async (p) => {
