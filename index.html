@@ -532,6 +532,33 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
      wrapped column. Stack label above value instead, full width. */
   .bk-tbl td[data-label="Job site"]{display:block;text-align:left}
   .bk-tbl td[data-label="Job site"]::before{display:block;margin-bottom:4px}
+  /* TIME LOG: two lines, never six (owner 2026-08-29, "how can we make that
+     part look more streamlined"). The generic stacking above turns every cell
+     into its own labelled line, which is right for a money table of four
+     fields and wrong for a time entry of six: it printed PERSON (redundant
+     inside that person's own card), a blank WEEK TOTAL, and CLOCK IN and
+     CLOCK OUT on separate rows. List guidance is the most distinguishing
+     content left, the metric right, and no more than three lines.
+     So: where on the left, duration on the right, the time range under it,
+     and the two dead fields gone. Scoped to .tl-tbl so the money tables keep
+     the card treatment they were designed for. */
+  .bk-tbl.tl-tbl tr{display:grid;grid-template-columns:1fr auto auto;align-items:baseline;column-gap:6px;row-gap:2px;padding:9px 12px}
+  .bk-tbl.tl-tbl td{display:block;border-bottom:none;padding:0;text-align:right;font-size:12px}
+  .bk-tbl.tl-tbl td::before{content:none}
+  /* Person and Week total carry nothing here: one is the card you are already
+     inside, the other is a running figure the card header already shows. */
+  .bk-tbl.tl-tbl td[data-label="Person"],
+  .bk-tbl.tl-tbl td[data-label="Week total"]{display:none}
+  .bk-tbl.tl-tbl td[data-label="Job site"]{grid-column:1;grid-row:1/span 2;text-align:left;align-self:center;min-width:0}
+  .bk-tbl.tl-tbl td[data-label="Duration"]{grid-column:2/span 2;grid-row:1;font-size:14px;font-weight:800;white-space:nowrap}
+  /* The range reads as ONE value, so the two cells sit side by side on the
+     second line with an en dash between them rather than each claiming a row. */
+  .bk-tbl.tl-tbl td[data-label="Clock In"]{grid-column:2;grid-row:2;color:var(--text-3);white-space:nowrap}
+  .bk-tbl.tl-tbl td[data-label="Clock In"]::after{content:" –"}
+  .bk-tbl.tl-tbl td[data-label="Clock Out"]{grid-column:3;grid-row:2;color:var(--text-3);white-space:nowrap}
+  /* The action button, when there is one, sits under the range. */
+  .bk-tbl.tl-tbl td[data-label=""]{grid-column:2/span 2;grid-row:3;padding-top:6px}
+  .bk-tbl.tl-tbl td[data-label=""]:empty{display:none}
 }
 .row-bb{padding:6px 0;border-bottom:1px solid var(--line);font-size:12px}
 .row-bb:last-child{border:none}

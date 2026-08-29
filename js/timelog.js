@@ -1048,7 +1048,7 @@ function _tlEmpAccHtml(cacheKey,rows,cid,selfUid,mo){
       name:(empRows.find(r=>r&&r.personName)||{}).personName||'Crew'};
     const card=_tlEmpCardHtml(uid,e,selfUid,_tlFlagChips(_tlEmpFlags(empRows)));
     const dayRows=empRows.slice().sort((a,b)=>(b.startTime||'').localeCompare(a.startTime||''));
-    const body=_bkRenderDays('tl',safeMo+'e'+i,dayRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,fm,{closed:true,metaFn:dr=>{
+    const body=_bkRenderDays('tl',safeMo+'e'+i,dayRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,fm,{closed:true,tblClass:'tl-tbl',metaFn:dr=>{
       const min=_tlPaidMin(dr);
       const amt=fm(min);
       return min>1440
@@ -1265,7 +1265,7 @@ function _tlRenderWeekBody(cacheKey){
     '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)">'+
       '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:0 2px 6px">Entries</div>'+
       _bkRenderDays('tl',mo,entryRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,fm,
-        scope==='team'?{closed:true}:{closed:true,metaFn:dr=>{
+        scope==='team'?{closed:true,tblClass:'tl-tbl'}:{closed:true,tblClass:'tl-tbl',metaFn:dr=>{
           const min=dr.filter(r=>!r.unpaid).reduce((s,r)=>s+(r.minutes||0),0);
           const amt=fm(min);
           return min>1440
