@@ -47,6 +47,25 @@ Talk to the owner like a person, not a compiler. Every reply:
 
 This rule is mandatory and applies to every response, not just summaries.
 
+### Answer length: short by default (owner mandate 2026-08-29)
+
+Owner: "don't care to read through all this shit, need clear answers to my
+question, short action items."
+
+- **Answer the question first, in one or two sentences.** Then stop. Add detail
+  only if it changes what the owner does next.
+- **Hard default: 6 lines.** A findings report or a design proposal may go
+  longer; nothing else may.
+- **Brainstorming = answer + numbered action items.** No essays, no research
+  dumps, no competitor tables unless asked.
+- **Building = one line per thing changed, one line for what's next.**
+- **Never re-state open items** the owner has already been told. Say them once.
+- **No tallies, no scorekeeping, no narrating your own process.** He does not
+  need to know how many bugs were found or how hard it was.
+- **No status noise on webhooks** (§1.2 already says this): silence, not a
+  paragraph about why silence.
+- Tables only when comparing three or more things. Otherwise prose or a list.
+
 ---
 
 ## 0. The Loop (plain English: read this first)
