@@ -770,6 +770,55 @@ test.describe('Home office: presence is not work', () => {
       expect(out.enq.length).toBe(0);
     });
 
+    test('the relabel fixes customer visits already written as supply runs', async () => {
+      // Owner 2026-08-29: "code should fix Laurie and today's jobs." Keyed on
+      // client_key, which both writers have always stamped '-vis-client-'
+      // into, so a saved place that happens to share a customer's name is
+      // never swept up by accident.
+      const out = await page.evaluate(async () => {
+        const realSupa = _supa, realUser = _supaUser;
+        const updated = [];
+        _supaUser = { id: 'u-home' };
+        _supa = { from: () => ({
+          select: () => ({ is: () => ({ eq: () => ({ eq: () => ({ gte: async () => ({ data: [
+            { id: 'r1', client_key: '987ebc83-vis-client-1787361287073-aaa', source: 'place', dest_place: 'Laurie Schonfeldt' },
+            { id: 'r2', client_key: '987ebc83-vis-client-1787361287073-bbb', source: 'place', dest_place: 'Laurie Schonfeldt' },
+            { id: 'r3', client_key: '987ebc83-vis-place-1787001824911-ccc', source: 'place', dest_place: 'The Home Depot' },
+            { id: 'r4', client_key: '', source: 'place', dest_place: 'Mystery' },
+          ] }) }) }) }) }),
+          update: (patch) => ({ in: async (_c, ids) => { updated.push({ patch, ids }); return {}; } }),
+        }) };
+        try {
+          window._geoClientRelabelRan = false;
+          const n = await _geoClientRelabelSweep();
+          return { n, updated };
+        } finally { _supa = realSupa; _supaUser = realUser; }
+      });
+      expect(out.n).toBe(2);
+      expect(out.updated.length).toBe(1);
+      expect(out.updated[0].patch).toEqual({ source: 'client' });
+      expect(out.updated[0].ids.sort(), 'the supply house and the keyless row are left alone').toEqual(['r1', 'r2']);
+    });
+
+    test('the relabel runs once per session and no-ops with nothing to fix', async () => {
+      const out = await page.evaluate(async () => {
+        const realSupa = _supa, realUser = _supaUser;
+        _supaUser = { id: 'u-home' };
+        _supa = { from: () => ({ select: () => ({ is: () => ({ eq: () => ({ eq: () => ({ gte: async () => ({ data: [] }) }) }) }) }) }) };
+        try {
+          window._geoClientRelabelRan = false;
+          const a = await _geoClientRelabelSweep();
+          window._geoClientRelabelRan = false;
+          let threw = null;
+          _supa = null;                                   // signed out mid-session
+          try { await _geoClientRelabelSweep(); } catch (e) { threw = String(e); }
+          return { a, threw };
+        } finally { _supa = realSupa; _supaUser = realUser; }
+      });
+      expect(out.a).toBe(0);
+      expect(out.threw).toBeNull();
+    });
+
     test('a customer visit is on-site work, never a supply run', async () => {
       // Owner 2026-08-29: "why did Laurie go as supply run when she was a
       // lead? That shouldn't happen." _geoCloseClientEntry wrote 'place', the

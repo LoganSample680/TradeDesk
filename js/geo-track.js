@@ -5933,6 +5933,46 @@ async function _geoTapeSync(){
     return (r&&r.ok)?batch.length:0;
   }catch(_e){return 0;}
 }
+// ── Relabel customer visits that were written as supply runs ────────────────
+// Owner 2026-08-29: "code should fix Laurie and today's jobs."
+//
+// _geoCloseClientEntry wrote source 'place' until today, so every customer
+// visit already on record is pooled with the supply house and billed as
+// overhead. Fixing the writer only helps visits closed from here on; this
+// corrects the ones already sitting in the log.
+//
+// KEYED ON client_key, NOT ON THE NAME. Both writers, the app's own closer and
+// the server-side ingest (visKeyOf), have always minted '-vis-client-' into
+// the key for a customer visit, so the row already says what it is with no
+// guessing and no risk of a place happening to share a customer's name. That
+// is also why this is an UPDATE and not a delete-and-rewrite: nothing about
+// the visit changes except the word for what it was, so the row keeps its id,
+// its history and anything already pointing at it.
+async function _geoClientRelabelSweep(){
+  try{
+    if(window._geoClientRelabelRan)return 0;
+    window._geoClientRelabelRan=true;
+    if(!_supa||!_supaUser)return 0;
+    const since=new Date(Date.now()-90*86400000).toISOString();
+    const{data,error}=await _supa.from('job_time_entries')
+      .select('id,client_key,source,dest_place').is('deleted_at',null)
+      .eq('employee_user_id',_supaUser.id).eq('source','place')
+      .gte('arrived_at',since);
+    if(error||!Array.isArray(data)||!data.length)return 0;
+    const ids=data.filter(r=>r&&r.id!=null&&/-vis-client-/.test(String(r.client_key||''))).map(r=>r.id);
+    if(!ids.length)return 0;
+    // Chunked for the same reason every other bulk write here is: one oversized
+    // `in` list is a request that can fail whole rather than in part.
+    let done=0;
+    for(let i=0;i<ids.length;i+=100){
+      const chunk=ids.slice(i,i+100);
+      const{error:uErr}=await _supa.from('job_time_entries').update({source:'client'}).in('id',chunk);
+      if(!uErr)done+=chunk.length;
+    }
+    _geoParkNote('client-relabel','found '+ids.length+' fixed '+done);
+    return done;
+  }catch(_e){return 0;}
+}
 // ── Re-grade home-office visits that closed under the old rule ──────────────
 // Owner 2026-08-29: "why can't we re-read the coremotion tape and patch it in
 // retro then ensure it works live going forward."
