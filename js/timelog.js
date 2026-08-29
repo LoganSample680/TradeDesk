@@ -1005,31 +1005,139 @@ function _tlAvatarLabel(name){
 // cost still lives in Crew Cost (_crewCostRender); this is purely a time
 // report. Works on any row subset (a whole week or one drilled-down day),
 // the caller decides the scope. selfUid tags the viewer's own row "(you)".
-function _tlWeekOwnerHtml(byEmp,selfUid){
-  const uids=Object.keys(byEmp).sort((a,b)=>byEmp[b].min-byEmp[a].min);
+// What on this person's rows actually needs a human (research 2026-08-29:
+// "most timesheets require no intervention, with flags ensuring the ones
+// that do get proper attention. The exception report should be short").
+// So the collapsed card carries a COUNT, not a list, and the count is only
+// ever things somebody has to decide about. A clean week shows nothing.
+// ── One card per person, not one list for everybody (owner 2026-08-29) ─────
+// "don't want everybodies time mixing together, must be structured by day,
+// week, month and year by employee."
+//
+// Month and week were already accordions; the entries under them were one
+// interleaved table, so Team scope was the only place the structure broke
+// down. This is the missing level, and it is built on _bkWeekAcc's own
+// open/close mechanics (§7.3) rather than a fourth accordion style: same
+// chevron, same toggle, same class names, so it looks and behaves like every
+// other collapsible surface in Books.
+//
+// Collapsed shows what the research says a contractor scans for: who, how
+// long, how it split, and whether anything needs them. Open shows their days
+// and their rows, nobody else's.
+function _tlEmpAccHtml(cacheKey,rows,cid,selfUid,mo){
+  const byEmp=_tlEmpWeekAgg(rows,cid);
   const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
-  return uids.map(uid=>{
-    const e=byEmp[uid];
-    const name=e.name||'Crew';
-    const pal=_tlAvatarPalette(name);
-    const parts=[];
-    if(e.onsiteMin>3)parts.push('On-site '+fm(e.onsiteMin));
-    if(e.driveMin>3)parts.push('Drive '+fm(e.driveMin));
-    if(e.placeMin>3)parts.push('Supply/other '+fm(e.placeMin));
-    if((e.shopMin||0)>3)parts.push('Shop '+fm(e.shopMin));
-    const total=(e.onsiteMin+e.driveMin+e.placeMin+(e.shopMin||0))||1;
-    const pOn=(e.onsiteMin/total*100).toFixed(1),pDr=(e.driveMin/total*100).toFixed(1),pPl=(e.placeMin/total*100).toFixed(1),
-          pSh=((e.shopMin||0)/total*100).toFixed(1);
-    const otBadge=e.weekOT?'<span class="tl-ot-badge" title="'+escHtml(name)+' logged 40+ hrs this week, verify overtime eligibility with your state; not payroll advice">OT</span>':'';
-    const youTag=(selfUid&&String(uid)===String(selfUid))?' <span style="color:var(--text3);font-weight:600;font-size:11px">(you)</span>':'';
-    return '<div class="tl-emp-row'+(e.weekOT?' ot':'')+'">'+
-      '<div class="tl-avatar" style="background:'+pal.bg+';color:'+pal.fg+'">'+escHtml(_tlAvatarLabel(name))+'</div>'+
-      '<div class="tl-emp-mid"><div class="tl-emp-name-row"><span class="tl-emp-name">'+escHtml(name)+'</span>'+youTag+otBadge+'</div>'+
-        '<div class="tl-split"><div class="tl-split-bar"><span style="width:'+pOn+'%;background:var(--blue)"></span><span style="width:'+pDr+'%;background:#9F5B00"></span><span style="width:'+pPl+'%;background:var(--text3)"></span><span style="width:'+pSh+'%;background:var(--c-teal,#0E6B6B)"></span></div>'+
-        '<div class="tl-split-legend">'+parts.join(' · ')+'</div></div></div>'+
-      '<div class="tl-emp-total">'+fm(e.min)+'</div>'+
+  // Unpaid rows carry no paid minutes so they never reach _tlEmpWeekAgg, but
+  // an unaccounted stretch is exactly what the card must flag. Bucket every
+  // row by person here, paid or not.
+  const rowsBy={};
+  rows.forEach(r=>{const uid=String((r&&r.personUid)||cid);(rowsBy[uid]||(rowsBy[uid]=[])).push(r);});
+  const flagged=f=>!!(f.bigDay||f.open||f.gaps||f.ot);
+  // Anything needing a human sorts first, then longest week: the exception
+  // surfaces without hunting, and past that the biggest payroll exposure
+  // leads (research 2026-08-29, exception-based review).
+  const uids=Object.keys(rowsBy).sort((a,b)=>{
+    const sa=flagged(_tlEmpFlags(rowsBy[a]))?1:0,sb=flagged(_tlEmpFlags(rowsBy[b]))?1:0;
+    if(sa!==sb)return sb-sa;
+    return ((byEmp[b]||{}).min||0)-((byEmp[a]||{}).min||0);
+  });
+  const safeMo=String(mo).replace(/[^0-9a-z]/gi,'');
+  return uids.map((uid,i)=>{
+    const empRows=rowsBy[uid];
+    const e=byEmp[uid]||{min:0,onsiteMin:0,driveMin:0,placeMin:0,shopMin:0,
+      name:(empRows.find(r=>r&&r.personName)||{}).personName||'Crew'};
+    const card=_tlEmpCardHtml(uid,e,selfUid,_tlFlagChips(_tlEmpFlags(empRows)));
+    const dayRows=empRows.slice().sort((a,b)=>(b.startTime||'').localeCompare(a.startTime||''));
+    const body=_bkRenderDays('tl',safeMo+'e'+i,dayRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,fm,{closed:true,metaFn:dr=>{
+      const min=_tlPaidMin(dr);
+      const amt=fm(min);
+      return min>1440
+        ?'<span style="font-weight:800;color:var(--c-red-deep)" title="'+escHtml(amt)+' in one day is not physically possible, this entry needs review">'+svgIcon('⚠',{size:11})+' Data error</span>'
+        :dr.length+' · '+amt;
+    }});
+    // _bkTogWeek's own DOM contract (id, .bk-week, .bk-week-body), so the
+    // shell opens and closes with the same code every other Books accordion
+    // uses. Built here rather than through _bkWeekAcc because that helper
+    // wraps its label in a title div and prints its own total, and the card
+    // already carries both.
+    const id=safeMo+'-'+i;
+    return '<div id="bk-tlemp-wk-'+id+'" class="bk-week">'+
+      '<button class="bk-week-hd" onclick="_bkTogWeek(\'tlemp\',\''+safeMo+'\',\''+i+'\')" style="align-items:center;gap:6px">'+
+        '<div style="flex:1;min-width:0">'+card+'</div>'+
+        '<div class="bk-week-chev">▸</div>'+
+      '</button>'+
+      '<div class="bk-week-body" style="display:none">'+body+'</div>'+
     '</div>';
   }).join('');
+}
+// PAID minutes, which is what every total on this page means (owner rule
+// 2026-08-29: "unaccounted for time doesn't count to the total unless it's
+// added"). The per-employee aggregate, the weekly running total and the OT
+// calc have always skipped unpaid; the month, week, year and scope HEADLINES
+// summed everything, so a week with a two-hour hole in it printed 14h 45m at
+// the top and 12h 26m on the only card underneath. Both were describing the
+// same week. One function now, so the two can never disagree again.
+function _tlPaidMin(rows){
+  return (Array.isArray(rows)?rows:[]).reduce((s,r)=>s+((r&&!r.unpaid)?(r.minutes||0):0),0);
+}
+function _tlEmpFlags(rows){
+  const out={gaps:0,gapMin:0,ot:false,bigDay:false,open:0};
+  if(!Array.isArray(rows))return out;
+  const dayMin={};
+  rows.forEach(r=>{
+    if(!r)return;
+    if(r.source==='unaccounted'){out.gaps++;out.gapMin+=r.minutes||0;}
+    if(r.weekOT)out.ot=true;
+    if(r.startTime&&!r.endTime)out.open++;
+    if(!r.unpaid&&r.date)dayMin[r.date]=(dayMin[r.date]||0)+(r.minutes||0);
+  });
+  // More than 24 hours in one day is not physically possible, the same
+  // impossible-day rule the per-day meta already applies.
+  out.bigDay=Object.keys(dayMin).some(d=>dayMin[d]>1440);
+  return out;
+}
+function _tlFlagChips(f){
+  if(!f)return '';
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  const chip=(bg,fg,icon,text)=>'<span style="display:inline-flex;align-items:center;gap:3px;font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:4px;background:'+bg+';color:'+fg+';white-space:nowrap">'+svgIcon(icon,{size:9})+' '+text+'</span>';
+  const out=[];
+  if(f.bigDay)out.push(chip('var(--c-red-soft,#A32D2D22)','var(--c-red-deep,#A32D2D)','⚠','Data error'));
+  if(f.open)out.push(chip('var(--c-green-soft)','var(--c-green-deep,#1B7A43)','▶',f.open+' still in'));
+  if(f.gaps)out.push(chip('var(--bg2)','var(--text3)','❓',fm(f.gapMin)+' unaccounted'));
+  if(f.ot)out.push(chip('var(--c-amber-soft)','var(--c-amber-deep)','⏱','OT'));
+  return out.length?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">'+out.join('')+'</div>':'';
+}
+// THE employee card. One function, because Me and Team must render the same
+// markup (owner rule 2026-08-26: "everything on the team should be the exact
+// same thing on me, same code, same constant, only difference is the fact me
+// is just me and team is everybody"). Team wraps this in a collapsible shell;
+// Me shows it directly. Neither one has its own copy of the markup, which is
+// what let the two drift apart the first time.
+function _tlEmpCardHtml(uid,e,selfUid,extraHtml){
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  const name=e.name||'Crew';
+  const pal=_tlAvatarPalette(name);
+  const parts=[];
+  if(e.onsiteMin>3)parts.push('On-site '+fm(e.onsiteMin));
+  if(e.driveMin>3)parts.push('Drive '+fm(e.driveMin));
+  if(e.placeMin>3)parts.push('Supply/other '+fm(e.placeMin));
+  if((e.shopMin||0)>3)parts.push('Shop '+fm(e.shopMin));
+  const total=(e.onsiteMin+e.driveMin+e.placeMin+(e.shopMin||0))||1;
+  const pOn=(e.onsiteMin/total*100).toFixed(1),pDr=(e.driveMin/total*100).toFixed(1),pPl=(e.placeMin/total*100).toFixed(1),
+        pSh=((e.shopMin||0)/total*100).toFixed(1);
+  const otBadge=e.weekOT?'<span class="tl-ot-badge" title="'+escHtml(name)+' logged 40+ hrs this week, verify overtime eligibility with your state; not payroll advice">OT</span>':'';
+  const youTag=(selfUid&&String(uid)===String(selfUid))?' <span style="color:var(--text3);font-weight:600;font-size:11px">(you)</span>':'';
+  return '<div class="tl-emp-row'+(e.weekOT?' ot':'')+'">'+
+    '<div class="tl-avatar" style="background:'+pal.bg+';color:'+pal.fg+'">'+escHtml(_tlAvatarLabel(name))+'</div>'+
+    '<div class="tl-emp-mid"><div class="tl-emp-name-row"><span class="tl-emp-name">'+escHtml(name)+'</span>'+youTag+otBadge+'</div>'+
+      '<div class="tl-split"><div class="tl-split-bar"><span style="width:'+pOn+'%;background:var(--blue)"></span><span style="width:'+pDr+'%;background:#9F5B00"></span><span style="width:'+pPl+'%;background:var(--text3)"></span><span style="width:'+pSh+'%;background:var(--c-teal,#0E6B6B)"></span></div>'+
+      '<div class="tl-split-legend">'+parts.join(' · ')+'</div></div>'+(extraHtml||'')+'</div>'+
+    '<div class="tl-emp-total">'+fm(e.min)+'</div>'+
+  '</div>';
+}
+function _tlWeekOwnerHtml(byEmp,selfUid){
+  const uids=Object.keys(byEmp).sort((a,b)=>byEmp[b].min-byEmp[a].min);
+  return uids.map(uid=>_tlEmpCardHtml(uid,byEmp[uid],selfUid,'')).join('');
 }
 // Me-scope EXTRA, under the shared split-bar row: your own days listed out.
 // Not an alternative to the team component (see _tlRenderWeekBody), an
@@ -1104,7 +1212,7 @@ function _tlRenderWeekBody(cacheKey){
   let scopeRows,scopeLabel;
   if(sel==='week'){scopeRows=weekRows;scopeLabel=_tlWeekLabel(wk);}
   else{const d=days[parseInt(sel,10)]||'';scopeRows=weekRows.filter(r=>r.date===d);scopeLabel=_tlDayFullLabel(d);}
-  const scopeMin=scopeRows.reduce((s,r)=>s+(r.minutes||0),0);
+  const scopeMin=_tlPaidMin(scopeRows);
   const scopeHdHtml='<div class="tl-scope-hd"><div class="tl-scope-ttl">'+escHtml(scopeLabel)+'</div><div class="tl-scope-amt">'+fm(scopeMin)+'</div></div>';
   let summaryHtml;
   if(!scopeRows.length){
@@ -1141,11 +1249,23 @@ function _tlRenderWeekBody(cacheKey){
   // scope: a Team-scope day legitimately combines several people's hours
   // and can exceed 24h with nobody's individual day being wrong, so the
   // default dr.length+total meta stays untouched there.
+  // TEAM: one collapsed card per person, never one interleaved table (owner
+  // 2026-08-29). Me is already one person, so it keeps the flat entries list;
+  // wrapping a single card around yourself would be a click to reach your own
+  // hours and nothing else.
+  if(scope==='team'&&scopeRows.length){
+    // The cards ARE the summary here. _tlWeekOwnerHtml renders the same
+    // avatar, split bar and total per person, so keeping both would print
+    // every employee twice, once uselessly. Me still gets the summary, where
+    // there is no card to replace it.
+    return pickerHtml+scopeHdHtml+
+      '<div style="margin-top:8px">'+_tlEmpAccHtml(cacheKey,scopeRows,cid,selfUid,mo)+'</div>';
+  }
   const entriesHtml=scopeRows.length?
     '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)">'+
       '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:0 2px 6px">Entries</div>'+
       _bkRenderDays('tl',mo,entryRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,fm,
-        scope==='team'?undefined:{metaFn:dr=>{
+        scope==='team'?{closed:true}:{closed:true,metaFn:dr=>{
           const min=dr.filter(r=>!r.unpaid).reduce((s,r)=>s+(r.minutes||0),0);
           const amt=fm(min);
           return min>1440
@@ -1179,7 +1299,7 @@ async function _tlShareWeek(){
   if(!rows.length){typeof showToast==='function'&&showToast('No hours logged this week yet','📋');return;}
   const byDay={};
   rows.forEach(r=>{byDay[r.date]=(byDay[r.date]||0)+(r.minutes||0);});
-  const totalMin=rows.reduce((s,r)=>s+(r.minutes||0),0);
+  const totalMin=_tlPaidMin(rows);
   const lines=Object.keys(byDay).sort().map(d=>_tlDayShort(d)+': '+(typeof _fmtMin==='function'?_fmtMin(byDay[d]):byDay[d]+'m'));
   const text='My hours this week ('+_tlWeekLabel(wkStartStr)+')\n'+lines.join('\n')+'\nTotal: '+(typeof _fmtMin==='function'?_fmtMin(totalMin):totalMin+'m');
   if(typeof pwaShare==='function')await pwaShare({title:'This week\'s hours',text});
@@ -1356,7 +1476,7 @@ async function renderTimeLog(opts){
     const wkStart=new Date();wkStart.setHours(0,0,0,0);wkStart.setDate(wkStart.getDate()-wkStart.getDay());
     const wkEnd=new Date(wkStart);wkEnd.setDate(wkEnd.getDate()+6);
     const wkStartStr=dateKey(wkStart),wkEndStr=dateKey(wkEnd);
-    const wkMin=visible.filter(r=>r.date>=wkStartStr&&r.date<=wkEndStr).reduce((s,r)=>s+(r.minutes||0),0);
+    const wkMin=_tlPaidMin(visible.filter(r=>r.date>=wkStartStr&&r.date<=wkEndStr));
     weekEl.textContent=(typeof _fmtMin==='function'?_fmtMin(wkMin):wkMin+'m')+' This week (Sun–Sat)';
   }
   const years=_tlYears(visible);
@@ -1374,7 +1494,7 @@ async function renderTimeLog(opts){
   _tlComputeWeeklyRunning(rows);
   _tlLastRows=rows;
   const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
-  const totalMin=rows.reduce((s,r)=>s+(r.minutes||0),0);
+  const totalMin=_tlPaidMin(rows);
   if(totalEl)totalEl.textContent=fm(totalMin)+' total in '+yr;
   const byMonth={};
   rows.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';(byMonth[mo]||(byMonth[mo]=[])).push(r);});
@@ -1397,7 +1517,7 @@ async function renderTimeLog(opts){
     // Books accordion's normal convention.
     const weeks=Object.keys(byWeek).sort((a,b)=>b.localeCompare(a));
     const moOpen=/^\d{4}-\d{2}$/.test(mo)&&mo>=curMo;
-    const moMin=moRows.reduce((s,r)=>s+(r.minutes||0),0);
+    const moMin=_tlPaidMin(moRows);
     let moSub=weeks.length+' week'+(weeks.length!==1?'s':'');
     if(scope==='team'){
       const empCount=Object.keys(_tlEmpWeekAgg(moRows,cid)).length;
@@ -1412,7 +1532,7 @@ async function renderTimeLog(opts){
       _tlWeekCache[cacheKey]={mo,wk,rows:weekRows,scope,cid,selfUid,domId};
       const wkOpen=moOpen&&wk===curWk;
       const wkLabel=_tlWeekLabel(wk);
-      const wkMin=weekRows.reduce((s,r)=>s+(r.minutes||0),0);
+      const wkMin=_tlPaidMin(weekRows);
       const wkTotalHtml='<div style="font-size:12.5px;font-weight:800;color:var(--text)">'+fm(wkMin)+'</div>';
       let wkSub;
       if(scope==='team'){

@@ -3657,13 +3657,20 @@ function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor,sumFn,fmtFn
     const dr=byDay[day];
     const dayTotal=dr.reduce((s,r)=>s+sumFn(r),0);
     const safe=day.replace(/[^0-9]/g,'')||'x';
-    return '<div class="bk-day open" id="bk-'+tab+'-day-'+mo+'-'+safe+'">'+
+    // opts.closed is ADDITIVE and defaults to the old always-open behaviour,
+    // so Income, Expenses, the client timeline and Time at Places are all
+    // untouched. The Time Log is the one caller that wants it: a week for one
+    // person is a dozen rows and a week for a crew is fifty, and research on
+    // what contractors actually scan for (2026-08-29) says the detail is
+    // evidence you open, not the headline you read.
+    const dayOpen=opts.closed?'':' open';
+    return '<div class="bk-day'+dayOpen+'" id="bk-'+tab+'-day-'+mo+'-'+safe+'">'+
       '<button class="bk-day-hd" onclick="_bkTogDay(\''+tab+'\',\''+mo+'\',\''+safe+'\')">'+
         '<span class="bk-day-title">'+_bkDayLabel(day)+'</span>'+
         '<span class="bk-day-meta" style="color:'+(totalColor||'var(--text3)')+'">'+(opts.metaFn?opts.metaFn(dr):(dr.length+' · '+fmtFn(dayTotal)))+'</span>'+
         '<span class="bk-day-chev">▾</span>'+
       '</button>'+
-      '<div class="bk-day-body">'+
+      '<div class="bk-day-body"'+(opts.closed?' style="display:none"':'')+'>'+
         (opts.bodyFn?opts.bodyFn(dr):
         '<div class="bk-tbl-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl bk-tbl" style="min-width:'+minWidth+'px"><thead><tr>'+
           headers.map(h=>'<th>'+h+'</th>').join('')+((tab==='exp'||tab==='tl')?'<th></th>':'')+'</tr></thead><tbody>'+
