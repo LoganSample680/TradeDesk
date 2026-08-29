@@ -827,6 +827,39 @@ test.describe('Wake region set for the dead app', () => {
       expect(r.n).toBe(0);
     });
 
+    test('a close that is already nearly right is left alone, confirmed or not', async () => {
+      // Dry-run against his real week found three rows whose driving edge sat
+      // SECONDS before their own close. Nothing was wrong with them and the
+      // sweep deleted them anyway. Both shapes must now survive.
+      const nearlyRight = await run(page, {
+        // closes 19:18:30, edge 19:18:04: 26 seconds of "error"
+        db: { shop_time_entries: { data: [shopRow('s9', '2026-08-29T00:15:00.000Z', '2026-08-29T00:18:30.000Z', 3)] },
+              job_time_entries: { data: [drive(DRIVE_NOON)] } },
+        tape: [{ ts: Date.parse('2026-08-29T00:18:04.000Z'), kind: 'driving' }],
+      });
+      expect(nearlyRight.deleted, 'a 26-second discrepancy is not a wrong row').toEqual([]);
+      expect(nearlyRight.wrote.length).toBe(0);
+
+      // The overnight row: 737 minutes, edge 42 seconds before its close.
+      const overnight = await run(page, {
+        db: { shop_time_entries: { data: [shopRow('sA', '2026-08-23T01:59:00.000Z', '2026-08-23T14:16:00.000Z', 737)] },
+              job_time_entries: { data: [drive(DRIVE_NOON)] } },
+        tape: [{ ts: Date.parse('2026-08-23T14:15:18.000Z'), kind: 'driving' }],
+      });
+      expect(overnight.deleted, 'a big row is not a wrong row either').toEqual([]);
+      expect(overnight.wrote.length).toBe(0);
+    });
+
+    test('the threshold does not spare a genuinely wrong close', async () => {
+      // 08-27 evening: 147 minutes of error, still deleted.
+      const r = await run(page, {
+        db: { shop_time_entries: { data: [shopRow('sB', ARR_PM, DEP_PM, 161)] },
+              job_time_entries: { data: [drive(DRIVE_NOON)] } },
+        tape: [{ ts: Date.parse('2026-08-27T22:48:59.000Z'), kind: 'driving' }],
+      });
+      expect(r.deleted).toEqual(['sB']);
+    });
+
     test('it runs once per session', async () => {
       const world = { db: { shop_time_entries: { data: [shopRow('s8', ARR_NOON, DEP_NOON, 45)] },
                             job_time_entries: { data: [drive(DRIVE_NOON)] } },

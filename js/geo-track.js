@@ -47,6 +47,15 @@ let _geoShopPendingClose=null;
 // was not "confirmed" by the 20:16:02 arrival at another customer, and a
 // confirmation that late is not evidence of anything.
 const _GEO_DEPART_CONFIRM_MS=15*60000;
+// How wrong a recorded close has to be before the retro sweep touches it.
+// Dry-run against the owner's real week, 2026-08-29: three rows would have
+// been deleted whose driving edge landed SECONDS before their own close
+// (19:18:04 against a 19:18 close, 09:15:18 against a 09:16 close). Those
+// departures were captured correctly. There was nothing to correct, and the
+// rule deleted the row regardless, because it asked "was this confirmed"
+// without first asking "is it even wrong". Both 08-27 corrections clear this
+// comfortably: 7.7 minutes on the midday dwell, 147 on the evening one.
+const _GEO_DWELL_MIN_TRIM_MS=3*60000;
 function _geoConfirmShopDepart(nowMs){
   const p=_geoShopPendingClose;_geoShopPendingClose=null;
   if(!p)return false;
@@ -6558,6 +6567,11 @@ async function _geoDwellRetroSweep(){
       const d=tape.find(t=>t.ts>s0&&(t.kind==='driving'||t.kind==='automotive'));
       if(!d)continue;                       // the tape has no opinion
       if(d.ts>=e0)continue;                 // already closed at or before it
+      // NOTHING TO CORRECT IS NOT THE SAME AS UNCONFIRMED. A close that
+      // already sits within a few minutes of the driving edge got the
+      // departure right, so there is no error to fix and no grounds to remove
+      // the row. Only a genuinely wrong close is this sweep's business.
+      if(e0-d.ts<_GEO_DWELL_MIN_TRIM_MS)continue;
       // A minute of slack backwards: the drive row is stamped from the fence
       // exit, which by definition happens after the wheels move.
       const confirmed=driveStarts.some(t=>t>=d.ts-60000&&t<=d.ts+_GEO_DEPART_CONFIRM_MS);
