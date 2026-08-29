@@ -920,7 +920,8 @@ test.describe('Home office: presence is not work', () => {
       expect(out.empty).toBe(false);
       expect(out.nul).toBe(false);
       expect(out.undef).toBe(false);
-      expect(out.label).toBe('Loading|Office|');
+      // 'Loading time', renamed 2026-08-29: the bare word reads as a spinner.
+      expect(out.label).toBe('Loading time|Office|');
     });
 
     // ── The tape goes to the server, and old visits get re-graded from it ──
