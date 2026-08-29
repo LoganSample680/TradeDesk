@@ -1046,6 +1046,111 @@ test.describe('timelog.js: exhaustive coverage', () => {
   // belonged to no row. Those are the drives to and from the stop, dropped
   // from mileage because a lunch run is not deductible, and the owner's call
   // was "the unpaid time leg should absorb that 5 minutes."
+  // ── The day must be continuous (owner 2026-08-29) ───────────────────────────
+  // "just want time in order... then show unaccounted for time in between,
+  // then arrival at Laurie's, unaccounted for time in between, arrival at
+  // Laurie's then drive time home, that ends the day."
+  //
+  // Jack's real 8/28 is the fixture: he left Laurie's at 12:14 and came back
+  // at 13:58, and those 104 minutes produced no row of any kind, so the Time
+  // Log jumped from one visit straight to the next and the day silently
+  // failed to add up.
+  test.describe('unaccounted time is shown, never hidden', () => {
+    const JACK = () => ([
+      { id: 'd1', personUid: 'jack', date: '2026-08-28', minutes: 3, unpaid: false, source: 'auto',
+        startTime: '2026-08-28T14:46:00Z', endTime: '2026-08-28T14:49:00Z' },   // house -> Laurie's
+      { id: 'v1', personUid: 'jack', date: '2026-08-28', minutes: 11, unpaid: false, source: 'auto',
+        startTime: '2026-08-28T14:49:00Z', endTime: '2026-08-28T15:00:00Z' },   // at Laurie's
+      { id: 'v2', personUid: 'jack', date: '2026-08-28', minutes: 99, unpaid: false, source: 'auto',
+        startTime: '2026-08-28T15:35:00Z', endTime: '2026-08-28T17:14:00Z' },   // back at Laurie's
+      { id: 'v3', personUid: 'jack', date: '2026-08-28', minutes: 16, unpaid: false, source: 'auto',
+        startTime: '2026-08-28T18:58:00Z', endTime: '2026-08-28T19:14:00Z' },   // back again
+      { id: 'd2', personUid: 'jack', date: '2026-08-28', minutes: 4, unpaid: false, source: 'auto',
+        startTime: '2026-08-28T19:14:00Z', endTime: '2026-08-28T19:18:00Z' },   // Laurie's -> home
+    ]);
+    const fill = rows => page.evaluate(r => _tlFillUnaccounted(r), rows);
+
+    test('the day reads in order with every hole named, and nothing is merged', async () => {
+      const r = await fill(JACK());
+      const day = r.slice().sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
+      // Exactly the owner's sequence: drive, arrival, hole, arrival, hole,
+      // arrival, drive home. Seven lines, and the day ends.
+      expect(day.map(x => x.source)).toEqual([
+        'auto', 'auto', 'unaccounted', 'auto', 'unaccounted', 'auto', 'auto',
+      ]);
+      const gaps = day.filter(x => x.source === 'unaccounted');
+      // 15:00 to 15:35 is the parts run; 17:14 to 18:58 is the 104 minutes
+      // that vanished on the real day.
+      expect(gaps.map(x => x.minutes)).toEqual([35, 104]);
+      // NOT merged: all three visits survive as their own rows.
+      expect(day.filter(x => ['v1', 'v2', 'v3'].includes(x.id)).length).toBe(3);
+      // The day now adds up: first row start to last row end, no silent hole.
+      const span = (Date.parse(day[day.length - 1].endTime) - Date.parse(day[0].startTime)) / 60000;
+      expect(day.reduce((n, x) => n + x.minutes, 0)).toBe(span);
+    });
+
+    test('a gap row is display only: never paid, never editable, never fixable', async () => {
+      const r = await fill(JACK());
+      const gap = r.find(x => x.source === 'unaccounted');
+      const flags = await page.evaluate(g => ({
+        edit: _tlCanEdit(g), fix: _tlCanFixAuto(g),
+      }), gap);
+      expect(gap.unpaid, 'a hole is never paid time').toBe(true);
+      expect(gap.rawId, 'no server row stands behind it').toBe(null);
+      expect(flags.edit).toBe(false);
+      expect(flags.fix).toBe(false);
+    });
+
+    test('rounding seams and overlaps never manufacture a hole', async () => {
+      const r = await page.evaluate(() => {
+        const base = (id, a, b, extra) => Object.assign({
+          id, personUid: 'jack', date: '2026-08-28', unpaid: false, source: 'auto',
+          minutes: Math.round((Date.parse(b) - Date.parse(a)) / 60000), startTime: a, endTime: b,
+        }, extra || {});
+        return {
+          // A 3-minute seam is rounding, under the 5-minute floor.
+          seam: _tlFillUnaccounted([
+            base('x', '2026-08-28T14:00:00Z', '2026-08-28T15:00:00Z'),
+            base('y', '2026-08-28T15:03:00Z', '2026-08-28T16:00:00Z'),
+          ]).filter(x => x.source === 'unaccounted').length,
+          // A drive that overlaps the visit it lands in must not produce a
+          // negative gap, and a short row nested inside a long one must not
+          // split the long one's remainder into two phantom holes.
+          nested: _tlFillUnaccounted([
+            base('long', '2026-08-28T14:00:00Z', '2026-08-28T18:00:00Z'),
+            base('inner', '2026-08-28T15:00:00Z', '2026-08-28T15:30:00Z'),
+          ]).filter(x => x.source === 'unaccounted').length,
+          overlap: _tlFillUnaccounted([
+            base('a', '2026-08-28T14:00:00Z', '2026-08-28T15:10:00Z'),
+            base('b', '2026-08-28T15:00:00Z', '2026-08-28T16:00:00Z'),
+          ]).filter(x => x.source === 'unaccounted').length,
+          // Two people on the same day never bleed into each other.
+          twoPeople: _tlFillUnaccounted([
+            base('p1', '2026-08-28T14:00:00Z', '2026-08-28T15:00:00Z'),
+            Object.assign(base('p2', '2026-08-28T19:00:00Z', '2026-08-28T20:00:00Z'), { personUid: 'other' }),
+          ]).filter(x => x.source === 'unaccounted').length,
+        };
+      });
+      expect(r.seam).toBe(0);
+      expect(r.nested).toBe(0);
+      expect(r.overlap).toBe(0);
+      expect(r.twoPeople).toBe(0);
+    });
+
+    test('junk input is survived, same contract as _tlAbsorbGaps', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          return { ok: true, a: _tlFillUnaccounted([]).length, b: _tlFillUnaccounted(null),
+                   c: _tlFillUnaccounted(undefined),
+                   d: _tlFillUnaccounted([null, { date: 'x' }, { startTime: 'nope', endTime: 'nope', date: 'd' }]).length };
+        } catch (e) { return { ok: false, msg: e.message }; }
+      });
+      expect(r.ok, r.msg || '').toBe(true);
+      expect(r.a).toBe(0);
+      expect(r.d).toBe(3);
+    });
+  });
+
   test.describe('gap absorption', () => {
     const FRI = () => ([
       { id: 'a1', personUid: 'me', date: '2026-08-21', minutes: 222, unpaid: false, startTime: '2026-08-21T12:55:00Z', endTime: '2026-08-21T16:37:00Z' },

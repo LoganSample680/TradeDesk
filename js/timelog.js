@@ -190,6 +190,66 @@ async function _tlShopTape(byUid){
     return await _geoMotionTape(lo,hi);
   }catch(_e){return null;}
 }
+// ── The day must be continuous (owner 2026-08-29) ──────────────────────────
+// "just want time in order from motion to drive, jacks house to Laurie's,
+// then show unaccounted for time in between, then arrival at Laurie's,
+// unaccounted for time in between, arrival at Laurie's then drive time home,
+// that ends the day."
+//
+// Nothing is merged and nothing is invented. What changes is that a hole
+// stops being INVISIBLE. Jack's 8/28 had 104 minutes between leaving Laurie's
+// at 12:14 and coming back at 13:58 that produced no row of any kind, so the
+// Time Log jumped straight from one visit to the next and the day silently
+// failed to add up. A reader could not tell that from a day with nothing in
+// between, which is the whole problem: a gap you cannot see is a gap nobody
+// questions.
+//
+// So every remaining hole between two rows becomes a row that says so. These
+// are DISPLAY rows: no id, never paid, never editable, never written back to
+// the server. They exist so the column adds up to the day.
+//
+// Small gaps are already absorbed into the unpaid row beside them
+// (_tlAbsorbGaps above, 30-minute ceiling) and never reach here. The floor
+// below is for what survives that: a two-minute seam between a drive and an
+// arrival is rounding, not a hole worth a line of its own.
+const _TL_UNACCOUNTED_MIN_MS=5*60000;
+function _tlFillUnaccounted(rows){
+  if(!Array.isArray(rows)||!rows.length)return rows;
+  const byDay={};
+  rows.forEach(r=>{
+    if(!r||!r.startTime||!r.endTime||!r.date)return;
+    const a=Date.parse(r.startTime),b=Date.parse(r.endTime);
+    if(!(a>0&&b>a))return;
+    const k=(r.personUid||'owner')+'|'+r.date;
+    (byDay[k]=byDay[k]||[]).push(r);
+  });
+  const out=rows.slice();
+  Object.keys(byDay).forEach(k=>{
+    const day=byDay[k].sort((x,y)=>Date.parse(x.startTime)-Date.parse(y.startTime));
+    // Walk a high-water mark, not just the previous row: two rows that
+    // overlap (a drive and the visit it lands in) must not manufacture a
+    // negative gap, and a short row nested inside a long one must not split
+    // the long one's remainder into two phantom holes.
+    let mark=Date.parse(day[0].endTime);
+    for(let i=1;i<day.length;i++){
+      const r=day[i];
+      const a=Date.parse(r.startTime),b=Date.parse(r.endTime);
+      const gap=a-mark;
+      if(gap>=_TL_UNACCOUNTED_MIN_MS){
+        out.push({
+          id:'u'+k+'_'+mark,rawId:null,source:'unaccounted',rawSource:'unaccounted',
+          date:r.date,minutes:Math.round(gap/60000),
+          personName:r.personName,personUid:r.personUid||null,
+          clientName:'Unaccounted for',addr:'',jobName:'',clientKey:null,
+          unpaid:true,detail:'No location or motion on record',
+          startTime:new Date(mark).toISOString(),endTime:r.startTime
+        });
+      }
+      if(b>mark)mark=b;
+    }
+  });
+  return out;
+}
 function _tlAbsorbGaps(rows){
   if(!Array.isArray(rows))return rows;
   const byDay={};
@@ -376,7 +436,7 @@ async function _timeLogRows(sinceISO){
       rawId:e.id!=null?e.id:null,rawSource:e.source||''
     });
   });
-  return _tlAbsorbGaps(rows).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  return _tlFillUnaccounted(_tlAbsorbGaps(rows)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 }
 function _tlYears(rows){
   const years=[...new Set(rows.map(r=>(r.date||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort((a,b)=>b.localeCompare(a));
@@ -704,7 +764,14 @@ function _tlRow(r){
   // exactly what both halves of a home-office visit are. Filled chips like
   // the Driving badge, for the same reason that one is filled: this minute
   // is real paid time and it is not on anybody's job.
-  const sourceTag=homeKind
+  // An unaccounted stretch is not an entry, it is the SHAPE OF A HOLE, and it
+  // has to read that way at a glance or it becomes just another gray row
+  // somebody scrolls past. Dashed accent and a question mark, deliberately
+  // unlike every filled badge on this page: nothing here was measured.
+  const isGap=r.source==='unaccounted';
+  const sourceTag=isGap
+    ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('❓',{size:9})+' Unaccounted</span>'
+    :homeKind
     ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:800;padding:1px 6px;border-radius:4px;background:#0E6B6B22;color:#0E6B6B">'+
        svgIcon(homeKind==='load'?'📦':'📋',{size:9})+' '+(homeKind==='load'?'Loading':'Office')+'</span>'
     :r.source==='shop'
@@ -722,7 +789,7 @@ function _tlRow(r){
   // nothing and reads clearer on a fast scroll down a long day). Unpaid gets
   // a neutral gray accent, same idea, so it never reads as ordinary paid time
   // on a fast scroll down the day.
-  const rowAccent=isAutoDrive?' style="border-left:3px solid #9F5B00"':(r.source==='shop'||homeKind)?' style="border-left:3px solid #0E6B6B"':r.unpaid?' style="border-left:3px solid var(--border2)"':'';
+  const rowAccent=isGap?' style="border-left:3px dashed var(--border2);opacity:.72"':isAutoDrive?' style="border-left:3px solid #9F5B00"':(r.source==='shop'||homeKind)?' style="border-left:3px solid #0E6B6B"':r.unpaid?' style="border-left:3px solid var(--border2)"':'';
   return '<tr'+lpAttrs+rowAccent+'>'+
     '<td class="bold" data-label="Person">'+escHtml(r.personName)+'</td>'+
     '<td data-label="Job site">'+
