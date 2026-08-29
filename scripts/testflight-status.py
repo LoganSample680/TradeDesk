@@ -14,6 +14,7 @@ with can upload builds and edit the store listing, so the blast radius of a
 mistake is the live app, not a test account.
 """
 import json, os, sys, time, urllib.request, urllib.error
+from datetime import datetime
 
 API = 'https://api.appstoreconnect.apple.com/v1'
 BUNDLE_ID = os.environ.get('TD_BUNDLE_ID', '').strip()
@@ -44,6 +45,20 @@ def get(path, tok):
         # is the difference between "it broke" and a fix.
         print('::error::App Store Connect %s on %s\n%s' % (e.code, path, body))
         raise
+
+
+def _utc(iso):
+    """Apple stamps uploadedDate with its own UTC offset. Slicing the string
+    kept that local time under a column headed UTC, showing build 43 as 10:03
+    when it landed at 17:03. Normalise, or the column lies by hours."""
+    if not iso:
+        return ''
+    try:
+        from datetime import timezone
+        return (datetime.fromisoformat(str(iso).replace('Z', '+00:00'))
+                .astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M'))
+    except Exception:
+        return str(iso)[:16].replace('T', ' ')
 
 
 def main():
@@ -88,14 +103,20 @@ def main():
         # processingState is Apple's verdict on the binary. internalBuildState
         # is whether a tester can press Install. A build can be VALID and still
         # be unreachable, which is exactly the failure this script exists for.
+        # Apple uses BOTH spellings and they mean the same thing to a tester:
+        # READY_FOR_BETA_TESTING is "available", IN_BETA_TESTING is "available
+        # and somebody has it". Matching only the first is what made the very
+        # first live run report "NO build is installable" against an account
+        # where all ten were. The stubbed fixtures could not catch it: they
+        # were written from the same wrong assumption as the code.
         ok = (at.get('processingState') == 'VALID'
-              and da.get('internalBuildState') == 'READY_FOR_BETA_TESTING'
+              and da.get('internalBuildState') in ('READY_FOR_BETA_TESTING', 'IN_BETA_TESTING')
               and not at.get('expired'))
         if ok and grp:
             installable.append(at.get('version'))
         rows.append({
             'build': at.get('version'),
-            'uploaded': (at.get('uploadedDate') or '')[:16].replace('T', ' '),
+            'uploaded': _utc(at.get('uploadedDate')),
             'processing': at.get('processingState'),
             'internal': da.get('internalBuildState'),
             'external': da.get('externalBuildState'),
@@ -121,6 +142,21 @@ def main():
                   % (rows[0]['build'], installable[0]))
     else:
         print('::warning::NO build in the last %d is installable by any tester.' % LIMIT)
+
+    # THE BUILD-35 CHECK. A build is only installable by the groups it was
+    # actually distributed to, and a tester in a group the tip never reached
+    # stays on whatever that group last got, silently, for as long as it takes
+    # somebody to ask. Comparing the tip's groups against every group seen in
+    # the window is what surfaces that without knowing who is in which.
+    seen = set()
+    for r in rows:
+        seen.update(r['groups'])
+    if rows and seen:
+        missed = sorted(seen - set(rows[0]['groups']))
+        for g in missed:
+            last = next((r['build'] for r in rows if g in r['groups']), None)
+            print('::warning::group %r cannot install build %s. Its newest is %s. '
+                  'A tester in that group is stuck there.' % (g, rows[0]['build'], last))
 
     for r in rows:
         if r['processing'] == 'INVALID':
