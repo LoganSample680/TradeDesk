@@ -889,6 +889,33 @@ final class TdGeoPluginTests: XCTestCase {
         return buf.filter { ($0["type"] as? String) == t }.count
     }
 
+    // ── Motion transitions carry position (owner 2026-08-29) ────────────────
+    // The tape is the day's clock now, so a transition with no position is
+    // half a fact: the geofence cannot say WHERE the state changed. Every
+    // motion row landed with lat/lon null before this (94 of 94 in the live
+    // table), which is precisely why nothing could be rebuilt server-side.
+    func testMotionEventsCarryKindAndPrevKind() {
+        UserDefaults.standard.set(["mode": "events", "visits": true], forKey: "td_geo_armed")
+        plugin.load()
+        // Drive the recorder the way the activity handler does. The shape of
+        // the row is the contract ingest-geo reads, so the shape is the test.
+        let ev: [String: Any] = [
+            "type": "motion", "ts": Double(Date().timeIntervalSince1970 * 1000),
+            "kind": "automotive", "prevKind": "onFoot",
+            "lat": 39.0103, "lng": -95.7790, "acc": 12.0, "fixAgeMs": 4000.0
+        ]
+        let before = bufferCount(ofType: "motion")
+        plugin.recordForTest(ev)
+        XCTAssertGreaterThan(bufferCount(ofType: "motion"), before)
+        let buf = (UserDefaults.standard.array(forKey: "td_geo_fix_buffer") as? [[String: Any]]) ?? []
+        let last = buf.last(where: { ($0["type"] as? String) == "motion" })
+        XCTAssertEqual(last?["kind"] as? String, "automotive")
+        XCTAssertEqual(last?["prevKind"] as? String, "onFoot",
+                       "the edge, not just the destination state, is what names a boundary")
+        XCTAssertNotNil(last?["lat"] as? Double, "a boundary with no position cannot be placed")
+        UserDefaults.standard.removeObject(forKey: "td_geo_armed")
+    }
+
     func testLifecycleEventsRecordOnlyWhenArmed() {
         // Armed: backgrounding writes an app-background row. record() persists
         // synchronously, so no waiting on a flush.

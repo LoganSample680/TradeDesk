@@ -586,6 +586,14 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         call.resolve(["fixes": fixes])
     }
 
+    // Test seam. record() stays private (nothing outside this file has any
+    // business appending to the buffer); TdNativeTests needs one door in to
+    // assert the ROW SHAPE that ingest-geo reads, which is the actual
+    // contract between the phone and the server.
+    #if DEBUG
+    func recordForTest(_ ev: [String: Any]) { record(ev) }
+    #endif
+
     private func record(_ ev: [String: Any]) {
         let d = UserDefaults.standard
         var buf = (d.array(forKey: bufferKey) as? [[String: Any]]) ?? []
@@ -757,12 +765,35 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 : a.walking ? "walking"
                 : a.stationary ? "still" : ""
             if kind.isEmpty || kind == self.lastMotionKind { return }
+            let prev = self.lastMotionKind
             self.lastMotionKind = kind
-            self.record([
+            // THE TRANSITION IS THE PING (owner 2026-08-29). Every state
+            // change is a boundary the day is measured on: still -> onFoot is
+            // a load-out starting, onFoot -> automotive is a departure,
+            // automotive -> onFoot is an arrival. A boundary with no position
+            // is only half a fact, and until now every motion row landed with
+            // lat/lon null, so the geofence could never say WHERE the change
+            // happened and the whole tape was unusable server-side.
+            //
+            // Last-known first so the event is never fixless, then a short
+            // burst so the NEXT event carries something fresh. Which
+            // transitions deserve a burst is JS's call (geo-track.js
+            // _geoTdEvent), per the dumb-native rule; the plugin only
+            // attaches what it already has and reports the edge it saw.
+            var ev: [String: Any] = [
                 "type": "motion",
                 "ts": Double(Date().timeIntervalSince1970 * 1000),
-                "kind": kind
-            ])
+                "kind": kind,
+                "prevKind": prev
+            ]
+            if let l = self.mgr().location {
+                ev["lat"] = l.coordinate.latitude
+                ev["lng"] = l.coordinate.longitude
+                ev["acc"] = l.horizontalAccuracy
+                ev["fixAgeMs"] = Date().timeIntervalSince(l.timestamp) * 1000
+            }
+            self.countWake("motion-" + kind)
+            self.record(ev)
         }
     }
 

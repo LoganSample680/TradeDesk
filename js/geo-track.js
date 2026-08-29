@@ -2262,6 +2262,108 @@ const _GEO_LOAD_STILL_MS=5*60000;
 const _GEO_LOAD_EXIT_MS=60000;
 // The [startMs,endMs] that was loading, or null when nothing on the tape says
 // a load-out happened. Never invents time: both edges come off the tape.
+// A drive drops to 'still' at a long light or a rail crossing and resumes.
+// Two minutes of stillness inside a drive is that; more is an actual stop.
+const _GEO_DRIVE_STITCH_MS=120000;
+// ── The day, as the coprocessor saw it (owner spec 2026-08-29) ─────────────
+// "when core motion sees the last motion before core motion sees a drive
+// that's loading up time... when you land in the geofence... the time that
+// address is from when core motion says this guy's moving to this guy is now
+// driving, that's the time on site."
+//
+// So the MOTION TAPE owns every boundary and the geofence only ever answers
+// WHERE. That is the inversion: fence edges are a circle drawn around a pin
+// and they trip when the truck crosses a line hundreds of feet from the
+// driveway, which is exactly the eight minutes that went missing from Jack's
+// 8/28 (a fence-stamped visit read 2h07m where the truck was actually there
+// 2h14m). A motion edge is the truck itself starting and stopping.
+//
+// Pure and synchronous on purpose: no plugin, no network, no clock. It takes
+// a tape and a window and returns segments, which is what makes it testable
+// against a fixture and safe to run over seven days of history.
+//
+// Returns [{kind:'load'|'drive'|'onsite', a, b}] in time order, where
+//   load   = the walk that runs straight into a departure (loading the truck)
+//   drive  = a driving span
+//   onsite = everything between one drive ending and the next beginning,
+//            still time included, because a man standing at a bench working
+//            is on site.
+function _geoTapeSegments(tape,s,e){
+  const out=[];
+  if(!Array.isArray(tape)||!tape.length||!(e>s))return out;
+  const t=tape.filter(x=>x&&typeof x.ts==='number'&&x.kind).slice().sort((a,b)=>a.ts-b.ts);
+  if(!t.length)return out;
+  // Each transition as a span running to the next, clipped to the window. The
+  // tape is fetched with a lead-in (_geoMotionTape asks 2 minutes early), so
+  // the state in force AT s is whatever transition last preceded it.
+  const spans=[];
+  for(let i=0;i<t.length;i++){
+    const a=t[i].ts,b=(i+1<t.length)?t[i+1].ts:e;
+    const lo=Math.max(a,s),hi=Math.min(b,e);
+    if(hi>lo)spans.push({kind:t[i].kind,a:lo,b:hi});
+  }
+  if(!spans.length)return out;
+  const isDrive=k=>k==='driving'||k==='automotive';
+  // Merge adjacent driving spans: the coprocessor drops to 'still' at a long
+  // light and comes back, and that is one drive, not three.
+  const drives=[];
+  for(const sp of spans){
+    if(!isDrive(sp.kind))continue;
+    const last=drives[drives.length-1];
+    if(last&&sp.a-last.b<=_GEO_DRIVE_STITCH_MS)last.b=sp.b;
+    else drives.push({a:sp.a,b:sp.b});
+  }
+  // The load-out in front of each departure: the last walking span that runs
+  // into the drive rather than merely happening earlier in the day. Slack
+  // allows the still moment spent sitting in the cab before pulling out.
+  const loads=[];
+  for(const d of drives){
+    let w=null;
+    for(const sp of spans){
+      if(sp.kind!=='onFoot'&&sp.kind!=='walking'&&sp.kind!=='running')continue;
+      if(sp.a>=d.a)break;
+      w=sp;
+    }
+    if(!w)continue;
+    const b=Math.min(w.b,d.a);
+    if(b>w.a&&d.a-b<=_GEO_LOAD_STILL_MS)loads.push({a:w.a,b:b});
+  }
+  // On site: the space between drives, with any load-out at its tail carved
+  // out so the same minute is never both loading and standing on the job.
+  const gaps=[];
+  let cursor=s;
+  for(const d of drives){ if(d.a>cursor)gaps.push({a:cursor,b:d.a}); cursor=Math.max(cursor,d.b); }
+  if(e>cursor)gaps.push({a:cursor,b:e});
+  for(const g of gaps){
+    const l=loads.find(x=>x.a>=g.a&&x.b<=g.b+1);
+    if(l&&l.a>g.a)out.push({kind:'onsite',a:g.a,b:l.a});
+    else if(!l&&g.b>g.a)out.push({kind:'onsite',a:g.a,b:g.b});
+  }
+  for(const l of loads)out.push({kind:'load',a:l.a,b:l.b});
+  for(const d of drives)out.push({kind:'drive',a:d.a,b:d.b});
+  return out.filter(x=>x.b>x.a).sort((a,b)=>a.a-b.a);
+}
+// Loading is loading only at YOUR OWN place (owner 2026-08-29: "loading is its
+// own line item"). The identical motion shape at a customer's, walking to the
+// truck before pulling out, is the tail of the job: packing up IS the work,
+// and his spec says on-site runs from "this guy's moving" straight through to
+// "this guy is now driving".
+//
+// _geoTapeSegments cannot make that call, and must not: it holds a tape, not a
+// map. This is the caller's half, applied once the fence has named the place.
+// Pass ownPlace=false and the load-out folds back into the on-site span it was
+// carved out of.
+function _geoFoldLoadIntoOnsite(segs,ownPlace){
+  if(ownPlace||!Array.isArray(segs)||!segs.length)return Array.isArray(segs)?segs.slice():[];
+  const out=segs.filter(x=>x&&x.kind!=='load').map(x=>({kind:x.kind,a:x.a,b:x.b}));
+  for(const l of segs.filter(x=>x&&x.kind==='load')){
+    // The on-site span this load was cut from ends exactly where it begins.
+    const host=out.find(x=>x.kind==='onsite'&&x.b===l.a);
+    if(host)host.b=l.b;
+    else out.push({kind:'onsite',a:l.a,b:l.b});
+  }
+  return out.filter(x=>x.b>x.a).sort((a,b)=>a.a-b.a);
+}
 function _geoHomeLoadWindow(tape,s,e){
   if(!Array.isArray(tape)||!tape.length||!(e>s))return null;
   const t=tape.filter(x=>x&&typeof x.ts==='number'&&x.kind).slice().sort((a,b)=>a.ts-b.ts);
@@ -3758,7 +3860,11 @@ function _geoInstallGeoShim(){
 // next boot, so a drive that started with the app killed still logs.
 let _geoParkTimer=null;         // countdown from fence entry to GPS-off
 let _geoParkModeOn=false;       // TdGeo regions armed, continuous watcher removed
-let _geoMotionBurstAt=0;        // one motion-triggered burst per 3 min
+let _geoMotionBurstAt=0;
+// 90s, not the old 180s. Two boundaries can legitimately land inside three
+// minutes (park, walk in, realise you left something, drive off), and the old
+// throttle ate the second one, which is the edge that closes the segment.
+const _GEO_MOTION_BURST_GAP_MS=90000;        // one motion-triggered burst per 3 min
 let _geoFenceEnteredAtMs=null;  // when the CURRENT fence was entered (dwell clock)
 const _GEO_PARK_AFTER_MS=4*60*1000;  // parked this long inside a fence => GPS off
 // "Parked" means NOT DRIVING, not "not moving". A phone in the pocket of
@@ -4373,12 +4479,29 @@ async function _geoTdEvent(ev,replay){
     return;
   }
   if(ev.type==='motion'){
-    if(!replay&&_geoParkModeOn&&ev.kind&&ev.kind!=='still'){
+    // A BOUNDARY DESERVES A REAL FIX (owner 2026-08-29). The transitions that
+    // start and end a paid segment are the ones worth spending radio on:
+    // pulling out (onFoot -> automotive) and parking (automotive -> onFoot).
+    // The plugin already stamped the event with its last-known position, so
+    // the row is never fixless; the burst is what makes the NEXT few seconds
+    // accurate enough for the geofence to name the place honestly. still ->
+    // still churn and a walk around the yard buy nothing and are skipped.
+    //
+    // Deciding WHICH edges are worth a burst is JS's job, not the plugin's
+    // (CLAUDE.md 3.2): the native layer reports the edge, this picks.
+    if(!replay&&ev.kind){
+      const prev=String(ev.prevKind||'');
+      const cur=String(ev.kind);
+      const _auto=k=>k==='automotive'||k==='driving';
+      const _foot=k=>k==='walking'||k==='running'||k==='onFoot';
+      const boundary=(_auto(cur)&&_foot(prev))||(_foot(cur)&&_auto(prev));
       const now=Date.now();
-      if(now-_geoMotionBurstAt>180000){
+      // Park mode keeps its own looser rule (any non-still motion may mean
+      // they are leaving), so a parked truck still wakes on a walk past it.
+      if((boundary||(_geoParkModeOn&&cur!=='still'))&&now-_geoMotionBurstAt>_GEO_MOTION_BURST_GAP_MS){
         _geoMotionBurstAt=now;
-        _geoParkNote('motion-burst',String(ev.kind));
-        try{const Td=_geoTdPlugin();if(Td&&typeof Td.burstFix==='function')Td.burstFix({seconds:12});}catch(_e){}
+        _geoParkNote('motion-burst',prev?prev+'->'+cur:cur);
+        try{const Td=_geoTdPlugin();if(Td&&typeof Td.burstFix==='function')Td.burstFix({seconds:boundary?15:12});}catch(_e){}
       }
     }
     return;

@@ -387,7 +387,143 @@ test.describe('Home office: presence is not work', () => {
       expect(out.hiddenFresh).toBe(false);    // backgrounded, however recent the tap
     });
 
-    test('the tally survives exactly the ping that closes the visit', async () => {
+    // ── _geoTapeSegments: the motion tape owns every boundary ──────────────────
+  // Owner spec 2026-08-29, in his words: the last motion before a drive is
+  // loading time, the drive starts when CoreMotion says driving, and time on
+  // site runs from "this guy's moving" to "this guy is now driving". The
+  // geofence only ever answers WHERE, never when.
+  //
+  // The fixture is Jack's real 8/28 shape (home office 09:46, at Laurie's
+  // 09:49, parts run, back, home 14:18), because that is the day the fence
+  // edges got wrong by eight minutes.
+  test('_geoTapeSegments splits a day into load, drive and on-site by motion alone', async () => {
+    const r = await page.evaluate(() => {
+      const T = (h, m) => Date.UTC(2026, 7, 28, h, m, 0);
+      // still → walk (load) → drive → walk (arrive) → still (working) → drive home
+      const tape = [
+        { kind: 'still',   ts: T(9, 30) },
+        { kind: 'onFoot',  ts: T(9, 42) },   // loading the truck
+        { kind: 'driving', ts: T(9, 46) },   // pulls out
+        { kind: 'onFoot',  ts: T(9, 49) },   // parks at Laurie's
+        { kind: 'still',   ts: T(9, 55) },   // working, phone on a bench
+        { kind: 'onFoot',  ts: T(12, 10) },
+        { kind: 'driving', ts: T(12, 14) },  // leaves
+        { kind: 'onFoot',  ts: T(12, 18) },  // home
+        { kind: 'still',   ts: T(12, 30) },
+      ];
+      const segs = _geoTapeSegments(tape, T(9, 30), T(12, 30));
+      const min = (x) => Math.round((x.b - x.a) / 60000);
+      return {
+        seq: segs.map(x => x.kind + ':' + min(x)),
+        loads: segs.filter(x => x.kind === 'load').length,
+        drives: segs.filter(x => x.kind === 'drive').length,
+      };
+    });
+    // Loading is its own line item (owner 2026-08-29), 09:42 to 09:46.
+    expect(r.seq).toContain('load:4');
+    // The drive out is 09:46 to 09:49, the drive home 12:14 to 12:18.
+    expect(r.seq).toContain('drive:3');
+    expect(r.seq).toContain('drive:4');
+    // On site runs first-footstep to next-drive and INCLUDES the still time:
+    // 09:49 to 12:10 is 141 minutes of a man working at a bench.
+    // RAW shape: both walks-into-a-drive are load-outs, because the tape
+    // cannot tell the shop from a customer's driveway. On site is 09:49 to
+    // 12:10 here, with the 12:10 walk still carved out.
+    expect(r.seq).toContain('onsite:141');
+    expect(r.drives).toBe(2);
+    expect(r.loads).toBe(2);
+  });
+
+  test('_geoFoldLoadIntoOnsite: packing up at a customer is on-site, at your own place it is loading', async () => {
+    const r = await page.evaluate(() => {
+      const T = (h, m) => Date.UTC(2026, 7, 28, h, m, 0);
+      const tape = [
+        { kind: 'still',   ts: T(9, 30) },
+        { kind: 'onFoot',  ts: T(9, 42) },
+        { kind: 'driving', ts: T(9, 46) },
+        { kind: 'onFoot',  ts: T(9, 49) },
+        { kind: 'still',   ts: T(9, 55) },
+        { kind: 'onFoot',  ts: T(12, 10) },
+        { kind: 'driving', ts: T(12, 14) },
+        { kind: 'onFoot',  ts: T(12, 18) },
+        { kind: 'still',   ts: T(12, 30) },
+      ];
+      const segs = _geoTapeSegments(tape, T(9, 30), T(12, 30));
+      const min = (x) => Math.round((x.b - x.a) / 60000);
+      const shape = (a) => a.map(x => x.kind + ':' + min(x));
+      return {
+        customer: shape(_geoFoldLoadIntoOnsite(segs, false)),
+        own: shape(_geoFoldLoadIntoOnsite(segs, true)),
+      };
+    });
+    // At a customer: on site runs moving-to-driving, 09:49 through 12:14,
+    // which is the 145 minutes the owner's spec asks for and 8 more than the
+    // fence-stamped row recorded on Jack's 8/28.
+    expect(r.customer).toContain('onsite:145');
+    expect(r.customer.some(x => x.startsWith('load:'))).toBe(false);
+    // At his own place the load-out survives as its own line item.
+    expect(r.own).toContain('load:4');
+  });
+
+  test('_geoTapeSegments stitches a drive across a long light, never splits it', async () => {
+    const r = await page.evaluate(() => {
+      const T = (h, m) => Date.UTC(2026, 7, 28, h, m, 0);
+      const tape = [
+        { kind: 'onFoot',  ts: T(8, 0) },
+        { kind: 'driving', ts: T(8, 5) },
+        { kind: 'still',   ts: T(8, 12) },   // 90 seconds at a rail crossing
+        { kind: 'driving', ts: T(8, 13) },
+        { kind: 'onFoot',  ts: T(8, 25) },
+      ];
+      const segs = _geoTapeSegments(tape, T(8, 0), T(8, 30));
+      return segs.filter(x => x.kind === 'drive').map(x => Math.round((x.b - x.a) / 60000));
+    });
+    // One drive of 20 minutes, not two of 7 and 12.
+    expect(r).toEqual([20]);
+  });
+
+  test('_geoTapeSegments: a walk that never reaches a drive is not loading', async () => {
+    const r = await page.evaluate(() => {
+      const T = (h, m) => Date.UTC(2026, 7, 28, h, m, 0);
+      // Walks the yard at 8:00, sits back down, drives an hour later. That
+      // walk is not a load-out and must not bill as one.
+      const tape = [
+        { kind: 'still',   ts: T(7, 30) },
+        { kind: 'onFoot',  ts: T(8, 0) },
+        { kind: 'still',   ts: T(8, 5) },
+        { kind: 'driving', ts: T(9, 5) },
+        { kind: 'onFoot',  ts: T(9, 20) },
+      ];
+      const segs = _geoTapeSegments(tape, T(7, 30), T(9, 30));
+      return { loads: segs.filter(x => x.kind === 'load').length };
+    });
+    expect(r.loads).toBe(0);
+  });
+
+  test('_geoTapeSegments survives junk: empty, null, inverted and unsorted input', async () => {
+    const r = await page.evaluate(() => {
+      const call = (t, s, e) => { try { return { n: _geoTapeSegments(t, s, e).length }; } catch (err) { return { threw: String(err) }; } };
+      const T = (h) => Date.UTC(2026, 7, 28, h, 0, 0);
+      return {
+        nullTape: call(null, T(8), T(9)),
+        empty: call([], T(8), T(9)),
+        notArray: call('nope', T(8), T(9)),
+        inverted: call([{ kind: 'driving', ts: T(8) }], T(9), T(8)),
+        junkRows: call([null, { ts: T(8) }, { kind: 'driving' }], T(8), T(9)),
+        // Out of order on the wire must still segment correctly.
+        unsorted: call([{ kind: 'onFoot', ts: T(9) }, { kind: 'driving', ts: T(8) }], T(8), T(10)),
+      };
+    });
+    expect(r.nullTape).toEqual({ n: 0 });
+    expect(r.empty).toEqual({ n: 0 });
+    expect(r.notArray).toEqual({ n: 0 });
+    expect(r.inverted).toEqual({ n: 0 });
+    expect(r.junkRows.threw).toBeUndefined();
+    expect(r.unsorted.threw).toBeUndefined();
+    expect(r.unsorted.n).toBeGreaterThan(0);
+  });
+
+  test('the tally survives exactly the ping that closes the visit', async () => {
       // The ordering trap: the sampler runs BEFORE the fence machine, so if it
       // cleared on first sight of an outside coordinate, the closer running
       // later in that same ping would read null and fall straight back to wall
