@@ -119,6 +119,17 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             let m = self.mgr()
             m.startMonitoringSignificantLocationChanges()
             if visits { m.startMonitoringVisits() }
+            // AND THE MOTION STREAM. It was armed only from startParked and
+            // startEvents, which run when JS asks, so after a force-quit wake
+            // the phone resumed fences and the heartbeat but stayed deaf to
+            // motion until somebody opened the app. Every boundary the day is
+            // measured on (still -> onFoot -> automotive) was therefore missed
+            // for exactly the stretch the app was dead, which is the stretch
+            // that matters most. The coprocessor's own history still holds it
+            // (queryActivityStarting, up to ~7 days) so nothing is lost
+            // permanently, but live it went quiet, and a wake that re-arms
+            // everything else and not this is half a recovery.
+            self.startMotionStream()
             // The event that woke us is (or is about to be) in the buffer;
             // this relaunch window is the moment to get it to the server.
             self.scheduleFlush()

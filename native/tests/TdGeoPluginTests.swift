@@ -894,6 +894,25 @@ final class TdGeoPluginTests: XCTestCase {
     // half a fact: the geofence cannot say WHERE the state changed. Every
     // motion row landed with lat/lon null before this (94 of 94 in the live
     // table), which is precisely why nothing could be rebuilt server-side.
+    // A relaunch has to restore EVERYTHING, not most things. Armed state
+    // covers fences and the heartbeat; the motion stream was armed only from
+    // startParked/startEvents, so a force-quit wake left the phone deaf to
+    // the transitions the whole day is measured on.
+    func testRelaunchReArmsTheMotionStreamToo() {
+        let src = try! String(contentsOfFile: #filePath.replacingOccurrences(
+            of: "tests/TdGeoPluginTests.swift", with: "td-geo/ios/Plugin/TdGeoPlugin.swift"), encoding: .utf8)
+        guard let lo = src.range(of: "override public func load()") else {
+            return XCTFail("load() not found")
+        }
+        // The body of load(), up to the next top-level MARK.
+        let rest = String(src[lo.upperBound...])
+        let body = rest.range(of: "// MARK:").map { String(rest[..<$0.lowerBound]) } ?? rest
+        XCTAssertTrue(body.contains("startMonitoringSignificantLocationChanges"),
+                      "a relaunch must re-arm significant-change")
+        XCTAssertTrue(body.contains("startMotionStream"),
+                      "a relaunch must re-arm the motion stream, or the phone wakes deaf to every boundary")
+    }
+
     func testMotionEventsCarryKindAndPrevKind() {
         UserDefaults.standard.set(["mode": "events", "visits": true], forKey: "td_geo_armed")
         plugin.load()
