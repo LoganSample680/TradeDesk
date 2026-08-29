@@ -37,6 +37,26 @@ let _geoWasInShop=false;   // currently inside office/shop geofence
 let _geoCurrentPlace=null; // id of the known place (supply house etc.) we're inside
 let _geoPlaceArrivedAt=null;// ISO arrival at that place, for dwell measurement
 let _geoShopArrivedAt=null;// ISO timestamp of shop arrival
+// A departure the motion tape clocked and no fence has confirmed yet.
+// {arrivedAt, at, ts}. Written only when the fence agrees; dropped otherwise.
+let _geoShopPendingClose=null;
+// How long a pending departure waits for the fence to back it up. A real exit
+// lands within a minute or two of pulling out (his 12:48:05 drive, 12:50:01
+// exit). What this rejects is the fence that shows up hours later because a
+// ping finally arrived from somewhere else entirely: his 17:48:59 departure
+// was not "confirmed" by the 20:16:02 arrival at another customer, and a
+// confirmation that late is not evidence of anything.
+const _GEO_DEPART_CONFIRM_MS=15*60000;
+function _geoConfirmShopDepart(nowMs){
+  const p=_geoShopPendingClose;_geoShopPendingClose=null;
+  if(!p)return false;
+  if(nowMs-p.ts>_GEO_DEPART_CONFIRM_MS){
+    _geoParkNote('shop-depart-dropped',Math.round((nowMs-p.ts)/60000)+'m late, unconfirmed');
+    return false;
+  }
+  _geoCloseShopEntry(p.arrivedAt,p.at);
+  return true;
+}
 let _geoDriveStartedAt=null;// ISO timestamp when a drive leg began (leaving any fence)
 let _geoDrivebyRun=0;      // consecutive driving-speed fixes inside a fence (eviction debounce)
 let _geoPersistPingMs=0;   // last time the open state was snapshotted to disk mid-drive
@@ -1121,7 +1141,7 @@ async function _geoOnPing(pos){
     // "no transition happened" and arriveIso's own read, run later in this
     // same function), so reading it costs nothing and can never pick up a
     // stale value from an earlier ping.
-    if(inShop){_geoShopArrivedAt=_geoParkBackdate||nowIsoEarly;}
+    if(inShop){_geoShopArrivedAt=_geoParkBackdate||nowIsoEarly;_geoShopPendingClose=null;}
     else{
       // A hidden gap since arrival: close at the last VERIFIED moment rather
       // than claiming shop time nobody observed.
@@ -1129,9 +1149,20 @@ async function _geoOnPing(pos){
       // replayed TdGeo buffer fix closes the dwell at the moment the departure
       // actually happened rather than at the replay moment.
       if(_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt,_geoGapHiddenAt||nowIsoEarly);
+      // THE FENCE HAS NOW AGREED THEY LEFT. If the motion tape called the
+      // departure first, this is the corroboration it was waiting on, and the
+      // row is written to the tape's clock rather than to this later moment:
+      // the fence is the witness, the tape is the watch.
+      else if(_geoShopPendingClose)_geoConfirmShopDepart(nowMs);
       _geoShopArrivedAt=null;
     }
     _geoWasInShop=inShop;
+  }else if(inShop&&!_geoShopArrivedAt&&_geoShopPendingClose&&nowMs-_geoShopPendingClose.ts>_GEO_DEPART_CONFIRM_MS){
+    // Still inside, long past the window, and the fence never called it a
+    // departure: the tape was wrong (a ride in someone else's truck, a phone
+    // on a dashboard in the yard). Drop the pending row and treat this ping as
+    // a fresh arrival, or a second load-out after a false alarm is invisible.
+    _geoShopPendingClose=null;_geoShopArrivedAt=nowIsoEarly;
   }
   // Where the truck IS, for the purpose of attributing drive legs. A JOB wins:
   // a trip that ends at a job belongs to that job even when the job happens to
@@ -4513,18 +4544,28 @@ async function _geoTdEvent(ev,replay){
       const _k=String(ev.kind);
       if(_k==='automotive'||_k==='driving'){
         const _at=new Date(Number(ev.ts)||Date.now()).toISOString();
-        // Only ever shortens. A tape event that arrives stamped BEFORE the
-        // arrival (a clock skew, a stale buffered row) would otherwise write
-        // a negative dwell, and one stamped after a departure we already
-        // recorded would reopen a closed question.
+        // Only ever shortens. A tape event stamped BEFORE the arrival (clock
+        // skew, a stale buffered row) would otherwise write a negative dwell.
         if(Date.parse(_at)>Date.parse(_geoShopArrivedAt)){
-          _geoParkNote('shop-close-motion',_geoShopArrivedAt+' -> '+_at);
-          _geoCloseShopEntry(_geoShopArrivedAt,_at);
+          // PENDING, NOT WRITTEN (owner 2026-08-29: "I want geo fence checks
+          // on everything even departures cause that's really what confirms
+          // where we were"). The motion edge is the accurate CLOCK for a
+          // departure and no evidence at all that one happened: a phone in a
+          // pocket reads driving from a ride in someone else's truck, and a
+          // dwell written off that alone is a guess wearing a timestamp.
+          //
+          // So this is the same bargain already struck for drives: motion may
+          // set the moment, a fence must confirm the event. The row is held
+          // until the fence agrees they left, and dropped if it never does.
+          // On his 2026-08-27 that is the whole difference between a day that
+          // ends at 17:34:41, which is what actually happened, and one
+          // carrying 14 more minutes nothing ever corroborated.
+          _geoShopPendingClose={arrivedAt:_geoShopArrivedAt,at:_at,ts:Date.parse(_at)};
+          _geoParkNote('shop-depart-pending',_geoShopArrivedAt+' -> '+_at);
+          // The timestamp goes, `_geoWasInShop` stays. The fence transition is
+          // what confirms this, and it can only fire while the engine still
+          // believes they were inside.
           _geoShopArrivedAt=null;
-          // Cleared together with the timestamp so a later ping still inside
-          // the fence reads as a FRESH arrival and opens a new dwell. Leaving
-          // it true would make coming back for a second load invisible.
-          _geoWasInShop=false;
         }
       }
     }
@@ -4853,7 +4894,7 @@ function stopGeoTracking(){
   if(_geoWasInShop&&_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt);
   if(_geoCurrentClient&&_geoClientArrivedAt)_geoCloseClientEntry(_geoCurrentClient,_geoClientArrivedAt);
   _geoCurrentJob=null;_geoArrivedAt=null;
-  _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;_geoGapHiddenAt=null;_geoExitPending=null;
+  _geoWasInShop=false;_geoShopArrivedAt=null;_geoShopPendingClose=null;_geoDriveStartedAt=null;_geoGapHiddenAt=null;_geoExitPending=null;
   // Park-detection state dies with tracking too: a lock or a half-grown
   // cluster from this session must never resolve an arrival for the next one
   // (same reason the job-coordinate cache below is cleared).
