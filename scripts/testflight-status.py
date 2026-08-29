@@ -194,6 +194,26 @@ def main():
     # the half that decides whether someone is stuck. An external group is the
     # one to watch: Apple gates it behind Beta App Review, so it lags by
     # default rather than by mistake.
+    # HOW MANY PEOPLE ACTUALLY INSTALLED EACH BUILD. A tester's `state` says
+    # INSTALLED once they have ever installed the app, not which build they are
+    # holding, so it cannot answer "is Jack on 43". Apple's per-build metrics
+    # can. Best-effort: this endpoint is not on every account tier, and a report
+    # that dies over an extra detail is worse than one without it.
+    print('\nINSTALLS PER BUILD')
+    for r in rows[:4]:
+        bid = next((b['id'] for b in builds['data']
+                    if str(b['attributes'].get('version')) == str(r['build'])), None)
+        if not bid:
+            continue
+        try:
+            mt = get('/builds/%s/metrics/betaBuildUsages' % bid, tok)
+            pts = [p for d in mt.get('data', []) for p in d.get('dataPoints', [])]
+            inst = sum(int((p.get('values') or {}).get('installCount') or 0) for p in pts)
+            sess = sum(int((p.get('values') or {}).get('sessionCount') or 0) for p in pts)
+            print('  build %-4s installs %-4s sessions %s' % (r['build'], inst, sess))
+        except Exception as e:
+            print('  build %-4s (metrics unavailable: %s)' % (r['build'], type(e).__name__))
+
     print('\nMEMBERSHIP')
     for gid, gname in groups.items():
         newest = next((r['build'] for r in rows if gname in r['groups']), None)
