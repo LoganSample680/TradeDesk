@@ -5962,10 +5962,14 @@ async function _geoHomeRegradeSweep(){
     const names=new Set(homes.map(p=>String(p.name||'')).filter(Boolean));
     if(!names.size)return 0;
     const since=new Date(Date.now()-7*86400000).toISOString();
+    // .is('deleted_at',null) sits directly after .select, which is the house
+    // convention every read of this table follows and what the soft-delete
+    // guard (tests/e2e-soft-delete.spec.js) statically enforces: a swept row
+    // that walks back in is payroll data resurrecting itself.
     const{data,error}=await _supa.from('job_time_entries')
-      .select('id,arrived_at,departed_at,minutes,source,dest_place,client_key')
+      .select('id,arrived_at,departed_at,minutes,source,dest_place,client_key').is('deleted_at',null)
       .eq('employee_user_id',_supaUser.id).eq('source','place')
-      .is('deleted_at',null).gte('arrived_at',since);
+      .gte('arrived_at',since);
     if(error||!Array.isArray(data))return 0;
     const rows=data.filter(r=>r&&r.arrived_at&&r.departed_at&&names.has(String(r.dest_place||'')));
     if(!rows.length)return 0;

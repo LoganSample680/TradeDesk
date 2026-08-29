@@ -716,7 +716,7 @@ test.describe('Home office: presence is not work', () => {
         window._geoMotionTape = async () => ([
           { kind: 'onFoot', ts: m(10) }, { kind: 'still', ts: m(32) }, { kind: 'driving', ts: m(34) },
         ]);
-        _supa = { from: () => ({ select: () => ({ eq: () => ({ eq: () => ({ is: () => ({ gte: async () => ({
+        _supa = { from: () => ({ select: () => ({ is: () => ({ eq: () => ({ eq: () => ({ gte: async () => ({
           data: [{ id: 'old-row-1', arrived_at: new Date(T).toISOString(),
                    departed_at: new Date(m(36)).toISOString(), minutes: 36,
                    source: 'place', dest_place: 'Home Office', client_key: 'k1' }] }) }) }) }) }) }) };
@@ -751,7 +751,7 @@ test.describe('Home office: presence is not work', () => {
         _geoEnqueue = (tbl, row) => enq.push(Object.assign({ _tbl: tbl }, row));
         window._tdSoftDelete = async (tbl, id) => { del.push(id); };
         window._geoMotionTape = async () => ([{ kind: 'still', ts: T + 60000 }]);
-        _supa = { from: () => ({ select: () => ({ eq: () => ({ eq: () => ({ is: () => ({ gte: async () => ({
+        _supa = { from: () => ({ select: () => ({ is: () => ({ eq: () => ({ eq: () => ({ gte: async () => ({
           data: [{ id: 'night-row', arrived_at: new Date(T).toISOString(),
                    departed_at: new Date(T + 567 * 60000).toISOString(), minutes: 567,
                    source: 'place', dest_place: 'Home Office', client_key: 'k2' }] }) }) }) }) }) }) };
