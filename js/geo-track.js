@@ -5933,6 +5933,70 @@ async function _geoTapeSync(){
     return (r&&r.ok)?batch.length:0;
   }catch(_e){return 0;}
 }
+// ── A drive row is paid for the part that was actually driving ──────────────
+// Owner 2026-08-29: "we go off the background core motion tape for walking
+// still and driving, so why can't this fix it too?"
+//
+// He is right, and the first version of this work was scoped too narrowly. The
+// coprocessor already says driving / still / onFoot for every minute of the
+// day, and the home-office re-grade used it while the drive rows next to it
+// went on being paid at face value. His own 8/28 has a 63-minute "drive" from
+// 5:26 to 6:28 that is 55 minutes parked at 39.031,-95.759, with an iOS visit
+// report at 5:43 confirming the truck never moved. Nothing was checking, so it
+// was paid as windshield time.
+//
+// The rule is the same rule the fence machine already uses: _GEO_STOP_MS is
+// this file's existing line between a red light and a stop. A still stretch
+// under it is traffic and stays paid; over it, nobody was driving and it comes
+// off. The row keeps its span, because the leg really did run end to end, and
+// only the MINUTES change, exactly like the office row carries a bracket wider
+// than the time worked.
+//
+// REDUCTIONS ONLY, unlike the home-office re-grade. A drive row was already
+// written from an observed leg, so the tape can only ever prove less driving
+// happened inside it, never more.
+function _geoStillOverage(tape,s,e){
+  if(!Array.isArray(tape)||!tape.length||!(e>s))return 0;
+  const t=tape.filter(x=>x&&typeof x.ts==='number'&&x.kind).slice().sort((a,b)=>a.ts-b.ts);
+  let over=0;
+  for(let i=0;i<t.length;i++){
+    if(t[i].kind!=='still')continue;
+    const a=Math.max(t[i].ts,s),b=Math.min((i+1<t.length)?t[i+1].ts:e,e);
+    const span=b-a;
+    if(span>_GEO_STOP_MS)over+=span-_GEO_STOP_MS;   // the red-light allowance stays paid
+  }
+  return over;
+}
+async function _geoDriveTapeTrim(){
+  try{
+    if(window._geoDriveTrimRan)return 0;
+    window._geoDriveTrimRan=true;
+    if(!_supa||!_supaUser)return 0;
+    const since=new Date(Date.now()-7*86400000).toISOString();
+    const{data,error}=await _supa.from('job_time_entries')
+      .select('id,arrived_at,departed_at,minutes,source').is('deleted_at',null)
+      .eq('employee_user_id',_supaUser.id)
+      .gte('arrived_at',since);
+    if(error||!Array.isArray(data))return 0;
+    const rows=data.filter(r=>r&&r.arrived_at&&r.departed_at&&(r.minutes||0)>=5&&
+      typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(r.source));
+    let fixed=0;
+    for(const r of rows.slice(0,20)){
+      const s=Date.parse(r.arrived_at)||0,e=Date.parse(r.departed_at)||0;
+      if(!(e>s))continue;
+      const tape=await _geoMotionTape(s,e);
+      if(!Array.isArray(tape)||!tape.length)continue;    // no tape, no opinion
+      const over=_geoStillOverage(tape,s,e);
+      const mins=Math.max(0,Math.round((r.minutes||0)-over/60000));
+      _geoParkNote('drive-trim',String(r.id).slice(0,8)+' '+(r.minutes||0)+'->'+mins);
+      if(mins>=(r.minutes||0))continue;                  // reductions only
+      const{error:uErr}=await _supa.from('job_time_entries').update({minutes:mins}).eq('id',r.id);
+      if(!uErr)fixed++;
+    }
+    _geoParkNote('drive-trim-done','rows='+rows.length+' fixed='+fixed);
+    return fixed;
+  }catch(_e){return 0;}
+}
 // ── Relabel customer visits that were written as supply runs ────────────────
 // Owner 2026-08-29: "code should fix Laurie and today's jobs."
 //

@@ -770,6 +770,68 @@ test.describe('Home office: presence is not work', () => {
       expect(out.enq.length).toBe(0);
     });
 
+    // ── A drive row is paid for the part that was actually driving ─────────
+    test('a long still inside a drive comes off, a red light does not', async () => {
+      // Owner 2026-08-29: "we go off the background core motion tape for
+      // walking still and driving, so why can't this fix it too?" _GEO_STOP_MS
+      // is this file's existing line between a red light and a stop, so the
+      // allowance under it stays paid and everything over it comes off.
+      const out = await page.evaluate(() => {
+        const T = Date.parse('2026-08-21T10:00:00.000Z'), m = n => T + n * 60000;
+        const mins = ms => Math.round(ms / 60000);
+        return {
+          // Jack's real shape: rolls at 0, parked 3 to 58, drives on to 62.
+          parked: mins(_geoStillOverage([
+            { kind: 'driving', ts: m(0) }, { kind: 'still', ts: m(3) }, { kind: 'driving', ts: m(58) },
+          ], T, m(62))),
+          // Three red lights, none over the allowance: nothing comes off.
+          lights: mins(_geoStillOverage([
+            { kind: 'driving', ts: m(0) }, { kind: 'still', ts: m(4) }, { kind: 'driving', ts: m(6) },
+            { kind: 'still', ts: m(12) }, { kind: 'driving', ts: m(15) },
+          ], T, m(20))),
+          none: mins(_geoStillOverage([{ kind: 'driving', ts: m(0) }], T, m(30))),
+          empty: _geoStillOverage([], T, m(30)),
+          nulls: _geoStillOverage(null, T, m(30)),
+          backwards: _geoStillOverage([{ kind: 'still', ts: m(1) }], m(30), T),
+        };
+      });
+      expect(out.parked, '55 min parked, less the 5 min allowance').toBe(50);
+      expect(out.lights, 'traffic is still driving').toBe(0);
+      expect(out.none).toBe(0);
+      expect(out.empty).toBe(0);
+      expect(out.nulls).toBe(0);
+      expect(out.backwards).toBe(0);
+    });
+
+    test('the drive trim only ever reduces, and leaves a tapeless row alone', async () => {
+      const out = await page.evaluate(async () => {
+        const T = Date.parse('2026-08-21T10:00:00.000Z'), m = n => T + n * 60000;
+        const realSupa = _supa, realUser = _supaUser, realTape = window._geoMotionTape;
+        const updates = [];
+        _supaUser = { id: 'u-home' };
+        _supa = { from: () => ({
+          select: () => ({ is: () => ({ eq: () => ({ gte: async () => ({ data: [
+            { id: 'parked', arrived_at: new Date(T).toISOString(), departed_at: new Date(m(62)).toISOString(), minutes: 63, source: 'drive' },
+            { id: 'clean', arrived_at: new Date(T).toISOString(), departed_at: new Date(m(20)).toISOString(), minutes: 20, source: 'drive' },
+            { id: 'onsite', arrived_at: new Date(T).toISOString(), departed_at: new Date(m(99)).toISOString(), minutes: 99, source: 'geofence' },
+          ] }) }) }) }),
+          update: (patch) => ({ eq: async (_c, id) => { updates.push({ id, patch }); return {}; } }),
+        }) };
+        window._geoMotionTape = async (s, e) => (e - s > 30 * 60000)
+          ? [{ kind: 'driving', ts: T }, { kind: 'still', ts: m(3) }, { kind: 'driving', ts: m(58) }]
+          : [{ kind: 'driving', ts: T }];      // the short leg never stopped
+        try {
+          window._geoDriveTrimRan = false;
+          const n = await _geoDriveTapeTrim();
+          return { n, updates };
+        } finally { _supa = realSupa; _supaUser = realUser; window._geoMotionTape = realTape; }
+      });
+      expect(out.n).toBe(1);
+      expect(out.updates.length, 'the clean leg and the on-site row are untouched').toBe(1);
+      expect(out.updates[0].id).toBe('parked');
+      expect(out.updates[0].patch).toEqual({ minutes: 13 });   // 63 paid, 50 parked
+    });
+
     test('the relabel fixes customer visits already written as supply runs', async () => {
       // Owner 2026-08-29: "code should fix Laurie and today's jobs." Keyed on
       // client_key, which both writers have always stamped '-vis-client-'
