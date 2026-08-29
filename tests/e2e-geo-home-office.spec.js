@@ -1210,7 +1210,7 @@ test.describe('Home office: presence is not work', () => {
       const out = await page.evaluate(() => _tlEmpWeekAgg([
         { rawSource: 'drive', detail: 'Driving', minutes: 30, personUid: 'u1', personName: 'A' },
         { rawSource: 'place', detail: '', minutes: 10, personUid: 'u1', personName: 'A' },
-        { rawSource: 'place-load', detail: 'Loading', minutes: 22, personUid: 'u1', personName: 'A' },
+        { rawSource: 'place-load', detail: 'Loading time', minutes: 22, personUid: 'u1', personName: 'A' },
         { rawSource: 'place-office', detail: 'Office', minutes: 8, personUid: 'u1', personName: 'A' },
         { rawSource: 'geofence', detail: '', minutes: 60, personUid: 'u1', personName: 'A' },
       ], 'cid').u1);

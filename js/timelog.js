@@ -83,7 +83,11 @@ function _tlSourceLabel(source){
   // A client visit needs no word: the row already carries the person's name,
   // which is more use than the label 'client' would be.
   if(s==='client')return '';
-  if(s==='place-load')return 'Loading';
+  // "Loading time", not "Loading" (owner 2026-08-29). The bare word means a
+  // spinner in every app anybody has ever used, so on a finished row it reads
+  // as the page still working rather than as the minutes he spent putting
+  // tools in the truck.
+  if(s==='place-load')return 'Loading time';
   if(s==='place-office')return 'Office';
   if(s==='place')return '';
   if(s==='manual')return 'GPS clock';
@@ -773,7 +777,7 @@ function _tlRow(r){
     ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('❓',{size:9})+' Unaccounted</span>'
     :homeKind
     ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:800;padding:1px 6px;border-radius:4px;background:#0E6B6B22;color:#0E6B6B">'+
-       svgIcon(homeKind==='load'?'📦':'📋',{size:9})+' '+(homeKind==='load'?'Loading':'Office')+'</span>'
+       svgIcon(homeKind==='load'?'📦':'📋',{size:9})+' '+(homeKind==='load'?'Loading time':'Office')+'</span>'
     :r.source==='shop'
     ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:#0E6B6B">'+svgIcon('🔧',{size:9})+' Shop</span>'
     :r.unpaid

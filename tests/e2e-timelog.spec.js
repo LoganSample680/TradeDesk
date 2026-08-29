@@ -2159,9 +2159,9 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window._isEmployee = false;
         const row = (rawSource, detail) => _tlRow({ id: 'a' + rawSource, rawId: 90, source: 'auto', rawSource,
           personName: 'Jack', personUid: 'u1', clientName: 'Home Office', addr: '', jobName: '-', detail, minutes: 22 });
-        return { load: row('place-load', 'Loading'), office: row('place-office', 'Office') };
+        return { load: row('place-load', 'Loading time'), office: row('place-office', 'Office') };
       });
-      expect(out.load).toContain('Loading');
+      expect(out.load).toContain('Loading time');
       expect(out.load).not.toContain('On-site');
       expect(out.office).toContain('Office');
       expect(out.office).not.toContain('On-site');
