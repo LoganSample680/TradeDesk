@@ -4065,7 +4065,9 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(outLeg, 'the leg out survives the return').toBeTruthy();
       expect(backLeg, 'the return leg is measured FROM the client, not from home').toBeTruthy();
       expect(backLeg.to_name).toBe('Home Office');
-      const visit = r.entries.find(e => e.tbl === 'job_time_entries' && e.row.source === 'place' && e.row.dest_place === 'John Doe');
+      // 'client', not 'place' (2026-08-29): John Doe is a customer, and a
+      // customer's address stopped sharing a source with a supply house.
+      const visit = r.entries.find(e => e.tbl === 'job_time_entries' && e.row.source === 'client' && e.row.dest_place === 'John Doe');
       expect(visit, 'the half hour in the driveway is a place-visit entry under the client\'s name').toBeTruthy();
       expect(visit.row.minutes).toBeGreaterThanOrEqual(28);
       expect(visit.row.job_id).toBe(null);

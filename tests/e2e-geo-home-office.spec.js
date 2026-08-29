@@ -659,6 +659,61 @@ test.describe('Home office: presence is not work', () => {
       expect(out.label).toBe('Loading|Office|');
     });
 
+    test('a customer visit is on-site work, never a supply run', async () => {
+      // Owner 2026-08-29: "why did Laurie go as supply run when she was a
+      // lead? That shouldn't happen." _geoCloseClientEntry wrote 'place', the
+      // same value a Home Depot visit gets, so a real beta user's 2h07m at a
+      // customer's house was pooled with the parts counter and billed as
+      // overhead. No bid or job is required for it to be work: the owner's
+      // rule is "Jack did work with no bid and that's fine."
+      const out = await page.evaluate(async () => {
+        const rows = [], realEnq = _geoEnqueue, realUser = _supaUser;
+        _supaUser = { id: 'u-home' };
+        _geoEnqueue = (tbl, row) => rows.push(Object.assign({ _tbl: tbl }, row));
+        try {
+          if (typeof clients !== 'undefined') { clients.length = 0; clients.push({ id: 'c-laurie', name: 'Laurie Schonfeldt' }); }
+          const t = Date.parse('2026-08-21T14:00:00.000Z');
+          _geoCloseClientEntry('c-laurie', new Date(t).toISOString(), new Date(t + 99 * 60000).toISOString());
+          return rows;
+        } finally { _geoEnqueue = realEnq; _supaUser = realUser; }
+      });
+      expect(out.length).toBe(1);
+      expect(out[0].source).toBe('client');
+      expect(out[0].minutes).toBe(99);
+      expect(out[0].dest_place).toBe('Laurie Schonfeldt');
+    });
+
+    test('client time lands in on-site labour, not the overhead bucket', async () => {
+      const out = await page.evaluate(() => ({
+        isPlace: _geoIsPlaceSource('client'),        // must NOT pool with supply
+        isDrive: _geoIsDriveSource('client'),
+        label: _tlSourceLabel('client'),             // the row shows the person's name instead
+        agg: _tlEmpWeekAgg([
+          { rawSource: 'client', detail: '', minutes: 127, personUid: 'u1', personName: 'Jack' },
+          { rawSource: 'place', detail: '', minutes: 15, personUid: 'u1', personName: 'Jack' },
+        ], 'cid').u1,
+      }));
+      expect(out.isPlace).toBe(false);
+      expect(out.isDrive).toBe(false);
+      expect(out.label).toBe('');
+      expect(out.agg.onsiteMin, "the customer's house is on-site work").toBe(127);
+      expect(out.agg.placeMin, 'only the supply house is overhead').toBe(15);
+    });
+
+    test('a client visit still dedupes and still merges, same as it always did', async () => {
+      // The trap in splitting the source off 'place': two sweeps keyed on the
+      // old string by name. The merge sweep's original ask was literally a day
+      // of John Doe visits, and John Doe is a client.
+      const out = await page.evaluate(() => {
+        const onSite = s => /^(geofence|stop|manual|place|client)$/.test(String(s || '')) || /^(geofence|place|client)-/.test(String(s || ''));
+        const isCandidate = s => /^(geofence|geofence-gap|place|client)$/.test(String(s || ''));
+        return { dedup: onSite('client'), merge: isCandidate('client'), notDrive: onSite('drive') };
+      });
+      expect(out.dedup).toBe(true);
+      expect(out.merge).toBe(true);
+      expect(out.notDrive).toBe(false);
+    });
+
     test('the weekly split bar reads the raw column, not the friendly label', async () => {
       // The bug found while wiring this up, and the reason the assertion above
       // is not enough on its own: _tlEmpWeekAgg fed `detail` ('Driving', '',

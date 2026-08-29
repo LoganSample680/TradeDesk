@@ -80,6 +80,9 @@ function _tlSourceLabel(source){
   // prevailing-wage agreements name that block (nobody in the trades says
   // "load-out", that is mining and logistics). Deliberately NOT "Shop": the
   // Shop badge already means the yard on this same table.
+  // A client visit needs no word: the row already carries the person's name,
+  // which is more use than the label 'client' would be.
+  if(s==='client')return '';
   if(s==='place-load')return 'Loading';
   if(s==='place-office')return 'Office';
   if(s==='place')return '';

@@ -253,7 +253,11 @@ Deno.serve(async (req) => {
         contractor_user_id: cid, employee_user_id: uid, job_id: null,
         arrived_at: arrIso, departed_at: depIso, minutes: mins,
         dest_place: names[D.regionId] || null,
-        client_key: visKeyOf(uid, kind, id, D.arrivedTs), source: "place",
+        // Same split the client does (js/geo-track.js _geoCloseClientEntry):
+        // a customer's address is on-site work, a saved place is overhead.
+        // The server wrote 'place' for both, so a dwell resolved here landed
+        // in the supply bucket even when it was somebody's house.
+        client_key: visKeyOf(uid, kind, id, D.arrivedTs), source: kind === "client" ? "client" : "place",
       });
     };
 

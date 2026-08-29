@@ -2440,7 +2440,18 @@ function _geoCloseClientEntry(clientId,arrivedAt,departedIso){
     contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
     job_id:null,arrived_at:arrivedAt,departed_at:departed,minutes:mins,
     dest_place:(c&&c.name)||null,client_key:_geoVisitKey('client',clientId,arrivedAt),
-    source:'place'
+    // A PERSON'S PLACE IS NOT A SUPPLY HOUSE (owner 2026-08-29: "why did
+    // Laurie go as supply run when she was a lead? That shouldn't happen").
+    // This wrote 'place', the identical value a Home Depot visit gets, so
+    // every money view pooled a customer's driveway with the parts counter
+    // and billed it as overhead instead of on-site work. Its own key has said
+    // 'client' since the day it was written; the source now agrees.
+    //
+    // NO BID OR JOB REQUIRED, deliberately. The owner's rule: "there's no job
+    // attached to it because it went off the books, Jack did work with no bid
+    // and that's fine." Time at a customer's property is work. Whether it was
+    // ever quoted is a sales question, not a payroll one.
+    source:'client'
   });
   return true;
 }
@@ -5221,7 +5232,12 @@ async function _geoDedupTimeEntries(){
     // the same class of gap drive rows are deliberately exempt from, except
     // client/place visits were never MEANT to be exempt, they simply got left
     // out when this was written for jobs first.
-    const onSite=s=>/^(geofence|stop|manual|place)$/.test(String(s||''))||/^(geofence|place)-/.test(String(s||''));
+    // 'client' joins the family it always belonged to: a customer visit is
+    // on-site presence and dedupes exactly like one. Leaving it out when the
+    // source split off 'place' would have silently stopped deduping every
+    // client visit, which is the same hole this regex was widened to close
+    // for 'place' itself in the first place.
+    const onSite=s=>/^(geofence|stop|manual|place|client)$/.test(String(s||''))||/^(geofence|place|client)-/.test(String(s||''));
     const rows=data.filter(r=>r&&r.id!=null&&r.arrived_at&&r.departed_at&&onSite(r.source));
     // A -reconciled row is a GUESS anchored to mileage legs, not a live fence
     // read: _geoReconcileFromMileage never checks for existing coverage
@@ -5461,7 +5477,11 @@ async function _geoMergeAdjacentVisits(){
     // Candidates: LIVE geofence/place detections only. Never reconciled
     // guesses (see the doc comment above: they bridged the 8/21 lunch),
     // never manual bookends, never stops, never drive rows.
-    const isCandidate=s=>/^(geofence|geofence-gap|place)$/.test(String(s||''));
+    // Same reason as the dedupe predicate above: the owner's original ask for
+    // this sweep was literally about merging a day of John Doe visits, and
+    // John Doe is a CLIENT. Splitting the source off 'place' without adding it
+    // here would have stopped merging the exact case it was built for.
+    const isCandidate=s=>/^(geofence|geofence-gap|place|client)$/.test(String(s||''));
     // A row a HUMAN corrected by hand is never a merge candidate, the same
     // protection 'manual' already gets everywhere in this file: the owner
     // set those boundaries on purpose and no sweep may widen them again
