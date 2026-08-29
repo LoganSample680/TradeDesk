@@ -659,6 +659,117 @@ test.describe('Home office: presence is not work', () => {
       expect(out.label).toBe('Loading|Office|');
     });
 
+    // ── The tape goes to the server, and old visits get re-graded from it ──
+    test('the tape upload no-ops without a device key, and never throws', async () => {
+      // A browser, or a phone whose plugin flush was never configured, has
+      // nothing to authenticate with. It must return zero, not throw out of a
+      // boot settle point and take the sweeps after it down with it.
+      const out = await page.evaluate(async () => {
+        const key = localStorage.getItem('zp3_geo_flush_key');
+        localStorage.removeItem('zp3_geo_flush_key');
+        window._geoTapeSyncRan = false;
+        try { return { v: await _geoTapeSync() }; }
+        catch (e) { return { threw: String(e) }; }
+        finally { if (key) localStorage.setItem('zp3_geo_flush_key', key); }
+      });
+      expect(out.threw).toBeUndefined();
+      expect(out.v).toBe(0);
+    });
+
+    test('the tape upload runs once per session, not once per settle', async () => {
+      const out = await page.evaluate(async () => {
+        window._geoTapeSyncRan = false;
+        const a = await _geoTapeSync();
+        const b = await _geoTapeSync();     // second call must short-circuit
+        return { a, b };
+      });
+      expect(out.b).toBe(0);
+    });
+
+    test('the re-grade no-ops with no home office saved, and never throws', async () => {
+      const out = await page.evaluate(async () => {
+        places.length = 0;                  // nothing tagged home_office
+        window._geoHomeRegradeRan = false;
+        try { return { v: await _geoHomeRegradeSweep() }; }
+        catch (e) { return { threw: String(e) }; }
+      });
+      expect(out.threw).toBeUndefined();
+      expect(out.v).toBe(0);
+    });
+
+    test('the re-grade recovers the load-out and drops the dwell row', async () => {
+      // The live shape: a home-office visit that closed under the old rule as
+      // one raw-dwell 'place' row. The tape still proves a walk ran into the
+      // drive, so that becomes a Loading row and the dwell row goes.
+      //
+      // The paperwork half is deliberately NOT recovered: app-active time was
+      // only ever in memory, so a visit that closed before the rule existed
+      // has no evidence of it and this must never invent one.
+      const out = await page.evaluate(async () => {
+        const T = Date.parse('2026-08-21T12:00:00.000Z'), m = n => T + n * 60000;
+        const enq = [], del = [];
+        const realEnq = _geoEnqueue, realUser = _supaUser, realSupa = _supa;
+        const realTape = window._geoMotionTape, realDel = window._tdSoftDelete;
+        _supaUser = { id: 'u-home' };
+        _geoEnqueue = (tbl, row) => enq.push(Object.assign({ _tbl: tbl }, row));
+        window._tdSoftDelete = async (tbl, id) => { del.push(id); };
+        window._geoMotionTape = async () => ([
+          { kind: 'onFoot', ts: m(10) }, { kind: 'still', ts: m(32) }, { kind: 'driving', ts: m(34) },
+        ]);
+        _supa = { from: () => ({ select: () => ({ eq: () => ({ eq: () => ({ is: () => ({ gte: async () => ({
+          data: [{ id: 'old-row-1', arrived_at: new Date(T).toISOString(),
+                   departed_at: new Date(m(36)).toISOString(), minutes: 36,
+                   source: 'place', dest_place: 'Home Office', client_key: 'k1' }] }) }) }) }) }) }) };
+        try {
+          places.length = 0;
+          savePlace({ id: 'ho-regrade', name: 'Home Office', kind: 'home_office', lat: 41.5, lon: -93.5, confirmedBy: 'manual' });
+          window._geoHomeRegradeRan = false;
+          const n = await _geoHomeRegradeSweep();
+          return { n, enq, del };
+        } finally {
+          _geoEnqueue = realEnq; _supaUser = realUser; _supa = realSupa;
+          window._geoMotionTape = realTape; window._tdSoftDelete = realDel;
+        }
+      });
+      expect(out.n).toBe(1);
+      expect(out.del).toEqual(['old-row-1']);          // the raw-dwell row goes
+      expect(out.enq.length).toBe(1);                  // exactly one replacement
+      expect(out.enq[0].source).toBe('place-load');
+      expect(out.enq[0].minutes).toBe(22);             // the walk, not the 36-minute visit
+      expect(out.enq.find(r => r.source === 'place-office'), 'paperwork is never invented').toBeFalsy();
+    });
+
+    test('the re-grade drops a dwell row the tape cannot vouch for, and adds nothing', async () => {
+      // The overnight case, retroactively: no walking on the tape, so there is
+      // no load-out to recover and the row that billed the night still goes.
+      const out = await page.evaluate(async () => {
+        const T = Date.parse('2026-08-21T02:00:00.000Z');
+        const enq = [], del = [];
+        const realEnq = _geoEnqueue, realUser = _supaUser, realSupa = _supa;
+        const realTape = window._geoMotionTape, realDel = window._tdSoftDelete;
+        _supaUser = { id: 'u-home' };
+        _geoEnqueue = (tbl, row) => enq.push(Object.assign({ _tbl: tbl }, row));
+        window._tdSoftDelete = async (tbl, id) => { del.push(id); };
+        window._geoMotionTape = async () => ([{ kind: 'still', ts: T + 60000 }]);
+        _supa = { from: () => ({ select: () => ({ eq: () => ({ eq: () => ({ is: () => ({ gte: async () => ({
+          data: [{ id: 'night-row', arrived_at: new Date(T).toISOString(),
+                   departed_at: new Date(T + 567 * 60000).toISOString(), minutes: 567,
+                   source: 'place', dest_place: 'Home Office', client_key: 'k2' }] }) }) }) }) }) }) };
+        try {
+          places.length = 0;
+          savePlace({ id: 'ho-regrade2', name: 'Home Office', kind: 'home_office', lat: 41.5, lon: -93.5, confirmedBy: 'manual' });
+          window._geoHomeRegradeRan = false;
+          await _geoHomeRegradeSweep();
+          return { enq, del };
+        } finally {
+          _geoEnqueue = realEnq; _supaUser = realUser; _supa = realSupa;
+          window._geoMotionTape = realTape; window._tdSoftDelete = realDel;
+        }
+      });
+      expect(out.del).toEqual(['night-row']);
+      expect(out.enq.length).toBe(0);
+    });
+
     test('a customer visit is on-site work, never a supply run', async () => {
       // Owner 2026-08-29: "why did Laurie go as supply run when she was a
       // lead? That shouldn't happen." _geoCloseClientEntry wrote 'place', the

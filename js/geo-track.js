@@ -5891,6 +5891,111 @@ async function _geoTimeEntriesSettleChain(){
   // try{if(typeof _geoAbsorbGapsIntoStops==='function')await _geoAbsorbGapsIntoStops();}catch(_e){}
 }
 
+// ── The tape reaches the server (owner 2026-08-29) ──────────────────────────
+// "How can we make the core motion tape go to server side since it's iOS level
+// shit." The coprocessor holds about a week of onFoot/still/driving and the
+// native plugin has always stamped that word on the motion events it records
+// (TdGeoPlugin.swift). Two holes made it useless server-side: ingest-geo
+// dropped the kind, and the plugin only records what happens while it is
+// running, so a stretch the app slept through existed on the handset and
+// nowhere else. That is why a load-out could only ever be graded live.
+//
+// This lifts the whole window up once per session through the SAME ingest
+// endpoint and per-device key the plugin's own background flush uses, so
+// nothing new has to be authorised and nothing native changes. The unique
+// index on (employee, type, ts, region) makes a re-upload a free no-op, which
+// is what lets this run every session with no watermark to keep straight.
+// The once-per-session latch lives on `window`, not in a `let`, matching
+// window._mileMotionHealRan and window._geoOpenRestored: a top-level `let` is
+// not a window property, so nothing outside this file, a test included, can
+// ever reset it.
+async function _geoTapeSync(){
+  try{
+    if(window._geoTapeSyncRan)return 0;
+    window._geoTapeSyncRan=true;
+    if(!_supa||!_supaUser||typeof _SUPA_DIRECT_URL==='undefined')return 0;
+    const devId=(typeof _initDeviceId==='function')?_initDeviceId():null;
+    let key=null;try{key=localStorage.getItem('zp3_geo_flush_key');}catch(_e){}
+    // No key means the plugin's flush was never configured on this device, so
+    // there is nothing to authenticate with. A browser lands here too.
+    if(!devId||!key)return 0;
+    const tape=await _geoMotionTape(Date.now()-7*86400000,Date.now());
+    if(!Array.isArray(tape)||!tape.length)return 0;
+    // Capped: a week on a busy phone is a few hundred transitions, and an
+    // unbounded POST out of a boot path is how a settle point becomes a stall.
+    // The tail, because recent history is what any re-grade actually needs.
+    const batch=tape.slice(-500).map(t=>({type:'motion',ts:Math.round(t.ts),kind:String(t.kind||'')}));
+    const r=await fetch(_SUPA_DIRECT_URL+'/functions/v1/ingest-geo',{
+      method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({user_id:_supaUser.id,device_id:devId,key,events:batch})
+    });
+    _geoParkNote('tape-sync',(r&&r.ok?'sent ':'failed ')+batch.length);
+    return (r&&r.ok)?batch.length:0;
+  }catch(_e){return 0;}
+}
+// ── Re-grade home-office visits that closed under the old rule ──────────────
+// Owner 2026-08-29: "why can't we re-read the coremotion tape and patch it in
+// retro then ensure it works live going forward."
+//
+// Same shape as _mileMotionHealSweep (js/mileage.js): once per session, only
+// inside the tape's own memory, a small cap, and a verdict note per row so the
+// next "it didn't correct" report is a diagnosis rather than a guess.
+//
+// ONE DELIBERATE DIFFERENCE, stated because it is the risky half: that sweep
+// is reductions-only by design, and this one can RAISE a number. A visit that
+// billed nothing may really have been a man loading his truck, and refusing to
+// ever add a minute would leave that unpaid forever. It is still never a
+// guess: the load window comes off the tape exactly as a live close would have
+// read it, and no walk on the tape means no row.
+//
+// The paperwork half cannot be recovered and is not attempted. App-active time
+// was never recorded anywhere but in memory, so a visit that closed before
+// this rule existed has no evidence of it. Only Loading is recoverable.
+// Same window-scoped latch as _geoTapeSync above, same reason.
+async function _geoHomeRegradeSweep(){
+  try{
+    if(window._geoHomeRegradeRan)return 0;
+    window._geoHomeRegradeRan=true;
+    if(!_supa||!_supaUser)return 0;
+    const homes=(typeof getPlaces==='function')?(getPlaces()||[]).filter(p=>p&&p.kind==='home_office'):[];
+    if(!homes.length)return 0;
+    const names=new Set(homes.map(p=>String(p.name||'')).filter(Boolean));
+    if(!names.size)return 0;
+    const since=new Date(Date.now()-7*86400000).toISOString();
+    const{data,error}=await _supa.from('job_time_entries')
+      .select('id,arrived_at,departed_at,minutes,source,dest_place,client_key')
+      .eq('employee_user_id',_supaUser.id).eq('source','place')
+      .is('deleted_at',null).gte('arrived_at',since);
+    if(error||!Array.isArray(data))return 0;
+    const rows=data.filter(r=>r&&r.arrived_at&&r.departed_at&&names.has(String(r.dest_place||'')));
+    if(!rows.length)return 0;
+    let changed=0;
+    for(const r of rows.slice(0,20)){
+      const s=Date.parse(r.arrived_at)||0,e=Date.parse(r.departed_at)||0;
+      if(!(e>s))continue;
+      const tape=await _geoMotionTape(s,e);
+      const load=_geoHomeLoadWindow(tape,s,e);
+      const mins=load?Math.floor((load[1]-load[0])/60000):0;
+      _geoParkNote('home-regrade',String(r.id).slice(0,8)+' '+(load?mins+'m load':'no walk'));
+      // The old row billed raw dwell either way, which is the thing the rule
+      // says is not work. It goes; what the tape can prove replaces it.
+      try{await _tdSoftDelete('job_time_entries',r.id);}catch(_e){}
+      if(load&&mins>=2){
+        const iso=new Date(load[0]).toISOString();
+        _geoEnqueue('job_time_entries',{
+          contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+          job_id:null,arrived_at:iso,departed_at:new Date(load[1]).toISOString(),
+          minutes:mins,dest_place:r.dest_place,
+          client_key:String(r.client_key||r.id)+'-regrade-load',
+          source:'place-load'
+        });
+      }
+      changed++;
+    }
+    _geoParkNote('home-regrade-done','rows='+rows.length+' changed='+changed);
+    return changed;
+  }catch(_e){return 0;}
+}
 // ── Drive-time hygiene: paid drive minutes must match a leg mileage itself
 // would still stand behind (owner rule 2026-08-22) ──────────────────────────
 // A job_time_entries 'drive*' row is written the moment a raw GPS leg closes

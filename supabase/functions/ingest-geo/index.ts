@@ -72,7 +72,7 @@ const EST_ROUTE_FACTOR = 1.3;     // straight-line -> provisional road miles;
                                   //   the client refine replaces this with the
                                   //   real routed distance
 
-type Ev = { type: string; ts: number; lat?: number; lng?: number; regionId?: string; arrivalTs?: number };
+type Ev = { type: string; ts: number; lat?: number; lng?: number; regionId?: string; arrivalTs?: number; kind?: string };
 type Dwell = { regionId: string; arrivedTs: number; lat: number; lon: number };
 type Leg = { startTs: number; lat: number; lon: number; regionId: string };
 
@@ -134,6 +134,11 @@ Deno.serve(async (req) => {
         lng: typeof e.lng === "number" ? e.lng : null,
         regionId: String(e.regionId || "").slice(0, 60),
         arrivalTs: typeof e.arrivalTs === "number" ? Math.round(e.arrivalTs) : null,
+        // What the coprocessor actually said: onFoot / still / driving. The
+        // native plugin has always sent it and this function has always
+        // dropped it, so the server could see that a transition happened and
+        // never what it was.
+        kind: typeof e.kind === "string" ? e.kind.slice(0, 16) : null,
       }))
       .sort((a, b) => a.ts - b.ts);
     if (!evs.length) return json({ ok: true, stored: 0, derived: 0 });
@@ -142,7 +147,7 @@ Deno.serve(async (req) => {
       evs.map((e) => ({
         contractor_user_id: cid, employee_user_id: uid, device_id: deviceId,
         type: e.type, ts: new Date(e.ts).toISOString(),
-        lat: e.lat, lon: e.lng, region_id: e.regionId,
+        lat: e.lat, lon: e.lng, region_id: e.regionId, kind: e.kind,
         arrival_ts: e.arrivalTs ? new Date(e.arrivalTs).toISOString() : null,
       })),
       { onConflict: "employee_user_id,type,ts,region_id", ignoreDuplicates: true },
