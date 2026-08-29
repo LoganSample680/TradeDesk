@@ -27,3 +27,8 @@ tests/flow/.local-crew.json
 tests/flow/.local-showcase.json
 tests/flow/.local-showcase-messy.json
 local-visual-shots/
+
+# Python bytecode. py_compile drops these next to any script it checks, and
+# they got committed once already by a git add -A.
+__pycache__/
+*.pyc
