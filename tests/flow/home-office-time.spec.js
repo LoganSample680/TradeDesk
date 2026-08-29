@@ -216,17 +216,25 @@ test.describe('home office: loading up and office work', () => {
       ruleText: 'both rows must render under their own badges, never the plain On-site one',
       expected: 'Loading and Office both present, teal, on the rendered log',
       act: async (p) => {
-        await tap(p, '[onclick*="pg-timelog"], #nav-timelog');
-        await p.evaluate(async () => { if (typeof renderTimeLog === 'function') await renderTimeLog(); });
-        await p.waitForTimeout(1500);
-        return 1;
+        // The path a contractor's thumb actually takes: More, then Time Log.
+        // The desktop sidebar's #nb-timelog is in the DOM at every width but
+        // is zero-size behind the topbar on a phone, which is what an earlier
+        // version of this step tapped and sat on for ten seconds.
+        let n = 0;
+        const onPhone = await p.locator('#mtb-more').isVisible().catch(() => false);
+        if (onPhone) { n += await tap(p, '#mtb-more'); n += await tap(p, '#mmi-timelog'); }
+        else { n += await tap(p, '#nb-timelog'); }
+        await p.waitForTimeout(2500);
+        return n;
       },
       rule: async (p) => {
-        const html = await p.evaluate(() => {
+        const r = await p.evaluate(() => {
           const el = document.getElementById('tl-list');
-          return el ? el.innerHTML : '';
+          const pg = document.querySelector('.pg.active');
+          return { page: pg ? pg.id : 'none', html: el ? el.innerHTML : '' };
         });
-        const hasLoad = /Loading<\/span>/.test(html), hasOffice = /Office<\/span>/.test(html);
+        if (r.page !== 'pg-timelog') return { ok: false, got: 'never left ' + r.page };
+        const hasLoad = /Loading<\/span>/.test(r.html), hasOffice = /Office<\/span>/.test(r.html);
         return { ok: hasLoad && hasOffice, got: 'loading=' + hasLoad + ' office=' + hasOffice };
       },
     });
