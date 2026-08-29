@@ -1445,6 +1445,11 @@ function _mileRestorePanel(){
 }
 window._mileRestorePanel=_mileRestorePanel;
 const _MILE_DEDUP_DEST_FT=1500;         // fence radius + GPS scatter
+// How much of the shorter drive has to sit inside the longer one before they
+// are the same journey. High on purpose: two writers describing one drive
+// agree almost exactly (the owner's 17:28 pair overlap 0.992), while a
+// there-and-back that shares a boundary minute overlaps by almost nothing.
+const _MILE_SAME_DRIVE_OVERLAP=0.5;
 const _MILE_DEDUP_SLACK_MS=10*60000;    // manual rows only: loggedAt is a tap, not a clock
 function _mileTripWindow(m){
   const end=Date.parse(m.endedIso||m.loggedAt||'')||0;
@@ -1544,14 +1549,29 @@ function _mileSameArrival(a,b){
   if(!a.legKey||!b.legKey)return false;              // auto rows only
   if(a.legKey===b.legKey)return false;               // already caught above
   if((a.logged_by_id||null)!==(b.logged_by_id||null))return false;
-  const near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&typeof _geoDistFt==='function'&&
-    _geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=_MILE_DEDUP_DEST_FT);
-  const sameDest=near(a.toCoord,b.toCoord)||
-    (!!a.to_name&&!!b.to_name&&String(a.to_name).toLowerCase()===String(b.to_name).toLowerCase());
-  if(!sameDest)return false;
+  // Same device, same person. The legKey carries the uid prefix, so this holds
+  // even on an owner account where every logged_by_id is null and the field
+  // therefore separates nobody.
+  const own=k=>String(k||'').split('-')[0];
+  if(own(a.legKey)!==own(b.legKey))return false;
   const wa=_mileTripWindow(a),wb=_mileTripWindow(b);
   if(!wa.end||!wb.end)return false;
-  return wa.end>=wb.start&&wb.end>=wa.start;
+  // NOBODY IS ON TWO DRIVES AT ONCE. The destination test this replaced asked
+  // whether the two rows agreed about where they ended, and on the owner's
+  // 17:28 leg they did not: a regionEnter fired with a position 3,044 ft stale,
+  // so one writer reverse-geocoded "2015 SW Randolph Ave" and the other used
+  // the place it resolved to, 3,753 ft apart. Two names for one shop, and a
+  // 2.5-mile ghost that outlived three attempts to catch it.
+  //
+  // Overlap is the physical fact underneath, and it does not care what either
+  // row believes about the destination. What the destination test was really
+  // protecting against was a there-and-back pair sharing a boundary minute,
+  // and requiring a SUBSTANTIAL overlap excludes that far more directly: those
+  // two touch at an instant, they do not overlap by half their length.
+  const ov=Math.min(wa.end,wb.end)-Math.max(wa.start,wb.start);
+  const shorter=Math.min(wa.end-wa.start,wb.end-wb.start);
+  if(!(shorter>0))return false;
+  return ov/shorter>=_MILE_SAME_DRIVE_OVERLAP;
 }
 // Which of two same-journey rows survives. The AUTOMATIC row is the source
 // of truth whenever one exists (owner rule 2026-08-11: "the background

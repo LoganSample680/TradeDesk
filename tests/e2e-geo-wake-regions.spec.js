@@ -832,9 +832,12 @@ test.describe('Wake region set for the dead app', () => {
       // SECONDS before their own close. Nothing was wrong with them and the
       // sweep deleted them anyway. Both shapes must now survive.
       const nearlyRight = await run(page, {
-        // closes 19:18:30, edge 19:18:04: 26 seconds of "error"
+        // closes 19:18:30, edge 19:18:04: 26 seconds of "error". The drive row
+        // lands the dwell, so this is a real arrival and the stir rule below
+        // has no claim on it: what is under test here is the trim threshold.
         db: { shop_time_entries: { data: [shopRow('s9', '2026-08-29T00:15:00.000Z', '2026-08-29T00:18:30.000Z', 3)] },
-              job_time_entries: { data: [drive(DRIVE_NOON)] } },
+              job_time_entries: { data: [{ arrived_at: '2026-08-29T00:10:00.000Z',
+                                           departed_at: '2026-08-29T00:14:55.000Z', source: 'drive' }] } },
         tape: [{ ts: Date.parse('2026-08-29T00:18:04.000Z'), kind: 'driving' }],
       });
       expect(nearlyRight.deleted, 'a 26-second discrepancy is not a wrong row').toEqual([]);
@@ -848,6 +851,43 @@ test.describe('Wake region set for the dead app', () => {
       });
       expect(overnight.deleted, 'a big row is not a wrong row either').toEqual([]);
       expect(overnight.wrote.length).toBe(0);
+    });
+
+    test('waking up inside a fence you never left is not a shift', async () => {
+      // His 08-27 06:50 row: five minutes, nothing arrived into it, nothing
+      // left from it for another 55 minutes.
+      const stir = await run(page, {
+        db: { shop_time_entries: { data: [shopRow('sC', '2026-08-27T11:50:11.000Z', '2026-08-27T11:55:09.000Z', 5)] },
+              job_time_entries: { data: [drive('2026-08-27T12:56:28.000Z')] } },
+        tape: [],
+      });
+      expect(stir.deleted, 'no arrival, no departure, five minutes').toEqual(['sC']);
+
+      // A morning of paperwork at the home office looks identical apart from
+      // its length, and must survive. This is the row the dry run caught.
+      const paperwork = await run(page, {
+        db: { shop_time_entries: { data: [shopRow('sD', '2026-08-23T14:55:00.000Z', '2026-08-23T19:04:00.000Z', 250)] },
+              job_time_entries: { data: [drive('2026-08-27T12:56:28.000Z')] } },
+        tape: [],
+      });
+      expect(paperwork.deleted, 'a 250-minute session is not a stir').toEqual([]);
+
+      // Short, but a drive landed into it: that was a real arrival.
+      const arrived = await run(page, {
+        db: { shop_time_entries: { data: [shopRow('sE', '2026-08-27T17:11:06.000Z', '2026-08-27T17:16:00.000Z', 5)] },
+              job_time_entries: { data: [{ arrived_at: '2026-08-27T17:04:33.000Z',
+                                           departed_at: '2026-08-27T17:11:23.000Z', source: 'drive' }] } },
+        tape: [],
+      });
+      expect(arrived.deleted, 'a drive ended here, so somebody arrived').toEqual([]);
+
+      // Short, nothing arrived, but they drove off soon after: that is loading.
+      const loading = await run(page, {
+        db: { shop_time_entries: { data: [shopRow('sF', '2026-08-27T12:43:00.000Z', '2026-08-27T12:49:00.000Z', 6)] },
+              job_time_entries: { data: [drive('2026-08-27T12:56:28.000Z')] } },
+        tape: [],
+      });
+      expect(loading.deleted, 'a departure within the half hour makes it a load-out').toEqual([]);
     });
 
     test('the threshold does not spare a genuinely wrong close', async () => {

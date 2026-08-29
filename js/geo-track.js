@@ -56,6 +56,14 @@ const _GEO_DEPART_CONFIRM_MS=15*60000;
 // without first asking "is it even wrong". Both 08-27 corrections clear this
 // comfortably: 7.7 minutes on the midday dwell, 147 on the evening one.
 const _GEO_DWELL_MIN_TRIM_MS=3*60000;
+// A dwell this short, with nothing arriving into it and nothing leaving from
+// it, is somebody waking up inside a fence they never left. Ten minutes is
+// deliberately mean: it must never reach a real session at the home office,
+// and the owner's week has nothing between 10 and 45 minutes for it to catch
+// by accident. Five minutes of slack on the arrival side, because a drive row
+// is stamped from the fence and the dwell from the ping that noticed.
+const _GEO_STIR_MAX_MS=10*60000;
+const _GEO_STIR_ARRIVE_MS=5*60000;
 function _geoConfirmShopDepart(nowMs){
   const p=_geoShopPendingClose;_geoShopPendingClose=null;
   if(!p)return false;
@@ -6556,8 +6564,37 @@ async function _geoDwellRetroSweep(){
     const rows=shop.data.filter(r=>r&&r.arrived_at&&r.departed_at)
       .sort((a,b)=>Date.parse(b.arrived_at)-Date.parse(a.arrived_at))
       .slice(0,20);
+    // Where a drive ENDED. A dwell with one of these behind it was an arrival;
+    // one without it opened because the phone stirred somewhere it had been all
+    // along. (Same reason the departures read the drive rows: geo_events is
+    // deny-all to clients, so the derived rows are the fence's testimony.)
+    const driveEnds=legs.data
+      .filter(x=>x&&x.departed_at&&_geoIsDriveSource(x.source))
+      .map(x=>Date.parse(x.departed_at)).filter(n=>n>0);
     let changed=0;
     for(const r of rows){
+      // ── WAKING UP IS NOT ARRIVING ──────────────────────────────────────────
+      // Owner, 2026-08-29, on his 06:50 row: "that was my first movement of
+      // today and not my loading up trip before drive fired." He had not gone
+      // anywhere. The app opened a shop dwell because motion started inside a
+      // fence he never left, and billed five minutes of being awake at home.
+      //
+      // All three conditions are needed, and the dry run against his own week
+      // is why. No arrival alone would also take a 250-minute morning of
+      // paperwork and a 737-minute overnight, which are the shapes a home
+      // office is supposed to record. Short and going nowhere is what makes it
+      // a stir rather than a shift.
+      {
+        const s=Date.parse(r.arrived_at)||0,e=Date.parse(r.departed_at)||0;
+        const arrived=driveEnds.some(t=>t>=s-_GEO_STIR_ARRIVE_MS&&t<=s+120000);
+        const leaves=driveStarts.some(t=>t>=e&&t-e<=_GEO_LOAD_MAX_MS);
+        if(!arrived&&!leaves&&e-s>0&&e-s<_GEO_STIR_MAX_MS){
+          await _tdSoftDelete('shop_time_entries',r.id,{userCol:'employee_user_id',userVal:_supaUser.id});
+          _geoParkNote('dwell-stir',String(r.id).slice(0,8)+' '+r.minutes+'m, no arrival and no departure');
+          changed++;
+          continue;
+        }
+      }
       const s0=Date.parse(r.arrived_at)||0,e0=Date.parse(r.departed_at)||0;
       if(!(e0>s0))continue;
       const tape=await _geoMotionTape(s0,e0+_GEO_REGRADE_PAD_MS);
