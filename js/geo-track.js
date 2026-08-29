@@ -3864,7 +3864,17 @@ let _geoMotionBurstAt=0;
 // 90s, not the old 180s. Two boundaries can legitimately land inside three
 // minutes (park, walk in, realise you left something, drive off), and the old
 // throttle ate the second one, which is the edge that closes the segment.
-const _GEO_MOTION_BURST_GAP_MS=90000;        // one motion-triggered burst per 3 min
+const _GEO_MOTION_BURST_GAP_MS=90000;
+// The last motion state THIS session saw, so the edge (still->onFoot,
+// onFoot->automotive) is derivable without native help. Reset with the rest
+// of the fence state, never carried across an account switch.
+let _geoLastMotionKind='';
+// How far outside a fence-stamped row the regrade will look for the real
+// boundary, and how far it must disagree before a row is worth rewriting.
+// 20 minutes covers a fence tripping early on approach and late on the way
+// out; 90 seconds is below the noise floor of the coprocessor itself.
+const _GEO_REGRADE_PAD_MS=20*60000;
+const _GEO_REGRADE_MIN_MS=90000;        // one motion-triggered burst per 3 min
 let _geoFenceEnteredAtMs=null;  // when the CURRENT fence was entered (dwell clock)
 const _GEO_PARK_AFTER_MS=4*60*1000;  // parked this long inside a fence => GPS off
 // "Parked" means NOT DRIVING, not "not moving". A phone in the pocket of
@@ -4490,8 +4500,17 @@ async function _geoTdEvent(ev,replay){
     // Deciding WHICH edges are worth a burst is JS's job, not the plugin's
     // (CLAUDE.md 3.2): the native layer reports the edge, this picks.
     if(!replay&&ev.kind){
-      const prev=String(ev.prevKind||'');
       const cur=String(ev.kind);
+      // prevKind ships from the plugin only on builds newer than 42. On the
+      // build actually in the owner's pocket the field is undefined, and
+      // reading it blind meant every boundary evaluated false and the new
+      // bursts never fired: the feature would have looked shipped and done
+      // nothing until an iOS build landed. JS sees the same ordered stream
+      // the plugin does, so it can remember the last kind itself and the
+      // edge is known on EVERY build. Native's copy still wins when present,
+      // because it is stamped at the instant of the transition.
+      const prev=String(ev.prevKind||_geoLastMotionKind||'');
+      _geoLastMotionKind=cur;
       const _auto=k=>k==='automotive'||k==='driving';
       const _foot=k=>k==='walking'||k==='running'||k==='onFoot';
       const boundary=(_auto(cur)&&_foot(prev))||(_foot(cur)&&_auto(prev));
@@ -4804,7 +4823,7 @@ function stopGeoTracking(){
   _geoDriveReset();_geoDriveShown=false;
   _geoCurrentClient=null;_geoClientArrivedAt=null;_geoClientCacheMemo=null;
   _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;_geoLegAtShop=false;_geoHomeDwell=null;_geoWasAtHome=false;
-  _geoLastFenceLoc=null;_geoLegOrigin=null;
+  _geoLastFenceLoc=null;_geoLegOrigin=null;_geoLastMotionKind='';
   // A real stop-then-restart (sign-out/in, account switch) must get a REAL
   // restore/drain on the next _geoTrackInit(), unlike the twin-write case this
   // guard exists to block: that is two firings racing on the SAME boot, not a
@@ -6179,6 +6198,119 @@ async function _geoClientRelabelSweep(){
 // was never recorded anywhere but in memory, so a visit that closed before
 // this rule existed has no evidence of it. Only Loading is recoverable.
 // Same window-scoped latch as _geoTapeSync above, same reason.
+// ── Re-derive the last seven days from the tape (owner 2026-08-29) ─────────
+// "I also want the code to retroactively clean up by using the core motion
+// tape", and re-derive the last seven days for everyone automatically.
+//
+// THIS NEEDS NO iOS BUILD. motionSince has shipped since 08-11 and queries
+// the coprocessor's own history, which iOS keeps for roughly seven days. That
+// is where the seven comes from: it is Apple's memory, not a policy choice,
+// and nothing older can ever be recovered this way.
+//
+// What it fixes is the eight minutes: a fence trips when the truck crosses a
+// circle drawn hundreds of feet from the driveway, so an arrival stamps early
+// and a departure late. The tape knows when the truck actually stopped. Rows
+// are re-stamped in place rather than deleted and rebuilt, so ids, job links
+// and anything a human already corrected survive.
+//
+// Same window-scoped latch as the sweeps above, and the same 20-row ceiling:
+// a boot must never turn into an unbounded write storm.
+async function _geoTapeRegradeSweep(){
+  try{
+    if(window._geoTapeRegradeRan)return 0;
+    window._geoTapeRegradeRan=true;
+    if(!_supa||!_supaUser)return 0;
+    // No tape, nothing to re-derive. Never guess from GPS alone: that is the
+    // fence answer this exists to replace.
+    const probe=await _geoMotionTape(Date.now()-3600000,Date.now());
+    if(!Array.isArray(probe))return 0;
+    const sinceMs=Date.now()-7*86400000;
+    const{data,error}=await _supa.from('job_time_entries')
+      .select('id,arrived_at,departed_at,minutes,source,dest_place,client_key,job_id').is('deleted_at',null)
+      .eq('employee_user_id',_supaUser.id)
+      .gte('arrived_at',new Date(sinceMs).toISOString());
+    if(error||!Array.isArray(data)||!data.length)return 0;
+    // Visits only. A drive row's own boundaries come from the legs either side
+    // of it, so re-stamping one in isolation would leave the pair disagreeing.
+    const rows=data.filter(r=>r&&r.arrived_at&&r.departed_at&&
+      (r.source==='place'||r.source==='client'))
+      .sort((a,b)=>Date.parse(b.arrived_at)-Date.parse(a.arrived_at))
+      .slice(0,20);
+    if(!rows.length)return 0;
+    // A visit at a place the contractor owns keeps loading as its own line
+    // item; at a customer the same walk is the tail of the job.
+    const ownNames=new Set(((typeof getPlaces==='function')?(getPlaces()||[]):[])
+      .filter(p=>p&&p.name).map(p=>String(p.name)));
+    let changed=0;
+    for(const r of rows){
+      const s0=Date.parse(r.arrived_at)||0,e0=Date.parse(r.departed_at)||0;
+      if(!(e0>s0))continue;
+      // Read wider than the row: the boundary that matters may sit just
+      // outside what the fence recorded, which is the whole point.
+      const tape=await _geoMotionTape(s0-_GEO_REGRADE_PAD_MS,e0+_GEO_REGRADE_PAD_MS);
+      if(!Array.isArray(tape)||!tape.length)continue;
+      const own=ownNames.has(String(r.dest_place||''));
+      const segs=_geoFoldLoadIntoOnsite(
+        _geoTapeSegments(tape,s0-_GEO_REGRADE_PAD_MS,e0+_GEO_REGRADE_PAD_MS),own);
+      // The on-site span that actually overlaps this row. Longest wins: a day
+      // that touched the fence twice has two, and the row belongs to the one
+      // it mostly covers.
+      let best=null,bestOv=0;
+      for(const g of segs){
+        if(g.kind!=='onsite')continue;
+        const ov=Math.min(g.b,e0)-Math.max(g.a,s0);
+        if(ov>bestOv){bestOv=ov;best=g;}
+      }
+      if(!best||bestOv<=0)continue;
+      // A BOUNDARY IS ONLY REAL IF A DRIVE ANCHORS IT. On site begins where a
+      // drive ended and ends where the next one began (the owner's own rule),
+      // so without a drive on that side the tape has no opinion about where
+      // the visit started or stopped, only that he was not driving. Taking the
+      // span anyway stretched an honest row to fill the entire padded window,
+      // which is a 20-minute lie in the direction of MORE billable time.
+      const drives=segs.filter(g=>g.kind==='drive');
+      const near=(x,y)=>Math.abs(x-y)<=1000;
+      const startAnchored=drives.some(d=>near(d.b,best.a));
+      const endAnchored=drives.some(d=>near(d.a,best.b));
+      if(!startAnchored&&!endAnchored)continue;
+      const nS=startAnchored?best.a:s0;
+      const nE=endAnchored?best.b:e0;
+      if(!(nE>nS))continue;
+      const mins=Math.round((nE-nS)/60000);
+      if(mins<2)continue;
+      // Only move a boundary the tape genuinely disagrees about, and never by
+      // more than the pad: a wild correction is a bug, not a repair.
+      const dS=Math.abs(nS-s0),dE=Math.abs(nE-e0);
+      if(dS<_GEO_REGRADE_MIN_MS&&dE<_GEO_REGRADE_MIN_MS)continue;
+      if(dS>_GEO_REGRADE_PAD_MS||dE>_GEO_REGRADE_PAD_MS)continue;
+      _geoEnqueue('job_time_entries',{
+        id:r.id,contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+        job_id:r.job_id||null,
+        arrived_at:new Date(nS).toISOString(),
+        departed_at:new Date(nE).toISOString(),
+        minutes:mins,dest_place:r.dest_place||null,
+        client_key:r.client_key,source:r.source
+      });
+      _geoParkNote('tape-regrade',String(r.id).slice(0,8)+' '+r.minutes+'m -> '+mins+'m');
+      // The load-out in front of the departure, at his own place only.
+      const load=own?segs.find(g=>g.kind==='load'&&g.a>=nE-1&&g.a<=e0+_GEO_REGRADE_PAD_MS):null;
+      if(load){
+        const lm=Math.round((load.b-load.a)/60000);
+        if(lm>=2)_geoEnqueue('job_time_entries',{
+          contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+          job_id:null,arrived_at:new Date(load.a).toISOString(),
+          departed_at:new Date(load.b).toISOString(),minutes:lm,
+          dest_place:r.dest_place||null,
+          client_key:String(r.client_key||r.id)+'-tape-load',
+          source:'place-load'
+        });
+      }
+      changed++;
+    }
+    _geoParkNote('tape-regrade-done','rows='+rows.length+' changed='+changed);
+    return changed;
+  }catch(_e){return 0;}
+}
 async function _geoHomeRegradeSweep(){
   try{
     if(window._geoHomeRegradeRan)return 0;

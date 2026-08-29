@@ -434,6 +434,134 @@ test.describe('Home office: presence is not work', () => {
     expect(r.loads).toBe(2);
   });
 
+  // ── The seven-day re-derive (owner 2026-08-29) ─────────────────────────────
+  // "I also want the code to retroactively clean up by using the core motion
+  // tape", automatically, for everyone. It runs on the build already in his
+  // pocket: motionSince has shipped since 08-11, so nothing here waits on iOS.
+  test('_geoTapeRegradeSweep re-stamps a fence-clipped visit from the tape and leaves an honest one alone', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { supa: _supa, user: _supaUser, td: _geoTdPlugin, enq: _geoEnqueue, places: window.getPlaces };
+      const enq = [];
+      try {
+        const T = (h, m) => Date.UTC(2026, 7, 28, h, m, 0);
+        // The fence recorded 09:52 to 12:08. The truck was actually stopped
+        // 09:49 to 12:14, which is Jack's real eight minutes.
+        const rows = [
+          { id: 'row-clipped', arrived_at: new Date(T(9, 52)).toISOString(),
+            departed_at: new Date(T(12, 8)).toISOString(), minutes: 136,
+            source: 'client', dest_place: 'Laurie Schonfeldt', client_key: 'k1', job_id: null },
+          // Already agrees with the tape inside the noise floor: must not be touched.
+          { id: 'row-honest', arrived_at: new Date(T(14, 0)).toISOString(),
+            departed_at: new Date(T(14, 30)).toISOString(), minutes: 30,
+            source: 'client', dest_place: 'Laurie Schonfeldt', client_key: 'k2', job_id: null },
+        ];
+        const q = { _d: { data: rows, error: null } };
+        q.then = (res, rej) => Promise.resolve(q._d).then(res, rej);
+        ['select', 'is', 'eq', 'gte'].forEach(m => { q[m] = () => q; });
+        _supa = { from: () => q };
+        _supaUser = { id: 'u-regrade' };
+        window.getPlaces = () => [];          // Laurie's is NOT his own place
+        _geoEnqueue = (tbl, row) => enq.push({ tbl, row });
+        _geoTdPlugin = () => ({
+          motionSince: () => Promise.resolve({ available: true, transitions: [
+            { kind: 'driving', ts: T(9, 46) },
+            { kind: 'onFoot',  ts: T(9, 49) },   // truck actually stops
+            { kind: 'still',   ts: T(9, 58) },
+            { kind: 'onFoot',  ts: T(12, 10) },
+            { kind: 'driving', ts: T(12, 14) },  // actually pulls out
+            { kind: 'onFoot',  ts: T(12, 18) },
+            { kind: 'still',   ts: T(14, 2) },
+            { kind: 'onFoot',  ts: T(14, 28) },
+          ] }),
+        });
+        window._geoTapeRegradeRan = false;
+        const changed = await _geoTapeRegradeSweep();
+        const upd = enq.find(x => x.row && x.row.id === 'row-clipped');
+        return {
+          changed,
+          touchedHonest: enq.some(x => x.row && x.row.id === 'row-honest'),
+          mins: upd ? upd.row.minutes : null,
+          arrived: upd ? upd.row.arrived_at : null,
+          keptId: upd ? upd.row.id : null,
+          keptKey: upd ? upd.row.client_key : null,
+          loads: enq.filter(x => x.row && x.row.source === 'place-load').length,
+        };
+      } finally {
+        _supa = saved.supa; _supaUser = saved.user; _geoTdPlugin = saved.td;
+        _geoEnqueue = saved.enq; window.getPlaces = saved.places;
+        window._geoTapeRegradeRan = true;
+      }
+    });
+    expect(r.changed).toBe(1);
+    // 09:49 to 12:14 is 145 minutes, the number the fence lost.
+    expect(r.mins).toBe(145);
+    expect(r.arrived).toBe('2026-08-28T09:49:00.000Z');
+    // Re-stamped IN PLACE: the id and client_key survive, so a job link or a
+    // human correction is never thrown away and rebuilt.
+    expect(r.keptId).toBe('row-clipped');
+    expect(r.keptKey).toBe('k1');
+    // A row the tape agrees with is left alone entirely.
+    expect(r.touchedHonest).toBe(false);
+    // Laurie's is not his own place, so packing up stays on site, no load row.
+    expect(r.loads).toBe(0);
+  });
+
+  test('_geoTapeRegradeSweep will not move a boundary no drive anchors', async () => {
+    // Caught in review, not theorised: with no drive inside the padded window
+    // the tape only proves he was not driving, never where the visit began or
+    // ended. Taking the span anyway stretched an honest 30-minute row to fill
+    // the whole 20-minute pad on both sides, which is a lie in the direction
+    // of more billable time.
+    const r = await page.evaluate(async () => {
+      const saved = { supa: _supa, user: _supaUser, td: _geoTdPlugin, enq: _geoEnqueue, places: window.getPlaces };
+      const enq = [];
+      try {
+        const T = (h, m) => Date.UTC(2026, 7, 28, h, m, 0);
+        const rows = [{ id: 'row-unanchored', arrived_at: new Date(T(14, 0)).toISOString(),
+          departed_at: new Date(T(14, 30)).toISOString(), minutes: 30,
+          source: 'client', dest_place: 'Laurie Schonfeldt', client_key: 'k', job_id: null }];
+        const q = { _d: { data: rows, error: null } };
+        q.then = (res, rej) => Promise.resolve(q._d).then(res, rej);
+        ['select', 'is', 'eq', 'gte'].forEach(m => { q[m] = () => q; });
+        _supa = { from: () => q }; _supaUser = { id: 'u-anchor' };
+        window.getPlaces = () => [];
+        _geoEnqueue = (t, row) => enq.push(row);
+        // Walking and standing still all afternoon. Not one drive.
+        _geoTdPlugin = () => ({ motionSince: () => Promise.resolve({ available: true, transitions: [
+          { kind: 'onFoot', ts: T(13, 30) }, { kind: 'still', ts: T(14, 2) }, { kind: 'onFoot', ts: T(14, 28) },
+        ] }) });
+        window._geoTapeRegradeRan = false;
+        const changed = await _geoTapeRegradeSweep();
+        return { changed, wrote: enq.length };
+      } finally {
+        _supa = saved.supa; _supaUser = saved.user; _geoTdPlugin = saved.td;
+        _geoEnqueue = saved.enq; window.getPlaces = saved.places; window._geoTapeRegradeRan = true;
+      }
+    });
+    expect(r.changed).toBe(0);
+    expect(r.wrote).toBe(0);
+  });
+
+  test('_geoTapeRegradeSweep does nothing when there is no tape, and never runs twice', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { td: _geoTdPlugin, enq: _geoEnqueue };
+      const enq = [];
+      try {
+        _geoEnqueue = (t, row) => enq.push(row);
+        // No coprocessor: a fenceless guess is exactly what this replaces.
+        _geoTdPlugin = () => ({ motionSince: () => Promise.resolve({ available: false, transitions: [] }) });
+        window._geoTapeRegradeRan = false;
+        const noTape = await _geoTapeRegradeSweep();
+        // Latch: a second call in the same session is a no-op.
+        const second = await _geoTapeRegradeSweep();
+        return { noTape, second, wrote: enq.length };
+      } finally { _geoTdPlugin = saved.td; _geoEnqueue = saved.enq; window._geoTapeRegradeRan = true; }
+    });
+    expect(r.noTape).toBe(0);
+    expect(r.second).toBe(0);
+    expect(r.wrote).toBe(0);
+  });
+
   test('_geoFoldLoadIntoOnsite: packing up at a customer is on-site, at your own place it is loading', async () => {
     const r = await page.evaluate(() => {
       const T = (h, m) => Date.UTC(2026, 7, 28, h, m, 0);
