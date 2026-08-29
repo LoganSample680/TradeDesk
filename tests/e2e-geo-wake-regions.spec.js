@@ -875,5 +875,115 @@ test.describe('Wake region set for the dead app', () => {
     });
   });
 
+  // ── The chain breaks, and the rest of the day goes with it ────────────────
+  test.describe('_geoTruncateDayAfter and loading up', () => {
+    test('_geoLoadBeforeDrive finds his six morning minutes, cycling included', async () => {
+      const r = await page.evaluate(() => {
+        // His real 08-27 morning, CT: 06:56 onFoot, 06:56 still, 07:43:54
+        // "cycling" (CoreMotion reading a walk round the truck), 07:44:23
+        // still, 07:49:43 driving.
+        const T = (h, m, s2) => Date.UTC(2026, 7, 27, h + 5, m, s2 || 0);
+        const tape = [
+          { ts: T(6, 56, 7), kind: 'onFoot' }, { ts: T(6, 56, 35), kind: 'still' },
+          { ts: T(7, 43, 54), kind: 'cycling' }, { ts: T(7, 44, 23), kind: 'still' },
+        ];
+        const w = _geoLoadBeforeDrive(tape, T(7, 49, 43));
+        return { mins: w ? Math.round((w[1] - w[0]) / 60000) : null,
+                 startsAt: w ? new Date(w[0]).toISOString() : null };
+      });
+      expect(r.mins, '07:43:54 to 07:49:43').toBe(6);
+      expect(r.startsAt).toBe('2026-08-27T12:43:54.000Z');
+    });
+
+    test('_geoLoadBeforeDrive refuses the shapes that are not a load-out', async () => {
+      const r = await page.evaluate(() => {
+        const T = (h, m, s2) => Date.UTC(2026, 7, 27, h + 5, m, s2 || 0);
+        const at = (h, m, s2, kind) => ({ ts: T(h, m, s2), kind });
+        return {
+          // Sitting still right up to the drive is getting in the cab.
+          none: _geoLoadBeforeDrive([at(7, 20, 0, 'still')], T(7, 49, 43)),
+          // A walk that ended two hours earlier was some other errand.
+          stale: _geoLoadBeforeDrive([at(5, 30, 0, 'onFoot')], T(7, 49, 43)),
+          // Thirty seconds is not loading.
+          tiny: _geoLoadBeforeDrive([at(7, 49, 13, 'onFoot')], T(7, 49, 43)),
+          empty: _geoLoadBeforeDrive([], T(7, 49, 43)),
+          nulls: _geoLoadBeforeDrive(null, 0),
+        };
+      });
+      expect(r.none).toBeNull();
+      expect(r.stale).toBeNull();
+      expect(r.tiny).toBeNull();
+      expect(r.empty).toBeNull();
+      expect(r.nulls).toBeNull();
+    });
+
+    test('an unconfirmed departure takes the rest of that Central day with it', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = { supa: window._supa, user: window._supaUser, del: window._tdSoftDelete };
+        const deleted = [];
+        try {
+          window._supaUser = { id: '30a2b589-e081-4351-9f18-b1efba238c2d' };
+          window._tdSoftDelete = async (tbl, ids) => {
+            (Array.isArray(ids) ? ids : [ids]).forEach(i => deleted.push(tbl + ':' + i)); return 1;
+          };
+          // His real evening, CT: the break is 17:48:59.
+          const rows = {
+            job_time_entries: [
+              { id: 'stop1', arrived_at: '2026-08-27T22:59:10.000Z' },   // 17:59
+              { id: 'stop2', arrived_at: '2026-08-27T23:25:39.000Z' },   // 18:25
+              { id: 'land',  arrived_at: '2026-08-28T01:16:02.000Z' },   // 20:16, still 08-27 CT
+              { id: 'morning', arrived_at: '2026-08-27T12:56:28.000Z' }, // 07:56, BEFORE the break
+              { id: 'tomorrow', arrived_at: '2026-08-28T14:00:00.000Z' },// 09:00 next day
+            ],
+            shop_time_entries: [{ id: 'shopPM', arrived_at: '2026-08-28T01:18:13.000Z' }],
+            td_mileage: [
+              { id: 'mLand', data: { date: '2026-08-27', legKey: '30a2b589-leg-x', startedIso: '2026-08-28T00:54:31.000Z' } },
+              { id: 'mMorn', data: { date: '2026-08-27', legKey: '30a2b589-leg-y', startedIso: '2026-08-27T12:51:25.000Z' } },
+              { id: 'mOther', data: { date: '2026-08-27', legKey: '987ebc83-leg-z', startedIso: '2026-08-28T00:54:31.000Z' } },
+            ],
+          };
+          const chain = (name) => {
+            const c = { select: () => c, is: () => c, eq: () => c, gte: () => c,
+                        lte: () => Promise.resolve({ data: rows[name], error: null }) };
+            c.then = (res, rej) => Promise.resolve({ data: rows[name], error: null }).then(res, rej);
+            return c;
+          };
+          window._supa = { from: chain };
+          const n = await _geoTruncateDayAfter(Date.parse('2026-08-27T22:48:59.000Z'));
+          return { n, deleted };
+        } finally {
+          window._supa = saved.supa; window._supaUser = saved.user; window._tdSoftDelete = saved.del;
+        }
+      });
+      // Everything after the break on 08-27 CT, time and money alike.
+      expect(r.deleted).toContain('job_time_entries:stop1');
+      expect(r.deleted).toContain('job_time_entries:stop2');
+      expect(r.deleted, 'a fence of its own does not rescue it').toContain('job_time_entries:land');
+      expect(r.deleted).toContain('shop_time_entries:shopPM');
+      expect(r.deleted, 'the miles cannot survive a trip the time log disowned').toContain('td_mileage:mLand');
+      // The morning is still evidence, and tomorrow is not this day's problem.
+      expect(r.deleted).not.toContain('job_time_entries:morning');
+      expect(r.deleted).not.toContain('job_time_entries:tomorrow');
+      expect(r.deleted).not.toContain('td_mileage:mMorn');
+      // Somebody else's leg is never this user's to remove.
+      expect(r.deleted).not.toContain('td_mileage:mOther');
+    });
+
+    test('truncation is inert without a signed-in user or a real cut', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = { user: window._supaUser };
+        try {
+          window._supaUser = null;
+          const a = await _geoTruncateDayAfter(Date.now());
+          window._supaUser = { id: 'u' };
+          const b = await _geoTruncateDayAfter(0);
+          return { a, b };
+        } finally { window._supaUser = saved.user; }
+      });
+      expect(r.a).toBe(0);
+      expect(r.b).toBe(0);
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });

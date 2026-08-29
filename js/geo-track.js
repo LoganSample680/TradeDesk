@@ -6590,17 +6590,180 @@ async function _geoDwellRetroSweep(){
         }
         changed++;
       }else{
-        // They drove away and no fence ever agreed. Under the owner's rule
-        // (2026-08-29) the dwell was never witnessed, so it is not a record of
-        // anything. Soft, so it can come back if this call was wrong.
+        // THE CHAIN BREAKS HERE, AND EVERYTHING AFTER IT GOES WITH IT.
+        // They drove away and no fence ever agreed, so the app does not know
+        // where they went. Owner, 2026-08-29: "535 was the end of the day
+        // since there was no other fence that left." Every row later that day
+        // is downstream of a journey nothing witnessed: the stops it thought
+        // it saw, the visit at the far end, the dwell it opened on arriving
+        // back, and the mileage claimed for any of it. A later row having a
+        // fence of its own does not rescue it, because the trip that produced
+        // it is still unaccounted, which is why his 20:16 Landscaper enter and
+        // its 2.1 miles come out too.
         await _tdSoftDelete('shop_time_entries',r.id,{userCol:'employee_user_id',userVal:_supaUser.id});
         _geoParkNote('dwell-retro-unconfirmed',String(r.id).slice(0,8)+' '+r.minutes+'m dropped');
         changed++;
+        changed+=await _geoTruncateDayAfter(d.ts);
       }
     }
     _geoParkNote('dwell-retro-done','rows='+rows.length+' changed='+changed);
     return changed;
   }catch(_e){return 0;}
+}
+// ── LOADING UP ───────────────────────────────────────────────────────────────
+// The stretch between the last time they moved around on foot and the moment
+// the truck pulls out. Owner, twice: "in the top there's no loading up time in
+// the morning", and it was not there because _geoCloseShopEntry bills a home
+// office by app-active minutes only and has no load-out window at all. His
+// 08-27 opens 07:43:54 moving, 07:49:43 driving, and the shop fence does not
+// release him until 07:51:16, so those six minutes are unambiguously work in
+// his own yard and the app logged nothing.
+//
+// Deliberately NOT _geoHomeLoadWindow, which anchors inside a visit it is
+// already closing and matches 'onFoot' only. This runs from the DRIVE
+// backwards, because a load-out is defined by the departure it serves, and it
+// accepts 'cycling' as well: CoreMotion reads walking around a truck with a
+// phone in your pocket as cycling, and that is exactly what it called those
+// six minutes.
+const _GEO_LOAD_MAX_MS=30*60000;   // longer than this is not a load-out
+const _GEO_LOAD_MIN_MS=2*60000;    // shorter than this is getting in the cab
+function _geoLoadBeforeDrive(tape,driveMs){
+  if(!Array.isArray(tape)||!tape.length||!(driveMs>0))return null;
+  const t=tape.filter(x=>x&&typeof x.ts==='number'&&x.kind).slice().sort((a,b)=>a.ts-b.ts);
+  const moving=k=>k==='onFoot'||k==='walking'||k==='running'||k==='cycling';
+  // The last stretch of moving-about that STARTS before the wheels turn. Last,
+  // not first: a morning with two trips out has two, and this one belongs to
+  // the drive it precedes.
+  let start=null;
+  for(const x of t){
+    if(x.ts>=driveMs)break;
+    if(moving(x.kind)){ if(start==null)start=x.ts; }
+    else if(start!=null&&driveMs-x.ts>_GEO_LOAD_MAX_MS)start=null;  // that was an earlier errand
+  }
+  if(start==null)return null;
+  const span=driveMs-start;
+  if(span<_GEO_LOAD_MIN_MS||span>_GEO_LOAD_MAX_MS)return null;
+  return [start,driveMs];
+}
+// Everything on one Central day at or after the moment the chain stopped being
+// witnessed. Scoped to that CT DAY on purpose: an unconfirmed departure says
+// nothing about tomorrow, and the next day opens with its own fence.
+//
+// Soft deletes only, and it never touches a row that started BEFORE the break.
+// The morning is still evidence, whatever happened at teatime.
+// Writes the load-out in front of every confirmed drive that has not got one.
+// Separate sweep rather than folded into the dwell pass, because his morning
+// load sits INSIDE NO EXISTING ROW: the shop dwell closed at 06:55 and the
+// loading happened at 07:43, so a pass that walks dwells can never see it. A
+// pass that walks DRIVES can, and a drive is what a load-out is for.
+async function _geoLoadRetroSweep(){
+  try{
+    if(window._geoLoadRetroRan)return 0;
+    window._geoLoadRetroRan=true;
+    if(!_supa||!_supaUser)return 0;
+    const probe=await _geoMotionTape(Date.now()-3600000,Date.now());
+    if(!Array.isArray(probe))return 0;
+    const sinceIso=new Date(Date.now()-7*86400000).toISOString();
+    const{data,error}=await _supa.from('job_time_entries')
+      .select('id,arrived_at,departed_at,source,dest_place,client_key').is('deleted_at',null)
+      .eq('employee_user_id',_supaUser.id).gte('arrived_at',sinceIso);
+    if(error||!Array.isArray(data)||!data.length)return 0;
+    const rows=data.filter(r=>r&&r.arrived_at&&_geoIsDriveSource(r.source))
+      .sort((a,b)=>Date.parse(b.arrived_at)-Date.parse(a.arrived_at)).slice(0,20);
+    if(!rows.length)return 0;
+    // Anything already on the books in that window means the minutes are
+    // spoken for, so a re-run cannot stack a second load-out on the first.
+    const taken=data.map(r=>[Date.parse(r.arrived_at)||0,Date.parse(r.departed_at)||0]);
+    let made=0;
+    for(const r of rows){
+      const drv=Date.parse(r.arrived_at)||0;
+      if(!drv)continue;
+      const tape=await _geoMotionTape(drv-_GEO_LOAD_MAX_MS-120000,drv);
+      if(!Array.isArray(tape)||!tape.length)continue;
+      // The wheels turn at the driving transition, which precedes the fence
+      // exit this drive row was stamped from. Fall back to the row's own start
+      // when the tape has no edge, rather than inventing one.
+      let edge=drv;
+      for(const x of tape){
+        if(x.kind==='driving'||x.kind==='automotive'){ if(x.ts<=drv&&drv-x.ts<=_GEO_LOAD_MAX_MS)edge=x.ts; }
+      }
+      const win=_geoLoadBeforeDrive(tape,edge);
+      if(!win)continue;
+      if(taken.some(([a,b])=>b>win[0]&&a<win[1]))continue;
+      const mins=Math.round((win[1]-win[0])/60000);
+      if(mins<2)continue;
+      _geoEnqueue('job_time_entries',{
+        contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,job_id:null,
+        arrived_at:new Date(win[0]).toISOString(),
+        departed_at:new Date(win[1]).toISOString(),
+        minutes:mins,dest_place:null,
+        client_key:String(r.client_key||r.id)+'-load',
+        source:'place-load'
+      });
+      taken.push(win);
+      _geoParkNote('load-retro',mins+'m before '+new Date(edge).toISOString().slice(11,19));
+      made++;
+    }
+    _geoParkNote('load-retro-done','drives='+rows.length+' made='+made);
+    return made;
+  }catch(_e){return 0;}
+}
+async function _geoTruncateDayAfter(cutMs){
+  let n=0;
+  try{
+    if(!_supa||!_supaUser||!(cutMs>0))return 0;
+    if(typeof _ctDateStr!=='function')return 0;
+    const cut=new Date(cutMs);
+    const day=_ctDateStr(cut);
+    if(!day)return 0;
+    const cutIso=cut.toISOString();
+    // A generous upper bound, then filtered back to the Central day itself.
+    // Central is never more than 6 hours off UTC, so +30h covers the tail of
+    // the day whichever side of a DST boundary it falls.
+    const endIso=new Date(cutMs+30*3600000).toISOString();
+    const kill=async(tbl,tsCol)=>{
+      const{data,error}=await _supa.from(tbl).select('id,'+tsCol).is('deleted_at',null)
+        .eq('employee_user_id',_supaUser.id).gte(tsCol,cutIso).lte(tsCol,endIso);
+      if(error||!Array.isArray(data)||!data.length)return;
+      // The cut is re-checked HERE as well as in the query. The query already
+      // asks for gte(cutIso), so this is belt and braces, and belt and braces
+      // is the right posture for the one code path in this file that deletes
+      // rows it did not write: a filter that silently stops applying would
+      // otherwise take the whole morning with it, which is precisely what the
+      // test that forced this line does.
+      const ids=data.filter(x=>x&&x[tsCol]&&(Date.parse(x[tsCol])||0)>=cutMs&&
+        _ctDateStr(new Date(x[tsCol]))===day).map(x=>x.id);
+      if(!ids.length)return;
+      await _tdSoftDelete(tbl,ids,{userCol:'employee_user_id',userVal:_supaUser.id});
+      n+=ids.length;
+      _geoParkNote('day-truncate',tbl+' x'+ids.length);
+    };
+    await kill('job_time_entries','arrived_at');
+    await kill('shop_time_entries','arrived_at');
+    // Mileage is the same journey seen from the money side, so it cannot
+    // survive a trip the time log just disowned. Those rows are jsonb and are
+    // keyed by legKey rather than employee_user_id, so they match on the day
+    // stamp and the uid prefix the row already carries.
+    try{
+      const{data,error}=await _supa.from('td_mileage').select('id,data').is('deleted_at',null);
+      if(!error&&Array.isArray(data)){
+        const uid8=String(_supaUser.id||'').slice(0,8);
+        const ids=data.filter(r=>{
+          const m=r&&r.data;if(!m)return false;
+          if(String(m.date||'')!==day)return false;
+          if(!String(m.legKey||'').startsWith(uid8))return false;
+          const t=Date.parse(m.startedIso||'');
+          return t>0&&t>=cutMs;
+        }).map(r=>r.id);
+        if(ids.length){
+          await _tdSoftDelete('td_mileage',ids);
+          n+=ids.length;
+          _geoParkNote('day-truncate','td_mileage x'+ids.length);
+        }
+      }
+    }catch(_e){}
+  }catch(_e){}
+  return n;
 }
 async function _geoHomeRegradeSweep(){
   try{
