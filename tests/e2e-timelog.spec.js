@@ -1137,6 +1137,76 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.twoPeople).toBe(0);
     });
 
+    test('a hole is free until it is added, then it counts like any manual entry', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { te: timeEntries.slice(), save: window.saveAll, cloud: window.supaSaveToCloud,
+                        toast: window.showToast, render: window.renderTimeLog };
+        try {
+          window.saveAll = () => {}; window.supaSaveToCloud = () => {};
+          window.showToast = () => {}; window.renderTimeLog = () => {};
+          const rows = _tlFillUnaccounted([
+            { id: 'v1', personUid: null, date: '2026-08-28', minutes: 99, unpaid: false, source: 'auto',
+              startTime: '2026-08-28T15:35:00Z', endTime: '2026-08-28T17:14:00Z' },
+            { id: 'v2', personUid: null, date: '2026-08-28', minutes: 16, unpaid: false, source: 'auto',
+              startTime: '2026-08-28T18:58:00Z', endTime: '2026-08-28T19:14:00Z' },
+          ]);
+          const gap = rows.find(x => x.source === 'unaccounted');
+          // Before: the hole is on the page but contributes nothing paid.
+          const paidBefore = rows.filter(x => !x.unpaid).reduce((n, x) => n + x.minutes, 0);
+          const agg = _tlEmpWeekAgg(rows, 'cid');
+          const before = timeEntries.length;
+          _tlAddUnaccounted(gap.startTime, gap.endTime);
+          const added = timeEntries[timeEntries.length - 1];
+          return {
+            gapMins: gap.minutes, paidBefore,
+            aggMin: Object.values(agg).reduce((n, e) => n + e.min, 0),
+            wrote: timeEntries.length - before,
+            addedMin: added.minutes, addedStart: added.start_time, addedEnd: added.end_time,
+            addedDate: added.date, addedJob: added.job_id, addedOpen: added.open,
+            addedLabel: added.scope_label,
+          };
+        } finally {
+          timeEntries.length = 0; saved.te.forEach(x => timeEntries.push(x));
+          window.saveAll = saved.save; window.supaSaveToCloud = saved.cloud;
+          window.showToast = saved.toast; window.renderTimeLog = saved.render;
+        }
+      });
+      // The hole is 104 minutes and NONE of it counts before it is added.
+      expect(r.gapMins).toBe(104);
+      expect(r.paidBefore).toBe(115);          // 99 + 16, the hole excluded
+      expect(r.aggMin).toBe(115);              // and the week agg agrees
+      // Adding writes ONE manual row covering exactly the hole.
+      expect(r.wrote).toBe(1);
+      expect(r.addedMin).toBe(104);
+      expect(r.addedStart).toBe('2026-08-28T17:14:00.000Z');
+      expect(r.addedEnd).toBe('2026-08-28T18:58:00.000Z');
+      expect(r.addedJob, 'nothing is invented about WHICH job it was').toBe(null);
+      expect(r.addedOpen).toBe(false);
+      expect(r.addedLabel).toBe('Added from unaccounted time');
+    });
+
+    test('_tlAddUnaccounted refuses a window that is backwards, zero or unparseable', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { te: timeEntries.slice(), save: window.saveAll, cloud: window.supaSaveToCloud,
+                        toast: window.showToast, render: window.renderTimeLog };
+        try {
+          window.saveAll = () => {}; window.supaSaveToCloud = () => {};
+          window.showToast = () => {}; window.renderTimeLog = () => {};
+          const before = timeEntries.length;
+          _tlAddUnaccounted('2026-08-28T18:00:00Z', '2026-08-28T17:00:00Z');  // backwards
+          _tlAddUnaccounted('2026-08-28T18:00:00Z', '2026-08-28T18:00:00Z');  // zero
+          _tlAddUnaccounted('nope', 'also nope');
+          _tlAddUnaccounted(null, undefined);
+          return { wrote: timeEntries.length - before };
+        } finally {
+          timeEntries.length = 0; saved.te.forEach(x => timeEntries.push(x));
+          window.saveAll = saved.save; window.supaSaveToCloud = saved.cloud;
+          window.showToast = saved.toast; window.renderTimeLog = saved.render;
+        }
+      });
+      expect(r.wrote).toBe(0);
+    });
+
     test('junk input is survived, same contract as _tlAbsorbGaps', async () => {
       const r = await page.evaluate(() => {
         try {

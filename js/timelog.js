@@ -802,12 +802,54 @@ function _tlRow(r){
       (r.weekOT?' <span title="'+escHtml(r.personName)+' logged 40+ hrs the week of '+_tlWeekKey(r.date)+', verify overtime eligibility with your state; not payroll advice" style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:4px;background:var(--c-amber-soft);color:var(--c-amber-deep);margin-left:4px;white-space:nowrap">OT WK</span>':'')+
     '</td>'+
     '<td data-label="Week total" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.weekRunningMin||0):(r.weekRunningMin||0)+'m')+'</td>'+
-    '<td data-label="">'+(canEdit?
+    '<td data-label="">'+(isGap?
+      '<button onclick="_tlAddUnaccounted(\''+escHtml(r.startTime)+'\',\''+escHtml(r.endTime)+'\')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Add</button>'
+      :canEdit?
       '<button onclick="_openEditTimeEntry('+r.rawId+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Edit</button>'
       :_tlCanFixAuto(r)?
       '<button onclick="_openFixAutoEntry(\''+escHtml(String(r.rawId))+'\')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Fix</button>'
       :'')+'</td>'+
   '</tr>';
+}
+// ── Adding a hole to the day (owner 2026-08-29) ────────────────────────────
+// "unaccounted for time doesn't count to the total unless it's added."
+//
+// The not-counting half needs no code: an unaccounted row is unpaid, and
+// every total on this page already skips unpaid (_tlEmpWeekAgg,
+// _tlComputeWeeklyRunning, _tlComputeOT, the day subtotal). So a hole is
+// visible and free by construction, which is the honest default: the app
+// never bills a stretch it cannot account for.
+//
+// This is the other half. The contractor is the only one who knows what those
+// 104 minutes were, and once he says, it becomes real time like any other
+// manual entry. It writes a MANUAL row through the same array and the same
+// save path clocking out uses (§7.3), never a new kind of record: it must
+// edit, delete, sync and pay exactly like time he keyed in himself, because
+// that is what it is.
+function _tlAddUnaccounted(startIso,endIso){
+  const a=Date.parse(startIso),b=Date.parse(endIso);
+  if(!(a>0&&b>a))return;
+  if(typeof timeEntries==='undefined'||!Array.isArray(timeEntries))return;
+  const mins=Math.max(1,Math.round((b-a)/60000));
+  const uid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
+  const name=uid?((typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.name)||'Crew')
+                :((typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)');
+  timeEntries.push({
+    id:(typeof _newId==='function')?_newId():Date.now(),
+    job_id:null,
+    // The CT date of the START, the same key every other row on this page is
+    // filed under. A hole that runs past midnight belongs to the day it began.
+    date:(typeof _ctDateStr==='function')?_ctDateStr(new Date(a)):startIso.slice(0,10),
+    start_time:new Date(a).toISOString(),end_time:new Date(b).toISOString(),
+    minutes:mins,scope_id:null,scope_label:'Added from unaccounted time',
+    logged_by_uid:uid,logged_by_name:name,open:false
+  });
+  if(typeof saveAll==='function')saveAll();
+  if(typeof supaSaveToCloud==='function')supaSaveToCloud();
+  if(typeof showToast==='function')showToast((typeof _fmtMin==='function'?_fmtMin(mins):mins+'m')+' added to the day','⏱');
+  // The gap row is derived, so it simply stops existing on the next build:
+  // the span is now covered by a real row and no hole remains to report.
+  if(typeof renderTimeLog==='function')renderTimeLog();
 }
 // Still-clocked-in banner, separate from the year/month/day history below,
 // refreshed on its own 30s tick while this page is open so elapsed time keeps
