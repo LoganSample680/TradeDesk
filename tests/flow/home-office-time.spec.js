@@ -26,14 +26,32 @@ const BASELINE = require('./perf-baseline.json');
 const FLOW = 'geo/home-office-time';
 // Far from any real seeded client or job in the dev account, so nothing else
 // can claim these pings.
-const HOME = { lat: 38.4211, lon: -96.1877 };
-const ROAD = { lat: 38.6900, lon: -96.5400 };
+//
+// AND A DIFFERENT SPOT EVERY RUN. §12.7 means this spec never cleans up, so
+// yesterday's home_office place is still sitting at these coordinates when it
+// runs again, and placeAt() resolves the fence to whichever place it finds
+// there first. The run that followed therefore entered the PREVIOUS run's
+// fence and wrote rows keyed to the previous run's place id, so the assertion
+// looked for its own id and found nothing at all. The rows were correct; the
+// test was asking the wrong question (2026-08-29, run 33225569052).
+//
+// A hundredth of a degree is about 3,600 feet, comfortably outside the ~600ft
+// place fence, and the whole walk stays in open Kansas farmland well away from
+// every seeded client and job.
+const RUNSLOT = (Date.now() / 60000 | 0) % 100;
+const HOME = { lat: 38.4211 + RUNSLOT * 0.01, lon: -96.1877 };
+const ROAD = { lat: 38.4211 + RUNSLOT * 0.01 + 0.27, lon: -96.5400 };
 
 // One ping through the real handler.
 const ping = (page, c) => page.evaluate(async (p) =>
   await _geoOnPing({ coords: { latitude: p.lat, longitude: p.lon, accuracy: 8 } }), c);
 
-// The rows this visit actually wrote, read back off the server.
+// The rows this visit actually wrote, read back off the server. `placeId` is
+// the fence the app ACTUALLY entered, read back off _geoCurrentPlace rather
+// than assumed from what this test saved: if an earlier run's place is still
+// sitting at these coordinates it is the one that wins, and the rows will
+// carry ITS id. Asking about the id we happened to save is how this spec
+// reported a false failure on a feature that was working.
 async function homeRows(page, placeId) {
   return await page.evaluate(async ({ placeId }) => {
     const uid = (typeof _supaUser !== 'undefined' && _supaUser) ? _supaUser.id : null;
@@ -55,7 +73,9 @@ test.describe('home office: loading up and office work', () => {
   test('a morning of paperwork and a load-out land as two labelled rows', async ({ page }) => {
     test.setTimeout(180000);
     // Unique per run and per viewport, since nothing is ever cleaned up.
-    const placeId = 'ho-' + (Date.now() * 1000 + (process.pid % 1000));
+    const savedId = 'ho-' + (Date.now() * 1000 + (process.pid % 1000));
+    // Filled in at arrival with whatever fence the app actually resolved.
+    let placeId = savedId;
 
     // ── 1. The contractor marks their own house as a home office. ──────────
     await step(page, {
@@ -70,14 +90,14 @@ test.describe('home office: loading up and office work', () => {
           // The yard is elsewhere, so shop dwell can never claim these pings.
           S.officeLat = 39.9; S.officeLon = -94.9;
           if (typeof jobs !== 'undefined') { window.__origJobs = jobs.slice(); jobs.length = 0; }
-        }, { placeId, HOME });
+        }, { placeId: savedId, HOME });
         return 1;
       },
       rule: async (p) => {
         const got = await p.evaluate((id) => {
           const pl = (getPlaces() || []).find(x => x && String(x.id) === String(id));
           return pl ? pl.kind : 'missing';
-        }, placeId);
+        }, savedId);
         return { ok: got === 'home_office', got };
       },
     });
@@ -117,6 +137,11 @@ test.describe('home office: loading up and office work', () => {
         // sampler credits a ping only when the app is visible AND was touched
         // inside the idle window, which a real headed browser satisfies.
         await ping(page, HOME);
+        // WHICH fence did we actually land in? An earlier run's leftover place
+        // at these coordinates wins over the one just saved, and its id is the
+        // one the rows will carry.
+        placeId = (await p.evaluate(() => (typeof _geoCurrentPlace !== 'undefined' && _geoCurrentPlace != null)
+          ? String(_geoCurrentPlace) : null)) || savedId;
         for (let i = 0; i < 3; i++) {
           await p.evaluate(() => { _geoLastInteractAt = Date.now(); });
           await ping(page, HOME);
