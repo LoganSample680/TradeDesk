@@ -13,10 +13,12 @@ or distributes anything, and it must stay that way: the .p8 it authenticates
 with can upload builds and edit the store listing, so the blast radius of a
 mistake is the live app, not a test account.
 """
-import json, os, sys, time, urllib.request, urllib.error
+import json, os, sys, urllib.request, urllib.error
 from datetime import datetime
 
-API = 'https://api.appstoreconnect.apple.com/v1'
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from asc_api import API, token, get  # noqa: E402
+
 BUNDLE_ID = os.environ.get('TD_BUNDLE_ID', '').strip()
 LIMIT = int(os.environ.get('TD_BUILD_LIMIT', '10'))
 # THE ONLY WRITE IN THIS FILE, and it is off unless something says the word.
@@ -26,30 +28,6 @@ LIMIT = int(os.environ.get('TD_BUILD_LIMIT', '10'))
 ENABLE_AUTO = os.environ.get('TD_ENABLE_AUTO_DISTRIBUTE', '') == 'yes'
 
 
-def token():
-    """ES256 JWT, 20 minutes. Apple hard-rejects anything over 20."""
-    import jwt  # PyJWT[crypto]
-    kid = os.environ['APPSTORE_KEY_ID']
-    iss = os.environ['APPSTORE_ISSUER_ID']
-    key = os.environ['APPSTORE_API_KEY']
-    now = int(time.time())
-    return jwt.encode(
-        {'iss': iss, 'iat': now, 'exp': now + 20 * 60, 'aud': 'appstoreconnect-v1'},
-        key, algorithm='ES256', headers={'kid': kid, 'typ': 'JWT'})
-
-
-def get(path, tok):
-    req = urllib.request.Request(path if path.startswith('http') else API + path,
-                                 headers={'Authorization': 'Bearer ' + tok})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        body = e.read().decode('utf8', 'replace')[:800]
-        # Apple's errors are genuinely descriptive; surfacing the body verbatim
-        # is the difference between "it broke" and a fix.
-        print('::error::App Store Connect %s on %s\n%s' % (e.code, path, body))
-        raise
 
 
 def _utc(iso):

@@ -603,3 +603,42 @@ jobs:
             --ipa "$IPA" \
             --api_key_path build/asc_key.json \
             --skip_waiting_for_build_processing true
+
+  # ── PUT IT IN FRONT OF THE TESTERS ──────────────────────────────────────────
+  # The upload job exits before Apple has an opinion (fastlane pilot upload runs
+  # with --skip_waiting_for_build_processing), so it proves the IPA left the
+  # runner and nothing more. Which groups end up with the build was decided by
+  # whoever remembered to go and click, and for builds 36 through 41 nobody did:
+  # an external tester sat on build 35 from 2026-08-19 to 2026-08-27 while every
+  # run in between reported success.
+  #
+  # App Store Connect's own per-group automatic distribution cannot be turned on
+  # after the fact (hasAccessToAllBuilds is create-only and Apple refuses it in
+  # an UPDATE), so distribution happens here, which also covers every group made
+  # before anyone thought about the flag.
+  #
+  # ubuntu, not macOS: it is HTTPS and a wait. Putting it on the Mac runner would
+  # bill the expensive minutes for sitting still.
+  distribute:
+    needs: build-upload
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyJWT (ES256 needs the crypto extra)
+        run: pip install --quiet 'pyjwt[crypto]==2.9.0'
+
+      - name: Wait for processing, then distribute to every tester group
+        env:
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          TD_BUNDLE_ID: app.tradedesk.beta
+          # The build THIS run made. CFBundleVersion is set to github.run_number
+          # in the upload job, so this can never pick up a concurrent upload.
+          TD_BUILD_VERSION: ${{ github.run_number }}
+        run: python3 scripts/testflight-distribute.py | tee "$GITHUB_STEP_SUMMARY"
