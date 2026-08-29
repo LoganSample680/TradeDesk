@@ -574,5 +574,108 @@ test.describe('Wake region set for the dead app', () => {
     expect(r.unparked).toBe(1);
   });
 
+  // ── The dwell ends where the driving starts ────────────────────────────────
+  // Every case below is the owner's real 2026-08-27, replayed to the second.
+  // The shop dwell used to close only on an `inShop` transition, so it needed
+  // a regionExit that iOS never sent: 161 minutes billed for 14.
+  test.describe('a shop dwell closes on departure, not on the next arrival', () => {
+    // One helper, so a test asserts on the row that would actually be written
+    // rather than on a stub of it.
+    const run = async (page, plan) => page.evaluate(async (plan) => {
+      const saved = { was: _geoWasInShop, at: _geoShopArrivedAt, home: _geoHomeDwell, q: localStorage.getItem('zp3_geo_queue') };
+      const rows = [];
+      const origEnq = window._geoEnqueue;
+      try {
+        window._geoEnqueue = (tbl, row) => { rows.push({ tbl, ...row }); };
+        _geoHomeDwell = null;                       // wall-clock, not the home-office rule
+        _geoWasInShop = true;
+        _geoShopArrivedAt = plan.arrived;
+        for (const ev of plan.events) await _geoTdEvent(ev, !!ev.replay);
+        return { rows, stillOpen: !!_geoShopArrivedAt, wasInShop: _geoWasInShop };
+      } finally {
+        window._geoEnqueue = origEnq;
+        _geoWasInShop = saved.was; _geoShopArrivedAt = saved.at; _geoHomeDwell = saved.home;
+        if (saved.q === null) localStorage.removeItem('zp3_geo_queue'); else localStorage.setItem('zp3_geo_queue', saved.q);
+      }
+    }, plan);
+
+    // Named instants, never Date.now() arithmetic: the meaning of this test is
+    // a duration, and the wall clock must never be an input to it (CLAUDE.md 5.2.2).
+    const ARR = '2026-08-27T22:34:41.000Z';   // 17:34:41 CT, the shop regionEnter
+    const DRIVE = '2026-08-27T22:48:59.000Z'; // 17:48:59 CT, CoreMotion says driving
+    const LATE = '2026-08-28T01:16:02.000Z';  // 20:16:02 CT, the Landscaper arrival
+
+    test('driving away writes the 14 real minutes, not the 161 it used to', async () => {
+      const r = await run(page, { arrived: ARR, events: [{ type: 'motion', ts: Date.parse(DRIVE), kind: 'driving' }] });
+      expect(r.rows.length, 'exactly one shop row').toBe(1);
+      expect(r.rows[0].tbl).toBe('shop_time_entries');
+      expect(r.rows[0].minutes, 'the dwell is 17:34:41 to 17:48:59').toBe(14);
+      expect(r.rows[0].departed_at).toBe(DRIVE);
+    });
+
+    test('the dwell is closed out, so the late fence cannot reopen or double it', async () => {
+      const r = await run(page, {
+        arrived: ARR,
+        events: [{ type: 'motion', ts: Date.parse(DRIVE), kind: 'driving' },
+                 { type: 'motion', ts: Date.parse(LATE), kind: 'driving' }],
+      });
+      expect(r.rows.length, 'the second driving edge has nothing left to close').toBe(1);
+      expect(r.stillOpen).toBe(false);
+      expect(r.wasInShop, 'cleared so a return trip reads as a fresh arrival').toBe(false);
+    });
+
+    test('a replayed transition closes it too: the force-closed case is the whole point', async () => {
+      const r = await run(page, { arrived: ARR, events: [{ type: 'motion', ts: Date.parse(DRIVE), kind: 'driving', replay: true }] });
+      expect(r.rows.length, 'a buffered tape is exactly when the fence exit was missed').toBe(1);
+      expect(r.rows[0].minutes).toBe(14);
+    });
+
+    test('automotive is the same edge as driving', async () => {
+      const r = await run(page, { arrived: ARR, events: [{ type: 'motion', ts: Date.parse(DRIVE), kind: 'automotive' }] });
+      expect(r.rows.length).toBe(1);
+      expect(r.rows[0].minutes).toBe(14);
+    });
+
+    test('standing at the yard is not leaving it', async () => {
+      const r = await run(page, {
+        arrived: ARR,
+        events: [{ type: 'motion', ts: Date.parse(ARR) + 60000, kind: 'still' },
+                 { type: 'motion', ts: Date.parse(ARR) + 120000, kind: 'onFoot' },
+                 { type: 'motion', ts: Date.parse(ARR) + 180000, kind: 'cycling' }],
+      });
+      expect(r.rows.length, 'walking the yard, loading, and standing still all stay open').toBe(0);
+      expect(r.stillOpen).toBe(true);
+    });
+
+    test('a transition stamped before the arrival never writes a negative dwell', async () => {
+      const r = await run(page, { arrived: ARR, events: [{ type: 'motion', ts: Date.parse(ARR) - 600000, kind: 'driving' }] });
+      expect(r.rows.length, 'clock skew and stale buffer rows are refused').toBe(0);
+      expect(r.stillOpen).toBe(true);
+    });
+
+    test('no open dwell means a driving edge does nothing at all', async () => {
+      const r = await page.evaluate(async (drive) => {
+        const saved = { was: _geoWasInShop, at: _geoShopArrivedAt };
+        const rows = []; const origEnq = window._geoEnqueue;
+        try {
+          window._geoEnqueue = (tbl, row) => { rows.push({ tbl, ...row }); };
+          _geoWasInShop = false; _geoShopArrivedAt = null;
+          await _geoTdEvent({ type: 'motion', ts: Date.parse(drive), kind: 'driving' });
+          return { n: rows.length };
+        } finally { window._geoEnqueue = origEnq; _geoWasInShop = saved.was; _geoShopArrivedAt = saved.at; }
+      }, DRIVE);
+      expect(r.n).toBe(0);
+    });
+
+    test('the 12:11 session too: 37 minutes to the departure, not 45 to the next arrival', async () => {
+      const r = await run(page, {
+        arrived: '2026-08-27T17:11:06.000Z',                                     // 12:11:06 CT
+        events: [{ type: 'motion', ts: Date.parse('2026-08-27T17:48:05.000Z'), kind: 'driving' }], // 12:48:05 CT
+      });
+      expect(r.rows.length).toBe(1);
+      expect(r.rows[0].minutes, 'was 45, closing on the 12:55:47 arrival').toBe(37);
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });

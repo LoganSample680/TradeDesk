@@ -4489,6 +4489,45 @@ async function _geoTdEvent(ev,replay){
     return;
   }
   if(ev.type==='motion'){
+    // ── DRIVING AWAY ENDS THE DWELL. ARRIVING SOMEWHERE ELSE IS TOO LATE. ──
+    // The shop dwell closed on the `inShop` transition and nowhere else, so it
+    // needed a regionExit to fire. iOS does not promise one. The owner's
+    // 2026-08-27: he reached the yard 17:34:41, drove off 17:48:59, and no
+    // shop regionExit ever came. The dwell stayed open until the Landscaper
+    // regionEnter at 20:16:02 flipped `inShop`, and billed 161 minutes for 14
+    // real ones. The same shape, smaller, at 12:11: closed on the 12:55
+    // arrival instead of the 12:48 departure, 8 minutes over.
+    //
+    // The motion tape knew at 17:48:59. It always knows first, because a
+    // fence cannot fire until you have crossed a line several hundred feet
+    // away and driving starts at the parking space. So the dwell now ends
+    // where the driving starts, and the fence is left to do the only job it
+    // is actually good at, saying WHERE.
+    //
+    // Deliberately outside the `!replay` guard below: a force-closed app
+    // replaying its buffer is exactly the case where the fence exit was
+    // missed, so a replayed transition must close the dwell too. It is
+    // idempotent by client_key, so a replay that races the live close writes
+    // the same row rather than a second one.
+    if(ev.kind&&_geoWasInShop&&_geoShopArrivedAt){
+      const _k=String(ev.kind);
+      if(_k==='automotive'||_k==='driving'){
+        const _at=new Date(Number(ev.ts)||Date.now()).toISOString();
+        // Only ever shortens. A tape event that arrives stamped BEFORE the
+        // arrival (a clock skew, a stale buffered row) would otherwise write
+        // a negative dwell, and one stamped after a departure we already
+        // recorded would reopen a closed question.
+        if(Date.parse(_at)>Date.parse(_geoShopArrivedAt)){
+          _geoParkNote('shop-close-motion',_geoShopArrivedAt+' -> '+_at);
+          _geoCloseShopEntry(_geoShopArrivedAt,_at);
+          _geoShopArrivedAt=null;
+          // Cleared together with the timestamp so a later ping still inside
+          // the fence reads as a FRESH arrival and opens a new dwell. Leaving
+          // it true would make coming back for a second load invisible.
+          _geoWasInShop=false;
+        }
+      }
+    }
     // A BOUNDARY DESERVES A REAL FIX (owner 2026-08-29). The transitions that
     // start and end a paid segment are the ones worth spending radio on:
     // pulling out (onFoot -> automotive) and parking (automotive -> onFoot).
