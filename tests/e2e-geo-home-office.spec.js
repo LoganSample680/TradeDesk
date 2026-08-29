@@ -609,6 +609,51 @@ test.describe('Home office: presence is not work', () => {
     expect(r.deleted).not.toContain('I');
   });
 
+  test('_geoDupeSweep collapses one drive written under two source labels', async () => {
+    // His 08-27 17:28 leg: the server deriver wrote 'drive' and the phone
+    // wrote 'drive-unassigned', 2.4 seconds apart, 0.992 overlap. Matching the
+    // source string exactly left both standing forever. They disagree about
+    // whether the leg is assigned to a job, not about whether it happened.
+    const r = await page.evaluate(async () => {
+      const saved = { supa: _supa, user: _supaUser, del: window._tdSoftDelete };
+      const deleted = [], updated = [];
+      try {
+        const T = (h, m, s2) => Date.UTC(2026, 7, 27, h, m, s2 || 0);
+        const row = (id, src, dest, a, b) => ({
+          id, source: src, dest_place: dest, job_id: null, client_key: 'k' + id,
+          arrived_at: new Date(a).toISOString(), departed_at: new Date(b).toISOString(),
+          minutes: Math.round((b - a) / 60000),
+        });
+        const rows = [
+          // 17:28:08 -> 17:34:37, server, named off a stale fence fix.
+          row('S', 'drive', '2015 SW Randolph Ave', T(22, 28, 8), T(22, 34, 37)),
+          // 17:28:11 -> 17:34:53, phone, named off the place it resolved to.
+          row('P', 'drive-unassigned', 'TradeDesk shop', T(22, 28, 11), T(22, 34, 53)),
+          // A stop overlapping a drive is NOT the same event, whatever the clocks say.
+          row('X', 'stop', null, T(22, 28, 9), T(22, 34, 50)),
+        ];
+        const q = { _d: { data: rows, error: null } };
+        q.then = (res, rej) => Promise.resolve(q._d).then(res, rej);
+        ['select', 'is', 'eq', 'gte'].forEach(m => { q[m] = () => q; });
+        const upd = { eq: (col, v) => { updated.push(v); return Promise.resolve({ error: null }); } };
+        _supa = { from: () => Object.assign(Object.create(q), q, { update: (patch) => { updated.patch = patch; return upd; } }) };
+        _supaUser = { id: 'u-cls' };
+        window._tdSoftDelete = async (tbl, id) => { deleted.push(id); };
+        window._geoDupeSweepRan = false;
+        const n = await _geoDupeSweep();
+        return { n, deleted, updated: updated.slice() };
+      } finally {
+        _supa = saved.supa; _supaUser = saved.user;
+        window._tdSoftDelete = saved.del; window._geoDupeSweepRan = true;
+      }
+    });
+    expect(r.n, 'exactly one collapse: the two drives').toBe(1);
+    // The longer row survives, which here is also the one named off the place
+    // rather than off a fix that was 3,044 ft stale.
+    expect(r.deleted).toEqual(['S']);
+    expect(r.deleted, 'a stop is still not a drive').not.toContain('X');
+  });
+
   test('_geoDupeSweep is a no-op with nothing to do, and never runs twice', async () => {
     const r = await page.evaluate(async () => {
       const saved = { supa: _supa, user: _supaUser, del: window._tdSoftDelete };
