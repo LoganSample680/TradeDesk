@@ -267,6 +267,26 @@ test.describe('Wake region set for the dead app', () => {
     expect(src.includes('td_geo_armed'), 'the armed state must persist for the relaunch to restore').toBe(true);
   });
 
+  test('a relaunch re-arms the MOTION stream too, not just the fences', async () => {
+    // startMotionStream was called only from startParked and startEvents,
+    // both of which run when JS asks. load() re-armed significant-change,
+    // visits and the heartbeat and never this, so after a force-quit wake the
+    // phone resumed fences and pings but stayed deaf to motion until somebody
+    // opened the app. Every boundary the day is measured on was missed for
+    // exactly the stretch the app was dead.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'native', 'td-geo', 'ios', 'Plugin', 'TdGeoPlugin.swift'), 'utf8');
+    const i = src.indexOf('override public func load()');
+    expect(i).toBeGreaterThan(-1);
+    // The body of load(), up to the next top-level MARK.
+    const rest = src.slice(i);
+    const end = rest.indexOf('// MARK:');
+    const body = end > -1 ? rest.slice(0, end) : rest;
+    expect(body.includes('startMonitoringSignificantLocationChanges'),
+      'a relaunch must re-arm significant-change').toBe(true);
+    expect(body.includes('startMotionStream'),
+      'a relaunch must re-arm the motion stream, or the phone wakes deaf to every boundary').toBe(true);
+  });
+
   // ── The heartbeat arms at shift start, not only at park ────────────────────
   // Owner report 2026-08-27 (live device): a whole morning at a job with zero
   // heartbeat events, because the only call site was _geoEnterParkMode and
