@@ -902,9 +902,18 @@ async function _geoOnPing(pos){
     // already-closed visit already claimed. Without this check, returning
     // home before the second away-ping (below) ever got a chance to null the
     // object handed the new, unrelated dwell the old one's leftover minutes.
-    if(!_geoHomeDwell||_geoHomeDwell.closed)_geoHomeDwell={activeMs:0,lastSampleMs:nowMs};
+    if(!_geoHomeDwell||_geoHomeDwell.closed)_geoHomeDwell={activeMs:0,lastSampleMs:nowMs,spans:[]};
     else{
-      if(_geoAppActive(nowMs))_geoHomeDwell.activeMs+=Math.min(nowMs-_geoHomeDwell.lastSampleMs,_GEO_IDLE_MS);
+      if(_geoAppActive(nowMs)){
+        // The credited stretch, kept as a SPAN as well as added to the total
+        // (2026-08-29). The total alone says how long they worked but not
+        // WHEN, and the load-out window has to be subtracted out of the office
+        // minutes so a minute walking to the truck with the app open is never
+        // billed twice. Two numbers cannot be intersected; two timelines can.
+        const _span=Math.min(nowMs-_geoHomeDwell.lastSampleMs,_GEO_IDLE_MS);
+        _geoHomeDwell.activeMs+=_span;
+        _geoAddSpan(_geoHomeDwell.spans||(_geoHomeDwell.spans=[]),nowMs-_span,nowMs);
+      }
       _geoHomeDwell.lastSampleMs=nowMs;
     }
   }else if(!_geoWasAtHome)_geoHomeDwell=null;   // a ping later, nothing left to close
@@ -1226,7 +1235,8 @@ async function _geoOnPing(pos){
       // behavior). The 'geofence-gap' source tag still marks the row as
       // gap-resolved rather than continuously observed.
       if(prev.k==='job'&&_geoArrivedAt)_wroteClose=await _geoCloseEntry(_geoCurrentJob,nowIso,!!_geoGapHiddenAt);
-      else if(prev.k==='place'&&_geoPlaceArrivedAt)_wroteClose=_geoClosePlaceEntry(_geoCurrentPlace,_geoPlaceArrivedAt,nowIso);
+      else if(prev.k==='place'&&_geoPlaceArrivedAt)_wroteClose=_geoClosePlaceEntry(_geoCurrentPlace,_geoPlaceArrivedAt,nowIso,
+        await _geoHomeTape(_geoCurrentPlace,_geoPlaceArrivedAt,nowIso));
       else if(prev.k==='client'&&_geoClientArrivedAt)_wroteClose=_geoCloseClientEntry(_geoCurrentClient,_geoClientArrivedAt,nowIso);
       // prev.k==='shop' needs nothing here: the independent shop block above
       // owns that dwell, and only closes it when they actually leave the yard.
@@ -1701,9 +1711,19 @@ function _geoBindInteract(){
   });
   _geoLastInteractAt=Date.now();   // opening the app IS an interaction
 }
-// Time inside a known place's fence (a supply house). Paid work, but overhead
-// rather than labor on any one job, so it is grouped with drive time.
-function _geoIsPlaceSource(s){return String(s||'')==='place';}
+// Time inside a known place's fence (a supply house, a home office). Paid
+// work, but overhead rather than labor on any one job, so it is grouped with
+// drive time.
+//
+// PREFIX, not an exact match (2026-08-29). A home office now writes
+// 'place-load' and 'place-office' instead of one undifferentiated 'place'
+// row, and an exact match would have let both fall through every money view's
+// else branch and be counted as ON-SITE JOB LABOR. That is precisely the bug
+// _geoDriveEntry's own comment records for 'drive-personal', which is why
+// _geoIsDriveSource is /^drive/ and this is now /^place/: one predicate owns
+// what a source MEANS, and a new variant joins the family by being named into
+// it rather than by every caller learning a new string.
+function _geoIsPlaceSource(s){return /^place/.test(String(s||''));}
 // ── Shop auto clock-out (owner rule 2026-08-24) ───────────────────────────
 // "Don't want shop time to calculate after the last job site or supply run
 // of the day", plus the matching report the same day that yard dwell on days
@@ -2168,26 +2188,167 @@ function _geoShopPaidSpans(entries,win,others,tape){
   }
   return out;
 }
+// ── Span arithmetic for the home-office split ───────────────────────────────
+// Everything here works on [startMs,endMs] pairs held sorted and disjoint.
+function _geoAddSpan(spans,a,b){
+  if(!Array.isArray(spans)||!(b>a))return spans;
+  const last=spans[spans.length-1];
+  // Back-to-back samples are ONE stretch of work. Without this the office row
+  // would be one row per ping.
+  if(last&&a<=last[1])last[1]=Math.max(last[1],b);
+  else spans.push([a,b]);
+  return spans;
+}
+// `spans` minus one window. A cut through the middle of a span splits it.
+function _geoCutSpan(spans,cut){
+  if(!cut)return (spans||[]).slice().map(x=>[x[0],x[1]]);
+  const c0=cut[0],c1=cut[1],out=[];
+  (spans||[]).forEach(x=>{
+    const a=x[0],b=x[1];
+    if(c1<=a||c0>=b){out.push([a,b]);return;}      // no overlap
+    if(c0>a)out.push([a,Math.min(c0,b)]);
+    if(c1<b)out.push([Math.max(c1,a),b]);
+  });
+  return out.filter(x=>x[1]>x[0]);
+}
+function _geoSpanMs(spans){return (spans||[]).reduce((n,x)=>n+(x[1]-x[0]),0);}
+// ── Truck load-out: the walk that runs into the drive ───────────────────────
+// Owner rule (2026-08-29): "home office should call the last motion event from
+// start time to end time before a drive, that's truck loading time."
+//
+// THE ANCHOR IS THE COPROCESSOR'S OWN 'driving' TRANSITION, NOT THE GEOFENCE
+// EXIT, and that distinction is the whole reason this works. The fence trips
+// 350 to 600 feet down the road: on Jack Schonfeldt's own 8/28 data that lands
+// 20 to 60 seconds after the truck actually rolled, and longer on a slow
+// street. Measured back from the fence, a real load-out looks late and gets
+// thrown away. Measured back from the moment CoreMotion says 'driving', the
+// walk that ends there IS the load-out, with no tolerance left to tune: a dog
+// walk an hour earlier is never the last walk before a driving transition.
+//
+// TdGeoPlugin maps CMMotionActivity.automotive to exactly this string
+// (native/td-geo/ios/Plugin/TdGeoPlugin.swift), so nothing native changes and
+// no iOS build is involved (CLAUDE.md 3.2).
+//
+// Only stillness may sit between the walk and the drive, and only briefly:
+// that gap is buckling in and backing off the drive, not a second activity.
+// Five minutes is the same slack _GEO_SHOP_CHAIN_MS and _GEO_LEAVE_SLACK_MS
+// already use for "these two events belong to each other."
+const _GEO_LOAD_STILL_MS=5*60000;
+// The fallback anchor, used only when the tape offers no driving transition
+// at all (an older shell, motion refused, a hop too short for the chip to
+// call it). The departure is then the only anchor there is, and the owner's
+// original rule applies: motion stops being reported the second a drive
+// starts, so only a walk ending about a minute before the fence can be the
+// load-out. Deliberately tighter than the anchored path, because the evidence
+// is weaker.
+const _GEO_LOAD_EXIT_MS=60000;
+// The [startMs,endMs] that was loading, or null when nothing on the tape says
+// a load-out happened. Never invents time: both edges come off the tape.
+function _geoHomeLoadWindow(tape,s,e){
+  if(!Array.isArray(tape)||!tape.length||!(e>s))return null;
+  const t=tape.filter(x=>x&&typeof x.ts==='number'&&x.kind).slice().sort((a,b)=>a.ts-b.ts);
+  if(!t.length)return null;
+  // The drive out: the LAST driving transition that begins inside the visit.
+  // Last, not first, because a day can leave and come back.
+  let dTs=null;
+  for(let i=0;i<t.length;i++){if(t[i].kind==='driving'&&t[i].ts>=s&&t[i].ts<=e)dTs=t[i].ts;}
+  const anchor=(dTs!=null)?dTs:e;
+  const slack=(dTs!=null)?_GEO_LOAD_STILL_MS:_GEO_LOAD_EXIT_MS;
+  // The last walk that STARTS before that anchor.
+  let w=-1;
+  for(let i=0;i<t.length;i++){
+    if(t[i].kind!=='onFoot')continue;
+    if(t[i].ts>=anchor)break;
+    w=i;
+  }
+  if(w<0)return null;
+  const a=Math.max(t[w].ts,s);
+  // Ends at the next transition (a 'still' in the cab, or the drive itself),
+  // clipped to the anchor so cab minutes are never billed as loading.
+  const b=Math.min((w+1<t.length)?t[w+1].ts:e,anchor,e);
+  if(!(b>a))return null;
+  // A walk that did not run into the drive was some other errand.
+  if(anchor-b>slack)return null;
+  return [a,b];
+}
+// One home-office visit, split into what it actually was.
+// Returns {load:[s,e]|null, office:[[s,e],...]}.
+function _geoHomeSplit(tape,s,e,dwell){
+  const load=_geoHomeLoadWindow(tape,s,e);
+  // Active-app spans are the paperwork, with the load-out window taken back
+  // out so a minute is never paid twice. In practice they barely overlap
+  // (_geoAppActive needs the screen up, the tape needs a gait), but payroll is
+  // not the place to lean on "in practice."
+  const office=_geoCutSpan((dwell&&dwell.spans)||[],load)
+    .map(x=>[Math.max(x[0],s),Math.min(x[1],e)])
+    .filter(x=>x[1]>x[0]);
+  return {load:load,office:office};
+}
+// The motion tape for a home-office visit, null for every other place. Gated
+// on the kind so a supply-house exit never spends a plugin round trip on a
+// tape nothing is going to read.
+async function _geoHomeTape(placeId,arrivedAt,departedIso){
+  try{
+    const pl=(typeof getPlaces==='function')?(getPlaces()||[]).find(p=>p&&String(p.id)===String(placeId)):null;
+    if(!pl||pl.kind!=='home_office')return null;
+    return await _geoMotionTape(Date.parse(arrivedAt)||0,Date.parse(departedIso||'')||0);
+  }catch(_e){return null;}
+}
+// A home-office visit is never one number. It is up to TWO rows, the truck
+// load-out and the paperwork, each labelled for what it was, and the rest of
+// the visit is a man living in his own house.
+function _geoCloseHomeEntry(placeId,pl,arrivedAt,departed,tape){
+  const s=Date.parse(arrivedAt)||0,e=Date.parse(departed)||0;
+  const dwell=_geoHomeDwell;
+  // Marked read, not nulled: see the matching comment in _geoCloseShopEntry.
+  if(_geoHomeDwell)_geoHomeDwell.closed=true;
+  if(!(e>s)||!_supaUser)return false;
+  const split=_geoHomeSplit(tape,s,e,dwell);
+  const name=(pl&&pl.name)||null;
+  let wrote=false;
+  const put=(src,a,b,mins)=>{
+    if(!(mins>=2))return;                 // a pass-through, not a stop
+    const iso=new Date(a).toISOString();
+    _geoEnqueue('job_time_entries',{
+      contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+      job_id:null,arrived_at:iso,departed_at:new Date(b).toISOString(),minutes:mins,
+      dest_place:name,client_key:_geoVisitKey(src,placeId,iso),source:src
+    });
+    wrote=true;
+  };
+  if(split.load)put('place-load',split.load[0],split.load[1],Math.floor((split.load[1]-split.load[0])/60000));
+  // ONE office row per visit, bracketing the paperwork, carrying the minutes
+  // actually worked rather than the bracket's width: a man who writes quotes
+  // for twenty minutes across a three-hour evening worked twenty minutes, and
+  // both facts belong on the row. Same shape the shop row has always had.
+  if(split.office.length){
+    put('place-office',split.office[0][0],split.office[split.office.length-1][1],
+        Math.floor(_geoSpanMs(split.office)/60000));
+  }
+  return wrote;
+}
 // Time at a known place, closed on departure. Bounded by a real fence at both
 // ends, so unlike an off-job stop this is verified work time.
 // Returns whether a row was actually enqueued, same contract as
 // _geoCloseEntry (see its comment): _geoOnPing's flicker-undo reads this.
-function _geoClosePlaceEntry(placeId,arrivedAt,departedIso){
+function _geoClosePlaceEntry(placeId,arrivedAt,departedIso,tape){
   if(!arrivedAt)return false;
   const departed=departedIso||new Date().toISOString();
-  // Same rule as the shop: a saved place marked home_office bills active app
-  // time only, every other kind bills the dwell.
-  const mins=_geoHomeDwell
-    ? Math.floor(_geoHomeDwell.activeMs/60000)
-    : Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrivedAt))/60000));
-  // Marked read, not nulled: see the matching comment in _geoCloseShopEntry.
-  if(_geoHomeDwell)_geoHomeDwell.closed=true;
-  if(mins<2)return false;        // a pass-through, not a stop
-  if(!_supaUser)return false;
   // Element-guarded for the same reason as _geoJobLatLng below: a hole in
   // the array must cost this row its place NAME, never throw out of a visit
   // close and lose the whole entry.
   const pl=(typeof getPlaces==='function')?(getPlaces()||[]).find(p=>p&&String(p.id)===String(placeId)):null;
+  // WHICH RULE APPLIES IS DECIDED BY THE PLACE, NOT BY WHAT IS IN MEMORY
+  // (2026-08-29). This read `_geoHomeDwell ? activeMs : wall-clock`, so a home
+  // office whose sampler had never run billed the DWELL, silently, and there
+  // was nothing on the row to say which rule had produced it. Not a
+  // hypothetical: Jack Schonfeldt's 8/27 row is 7:56pm to 5:23am, 567 minutes
+  // of sleep, written by that line. The place's own kind is the fact. An
+  // absent tally means nothing was observed, which bills zero, not a night.
+  if(pl&&pl.kind==='home_office')return _geoCloseHomeEntry(placeId,pl,arrivedAt,departed,tape);
+  const mins=Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrivedAt))/60000));
+  if(mins<2)return false;        // a pass-through, not a stop
+  if(!_supaUser)return false;
   _geoEnqueue('job_time_entries',{
     contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
     job_id:null,arrived_at:arrivedAt,departed_at:departed,minutes:mins,

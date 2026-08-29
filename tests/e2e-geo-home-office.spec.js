@@ -375,5 +375,249 @@ test.describe('Home office: presence is not work', () => {
     // the exact path the live account's anomaly was found in.
   });
 
+  // ── Loading vs paperwork: the home office is two kinds of work ─────────────
+  //
+  // Owner rule (2026-08-29): "home office should call the last motion event
+  // from start time to end time before a drive, that's truck loading time...
+  // then home office counts app open time while in home office geofence, that
+  // means work is actively being done so it needs counted as its own thing."
+  //
+  // Both halves were unbillable before this. Presence billed nothing at a home
+  // office (correct, that is the night rule above), and app-active time billed
+  // as one anonymous 'place' row that Crew Cost could not tell from a supply
+  // run. A man loading his truck for forty minutes with the phone in his
+  // pocket earned nothing at all, because no rule in the file described the
+  // work he was doing.
+  //
+  // The anchor is the coprocessor's own 'driving' transition rather than the
+  // geofence exit, because the fence trips several hundred feet down the road
+  // and a real load-out measured back from it looks late. These tests pin that
+  // distinction down: the gap cases below are the ones that break if anybody
+  // ever "simplifies" the anchor back to the departure timestamp.
+  test.describe('loading up and office work', () => {
+    const T = Date.parse('2026-08-21T12:00:00.000Z');     // named, never derived (CLAUDE.md 5.2.2)
+    const m = (n) => T + n * 60000;
+    const win = (s, e) => page.evaluate((a) => {
+      const w = _geoHomeLoadWindow(a.tape, a.s, a.e);
+      return w ? [w[0] - a.t0, w[1] - a.t0] : null;       // minutes-from-T, so a failure reads
+    }, { tape: s, s: e[0], e: e[1], t0: T });
+
+    test('the walk that runs into the drive is the load-out', async () => {
+      const out = await win(
+        [{ kind: 'onFoot', ts: m(10) }, { kind: 'still', ts: m(32) }, { kind: 'driving', ts: m(34) }],
+        [T, m(36)]);
+      expect(out).toEqual([10 * 60000, 32 * 60000]);
+    });
+
+    test('a short still in the cab does not extend the load-out', async () => {
+      // Buckling in is not loading. The window ends where the walking ends,
+      // never at the driving transition itself.
+      const out = await win(
+        [{ kind: 'onFoot', ts: m(10) }, { kind: 'still', ts: m(20) }, { kind: 'driving', ts: m(24) }],
+        [T, m(30)]);
+      expect(out).toEqual([10 * 60000, 20 * 60000]);
+    });
+
+    test('a walk that did not run into the drive is not loading', async () => {
+      // Forty minutes of stillness between the walk and the drive: that walk
+      // was some other errand and the truck was loaded before or not at all.
+      const out = await win(
+        [{ kind: 'onFoot', ts: m(5) }, { kind: 'still', ts: m(15) }, { kind: 'driving', ts: m(55) }],
+        [T, m(60)]);
+      expect(out).toBeNull();
+    });
+
+    test('the LAST walk wins, not the first', async () => {
+      // The dog walk at 7am is not the load-out at 9am. This is the case the
+      // owner's own "last motion event before a drive" wording names.
+      const out = await win(
+        [{ kind: 'onFoot', ts: m(2) }, { kind: 'still', ts: m(12) },
+         { kind: 'onFoot', ts: m(50) }, { kind: 'driving', ts: m(58) }],
+        [T, m(60)]);
+      expect(out).toEqual([50 * 60000, 58 * 60000]);
+    });
+
+    test('with no driving transition the departure anchors it, within a minute', async () => {
+      // The weaker fallback path: an older shell, or motion refused. The
+      // owner's original rule applies because motion stops being reported the
+      // second a drive starts.
+      const near = await win([{ kind: 'onFoot', ts: m(10) }, { kind: 'still', ts: m(29.5) }], [T, m(30)]);
+      expect(near).toEqual([10 * 60000, 29.5 * 60000]);
+      const far = await win([{ kind: 'onFoot', ts: m(10) }, { kind: 'still', ts: m(15) }], [T, m(30)]);
+      expect(far).toBeNull();
+    });
+
+    test('a driving transition outside the visit is not this visit\'s drive', async () => {
+      const out = await win(
+        [{ kind: 'onFoot', ts: m(10) }, { kind: 'still', ts: m(12) }, { kind: 'driving', ts: m(90) }],
+        [T, m(30)]);
+      expect(out).toBeNull();       // falls back to the departure, and m(12) is 18 min short
+    });
+
+    test('stillness alone is never loading', async () => {
+      const out = await win([{ kind: 'still', ts: m(1) }, { kind: 'driving', ts: m(20) }], [T, m(25)]);
+      expect(out).toBeNull();
+    });
+
+    test('no tape, empty tape, junk tape and a zero window all return null', async () => {
+      // The §11.1 input classes. None of these may throw: a tape is optional
+      // evidence and its absence must read as "nothing observed", never as an
+      // exception out of a visit close that would lose the whole entry.
+      const out = await page.evaluate((a) => {
+        const call = (t, s, e) => { try { return { v: _geoHomeLoadWindow(t, s, e) }; } catch (err) { return { threw: String(err) }; } };
+        return [
+          call(null, a.s, a.e), call(undefined, a.s, a.e), call([], a.s, a.e),
+          call('nonsense', a.s, a.e), call([{}, null, { kind: 'onFoot' }], a.s, a.e),
+          call([{ kind: 'onFoot', ts: a.s }], a.e, a.s),        // e before s
+          call([{ kind: 'onFoot', ts: a.s }], a.s, a.s),        // zero width
+        ];
+      }, { s: T, e: m(30) });
+      out.forEach(r => { expect(r.threw).toBeUndefined(); expect(r.v).toBeNull(); });
+    });
+
+    test('office time is the app-active spans, with the load-out cut back out', async () => {
+      // A minute is never paid twice. The two measures barely overlap in
+      // practice (the screen is down while you carry a ladder), but payroll is
+      // not the place to lean on "in practice".
+      const out = await page.evaluate((a) => {
+        const r = _geoHomeSplit(a.tape, a.s, a.e, { spans: [[a.s + 5 * 60000, a.s + 15 * 60000]] });
+        return { load: r.load && [r.load[0] - a.s, r.load[1] - a.s], office: r.office.map(x => [x[0] - a.s, x[1] - a.s]) };
+      }, { tape: [{ kind: 'onFoot', ts: m(10) }, { kind: 'still', ts: m(32) }, { kind: 'driving', ts: m(34) }], s: T, e: m(36) });
+      expect(out.load).toEqual([10 * 60000, 32 * 60000]);
+      expect(out.office).toEqual([[5 * 60000, 10 * 60000]]);    // the 10-15 half is inside the load-out
+    });
+
+    test('contiguous active samples merge into one stretch, not one row per ping', async () => {
+      const out = await page.evaluate(() => {
+        const sp = [];
+        _geoAddSpan(sp, 1000, 2000); _geoAddSpan(sp, 2000, 3000); _geoAddSpan(sp, 2500, 4000);
+        _geoAddSpan(sp, 9000, 9500); _geoAddSpan(sp, 5000, 4000);   // zero/negative is ignored
+        return sp;
+      });
+      expect(out).toEqual([[1000, 4000], [9000, 9500]]);
+    });
+
+    // ── The two rows, written for real ──────────────────────────────────────
+    async function closeHome({ tape, spans, dwellMins, kind }) {
+      return page.evaluate(async (a) => {
+        const rows = [], realEnq = _geoEnqueue, realUser = _supaUser;
+        _supaUser = { id: 'u-home' };
+        _geoEnqueue = (tbl, row) => rows.push(Object.assign({ _tbl: tbl }, row));
+        try {
+          places.length = 0;
+          savePlace({ id: 'ho-split', name: 'Home Office', kind: a.kind, lat: 41.5, lon: -93.5, confirmedBy: 'manual' });
+          _geoHomeDwell = a.spans ? { activeMs: 0, lastSampleMs: 0, spans: a.spans.map(x => x.slice()) } : null;
+          _geoClosePlaceEntry('ho-split', new Date(a.s).toISOString(), new Date(a.e).toISOString(), a.tape);
+          return rows;
+        } finally { _geoEnqueue = realEnq; _supaUser = realUser; }
+      }, { tape, spans, kind: kind || 'home_office', s: T, e: T + dwellMins * 60000 });
+    }
+
+    test('a morning of paperwork then a load-out writes exactly two labelled rows', async () => {
+      const rows = await closeHome({
+        tape: [{ kind: 'onFoot', ts: m(10) }, { kind: 'still', ts: m(32) }, { kind: 'driving', ts: m(34) }],
+        spans: [[T, m(8)]], dwellMins: 36,
+      });
+      const by = (src) => rows.filter(r => r.source === src);
+      expect(by('place-load').length).toBe(1);
+      expect(by('place-office').length).toBe(1);
+      expect(by('place').length).toBe(0);            // never the old anonymous row
+      expect(by('place-load')[0].minutes).toBe(22);
+      expect(by('place-office')[0].minutes).toBe(8);
+      // Both carry the place name and their own dedupe key, so the drain can
+      // never collapse the two rows of one visit into one.
+      expect(by('place-load')[0].dest_place).toBe('Home Office');
+      expect(by('place-load')[0].client_key).not.toBe(by('place-office')[0].client_key);
+    });
+
+    test('THE OVERNIGHT ROW: asleep at the home office bills nothing at all', async () => {
+      // The regression guard for the live defect this work was found by. Jack
+      // Schonfeldt's job_time_entries row for 2026-08-27 reads 7:56pm to
+      // 5:23am, source 'place', 567 minutes: nine and a half hours of sleep
+      // billed as work, because _geoClosePlaceEntry chose its rule from
+      // whether _geoHomeDwell happened to be in memory rather than from the
+      // place's own kind. No walking, no app-active time, so nothing was
+      // observed and nothing may be billed. If this ever writes a row again,
+      // somebody has restored the wall-clock fallback.
+      const rows = await closeHome({ tape: null, spans: null, dwellMins: 567 });
+      expect(rows.length).toBe(0);
+    });
+
+    test('the same night with a tape full of stillness still bills nothing', async () => {
+      const rows = await closeHome({
+        tape: [{ kind: 'still', ts: m(30) }, { kind: 'still', ts: m(300) }],
+        spans: null, dwellMins: 567,
+      });
+      expect(rows.length).toBe(0);
+    });
+
+    test('a load-out under the two-minute floor is a pass-through, not a row', async () => {
+      const rows = await closeHome({
+        tape: [{ kind: 'onFoot', ts: m(10) }, { kind: 'driving', ts: m(11) }],
+        spans: null, dwellMins: 20,
+      });
+      expect(rows.length).toBe(0);
+    });
+
+    test('a supply house is untouched: one place row, the full dwell', async () => {
+      // The line this change must not move. A tape is handed in and ignored,
+      // because presence at a supply house has always been the work.
+      const rows = await closeHome({
+        tape: [{ kind: 'onFoot', ts: m(10) }, { kind: 'driving', ts: m(34) }],
+        spans: [[T, m(8)]], dwellMins: 36, kind: 'supply',
+      });
+      expect(rows.length).toBe(1);
+      expect(rows[0].source).toBe('place');
+      expect(rows[0].minutes).toBe(36);
+    });
+
+    test('every home-office source counts as overhead, never as job labour', async () => {
+      // The trap this change had to clear: _geoIsPlaceSource was an exact
+      // match on 'place', so both new sources would have fallen through every
+      // money view's else branch and been billed as ON-SITE JOB LABOUR. Same
+      // defect 'drive-personal' already had, same fix, one predicate.
+      const out = await page.evaluate(() => ({
+        place: _geoIsPlaceSource('place'),
+        load: _geoIsPlaceSource('place-load'),
+        office: _geoIsPlaceSource('place-office'),
+        drive: _geoIsPlaceSource('drive'),
+        geofence: _geoIsPlaceSource('geofence'),
+        empty: _geoIsPlaceSource(''),
+        nul: _geoIsPlaceSource(null),
+        undef: _geoIsPlaceSource(undefined),
+        label: _tlSourceLabel('place-load') + '|' + _tlSourceLabel('place-office') + '|' + _tlSourceLabel('place'),
+      }));
+      expect(out.place).toBe(true);
+      expect(out.load).toBe(true);
+      expect(out.office).toBe(true);
+      expect(out.drive).toBe(false);
+      expect(out.geofence).toBe(false);
+      expect(out.empty).toBe(false);
+      expect(out.nul).toBe(false);
+      expect(out.undef).toBe(false);
+      expect(out.label).toBe('Loading|Office|');
+    });
+
+    test('the weekly split bar reads the raw column, not the friendly label', async () => {
+      // The bug found while wiring this up, and the reason the assertion above
+      // is not enough on its own: _tlEmpWeekAgg fed `detail` ('Driving', '',
+      // 'Loading') to predicates that test the RAW source, so every GPS drive
+      // leg and supply visit was silently counted as on-site labour while Crew
+      // Cost, reading the raw column, put them in overhead. The two reports
+      // are supposed to be incapable of disagreeing.
+      const out = await page.evaluate(() => _tlEmpWeekAgg([
+        { rawSource: 'drive', detail: 'Driving', minutes: 30, personUid: 'u1', personName: 'A' },
+        { rawSource: 'place', detail: '', minutes: 10, personUid: 'u1', personName: 'A' },
+        { rawSource: 'place-load', detail: 'Loading', minutes: 22, personUid: 'u1', personName: 'A' },
+        { rawSource: 'place-office', detail: 'Office', minutes: 8, personUid: 'u1', personName: 'A' },
+        { rawSource: 'geofence', detail: '', minutes: 60, personUid: 'u1', personName: 'A' },
+      ], 'cid').u1);
+      expect(out.driveMin).toBe(30);
+      expect(out.placeMin).toBe(40);     // 10 supply + 22 loading + 8 office, all overhead
+      expect(out.onsiteMin).toBe(60);    // only the real job fence
+      expect(out.min).toBe(130);
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });

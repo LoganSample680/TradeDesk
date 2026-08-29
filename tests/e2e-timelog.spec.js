@@ -1020,9 +1020,9 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
     test('shop minutes land in their own bucket, never inflating job-site labor', async () => {
       const agg = await page.evaluate(() => _tlEmpWeekAgg([
-        { personUid: 'me', personName: 'Logan', source: 'auto', detail: '', minutes: 268 },
-        { personUid: 'me', personName: 'Logan', source: 'auto', detail: 'drive', minutes: 9 },
-        { personUid: 'me', personName: 'Logan', source: 'shop', detail: 'Shop', minutes: 44, unpaid: false },
+        { personUid: 'me', personName: 'Logan', source: 'auto', rawSource: 'geofence', detail: '', minutes: 268 },
+        { personUid: 'me', personName: 'Logan', source: 'auto', rawSource: 'drive', detail: 'Driving', minutes: 9 },
+        { personUid: 'me', personName: 'Logan', source: 'shop', rawSource: 'shop', detail: 'Shop', minutes: 44, unpaid: false },
       ], 'me'));
       const e = agg.me;
       expect(e.onsiteMin, 'shop time is not job-site time').toBe(268);
@@ -1976,6 +1976,43 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r).not.toContain('border-left:3px solid');
     });
 
+    test('the two halves of a home-office visit each get their own badge, never On-site', async () => {
+      // Owner 2026-08-29: "work is actively being done so it needs counted as
+      // its own thing." Before this, both rows fell into the plain On-site
+      // badge and read on the log as if the man had been on somebody's job.
+      const out = await page.evaluate(() => {
+        window._isEmployee = false;
+        const row = (rawSource, detail) => _tlRow({ id: 'a' + rawSource, rawId: 90, source: 'auto', rawSource,
+          personName: 'Jack', personUid: 'u1', clientName: 'Home Office', addr: '', jobName: '-', detail, minutes: 22 });
+        return { load: row('place-load', 'Loading'), office: row('place-office', 'Office') };
+      });
+      expect(out.load).toContain('Loading');
+      expect(out.load).not.toContain('On-site');
+      expect(out.office).toContain('Office');
+      expect(out.office).not.toContain('On-site');
+      // Teal, the colour this page already uses for "your own premises, paid,
+      // not job-site labour", and the matching left-edge accent the Shop row
+      // gets for the same fast-scroll reason. Never the drive amber.
+      expect(out.load).toContain('#0E6B6B');
+      expect(out.load).toContain('border-left:3px solid #0E6B6B');
+      expect(out.load).not.toContain('#9F5B00');
+      // The word is on the badge, so it is not repeated in the job line, the
+      // same not-repeated rule the Driving and Shop rows already follow.
+      expect((out.load.match(/Loading/g) || []).length).toBe(1);
+      expect((out.office.match(/Office/g) || []).length).toBe(2);   // 'Home Office' + the badge
+    });
+
+    test('a place row that is NOT a home office keeps the plain on-site treatment', async () => {
+      // The line this must not move: a supply house is still a supply house.
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'a91', rawId: 91, source: 'auto', rawSource: 'place', personName: 'Jack',
+          personUid: 'u1', clientName: 'Home Depot', addr: '', jobName: '-', detail: '', minutes: 15 });
+      });
+      expect(r).toContain('On-site');
+      expect(r).not.toContain('border-left:3px solid #0E6B6B');
+    });
+
     test('a manual row never gets the driving badge, even with an unrelated detail/task label', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = false;
@@ -2789,12 +2826,15 @@ test.describe('timelog.js: exhaustive coverage', () => {
     test('golden path: sums minutes and classifies on-site/drive/place per employee', async () => {
       const r = await page.evaluate(() => _tlEmpWeekAgg([
         { personUid: 'u1', personName: 'Mike Sample', minutes: 60, source: 'manual' },
-        // _geoIsDriveSource/_geoIsPlaceSource test a raw source string
-        // ('drive...'/'place'), and this function calls them against
-        // r.detail (the row's friendly label), so a lowercase raw-shaped
-        // value is what actually lands in driveMin here, not the
-        // capitalized "Driving" label _tlSourceLabel would produce.
-        { personUid: 'u1', personName: 'Mike Sample', minutes: 10, source: 'auto', detail: 'drive' },
+        // rawSource is the RAW column, which is what the two predicates test
+        // and what a real row carries. This fixture used to put the raw-shaped
+        // string in `detail` instead, and the comment here used to explain
+        // that as though it were the contract. It was not: it was the shape
+        // the fixture needed to survive a bug (fixed 2026-08-29). A real auto
+        // row's detail is the friendly label 'Driving', capital D, which
+        // /^drive/ never matched, so in production this minute was silently
+        // counted as on-site job labour on every split bar in the app.
+        { personUid: 'u1', personName: 'Mike Sample', minutes: 10, source: 'auto', rawSource: 'drive', detail: 'Driving' },
       ], 'cid1'));
       expect(r.u1.min).toBe(70);
       expect(r.u1.onsiteMin).toBe(60);
@@ -3203,10 +3243,10 @@ test.describe('timelog.js: exhaustive coverage', () => {
   test.describe('Me mirrors Team', () => {
     const WEEK = '2026-08-17';
     const ROWS = [
-      { date: '2026-08-18', minutes: 210, source: 'manual', detail: 'geofence', personUid: 'me', personName: 'Logan Sample', clientName: 'Marcy', startTime: '2026-08-18T13:00:00Z' },
-      { date: '2026-08-18', minutes: 46, source: 'auto', detail: 'drive', personUid: 'me', personName: 'Logan Sample', clientName: 'Marcy', startTime: '2026-08-18T12:10:00Z' },
-      { date: '2026-08-19', minutes: 38, source: 'auto', detail: 'place', personUid: 'me', personName: 'Logan Sample', clientName: 'Supply', startTime: '2026-08-19T17:00:00Z' },
-      { date: '2026-08-20', minutes: 52, source: 'shop', detail: 'shop', personUid: 'me', personName: 'Logan Sample', startTime: '2026-08-20T12:00:00Z' },
+      { date: '2026-08-18', minutes: 210, source: 'manual', rawSource: 'manual', detail: 'geofence', personUid: 'me', personName: 'Logan Sample', clientName: 'Marcy', startTime: '2026-08-18T13:00:00Z' },
+      { date: '2026-08-18', minutes: 46, source: 'auto', rawSource: 'drive', detail: 'Driving', personUid: 'me', personName: 'Logan Sample', clientName: 'Marcy', startTime: '2026-08-18T12:10:00Z' },
+      { date: '2026-08-19', minutes: 38, source: 'auto', rawSource: 'place', detail: '', personUid: 'me', personName: 'Logan Sample', clientName: 'Supply', startTime: '2026-08-19T17:00:00Z' },
+      { date: '2026-08-20', minutes: 52, source: 'shop', rawSource: 'shop', detail: 'Shop', personUid: 'me', personName: 'Logan Sample', startTime: '2026-08-20T12:00:00Z' },
     ];
     const body = (scope, sel) => page.evaluate(([wk, rows, sc, se]) => {
       const key = 'T|' + wk;

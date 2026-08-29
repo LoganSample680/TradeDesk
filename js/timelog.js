@@ -74,6 +74,14 @@ function _tlSourceLabel(source){
   const s=String(source||'');
   if(/^geofence/.test(s))return '';
   if(/^drive/.test(s))return 'Driving'+(s.indexOf('rider')>=0?' (rider)':s.indexOf('personal')>=0?' (personal vehicle)':'');
+  // A home office is TWO different kinds of work and the log now says which.
+  // The words are the ones contractors actually use: Jobber ships "Office"
+  // for desk time, and loading the truck is how the trade forums and the
+  // prevailing-wage agreements name that block (nobody in the trades says
+  // "load-out", that is mining and logistics). Deliberately NOT "Shop": the
+  // Shop badge already means the yard on this same table.
+  if(s==='place-load')return 'Loading';
+  if(s==='place-office')return 'Office';
   if(s==='place')return '';
   if(s==='manual')return 'GPS clock';
   if(s==='stop')return 'Unpaid';
@@ -675,12 +683,28 @@ function _tlRow(r){
   // A plain shop row's detail is the literal word the Shop badge already
   // shows, so it is dropped for the same not-repeated reason; the clock-out
   // variant ('Shop · auto clock-out') carries new information and stays.
-  const jobLine=[driveFromTo||r.clientName,(!driveFromTo&&r.jobName&&r.jobName!==r.clientName)?r.jobName:null,(isAutoDrive||r.unpaid||r.detail==='Shop')?null:(r.detail||null)]
+  // Which half of a home-office visit this row is, or '' for everything else.
+  // Read off the RAW column, never the label, for the same reason the weekly
+  // split bar now does (see _tlEmpWeekAgg).
+  const homeKind=r.source==='auto'
+    ?(r.rawSource==='place-load'?'load':r.rawSource==='place-office'?'office':'')
+    :'';
+  const jobLine=[driveFromTo||r.clientName,(!driveFromTo&&r.jobName&&r.jobName!==r.clientName)?r.jobName:null,(isAutoDrive||r.unpaid||homeKind||r.detail==='Shop')?null:(r.detail||null)]
     .filter(Boolean).map(escHtml).join(' · ');
   // Amber (#9F5B00) is the SAME color drive time already gets in the Team
   // split bar/legend (_tlWeekOwnerHtml above), reused rather than invented
   // (§7.3) so "amber" means "driving" consistently everywhere on this page.
-  const sourceTag=r.source==='shop'
+  // Loading and Office are their own badges, never the plain On-site one
+  // (owner 2026-08-29: "work is actively being done so it needs counted as
+  // its own thing"). Teal is REUSED, not invented: on this page it already
+  // means "your own premises, paid, but not job-site labour", which is
+  // exactly what both halves of a home-office visit are. Filled chips like
+  // the Driving badge, for the same reason that one is filled: this minute
+  // is real paid time and it is not on anybody's job.
+  const sourceTag=homeKind
+    ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:800;padding:1px 6px;border-radius:4px;background:#0E6B6B22;color:#0E6B6B">'+
+       svgIcon(homeKind==='load'?'📦':'📋',{size:9})+' '+(homeKind==='load'?'Loading':'Office')+'</span>'
+    :r.source==='shop'
     ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:#0E6B6B">'+svgIcon('🔧',{size:9})+' Shop</span>'
     :r.unpaid
     ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('🍽',{size:9})+' Unpaid</span>'
@@ -695,7 +719,7 @@ function _tlRow(r){
   // nothing and reads clearer on a fast scroll down a long day). Unpaid gets
   // a neutral gray accent, same idea, so it never reads as ordinary paid time
   // on a fast scroll down the day.
-  const rowAccent=isAutoDrive?' style="border-left:3px solid #9F5B00"':r.source==='shop'?' style="border-left:3px solid #0E6B6B"':r.unpaid?' style="border-left:3px solid var(--border2)"':'';
+  const rowAccent=isAutoDrive?' style="border-left:3px solid #9F5B00"':(r.source==='shop'||homeKind)?' style="border-left:3px solid #0E6B6B"':r.unpaid?' style="border-left:3px solid var(--border2)"':'';
   return '<tr'+lpAttrs+rowAccent+'>'+
     '<td class="bold" data-label="Person">'+escHtml(r.personName)+'</td>'+
     '<td data-label="Job site">'+
@@ -821,10 +845,21 @@ function _tlEmpWeekAgg(rows,cid){
     // Shop/yard dwell is its own bucket (owner request 2026-08-24): it is paid
     // like Crew Cost pays it, but it is NOT job-site labor and must never
     // inflate that number on the split bar.
+    // rawSource, NOT detail (fixed 2026-08-29). The comment above has always
+    // said these classify through the same two predicates Crew Cost uses, so
+    // the two reports can never disagree. They did. `detail` is the FRIENDLY
+    // label, so a drive leg arrived here as the string 'Driving' and was
+    // tested against /^drive/, which is case-sensitive and never matched, and
+    // a place visit arrived as '' and was tested against ==='place'. Both
+    // fell through to the else, so every GPS drive leg and every supply-house
+    // visit has been counting as ON-SITE JOB LABOR on the split bar while
+    // Crew Cost, reading the raw column, put them in overhead. rawSource is
+    // the raw column and is already on the row for exactly this reason.
+    const _src=r.rawSource||'';
     if(r.source==='shop')e.shopMin+=r.minutes||0;
     else if(r.source==='manual')e.onsiteMin+=r.minutes||0;
-    else if(typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(r.detail))e.driveMin+=r.minutes||0;
-    else if(typeof _geoIsPlaceSource==='function'&&_geoIsPlaceSource(r.detail))e.placeMin+=r.minutes||0;
+    else if(typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(_src))e.driveMin+=r.minutes||0;
+    else if(typeof _geoIsPlaceSource==='function'&&_geoIsPlaceSource(_src))e.placeMin+=r.minutes||0;
     else e.onsiteMin+=r.minutes||0;
     if(!e.name&&r.personName)e.name=r.personName;
   });
