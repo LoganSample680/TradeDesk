@@ -19,6 +19,11 @@ from datetime import datetime
 API = 'https://api.appstoreconnect.apple.com/v1'
 BUNDLE_ID = os.environ.get('TD_BUNDLE_ID', '').strip()
 LIMIT = int(os.environ.get('TD_BUILD_LIMIT', '10'))
+# THE ONLY WRITE IN THIS FILE, and it is off unless something says the word.
+# Every other call here is a GET on purpose: the .p8 this authenticates with
+# can ship to the App Store, so a write path has to be impossible to trip by
+# accident. Exact string, no truthiness, no default.
+ENABLE_AUTO = os.environ.get('TD_ENABLE_AUTO_DISTRIBUTE', '') == 'yes'
 
 
 def token():
@@ -61,6 +66,34 @@ def _utc(iso):
         return str(iso)[:16].replace('T', ' ')
 
 
+def patch_auto_distribute(gid, name, tok):
+    """Turn on automatic distribution for one group.
+
+    Scope is deliberately one attribute. It does not distribute a build, add or
+    remove a tester, or touch anything about the app: it says future builds
+    reach this group without somebody remembering to push them, which is what
+    was already true of the internal group and false of the external one.
+    Reversible by setting it back.
+    """
+    body = json.dumps({'data': {'type': 'betaGroups', 'id': gid,
+                                'attributes': {'hasAccessToAllBuilds': True}}}).encode()
+    req = urllib.request.Request(API + '/betaGroups/' + gid, data=body, method='PATCH',
+                                 headers={'Authorization': 'Bearer ' + tok,
+                                          'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            got = json.loads(r.read())
+        now = got.get('data', {}).get('attributes', {}).get('hasAccessToAllBuilds')
+        # Apple's own answer, not our hope. A 200 that came back False is a
+        # failure wearing a success code.
+        print('  %s: automatic distribution -> %s' % (name, 'ON' if now else 'STILL OFF'))
+        return bool(now)
+    except urllib.error.HTTPError as e:
+        print('::error::could not enable automatic distribution on %r: %s %s'
+              % (name, e.code, e.read().decode('utf8', 'replace')[:500]))
+        return False
+
+
 def main():
     tok = token()
 
@@ -95,6 +128,13 @@ def main():
             '%s (%s, auto-distribute %s)' % (
                 groups[i], 'internal' if ginternal[i] else 'EXTERNAL',
                 'ON' if gauto[i] else 'OFF') for i in groups))
+    todo = [i for i in groups if not gauto[i]]
+    if todo and ENABLE_AUTO:
+        print('\nENABLING AUTOMATIC DISTRIBUTION')
+        for i in todo:
+            if patch_auto_distribute(i, groups[i], tok):
+                gauto[i] = True
+        print()
     for i in groups:
         if not gauto[i]:
             print('::warning::group %r has automatic distribution OFF. It only ever gets '
