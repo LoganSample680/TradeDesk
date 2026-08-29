@@ -1,0 +1,49 @@
+# What can a tester actually install right now?
+#
+# A green `ios-beta` run proves the IPA left the runner. It does NOT prove
+# Apple accepted the binary, and it does not prove the build reached a tester
+# group: `fastlane pilot upload` runs with --skip_waiting_for_build_processing
+# and exits before Apple has an opinion. Those are three separate facts and
+# only the last one decides whether anybody can press Install.
+#
+# That gap is not theoretical: a tester sat on build 35 for days while every
+# workflow run after it reported success. Nothing on the CI board could have
+# told us, because the board only ever knew about the upload.
+#
+# Read-only, deliberately. Every call is a GET. This never uploads, expires,
+# distributes, or edits anything, and it must stay that way: the same .p8 that
+# authenticates it can ship to the App Store.
+#
+# Runs on ubuntu, not macOS: it is plain HTTPS, so it costs a tenth of what a
+# macOS minute does and nothing here needs Xcode.
+name: TestFlight status (read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: How many recent builds to report
+        required: false
+        default: '10'
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyJWT (ES256 needs the crypto extra)
+        run: pip install --quiet 'pyjwt[crypto]==2.9.0'
+
+      - name: Query App Store Connect
+        env:
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          TD_BUNDLE_ID: app.tradedesk.beta
+          TD_BUILD_LIMIT: ${{ github.event.inputs.limit || '10' }}
+        run: python3 scripts/testflight-status.py | tee "$GITHUB_STEP_SUMMARY"
