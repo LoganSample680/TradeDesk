@@ -6340,7 +6340,15 @@ async function _geoDupeSweep(){
         // Sorted by start, so once y begins after x ends nothing later can
         // overlap x either.
         if(y.a>=x.b)break;
-        if(String(x.r.source||'')!==String(y.r.source||''))continue;
+        // SAME CLASS, NOT SAME STRING. Every 'drive*' source is one physical
+        // act: driving somewhere. The two writers disagree about whether the
+        // leg is assigned to a job, not about whether it happened, so an exact
+        // string match let the owner's 17:28:08 'drive' and 17:28:11
+        // 'drive-unassigned' stand as two rows for one 8-minute trip, 2.4
+        // seconds and 0.992 overlap apart. Everything else still has to match
+        // itself: a stop is not a visit, a visit is not a drive.
+        const _cls=v=>_geoIsDriveSource(v)?'drive':String(v||'');
+        if(_cls(x.r.source)!==_cls(y.r.source))continue;
         // A row tied to a job is never the same event as one tied to a
         // different job, however the clocks line up.
         if((x.r.job_id||null)!==(y.r.job_id||null))continue;
@@ -6482,6 +6490,101 @@ async function _geoTapeRegradeSweep(){
       changed++;
     }
     _geoParkNote('tape-regrade-done','rows='+rows.length+' changed='+changed);
+    return changed;
+  }catch(_e){return 0;}
+}
+// ── THE DAYS ALREADY ON RECORD ───────────────────────────────────────────────
+// The departure rule fixed how a dwell is CLOSED from now on, and rewrote
+// nothing. The owner's 2026-08-27 still read 16h10m against the 9h46m he
+// actually worked, because the rows were written months-of-code ago and sit in
+// the database exactly as they were. "Correct from now on" is not the same
+// promise as "correct for the days you already worked", and a tax record cares
+// about the second one.
+//
+// So this re-derives past dwells the same way the live path now does: the
+// motion tape says WHEN the driving started, and a fence has to agree a
+// departure happened at all. Confirmed and early, the row is shortened to the
+// tape's clock. Never confirmed, the row is not evidence of anything and goes.
+//
+// THE FENCE'S TESTIMONY COMES FROM THE DRIVE ROWS, NOT FROM geo_events, which
+// is deny-all to clients by design ("the app consumes the DERIVED rows through
+// the existing tables", 20260830_geo_realtime_ingest.sql). A drive row exists
+// because the engine watched them leave one fence and reach another, so a
+// drive that starts just after the tape's driving edge IS the fence saying
+// they left. On 08-27 that separates the two cases exactly: the 12:48:05 edge
+// has a drive row at 12:50:11 behind it, and the 17:48:59 edge has nothing.
+//
+// Everything here only ever REMOVES time. It cannot lengthen a row, cannot
+// invent one, and deletes softly so a wrong call is recoverable rather than
+// final.
+async function _geoDwellRetroSweep(){
+  try{
+    if(window._geoDwellRetroRan)return 0;
+    window._geoDwellRetroRan=true;
+    if(!_supa||!_supaUser)return 0;
+    // No tape, no basis. Deleting rows because a plugin is missing would be
+    // the worst possible failure mode for this function.
+    const probe=await _geoMotionTape(Date.now()-3600000,Date.now());
+    if(!Array.isArray(probe))return 0;
+    const sinceMs=Date.now()-7*86400000;
+    const sinceIso=new Date(sinceMs).toISOString();
+    const shop=await _supa.from('shop_time_entries')
+      .select('id,arrived_at,departed_at,minutes,client_key').is('deleted_at',null)
+      .eq('employee_user_id',_supaUser.id).gte('arrived_at',sinceIso);
+    if(shop.error||!Array.isArray(shop.data)||!shop.data.length)return 0;
+    const legs=await _supa.from('job_time_entries')
+      .select('arrived_at,source').is('deleted_at',null)
+      .eq('employee_user_id',_supaUser.id).gte('arrived_at',sinceIso);
+    // THE SAFETY INTERLOCK. Every delete below is justified by the ABSENCE of
+    // a drive row, so a failed or empty read of that table would read as "no
+    // fence ever fired" and wipe the week. Bail instead: no testimony means no
+    // verdict, never a guilty one.
+    if(legs.error||!Array.isArray(legs.data)||!legs.data.length)return 0;
+    const driveStarts=legs.data
+      .filter(r=>r&&r.arrived_at&&_geoIsDriveSource(r.source))
+      .map(r=>Date.parse(r.arrived_at)).filter(n=>n>0).sort((a,b)=>a-b);
+    if(!driveStarts.length)return 0;
+    const rows=shop.data.filter(r=>r&&r.arrived_at&&r.departed_at)
+      .sort((a,b)=>Date.parse(b.arrived_at)-Date.parse(a.arrived_at))
+      .slice(0,20);
+    let changed=0;
+    for(const r of rows){
+      const s0=Date.parse(r.arrived_at)||0,e0=Date.parse(r.departed_at)||0;
+      if(!(e0>s0))continue;
+      const tape=await _geoMotionTape(s0,e0+_GEO_REGRADE_PAD_MS);
+      if(!Array.isArray(tape)||!tape.length)continue;
+      // The first time they drove after arriving. First, not last: a later
+      // edge belongs to a later visit, and this row ends at the first one.
+      const d=tape.find(t=>t.ts>s0&&(t.kind==='driving'||t.kind==='automotive'));
+      if(!d)continue;                       // the tape has no opinion
+      if(d.ts>=e0)continue;                 // already closed at or before it
+      // A minute of slack backwards: the drive row is stamped from the fence
+      // exit, which by definition happens after the wheels move.
+      const confirmed=driveStarts.some(t=>t>=d.ts-60000&&t<=d.ts+_GEO_DEPART_CONFIRM_MS);
+      if(confirmed){
+        const mins=Math.round((d.ts-s0)/60000);
+        if(mins<2){
+          await _tdSoftDelete('shop_time_entries',r.id,{userCol:'employee_user_id',userVal:_supaUser.id});
+          _geoParkNote('dwell-retro-drop',String(r.id).slice(0,8)+' '+r.minutes+'m, under the floor');
+        }else{
+          _geoEnqueue('shop_time_entries',{
+            id:r.id,contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+            arrived_at:r.arrived_at,departed_at:new Date(d.ts).toISOString(),
+            minutes:mins,client_key:r.client_key
+          });
+          _geoParkNote('dwell-retro',String(r.id).slice(0,8)+' '+r.minutes+'m -> '+mins+'m');
+        }
+        changed++;
+      }else{
+        // They drove away and no fence ever agreed. Under the owner's rule
+        // (2026-08-29) the dwell was never witnessed, so it is not a record of
+        // anything. Soft, so it can come back if this call was wrong.
+        await _tdSoftDelete('shop_time_entries',r.id,{userCol:'employee_user_id',userVal:_supaUser.id});
+        _geoParkNote('dwell-retro-unconfirmed',String(r.id).slice(0,8)+' '+r.minutes+'m dropped');
+        changed++;
+      }
+    }
+    _geoParkNote('dwell-retro-done','rows='+rows.length+' changed='+changed);
     return changed;
   }catch(_e){return 0;}
 }

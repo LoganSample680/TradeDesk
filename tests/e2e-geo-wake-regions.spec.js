@@ -700,5 +700,147 @@ test.describe('Wake region set for the dead app', () => {
     });
   });
 
+  // ── Rewriting the days already on record ──────────────────────────────────
+  // Owner 2026-08-29, after the live fix landed and his 08-27 had not moved:
+  // "is it matching what I indicated was true?" It was not, because closing
+  // rule changes do not rewrite rows. Every fixture below is his real day.
+  test.describe('_geoDwellRetroSweep re-derives past dwells', () => {
+    // The sweep talks to Supabase and CoreMotion, so both are stubbed and the
+    // assertions are on what it decided to WRITE and DELETE.
+    const run = async (page, world) => page.evaluate(async (w) => {
+      const saved = { supa: window._supa, user: window._supaUser, tape: window._geoMotionTape,
+                      enq: window._geoEnqueue, del: window._tdSoftDelete, ran: window._geoDwellRetroRan };
+      const wrote = [], deleted = [];
+      try {
+        window._geoDwellRetroRan = false;
+        window._supaUser = { id: 'u1' };
+        window._geoEnqueue = (tbl, row) => wrote.push({ tbl, ...row });
+        window._tdSoftDelete = async (tbl, id) => { deleted.push(String(id)); return 1; };
+        window._geoMotionTape = async () => w.tape;
+        // Minimal PostgREST shape: only the calls this sweep actually makes.
+        const table = (name) => {
+          const res = w.db[name];
+          const chain = {
+            select: () => chain, is: () => chain, eq: () => chain,
+            gte: () => Promise.resolve(res),
+          };
+          return chain;
+        };
+        window._supa = { from: table };
+        const n = await _geoDwellRetroSweep();
+        return { n, wrote, deleted };
+      } finally {
+        window._supa = saved.supa; window._supaUser = saved.user;
+        window._geoMotionTape = saved.tape; window._geoEnqueue = saved.enq;
+        window._tdSoftDelete = saved.del; window._geoDwellRetroRan = saved.ran;
+      }
+    }, world);
+
+    // His real 08-27, named to the second. Never derived from Date.now():
+    // this test's meaning is a duration (CLAUDE.md 5.2.2).
+    const D = (t) => Date.parse('2026-08-27T' + t + 'Z');
+    // Full ISO in, full ISO out. An earlier version built these by slicing
+    // strings and put a departure before its own arrival, which the sweep
+    // correctly refused and the test read as a missing fix.
+    const shopRow = (id, a, b, m) => ({ id, arrived_at: a, departed_at: b, minutes: m, client_key: 'k' + id });
+    const drive = (t) => ({ arrived_at: t, source: 'drive-unassigned' });
+    const ARR_PM = '2026-08-27T22:34:41.000Z';        // 17:34:41 CT
+    const DEP_PM = '2026-08-28T01:16:02.000Z';        // 20:16:02 CT, the Landscaper arrival
+    const ARR_NOON = '2026-08-27T17:11:06.000Z';      // 12:11:06 CT
+    const DEP_NOON = '2026-08-27T17:55:47.000Z';      // 12:55:47 CT
+    const DRIVE_NOON = '2026-08-27T17:50:11.000Z';    // 12:50:11 CT drive row
+
+    test('THE 161-MINUTE ROW: drove off, no fence ever agreed, the row goes', async () => {
+      const r = await run(page, {
+        // 17:34:41 to 20:16:02 CT
+        db: { shop_time_entries: { data: [shopRow('s1', ARR_PM, DEP_PM, 161)] },
+              job_time_entries: { data: [drive(DRIVE_NOON)] } },   // only the midday drive exists
+        tape: [{ ts: D('22:48:59'), kind: 'driving' }],            // 17:48:59 CT
+      });
+      expect(r.deleted, 'nothing corroborated the departure').toEqual(['s1']);
+      expect(r.wrote.length).toBe(0);
+    });
+
+    test('THE 45-MINUTE ROW: a drive row two minutes later confirms it, so 37 stands', async () => {
+      const r = await run(page, {
+        // 12:11:06 to 12:55:47 CT, driving edge 12:48:05, drive row 12:50:11
+        db: { shop_time_entries: { data: [shopRow('s2', ARR_NOON, DEP_NOON, 45)] },
+              job_time_entries: { data: [drive(DRIVE_NOON)] } },
+        tape: [{ ts: D('17:48:05'), kind: 'driving' }],
+      });
+      expect(r.deleted.length, 'a confirmed departure shortens, never deletes').toBe(0);
+      expect(r.wrote.length).toBe(1);
+      expect(r.wrote[0].tbl).toBe('shop_time_entries');
+      expect(r.wrote[0].id).toBe('s2');
+      expect(r.wrote[0].minutes, 'was 45, closing on the next arrival').toBe(37);
+      expect(r.wrote[0].departed_at, 'the tape clock, not the fence clock').toBe('2026-08-27T17:48:05.000Z');
+      expect(r.wrote[0].arrived_at, 'the arrival is never moved').toBe(ARR_NOON);
+    });
+
+    test('a tape with no driving edge is left completely alone', async () => {
+      const r = await run(page, {
+        db: { shop_time_entries: { data: [shopRow('s3', ARR_NOON, DEP_NOON, 45)] },
+              job_time_entries: { data: [drive(DRIVE_NOON)] } },
+        tape: [{ ts: D('17:20:00'), kind: 'still' }, { ts: D('17:30:00'), kind: 'onFoot' }],
+      });
+      expect(r.wrote.length).toBe(0);
+      expect(r.deleted.length).toBe(0);
+    });
+
+    test('it never lengthens: a driving edge after the close is ignored', async () => {
+      const r = await run(page, {
+        db: { shop_time_entries: { data: [shopRow('s4', ARR_NOON, '2026-08-27T17:40:00.000Z', 29)] },
+              job_time_entries: { data: [drive(DRIVE_NOON)] } },
+        tape: [{ ts: D('17:48:05'), kind: 'driving' }],
+      });
+      expect(r.wrote.length, 'the row already closed earlier than the tape says').toBe(0);
+      expect(r.deleted.length).toBe(0);
+    });
+
+    test('SAFETY: no drive rows at all means no verdict, never a guilty one', async () => {
+      const r = await run(page, {
+        db: { shop_time_entries: { data: [shopRow('s5', ARR_PM, DEP_PM, 161)] },
+              job_time_entries: { data: [] } },
+        tape: [{ ts: D('22:48:59'), kind: 'driving' }],
+      });
+      expect(r.deleted.length, 'an empty read must never be read as "no fence ever fired"').toBe(0);
+      expect(r.n).toBe(0);
+    });
+
+    test('SAFETY: a failed read of the drive rows aborts the sweep', async () => {
+      const r = await run(page, {
+        db: { shop_time_entries: { data: [shopRow('s6', ARR_PM, DEP_PM, 161)] },
+              job_time_entries: { error: { message: 'nope' } } },
+        tape: [{ ts: D('22:48:59'), kind: 'driving' }],
+      });
+      expect(r.deleted.length).toBe(0);
+      expect(r.n).toBe(0);
+    });
+
+    test('SAFETY: no motion tape means the sweep does nothing', async () => {
+      const r = await run(page, {
+        db: { shop_time_entries: { data: [shopRow('s7', ARR_PM, DEP_PM, 161)] },
+              job_time_entries: { data: [drive(DRIVE_NOON)] } },
+        tape: null,
+      });
+      expect(r.deleted.length, 'a missing plugin must never delete anything').toBe(0);
+      expect(r.n).toBe(0);
+    });
+
+    test('it runs once per session', async () => {
+      const world = { db: { shop_time_entries: { data: [shopRow('s8', ARR_NOON, DEP_NOON, 45)] },
+                            job_time_entries: { data: [drive(DRIVE_NOON)] } },
+                      tape: [{ ts: D('17:48:05'), kind: 'driving' }] };
+      const first = await run(page, world);
+      expect(first.wrote.length).toBe(1);
+      const again = await page.evaluate(async () => {
+        const saved = window._geoDwellRetroRan;
+        try { window._geoDwellRetroRan = true; return await _geoDwellRetroSweep(); }
+        finally { window._geoDwellRetroRan = saved; }
+      });
+      expect(again).toBe(0);
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });
