@@ -82,10 +82,12 @@ def main():
 
     # Beta groups, so "which builds can a tester actually see" has a name
     # attached rather than an opaque id.
-    groups = {g['id']: g['attributes'].get('name', g['id'])
-              for g in get('/betaGroups?filter[app]=%s&limit=50' % aid, tok)['data']}
+    graw = get('/betaGroups?filter[app]=%s&limit=50' % aid, tok)['data']
+    groups = {g['id']: g['attributes'].get('name', g['id']) for g in graw}
+    ginternal = {g['id']: bool(g['attributes'].get('isInternalGroup')) for g in graw}
     if groups:
-        print('Tester groups: %s\n' % ', '.join(sorted(groups.values())))
+        print('Tester groups: %s\n' % ', '.join(
+            '%s (%s)' % (groups[i], 'internal' if ginternal[i] else 'EXTERNAL') for i in groups))
 
     builds = get('/builds?filter[app]=%s&limit=%d&sort=-uploadedDate'
                  '&include=buildBetaDetail,betaGroups' % (aid, LIMIT), tok)
@@ -157,6 +159,34 @@ def main():
             last = next((r['build'] for r in rows if g in r['groups']), None)
             print('::warning::group %r cannot install build %s. Its newest is %s. '
                   'A tester in that group is stuck there.' % (g, rows[0]['build'], last))
+
+    # WHO IS ACTUALLY IN EACH GROUP. The build table says which groups can
+    # install what; it cannot say which group a given person is in, and that is
+    # the half that decides whether someone is stuck. An external group is the
+    # one to watch: Apple gates it behind Beta App Review, so it lags by
+    # default rather than by mistake.
+    print('\nMEMBERSHIP')
+    for gid, gname in groups.items():
+        newest = next((r['build'] for r in rows if gname in r['groups']), None)
+        try:
+            people = get('/betaGroups/%s/betaTesters?limit=200' % gid, tok)['data']
+        except Exception:
+            print('  %s: could not read the roster' % gname)
+            continue
+        kind = 'internal' if ginternal.get(gid) else 'EXTERNAL, gated by Beta App Review'
+        print('  %s (%s) -- newest installable build: %s' % (gname, kind, newest or 'none'))
+        if not people:
+            print('      (nobody)')
+        for p in people:
+            a = p.get('attributes', {})
+            nm = ' '.join(x for x in [a.get('firstName'), a.get('lastName')] if x) or '(no name)'
+            # Masked on purpose: the roster is real people and this prints into
+            # a CI log that lives in the repo's history. The name is enough to
+            # tell who is who; the full address adds nothing and lingers.
+            em = str(a.get('email') or '')
+            em = (em[0] + '***@' + em.split('@', 1)[1]) if '@' in em and em else '(no email)'
+            print('      %-28s %-24s %s' % (nm, em, a.get('state') or ''))
+    print()
 
     for r in rows:
         if r['processing'] == 'INVALID':
