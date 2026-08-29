@@ -1066,6 +1066,65 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.rows).toEqual([{ id: 2, miles: 3.2 }]);   // the longest, and the FIRST close
     });
 
+    // ── Two writers, one drive, two origins (owner's real 8/27) ──────────────
+    // His day logged 22.1 miles across 8 legs against roughly 15.1 actually
+    // driven, a 46% overstatement on a tax record, because three drives each
+    // kept two rows. Both writers agreed where he ARRIVED and disagreed about
+    // where he set off ("Shop -> John Doe 3.2mi" beside "Stop -> John Doe
+    // 2.5mi", same 7:51 departure), so the both-endpoints twin test never
+    // fired and _mileSameJourney bails outright when both rows carry legKeys.
+    test('one drive with two origins collapses; a genuine repeat run does not', async () => {
+      const out = await page.evaluate(() => {
+        const JOHN = { lat: 39.0208, lng: -95.7351 };
+        const SHOP = { lat: 39.0325, lng: -95.69 }, KERB = { lat: 39.0301, lng: -95.7013 };
+        const keep = mileage.splice(0);
+        try {
+          mileage.push(
+            { id: 1, gps: true, legKey: 'leg-mtbj12c9', calc_method: 'auto_route', miles: 3.2,
+              from_name: 'Shop', to_name: 'John Doe', fromCoord: SHOP, toCoord: JOHN,
+              startedIso: '2026-08-27T12:51:00Z', endedIso: '2026-08-27T12:59:00Z',
+              loggedAt: '2026-08-27T12:59:02Z', date: '2026-08-27' },
+            { id: 2, gps: true, legKey: 'leg-mtbiue45', calc_method: 'auto_route', miles: 2.5,
+              from_name: 'Stop', to_name: 'John Doe', fromCoord: KERB, toCoord: JOHN,
+              startedIso: '2026-08-27T12:51:00Z', endedIso: '2026-08-27T12:56:00Z',
+              loggedAt: '2026-08-27T12:56:04Z', date: '2026-08-27' });
+          const live = _mileDedupTrips();          // live sweep leaves auto rows alone
+          const healed = _mileDedupTrips(true);    // boot heal collapses them
+          const again = _mileDedupTrips(true);
+          return { live, healed, again, rows: mileage.map(m => ({ id: m.id, miles: m.miles })) };
+        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
+      });
+      expect(out.live, 'the live sweep must not touch two auto rows').toBe(0);
+      expect(out.healed).toBe(1);
+      expect(out.again, 'healing must not keep healing').toBe(0);
+      // One drive, 3.2 miles, not 5.7.
+      expect(out.rows).toEqual([{ id: 1, miles: 3.2 }]);
+    });
+
+    test('a genuinely repeated run to the same client survives, because it does not overlap', async () => {
+      // The rule the both-endpoints test was protecting: a crew really can
+      // drive to one client twice in a day. Sequential, never simultaneous.
+      const out = await page.evaluate(() => {
+        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP = { lat: 39.0325, lng: -95.69 };
+        const keep = mileage.splice(0);
+        try {
+          mileage.push(
+            { id: 1, gps: true, legKey: 'leg-am', calc_method: 'auto_route', miles: 3.2,
+              from_name: 'Shop', to_name: 'John Doe', fromCoord: SHOP, toCoord: JOHN,
+              startedIso: '2026-08-27T12:51:00Z', endedIso: '2026-08-27T12:59:00Z',
+              loggedAt: '2026-08-27T12:59:02Z', date: '2026-08-27' },
+            { id: 2, gps: true, legKey: 'leg-pm', calc_method: 'auto_route', miles: 3.2,
+              from_name: 'Shop', to_name: 'John Doe', fromCoord: SHOP, toCoord: JOHN,
+              startedIso: '2026-08-27T17:50:00Z', endedIso: '2026-08-27T17:58:00Z',
+              loggedAt: '2026-08-27T17:58:03Z', date: '2026-08-27' });
+          const healed = _mileDedupTrips(true);
+          return { healed, rows: mileage.map(m => m.id) };
+        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
+      });
+      expect(out.healed).toBe(0);
+      expect(out.rows).toEqual([1, 2]);
+    });
+
     test('dedup waits for the measurement, then the partial manual row yields', async () => {
       // The automatic row is born at zero miles (no signal is the normal case).
       // Zero must never "lose" to the typed number: the pair defers, and the

@@ -6215,6 +6215,100 @@ async function _geoClientRelabelSweep(){
 //
 // Same window-scoped latch as the sweeps above, and the same 20-row ceiling:
 // a boot must never turn into an unbounded write storm.
+// ── The same visit, written twice (owner report 2026-08-29) ────────────────
+// His 8/27 read 15h 25m and about 4h 34m of it was the same time counted
+// twice, including one John Doe visit logged at 242 minutes TWICE.
+//
+// Root cause: the idempotency key embeds a millisecond timestamp
+// (_geoVisitKey), and the unique index is on that string, so two writers only
+// dedupe when they agree to the millisecond. Decoded from his own rows, they
+// never do. The John Doe pair's keys were minted 149.6 seconds apart while
+// BOTH rows stored the identical arrived_at, so the key did not even match
+// the value it was keying. The stop pairs were two observations of one stop
+// 35 and 29 seconds apart, each internally consistent and still two rows.
+//
+// A key can never fix that: it demands agreement between independent
+// observers who are, by definition, observing at different moments. Overlap
+// can. Nobody is in two places at once, so two rows of the SAME SOURCE for
+// the SAME PERSON whose windows overlap are one event seen twice.
+//
+// Runs for every user on open, same window-latched shape and same 20-row
+// ceiling as the sweeps beside it.
+const _GEO_DUPE_OVERLAP=0.8;   // of the SHORTER row, so a nested twin counts
+async function _geoDupeSweep(){
+  try{
+    if(window._geoDupeSweepRan)return 0;
+    window._geoDupeSweepRan=true;
+    if(!_supa||!_supaUser)return 0;
+    const since=new Date(Date.now()-14*86400000).toISOString();
+    const{data,error}=await _supa.from('job_time_entries')
+      .select('id,arrived_at,departed_at,minutes,source,dest_place,job_id,client_key').is('deleted_at',null)
+      .eq('employee_user_id',_supaUser.id)
+      .gte('arrived_at',since);
+    if(error||!Array.isArray(data)||data.length<2)return 0;
+    const rows=data.filter(r=>r&&r.arrived_at&&r.departed_at)
+      .map(r=>({r,a:Date.parse(r.arrived_at)||0,b:Date.parse(r.departed_at)||0}))
+      .filter(x=>x.b>x.a)
+      .sort((x,y)=>x.a-y.a);
+    const dropped=new Set();
+    const pairs=[];
+    for(let i=0;i<rows.length;i++){
+      if(dropped.has(rows[i].r.id))continue;
+      for(let j=i+1;j<rows.length;j++){
+        const x=rows[i],y=rows[j];
+        if(dropped.has(y.r.id))continue;
+        // Sorted by start, so once y begins after x ends nothing later can
+        // overlap x either.
+        if(y.a>=x.b)break;
+        if(String(x.r.source||'')!==String(y.r.source||''))continue;
+        // A row tied to a job is never the same event as one tied to a
+        // different job, however the clocks line up.
+        if((x.r.job_id||null)!==(y.r.job_id||null))continue;
+        const ov=Math.min(x.b,y.b)-Math.max(x.a,y.a);
+        const shorter=Math.min(x.b-x.a,y.b-y.a);
+        if(!(shorter>0)||ov/shorter<_GEO_DUPE_OVERLAP)continue;
+        // LONGER WINS, and it must be checked first. Preferring the better
+        // NAME first would have kept a 14-minute fragment carrying
+        // 'John Doe' and deleted the 269-minute visit it sat inside, which
+        // is four and a half hours of real work destroyed to win a label.
+        // The name is then merged onto the survivor instead, so the row
+        // keeps both the hours and the client.
+        // LONGER WINS FIRST, then the better name breaks the tie. Order
+        // matters both ways: name-first destroys hours (see above), and
+        // first-seen-wins on a tie keeps the anonymous row and throws away
+        // the one that knows whose visit it was.
+        const dx=x.b-x.a,dy=y.b-y.a;
+        const win=dx!==dy?(dx>dy?x:y)
+          :(x.r.dest_place&&!y.r.dest_place)?x
+          :(y.r.dest_place&&!x.r.dest_place)?y:x;
+        const lose=win===x?y:x;
+        pairs.push({win,lose});
+        dropped.add(lose.r.id);
+        if(lose===x)break;
+        if(pairs.length>=20)break;
+      }
+      if(pairs.length>=20)break;
+    }
+    if(!pairs.length)return 0;
+    let n=0;
+    for(const{win,lose}of pairs){
+      try{await _tdSoftDelete('job_time_entries',lose.r.id);}catch(_e){continue;}
+      // Carry the loser's name over when the survivor has none: the longer
+      // row is often the one written without a dest_place, and dropping the
+      // shorter one blind is what leaves a visit rendering as a bare dash.
+      if(!win.r.dest_place&&lose.r.dest_place){
+        try{
+          await _supa.from('job_time_entries').update({dest_place:lose.r.dest_place}).eq('id',win.r.id);
+          win.r.dest_place=lose.r.dest_place;
+        }catch(_e){}
+      }
+      _geoParkNote('dupe-drop',String(lose.r.id).slice(0,8)+' '+lose.r.minutes+'m dup of '+String(win.r.id).slice(0,8));
+      n++;
+    }
+    _geoParkNote('dupe-sweep-done','dropped='+n);
+    return n;
+  }catch(_e){return 0;}
+}
 async function _geoTapeRegradeSweep(){
   try{
     if(window._geoTapeRegradeRan)return 0;

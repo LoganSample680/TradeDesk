@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.29.26.12';
+const APP_VERSION='08.29.26.13';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -8310,6 +8310,10 @@ async function supaLoadFromCloud({silent=false}={}){
     // never fight over the same row on the same boot, and it needs no iOS
     // build: motionSince has shipped since 08-11.
     try{if(typeof _geoTapeRegradeSweep==='function')_geoTapeRegradeSweep();}catch(_e){}
+    // Duplicates first among equals is tempting but wrong: the regrade above
+    // re-stamps boundaries, and doing that to a row that is about to be
+    // deleted as a duplicate wastes a write. It runs after, on the survivors.
+    try{if(typeof _geoDupeSweep==='function')_geoDupeSweep();}catch(_e){}
     // And the customer visits already on record that were written as supply
     // runs before the source split (js/geo-track.js _geoClientRelabelSweep).
     try{if(typeof _geoClientRelabelSweep==='function')_geoClientRelabelSweep();}catch(_e){}

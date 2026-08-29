@@ -1523,6 +1523,36 @@ function _mileSameLeg(a,b,heal){
   }
   return false;
 }
+// The two writers agreed where he ARRIVED and disagreed about where he set
+// off, so the both-endpoints test above never fired and one drive kept two
+// rows (owner's 8/27: "Shop -> John Doe 3.2mi" alongside "Stop -> John Doe
+// 2.5mi", same 7:51 departure, and twice more the same day; 22.1 miles logged
+// against about 15.1 actually driven, a 46% overstatement on a tax record).
+//
+// Requiring both ends to match means any disagreement about the ORIGIN keeps
+// the duplicate, and the origin is precisely the half the two writers are
+// least likely to agree on: one reads the fence it left, the other the kerb
+// it was parked at.
+//
+// So the destination plus overlapping clocks is enough. It stays tight
+// because nobody arrives at the same place twice at overlapping times: a
+// crew's genuinely repeated run to one client is sequential, never
+// simultaneous, which is what the both-ends rule was protecting and this
+// still protects. Heal-only, same as the rule above, for the same reason.
+function _mileSameArrival(a,b){
+  if(!a||!b||a===b)return false;
+  if(!a.legKey||!b.legKey)return false;              // auto rows only
+  if(a.legKey===b.legKey)return false;               // already caught above
+  if((a.logged_by_id||null)!==(b.logged_by_id||null))return false;
+  const near=(c1,c2)=>!!(c1&&c2&&c1.lat!=null&&c2.lat!=null&&typeof _geoDistFt==='function'&&
+    _geoDistFt({lat:c1.lat,lng:c1.lng},{lat:c2.lat,lng:c2.lng})<=_MILE_DEDUP_DEST_FT);
+  const sameDest=near(a.toCoord,b.toCoord)||
+    (!!a.to_name&&!!b.to_name&&String(a.to_name).toLowerCase()===String(b.to_name).toLowerCase());
+  if(!sameDest)return false;
+  const wa=_mileTripWindow(a),wb=_mileTripWindow(b);
+  if(!wa.end||!wb.end)return false;
+  return wa.end>=wb.start&&wb.end>=wa.start;
+}
 // Which of two same-journey rows survives. The AUTOMATIC row is the source
 // of truth whenever one exists (owner rule 2026-08-11: "the background
 // running one should always be the source of truth"): it ran geocode to
@@ -1558,7 +1588,7 @@ function _mileDedupTrips(heal){
     const a=mileage[i];if(!a||drop.has(a))continue;
     for(let j=i+1;j<mileage.length;j++){
       const b=mileage[j];if(!b||drop.has(b))continue;
-      const twin=_mileSameLeg(a,b,heal);
+      const twin=_mileSameLeg(a,b,heal)||(heal&&_mileSameArrival(a,b));
       if(!twin&&!_mileSameJourney(a,b))continue;
       // A row still awaiting its measurement is only ever dropped as a twin of
       // another auto row (identical endpoints, identical eventual answer).

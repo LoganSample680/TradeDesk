@@ -542,6 +542,97 @@ test.describe('Home office: presence is not work', () => {
     expect(r.wrote).toBe(0);
   });
 
+  // ── The same visit, written twice (owner's real 8/27) ──────────────────────
+  // His day read 15h 25m and about 4h 34m of it was duplicate, including one
+  // John Doe visit logged at 242 minutes TWICE. The keys were minted 149.6
+  // seconds apart while both rows stored the identical arrived_at, so the
+  // unique index never fired. Fixture is those exact rows.
+  test('_geoDupeSweep drops the twin and keeps the hours, not the label', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { supa: _supa, user: _supaUser, del: window._tdSoftDelete };
+      const deleted = [], updated = [];
+      try {
+        const T = (h, m, s2) => Date.UTC(2026, 7, 27, h, m, s2 || 0);
+        const row = (id, src, dest, a, b, job) => ({
+          id, source: src, dest_place: dest, job_id: job || null, client_key: 'k' + id,
+          arrived_at: new Date(a).toISOString(), departed_at: new Date(b).toISOString(),
+          minutes: Math.round((b - a) / 60000),
+        });
+        const rows = [
+          // The 242-minute John Doe visit, twice, one without a name.
+          row('A', 'client', null,       T(12, 59, 6), T(17, 1, 35)),
+          row('B', 'client', 'John Doe', T(12, 59, 6), T(17, 1, 35)),
+          // The 269-minute visit with the 14-minute fragment nested in it.
+          row('C', 'client', null,       T(17, 57, 43), T(22, 26, 48)),
+          row('D', 'client', 'John Doe', T(22, 13, 40), T(22, 28, 9)),
+          // Two observations of one stop, 35 seconds apart.
+          row('E', 'stop', null, T(22, 59, 10), T(23, 12, 56)),
+          row('F', 'stop', null, T(22, 59, 45), T(23, 12, 56)),
+          // NOT duplicates: same source, no overlap at all.
+          row('G', 'stop', null, T(23, 59, 32), T(24 % 24 === 0 ? 23 : 23, 59, 59)),
+          // NOT duplicates: overlapping but tied to DIFFERENT jobs.
+          row('H', 'client', null, T(9, 0, 0), T(10, 0, 0), 11),
+          row('I', 'client', null, T(9, 0, 0), T(10, 0, 0), 22),
+        ];
+        const q = { _d: { data: rows, error: null } };
+        q.then = (res, rej) => Promise.resolve(q._d).then(res, rej);
+        ['select', 'is', 'eq', 'gte'].forEach(m => { q[m] = () => q; });
+        const upd = { eq: (col, v) => { updated.push(v); return Promise.resolve({ error: null }); } };
+        _supa = { from: () => Object.assign(Object.create(q), q, { update: (patch) => { updated.patch = patch; return upd; } }) };
+        _supaUser = { id: 'u-dupe' };
+        window._tdSoftDelete = async (tbl, id) => { deleted.push(id); };
+        window._geoDupeSweepRan = false;
+        const n = await _geoDupeSweep();
+        return { n, deleted, updated: updated.slice(), patch: updated.patch };
+      } finally {
+        _supa = saved.supa; _supaUser = saved.user;
+        window._tdSoftDelete = saved.del; window._geoDupeSweepRan = true;
+      }
+    });
+    // Three duplicates found: the John Doe twin, the nested fragment, one stop.
+    expect(r.n).toBe(3);
+    // A and B are the same 242 minutes. Equal length, so the NAMED one wins.
+    expect(r.deleted).toContain('A');
+    expect(r.deleted).not.toContain('B');
+    // The 14-minute fragment goes, the 269-minute visit stays. Preferring the
+    // better NAME first here would have destroyed four and a half hours.
+    expect(r.deleted).toContain('D');
+    expect(r.deleted, 'the long visit must never lose to a fragment').not.toContain('C');
+    // ...and C inherits the name it lacked rather than rendering as a dash.
+    expect(r.updated).toContain('C');
+    expect(r.patch).toEqual({ dest_place: 'John Doe' });
+    // One of the two stop observations goes; the longer survives.
+    expect(r.deleted.filter(x => x === 'E' || x === 'F').length).toBe(1);
+    expect(r.deleted).toContain('F');
+    // Different jobs are never the same event, however the clocks line up.
+    expect(r.deleted).not.toContain('H');
+    expect(r.deleted).not.toContain('I');
+  });
+
+  test('_geoDupeSweep is a no-op with nothing to do, and never runs twice', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = { supa: _supa, user: _supaUser, del: window._tdSoftDelete };
+      const deleted = [];
+      try {
+        const q = { _d: { data: [], error: null } };
+        q.then = (res, rej) => Promise.resolve(q._d).then(res, rej);
+        ['select', 'is', 'eq', 'gte'].forEach(m => { q[m] = () => q; });
+        _supa = { from: () => q }; _supaUser = { id: 'u-none' };
+        window._tdSoftDelete = async (t, id) => { deleted.push(id); };
+        window._geoDupeSweepRan = false;
+        const first = await _geoDupeSweep();
+        const second = await _geoDupeSweep();
+        return { first, second, deleted };
+      } finally {
+        _supa = saved.supa; _supaUser = saved.user;
+        window._tdSoftDelete = saved.del; window._geoDupeSweepRan = true;
+      }
+    });
+    expect(r.first).toBe(0);
+    expect(r.second).toBe(0);
+    expect(r.deleted.length).toBe(0);
+  });
+
   test('_geoTapeRegradeSweep does nothing when there is no tape, and never runs twice', async () => {
     const r = await page.evaluate(async () => {
       const saved = { td: _geoTdPlugin, enq: _geoEnqueue };
