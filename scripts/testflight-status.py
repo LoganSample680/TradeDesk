@@ -85,9 +85,20 @@ def main():
     graw = get('/betaGroups?filter[app]=%s&limit=50' % aid, tok)['data']
     groups = {g['id']: g['attributes'].get('name', g['id']) for g in graw}
     ginternal = {g['id']: bool(g['attributes'].get('isInternalGroup')) for g in graw}
+    # hasAccessToAllBuilds IS automatic distribution. A group with it off gets
+    # only the builds somebody pushed to it by hand, which is a gap nobody sees
+    # until a tester says they are on an old version. Reading the flag beats
+    # guessing at App Store Connect menu labels.
+    gauto = {g['id']: bool(g['attributes'].get('hasAccessToAllBuilds')) for g in graw}
     if groups:
         print('Tester groups: %s\n' % ', '.join(
-            '%s (%s)' % (groups[i], 'internal' if ginternal[i] else 'EXTERNAL') for i in groups))
+            '%s (%s, auto-distribute %s)' % (
+                groups[i], 'internal' if ginternal[i] else 'EXTERNAL',
+                'ON' if gauto[i] else 'OFF') for i in groups))
+    for i in groups:
+        if not gauto[i]:
+            print('::warning::group %r has automatic distribution OFF. It only ever gets '
+                  'builds somebody pushes to it by hand.' % groups[i])
 
     builds = get('/builds?filter[app]=%s&limit=%d&sort=-uploadedDate'
                  '&include=buildBetaDetail,betaGroups' % (aid, LIMIT), tok)
