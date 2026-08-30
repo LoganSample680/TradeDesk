@@ -4190,6 +4190,20 @@ test.describe('timelog.js: exhaustive coverage', () => {
         // flake). Each test flips the latch off itself, immediately before
         // its call, so nothing else can slip in.
         window._tlGapTrimRan = true;
+        // AND the busy flag, which the latch alone does not cover. The latch
+        // stops a boot-chain trim from doing work; it does nothing about one
+        // that entered BEFORE the seed and is now parked on its own awaits
+        // holding _tlGapTrimBusy. The test's call then hits the concurrency
+        // guard (§11.2) and returns 0 without doing anything, and the test
+        // measures the no-op. That is the midnight-clock failure of
+        // 2026-08-30 ("newest wins" expected 1, received 0): load-dependent,
+        // which is why it passed on a quiet runner and locally every time.
+        // Cleared here rather than in the one test that happened to lose the
+        // race, because every test in this block resets the latch the same
+        // way and every one of them carries the same hole (§10.4). The guard
+        // itself stays genuinely covered: the overlapping-invocations test
+        // below fires five real concurrent calls and never touches the flag.
+        window._tlGapTrimBusy = false;
         window.__tlPrevEntries = timeEntries.slice();
         timeEntries.length = 0;
         rows.forEach(r => timeEntries.push(r));
