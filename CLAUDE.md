@@ -1097,6 +1097,40 @@ hat) and in the employee sign-out menu (crew hat). Tests: `tests/e2e-dual-hat.sp
   refactor, architect with owner (§16) in slices: (1) switcher + data wall,
   (2) tracking-follows-the-hat, (3) sign-up growth loop.
 
+### 9.11 What Counts Toward Totals (owner rule, 2026-08-30)
+
+**This is a RULE, not a backlog item.** It governs every paid-minute number on
+the time log: the day rail, the week bars, the split bar, the weekly running
+total and the OT calc. The second half of it is not enforced yet; that part is
+the backlog piece.
+
+Owner, verbatim: *"for totals, shop time always counts, home office time only
+counts when the app is open."*
+
+| Kind | Rule | Status |
+|---|---|---|
+| **Shop / yard** (`source:'shop'`) | Always counts. No extra condition on top of the workday itself. | Enforced today |
+| **Home office** (`rawSource:'place-office'`) | Counts **only for the stretches the app was actually open.** Presence at a desk is not, by itself, work. | **NOT enforced.** Office dwell currently lands in the Supply/other bucket and counts in full |
+
+**Why the office half cannot be built yet:** nothing records when the app was
+open. `document.visibilityState` drives sync and the version watchdog
+(js/cloud.js) but is never persisted, and `S.devices[].lastSeen` is a single
+stamp, not a log of intervals. Enforcing this needs a **foreground-interval
+log** written on every `visibilitychange` and intersected with the office dwell
+at read time, the same read-time-derivation shape `_geoShopWrapMs` already uses
+(§ shop auto clock-out, js/geo-track.js), so history re-grades itself instead
+of needing a sweep to rewrite rows. Design with the owner (§16) before building.
+
+**The one place this rule can collide with an older one, flagged rather than
+silently resolved:** the shop auto clock-out (owner rule 2026-08-24,
+`_geoShopWrapMs` in js/geo-track.js) already trims yard dwell to the day's last
+verified work event plus `S.shopWrapMin`, because the phone sits at the yard
+after hours (one session ran to 11:48pm and would have added 19h38m to a single
+week). "Shop time always counts" is read as **"shop time needs no condition
+beyond the workday,"** NOT as "pay yard dwell past the last run," which the
+owner rejected by name with those numbers. If he ever means the wider reading,
+the 2026-08-24 rule is what has to change, and he has to say so.
+
 ---
 
 ## 10. Patch-Chain Prohibition: No House-of-Cards Fixing
