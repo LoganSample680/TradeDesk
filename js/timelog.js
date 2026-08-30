@@ -273,14 +273,17 @@ function _tlFillUnaccounted(rows,cid){
   });
   return out;
 }
-function _tlAbsorbGaps(rows){
+function _tlAbsorbGaps(rows,cid){
   if(!Array.isArray(rows))return rows;
   const byDay={};
   rows.forEach(r=>{
     if(!r||!r.startTime||!r.endTime||!r.date)return;
     const a=Date.parse(r.startTime),b=Date.parse(r.endTime);
     if(!(a>0&&b>=a))return;
-    ((byDay[(r.personUid||'owner')+'|'+r.date])=byDay[(r.personUid||'owner')+'|'+r.date]||[]).push(r);
+    // Same one-person-one-bucket fold as _tlFillUnaccounted below: an
+    // owner-logged row (null uid) and that owner's GPS rows are one person.
+    const _k=String((r.personUid||cid||'owner'))+'|'+r.date;
+    (byDay[_k]=byDay[_k]||[]).push(r);
   });
   Object.keys(byDay).forEach(k=>{
     const day=byDay[k].sort((x,y)=>Date.parse(x.startTime)-Date.parse(y.startTime));
@@ -467,7 +470,7 @@ async function _timeLogRows(sinceISO){
     });
   });
   const _cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
-  return _tlFillUnaccounted(_tlAbsorbGaps(rows),_cid).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  return _tlFillUnaccounted(_tlAbsorbGaps(rows,_cid),_cid).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 }
 function _tlYears(rows){
   const years=[...new Set(rows.map(r=>(r.date||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort((a,b)=>b.localeCompare(a));
@@ -900,10 +903,6 @@ function _tlAddUnaccounted(startIso,endIso,kind){
   if(!(a>0&&b>a))return;
   if(typeof timeEntries==='undefined'||!Array.isArray(timeEntries))return;
   const mins=Math.max(1,Math.round((b-a)/60000));
-  // The same stretch, answered twice, is never two pieces of work. Whatever
-  // the render does, a second tap on a span already answered is a no-op
-  // rather than a second row.
-  if(timeEntries.some(e=>e&&!e.open&&Date.parse(e.start_time)===a&&Date.parse(e.end_time)===b))return;
   const k=(kind==='break'||kind==='personal')?kind:'work';
   const unpaid=k==='personal'?true:k==='break'?!_tlBreakIsPaid(mins):false;
   const label=k==='break'?('Break'+(unpaid?' (unpaid)':' (paid)'))
@@ -912,6 +911,30 @@ function _tlAddUnaccounted(startIso,endIso,kind){
   const uid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
   const name=uid?((typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.name)||'Crew')
                 :((typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)');
+  // ONE SPAN, ONE ANSWER, AND THE LATEST ONE WINS (owner 2026-08-30: "tapping
+  // personal set break unpaid, shouldn't it say personal?").
+  //
+  // The first attempt at this refused a second tap outright, which was worse
+  // than the duplicate it prevented: a man who taps Break and then realises it
+  // was Personal has no way to say so, and the row keeps insisting Break. An
+  // answer is a correction, so answering again CORRECTS the row in place
+  // rather than adding a second one or ignoring him.
+  const same=timeEntries.filter(e=>_tlIsGapAnswer(e)&&
+    Date.parse(e.start_time)===a&&Date.parse(e.end_time)===b);
+  if(same.length){
+    // Any earlier duplicates of this same span collapse into the one row he
+    // is now answering, so a stack left by the old behaviour cleans itself up
+    // the moment he touches it.
+    const keep=same[same.length-1];
+    same.slice(0,-1).forEach(e=>{const i=timeEntries.indexOf(e);if(i>=0)timeEntries.splice(i,1);});
+    keep.minutes=mins;keep.unpaid=unpaid;keep.scope_label=label;keep.fromGap=true;
+    if(typeof saveAll==='function')saveAll();
+    if(typeof supaSaveToCloud==='function')supaSaveToCloud();
+    if(typeof showToast==='function')showToast('Changed to '+
+      (k==='break'?('break, '+(unpaid?'unpaid':'paid')):k==='personal'?'personal, unpaid':'work time'),'⏱');
+    if(typeof renderTimeLog==='function')renderTimeLog();
+    return;
+  }
   timeEntries.push({
     id:(typeof _newId==='function')?_newId():Date.now(),
     job_id:null,
@@ -1194,7 +1217,27 @@ async function _tlTrimCoveredGapRows(){
     // read retries on the next load instead of dying quietly.
     if(!covers.length){note('gap-trim','no covers, retrying next load');return 0;}
     let changed=0;
+    // A stack of answers on ONE span is one answer plus leftovers. Newest
+    // wins: it is the last thing the person actually chose. (His 08/27 window
+    // carried three, two Breaks and a Personal, because the old repeat bug
+    // wrote a fresh row on every tap.)
+    const bySpan={};
     claims.forEach(e=>{
+      const a=Date.parse(e.start_time)||0,b=Date.parse(e.end_time)||0;
+      if(!(b>a))return;
+      (bySpan[a+'|'+b]=bySpan[a+'|'+b]||[]).push(e);
+    });
+    Object.keys(bySpan).forEach(k=>{
+      const stack=bySpan[k];
+      if(stack.length<2)return;
+      stack.slice(0,-1).forEach(e=>{
+        e.deleted=true;e._gapTrimmed='superseded';
+        note('gap-trim',String(e.id).slice(0,10)+' superseded by a later answer');
+        changed++;
+      });
+    });
+    claims.forEach(e=>{
+      if(e.deleted)return;
       const a=Date.parse(e.start_time)||0,b=Date.parse(e.end_time)||0;
       if(!(b>a))return;
       const left=_tlSubtractCovered(a,b,covers);

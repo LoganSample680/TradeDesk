@@ -4098,25 +4098,56 @@ test.describe('timelog.js: exhaustive coverage', () => {
         expect(r.someoneElse, "another person's entry never fills your hole").toBe(1);
       });
 
-      test('the same span cannot be answered twice, whatever the render does', async () => {
+      // Owner 2026-08-30: "tapping personal set break unpaid, shouldn't it say
+      // personal?" Answering again is a CORRECTION, not a duplicate and not a
+      // no-op.
+      test('answering the same span again corrects the row instead of adding one', async () => {
         const r = await page.evaluate(() => {
           const before = timeEntries.length;
           _tlAddUnaccounted('2026-08-27T18:00:00.000Z', '2026-08-27T18:34:00.000Z', 'break');
           const afterFirst = timeEntries.length;
-          _tlAddUnaccounted('2026-08-27T18:00:00.000Z', '2026-08-27T18:34:00.000Z', 'break');
-          _tlAddUnaccounted('2026-08-27T18:00:00.000Z', '2026-08-27T18:34:00.000Z', 'work');
-          const afterRepeats = timeEntries.length;
-          // A DIFFERENT span is still a real answer.
+          const first = timeEntries[timeEntries.length - 1];
+          const firstId = first.id, firstLabel = first.scope_label;
+          _tlAddUnaccounted('2026-08-27T18:00:00.000Z', '2026-08-27T18:34:00.000Z', 'personal');
+          const e = timeEntries[timeEntries.length - 1];
+          // A DIFFERENT span is still its own answer.
           _tlAddUnaccounted('2026-08-27T19:00:00.000Z', '2026-08-27T19:20:00.000Z', 'break');
-          const afterOther = timeEntries.length;
+          const out = { added: afterFirst - before, count: timeEntries.length - before,
+                        firstLabel, sameRow: e.id === firstId,
+                        label: e.scope_label, unpaid: e.unpaid };
           timeEntries.length = before;
-          return { added: afterFirst - before, repeats: afterRepeats - afterFirst,
-                   other: afterOther - afterRepeats };
+          return out;
         });
         expect(r.added).toBe(1);
-        expect(r.repeats, 'his two identical Break rows, twelve seconds apart').toBe(0);
-        expect(r.other).toBe(1);
+        expect(r.firstLabel).toContain('Break');
+        expect(r.count, 'the correction plus one different span: two rows, not three').toBe(2);
+        expect(r.sameRow, 'it edits the row he already made').toBe(true);
+        expect(r.label, 'it says what he last tapped').toBe('Personal time (unpaid)');
+        expect(r.unpaid).toBe(true);
       });
+
+      test('a stack left by the old repeat bug collapses when he answers again', async () => {
+        const r = await page.evaluate(() => {
+          const before = timeEntries.slice();
+          timeEntries.length = 0;
+          // His live 08/27 shape: two Breaks and a Personal on one span.
+          [['Break (unpaid)', 1], ['Break (unpaid)', 2], ['Personal time (unpaid)', 3]]
+            .forEach(([label, n]) => timeEntries.push({ id: 6000 + n, date: '2026-08-27',
+              open: false, fromGap: true, unpaid: true, minutes: 34, scope_label: label,
+              start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:48:05.000Z' }));
+          _tlAddUnaccounted('2026-08-27T17:13:54.000Z', '2026-08-27T17:48:05.000Z', 'work');
+          const out = { left: timeEntries.length, id: timeEntries[0] && timeEntries[0].id,
+                        label: timeEntries[0] && timeEntries[0].scope_label,
+                        unpaid: timeEntries[0] && timeEntries[0].unpaid };
+          timeEntries.length = 0; before.forEach(x => timeEntries.push(x));
+          return out;
+        });
+        expect(r.left, 'three become one').toBe(1);
+        expect(r.id, 'the newest is the one he kept answering').toBe(6003);
+        expect(r.label).toBe('Added from unaccounted time');
+        expect(r.unpaid).toBe(false);
+      });
+
     });
 
     // Owner 2026-08-30: a gap he answered on 08/29 was covered by a shop
@@ -4300,6 +4331,28 @@ test.describe('timelog.js: exhaustive coverage', () => {
         expect(r.first).toBe(0);
         expect(r.second, 'the guard stops a second pass').toBe(0);
         expect(r.left).toBe(3);
+      });
+
+      test('the trim collapses a stack on one span, newest wins', async () => {
+        await seed(page, [
+          { id: 7001, date: '2026-08-27', open: false, fromGap: true, unpaid: true, minutes: 34,
+            scope_label: 'Break (unpaid)',
+            start_time: '2026-08-27T20:00:00.000Z', end_time: '2026-08-27T20:34:00.000Z' },
+          { id: 7002, date: '2026-08-27', open: false, fromGap: true, unpaid: true, minutes: 34,
+            scope_label: 'Personal time (unpaid)',
+            start_time: '2026-08-27T20:00:00.000Z', end_time: '2026-08-27T20:34:00.000Z' },
+        ]);
+        await withSupa(page, COVERS);   // covers are elsewhere, so neither is withdrawn
+        const r = await page.evaluate(async () => {
+          window._tlGapTrimRan = false;
+          const n = await _tlTrimCoveredGapRows();
+          return { n, left: timeEntries.length,
+                   label: timeEntries[0] && timeEntries[0].scope_label };
+        });
+        await unSupa(page); await restore(page);
+        expect(r.n).toBe(1);
+        expect(r.left, 'the earlier answer is a leftover, not a second entry').toBe(1);
+        expect(r.label, 'the last thing he chose survives').toBe('Personal time (unpaid)');
       });
 
       // The guard used to latch before the work, so one swallowed failure
