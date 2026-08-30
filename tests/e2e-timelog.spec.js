@@ -4023,12 +4023,17 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.card, 'the card names it too, from the same table').toContain('Loading');
     });
 
-    test('a real segment prints its end time; the left column alone never shows it', async () => {
+    test('the sub-line is the clock and nothing else', async () => {
       const r = await page.evaluate((rows) => {
         const d = document.createElement('div'); d.innerHTML = _tlDayRailHtml(rows);
-        return (d.querySelector('li[data-kind="job"] .tl-rail-sub') || {}).textContent || '';
+        return [...d.querySelectorAll('li:not([data-kind="gap"]) .tl-rail-sub')]
+          .map(e => e.textContent.trim());
       }, ROWS());
-      expect(r).toMatch(/ to /);
+      expect(r.length).toBeGreaterThan(0);
+      r.forEach(t => {
+        expect(t, 'start to end, that is the whole line').toMatch(/^\d{1,2}:\d{2} [AP]M to \d{1,2}:\d{2} [AP]M$/);
+        expect(t, 'the place is the title; it is not repeated underneath').not.toContain('Marcy');
+      });
     });
 
     test('the header survives an empty day and rows with no buckets', async () => {
@@ -4050,6 +4055,68 @@ test.describe('timelog.js: exhaustive coverage', () => {
         return { n: cs.length, unique: new Set(cs).size };
       });
       expect(r.unique).toBe(r.n);
+    });
+
+    // Owner 2026-08-30: "when I marked it as break unpaid it kept adding a
+    // row." He was not double-tapping.
+    test.describe('an answer closes the hole it answered', () => {
+      test('an owner-logged answer and the owner GPS rows are ONE person', async () => {
+        const r = await page.evaluate(() => {
+          const CID = 'contractor-uid';
+          // His real shape: GPS rows carry the contractor uid, the manual
+          // answer carries null the way every owner-logged entry does.
+          const gps = (a, b) => ({ personUid: CID, date: '2026-08-27', personName: 'L',
+            startTime: a, endTime: b, source: 'auto' });
+          const rows = [
+            gps('2026-08-27T13:00:00.000Z', '2026-08-27T14:00:00.000Z'),
+            gps('2026-08-27T15:00:00.000Z', '2026-08-27T16:00:00.000Z'),
+          ];
+          const holes = (rs) => _tlFillUnaccounted(rs, CID).filter(x => x.source === 'unaccounted');
+          const before = holes(rows).length;
+          const answered = rows.concat([{ personUid: null, date: '2026-08-27', personName: 'L',
+            startTime: '2026-08-27T14:00:00.000Z', endTime: '2026-08-27T15:00:00.000Z',
+            source: 'manual', unpaid: true }]);
+          return { before, after: holes(answered).length };
+        });
+        expect(r.before, 'an hour between two GPS rows is a hole').toBe(1);
+        expect(r.after, 'answering it closes it; this returned 1 forever before').toBe(0);
+      });
+
+      test('a crew member answering their own hole is still their own person', async () => {
+        const r = await page.evaluate(() => {
+          const gap = (uid) => _tlFillUnaccounted([
+            { personUid: 'crew-1', date: '2026-08-27', personName: 'A', source: 'auto',
+              startTime: '2026-08-27T13:00:00.000Z', endTime: '2026-08-27T14:00:00.000Z' },
+            { personUid: 'crew-1', date: '2026-08-27', personName: 'A', source: 'auto',
+              startTime: '2026-08-27T15:00:00.000Z', endTime: '2026-08-27T16:00:00.000Z' },
+            { personUid: uid, date: '2026-08-27', personName: 'A', source: 'manual',
+              startTime: '2026-08-27T14:00:00.000Z', endTime: '2026-08-27T15:00:00.000Z' },
+          ], 'contractor-uid').filter(x => x.source === 'unaccounted').length;
+          return { own: gap('crew-1'), someoneElse: gap('crew-2') };
+        });
+        expect(r.own).toBe(0);
+        expect(r.someoneElse, "another person's entry never fills your hole").toBe(1);
+      });
+
+      test('the same span cannot be answered twice, whatever the render does', async () => {
+        const r = await page.evaluate(() => {
+          const before = timeEntries.length;
+          _tlAddUnaccounted('2026-08-27T18:00:00.000Z', '2026-08-27T18:34:00.000Z', 'break');
+          const afterFirst = timeEntries.length;
+          _tlAddUnaccounted('2026-08-27T18:00:00.000Z', '2026-08-27T18:34:00.000Z', 'break');
+          _tlAddUnaccounted('2026-08-27T18:00:00.000Z', '2026-08-27T18:34:00.000Z', 'work');
+          const afterRepeats = timeEntries.length;
+          // A DIFFERENT span is still a real answer.
+          _tlAddUnaccounted('2026-08-27T19:00:00.000Z', '2026-08-27T19:20:00.000Z', 'break');
+          const afterOther = timeEntries.length;
+          timeEntries.length = before;
+          return { added: afterFirst - before, repeats: afterRepeats - afterFirst,
+                   other: afterOther - afterRepeats };
+        });
+        expect(r.added).toBe(1);
+        expect(r.repeats, 'his two identical Break rows, twelve seconds apart').toBe(0);
+        expect(r.other).toBe(1);
+      });
     });
 
     // Owner 2026-08-30: a gap he answered on 08/29 was covered by a shop

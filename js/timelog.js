@@ -221,14 +221,29 @@ async function _tlShopTape(byUid){
 // below is for what survives that: a two-minute seam between a drive and an
 // arrival is rounding, not a hole worth a line of its own.
 const _TL_UNACCOUNTED_MIN_MS=5*60000;
-function _tlFillUnaccounted(rows){
+// ONE PERSON, ONE BUCKET (owner 2026-08-30: "when I marked it as break unpaid
+// it kept adding a row").
+//
+// He was not double-tapping. His manual answers carry logged_by_uid null, the
+// way every owner-logged entry does, while his GPS rows carry his contractor
+// uid. Keyed on the raw value those are two different people, so the answer
+// landed in the 'owner' bucket, the hole was recomputed from the GPS bucket
+// alone, and it came back untouched every render. Tap, row written, hole
+// still there, tap again. Forever, and the same reason his original Add from
+// 08/29 never closed its own gap either.
+//
+// _tlEmpWeekAgg already had the rule (`r.personUid||cid`); this walk did not.
+// Same fold here, so a null-uid owner row and a contractor-uid GPS row are the
+// one person they actually are.
+function _tlFillUnaccounted(rows,cid){
   if(!Array.isArray(rows)||!rows.length)return rows;
+  const who=r=>String((r&&r.personUid)||cid||'owner');
   const byDay={};
   rows.forEach(r=>{
     if(!r||!r.startTime||!r.endTime||!r.date)return;
     const a=Date.parse(r.startTime),b=Date.parse(r.endTime);
     if(!(a>0&&b>a))return;
-    const k=(r.personUid||'owner')+'|'+r.date;
+    const k=who(r)+'|'+r.date;
     (byDay[k]=byDay[k]||[]).push(r);
   });
   const out=rows.slice();
@@ -451,7 +466,8 @@ async function _timeLogRows(sinceISO){
       rawId:e.id!=null?e.id:null,rawSource:e.source||''
     });
   });
-  return _tlFillUnaccounted(_tlAbsorbGaps(rows)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const _cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
+  return _tlFillUnaccounted(_tlAbsorbGaps(rows),_cid).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 }
 function _tlYears(rows){
   const years=[...new Set(rows.map(r=>(r.date||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort((a,b)=>b.localeCompare(a));
@@ -884,6 +900,10 @@ function _tlAddUnaccounted(startIso,endIso,kind){
   if(!(a>0&&b>a))return;
   if(typeof timeEntries==='undefined'||!Array.isArray(timeEntries))return;
   const mins=Math.max(1,Math.round((b-a)/60000));
+  // The same stretch, answered twice, is never two pieces of work. Whatever
+  // the render does, a second tap on a span already answered is a no-op
+  // rather than a second row.
+  if(timeEntries.some(e=>e&&!e.open&&Date.parse(e.start_time)===a&&Date.parse(e.end_time)===b))return;
   const k=(kind==='break'||kind==='personal')?kind:'work';
   const unpaid=k==='personal'?true:k==='break'?!_tlBreakIsPaid(mins):false;
   const label=k==='break'?('Break'+(unpaid?' (unpaid)':' (paid)'))
@@ -1017,17 +1037,16 @@ function _tlRailRow(r){
       ?mileage.find(x=>x&&x.legKey===r.clientKey):null;
     const ttl=leg?((leg.from_name||'—')+' → '+(leg.to_name||r.clientName||'—'))
                  :(r.addr||r.clientName||m.word);
-    // Anything already visible in the title is dropped, not just an exact
-    // match: a drive titled "Home -> Marcy Hunter" was still printing
-    // "Marcy Hunter" underneath, which is the destination said twice.
-    const inTtl=v=>!!v&&ttl.indexOf(v)>=0;
-    const subBits=[inTtl(r.clientName)?null:r.clientName,
-                   (r.jobName&&r.jobName!==r.clientName&&!inTtl(r.jobName))?r.jobName:null].filter(Boolean);
-    // "7:59 AM to 12:02 PM" under the title: the left column gives the start,
-    // and on a 4-hour block the end is the thing you actually go looking for.
+    // THE SUB-LINE IS THE CLOCK, AND ONLY THE CLOCK (owner 2026-08-30: "why
+    // put tradedesk shop under the sub title that already says it ... can
+    // just do the start and end time under there").
+    //
+    // It used to also carry the client and job names, which on most rows were
+    // the title again in smaller grey type: three lines to say a place once.
+    // The tag names the kind, the title names the place, the sub gives the
+    // clock. Nothing repeats.
     const span=[_tlFmtTime(r.startTime),_tlFmtTime(r.endTime)].filter(Boolean);
-    const rangeTxt=span.length===2?(span[0]+' to '+span[1]):'';
-    const sub=[subBits.join(' · '),rangeTxt].filter(Boolean).join(' · ');
+    const sub=span.length===2?(span[0]+' to '+span[1]):'';
     body='<div class="tl-rail-ttl">'+escHtml(ttl)+'</div>'+
          (sub?'<div class="tl-rail-sub">'+escHtml(sub)+'</div>':'');
   }
