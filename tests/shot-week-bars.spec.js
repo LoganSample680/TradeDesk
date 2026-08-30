@@ -25,6 +25,10 @@ test.describe('month screenshot', () => {
     await waitForAppBoot(page);
     await mountMonth(page);
     await page.screenshot({ path: 'month-bars-mobile.png', fullPage: false });
+    // Forward one month: the single-week month, and the arrows both live.
+    await page.evaluate(() => _tlMonthStep(1));
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: 'month-one-week.png', fullPage: false });
   });
 });
 

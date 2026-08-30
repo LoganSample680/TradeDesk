@@ -1354,8 +1354,15 @@ function _tlWeekShortLabel(wk){
 // shown, disabled: which months a year HAS is information, and a gap in the
 // row says "nothing that month" better than a missing chip does.
 let _tlMonthSel=null;
-function setTimeLogMonth(mo){
+// Which way the chart should slide on the next render: set by an arrow tap,
+// cleared by anything else. Declared beside the selection it belongs to and
+// ABOVE setTimeLogMonth, which writes it.
+let _tlMonthDir='';
+function setTimeLogMonth(mo,dir){
   if(!/^\d{4}-\d{2}$/.test(String(mo||'')))return;
+  // A jump with no direction clears the last one, so a programmatic change
+  // never inherits the previous arrow tap's animation.
+  _tlMonthDir=(dir==='fwd'||dir==='back')?dir:'';
   _tlMonthSel=mo;
   renderTimeLog();
 }
@@ -1369,36 +1376,71 @@ function _tlOpenWeek(mo,wk){
   if(!el.classList.contains('open')&&typeof _bkTogWeek==='function')_bkTogWeek('tl',mo,wkId);
   if(typeof el.scrollIntoView==='function')el.scrollIntoView({behavior:'smooth',block:'start'});
 }
-// Twelve chips never fit a phone, so the row scrolls; an active chip parked
-// off the right edge is the same as having no picker at all. Deferred a frame
-// because the row does not exist until innerHTML lands.
-function _tlScrollMonthIntoView(){
-  setTimeout(()=>{
-    try{
-      const c=document.querySelector('.tl-mpicker .tl-chip.active');
-      if(c&&typeof c.scrollIntoView==='function')
-        c.scrollIntoView({inline:'center',block:'nearest'});
-    }catch(_e){}
-  },0);
+// ── Moving between months ──────────────────────────────────────────────────
+// Owner, 2026-08-30: "would like something that you click a back arrow with
+// the month in the middle and smooth css animations."
+//
+// The twelve-chip row was wrong twice over. It never fit a phone, so it
+// scrolled, so the month you wanted was usually off-screen and the control had
+// to scroll ITSELF back into view to be usable at all. And it spent a whole
+// row of the page on eleven months that are almost never the one you want.
+// A back arrow, the month, a forward arrow: one line, no scrolling, and the
+// month you are looking at is the biggest thing on it.
+//
+// The arrows step to the next month that HAS hours, not to the next calendar
+// month, so a tap never lands on an empty chart. At the ends they disable
+// rather than disappear: a control that vanishes makes the row jump and leaves
+// you wondering whether you broke something.
+//
+// Which way the chart slides is decided HERE, from the step, because only the
+// caller knows whether this was a back or a forward.
+function _tlMonthStep(delta){
+  const list=(_tlLastRows||[]).reduce((acc,r)=>{
+    const mo=String((r&&r.date)||'').slice(0,7);
+    if(/^\d{4}-\d{2}$/.test(mo)&&acc.indexOf(mo)<0)acc.push(mo);
+    return acc;
+  },[]).sort();
+  const i=list.indexOf(_tlMonthSel);
+  if(i<0)return;
+  const next=list[i+(delta>0?1:-1)];
+  if(!next)return;
+  setTimeLogMonth(next,delta>0?'fwd':'back');
 }
-function _tlMonthPickerHtml(year,byMonth,sel){
-  const names=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return '<div class="tl-picker tl-mpicker">'+names.map((n,i)=>{
-    const mo=year+'-'+String(i+1).padStart(2,'0');
-    const has=!!(byMonth[mo]&&byMonth[mo].length);
-    return '<button type="button" class="tl-chip'+(mo===sel?' active':'')+(has?'':' tl-chip-off')+'"'+
-      (has?'':' disabled aria-disabled="true"')+
-      ' aria-label="'+escHtml(n+' '+year+(has?'':', nothing logged'))+'"'+
-      ' onclick="setTimeLogMonth(\''+mo+'\')">'+n+
-      (has?'<span class="tl-dot"></span>':'')+
-    '</button>';
-  }).join('')+'</div>';
+function _tlMonthNavHtml(sel,byMonth,totalHtml){
+  const list=Object.keys(byMonth||{})
+    .filter(m=>/^\d{4}-\d{2}$/.test(m)&&byMonth[m]&&byMonth[m].length).sort();
+  const i=list.indexOf(sel);
+  const prev=i>0?list[i-1]:null;
+  const next=(i>=0&&i<list.length-1)?list[i+1]:null;
+  const label=(typeof _bkMonthLabel==='function')?_bkMonthLabel(sel):String(sel);
+  const arrow=(dir,to,glyph,word)=>
+    '<button type="button" class="tl-monav-btn"'+(to?'':' disabled aria-disabled="true"')+
+    ' aria-label="'+escHtml(word+(to&&typeof _bkMonthLabel==='function'?', '+_bkMonthLabel(to):''))+'"'+
+    ' onclick="_tlMonthStep('+dir+')">'+glyph+'</button>';
+  return '<div class="tl-monav">'+
+    arrow(-1,prev,'\u2039','Previous month')+
+    // aria-live: the label is the only thing on this row that changes, and a
+    // reader following focus on the arrow would otherwise never hear what it
+    // changed to.
+    '<div class="tl-monav-mid" aria-live="polite">'+
+      '<div class="tl-monav-lbl">'+escHtml(label)+'</div>'+
+      (totalHtml?'<div class="tl-monav-tot">'+totalHtml+'</div>':'')+
+    '</div>'+
+    arrow(1,next,'\u203a','Next month')+
+  '</div>';
 }
 // The month as text, same shape and the same builder family as the week's
 // (§7.3): one line per week, the split, and the total.
 function _tlMonthShareText(rows,mo){
   const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
-  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object');
+  // FILTERED HERE, not trusted from the caller. A message headed "August 2026"
+  // that carries September hours is a wrong number in somebody's payroll text,
+  // and the only thing that stood between us and that was every caller
+  // remembering to filter first. One of them did; the rule now lives in the
+  // function that prints the heading.
+  const inMonth=/^\d{4}-\d{2}$/.test(String(mo||''))
+    ? (r=>String((r&&r.date)||'').slice(0,7)===mo) : (()=>true);
+  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object').filter(inMonth);
   const byWeek={};
   list.forEach(r=>{const wk=_tlWeekKey(r.date)||'';if(wk)(byWeek[wk]||(byWeek[wk]=[])).push(r);});
   const lines=Object.keys(byWeek).sort().map(wk=>{
@@ -2354,9 +2396,13 @@ async function renderTimeLog(opts){
   // blank chart on an empty month.
   const selMo=(_tlMonthSel&&byMonth[_tlMonthSel])?_tlMonthSel
     :(byMonth[curMo]?curMo:months[months.length-1]);
-  const pickerHtml=_tlMonthPickerHtml(yr,byMonth,selMo);
-  _tlScrollMonthIntoView();
-  el.innerHTML=pickerHtml+'<div class="bk-months">'+[selMo].map(mo=>{
+  // STORED, not just computed. _tlMonthStep looks up the current month to find
+  // its neighbours, so leaving the default un-stored left indexOf at -1 and
+  // both arrows dead until something else happened to set it, which on a fresh
+  // open is never.
+  _tlMonthSel=selMo;
+  const navHtml=_tlMonthNavHtml(selMo,byMonth,fm(_tlPaidMin(byMonth[selMo]||[])));
+  el.innerHTML=navHtml+'<div class="bk-months">'+[selMo].map(mo=>{
     const moRows=byMonth[mo]||[];
     const byWeek={};
     moRows.forEach(r=>{const wk=_tlWeekKey(r.date)||'unknown';(byWeek[wk]||(byWeek[wk]=[])).push(r);});
@@ -2400,8 +2446,18 @@ async function renderTimeLog(opts){
     // The month's own chart sits above its weeks: weekly bars, one per week,
     // guided at 40 hours. Tapping a bar opens that week's accordion below.
     const monthBars=_tlMonthBarsHtml(moRows,mo,scope);
-    const monthBarsHtml=monthBars?'<div class="tl-mbars">'+monthBars+'</div>':'';
-    return _bkMonthAcc('tl',mo,_bkMonthLabel(mo),moSub,moTotalHtml,monthBarsHtml+weeksHtml,moOpen);
+    // The direction rides on the element as a class, so the slide is pure CSS
+    // and the JS never touches a style property (§8.5).
+    const monthBarsHtml=monthBars
+      ?'<div class="tl-mbars'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+'">'+monthBars+'</div>'
+      :'';
+    // NO MONTH ACCORDION. The nav row above already names the month and now
+    // carries its total, so wrapping the page in a header that says both again
+    // is the same duplication the week body had (owner caught that one on
+    // 2026-08-30 as "lot of white space"). A month is not a row you open any
+    // more; it IS the page, so it gets a plain container.
+    return '<div class="bk-month open" id="bk-tl-mo-'+mo+'">'+
+      '<div class="bk-month-body">'+monthBarsHtml+weeksHtml+'</div></div>';
   }).join('')+'</div>';
   // The page-level Share button is GONE. It said "this calendar week", which
   // on a screen that now carries Send this month and Send this week (the one

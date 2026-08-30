@@ -81,7 +81,11 @@ test.describe('month bars: pure helpers', () => {
     expect(t.split('\n').every(l => l.length <= 72)).toBe(true);
     expect(t).toContain('August 2026');
     expect(t).toContain('Wk Aug 23 – 29: 39h 27m (45m unaccounted)');
+    // The fixture also carries September. A message headed "August 2026" must
+    // total August, so the function filters by the month it is labelling
+    // rather than trusting whatever the caller handed it.
     expect(t).toContain('Total: 97h 42m');
+    expect(t).not.toContain('September');
     expect(t).toContain('On site');
   });
 
@@ -106,38 +110,106 @@ test.describe('month bars: the page', () => {
   });
   test.afterEach(async ({ page }) => { assertNoErrors(page, 'month page'); });
 
-  test('twelve chips, and a month with no hours is shown but disabled', async ({ page }) => {
-    // Which months a year HAS is information. A gap in the row says "nothing
-    // that month" better than a missing chip does, and a disabled chip cannot
-    // navigate somebody to a blank chart.
+  test('a back arrow, the month, a forward arrow', async ({ page }) => {
+    // Replaced a twelve-chip row that never fit a phone, scrolled, and so had
+    // to scroll ITSELF back into view to be usable (owner 2026-08-30).
     const r = await page.evaluate(() => {
-      const chips = [...document.querySelectorAll('.tl-mpicker .tl-chip')];
+      const nav = document.querySelector('.tl-monav');
+      const btns = [...nav.querySelectorAll('.tl-monav-btn')];
       return {
-        n: chips.length,
-        labels: chips.map(c => c.textContent.trim()),
-        active: chips.filter(c => c.classList.contains('active')).map(c => c.textContent.trim()),
-        disabled: chips.filter(c => c.disabled).map(c => c.textContent.trim()),
-        dots: chips.filter(c => c.querySelector('.tl-dot')).map(c => c.textContent.trim()),
+        chips: document.querySelectorAll('.tl-mpicker').length,
+        label: nav.querySelector('.tl-monav-lbl').textContent,
+        total: nav.querySelector('.tl-monav-tot').textContent,
+        n: btns.length,
+        aria: btns.map(b => b.getAttribute('aria-label')),
+        disabled: btns.map(b => b.disabled),
+        // The label is the only thing on the row that changes, so a reader
+        // following focus on an arrow has to be told what it changed to.
+        live: nav.querySelector('[aria-live]').getAttribute('aria-live'),
+        // WCAG 2.5.8, with room for a thumb.
+        sizes: btns.map(b => Math.round(b.getBoundingClientRect().width)),
       };
     });
-    expect(r.n).toBe(12);
-    expect(r.labels[0]).toBe('Jan');
-    expect(r.labels[11]).toBe('Dec');
-    expect(r.active).toEqual(['Aug']);
-    expect(r.dots).toEqual(['Aug']);
-    expect(r.disabled.length).toBe(11);
+    expect(r.chips, 'the chip row is gone, not hidden').toBe(0);
+    expect(r.label).toBe('August 2026');
+    // The month's total moved here from the accordion header this replaced.
+    expect(r.total).toBe('97h 42m');
+    expect(r.n).toBe(2);
+    expect(r.aria[0]).toContain('Previous month');
+    expect(r.aria[1]).toContain('Next month');
+    expect(r.aria[1]).toContain('September 2026');
+    // August is the earliest month with hours, so back is dead and forward is
+    // live. Disabled, never hidden: a control that vanishes makes the row jump.
+    expect(r.disabled).toEqual([true, false]);
+    expect(r.live).toBe('polite');
+    r.sizes.forEach(w => expect(w).toBeGreaterThanOrEqual(24));
   });
 
-  test('one month at a time: the picked month, and only it', async ({ page }) => {
+  test('the arrows step to the next month that HAS hours, and stop at the ends', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      const label = () => document.querySelector('.tl-monav-lbl').textContent;
+      const out = { start: label() };
+      _tlMonthStep(1); await new Promise(r2 => setTimeout(r2, 60));
+      out.fwd = label();
+      out.dirFwd = _tlMonthDir;
+      // Past the end is a no-op, never a blank chart.
+      _tlMonthStep(1); await new Promise(r2 => setTimeout(r2, 60));
+      out.past = label();
+      _tlMonthStep(-1); await new Promise(r2 => setTimeout(r2, 60));
+      out.back = label();
+      out.dirBack = _tlMonthDir;
+      _tlMonthStep(-1); await new Promise(r2 => setTimeout(r2, 60));
+      out.before = label();
+      return out;
+    });
+    expect(r.start).toBe('August 2026');
+    expect(r.fwd).toBe('September 2026');
+    expect(r.past, 'past the last month is a no-op').toBe('September 2026');
+    expect(r.back).toBe('August 2026');
+    expect(r.before, 'and before the first is too').toBe('August 2026');
+    // The direction is decided by the step, because only the caller knows
+    // which way it went; the CSS slide reads it off the element.
+    expect(r.dirFwd).toBe('fwd');
+    expect(r.dirBack).toBe('back');
+  });
+
+  test('the default month is STORED, so the arrows work on a fresh open', async ({ page }) => {
+    // It used to be computed for the render and thrown away, which left
+    // _tlMonthStep looking up index -1 and both arrows dead until something
+    // else happened to set the month. On a fresh open that is never.
+    const r = await page.evaluate(() => _tlMonthSel);
+    expect(r).toBe('2026-08');
+  });
+
+  test('the chart slides in from the side you came from', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      _tlMonthStep(1); await new Promise(r2 => setTimeout(r2, 60));
+      const fwd = document.querySelector('.tl-mbars').className;
+      _tlMonthStep(-1); await new Promise(r2 => setTimeout(r2, 60));
+      const back = document.querySelector('.tl-mbars').className;
+      // A jump with no direction must not inherit the last tap's animation.
+      setTimeLogMonth('2026-09'); await new Promise(r2 => setTimeout(r2, 60));
+      const jump = document.querySelector('.tl-mbars').className;
+      return { fwd, back, jump };
+    });
+    expect(r.fwd).toContain('tl-mbars-fwd');
+    expect(r.back).toContain('tl-mbars-back');
+    expect(r.jump).not.toContain('tl-mbars-fwd');
+    expect(r.jump).not.toContain('tl-mbars-back');
+  });
+
+  test('one month at a time, and it prints no header of its own', async ({ page }) => {
     const r = await page.evaluate(() => ({
-      months: [...document.querySelectorAll('.bk-month')].length,
-      titles: [...document.querySelectorAll('.bk-month-title')].map(e => e.textContent),
-      open: [...document.querySelectorAll('.bk-month')].every(m => m.classList.contains('open')),
+      months: document.querySelectorAll('.bk-month').length,
+      // The nav above already names the month and carries its total, so an
+      // accordion header saying both again is the duplication the week body
+      // was already caught for.
+      hdrs: document.querySelectorAll('.bk-month-hd').length,
+      titles: document.querySelectorAll('.bk-month-title').length,
     }));
     expect(r.months).toBe(1);
-    expect(r.titles).toEqual(['August 2026']);
-    // The picked month IS the page now, not a row somebody still has to tap.
-    expect(r.open).toBe(true);
+    expect(r.hdrs).toBe(0);
+    expect(r.titles).toBe(0);
   });
 
   test('one bar per week, oldest first, each drilling into its own week', async ({ page }) => {
@@ -221,7 +293,7 @@ test.describe('month bars: the page', () => {
       await renderTimeLog();
       const team = { bars: !!document.querySelector('.tl-mbars'),
                      cards: !!document.querySelector('.tl-emp-row'),
-                     picker: !!document.querySelector('.tl-mpicker') };
+                     nav: !!document.querySelector('.tl-monav') };
       _tlScope = orig;
       await renderTimeLog();
       const me = { bars: !!document.querySelector('.tl-mbars') };
@@ -229,24 +301,23 @@ test.describe('month bars: the page', () => {
     });
     expect(r.team.bars).toBe(false);
     expect(r.team.cards, 'Team still separates people').toBe(true);
-    // The picker is navigation, not a chart: both scopes need to reach a month.
-    expect(r.team.picker).toBe(true);
+    // The nav is navigation, not a chart: both scopes need to reach a month.
+    expect(r.team.nav).toBe(true);
     expect(r.me.bars).toBe(true);
   });
 
-  test('no horizontal bleed at 320px, and the picked chip is scrolled into view', async ({ page }) => {
+  test('no horizontal bleed at 320px', async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 780 });
     await page.waitForTimeout(250);
     const r = await page.evaluate(() => {
-      const row = document.querySelector('.tl-mpicker');
-      const active = row.querySelector('.tl-chip.active');
-      const rb = row.getBoundingClientRect(), ab = active.getBoundingClientRect();
+      const nav = document.querySelector('.tl-monav');
+      const lbl = nav.querySelector('.tl-monav-lbl');
+      const nb = nav.getBoundingClientRect(), lb = lbl.getBoundingClientRect();
       return { sw: document.documentElement.scrollWidth, iw: window.innerWidth,
-               visible: ab.left >= rb.left - 1 && ab.right <= rb.right + 1 };
+               inside: lb.left >= nb.left - 1 && lb.right <= nb.right + 1 };
     });
     expect(r.sw).toBeLessThanOrEqual(r.iw + 1);
-    // Twelve chips never fit a phone; an active chip parked off the right edge
-    // is the same as having no picker at all.
-    expect(r.visible).toBe(true);
+    // One line, no scrolling: the whole reason this replaced the chip row.
+    expect(r.inside).toBe(true);
   });
 });

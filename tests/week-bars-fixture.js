@@ -65,11 +65,26 @@ function _wk(startDay, mins) {
       personName: 'Logan Sample', personUid: 'me', unpaid: false };
   });
 }
+// September carries ONE week on purpose: a month with a single bar used to
+// hand that week the whole page and it read as a slab, not a bar (owner
+// 2026-08-30, "one week looks awful"). It is in the fixture so the capped
+// column is exercised and screenshotted rather than trusted.
+function _sep(startDay, mins) {
+  return mins.map((m, i) => {
+    const d = '2026-09-' + String(startDay + i).padStart(2, '0');
+    return { id: 's' + startDay + i, date: d,
+      startTime: d + 'T13:00:00Z', endTime: d + 'T19:00:00Z',
+      minutes: m, source: 'auto', rawSource: i % 3 === 0 ? 'drive' : 'client',
+      clientName: 'September work', detail: 'September work', addr: '',
+      personName: 'Logan Sample', personUid: 'me', unpaid: false };
+  });
+}
 const MONTH_ROWS = [].concat(
   _wk(3,  [430, 96, 512, 44, 380]),     // Aug 2 to 8
   _wk(10, [505, 120, 468, 60, 442]),    // Aug 9 to 15
   _wk(17, [188, 40, 210]),              // Aug 16 to 22, a light week
-  WEEK_ROWS);
+  WEEK_ROWS,
+  _sep(1, [402, 88, 455]));             // Sep, a single week
 
 // Runs INSIDE the page. Drives the REAL week body (_tlRenderWeekBody, Me
 // scope, week pick) rather than assembling the chart by hand, so the picture
