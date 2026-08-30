@@ -1067,6 +1067,56 @@ test.describe('Wake region set for the dead app', () => {
       { ts: T(7, 49, 43), kind: 'driving' }, { ts: T(7, 59, 6), kind: 'onFoot' },
     ];
 
+    // THE RUNAWAY, found in production 2026-08-30: 6 minutes became 36, then
+    // 66, thirty per boot. _geoTapeSegments tiles the window it is handed, so
+    // its first onsite span began at the window's own left edge, which is the
+    // row's start minus the 30-minute ceiling. The sweep's output was its own
+    // next input.
+    test('a row is never dragged by the window edge, however many times it runs', async () => {
+      // A tape whose standing-still state began long BEFORE the window: the
+      // exact shape that produced the runaway.
+      const tape = [
+        { ts: T(4, 0, 0), kind: 'still' },
+        { ts: T(7, 49, 43), kind: 'driving' },
+        { ts: T(7, 59, 6), kind: 'onFoot' },
+      ];
+      let rows = [row('C1', 'client', iso(7, 59, 6), iso(12, 1, 35))];
+      const seen = [];
+      for (let i = 0; i < 3; i++) {
+        const r = await run(page, { tape, rows });
+        seen.push(r.n);
+        if (r.wrote.length) {
+          rows = [row('C1', 'client', r.wrote[0].arrived_at, r.wrote[0].departed_at)];
+        }
+      }
+      expect(seen, 'stable on the first pass and every pass after').toEqual([0, 0, 0]);
+      // And the row is exactly where it started, not thirty minutes per run earlier.
+      expect(rows[0].arrived_at).toBe(iso(7, 59, 6));
+    });
+
+    test('a real transition inside the window still moves the row', async () => {
+      // An onsite span is the space BETWEEN drives, so the only thing that can
+      // legitimately start one is a drive ending. (My first version of this
+      // test used a bare 'still' transition and expected it to be the
+      // boundary; it never is, which the failure said plainly.)
+      const r = await run(page, {
+        // onFoot then still: without the 'still' the walking would run all the
+        // way into the next drive and _geoTapeSegments would read the whole
+        // day as one load-out, leaving no onsite span at all. That is correct
+        // behaviour and a badly built fixture, which is what the second
+        // failure here was telling me.
+        tape: [
+          { ts: T(7, 40, 0), kind: 'driving' },
+          { ts: T(7, 55, 0), kind: 'onFoot' },
+          { ts: T(8, 10, 0), kind: 'still' },
+          { ts: T(12, 5, 0), kind: 'driving' },
+        ],
+        rows: [row('C2', 'client', iso(7, 59, 6), iso(12, 1, 35))],
+      });
+      expect(r.n, 'a genuine edge is still allowed to correct the row').toBe(1);
+      expect(r.wrote[0].arrived_at, 'the arrival is where the wheels stopped').toBe(iso(7, 55, 0));
+    });
+
     // Owner 2026-08-30, on his live 08/27 after the first roll: a 6-minute
     // load-out had become 36. The whole morning at the shop was one
     // standing-still segment and the sweep snapped the row to all of it, by

@@ -6774,11 +6774,12 @@ async function _geoRetimeToTapeSweep(){
       if(!(e0>s0))continue;
       // One tape per row window, padded either side so the boundary that
       // matters is inside it even when the fence was minutes late.
+      const winA=s0-_GEO_RETIME_MAX_MS,winB=e0+_GEO_RETIME_MAX_MS;
       const key=String(Math.floor(s0/3600000));
-      if(!(key in tapes))tapes[key]=await _geoMotionTape(s0-_GEO_RETIME_MAX_MS,e0+_GEO_RETIME_MAX_MS);
+      if(!(key in tapes))tapes[key]=await _geoMotionTape(winA,winB);
       const tape=tapes[key];
       if(!Array.isArray(tape)||!tape.length)continue;
-      const segs=_geoTapeSegments(tape,s0-_GEO_RETIME_MAX_MS,e0+_GEO_RETIME_MAX_MS);
+      const segs=_geoTapeSegments(tape,winA,winB);
       if(!segs.length)continue;
       let best=null,bestOv=0;
       if(r.source==='place-office'){
@@ -6815,16 +6816,35 @@ async function _geoRetimeToTapeSweep(){
         }
       }
       if(!best||bestOv<=0)continue;
-      const dS=Math.abs(best.a-s0),dE=Math.abs(best.b-e0);
+      // A SEGMENT EDGE THAT SITS ON THE WINDOW EDGE IS NOT A TRANSITION.
+      //
+      // _geoTapeSegments tiles whatever window it is handed: its first onsite
+      // span starts at `s`, which here is the row's own start minus the
+      // 30-minute ceiling. So a row whose true state began before the window
+      // matched a segment beginning exactly 30 minutes early, moved back by
+      // exactly 30 minutes, and on the next boot did it again from its new
+      // start. The sweep's output was its own next input.
+      //
+      // That is what happened to the owner's 08/27 load-out in production:
+      // 6 minutes, then 36, then 66, thirty per boot, unbounded. It would have
+      // done the same to any non-drive row whose state began off-window.
+      //
+      // An edge clipped by the window says nothing except how much tape we
+      // asked for, so it gets no vote. Only an edge that is a real transition
+      // inside the window may move a boundary.
+      const startIsReal=best.a>winA, endIsReal=best.b<winB;
+      const A=startIsReal?best.a:s0, B=endIsReal?best.b:e0;
+      if(!(B>A))continue;
+      const dS=Math.abs(A-s0),dE=Math.abs(B-e0);
       if(dS<_GEO_RETIME_MIN_MS&&dE<_GEO_RETIME_MIN_MS)continue;   // already agree
       if(dS>_GEO_RETIME_MAX_MS||dE>_GEO_RETIME_MAX_MS)continue;   // not the same event
-      const mins=Math.round((best.b-best.a)/60000);
+      const mins=Math.round((B-A)/60000);
       if(mins<1)continue;
       _geoEnqueue('job_time_entries',{
         id:r.id,contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
         job_id:r.job_id||null,
-        arrived_at:new Date(best.a).toISOString(),
-        departed_at:new Date(best.b).toISOString(),
+        arrived_at:new Date(A).toISOString(),
+        departed_at:new Date(B).toISOString(),
         minutes:mins,dest_place:r.dest_place||null,
         client_key:r.client_key,source:r.source
       });
