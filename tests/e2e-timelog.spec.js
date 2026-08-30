@@ -3777,24 +3777,29 @@ test.describe('timelog.js: exhaustive coverage', () => {
                  chips: [...gap.querySelectorAll('.tl-rail-chip')].map(c => c.textContent.trim()) };
       }, ROWS());
       expect(r.text).not.toMatch(/nothing recorded/i);
-      expect(r.text).toContain('Away from every job site');
-      expect(r.text).toContain('unaccounted');
-      expect(r.text).toContain('What was this?');
-      // Owner 2026-08-30: our vocabulary is not the contractor's.
+      expect(r.text).toContain('What was this time?');
+      // Owner 2026-08-30, twice over: first the jargon went, then the whole
+      // explaining sentence ("hate this just say what was this time?"). The
+      // tag and the duration already carry everything the prose was saying.
       expect(r.text, 'no jargon a contractor would not use').not.toMatch(/geofence|motion|coremotion|gps/i);
+      expect(r.text, 'no explaining sentence, just the question').not.toMatch(/tracking|job address|Away from/i);
       expect(r.chips.length).toBe(3);
       expect(r.chips[0]).toBe('Work time');
       expect(r.chips[2]).toBe('Personal');
     });
 
-    // A gap has no measured duration, so it must not print one.
-    test('a hole shows no duration; a real segment does', async () => {
+    // The hole hid its length while a sentence was spelling it out. With the
+    // sentence gone the minutes have nowhere else to live, so they take the
+    // right column like every other row, muted because they are not paid yet.
+    test('a hole shows its length, muted; a real segment shows its own', async () => {
       const r = await page.evaluate((rows) => {
         const d = document.createElement('div'); d.innerHTML = _tlDayRailHtml(rows);
-        return { gap: !!d.querySelector('li[data-kind="gap"] .tl-rail-dur'),
+        const g = d.querySelector('li[data-kind="gap"] .tl-rail-dur');
+        return { gap: g && g.textContent, muted: g && g.classList.contains('mute'),
                  drive: (d.querySelector('li[data-kind="drive"] .tl-rail-dur') || {}).textContent };
       }, ROWS());
-      expect(r.gap).toBe(false);
+      expect(r.gap).toContain('40');
+      expect(r.muted, 'unpaid until he answers').toBe(true);
       expect(r.drive).toContain('9');
     });
 

@@ -985,15 +985,14 @@ function _tlRailGapBody(r){
     'onclick="_tlAddUnaccounted(\''+a+'\',\''+b+'\',\''+k+'\')">'+escHtml(txt)+'</button>';
   // No title line: the tag above already reads "Between jobs" and printing it
   // twice is the kind of duplication that makes a dense day harder to scan.
-  // "geofence" is our word, not a contractor's (owner 2026-08-30: "say
-  // something that's not jargon and a contractor would understand, geofence
-  // isn't something they would know"). The sentence now describes what
-  // happened in the only terms that matter on a truck: the phone was running
-  // and you were not at the shop or at a job.
-  return '<div class="tl-rail-ttl">Away from every job site</div>'+
-    '<div class="tl-rail-sub">'+escHtml(fm(mins))+' unaccounted. Your phone was tracking the whole time, '+
-      'you just were not at the shop or at any job address.</div>'+
-    '<div class="tl-rail-ask">What was this?</div>'+
+  // Just the question (owner 2026-08-30: "hate this just say what was this
+  // time?"). The explaining sentence went through two rewrites, from geofence
+  // jargon to plain English, and the owner's answer to the plain-English one
+  // was that he does not want a sentence at all. He is right: the tag already
+  // says UNACCOUNTED and the duration is in the right column, so the prose was
+  // narrating what the row had already shown. The question is the only thing
+  // on this row that needs a person.
+  return '<div class="tl-rail-ttl">What was this time?</div>'+
     '<div class="tl-rail-chips">'+
       chip('work','Work time')+
       chip('break','Break · '+(brk?'paid':'unpaid'))+
@@ -1033,7 +1032,7 @@ function _tlRailRow(r){
   // the work on its own (1.4.1).
   const tag='<span class="tl-rail-tag">'+svgIcon(m.icon,{size:10})+' '+escHtml(m.word)+
     (r.unpaid&&!isGap?' · unpaid':'')+'</span>';
-  const dur=isGap?'':'<div class="tl-rail-dur'+(r.unpaid?' mute':'')+'">'+escHtml(fm(r.minutes||0))+'</div>';
+  const dur='<div class="tl-rail-dur'+((r.unpaid||isGap)?' mute':'')+'">'+escHtml(fm(r.minutes||0))+'</div>';
   return '<li class="tl-rail-row" data-kind="'+kind+'" style="--rail:'+m.c+'">'+
     '<div class="tl-rail-time"><span>'+escHtml(_tlFmtTime(r.startTime)||'—')+'</span></div>'+
     '<div class="tl-rail-spine" aria-hidden="true"><i></i><b></b></div>'+
