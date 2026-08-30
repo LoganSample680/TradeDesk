@@ -50,6 +50,27 @@ const WEEK_ROWS = WEEK_ROWS_RAW.map((w, i) => ({
 const WEEK_DAYS = ['2026-08-23','2026-08-24','2026-08-25','2026-08-26',
                    '2026-08-27','2026-08-28','2026-08-29'];
 
+// A full month for the month-level shot and its assertions: three more weeks
+// of August ahead of the real 08/23 one, so the chart shows what a month
+// actually looks like (four bars, a light week, a heavy one) instead of one
+// bar spanning the page.
+function _wk(startDay, mins) {
+  return mins.map((m, i) => {
+    const d = '2026-08-' + String(startDay + i).padStart(2, '0');
+    return { id: 'm' + startDay + i, date: d,
+      startTime: d + 'T13:00:00Z', endTime: d + 'T21:00:00Z',
+      minutes: m, source: i % 4 === 1 ? 'shop' : 'auto',
+      rawSource: i % 4 === 1 ? 'shop' : (i % 3 === 0 ? 'drive' : 'client'),
+      clientName: 'Earlier work', detail: 'Earlier work', addr: '',
+      personName: 'Logan Sample', personUid: 'me', unpaid: false };
+  });
+}
+const MONTH_ROWS = [].concat(
+  _wk(3,  [430, 96, 512, 44, 380]),     // Aug 2 to 8
+  _wk(10, [505, 120, 468, 60, 442]),    // Aug 9 to 15
+  _wk(17, [188, 40, 210]),              // Aug 16 to 22, a light week
+  WEEK_ROWS);
+
 // Runs INSIDE the page. Drives the REAL week body (_tlRenderWeekBody, Me
 // scope, week pick) rather than assembling the chart by hand, so the picture
 // under review and the assertions are both looking at what actually ships.
@@ -98,4 +119,22 @@ async function mountWeekBars(page) {
   await page.waitForTimeout(200);
 }
 
-module.exports = { WEEK_ROWS, WEEK_DAYS, renderWeekRail, mountWeekBars };
+// The MONTH level, driven through the real renderTimeLog rather than injected,
+// so the picker, the weekly bars and the week accordions are the app's own.
+async function mountMonth(page) {
+  await page.evaluate((rows) => {
+    try { S.bizTz = 'America/Chicago'; } catch (_e) {}
+    // Seed the underlying store the page reads, not the DOM: this level is
+    // built by renderTimeLog itself and there is nothing to inject into.
+    // personUid null is an owner-logged row, which is what isMine() lets
+    // through in Me scope; 'me' is nobody's uid and got filtered out, which is
+    // how the first attempt at this produced an empty month.
+    window._timeLogRows = async () => rows.map(r => ({ ...r, personUid: null }));
+    if (typeof goPg === 'function') goPg('pg-timelog');
+  }, MONTH_ROWS);
+  await page.waitForTimeout(200);
+  await page.evaluate(() => { setTimeLogYear(2026); });
+  await page.waitForTimeout(500);
+}
+
+module.exports = { WEEK_ROWS, WEEK_DAYS, MONTH_ROWS, renderWeekRail, mountWeekBars, mountMonth };

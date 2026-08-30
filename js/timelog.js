@@ -1206,39 +1206,45 @@ function _tlBarCeiling(dayMins){
   // against the ceiling, without banding empty space across the whole chart.
   return Math.max(Math.round(max*1.06),_TL_BAR_FLOOR);
 }
-function _tlWeekBarsHtml(weekRows,days,cacheKey){
+// ONE bar chart, two levels (§7.3). A month drawn as weekly bars and a week
+// drawn as daily bars are the same picture with a different bucket on the x
+// axis, so they are the same function: hand it groups, get the chart. Building
+// a second one for the month is exactly how the split bar and Crew Cost ended
+// up disagreeing about what a minute was.
+//
+// groups: [{ label, sub, rows, onclick, aria }]
+// opts:   { guideMin, guideLabel, share }
+function _tlBarsHtml(groups,opts){
   const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
-  const list=(Array.isArray(weekRows)?weekRows:[]).filter(r=>r&&typeof r==='object');
-  const dayList=Array.isArray(days)?days:[];
-  if(!list.length||!dayList.length)return '';
-  const byDay={};
-  dayList.forEach(d=>{byDay[d]=[];});
-  list.forEach(r=>{if(byDay[r.date])byDay[r.date].push(r);});
-  const folds=dayList.map(d=>_tlBucketFold(byDay[d]));
+  const list=(Array.isArray(groups)?groups:[]).filter(g=>g&&typeof g==='object');
+  if(!list.length)return '';
+  const o=opts||{};
+  const folds=list.map(g=>_tlBucketFold(g.rows));
+  if(!folds.some(f=>f.min>0))return '';
   const ceil=_tlBarCeiling(folds.map(f=>f.min));
-  const guide=_TL_BAR_GUIDE_MIN<=ceil
-    ?'<span class="tl-wbar-guide" style="bottom:'+(_TL_BAR_GUIDE_MIN/ceil*100).toFixed(2)+'%">'+
-       '<b>8h</b></span>'
+  const gMin=Number(o.guideMin)||0;
+  const guide=(gMin>0&&gMin<=ceil)
+    ?'<span class="tl-wbar-guide" style="bottom:'+(gMin/ceil*100).toFixed(2)+'%">'+
+       '<b>'+escHtml(String(o.guideLabel||''))+'</b></span>'
     :'';
   // The guide is drawn OVER the bars, not behind them. Behind, it vanished
   // under every column tall enough to matter, which is precisely the set of
-  // days it exists to flag.
-  const cols=dayList.map((d,i)=>{
-    const rows=byDay[d]||[];
+  // columns it exists to flag.
+  const cols=list.map((g,i)=>{
+    const rows=Array.isArray(g.rows)?g.rows:[];
     const e=folds[i];
     const gapMin=rows.filter(r=>_tlRailKind(r)==='gap').reduce((s,r)=>s+(r.minutes||0),0);
     const h=Math.min(100,e.min/ceil*100);
     // Bottom-up, in _TL_BUCKETS order, so the same colour sits in the same
-    // place in every column and the stack can be compared across days.
+    // place in every column and the stack can be compared across columns.
     const segs=_TL_BUCKETS.filter(b=>(e[b.k]||0)>0).map(b=>
       '<i class="tl-wbar-seg" style="flex:'+(e[b.k]||0)+' 0 auto;background:'+b.c+'" '+
       'title="'+escHtml(b.label+' '+fm(e[b.k]))+'"></i>').reverse().join('');
-    const dow=(typeof _tlDayShort==='function'?_tlDayShort(d):d).slice(0,1);
-    const aria=(typeof _tlDayFullLabel==='function'?_tlDayFullLabel(d):d)+', '+
+    const aria=(g.aria||g.label||'')+', '+
       (e.min?fm(e.min):'nothing logged')+(gapMin?', '+fm(gapMin)+' unaccounted':'');
     // The badge rides just above the TOP OF THE BAR, not at the top of the
-    // column: parked at the ceiling it floated in space over a short day and
-    // read as belonging to nothing.
+    // column: parked at the ceiling it floated in space over a short column
+    // and read as belonging to nothing.
     const amt=_tlBarAmtParts(e.min);
     const q=gapMin
       ?'<i class="tl-wbar-q" style="bottom:calc('+h.toFixed(2)+'% + 3px)" '+
@@ -1246,26 +1252,39 @@ function _tlWeekBarsHtml(weekRows,days,cacheKey){
       :'';
     return '<li class="tl-wbar-col'+(e.min?'':' tl-wbar-none')+'">'+
       '<button type="button" class="tl-wbar-hit" aria-label="'+escHtml(aria)+'" '+
-        'onclick="setTimeLogDayPick(\''+escHtml(String(cacheKey))+'\',\''+i+'\')">'+
+        'onclick="'+escHtml(String(g.onclick||''))+'">'+
         '<span class="tl-wbar-plot">'+q+
           '<span class="tl-wbar-stack" style="height:'+h.toFixed(2)+'%">'+segs+'</span>'+
         '</span>'+
-        // The weekday letter only. The date number was a third line of type
-        // under a 46px column saying what the picker chips and the week label
-        // above already say twice.
-        '<span class="tl-wbar-dow">'+escHtml(dow)+'</span>'+
+        '<span class="tl-wbar-dow">'+escHtml(String(g.label||''))+'</span>'+
         // The hours are TEXT under every column, so the comparison the chart
-        // makes by height is also there in words (1.4.1), and a day that is
-        // simply short is never mistaken for a day that failed to record.
+        // makes by height is also there in words (1.4.1), and a column that is
+        // simply short is never mistaken for one that failed to record.
         '<span class="tl-wbar-amt">'+escHtml(e.min?amt.top:'—')+'</span>'+
         // ALWAYS emitted, empty or not. A conditional span made columns with
-        // no minutes part one row shorter, so the seven bars stopped sharing a
+        // no minutes part one row shorter, so the bars stopped sharing a
         // baseline. Same reason the height is fixed in CSS rather than left to
         // the line box.
         '<span class="tl-wbar-sub">'+escHtml(amt.sub)+'</span>'+
       '</button>'+
     '</li>';
   }).join('');
+  return '<div class="tl-wbar-wrap">'+
+    '<div class="tl-wbar-plotarea">'+guide+'</div>'+
+    '<ol class="tl-wbar" style="grid-template-columns:repeat('+list.length+',minmax(0,1fr))">'+
+      cols+
+    '</ol>'+
+    (o.share||'')+
+  '</div>';
+}
+// A WEEK: seven days, guided at 8 hours.
+function _tlWeekBarsHtml(weekRows,days,cacheKey){
+  const list=(Array.isArray(weekRows)?weekRows:[]).filter(r=>r&&typeof r==='object');
+  const dayList=Array.isArray(days)?days:[];
+  if(!list.length||!dayList.length)return '';
+  const byDay={};
+  dayList.forEach(d=>{byDay[d]=[];});
+  list.forEach(r=>{if(byDay[r.date])byDay[r.date].push(r);});
   // Share sits ON the week it sends, not at the bottom of the page, because
   // the page-level button has always meant "this calendar week" and this one
   // means "the week you are looking at." Two different things, so two
@@ -1273,11 +1292,138 @@ function _tlWeekBarsHtml(weekRows,days,cacheKey){
   const share='<button type="button" class="tl-wbar-share" '+
     'onclick="_tlShareWeekAt(\''+escHtml(String(cacheKey))+'\')">'+
     (typeof svgIcon==='function'?svgIcon('⬆',{size:12}):'')+' Send this week</button>';
-  return '<div class="tl-wbar-wrap">'+
-    '<div class="tl-wbar-plotarea">'+guide+'</div>'+
-    '<ol class="tl-wbar">'+cols+'</ol>'+
-    share+
-  '</div>';
+  return _tlBarsHtml(dayList.map((d,i)=>({
+    label:(typeof _tlDayShort==='function'?_tlDayShort(d):d).slice(0,1),
+    aria:(typeof _tlDayFullLabel==='function'?_tlDayFullLabel(d):d),
+    rows:byDay[d]||[],
+    onclick:'setTimeLogDayPick(\''+String(cacheKey)+'\',\''+i+'\')'
+  })),{guideMin:_TL_BAR_GUIDE_MIN,guideLabel:'8h',share});
+}
+// A MONTH: one bar per week, guided at 40 hours.
+//
+// 40 is the line that matters at this zoom for the same reason 8 is at the
+// week's: it is the number that changes what somebody does next (overtime),
+// and a chart scaled only to its own tallest week would make every month look
+// normal. The weeks read oldest to newest left to right, because that is the
+// direction a month runs and the eye is being asked to see a trend.
+const _TL_MONTH_GUIDE_MIN=40*60;
+function _tlMonthBarsHtml(monthRows,mo,scope){
+  // ME ONLY, the same split the week already makes. Folding a whole crew into
+  // one bar per week hides who did what, which is the single thing the
+  // per-person cards exist to show, so Team keeps the cards and skips the
+  // chart rather than getting a prettier version of a worse answer.
+  if(scope==='team')return '';
+  const list=(Array.isArray(monthRows)?monthRows:[]).filter(r=>r&&typeof r==='object');
+  if(!list.length)return '';
+  const byWeek={};
+  list.forEach(r=>{const wk=_tlWeekKey(r.date)||'';if(wk)(byWeek[wk]||(byWeek[wk]=[])).push(r);});
+  const weeks=Object.keys(byWeek).sort();
+  if(!weeks.length)return '';
+  const share='<button type="button" class="tl-wbar-share" '+
+    'onclick="_tlShareMonth(\''+escHtml(String(mo))+'\')">'+
+    (typeof svgIcon==='function'?svgIcon('⬆',{size:12}):'')+' Send this month</button>';
+  return _tlBarsHtml(weeks.map(wk=>({
+    // "Aug 23" reads as the week it starts, which is how a contractor names a
+    // week out loud. The full label is on the accordion this scrolls to.
+    label:_tlWeekShortLabel(wk),
+    aria:(typeof _tlWeekLabel==='function'?_tlWeekLabel(wk):wk),
+    rows:byWeek[wk],
+    onclick:'_tlOpenWeek(\''+String(mo)+'\',\''+String(wk)+'\')'
+  })),{guideMin:_TL_MONTH_GUIDE_MIN,guideLabel:'40h',share});
+}
+// "8/23" for a weekly column: short enough for six columns on a 320px phone,
+// and unambiguous because the month picker above already names the month.
+function _tlWeekShortLabel(wk){
+  const p=String(wk||'').split('-');
+  if(p.length<3)return String(wk||'');
+  return String(Number(p[1]))+'/'+String(Number(p[2]));
+}
+// ── The month level: pick a month, see its weeks ───────────────────────────
+// Owner, 2026-08-30: "we also need a monthly picker that shows weekly bars and
+// fills the page then a way to pick previous months inside of the year we have
+// open."
+//
+// This REPLACES the month accordion list rather than sitting on top of it. A
+// list of twelve collapsed months and a month picker are two navigations for
+// one job, and every call he has made this session has been to cut the second
+// one. So the year now opens on a month, the month is a chart, and the weeks
+// of that month are the accordions underneath it.
+//
+// The picker is the same .tl-chip row the day picker uses (§7.3), not a new
+// control that happens to look similar. A month with nothing logged is still
+// shown, disabled: which months a year HAS is information, and a gap in the
+// row says "nothing that month" better than a missing chip does.
+let _tlMonthSel=null;
+function setTimeLogMonth(mo){
+  if(!/^\d{4}-\d{2}$/.test(String(mo||'')))return;
+  _tlMonthSel=mo;
+  renderTimeLog();
+}
+// Scroll the week open inside the month, from its bar. The bar is the map and
+// the accordion is the detail, same relationship the week's bars have with the
+// day rail.
+function _tlOpenWeek(mo,wk){
+  const wkId=String(wk||'').replace(/[^0-9]/g,'')||'x';
+  const el=document.getElementById('bk-tl-wk-'+mo+'-'+wkId);
+  if(!el)return;
+  if(!el.classList.contains('open')&&typeof _bkTogWeek==='function')_bkTogWeek('tl',mo,wkId);
+  if(typeof el.scrollIntoView==='function')el.scrollIntoView({behavior:'smooth',block:'start'});
+}
+// Twelve chips never fit a phone, so the row scrolls; an active chip parked
+// off the right edge is the same as having no picker at all. Deferred a frame
+// because the row does not exist until innerHTML lands.
+function _tlScrollMonthIntoView(){
+  setTimeout(()=>{
+    try{
+      const c=document.querySelector('.tl-mpicker .tl-chip.active');
+      if(c&&typeof c.scrollIntoView==='function')
+        c.scrollIntoView({inline:'center',block:'nearest'});
+    }catch(_e){}
+  },0);
+}
+function _tlMonthPickerHtml(year,byMonth,sel){
+  const names=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return '<div class="tl-picker tl-mpicker">'+names.map((n,i)=>{
+    const mo=year+'-'+String(i+1).padStart(2,'0');
+    const has=!!(byMonth[mo]&&byMonth[mo].length);
+    return '<button type="button" class="tl-chip'+(mo===sel?' active':'')+(has?'':' tl-chip-off')+'"'+
+      (has?'':' disabled aria-disabled="true"')+
+      ' aria-label="'+escHtml(n+' '+year+(has?'':', nothing logged'))+'"'+
+      ' onclick="setTimeLogMonth(\''+mo+'\')">'+n+
+      (has?'<span class="tl-dot"></span>':'')+
+    '</button>';
+  }).join('')+'</div>';
+}
+// The month as text, same shape and the same builder family as the week's
+// (§7.3): one line per week, the split, and the total.
+function _tlMonthShareText(rows,mo){
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object');
+  const byWeek={};
+  list.forEach(r=>{const wk=_tlWeekKey(r.date)||'';if(wk)(byWeek[wk]||(byWeek[wk]=[])).push(r);});
+  const lines=Object.keys(byWeek).sort().map(wk=>{
+    const min=_tlPaidMin(byWeek[wk]);
+    if(!min)return '';
+    const gap=byWeek[wk].filter(r=>_tlRailKind(r)==='gap').reduce((s,r)=>s+(r.minutes||0),0);
+    return (typeof _tlWeekLabel==='function'?String(_tlWeekLabel(wk)).replace(/^Week of /,'Wk '):wk)+
+      ': '+fm(min)+(gap?' ('+fm(gap)+' unaccounted)':'');
+  }).filter(Boolean);
+  const e=_tlBucketFold(list);
+  const split=_TL_BUCKETS.filter(b=>(e[b.k]||0)>0).map(b=>b.label+' '+fm(e[b.k])).join(', ');
+  const out=['Hours, '+(typeof _bkMonthLabel==='function'?_bkMonthLabel(mo):String(mo)),''];
+  if(lines.length)out.push(lines.join('\n'),'');
+  out.push('Total: '+(fm(e.min)||'0m'));
+  if(split)out.push(split);
+  return out.join('\n');
+}
+async function _tlShareMonth(mo){
+  const rows=(_tlLastRows||[]).filter(r=>r&&String(r.date||'').slice(0,7)===mo);
+  if(!rows.length){
+    typeof showToast==='function'&&showToast('No hours logged that month yet','📋');return;
+  }
+  const text=_tlMonthShareText(rows,mo);
+  if(typeof pwaShare==='function')await pwaShare({title:'Hours',text});
+  return text;
 }
 // ── A gap answered on Saturday, covered by real rows on Sunday ─────────────
 // Owner, 2026-08-30, looking at a manual row on 08/27: "then saw shop time
@@ -2201,8 +2347,17 @@ async function renderTimeLog(opts){
   const curMo=todayKey().slice(0,7);
   const curWk=_tlWeekKey(todayKey());
   _tlWeekCache={};
-  el.innerHTML='<div class="bk-months">'+months.map(mo=>{
-    const moRows=byMonth[mo];
+  // ONE month at a time (owner 2026-08-30). The picker replaced the list of
+  // twelve collapsed month accordions: two navigations for one job, and the
+  // second one was the clutter. Default to the current month when the open
+  // year has it, otherwise the latest month that actually has hours, never a
+  // blank chart on an empty month.
+  const selMo=(_tlMonthSel&&byMonth[_tlMonthSel])?_tlMonthSel
+    :(byMonth[curMo]?curMo:months[months.length-1]);
+  const pickerHtml=_tlMonthPickerHtml(yr,byMonth,selMo);
+  _tlScrollMonthIntoView();
+  el.innerHTML=pickerHtml+'<div class="bk-months">'+[selMo].map(mo=>{
+    const moRows=byMonth[mo]||[];
     const byWeek={};
     moRows.forEach(r=>{const wk=_tlWeekKey(r.date)||'unknown';(byWeek[wk]||(byWeek[wk]=[])).push(r);});
     // Newest week first within the month (owner report 2026-08-20: opening a
@@ -2212,7 +2367,9 @@ async function renderTimeLog(opts){
     // week order to match it, and newest-first here matches every other
     // Books accordion's normal convention.
     const weeks=Object.keys(byWeek).sort((a,b)=>b.localeCompare(a));
-    const moOpen=/^\d{4}-\d{2}$/.test(mo)&&mo>=curMo;
+    // The picked month is always open: it IS the page now, not one row of a
+    // list somebody still has to tap.
+    const moOpen=true;
     const moMin=_tlPaidMin(moRows);
     let moSub=weeks.length+' week'+(weeks.length!==1?'s':'');
     if(scope==='team'){
@@ -2226,7 +2383,7 @@ async function renderTimeLog(opts){
       const domId='tl-wkbody-'+mo.replace(/[^0-9]/g,'')+'-'+wkId;
       const cacheKey=mo+'|'+wk;
       _tlWeekCache[cacheKey]={mo,wk,rows:weekRows,scope,cid,selfUid,domId};
-      const wkOpen=moOpen&&wk===curWk;
+      const wkOpen=wk===curWk;
       const wkLabel=_tlWeekLabel(wk);
       const wkMin=_tlPaidMin(weekRows);
       const wkTotalHtml='<div style="font-size:12.5px;font-weight:800;color:var(--text)">'+fm(wkMin)+'</div>';
@@ -2240,14 +2397,17 @@ async function renderTimeLog(opts){
       const bodyHtml='<div id="'+domId+'">'+_tlRenderWeekBody(cacheKey)+'</div>';
       return _bkWeekAcc('tl',mo,wkId,wkLabel,wkSub,wkTotalHtml,bodyHtml,wkOpen);
     }).join('');
-    return _bkMonthAcc('tl',mo,_bkMonthLabel(mo),moSub,moTotalHtml,weeksHtml,moOpen);
+    // The month's own chart sits above its weeks: weekly bars, one per week,
+    // guided at 40 hours. Tapping a bar opens that week's accordion below.
+    const monthBars=_tlMonthBarsHtml(moRows,mo,scope);
+    const monthBarsHtml=monthBars?'<div class="tl-mbars">'+monthBars+'</div>':'';
+    return _bkMonthAcc('tl',mo,_bkMonthLabel(mo),moSub,moTotalHtml,monthBarsHtml+weeksHtml,moOpen);
   }).join('')+'</div>';
-  if(shareEl){
-    if(scope==='me'){
-      shareEl.style.display='block';
-      shareEl.innerHTML='<button onclick="_tlShareWeek()" class="btn btn-p" style="width:100%;margin-top:16px;height:48px;font-size:14px">'+svgIcon('⬆',{size:14})+' Share this week\'s hours</button>';
-    }else{
-      shareEl.style.display='none';shareEl.innerHTML='';
-    }
-  }
+  // The page-level Share button is GONE. It said "this calendar week", which
+  // on a screen that now carries Send this month and Send this week (the one
+  // you are actually looking at) was a third Send button meaning a fourth
+  // thing. _tlShareWeek stays as the function: the CSV export and any future
+  // caller still use it, and it is what the two contextual buttons were built
+  // out of. Only the button left.
+  if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
 }

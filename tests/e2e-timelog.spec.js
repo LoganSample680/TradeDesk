@@ -2780,25 +2780,38 @@ test.describe('timelog.js: exhaustive coverage', () => {
     // strictly role-based: Share is a Me-scope-only button, hidden in Team.
     // Owner defaults to Me since 2026-08-23, so this pins Team explicitly for
     // the owner half rather than leaning on a default that changed.
-    test('"Share this week\'s hours" button shows for an individual, not for the owner in Team scope', async () => {
+    // Was: '"Share this week's hours" button shows for an individual, not for
+    // the owner in Team scope'. That button is gone (2026-08-30). Once the
+    // month chart and the week chart each carried their own Send, a
+    // page-level third one that always meant "this calendar week" regardless
+    // of what was on screen was a button meaning a fourth thing.
+    //
+    // What replaced the rule it enforced: sharing rides on the thing it
+    // sends, in EITHER scope, so there is nothing left to show or hide by
+    // permission here.
+    test('sharing rides on the chart it sends, in both scopes', async () => {
       const r = await page.evaluate(async () => {
         setTimeLogYear(new Date().getFullYear());
         setTimeLogScope('team');
         await renderTimeLog();
-        const ownerVisible = document.getElementById('tl-share').style.display !== 'none' && !!document.getElementById('tl-share').innerHTML;
+        const teamPageBtn = document.getElementById('tl-share').innerHTML;
         const origIsEmployee = window._isEmployee, origEmpRecord = window._employeeRecord, origSupaUser = window._supaUser;
         window._isEmployee = true;
         window._employeeRecord = { name: 'Test Crew Member', permissions: { payroll: false } };
         window._supaUser = { id: 'emp-test-uid' };
         await renderTimeLog();
-        const empVisible = document.getElementById('tl-share').style.display !== 'none' && !!document.querySelector('#tl-share button[onclick="_tlShareWeek()"]');
+        const empPageBtn = document.getElementById('tl-share').innerHTML;
+        const empMonthBtn = !!document.querySelector('.tl-mbars .tl-wbar-share');
         window._isEmployee = origIsEmployee; window._employeeRecord = origEmpRecord; window._supaUser = origSupaUser;
         _tlScope = null; // restore auto-detection for later tests
         await renderTimeLog();
-        return { ownerVisible, empVisible };
+        return { teamPageBtn, empPageBtn, empMonthBtn, fn: typeof _tlShareWeek };
       });
-      expect(r.ownerVisible).toBe(false);
-      expect(r.empVisible).toBe(true);
+      expect(r.teamPageBtn, 'no page-level Share in Team').toBe('');
+      expect(r.empPageBtn, 'and none for an individual either').toBe('');
+      expect(r.empMonthBtn, 'Send this month is on the month it sends').toBe(true);
+      // The function stays: the contextual buttons were built out of it.
+      expect(r.fn).toBe('function');
     });
 
     // _tlLastRows is a script-top-level `let` in js/timelog.js, not a `window`
@@ -3373,7 +3386,9 @@ test.describe('timelog.js: exhaustive coverage', () => {
         // than inherited.
         setTimeLogScope('me');
         await renderTimeLog();
-        const meShare = document.getElementById('tl-share').style.display !== 'none';
+        // The page-level Share button is gone (2026-08-30); what follows scope
+        // now is the CHART, and its Send rides on it. Read that instead.
+        const meShare = !!document.querySelector('.tl-mbars .tl-wbar-share');
         // Me's week is the bars and names nobody, so whose rows are in scope
         // has to be read a day at a time, where the rail names them.
         let meHtml = document.getElementById('tl-list').innerHTML;
@@ -3391,7 +3406,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         // like every setTimeLogYear test already does.
         setTimeLogScope('team');
         await renderTimeLog();
-        const teamShare = document.getElementById('tl-share').style.display !== 'none';
+        const teamShare = !!document.querySelector('.tl-mbars .tl-wbar-share');
         const teamHtml = document.getElementById('tl-list').innerHTML;
         const scopeAfterTeam = _tlScope;
         window._isEmployee = orig.isEmp; window._employeeRecord = orig.emp; window._supaUser = orig.user;
@@ -3409,7 +3424,9 @@ test.describe('timelog.js: exhaustive coverage', () => {
           teamHasSelf: teamHtml.includes('Test Crew Member'),
         };
       });
-      expect(r.meShare).toBe(true);
+      expect(r.meShare, 'Me sees the month chart and its Send').toBe(true);
+      // Team gets the per-person cards instead of the chart, so there is no
+      // month Send there. Same split the week already has.
       expect(r.teamShare).toBe(false);
       expect(r.scopeAfterTeam).toBe('team');
       expect(r.meHasOwner).toBe(false); // Me scope: only the manager's own rows

@@ -3,7 +3,7 @@
 // component with the owner's real 08/27 geometry so the picture can be
 // reviewed before anything is deployed.
 const { test, mockAllExternal, waitForAppBoot } = require('./helpers');
-const { mountWeekBars } = require('./week-bars-fixture');
+const { mountWeekBars, mountMonth } = require('./week-bars-fixture');
 
 async function shoot(page, path) {
   await mockAllExternal(page);
@@ -15,6 +15,17 @@ async function shoot(page, path) {
 
 test.describe('week rail screenshot', () => {
   test('phone', async ({ page }) => { await shoot(page, 'week-bars-mobile.png'); });
+});
+
+// The month level: the picker, the weekly bars, and the weeks underneath.
+test.describe('month screenshot', () => {
+  test('phone', async ({ page }) => {
+    await mockAllExternal(page);
+    await page.goto('/index.html');
+    await waitForAppBoot(page);
+    await mountMonth(page);
+    await page.screenshot({ path: 'month-bars-mobile.png', fullPage: false });
+  });
 });
 
 test.describe('week rail screenshot, 320px', () => {
