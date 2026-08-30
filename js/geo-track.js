@@ -6780,15 +6780,39 @@ async function _geoRetimeToTapeSweep(){
       if(!Array.isArray(tape)||!tape.length)continue;
       const segs=_geoTapeSegments(tape,s0-_GEO_RETIME_MAX_MS,e0+_GEO_RETIME_MAX_MS);
       if(!segs.length)continue;
-      // A drive row belongs to a drive segment; everything else belongs to the
-      // standing-still one. Best overlap wins, so a row cannot be dragged onto
-      // a neighbouring segment it barely touches.
-      const want=_geoIsDriveSource(r.source)?'drive':'onsite';
       let best=null,bestOv=0;
-      for(const g of segs){
-        if(g.kind!==want)continue;
-        const ov=Math.min(g.b,e0)-Math.max(g.a,s0);
-        if(ov>bestOv){bestOv=ov;best=g;}
+      if(r.source==='place-office'){
+        // An office row's start is not a fence artifact either, and there is
+        // no tape shape that says "began desk work". Left alone.
+        continue;
+      }else if(r.source==='place-load'){
+        // LOADING IS NOT THE WHOLE TIME YOU STOOD STILL. Its start is a
+        // computed judgement (the last stretch of moving about before the
+        // wheels turn), so snapping it to the best-overlapping still segment
+        // is the wrong answer, and on 2026-08-27 it was wrong by exactly the
+        // 30-minute ceiling: a 6-minute load-out became 36 because the whole
+        // morning at the shop was one standing-still segment. The owner's own
+        // rule is narrower than that: "last few minutes from motion to cycling
+        // until drive is loading time."
+        //
+        // So the load row is re-derived by the SAME helper that creates one,
+        // _geoLoadBeforeDrive, which also means an already-stretched row heals
+        // itself on the next boot instead of needing a hand-written fix.
+        // The row's END is the driving transition and is already right, which
+        // is exactly what that helper wants as its anchor.
+        const win=_geoLoadBeforeDrive(tape,e0);
+        if(!win)continue;
+        best={a:win[0],b:win[1],kind:'onsite'};bestOv=1;
+      }else{
+        // A drive row belongs to a drive segment; everything else belongs to
+        // the standing-still one. Best overlap wins, so a row cannot be
+        // dragged onto a neighbouring segment it barely touches.
+        const want=_geoIsDriveSource(r.source)?'drive':'onsite';
+        for(const g of segs){
+          if(g.kind!==want)continue;
+          const ov=Math.min(g.b,e0)-Math.max(g.a,s0);
+          if(ov>bestOv){bestOv=ov;best=g;}
+        }
       }
       if(!best||bestOv<=0)continue;
       const dS=Math.abs(best.a-s0),dE=Math.abs(best.b-e0);

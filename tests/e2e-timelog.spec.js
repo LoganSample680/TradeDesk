@@ -4052,6 +4052,189 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.unique).toBe(r.n);
     });
 
+    // Owner 2026-08-30: a gap he answered on 08/29 was covered by a shop
+    // session the dedupe sweep restored afterwards, and the day counted the
+    // minutes twice.
+    test.describe('a gap answer is re-checked against rows that arrive later', () => {
+      test('_tlSubtractCovered returns what is genuinely left', async () => {
+        const r = await page.evaluate(() => {
+          const H = 3600000, t = (h, m) => Date.UTC(2026, 7, 27, h, m) ;
+          return {
+            none: _tlSubtractCovered(t(12, 0), t(13, 0), []).length,
+            whole: _tlSubtractCovered(t(12, 0), t(13, 0), [[t(11, 0), t(14, 0)]]).length,
+            exact: _tlSubtractCovered(t(12, 0), t(13, 0), [[t(12, 0), t(13, 0)]]).length,
+            front: _tlSubtractCovered(t(12, 0), t(13, 0), [[t(11, 0), t(12, 30)]])
+                     .map(([a, b]) => (b - a) / 60000),
+            back: _tlSubtractCovered(t(12, 0), t(13, 0), [[t(12, 30), t(14, 0)]])
+                    .map(([a, b]) => (b - a) / 60000),
+            split: _tlSubtractCovered(t(12, 0), t(13, 0), [[t(12, 20), t(12, 40)]])
+                     .map(([a, b]) => (b - a) / 60000),
+            // Sub-minute slivers are not rows.
+            sliver: _tlSubtractCovered(t(12, 0), t(13, 0), [[t(12, 0), t(12, 59.5 / 60 * 60)]]).length,
+            junk: _tlSubtractCovered(t(12, 0), t(13, 0), [null, undefined, [5, 1]]).length,
+            nullCovers: _tlSubtractCovered(t(12, 0), t(13, 0), null).length,
+          };
+        });
+        expect(r.none).toBe(1);
+        expect(r.whole, 'fully covered leaves nothing').toBe(0);
+        expect(r.exact).toBe(0);
+        expect(r.front).toEqual([30]);
+        expect(r.back).toEqual([30]);
+        expect(r.split, 'a cover in the middle leaves two pieces').toEqual([20, 20]);
+        expect(r.junk, 'malformed covers are ignored, never thrown on').toBe(1);
+        expect(r.nullCovers).toBe(1);
+      });
+
+      const seed = async (page, rows) => page.evaluate((rows) => {
+        window._tlGapTrimRan = false;
+        window.__tlPrevEntries = timeEntries.slice();
+        timeEntries.length = 0;
+        rows.forEach(r => timeEntries.push(r));
+      }, rows);
+      const restore = (page) => page.evaluate(() => {
+        timeEntries.length = 0;
+        (window.__tlPrevEntries || []).forEach(r => timeEntries.push(r));
+        window.__tlPrevEntries = null;
+      });
+      // The real 08/27 shape: the shop session and the drive that now cover it.
+      const COVERS = [
+        ['2026-08-27T17:11:06.000Z', '2026-08-27T17:48:05.000Z'],
+        ['2026-08-27T17:48:05.000Z', '2026-08-27T17:57:43.000Z'],
+      ];
+      const withSupa = (page, covers) => page.evaluate((covers) => {
+        window.__tlPrevSupa = window._supa;
+        window._supa = { from: () => ({ select: () => ({ is: () => ({ eq: () => ({
+          gte: () => ({ lte: async () => ({ data: covers.map(([a, b]) =>
+            ({ arrived_at: a, departed_at: b })), error: null }) }) }) }) }) }) };
+        window.__tlPrevUser = window._supaUser;
+        window._supaUser = { id: 'u1' };
+        // The sweep persists through the normal save path when it changes
+        // something. That path is not what these tests are about, and a stub
+        // _supa that only answers the sweep's own reads makes it log a real
+        // console error. Stubbed here so the assertions stay on the trimming.
+        window.__tlPrevSave = window.supaSaveToCloud;
+        window.__tlPrevSaveAll = window.saveAll;
+        window.supaSaveToCloud = () => {};
+        window.saveAll = () => {};
+      }, covers);
+      const unSupa = (page) => page.evaluate(() => {
+        window._supa = window.__tlPrevSupa; window._supaUser = window.__tlPrevUser;
+        window.supaSaveToCloud = window.__tlPrevSave; window.saveAll = window.__tlPrevSaveAll;
+      });
+
+      test('a fully covered answer is withdrawn', async () => {
+        await seed(page, [{ id: 5001, date: '2026-08-27', open: false, fromGap: true,
+          minutes: 36, scope_label: 'Added from unaccounted time',
+          start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
+        await withSupa(page, COVERS);
+        const r = await page.evaluate(async () => {
+          const n = await _tlTrimCoveredGapRows();
+          return { n, left: timeEntries.length };
+        });
+        await unSupa(page); await restore(page);
+        expect(r.n).toBe(1);
+        expect(r.left, 'nothing of the claim survived, so the row goes').toBe(0);
+      });
+
+      test('a partly covered answer is trimmed, never discarded', async () => {
+        await seed(page, [{ id: 5002, date: '2026-08-27', open: false, fromGap: true,
+          minutes: 90, scope_label: 'Added from unaccounted time',
+          start_time: '2026-08-27T16:30:00.000Z', end_time: '2026-08-27T18:00:00.000Z' }]);
+        await withSupa(page, COVERS);
+        const r = await page.evaluate(async () => {
+          const n = await _tlTrimCoveredGapRows();
+          const e = timeEntries[0];
+          return { n, mins: e && e.minutes, start: e && e.start_time, end: e && e.end_time,
+                   mark: e && e._gapTrimmed };
+        });
+        await unSupa(page); await restore(page);
+        expect(r.n).toBe(1);
+        // 16:30-17:11 is 41 min free; 17:57-18:00 is only 3. The longer piece wins.
+        expect(r.mins).toBe(41);
+        expect(r.start).toBe('2026-08-27T16:30:00.000Z');
+        expect(r.end).toBe('2026-08-27T17:11:06.000Z');
+        expect(r.mark).toBe('trimmed');
+      });
+
+      test('an uncovered answer is left exactly alone', async () => {
+        await seed(page, [{ id: 5003, date: '2026-08-27', open: false, fromGap: true,
+          minutes: 30, scope_label: 'Added from unaccounted time',
+          start_time: '2026-08-27T20:00:00.000Z', end_time: '2026-08-27T20:30:00.000Z' }]);
+        await withSupa(page, COVERS);
+        const r = await page.evaluate(async () => {
+          const n = await _tlTrimCoveredGapRows();
+          const e = timeEntries[0];
+          return { n, mins: e && e.minutes, start: e && e.start_time, mark: e && e._gapTrimmed };
+        });
+        await unSupa(page); await restore(page);
+        expect(r.n).toBe(0);
+        expect(r.mins).toBe(30);
+        expect(r.start).toBe('2026-08-27T20:00:00.000Z');
+        expect(r.mark).toBeUndefined();
+      });
+
+      test('a hand-typed entry is never touched, only the app’s own gap answers', async () => {
+        await seed(page, [{ id: 5004, date: '2026-08-27', open: false,
+          minutes: 36, scope_label: 'Framing, second floor',
+          start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
+        await withSupa(page, COVERS);
+        const r = await page.evaluate(async () => {
+          const n = await _tlTrimCoveredGapRows();
+          return { n, left: timeEntries.length, mins: timeEntries[0] && timeEntries[0].minutes };
+        });
+        await unSupa(page); await restore(page);
+        expect(r.n, 'a person typed this; it is not ours to trim').toBe(0);
+        expect(r.left).toBe(1);
+        expect(r.mins).toBe(36);
+      });
+
+      // The interlock: an empty read is a failed read, not an empty day.
+      test('no derived rows returned means no trimming at all', async () => {
+        await seed(page, [{ id: 5005, date: '2026-08-27', open: false, fromGap: true,
+          minutes: 36, scope_label: 'Added from unaccounted time',
+          start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
+        await withSupa(page, []);
+        const r = await page.evaluate(async () => {
+          const n = await _tlTrimCoveredGapRows();
+          return { n, left: timeEntries.length };
+        });
+        await unSupa(page); await restore(page);
+        expect(r.n, 'an empty result must never be read as "nothing happened"').toBe(0);
+        expect(r.left).toBe(1);
+      });
+
+      test('it runs once per session, and survives junk rows', async () => {
+        await seed(page, [null, { id: 5006, open: true, fromGap: true },
+          { id: 5007, date: '2026-08-27', open: false, fromGap: true, minutes: 5,
+            start_time: 'nope', end_time: 'also nope' }]);
+        await withSupa(page, COVERS);
+        const r = await page.evaluate(async () => {
+          const first = await _tlTrimCoveredGapRows();
+          const second = await _tlTrimCoveredGapRows();
+          return { first, second, left: timeEntries.length };
+        });
+        await unSupa(page); await restore(page);
+        expect(r.first).toBe(0);
+        expect(r.second, 'the guard stops a second pass').toBe(0);
+        expect(r.left).toBe(3);
+      });
+
+      test('a new gap answer is stamped so the sweep never has to guess', async () => {
+        const r = await page.evaluate(() => {
+          const before = timeEntries.length;
+          _tlAddUnaccounted('2026-08-27T21:00:00.000Z', '2026-08-27T21:30:00.000Z', 'work');
+          const e = timeEntries[timeEntries.length - 1];
+          const out = { fromGap: e.fromGap, eligible: _tlIsGapAnswer(e),
+                        typed: _tlIsGapAnswer({ scope_label: 'Framing' }) };
+          timeEntries.length = before;
+          return out;
+        });
+        expect(r.fromGap).toBe(true);
+        expect(r.eligible).toBe(true);
+        expect(r.typed).toBe(false);
+      });
+    });
+
     test('row content is escaped, never injected', async () => {
       const r = await page.evaluate(() => {
         const d = document.createElement('div');

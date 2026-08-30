@@ -1067,6 +1067,50 @@ test.describe('Wake region set for the dead app', () => {
       { ts: T(7, 49, 43), kind: 'driving' }, { ts: T(7, 59, 6), kind: 'onFoot' },
     ];
 
+    // Owner 2026-08-30, on his live 08/27 after the first roll: a 6-minute
+    // load-out had become 36. The whole morning at the shop was one
+    // standing-still segment and the sweep snapped the row to all of it, by
+    // exactly the 30-minute ceiling.
+    test('THE LOAD-OUT: the whole morning at the shop is not loading time', async ({}, ti) => {
+      const r = await run(page, {
+        tape: MORNING,
+        // The row as the first roll left it: stretched back to 07:13:54.
+        rows: [row('L1', 'place-load', iso(7, 13, 54), iso(7, 49, 43))],
+      });
+      expect(r.n, 'the stretched row is corrected, not left as it is').toBe(1);
+      // Back to the last stretch of moving about before the wheels turn,
+      // which is the cycling edge at 07:43:54, not the still segment's start.
+      expect(r.wrote[0].arrived_at).toBe(iso(7, 43, 54));
+      expect(r.wrote[0].departed_at, 'the end was already the driving edge').toBe(iso(7, 49, 43));
+      expect(r.wrote[0].minutes).toBe(6);
+    });
+
+    test('a load row already right is left alone', async () => {
+      const r = await run(page, {
+        tape: MORNING,
+        rows: [row('L2', 'place-load', iso(7, 43, 54), iso(7, 49, 43))],
+      });
+      expect(r.n).toBe(0);
+      expect(r.wrote).toEqual([]);
+    });
+
+    test('a load row with no load-out shape in the tape is left alone, never guessed at', async () => {
+      const r = await run(page, {
+        tape: [{ ts: T(7, 10, 0), kind: 'still' }, { ts: T(7, 49, 43), kind: 'driving' }],
+        rows: [row('L3', 'place-load', iso(7, 13, 54), iso(7, 49, 43))],
+      });
+      expect(r.n, 'no moving-about before the wheels means no opinion').toBe(0);
+    });
+
+    test('an office row is never re-timed: no tape shape says "began desk work"', async () => {
+      const r = await run(page, {
+        tape: MORNING,
+        rows: [row('O1', 'place-office', iso(7, 13, 54), iso(7, 49, 43))],
+      });
+      expect(r.n).toBe(0);
+      expect(r.wrote).toEqual([]);
+    });
+
     test('THE MORNING DRIVE: 3 minutes becomes the 9 it actually was', async () => {
       const r = await run(page, {
         // What the fence recorded: 07:56:28 to 07:59:25.

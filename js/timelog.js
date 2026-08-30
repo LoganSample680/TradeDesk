@@ -901,6 +901,9 @@ function _tlAddUnaccounted(startIso,endIso,kind){
     start_time:new Date(a).toISOString(),end_time:new Date(b).toISOString(),
     minutes:mins,scope_id:null,scope_label:label,
     unpaid,
+    // So the trim sweep can recognise its own rows without pattern-matching a
+    // label that copy changes will eventually move.
+    fromGap:true,
     logged_by_uid:uid,logged_by_name:name,open:false
   });
   if(typeof saveAll==='function')saveAll();
@@ -1076,6 +1079,119 @@ function _tlDayRailHtml(rows){
     .sort((a,b)=>String(a.startTime||'').localeCompare(String(b.startTime||'')));
   if(!list.length)return '';
   return '<ol class="tl-rail">'+list.map(_tlRailRow).join('')+'</ol>';
+}
+// ── A gap answered on Saturday, covered by real rows on Sunday ─────────────
+// Owner, 2026-08-30, looking at a manual row on 08/27: "then saw shop time
+// manual at 12:13 pm what's up with that?"
+//
+// He had tapped Add on what was a genuine hole at the time: a duplicate shop
+// session was clipping the real one down to five minutes, so 12:13 to 12:50
+// read as unaccounted and he answered it honestly. The dedupe sweep later
+// deleted the duplicate, the real 37-minute shop session came back whole, and
+// his 36 manual minutes were left sitting on top of it. The day counted them
+// twice.
+//
+// Nothing was wrong with the answer. What was missing is that an answer is a
+// CLAIM ON A WINDOW, and no code ever re-checked that claim against rows which
+// showed up afterwards. That matters more now than it did: the day rail asks
+// the question on every hole, with three chips, so these rows are about to
+// become common rather than rare.
+//
+// TRIMMED, NOT DELETED, and this is the whole design. If half the window is
+// now covered, the person's answer about the other half is still true and
+// still theirs. Only a claim with nothing left of it is withdrawn. The rule is
+// deliberately one-directional: this sweep can shrink or remove a gap answer,
+// never grow one and never create one, so the worst it can do is under-count
+// time the derived rows already carry.
+const _TL_GAP_LABEL_RE=/^(Added from unaccounted time|Break \(|Personal time)/;
+const _TL_GAP_MIN_KEEP_MS=60000;   // under a minute left is not worth a row
+// Only rows this app wrote from a gap are eligible. `fromGap` is stamped on
+// every new one; the label match is the fallback for the rows written before
+// the flag existed (there are real ones in production, 08/27 among them).
+function _tlIsGapAnswer(e){
+  if(!e||e.open)return false;
+  if(e.fromGap===true)return true;
+  return _TL_GAP_LABEL_RE.test(String(e.scope_label||''));
+}
+// Subtract every covered stretch from [a,b], returning what is left.
+function _tlSubtractCovered(a,b,covers){
+  let free=[[a,b]];
+  (Array.isArray(covers)?covers:[]).forEach(c=>{
+    if(!c||!(c[1]>c[0]))return;
+    const next=[];
+    free.forEach(([s,e])=>{
+      if(c[1]<=s||c[0]>=e){next.push([s,e]);return;}   // no overlap
+      if(c[0]>s)next.push([s,Math.min(c[0],e)]);
+      if(c[1]<e)next.push([Math.max(c[1],s),e]);
+    });
+    free=next;
+  });
+  return free.filter(([s,e])=>e-s>=_TL_GAP_MIN_KEEP_MS);
+}
+// Runs at boot, after the geo sweeps have settled the derived rows: their
+// answer is the input here, so this has to be last or it would trim against a
+// half-corrected day.
+async function _tlTrimCoveredGapRows(){
+  try{
+    if(window._tlGapTrimRan)return 0;
+    window._tlGapTrimRan=true;
+    if(typeof timeEntries==='undefined'||!Array.isArray(timeEntries))return 0;
+    const claims=timeEntries.filter(_tlIsGapAnswer);
+    if(!claims.length)return 0;
+    if(typeof _supa==='undefined'||!_supa||typeof _supaUser==='undefined'||!_supaUser)return 0;
+    // Every derived row that could cover a claim, over the span the claims
+    // actually occupy: one query, not one per row.
+    const starts=claims.map(e=>Date.parse(e.start_time)||0).filter(Boolean);
+    const ends=claims.map(e=>Date.parse(e.end_time)||0).filter(Boolean);
+    if(!starts.length||!ends.length)return 0;
+    const lo=new Date(Math.min.apply(null,starts)-3600000).toISOString();
+    const hi=new Date(Math.max.apply(null,ends)+3600000).toISOString();
+    const covers=[];
+    for(const tbl of ['job_time_entries','shop_time_entries']){
+      const{data,error}=await _supa.from(tbl).select('arrived_at,departed_at')
+        .is('deleted_at',null).eq('employee_user_id',_supaUser.id)
+        .gte('arrived_at',lo).lte('arrived_at',hi);
+      if(error||!Array.isArray(data))continue;
+      data.forEach(r=>{
+        const a=Date.parse(r&&r.arrived_at)||0,b=Date.parse(r&&r.departed_at)||0;
+        if(b>a)covers.push([a,b]);
+      });
+    }
+    // No derived rows came back at all: that is a failed read, not an empty
+    // day, and trimming against it would delete every answer the person ever
+    // gave. Same interlock the dwell sweep carries.
+    if(!covers.length)return 0;
+    let changed=0;
+    claims.forEach(e=>{
+      const a=Date.parse(e.start_time)||0,b=Date.parse(e.end_time)||0;
+      if(!(b>a))return;
+      const left=_tlSubtractCovered(a,b,covers);
+      if(left.length===1&&left[0][0]===a&&left[0][1]===b)return;   // untouched
+      if(!left.length){
+        e.deleted=true;e._gapTrimmed='covered';
+        changed++;
+        return;
+      }
+      // Keep the longest surviving piece. A claim broken into two by a row in
+      // the middle is one person's one answer, and splitting it into two rows
+      // would invent a second entry they never made.
+      const keep=left.slice().sort((x,y)=>(y[1]-y[0])-(x[1]-x[0]))[0];
+      e.start_time=new Date(keep[0]).toISOString();
+      e.end_time=new Date(keep[1]).toISOString();
+      e.minutes=Math.max(1,Math.round((keep[1]-keep[0])/60000));
+      e._gapTrimmed='trimmed';
+      changed++;
+    });
+    if(changed){
+      // Deleted claims leave the array the same way every other delete on this
+      // page does, so the cloud sweep carries the removal like any other.
+      for(let i=timeEntries.length-1;i>=0;i--)if(timeEntries[i]&&timeEntries[i].deleted)timeEntries.splice(i,1);
+      if(typeof saveAll==='function')saveAll();
+      if(typeof supaSaveToCloud==='function')supaSaveToCloud();
+      if(typeof renderTimeLog==='function')renderTimeLog();
+    }
+    return changed;
+  }catch(_e){return 0;}
 }
 // Still-clocked-in banner, separate from the year/month/day history below,
 // refreshed on its own 30s tick while this page is open so elapsed time keeps
