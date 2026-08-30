@@ -1197,6 +1197,48 @@ function _tlStopCount(rows){
 //
 // groups: [{ label, sub, rows, onclick, aria }]
 // opts:   { guideMin, guideLabel, share }
+// ── The first paint, and only the first ─────────────────────────────────────
+// Owner, 2026-08-30: "make the skeleton shimmer show the bars, make them load
+// themselves in a bit slower, then once loaded we don't show the skeleton
+// shimmer at all, they just load in, only want skeleton shimmer one time."
+//
+// Two faults, one sentence. The placeholder was four generic grey LINES, so
+// what it promised (a list) was not what arrived (a chart), and the swap read
+// as a change of subject rather than a load. And it reprinted on every render,
+// which is every drill tap: by then the rows are already in memory, so the
+// shimmer was measuring nothing and just flashing. It is a first-load thing
+// now, once per session. After that the bars growing out of the baseline ARE
+// the load, which is what he means by "they just load in".
+//
+// The heights are fixed and deliberately uneven. A row of equal bars reads as
+// a real chart of a boring week and you wait to see it change; an uneven one
+// reads as a placeholder. It is not random either, because a placeholder that
+// differs every time it is drawn is noise.
+const _TL_SKEL_H=[54,72,38,88,64,46,30];
+let _tlSkelShown=false;
+function _tlBarsSkelHtml(){
+  const cols=_TL_SKEL_H.map(h=>
+    '<li class="tl-wbar-col"><span class="tl-wbar-plot">'+
+      '<span class="td-skel tl-skel-bar" style="height:'+h+'%"></span></span>'+
+      '<span class="td-skel tl-skel-lbl"></span>'+
+      '<span class="td-skel tl-skel-amt"></span>'+
+    '</li>').join('');
+  // The same header shell and the same chart card the real thing lands in, so
+  // nothing jumps when it does: only the contents are swapped.
+  return '<div class="tl-drill" aria-hidden="true"><div class="tl-monav">'+
+      '<span class="td-skel tl-skel-btn"></span>'+
+      '<div class="tl-monav-mid">'+
+        '<span class="td-skel tl-skel-ttl"></span>'+
+        '<span class="td-skel tl-skel-sub"></span>'+
+      '</div>'+
+      '<span class="td-skel tl-skel-btn"></span>'+
+    '</div></div>'+
+    '<div class="tl-wbar-wrap" aria-hidden="true">'+
+      '<ol class="tl-wbar" style="grid-template-columns:repeat(7,minmax(0,1fr))">'+
+        cols+
+      '</ol>'+
+    '</div>';
+}
 function _tlBarsHtml(groups,opts){
   const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
   const list=(Array.isArray(groups)?groups:[]).filter(g=>g&&typeof g==='object');
@@ -2275,7 +2317,10 @@ async function renderTimeLog(opts){
   const totalEl=document.getElementById('tl-total');
   const shareEl=document.getElementById('tl-share');
   const toggleEl=document.getElementById('tl-scope-toggle');
-  el.innerHTML='<div style="padding:6px 2px">'+_tdSkelRows(4,12)+'</div>';
+  // Only the first time. A drill tap re-enters here with the rows already
+  // loaded, so clearing to a placeholder would blank a chart that is about to
+  // be redrawn from memory a few milliseconds later: a flash, not a load.
+  if(!_tlSkelShown)el.innerHTML=_tlBarsSkelHtml();
   let allRows;
   try{allRows=await _timeLogRows(null);}
   catch(_e){el.innerHTML='<div class="empty">Couldn\'t load time entries.</div>';return;}
@@ -2292,6 +2337,10 @@ async function renderTimeLog(opts){
   if(!(opts&&opts.noRepair)){
     try{_tlRepairAfterPaint(allRows,_gen);}catch(_e){}
   }
+  // Set as soon as the rows are in hand, not at the end: the render has
+  // several early returns after this point and every one of them is still a
+  // completed first load as far as the placeholder is concerned.
+  _tlSkelShown=true;
   const canComp=typeof _canViewComp==='function'&&_canViewComp();
   const isEmp=typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser;
   const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;

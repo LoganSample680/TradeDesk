@@ -1387,19 +1387,30 @@ body.dark .tl-wbar-guide{box-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,
    scaleY from the bottom, not a height transition: §8.5 bans animating height,
    and scaling the stack takes its segments with it, which is what a stacked
    bar growing actually looks like. */
+/* .34s, up from .22s (owner 2026-08-30: "make them load themselves in a bit
+   slower"). It is doing a different job now: the shimmer only ever runs once,
+   so on every drill after that the growth IS the load and it needs long enough
+   to be read as one. Still inside §8.4's 350ms ceiling for a single element,
+   and the sequence past that is stagger, not duration. */
 @keyframes td-bar-rise{from{transform:scaleY(0)}to{transform:scaleY(1)}}
 .tl-wbar-stack{display:flex;flex-direction:column;width:100%;overflow:hidden;
   border-radius:6px 6px 3px 3px;min-height:3px;transform-origin:bottom;
-  animation:td-bar-rise .22s cubic-bezier(.22,1,.36,1) both}
+  animation:td-bar-rise .34s cubic-bezier(.22,1,.36,1) both}
 /* Staggered left to right so the chart reads as filling in rather than
    flashing. Small enough that the last column still lands inside §8.4's
    350ms ceiling. */
-.tl-wbar-col:nth-child(2) .tl-wbar-stack{animation-delay:.022s}
-.tl-wbar-col:nth-child(3) .tl-wbar-stack{animation-delay:.044s}
-.tl-wbar-col:nth-child(4) .tl-wbar-stack{animation-delay:.066s}
-.tl-wbar-col:nth-child(5) .tl-wbar-stack{animation-delay:.088s}
-.tl-wbar-col:nth-child(6) .tl-wbar-stack{animation-delay:.11s}
-.tl-wbar-col:nth-child(7) .tl-wbar-stack{animation-delay:.132s}
+.tl-wbar-col:nth-child(2) .tl-wbar-stack{animation-delay:.04s}
+.tl-wbar-col:nth-child(3) .tl-wbar-stack{animation-delay:.08s}
+.tl-wbar-col:nth-child(4) .tl-wbar-stack{animation-delay:.12s}
+.tl-wbar-col:nth-child(5) .tl-wbar-stack{animation-delay:.16s}
+.tl-wbar-col:nth-child(6) .tl-wbar-stack{animation-delay:.2s}
+.tl-wbar-col:nth-child(7) .tl-wbar-stack{animation-delay:.24s}
+/* A month can run to six weeks and a future chart may hold more, so the ramp
+   does not stop at seven and leave the eighth column snapping in ahead of its
+   neighbours. */
+.tl-wbar-col:nth-child(8) .tl-wbar-stack{animation-delay:.28s}
+.tl-wbar-col:nth-child(9) .tl-wbar-stack{animation-delay:.32s}
+.tl-wbar-col:nth-child(n+10) .tl-wbar-stack{animation-delay:.36s}
 /* Somebody who asked their device for less motion gets the chart, not the
    show. This is vestibular, not taste. */
 @media (prefers-reduced-motion:reduce){
@@ -1415,6 +1426,16 @@ body.dark .tl-wbar-guide{box-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,
 /* The chart inside an expanded crew card. Padded off the card's own edges so
    the bars are not flush against the accordion border. */
 .tl-emp-bars{padding:8px 4px 4px}
+/* The placeholder wears the real chart's shapes: a bar on the baseline, a day
+   label under it, an hours line under that. What it promises is what arrives,
+   so the swap reads as the same object resolving rather than one thing being
+   replaced by another. */
+.tl-skel-bar{display:block;width:100%;border-radius:6px 6px 3px 3px}
+.tl-skel-lbl{display:block;height:11px;width:62%;margin:6px auto 0}
+.tl-skel-amt{display:block;height:11px;width:80%;margin:4px auto 0}
+.tl-skel-btn{display:block;width:44px;height:44px;border-radius:11px;flex-shrink:0}
+.tl-skel-ttl{display:block;height:17px;width:132px;max-width:100%;margin:0 auto}
+.tl-skel-sub{display:block;height:12px;width:74px;margin:5px auto 0}
 .tl-emp-nobars{padding:10px 2px;font-size:12px;color:var(--text3);font-weight:600}
 /* ── Why the bars look like objects instead of pictures ──
    Two different jobs, and they are not the same job.

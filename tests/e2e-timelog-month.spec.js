@@ -139,6 +139,108 @@ test.describe('month bars: the ruler and the shape', () => {
   });
 });
 
+// ── The placeholder, and why it only ever runs once ───────────────────────
+// Owner 2026-08-30: "make the skeleton shimmer show the bars ... then once
+// loaded we don't show the skeleton shimmer at all ... only want skeleton
+// shimmer one time."
+test.describe('month bars: the first paint', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockAllExternal(page);
+    await page.goto('/index.html');
+    await waitForAppBoot(page);
+  });
+  test.afterEach(async ({ page }) => { assertNoErrors(page, 'first paint'); });
+
+  test('the placeholder is bar-shaped, and wears the real chart\'s clothes', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const d = document.createElement('div');
+      d.innerHTML = _tlBarsSkelHtml();
+      const heights = [...d.querySelectorAll('.tl-skel-bar')].map(e => e.style.height);
+      return {
+        cols: d.querySelectorAll('.tl-wbar-col').length,
+        card: !!d.querySelector('.tl-wbar-wrap'),
+        plots: d.querySelectorAll('.tl-wbar-plot').length,
+        lbls: d.querySelectorAll('.tl-skel-lbl').length,
+        amts: d.querySelectorAll('.tl-skel-amt').length,
+        shimmer: d.querySelectorAll('.td-skel').length,
+        hidden: [...d.children].every(c => c.getAttribute('aria-hidden') === 'true'),
+        heights, uneven: new Set(heights).size,
+      };
+    });
+    // The old placeholder was four generic grey LINES, so what it promised was
+    // not what arrived and the swap read as a change of subject.
+    expect(r.cols).toBe(7);
+    expect(r.card).toBe(true);
+    expect(r.plots).toBe(7);
+    expect(r.lbls).toBe(7);
+    expect(r.amts).toBe(7);
+    expect(r.shimmer).toBeGreaterThan(7);
+    // A row of EQUAL bars reads as a real chart of a boring week and you sit
+    // waiting for it to change.
+    expect(r.uneven).toBe(7);
+    // It says nothing to a screen reader: it is a picture of waiting, and the
+    // real chart announces itself when it lands.
+    expect(r.hidden).toBe(true);
+  });
+
+  test('it shows on the first load and never again', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      const el = document.getElementById('tl-list');
+      const rows = [{ id: 'z1', date: '2026-08-27', startTime: '2026-08-27T13:00:00Z',
+        endTime: '2026-08-27T21:00:00Z', minutes: 480, source: 'auto',
+        rawSource: 'client', clientName: 'X', detail: 'X',
+        personName: 'Logan Sample', personUid: null }];
+      // Slow enough that a placeholder would be visible if one were drawn.
+      window._timeLogRows = () => new Promise(res => setTimeout(() => res(rows), 300));
+      try { S.bizTz = 'America/Chicago'; } catch (_e) {}
+      let hit = false;
+      const obs = new MutationObserver(() => {
+        if (el.querySelector('.td-skel')) hit = true;
+      });
+      obs.observe(el, { childList: true, subtree: true });
+      const run = async () => {
+        hit = false;
+        const p = renderTimeLog();
+        await new Promise(r2 => setTimeout(r2, 150));   // mid-load
+        const mid = hit;
+        await p;
+        await new Promise(r2 => setTimeout(r2, 100));
+        return mid;
+      };
+      _tlSkelShown = false;
+      const first = await run();
+      const second = await run();
+      const third = await run();
+      obs.disconnect();
+      return { first, second, third, flag: _tlSkelShown,
+               bars: el.querySelectorAll('.tl-wbar-col').length };
+    });
+    // Every drill tap re-enters renderTimeLog with the rows already in memory,
+    // so a placeholder there blanks a chart that is about to be redrawn a few
+    // milliseconds later. That is a flash, not a load.
+    expect(r.first, 'the first load shows it').toBe(true);
+    expect(r.second, 'the second does not').toBe(false);
+    expect(r.third, 'and neither does any after that').toBe(false);
+    expect(r.flag).toBe(true);
+    expect(r.bars, 'and the real chart is what is left on screen').toBeGreaterThan(0);
+  });
+
+  test('the grow-in is disabled for anyone who asked for less motion', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mountMonth(page);
+    const r = await page.evaluate(() => {
+      const st = document.querySelector('.tl-wbar-stack');
+      return { anim: getComputedStyle(st).animationName,
+               h: Math.round(st.getBoundingClientRect().height) };
+    });
+    // Vestibular, not taste (§8.4). The chart still has to be THERE, at full
+    // height, which is the part a naive "animation:none" on a `both`-filled
+    // keyframe gets wrong.
+    expect(r.anim).toBe('none');
+    expect(r.h).toBeGreaterThan(10);
+  });
+});
+
 test.describe('month bars: pure helpers', () => {
   test.beforeEach(async ({ page }) => {
     await mockAllExternal(page);
