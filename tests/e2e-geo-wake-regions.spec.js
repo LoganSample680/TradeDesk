@@ -1205,6 +1205,22 @@ test.describe('Wake region set for the dead app', () => {
       expect(r.wrote[0].minutes).toBe(6);
     });
 
+    // The runaway's leftovers: it had pushed this row's start 60 minutes from
+    // truth, and the same-event cap then refused the correction as "not the
+    // same event". Old damage must never outrank the tape.
+    test('a load row damaged beyond the cap still heals: the derivation is not capped', async () => {
+      const tape = [
+        { ts: T(6, 56, 7), kind: 'onFoot' }, { ts: T(6, 56, 35), kind: 'still' },
+      ].concat(MORNING);
+      const r = await run(page, {
+        tape,
+        rows: [row('L60', 'place-load', iso(6, 43, 54), iso(7, 49, 43))],   // his live 66m row
+      });
+      expect(r.n).toBe(1);
+      expect(r.wrote[0].arrived_at, 'back to the cycling edge, however far it drifted').toBe(iso(7, 43, 54));
+      expect(r.wrote[0].minutes).toBe(6);
+    });
+
     test('a load row already right is left alone', async () => {
       const r = await run(page, {
         tape: MORNING,

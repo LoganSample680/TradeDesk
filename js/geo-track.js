@@ -6783,7 +6783,7 @@ async function _geoRetimeToTapeSweep(){
       if(!Array.isArray(tape)||!tape.length)return 0;
       const segs=_geoTapeSegments(tape,winA,winB);
       if(!segs.length)return 0;
-      let best=null,bestOv=0;
+      let best=null,bestOv=0,derived=false;
       if(tbl==='job_time_entries'&&r.source==='place-office'){
         // An office row's start is not a fence artifact either, and there is
         // no tape shape that says "began desk work". Left alone.
@@ -6805,7 +6805,7 @@ async function _geoRetimeToTapeSweep(){
         // is exactly what that helper wants as its anchor.
         const win=_geoLoadBeforeDrive(tape,e0);
         if(!win)return 0;
-        best={a:win[0],b:win[1],kind:'onsite'};bestOv=1;
+        best={a:win[0],b:win[1],kind:'onsite'};bestOv=1;derived=true;
       }else{
         // A drive row belongs to a drive segment; everything else, a shop
         // dwell included, belongs to the standing-still one: an onsite
@@ -6843,7 +6843,15 @@ async function _geoRetimeToTapeSweep(){
       if(!(B>A))return 0;
       const dS=Math.abs(A-s0),dE=Math.abs(B-e0);
       if(dS<_GEO_RETIME_MIN_MS&&dE<_GEO_RETIME_MIN_MS)return 0;   // already agree
-      if(dS>_GEO_RETIME_MAX_MS||dE>_GEO_RETIME_MAX_MS)return 0;   // not the same event
+      // The same-event cap protects the OVERLAP-MATCHED path, where a big
+      // delta means the row grabbed a neighbouring segment. A DERIVED window
+      // (the load re-derivation) is anchored on the drive transition and
+      // bounded inside its own helper, so the cap has nothing to protect
+      // there. Worse, it actively preserved damage: the runaway had pushed
+      // the owner's load row 60 minutes from truth, and the cap then refused
+      // the correction as "not the same event". Old damage must never outrank
+      // the tape.
+      if(!derived&&(dS>_GEO_RETIME_MAX_MS||dE>_GEO_RETIME_MAX_MS))return 0;   // not the same event
       const mins=Math.round((B-A)/60000);
       if(mins<1)return 0;
       if(tbl==='shop_time_entries'){

@@ -1132,12 +1132,24 @@ function _tlSubtractCovered(a,b,covers){
 // answer is the input here, so this has to be last or it would trim against a
 // half-corrected day.
 async function _tlTrimCoveredGapRows(){
+  const note=(ev,x)=>{try{if(typeof _geoParkNote==='function')_geoParkNote(ev,x);}catch(_e){}};
+  // Concurrency guard (11.2), needed the moment the once-latch stopped being
+  // set up front: supaLoadFromCloud re-runs on reconnect, so two invocations
+  // can now overlap across this function's awaits, both holding the same
+  // claims. One runs, the overlap no-ops.
+  if(window._tlGapTrimBusy)return 0;
+  window._tlGapTrimBusy=true;
   try{
+    // The guard latches at the END, not here. It used to latch first, which
+    // meant one silent failure (no client yet, a dropped read, anything the
+    // catch below swallowed) killed the trim for the whole session with no
+    // trace: the exact shape of the owner's 08/27 manual row surviving a boot
+    // that healed everything around it. supaLoadFromCloud re-runs on
+    // reconnect, so an unlatched miss simply tries again.
     if(window._tlGapTrimRan)return 0;
-    window._tlGapTrimRan=true;
     if(typeof timeEntries==='undefined'||!Array.isArray(timeEntries))return 0;
     const claims=timeEntries.filter(_tlIsGapAnswer);
-    if(!claims.length)return 0;
+    if(!claims.length){window._tlGapTrimRan=true;return 0;}
     if(typeof _supa==='undefined'||!_supa||typeof _supaUser==='undefined'||!_supaUser)return 0;
     // Every derived row that could cover a claim, over the span the claims
     // actually occupy: one query, not one per row.
@@ -1159,8 +1171,9 @@ async function _tlTrimCoveredGapRows(){
     }
     // No derived rows came back at all: that is a failed read, not an empty
     // day, and trimming against it would delete every answer the person ever
-    // gave. Same interlock the dwell sweep carries.
-    if(!covers.length)return 0;
+    // gave. Same interlock the dwell sweep carries. Unlatched, so a flaky
+    // read retries on the next load instead of dying quietly.
+    if(!covers.length){note('gap-trim','no covers, retrying next load');return 0;}
     let changed=0;
     claims.forEach(e=>{
       const a=Date.parse(e.start_time)||0,b=Date.parse(e.end_time)||0;
@@ -1169,6 +1182,7 @@ async function _tlTrimCoveredGapRows(){
       if(left.length===1&&left[0][0]===a&&left[0][1]===b)return;   // untouched
       if(!left.length){
         e.deleted=true;e._gapTrimmed='covered';
+        note('gap-trim',String(e.id).slice(0,10)+' '+(e.minutes||'?')+'m withdrawn, covered');
         changed++;
         return;
       }
@@ -1180,6 +1194,7 @@ async function _tlTrimCoveredGapRows(){
       e.end_time=new Date(keep[1]).toISOString();
       e.minutes=Math.max(1,Math.round((keep[1]-keep[0])/60000));
       e._gapTrimmed='trimmed';
+      note('gap-trim',String(e.id).slice(0,10)+' trimmed to '+e.minutes+'m');
       changed++;
     });
     if(changed){
@@ -1190,8 +1205,11 @@ async function _tlTrimCoveredGapRows(){
       if(typeof supaSaveToCloud==='function')supaSaveToCloud();
       if(typeof renderTimeLog==='function')renderTimeLog();
     }
+    window._tlGapTrimRan=true;
+    note('gap-trim-done','claims='+claims.length+' changed='+changed);
     return changed;
-  }catch(_e){return 0;}
+  }catch(_e){note('gap-trim','threw: '+String(_e&&_e.message).slice(0,80));return 0;}
+  finally{window._tlGapTrimBusy=false;}
 }
 // Still-clocked-in banner, separate from the year/month/day history below,
 // refreshed on its own 30s tick while this page is open so elapsed time keeps

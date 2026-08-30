@@ -4086,7 +4086,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
       });
 
       const seed = async (page, rows) => page.evaluate((rows) => {
-        window._tlGapTrimRan = false;
+        // Latched TRUE while seeding: the boot chain can fire between a seed
+        // and the test's own call, and an unlatched trim would eat the
+        // seeded claims first (this happened; it showed as a once-in-a-run
+        // flake). Each test flips the latch off itself, immediately before
+        // its call, so nothing else can slip in.
+        window._tlGapTrimRan = true;
         window.__tlPrevEntries = timeEntries.slice();
         timeEntries.length = 0;
         rows.forEach(r => timeEntries.push(r));
@@ -4128,6 +4133,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
           start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
         await withSupa(page, COVERS);
         const r = await page.evaluate(async () => {
+          window._tlGapTrimRan = false;
           const n = await _tlTrimCoveredGapRows();
           return { n, left: timeEntries.length };
         });
@@ -4142,6 +4148,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
           start_time: '2026-08-27T16:30:00.000Z', end_time: '2026-08-27T18:00:00.000Z' }]);
         await withSupa(page, COVERS);
         const r = await page.evaluate(async () => {
+          window._tlGapTrimRan = false;
           const n = await _tlTrimCoveredGapRows();
           const e = timeEntries[0];
           return { n, mins: e && e.minutes, start: e && e.start_time, end: e && e.end_time,
@@ -4162,6 +4169,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
           start_time: '2026-08-27T20:00:00.000Z', end_time: '2026-08-27T20:30:00.000Z' }]);
         await withSupa(page, COVERS);
         const r = await page.evaluate(async () => {
+          window._tlGapTrimRan = false;
           const n = await _tlTrimCoveredGapRows();
           const e = timeEntries[0];
           return { n, mins: e && e.minutes, start: e && e.start_time, mark: e && e._gapTrimmed };
@@ -4179,6 +4187,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
           start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
         await withSupa(page, COVERS);
         const r = await page.evaluate(async () => {
+          window._tlGapTrimRan = false;
           const n = await _tlTrimCoveredGapRows();
           return { n, left: timeEntries.length, mins: timeEntries[0] && timeEntries[0].minutes };
         });
@@ -4195,11 +4204,17 @@ test.describe('timelog.js: exhaustive coverage', () => {
           start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
         await withSupa(page, []);
         const r = await page.evaluate(async () => {
+          window._tlGapTrimRan = false;
           const n = await _tlTrimCoveredGapRows();
-          return { n, left: timeEntries.length };
+          const stillArmed = window._tlGapTrimRan === false;
+          // Re-latch before this evaluate ends so the unlatched state never
+          // leaks into the gap between tests.
+          window._tlGapTrimRan = true;
+          return { n, stillArmed, left: timeEntries.length };
         });
         await unSupa(page); await restore(page);
         expect(r.n, 'an empty result must never be read as "nothing happened"').toBe(0);
+        expect(r.stillArmed, 'the interlock refuses AND stays armed to retry').toBe(true);
         expect(r.left).toBe(1);
       });
 
@@ -4209,6 +4224,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
             start_time: 'nope', end_time: 'also nope' }]);
         await withSupa(page, COVERS);
         const r = await page.evaluate(async () => {
+          window._tlGapTrimRan = false;
           const first = await _tlTrimCoveredGapRows();
           const second = await _tlTrimCoveredGapRows();
           return { first, second, left: timeEntries.length };
@@ -4217,6 +4233,56 @@ test.describe('timelog.js: exhaustive coverage', () => {
         expect(r.first).toBe(0);
         expect(r.second, 'the guard stops a second pass').toBe(0);
         expect(r.left).toBe(3);
+      });
+
+      // The guard used to latch before the work, so one swallowed failure
+      // killed the trim for the whole session with no trace: the shape of the
+      // owner's manual row surviving a boot that healed everything around it.
+      test('a failed read leaves the trim armed; the next load retries and succeeds', async () => {
+        await seed(page, [{ id: 5008, date: '2026-08-27', open: false, fromGap: true,
+          minutes: 36, scope_label: 'Added from unaccounted time',
+          start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
+        // BOTH phases in ONE evaluate. This test is the only one that
+        // deliberately holds the guard unlatched mid-test, and its first
+        // version did so across separate evaluates, leaving a gap where a
+        // stale boot-chain call could reach the trim against the restored
+        // test shim and eat the claim (surfaced as a once-in-ten flake in
+        // the eight-spec composition). One evaluate has no such gap: the
+        // busy flag covers every await inside it.
+        await withSupa(page, COVERS);
+        const r = await page.evaluate(async () => {
+          const realFrom = window._supa.from;
+          window._supa = { from: () => { const c = { select: () => c, is: () => c, eq: () => c,
+            gte: () => Promise.resolve({ data: [], error: null }) }; return c; } };
+          window._tlGapTrimRan = false;
+          const first = await _tlTrimCoveredGapRows();     // failed/empty read
+          const latchedEarly = window._tlGapTrimRan === true;
+          window._supa = { from: realFrom };               // reconnect: covers arrive
+          const n = await _tlTrimCoveredGapRows();
+          return { first, latchedEarly, n,
+                   latchedAfter: window._tlGapTrimRan === true, left: timeEntries.length };
+        });
+        await unSupa(page); await restore(page);
+        expect(r.first).toBe(0);
+        expect(r.latchedEarly, 'a miss must not latch the guard').toBe(false);
+        expect(r.n, 'the retry does the work the first pass could not').toBe(1);
+        expect(r.latchedAfter, 'success latches').toBe(true);
+        expect(r.left).toBe(0);
+      });
+
+      test('overlapping invocations: exactly one does the work (11.2)', async () => {
+        await seed(page, [{ id: 5009, date: '2026-08-27', open: false, fromGap: true,
+          minutes: 36, scope_label: 'Added from unaccounted time',
+          start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
+        await withSupa(page, COVERS);
+        const r = await page.evaluate(async () => {
+          window._tlGapTrimRan = false;
+          const results = await Promise.all([1, 2, 3, 4, 5].map(() => _tlTrimCoveredGapRows()));
+          return { total: results.reduce((a, b) => a + b, 0), left: timeEntries.length };
+        });
+        await unSupa(page); await restore(page);
+        expect(r.total, 'the busy guard lets one through; the rest no-op').toBe(1);
+        expect(r.left).toBe(0);
       });
 
       test('a new gap answer is stamped so the sweep never has to guess', async () => {
