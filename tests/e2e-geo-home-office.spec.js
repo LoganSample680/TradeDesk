@@ -1344,17 +1344,28 @@ test.describe('Home office: presence is not work', () => {
       // leg and supply visit was silently counted as on-site labour while Crew
       // Cost, reading the raw column, put them in overhead. The two reports
       // are supposed to be incapable of disagreeing.
-      const out = await page.evaluate(() => _tlEmpWeekAgg([
-        { rawSource: 'drive', detail: 'Driving', minutes: 30, personUid: 'u1', personName: 'A' },
-        { rawSource: 'place', detail: '', minutes: 10, personUid: 'u1', personName: 'A' },
-        { rawSource: 'place-load', detail: 'Loading time', minutes: 22, personUid: 'u1', personName: 'A' },
-        { rawSource: 'place-office', detail: 'Office', minutes: 8, personUid: 'u1', personName: 'A' },
-        { rawSource: 'geofence', detail: '', minutes: 60, personUid: 'u1', personName: 'A' },
-      ], 'cid').u1);
+      const out = await page.evaluate(() => {
+        const e = _tlEmpWeekAgg([
+          { rawSource: 'drive', detail: 'Driving', minutes: 30, personUid: 'u1', personName: 'A' },
+          { rawSource: 'place', detail: '', minutes: 10, personUid: 'u1', personName: 'A' },
+          { rawSource: 'place-load', detail: 'Loading time', minutes: 22, personUid: 'u1', personName: 'A' },
+          { rawSource: 'place-office', detail: 'Office', minutes: 8, personUid: 'u1', personName: 'A' },
+          { rawSource: 'geofence', detail: '', minutes: 60, personUid: 'u1', personName: 'A' },
+        ], 'cid').u1;
+        // _tlBucketTotal is a page global, so it has to be called in the page.
+        return Object.assign({}, e, { bucketTotal: _tlBucketTotal(e) });
+      });
       expect(out.driveMin).toBe(30);
-      expect(out.placeMin).toBe(40);     // 10 supply + 22 loading + 8 office, all overhead
+      // Loading left this bucket on 2026-08-30: the day rail's legend names it,
+      // and a bucket with no name of its own cannot be named. Still overhead,
+      // still never on-site, just counted under its own key now.
+      expect(out.loadMin).toBe(22);
+      expect(out.placeMin).toBe(18);     // 10 supply + 8 office
       expect(out.onsiteMin).toBe(60);    // only the real job fence
       expect(out.min).toBe(130);
+      // The split bar must still add up to every paid minute: a bucket carved
+      // out of another one is exactly how a total quietly starts losing time.
+      expect(out.bucketTotal).toBe(out.min);
     });
   });
 
