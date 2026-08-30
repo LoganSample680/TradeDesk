@@ -6933,11 +6933,11 @@ async function _geoTapeFillSweep(){
     const sinceIso=new Date(Date.now()-7*86400000).toISOString();
     // Deleted included, deliberately: see the interlock above.
     const jt=await _supa.from('job_time_entries')
-      .select('id,arrived_at,departed_at,source,dest_place,job_id,deleted_at')
+      .select('id,arrived_at,departed_at,source,dest_place,job_id,deleted_at') /* deleted-included: the fill's no-resurrection interlock reads struck rows so it can refuse to write over them; nothing here is ever displayed */
       .eq('employee_user_id',_supaUser.id).gte('arrived_at',sinceIso);
     if(jt.error||!Array.isArray(jt.data)||!jt.data.length)return 0;
     const st=await _supa.from('shop_time_entries')
-      .select('id,arrived_at,departed_at,deleted_at')
+      .select('id,arrived_at,departed_at,deleted_at') /* deleted-included: same interlock */
       .eq('employee_user_id',_supaUser.id).gte('arrived_at',sinceIso);
     const stRows=(st.error||!Array.isArray(st.data))?[]:st.data;
     const all=jt.data.map(r=>({...r,_tbl:'job'})).concat(stRows.map(r=>({...r,_tbl:'shop'})))
