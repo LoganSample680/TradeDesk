@@ -1511,13 +1511,23 @@ async function _tlShareMonth(mo){
 // member's card, rides along week to day, and is dropped on the way back up to
 // month, because the crew list is the one screen that is not about one person.
 let _tlDrill={level:'month',mo:null,wk:null,day:null,uid:null};
+// Which way the chart is about to move, and it is FOUR directions, not two.
+// The arrows move sideways and already said so; going down a level and coming
+// back up said nothing at all, so a tap that changed what the chart MEANS
+// looked exactly like a tap that changed which week it was showing. Ranking
+// the levels is what lets one line tell those apart.
+const _TL_LEVEL_RANK={month:0,week:1,day:2};
 function _tlDrillTo(level,key,dir){
-  const uid=_tlDrill.uid;
+  const uid=_tlDrill.uid,was=_tlDrill.level;
   if(level==='month')_tlDrill={level:'month',mo:key||_tlDrill.mo,wk:null,day:null,uid:null};
   else if(level==='week')_tlDrill={level:'week',mo:_tlDrill.mo,wk:key,day:null,uid:uid};
   else if(level==='day')_tlDrill={level:'day',mo:_tlDrill.mo,wk:_tlDrill.wk,day:key,uid:uid};
   else return;
-  _tlMonthDir=(dir==='fwd'||dir==='back')?dir:'';
+  const a=_TL_LEVEL_RANK[was],b=_TL_LEVEL_RANK[level];
+  // An explicit arrow direction always wins: stepping sideways is what the
+  // caller asked for even when the level happens to be the same.
+  _tlMonthDir=(dir==='fwd'||dir==='back')?dir
+    :(b>a)?'down':(b<a)?'up':'';
   renderTimeLog();
 }
 // Into one crew member's week. The ONLY way uid is ever set, so there is one
@@ -2457,7 +2467,12 @@ async function renderTimeLog(opts){
     }
     el.innerHTML=_tlDrillHeadHtml(_bkMonthLabel(selMo),fm(_tlPaidMin(teamRows)),
         teamKeys,selMo,'')+
-      '<div style="margin-top:8px">'+_tlEmpAccHtml(selMo,teamRows,cid,selfUid,selMo)+'</div>';
+      // The crew list moves too. Coming back out of one person's week is an UP
+      // like any other, and arrowing between months is a sideways like any
+      // other: without the class, the one screen you return to was the one
+      // screen that just appeared.
+      '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+
+        '" style="margin-top:8px">'+_tlEmpAccHtml(selMo,teamRows,cid,selfUid,selMo)+'</div>';
     if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
     return;
   }

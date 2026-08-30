@@ -1324,10 +1324,26 @@ body.dark .cal-cell.other{background:var(--cream)}
 /* Month change slides the chart in from the side you came from, so a back tap
    reads as going back rather than as the numbers silently changing. Entrance
    easing and duration per §8.4; transform and opacity only, never layout. */
+/* SIDEWAYS: a different week, same kind of thing. It slides, because that is
+   what moving along a row of them feels like. */
 @keyframes td-mo-back{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
 @keyframes td-mo-fwd{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
 .tl-mbars-back{animation:td-mo-back .2s cubic-bezier(.22,1,.36,1) both}
 .tl-mbars-fwd{animation:td-mo-fwd .2s cubic-bezier(.22,1,.36,1) both}
+/* DOWN AND UP: a different KIND of thing, so it must not look like sideways.
+   The drill is a zoom (a month contains its weeks, a week contains its days),
+   so down grows in from slightly small, as if the bar you tapped opened up,
+   and up pulls back from slightly large, as if you stepped away from it. That
+   direction is the whole message: without it, tapping a bar and tapping an
+   arrow produced the same motion for two things that mean nothing alike, and
+   the one that changed what the chart IS was the one saying nothing.
+   Marginally longer than the sideways .2s because it covers more ground. */
+@keyframes td-drill-down{from{opacity:0;transform:scale(.93)}to{opacity:1;transform:none}}
+@keyframes td-drill-up{from{opacity:0;transform:scale(1.05)}to{opacity:1;transform:none}}
+.tl-mbars-down{animation:td-drill-down .24s cubic-bezier(.22,1,.36,1) both;
+  transform-origin:50% 40%}
+.tl-mbars-up{animation:td-drill-up .24s cubic-bezier(.22,1,.36,1) both;
+  transform-origin:50% 40%}
 /* ── Time log: the week bars ──
    Seven columns, one big number above them (the shared employee card), and a
    guide line at 8 hours so a long day is over a LINE and not merely taller
@@ -1414,7 +1430,8 @@ body.dark .tl-wbar-guide{box-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,
 /* Somebody who asked their device for less motion gets the chart, not the
    show. This is vestibular, not taste. */
 @media (prefers-reduced-motion:reduce){
-  .tl-wbar-stack,.tl-mbars-back,.tl-mbars-fwd{animation:none}
+  .tl-wbar-stack,.tl-mbars-back,.tl-mbars-fwd,
+  .tl-mbars-down,.tl-mbars-up{animation:none}
   .tl-monav-btn{transition:none}
 }
 .tl-wbar-seg{display:block;width:100%;min-height:2px}

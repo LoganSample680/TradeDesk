@@ -241,6 +241,103 @@ test.describe('month bars: the first paint', () => {
   });
 });
 
+// ── Which way the chart moved, and why it has to be four answers ──────────
+// Owner 2026-08-30, asking about "drilling down from the home to the month
+// week day": the CSS between the levels, not the levels themselves.
+//
+// Sideways already animated. Down and up did not, so tapping a bar (which
+// changes what the chart IS) looked exactly like tapping an arrow (which only
+// changes which week it shows), and the more significant of the two was the
+// one saying nothing.
+test.describe('month bars: moving between levels', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockAllExternal(page);
+    await page.goto('/index.html');
+    await waitForAppBoot(page);
+    await mountMonth(page);
+  });
+  test.afterEach(async ({ page }) => { assertNoErrors(page, 'level motion'); });
+
+  const dirOf = () => document.querySelector('.tl-drill-body').className;
+
+  test('down, up and sideways are three different moves', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      const cls = () => (document.querySelector('.tl-drill-body') || {}).className || '';
+      const wait = () => new Promise(r2 => setTimeout(r2, 120));
+      const out = {};
+      _tlDrillTo('week', '2026-08-23'); await wait(); out.down = cls();
+      _tlDrillTo('day', '2026-08-27');  await wait(); out.down2 = cls();
+      _tlDrillUp();                      await wait(); out.up = cls();
+      _tlDrillUp();                      await wait(); out.up2 = cls();
+      _tlDrillStep(1, _tlLastRows);      await wait(); out.fwd = cls();
+      _tlDrillStep(-1, _tlLastRows);     await wait(); out.back = cls();
+      return out;
+    });
+    expect(r.down).toContain('tl-mbars-down');
+    expect(r.down2).toContain('tl-mbars-down');
+    expect(r.up).toContain('tl-mbars-up');
+    expect(r.up2).toContain('tl-mbars-up');
+    // An explicit arrow direction still wins, which is the case that would
+    // otherwise regress silently: an arrow keeps you on the same level, so a
+    // level comparison alone would call it neither.
+    expect(r.fwd).toContain('tl-mbars-fwd');
+    expect(r.fwd).not.toContain('tl-mbars-down');
+    expect(r.back).toContain('tl-mbars-back');
+  });
+
+  test('the move is a real animation, and it is a zoom, not a slide', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      _tlDrillTo('week', '2026-08-23');
+      await new Promise(r2 => setTimeout(r2, 30));
+      const body = document.querySelector('.tl-drill-body');
+      const anims = body.getAnimations().map(a => a.animationName ||
+        (a.effect && a.effect.getKeyframes && 'kf'));
+      const cs = getComputedStyle(body);
+      return { names: anims, name: cs.animationName, dur: cs.animationDuration,
+               origin: cs.transformOrigin };
+    });
+    // A slide here would say "another one of the same kind", which is exactly
+    // the wrong message for a tap that went a level deeper.
+    expect(r.name).toBe('td-drill-down');
+    expect(parseFloat(r.dur)).toBeGreaterThan(0.15);
+    expect(parseFloat(r.dur)).toBeLessThanOrEqual(0.35);   // §8.4 ceiling
+    expect(r.names.length).toBeGreaterThan(0);
+  });
+
+  test('the crew list moves too, it is not the one screen that just appears', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      const wait = () => new Promise(r2 => setTimeout(r2, 150));
+      window._canViewComp = () => true;
+      setTimeLogScope('team'); await wait();
+      const body = document.querySelector('.tl-drill-body');
+      return { there: !!body, cls: body ? body.className : '',
+               cards: document.querySelectorAll('.bk-week').length };
+    });
+    // The Team accordion used to render into a bare div, so coming back out of
+    // one person's week landed on the only screen in the drill that did not
+    // move at all.
+    expect(r.there).toBe(true);
+    expect(r.cls).toContain('tl-drill-body');
+  });
+
+  test('someone who asked for less motion gets none of it', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const r = await page.evaluate(async () => {
+      _tlDrillTo('week', '2026-08-23');
+      await new Promise(r2 => setTimeout(r2, 80));
+      const body = document.querySelector('.tl-drill-body');
+      return { anim: getComputedStyle(body).animationName,
+               op: getComputedStyle(body).opacity,
+               h: Math.round(body.getBoundingClientRect().height) };
+    });
+    // And still SEES it: a `both`-filled keyframe turned off carelessly leaves
+    // the thing at opacity 0, which is worse than the animation was.
+    expect(r.anim).toBe('none');
+    expect(parseFloat(r.op)).toBe(1);
+    expect(r.h).toBeGreaterThan(10);
+  });
+});
+
 test.describe('month bars: pure helpers', () => {
   test.beforeEach(async ({ page }) => {
     await mockAllExternal(page);
