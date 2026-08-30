@@ -2064,21 +2064,25 @@ test.describe('timelog.js: exhaustive coverage', () => {
     test('a drive-sourced row gets the amber Driving badge and left-border accent', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = false;
-        return _tlRow({ id: 'a2', rawId: 2, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'DEV A shop', addr: '', jobName: '', detail: 'Driving', minutes: 6 });
+        // detail comes from _tlSourceLabel, never a hand-typed word. Typing
+        // 'Driving' here is what let the 2026-08-29 rename break the badge
+        // without a single red shard: the app had stopped producing that
+        // string and this test was still handing it in (CLAUDE.md 10.4).
+        return _tlRow({ id: 'a2', rawId: 2, source: 'auto', rawSource: 'drive', personName: 'Crew A', personUid: 'u1', clientName: 'DEV A shop', addr: '', jobName: '', detail: _tlSourceLabel('drive'), minutes: 6 });
       });
       // #9F5B00 is the SAME amber the Team split bar already uses for drive
       // time (_tlWeekOwnerHtml), reused rather than invented (§7.3).
       expect(r).toContain('#9F5B00');
       expect(r).toContain('Driving');
       expect(r).toContain('border-left:3px solid #9F5B00');
-      // The word "Driving" is not repeated in plain text next to the badge.
+      // The badge word is not repeated in plain text next to the badge.
       expect((r.match(/Driving/g) || []).length).toBe(1);
     });
 
     test('a drive-rider/personal-vehicle suffix still reads as a driving row (badge, not plain text)', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = false;
-        return _tlRow({ id: 'a3', rawId: 3, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'Riverside Remodel', addr: '', jobName: '', detail: 'Driving (rider)', minutes: 10 });
+        return _tlRow({ id: 'a3', rawId: 3, source: 'auto', rawSource: 'drive-rider', personName: 'Crew A', personUid: 'u1', clientName: 'Riverside Remodel', addr: '', jobName: '', detail: _tlSourceLabel('drive-rider'), minutes: 10 });
       });
       expect(r).toContain('#9F5B00');
       expect(r).toContain('border-left:3px solid #9F5B00');
@@ -2094,7 +2098,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window._isEmployee = false;
         window.__origMileage = mileage.slice(); mileage.length = 0;
         mileage.push({ id: 'ml-tl-1', legKey: 'tl-leg-1', from_name: 'Shop', to_name: 'John Doe' });
-        const html = _tlRow({ id: 'a5', rawId: 5, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'John Doe', addr: '', jobName: '', detail: 'Driving', minutes: 6, clientKey: 'tl-leg-1' });
+        const html = _tlRow({ id: 'a5', rawId: 5, source: 'auto', rawSource: 'drive', personName: 'Crew A', personUid: 'u1', clientName: 'John Doe', addr: '', jobName: '', detail: _tlSourceLabel('drive'), minutes: 6, clientKey: 'tl-leg-1' });
         mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
         return html;
       });
@@ -2109,7 +2113,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window.__origMileage = mileage.slice(); mileage.length = 0;
         // A leg exists, but for a DIFFERENT key: nothing here matches.
         mileage.push({ id: 'ml-tl-2', legKey: 'some-other-leg', from_name: 'Shop', to_name: 'Riverside Remodel' });
-        const html = _tlRow({ id: 'a6', rawId: 6, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'DEV A shop', addr: '', jobName: '', detail: 'Driving', minutes: 6, clientKey: 'tl-leg-missing' });
+        const html = _tlRow({ id: 'a6', rawId: 6, source: 'auto', rawSource: 'drive', personName: 'Crew A', personUid: 'u1', clientName: 'DEV A shop', addr: '', jobName: '', detail: _tlSourceLabel('drive'), minutes: 6, clientKey: 'tl-leg-missing' });
         mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
         return html;
       });
@@ -2120,7 +2124,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
     test('a drive row with no client_key at all (older row, written before client_key existed) falls back cleanly', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = false;
-        return _tlRow({ id: 'a7', rawId: 7, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'DEV A shop', addr: '', jobName: '', detail: 'Driving', minutes: 6 });
+        return _tlRow({ id: 'a7', rawId: 7, source: 'auto', rawSource: 'drive', personName: 'Crew A', personUid: 'u1', clientName: 'DEV A shop', addr: '', jobName: '', detail: _tlSourceLabel('drive'), minutes: 6 });
       });
       expect(r).toContain('DEV A shop');
       expect(r).not.toContain('From:');
@@ -3688,6 +3692,275 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.removed).toBe(true);
       expect(r.retimed).toBe(true);
       expect(r.empty, 'null and empty are the same nothing').toBe(true);
+    });
+  });
+
+  // ── The day rail (owner-approved design 2026-08-29) ─────────────────────
+  test.describe('day rail', () => {
+    const ROWS = () => ([
+      { id: 'r1', source: 'auto', rawSource: 'place-load', detail: 'Loading time', minutes: 11,
+        startTime: '2026-08-27T12:43:54.000Z', endTime: '2026-08-27T12:54:00.000Z',
+        personName: 'Logan', clientName: 'Home', addr: '' },
+      { id: 'r2', source: 'auto', rawSource: 'drive', detail: 'Drive time', minutes: 9,
+        startTime: '2026-08-27T12:54:00.000Z', endTime: '2026-08-27T13:03:00.000Z',
+        personName: 'Logan', clientName: 'Marcy', addr: '', clientKey: null },
+      { id: 'r3', source: 'auto', rawSource: 'geofence', detail: '', minutes: 120,
+        startTime: '2026-08-27T13:03:00.000Z', endTime: '2026-08-27T15:03:00.000Z',
+        personName: 'Logan', clientName: 'Marcy', addr: '12 Oak St' },
+      { id: 'r4', source: 'unaccounted', detail: 'No location or motion on record',
+        unpaid: true, minutes: 40,
+        startTime: '2026-08-27T15:03:00.000Z', endTime: '2026-08-27T15:43:00.000Z',
+        personName: 'Logan', clientName: '' },
+    ]);
+
+    test('renders one <li> per row, oldest first, so the spine runs forward in time', async () => {
+      const r = await page.evaluate((rows) => {
+        const html = _tlDayRailHtml(rows.slice().reverse());   // hand it backwards on purpose
+        const d = document.createElement('div'); d.innerHTML = html;
+        return { n: d.querySelectorAll('li.tl-rail-row').length,
+                 kinds: [...d.querySelectorAll('li.tl-rail-row')].map(li => li.dataset.kind) };
+      }, ROWS());
+      expect(r.n).toBe(4);
+      expect(r.kinds).toEqual(['load', 'drive', 'job', 'gap']);
+    });
+
+    test('every row carries a spine segment, which is what makes the line continuous', async () => {
+      const r = await page.evaluate((rows) => {
+        const d = document.createElement('div'); d.innerHTML = _tlDayRailHtml(rows);
+        const lis = [...d.querySelectorAll('li.tl-rail-row')];
+        return { spines: lis.filter(li => li.querySelector('.tl-rail-spine i')).length,
+                 nodes: lis.filter(li => li.querySelector('.tl-rail-spine b')).length,
+                 railVars: lis.every(li => /--rail:/.test(li.getAttribute('style') || '')) };
+      }, ROWS());
+      expect(r.spines, 'a missing segment is a visible break in the line').toBe(4);
+      expect(r.nodes).toBe(4);
+      expect(r.railVars).toBe(true);
+    });
+
+    // WCAG 1.4.1: colour is never the only carrier.
+    test('each segment prints a word, not just a colour', async () => {
+      const words = await page.evaluate((rows) => {
+        const d = document.createElement('div'); d.innerHTML = _tlDayRailHtml(rows);
+        return [...d.querySelectorAll('.tl-rail-tag')].map(e => e.textContent.trim());
+      }, ROWS());
+      expect(words[0]).toContain('Loading time');
+      expect(words[1]).toContain('Drive time');
+      expect(words[2]).toContain('On site');
+      expect(words[3]).toContain('Between jobs');
+    });
+
+    // Owner 2026-08-29: "don't want to say nothing recorded since that instills
+    // doubt in the tracking".
+    test('a hole never says "nothing recorded", it says where you were not and asks', async () => {
+      const r = await page.evaluate((rows) => {
+        const d = document.createElement('div'); d.innerHTML = _tlDayRailHtml(rows);
+        const gap = d.querySelector('li[data-kind="gap"]');
+        return { text: gap.textContent,
+                 chips: [...gap.querySelectorAll('.tl-rail-chip')].map(c => c.textContent.trim()) };
+      }, ROWS());
+      expect(r.text).not.toMatch(/nothing recorded/i);
+      expect(r.text).toContain('Away from every job site');
+      expect(r.text).toContain('What was this?');
+      expect(r.chips.length).toBe(3);
+      expect(r.chips[0]).toBe('Work time');
+      expect(r.chips[2]).toBe('Personal');
+    });
+
+    // A gap has no measured duration, so it must not print one.
+    test('a hole shows no duration; a real segment does', async () => {
+      const r = await page.evaluate((rows) => {
+        const d = document.createElement('div'); d.innerHTML = _tlDayRailHtml(rows);
+        return { gap: !!d.querySelector('li[data-kind="gap"] .tl-rail-dur'),
+                 drive: (d.querySelector('li[data-kind="drive"] .tl-rail-dur') || {}).textContent };
+      }, ROWS());
+      expect(r.gap).toBe(false);
+      expect(r.drive).toContain('9');
+    });
+
+    test('empty and junk input render nothing rather than throwing', async () => {
+      const r = await page.evaluate(() => ({
+        empty: _tlDayRailHtml([]), nul: _tlDayRailHtml(null),
+        undef: _tlDayRailHtml(undefined), str: _tlDayRailHtml('nope'),
+        junk: _tlDayRailHtml([null, undefined]),
+      }));
+      expect(r.empty).toBe('');
+      expect(r.nul).toBe('');
+      expect(r.undef).toBe('');
+      expect(r.str).toBe('');
+      // Written first as "renders something", which was my guess and not a
+      // decision. A null row is not a segment: rendering a blank one hangs a
+      // phantom node off the spine at a time nothing happened, so it is
+      // dropped. The failure this assertion caused is what forced the choice.
+      expect(r.junk, 'null rows are dropped, never drawn, and never throw').toBe('');
+    });
+
+    test('_tlRailKind classifies off the raw column, so a label rename cannot break it', async () => {
+      const r = await page.evaluate(() => ({
+        drive: _tlRailKind({ source: 'auto', rawSource: 'drive', detail: 'anything at all' }),
+        renamed: _tlRailKind({ source: 'auto', rawSource: 'drive', detail: 'Drive time' }),
+        old: _tlRailKind({ source: 'auto', detail: 'Driving' }),
+        shop: _tlRailKind({ source: 'shop' }),
+        load: _tlRailKind({ source: 'auto', rawSource: 'place-load' }),
+        gap: _tlRailKind({ source: 'unaccounted' }),
+        off: _tlRailKind({ source: 'auto', rawSource: 'stop', unpaid: true }),
+        none: _tlRailKind(null),
+      }));
+      expect(r.drive).toBe('drive');
+      expect(r.renamed).toBe('drive');
+      expect(r.old, 'rows built without a raw column still classify by label').toBe('drive');
+      expect(r.shop).toBe('shop');
+      expect(r.load).toBe('load');
+      expect(r.gap).toBe('gap');
+      expect(r.off).toBe('off');
+      expect(r.none).toBe('job');
+    });
+
+    // Owner 2026-08-29: "Break would need a toggle if they get paid on it or
+    // not right?" FLSA shape: short rest breaks are compensable, a 30-minute
+    // meal period need not be.
+    test('break pay follows duration by default and the business setting when set', async () => {
+      const r = await page.evaluate(() => {
+        const prev = S.breakPaid;
+        S.breakPaid = 'auto';
+        const auto = { short: _tlBreakIsPaid(10), edge: _tlBreakIsPaid(20), meal: _tlBreakIsPaid(45) };
+        S.breakPaid = 'paid';   const forcedPaid = _tlBreakIsPaid(45);
+        S.breakPaid = 'unpaid'; const forcedUnpaid = _tlBreakIsPaid(5);
+        S.breakPaid = prev;
+        return { auto, forcedPaid, forcedUnpaid };
+      });
+      expect(r.auto.short).toBe(true);
+      expect(r.auto.edge).toBe(true);
+      expect(r.auto.meal).toBe(false);
+      expect(r.forcedPaid, 'an explicit policy beats the duration rule').toBe(true);
+      expect(r.forcedUnpaid).toBe(false);
+    });
+
+    test('the break chip says which way it will resolve BEFORE it is tapped', async () => {
+      const r = await page.evaluate(() => {
+        const mk = (mins, endIso) => {
+          const d = document.createElement('div');
+          d.innerHTML = _tlDayRailHtml([{ id: 'g', source: 'unaccounted', unpaid: true, minutes: mins,
+            startTime: '2026-08-27T15:03:00.000Z', endTime: endIso, personName: 'L', clientName: '' }]);
+          return [...d.querySelectorAll('.tl-rail-chip')].map(c => c.textContent.trim())[1];
+        };
+        const prev = S.breakPaid; S.breakPaid = 'auto';
+        const out = { short: mk(10, '2026-08-27T15:13:00.000Z'), meal: mk(45, '2026-08-27T15:48:00.000Z') };
+        S.breakPaid = prev;
+        return out;
+      });
+      expect(r.short).toBe('Break · paid');
+      expect(r.meal).toBe('Break · unpaid');
+    });
+
+    // The whole point of an unpaid answer: it must stay out of the paid total,
+    // through the SAME unpaid path a geofenced lunch already uses.
+    test('a personal answer writes an unpaid row that no paid total counts', async () => {
+      const r = await page.evaluate(() => {
+        const before = timeEntries.length;
+        _tlAddUnaccounted('2026-08-27T15:03:00.000Z', '2026-08-27T15:43:00.000Z', 'personal');
+        const e = timeEntries[timeEntries.length - 1];
+        const row = { unpaid: e.unpaid, minutes: e.minutes };
+        const paid = _tlPaidMin([row, { unpaid: false, minutes: 60 }]);
+        timeEntries.length = before;
+        return { added: e.unpaid, label: e.scope_label, mins: e.minutes, paid };
+      });
+      expect(r.added).toBe(true);
+      expect(r.label).toContain('Personal');
+      expect(r.mins).toBe(40);
+      expect(r.paid, 'only the 60 paid minutes count').toBe(60);
+    });
+
+    test('a work answer is still paid, and the no-arg call is unchanged', async () => {
+      const r = await page.evaluate(() => {
+        const before = timeEntries.length;
+        _tlAddUnaccounted('2026-08-27T15:03:00.000Z', '2026-08-27T15:43:00.000Z', 'work');
+        const withKind = timeEntries[timeEntries.length - 1];
+        _tlAddUnaccounted('2026-08-27T16:03:00.000Z', '2026-08-27T16:43:00.000Z');
+        const noKind = timeEntries[timeEntries.length - 1];
+        const out = { a: withKind.unpaid, b: noKind.unpaid, label: noKind.scope_label };
+        timeEntries.length = before;
+        return out;
+      });
+      expect(r.a).toBe(false);
+      expect(r.b, 'the original one-button behaviour is untouched').toBe(false);
+      expect(r.label).toBe('Added from unaccounted time');
+    });
+
+    test('a garbage span is refused rather than written', async () => {
+      const r = await page.evaluate(() => {
+        const before = timeEntries.length;
+        _tlAddUnaccounted('nope', 'also nope', 'break');
+        _tlAddUnaccounted('2026-08-27T15:43:00.000Z', '2026-08-27T15:03:00.000Z', 'break'); // backwards
+        _tlAddUnaccounted(null, null, 'work');
+        return timeEntries.length - before;
+      });
+      expect(r).toBe(0);
+    });
+
+    test('an unknown kind falls back to paid work rather than inventing a state', async () => {
+      const r = await page.evaluate(() => {
+        const before = timeEntries.length;
+        _tlAddUnaccounted('2026-08-27T15:03:00.000Z', '2026-08-27T15:43:00.000Z', 'wat');
+        const e = timeEntries[timeEntries.length - 1];
+        const out = { unpaid: e.unpaid, label: e.scope_label };
+        timeEntries.length = before;
+        return out;
+      });
+      expect(r.unpaid).toBe(false);
+      expect(r.label).toBe('Added from unaccounted time');
+    });
+
+    test('a stored unpaid manual entry reads back as unpaid, older entries as paid', async () => {
+      const r = await page.evaluate(async () => {
+        const before = timeEntries.slice();
+        timeEntries.length = 0;
+        timeEntries.push({ id: 91, date: '2026-08-27', minutes: 40, open: false,
+          start_time: '2026-08-27T15:03:00.000Z', end_time: '2026-08-27T15:43:00.000Z',
+          scope_label: 'Break (unpaid)', unpaid: true });
+        timeEntries.push({ id: 92, date: '2026-08-27', minutes: 60, open: false,
+          start_time: '2026-08-27T16:03:00.000Z', end_time: '2026-08-27T17:03:00.000Z',
+          scope_label: 'Framing' });                       // no flag: every pre-existing entry
+        const rows = await _timeLogRows();
+        const out = { a: (rows.find(x => x.rawId === 91) || {}).unpaid,
+                      b: (rows.find(x => x.rawId === 92) || {}).unpaid };
+        timeEntries.length = 0; before.forEach(x => timeEntries.push(x));
+        return out;
+      });
+      expect(r.a).toBe(true);
+      expect(r.b, 'an entry written before this feature is paid, as it always was').toBe(false);
+    });
+
+    // WCAG 2.5.8 (24px) and the grid that makes 1.4.4/1.4.10 work.
+    test('chips clear the 24px target minimum and the row uses flexible tracks', async () => {
+      const r = await page.evaluate((rows) => {
+        const host = document.createElement('div');
+        host.style.width = '320px';
+        host.innerHTML = _tlDayRailHtml(rows);
+        document.body.appendChild(host);
+        const chip = host.querySelector('.tl-rail-chip');
+        const li = host.querySelector('li.tl-rail-row');
+        const cs = getComputedStyle(li);
+        const out = { chipH: chip.getBoundingClientRect().height,
+                      cols: cs.gridTemplateColumns,
+                      overflow: host.scrollWidth <= 321 };
+        host.remove();
+        return out;
+      }, ROWS());
+      expect(r.chipH).toBeGreaterThanOrEqual(24);
+      expect(r.cols.split(' ').length, 'four tracks: time, spine, body, duration').toBe(4);
+      expect(r.overflow, 'the rail must reflow at 320px, never bleed').toBe(true);
+    });
+
+    test('row content is escaped, never injected', async () => {
+      const r = await page.evaluate(() => {
+        const d = document.createElement('div');
+        d.innerHTML = _tlDayRailHtml([{ id: 'x', source: 'auto', rawSource: 'geofence', minutes: 5,
+          startTime: '2026-08-27T13:03:00.000Z', endTime: '2026-08-27T13:08:00.000Z',
+          personName: 'L', clientName: '<img src=x onerror=alert(1)>', addr: '' }]);
+        return { imgs: d.querySelectorAll('img').length, text: d.textContent };
+      });
+      expect(r.imgs).toBe(0);
+      expect(r.text).toContain('<img');
     });
   });
 

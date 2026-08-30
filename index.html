@@ -1222,6 +1222,45 @@ body.dark .cal-cell.other{background:var(--cream)}
 .tl-split-legend{font-size:10px;color:var(--text3)}
 .tl-emp-total{font-size:13.5px;font-weight:800;font-variant-numeric:tabular-nums;flex-shrink:0;color:var(--text)}
 .tl-empty{padding:18px 4px;text-align:center;color:var(--text3);font-size:12px}
+/* ── Time log: the day rail ──
+   ONE continuous line. Each row's spine segment is height:100% of its own
+   grid row and the rows carry no vertical margin, so segments meet exactly
+   and the colour changes mid-line instead of the line restarting. Do not add
+   margin or gap between .tl-rail-row: that is what breaks the spine, and a
+   broken spine is the exact thing this replaced.
+   Tracks are minmax(0,...) so the whole thing reflows to 320px and survives
+   200% zoom (WCAG 1.4.4/1.4.10) without clipping the job name. */
+.tl-rail{list-style:none;margin:0;padding:0}
+.tl-rail-row{display:grid;grid-template-columns:minmax(0,4.4rem) 14px minmax(0,1fr) auto;
+  column-gap:8px;align-items:stretch;margin:0;padding:0}
+.tl-rail-time{font-size:11px;font-weight:700;color:var(--text3);font-variant-numeric:tabular-nums;
+  text-align:left;padding:10px 0 0;line-height:1.2;overflow-wrap:anywhere}
+.tl-rail-spine{position:relative;width:14px}
+/* The line. Full row height, no rounding, so consecutive segments abut. */
+.tl-rail-spine i{position:absolute;left:5px;top:0;bottom:0;width:4px;background:var(--rail);display:block}
+/* The boundary node, drawn ON the line at the moment the segment starts. */
+.tl-rail-spine b{position:absolute;left:2px;top:11px;width:10px;height:10px;border-radius:50%;
+  background:var(--bg-card);border:3px solid var(--rail);box-sizing:border-box;display:block}
+.tl-rail-body{min-width:0;padding:9px 0 12px}
+.tl-rail-tag{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:800;
+  letter-spacing:.02em;color:var(--rail);text-transform:uppercase}
+.tl-rail-ttl{font-size:13px;font-weight:700;color:var(--text);line-height:1.35;margin-top:2px;overflow-wrap:anywhere}
+.tl-rail-sub{font-size:11.5px;color:var(--text3);line-height:1.4;margin-top:1px;overflow-wrap:anywhere}
+.tl-rail-ask{font-size:11.5px;font-weight:700;color:var(--text2);margin-top:6px}
+.tl-rail-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px}
+/* 32px clears the 24px target minimum (WCAG 2.5.8) with room to spare, and
+   matches the .tl-chip height already used by the day picker above. */
+.tl-rail-chip{min-height:32px;padding:0 11px;border-radius:8px;border:1.5px solid var(--line-2);
+  background:var(--bg-card);color:var(--text);font-family:inherit;font-size:11.5px;font-weight:700;
+  cursor:pointer;white-space:nowrap}
+.tl-rail-chip:hover{border-color:var(--ink)}
+.tl-rail-dur{font-size:13px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;
+  padding:9px 0 0 8px;white-space:nowrap}
+.tl-rail-dur.mute{font-weight:700;color:var(--text3)}
+/* A hole is the SHAPE OF A HOLE: dashed line, nothing measured. */
+.tl-rail-row[data-kind="gap"] .tl-rail-spine i{
+  background:repeating-linear-gradient(to bottom,var(--border2) 0,var(--border2) 4px,transparent 4px,transparent 8px)}
+.tl-rail-row[data-kind="gap"] .tl-rail-spine b{border-color:var(--border2)}
 /* ── Mileage: trip rows ── */
 .mil-day-trip{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line)}
 .mil-day-trip:last-child{border-bottom:none}

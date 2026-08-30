@@ -296,6 +296,13 @@ async function _timeLogRows(sinceISO){
       personName:e.logged_by_name||((typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)'),
       personUid:e.logged_by_uid||null,
       clientName:info.clientName,addr:info.addr,jobName:info.jobName,detail:e.scope_label||'',
+      // A manual row was paid by definition until the day rail let somebody
+      // name a hole as an unpaid meal break. Reading the stored flag (absent
+      // on every entry written before this, hence false) is what keeps that
+      // one answer out of the paid totals, through the SAME unpaid path a
+      // geofenced lunch already uses (_tlPaidMin, _tlComputeOT), never a
+      // second kind of not-paid.
+      unpaid:e.unpaid===true,
       startTime:e.start_time||null,endTime:e.end_time||null
     });
   });
@@ -728,7 +735,20 @@ function _tlRow(r){
   // friendly _tlSourceLabel() text ('Driving'/'Driving (rider)'/etc for a
   // drive-sourced auto row, '' for a geofence/place row), so a driving row
   // is exactly one that starts with it.
-  const isAutoDrive=r.source==='auto'&&/^Driving/.test(r.detail||'');
+  // rawSource FIRST, label second, for the reason _tlEmpWeekAgg already
+  // learned the hard way: `detail` is the friendly label and the friendly
+  // label moves. It moved on 2026-08-29 ('Driving' -> 'Drive time') and this
+  // test, still matching the old word, silently dropped the amber badge and
+  // the amber accent off every GPS drive row on the table. CI did not catch
+  // it because the two specs covering this line hand _tlRow a hand-written
+  // detail:'Driving' instead of the string _tlSourceLabel actually returns,
+  // so they were asserting against a value the app had stopped producing.
+  // The raw column cannot drift like that. The label test stays only as the
+  // fallback for rows built without one, and now accepts either word.
+  const isAutoDrive=r.source==='auto'&&(
+    (typeof _geoIsDriveSource==='function'&&r.rawSource)
+      ?_geoIsDriveSource(r.rawSource)
+      :/^Driv(ing|e time)/.test(r.detail||''));
   // Drive rows show FROM and TO locations under Job Site (owner request
   // 2026-08-23: "Time entry drive times should show from and to locations"),
   // not just the bare destination every drive row showed before this. The
@@ -834,11 +854,41 @@ function _tlRow(r){
 // save path clocking out uses (§7.3), never a new kind of record: it must
 // edit, delete, sync and pay exactly like time he keyed in himself, because
 // that is what it is.
-function _tlAddUnaccounted(startIso,endIso){
+// Does a break of this length get paid? (owner 2026-08-29: "Break would need
+// a toggle if they get paid on it or not right?" Yes, and the honest default
+// is not a coin flip.)
+//
+// The federal rule is shaped by DURATION, not by what anyone calls it: short
+// rest breaks (29 CFR 785.18, roughly 5 to 20 minutes) are compensable and
+// count toward the workweek, while a bona fide meal period (785.19, 30
+// minutes or more with the employee fully relieved of duty) need not be.
+// So 'auto' reads the length and applies that shape. A contractor whose
+// state or handbook says otherwise sets S.breakPaid to 'paid' or 'unpaid'
+// and the length stops mattering.
+//
+// NOT legal advice, and deliberately never silent: the chip in the day rail
+// prints which way this resolved BEFORE it is tapped, so nobody discovers
+// after the fact that 45 minutes went unpaid.
+const _TL_BREAK_PAID_MAX_MIN=20;
+function _tlBreakIsPaid(mins){
+  const pol=(typeof S!=='undefined'&&S&&S.breakPaid)||'auto';
+  if(pol==='paid')return true;
+  if(pol==='unpaid')return false;
+  return (Number(mins)||0)<=_TL_BREAK_PAID_MAX_MIN;
+}
+// kind: 'work' (default, paid job time), 'break' (paid or unpaid per the
+// policy above), 'personal' (never paid). The default preserves the original
+// one-button behavior exactly, so the old Add button keeps working unchanged.
+function _tlAddUnaccounted(startIso,endIso,kind){
   const a=Date.parse(startIso),b=Date.parse(endIso);
   if(!(a>0&&b>a))return;
   if(typeof timeEntries==='undefined'||!Array.isArray(timeEntries))return;
   const mins=Math.max(1,Math.round((b-a)/60000));
+  const k=(kind==='break'||kind==='personal')?kind:'work';
+  const unpaid=k==='personal'?true:k==='break'?!_tlBreakIsPaid(mins):false;
+  const label=k==='break'?('Break'+(unpaid?' (unpaid)':' (paid)'))
+             :k==='personal'?'Personal time (unpaid)'
+             :'Added from unaccounted time';
   const uid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
   const name=uid?((typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.name)||'Crew')
                 :((typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)');
@@ -849,15 +899,148 @@ function _tlAddUnaccounted(startIso,endIso){
     // filed under. A hole that runs past midnight belongs to the day it began.
     date:(typeof _ctDateStr==='function')?_ctDateStr(new Date(a)):startIso.slice(0,10),
     start_time:new Date(a).toISOString(),end_time:new Date(b).toISOString(),
-    minutes:mins,scope_id:null,scope_label:'Added from unaccounted time',
+    minutes:mins,scope_id:null,scope_label:label,
+    unpaid,
     logged_by_uid:uid,logged_by_name:name,open:false
   });
   if(typeof saveAll==='function')saveAll();
   if(typeof supaSaveToCloud==='function')supaSaveToCloud();
-  if(typeof showToast==='function')showToast((typeof _fmtMin==='function'?_fmtMin(mins):mins+'m')+' added to the day','⏱');
+  if(typeof showToast==='function')showToast(
+    (typeof _fmtMin==='function'?_fmtMin(mins):mins+'m')+' logged as '+
+    (k==='break'?('break, '+(unpaid?'unpaid':'paid')):k==='personal'?'personal, unpaid':'work time'),'⏱');
   // The gap row is derived, so it simply stops existing on the next build:
   // the span is now covered by a real row and no hole remains to report.
   if(typeof renderTimeLog==='function')renderTimeLog();
+}
+// ── The day rail (owner-approved design 2026-08-29) ────────────────────────
+// "I like the day rail but what would a compliant day rail look like for ADA
+// compliance?" ... "Why can't the lines be one big line and unaccounted for
+// times being grey."
+//
+// One continuous spine down the day. Every row's spine segment spans that
+// row's FULL height with no margin between rows, so adjacent segments touch
+// and read as a single unbroken line whose colour changes at each boundary.
+// That is only honest because the rows already tile the day: the clock-is-the
+// -tape model closes every segment at the next transition and _tlFillUnaccounted
+// covers whatever is left, so a visible break in the line would be a bug, not
+// a gap in the work.
+//
+// ACCESSIBILITY, the part that shaped the markup rather than decorating it:
+//  - 1.4.1 colour is never the only carrier. Every segment prints an icon AND
+//    a word ("Drive time", "Break"), so the spine colour is reinforcement.
+//  - 1.4.3 / 1.4.11 measured against --bg #FFFFFF: ink 18.15:1, --text3 5.43:1,
+//    --blue 6.48:1, teal 6.59:1, amber 6.62:1, load 8.37:1. Text clears 4.5:1
+//    and the spine clears the 3:1 non-text minimum.
+//  - 1.4.4 / 1.4.10 the grid is minmax(0,...) tracks, never fixed px, so it
+//    reflows to 320px and survives 200% zoom instead of clipping. An earlier
+//    attempt used an `em` media query as the resize lever; `em` in a media
+//    query resolves against the browser's INITIAL font size, not a root we
+//    set, so that lever never fired at all. Tracks do.
+//  - 2.5.8 every chip and button is at least 24px tall (32 here).
+//  - The list is a real <ol> so a screen reader announces position in the day.
+function _tlRailKind(r){
+  if(!r)return 'job';
+  if(r.source==='unaccounted')return 'gap';
+  if(r.source==='shop')return 'shop';
+  if(r.rawSource==='place-load')return 'load';
+  if(r.rawSource==='place-office')return 'office';
+  // Same raw-column-first rule as _tlRow, and for the same reason: the
+  // friendly label is not a stable key.
+  if(r.source==='auto'&&((typeof _geoIsDriveSource==='function'&&r.rawSource)
+      ?_geoIsDriveSource(r.rawSource)
+      :/^Driv(ing|e time)/.test(r.detail||'')))return 'drive';
+  if(r.unpaid)return 'off';
+  if(r.source==='manual')return 'manual';
+  return 'job';
+}
+// Colours are REUSED from the split bar and the row badges (§7.3), never
+// invented here, so "amber means driving" holds everywhere on this page.
+const _TL_RAIL_META={
+  job:   {c:'var(--blue)',       icon:'📍', word:'On site'},
+  drive: {c:'#9F5B00',           icon:'🚗', word:'Drive time'},
+  shop:  {c:'#0E6B6B',           icon:'🔧', word:'Shop time'},
+  load:  {c:'#0E6B6B',           icon:'📦', word:'Loading time'},
+  office:{c:'#0E6B6B',           icon:'📋', word:'Office'},
+  off:   {c:'var(--text3)',      icon:'🍽', word:'Break'},
+  manual:{c:'var(--text3)',      icon:'▶',  word:'Manual'},
+  gap:   {c:'var(--border2)',    icon:'❓', word:'Between jobs'}
+};
+function _tlRailMeta(kind){return _TL_RAIL_META[kind]||_TL_RAIL_META.job;}
+// The gap row. It is the reason this rail exists in the shape it does.
+//
+// It used to say "nothing recorded", and the owner killed that wording
+// outright (2026-08-29): "don't want to say nothing recorded since that
+// instills doubt in the tracking, rather that means there was no fence or was
+// break time away from jobs." He is right, and it is not just tone. The
+// tracker did record: it recorded motion and it recorded that none of it
+// happened inside a fence. Saying "nothing" describes the app as broken when
+// what it actually knows is where you were NOT. So the row states that fact
+// and then asks the one question only the person can answer.
+function _tlRailGapBody(r){
+  const mins=r.minutes||0;
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  const brk=_tlBreakIsPaid(mins);
+  const a=escHtml(r.startTime||''),b=escHtml(r.endTime||'');
+  const chip=(k,txt)=>'<button type="button" class="tl-rail-chip" data-kind="'+k+'" '+
+    'onclick="_tlAddUnaccounted(\''+a+'\',\''+b+'\',\''+k+'\')">'+escHtml(txt)+'</button>';
+  // No title line: the tag above already reads "Between jobs" and printing it
+  // twice is the kind of duplication that makes a dense day harder to scan.
+  return '<div class="tl-rail-sub" style="margin-top:3px">Away from every job site for '+escHtml(fm(mins))+'. '+
+      'Motion was tracked, no geofence matched.</div>'+
+    '<div class="tl-rail-ask">What was this?</div>'+
+    '<div class="tl-rail-chips">'+
+      chip('work','Work time')+
+      chip('break','Break · '+(brk?'paid':'unpaid'))+
+      chip('personal','Personal')+
+    '</div>';
+}
+function _tlRailRow(r){
+  if(!r||typeof r!=='object')return '';
+  const kind=_tlRailKind(r);
+  const m=_tlRailMeta(kind);
+  const fm=typeof _fmtMin==='function'?_fmtMin:(mm=>mm+'m');
+  const isGap=kind==='gap';
+  let body;
+  if(isGap){
+    body=_tlRailGapBody(r);
+  }else{
+    const isDrive=kind==='drive';
+    const leg=isDrive&&r.clientKey&&typeof mileage!=='undefined'&&Array.isArray(mileage)
+      ?mileage.find(x=>x&&x.legKey===r.clientKey):null;
+    const ttl=leg?((leg.from_name||'—')+' → '+(leg.to_name||r.clientName||'—'))
+                 :(r.addr||r.clientName||m.word);
+    // Anything already visible in the title is dropped, not just an exact
+    // match: a drive titled "Home -> Marcy Hunter" was still printing
+    // "Marcy Hunter" underneath, which is the destination said twice.
+    const inTtl=v=>!!v&&ttl.indexOf(v)>=0;
+    const subBits=[inTtl(r.clientName)?null:r.clientName,
+                   (r.jobName&&r.jobName!==r.clientName&&!inTtl(r.jobName))?r.jobName:null].filter(Boolean);
+    body='<div class="tl-rail-ttl">'+escHtml(ttl)+'</div>'+
+         (subBits.length?'<div class="tl-rail-sub">'+escHtml(subBits.join(' · '))+'</div>':'');
+  }
+  // The word rides with the icon in every case, so the colour is never doing
+  // the work on its own (1.4.1).
+  const tag='<span class="tl-rail-tag">'+svgIcon(m.icon,{size:10})+' '+escHtml(m.word)+
+    (r.unpaid&&!isGap?' · unpaid':'')+'</span>';
+  const dur=isGap?'':'<div class="tl-rail-dur'+(r.unpaid?' mute':'')+'">'+escHtml(fm(r.minutes||0))+'</div>';
+  return '<li class="tl-rail-row" data-kind="'+kind+'" style="--rail:'+m.c+'">'+
+    '<div class="tl-rail-time"><span>'+escHtml(_tlFmtTime(r.startTime)||'—')+'</span></div>'+
+    '<div class="tl-rail-spine" aria-hidden="true"><i></i><b></b></div>'+
+    '<div class="tl-rail-body">'+tag+body+'</div>'+
+    dur+
+  '</li>';
+}
+// One day, oldest first. Chronological is not a preference here: a spine that
+// runs down the page is a picture of time passing, and time does not run
+// backwards, so the newest-first ordering the table uses would make the line
+// lie about the day it is drawing.
+function _tlDayRailHtml(rows){
+  // A null row is not a segment, and drawing a blank one would hang a phantom
+  // node off the spine at a time nothing happened. Dropped, not rendered.
+  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object')
+    .sort((a,b)=>String(a.startTime||'').localeCompare(String(b.startTime||'')));
+  if(!list.length)return '';
+  return '<ol class="tl-rail">'+list.map(_tlRailRow).join('')+'</ol>';
 }
 // Still-clocked-in banner, separate from the year/month/day history below,
 // refreshed on its own 30s tick while this page is open so elapsed time keeps
@@ -1265,7 +1448,16 @@ function _tlRenderWeekBody(cacheKey){
     return pickerHtml+scopeHdHtml+
       '<div style="margin-top:8px">'+_tlEmpAccHtml(cacheKey,scopeRows,cid,selfUid,mo)+'</div>';
   }
-  const entriesHtml=scopeRows.length?
+  // A SINGLE DAY gets the rail; a week keeps the per-day accordion table.
+  // The rail draws one continuous line down one day, so a week of them would
+  // be seven lines pretending to be one, which is exactly the thing the
+  // owner objected to about the old broken-up bars.
+  const entriesHtml=(sel!=='week'&&scopeRows.length)?
+    '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)">'+
+      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:0 2px 6px">The day</div>'+
+      _tlDayRailHtml(scopeRows)+
+    '</div>'
+   :scopeRows.length?
     '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)">'+
       '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:0 2px 6px">Entries</div>'+
       _bkRenderDays('tl',mo,entryRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,fm,
