@@ -44,6 +44,30 @@ test.describe('month bars: the ruler and the shape', () => {
     expect(r.above, '39h must sit UNDER the 40h line, not on it').toBe(true);
   });
 
+  test('the chart sits on a surface, and the guide still lands on the bars', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const wrap = document.querySelector('.tl-wbar-wrap');
+      const cs = getComputedStyle(wrap);
+      const area = document.querySelector('.tl-wbar-plotarea').getBoundingClientRect();
+      const plots = [...document.querySelectorAll('.tl-wbar-plot')]
+        .map(e => e.getBoundingClientRect());
+      return { bg: cs.backgroundColor, radius: parseFloat(cs.borderTopLeftRadius),
+               areaTop: Math.round(area.top), areaH: Math.round(area.height),
+               plotTops: plots.map(p => Math.round(p.top)),
+               plotHs: plots.map(p => Math.round(p.height)) };
+    });
+    // Owner 2026-08-30: "charts are just kind of floating with no background."
+    expect(r.bg).not.toBe('rgba(0, 0, 0, 0)');
+    expect(r.radius).toBeGreaterThan(0);
+    // And the reason that is riskier than it looks: the plot overlay is
+    // absolutely positioned, so it offsets from the wrap's PADDING box. Give
+    // the wrap padding without moving the overlay and the 40h line floats
+    // above every bar it is supposed to measure. Same y, same height, or the
+    // guide is lying.
+    r.plotTops.forEach(t => expect(Math.abs(t - r.areaTop)).toBeLessThanOrEqual(1));
+    r.plotHs.forEach(h => expect(Math.abs(h - r.areaH)).toBeLessThanOrEqual(1));
+  });
+
   test('_tlBarCeiling: the floor is a floor, and junk never becomes one', async ({ page }) => {
     const r = await page.evaluate(() => ({
       // 40h floor holds a light month down to scale.

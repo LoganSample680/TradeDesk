@@ -1193,6 +1193,10 @@ body.dark .cal-cell.other{background:var(--cream)}
 .bk-week-chev{font-size:11px;color:var(--text-3);width:14px;text-align:center;transition:transform .15s;flex-shrink:0}
 .bk-week:not(.open) .bk-week-chev{transform:rotate(-90deg)}
 .bk-week-body{border-top:1px solid var(--line);overflow:hidden;display:none;padding:2px 8px 10px 14px}
+/* An open card's body is TINTED (owner 2026-08-30). Two jobs: a white chart
+   card needs something to sit on, and the body needs to read as the content of
+   the header above it rather than as a third row in the list. */
+.bk-week.open > .bk-week-body{background:var(--bg2)}
 .bk-week.open .bk-week-body{display:block}
 /* Time Log: Me/Team toggle + the per-week day picker (owner: "need the day
    picker to change what day we're looking at") + Team-scope employee rows. */
@@ -1331,8 +1335,20 @@ body.dark .cal-cell.other{background:var(--cream)}
    _TL_BAR_H pixels of the wrap, which is exactly the height of each column's
    .tl-wbar-plot, so the guide lands on the same y as the bars measure from.
    Change one of those heights and you must change the other. */
-.tl-wbar-wrap{position:relative;margin:2px 0 0}
-.tl-wbar-plotarea{position:absolute;left:0;right:0;top:0;height:92px;pointer-events:none;z-index:3}
+/* THE CHART SITS ON SOMETHING (owner 2026-08-30: "charts are just kind of
+   floating with no background"). It is the app's own card surface, not a new
+   one: same background, same radius, same shadow token every other card on
+   every other screen uses (§7.3), so a chart reads as a panel on the grey page
+   AND inside a white crew card, which a tint could not do for both at once.
+   --tl-pad is declared here and consumed by the plot overlay below, because
+   the guide line has to land on exactly the y the columns measure from and an
+   absolutely positioned child offsets from the PADDING box. One number, two
+   readers: hard-coding it twice is how the guide drifts off the bars. */
+.tl-wbar-wrap{--tl-pad:12px;position:relative;margin:2px 0 0;
+  padding:var(--tl-pad) var(--tl-pad) 8px;
+  background:var(--bg-card);border-radius:var(--r-lg);box-shadow:var(--shadow-card)}
+.tl-wbar-plotarea{position:absolute;left:var(--tl-pad);right:var(--tl-pad);
+  top:var(--tl-pad);height:92px;pointer-events:none;z-index:3}
 /* Dark enough to read on the blue of a tall bar AND on the page behind a short
    one, with a light halo either side so it never dissolves into the bar it is
    crossing. A pale line here was invisible on exactly the long days it exists
@@ -1398,7 +1414,7 @@ body.dark .tl-wbar-guide{box-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,
   line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* The chart inside an expanded crew card. Padded off the card's own edges so
    the bars are not flush against the accordion border. */
-.tl-emp-bars{padding:10px 12px 6px}
+.tl-emp-bars{padding:8px 4px 4px}
 .tl-emp-nobars{padding:10px 2px;font-size:12px;color:var(--text3);font-weight:600}
 /* ── Why the bars look like objects instead of pictures ──
    Two different jobs, and they are not the same job.
