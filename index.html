@@ -1383,6 +1383,41 @@ body.dark .tl-wbar-guide{box-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,
   .tl-monav-btn{transition:none}
 }
 .tl-wbar-seg{display:block;width:100%;min-height:2px}
+/* ── Why the bars look like objects instead of pictures ──
+   Two different jobs, and they are not the same job.
+
+   LOOKING tappable is perceived affordance: the eye reads a top highlight and
+   a shadow underneath as a raised thing, and raised things get pressed. A flat
+   coloured region reads as a printed chart, and nobody presses a picture. The
+   depth is 1px of light and 2px of shadow, which is enough to change the
+   category and not enough to be noticed as styling.
+
+   WANTING to tap is a different mechanism: a specific missing number. A closed
+   fact ("39h 27m") answers itself and ends there. A count of things you cannot
+   see yet ("8") is an open loop, and open loops are what make a person's hand
+   move. That is the badge below, and it is why it is a number and not the
+   words "tap for details": a label tells, and telling is the thing the owner
+   has cut three times today. */
+.tl-wbar-stack{position:relative;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 1px 2px rgba(17,24,39,.18)}
+.tl-wbar-hit:hover .tl-wbar-stack{
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 2px 5px rgba(17,24,39,.26)}
+body.dark .tl-wbar-stack{
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 1px 2px rgba(0,0,0,.5)}
+body.dark .tl-wbar-hit:hover .tl-wbar-stack{
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.26),0 2px 5px rgba(0,0,0,.6)}
+/* The count of places actually stopped, printed on the bar it belongs to.
+   ABSOLUTE, not a flex item: as a flex item it would eat height out of the
+   segments and the bar would stop being an honest measurement of minutes.
+   A white pill so it reads on any bucket colour without needing a per-colour
+   rule, and aria-hidden in the markup because the button's label already says
+   "8 stops" in words. */
+.tl-wbar-n{position:absolute;left:50%;bottom:3px;transform:translateX(-50%);
+  font-style:normal;font-size:10px;font-weight:900;line-height:15px;
+  min-width:15px;height:15px;padding:0 4px;border-radius:8px;text-align:center;
+  background:rgba(255,255,255,.93);color:#111827;
+  font-variant-numeric:tabular-nums;pointer-events:none;
+  box-shadow:0 1px 1px rgba(17,24,39,.2)}
 /* The column has to LOOK pressable or the tap is a secret. The whole column
    lights up, not just the bar, so the target and the affordance are the same
    shape, and it presses on touch where there is no hover at all. */

@@ -1209,6 +1209,46 @@ function _tlBarCeiling(dayMins){
   // against the ceiling, without banding empty space across the whole chart.
   return Math.max(Math.round(max*1.06),_TL_BAR_FLOOR);
 }
+// ── Making a bar look like something you can open ──────────────────────────
+// Owner, 2026-08-30: "how do we make the bars scream click me for more info
+// without saying that? What's the psychological design aspect that makes
+// somebody click the bar wondering what it will do?"
+//
+// Two different jobs, and they need two different answers.
+//
+// LOOKING tappable is perceived affordance. A flat painted rectangle reads as
+// a PICTURE, and nobody taps a picture. The same rectangle with a lit top edge
+// and a shadow under it reads as an OBJECT sitting on the baseline, and an
+// object invites a hand. That is all in the CSS and costs no space, which is
+// why it is the first thing to reach for.
+//
+// WANTING to tap is a different thing: curiosity is not "there might be more
+// here", it is a SPECIFIC COUNTABLE UNKNOWN (Loewenstein's information gap).
+// "9h 54m" is a closed fact with nothing missing. "9h 54m, and 8 stops" is an
+// open one: you now know exactly how many things are inside and not what they
+// are. That is the itch, and it is information worth having anyway, which is
+// what separates it from bait.
+//
+// It goes INSIDE the bar rather than under it. A fourth line of type under a
+// 46px column is the clutter the owner has cut three times today, and a number
+// printed on the thing it counts reads as a property of that thing.
+//
+// Deliberately NOT done: a "tap for details" label. An explicit instruction is
+// what you write when the affordance failed, which is exactly why he asked for
+// this without saying it.
+function _tlStopCount(rows){
+  // Places you actually stopped. A drive is not a stop, an unanswered hole is
+  // not a stop, and neither is a wheels-turning leg between two of them.
+  // A hole in the array is not a stop either. _tlRailKind(null) answers 'job'
+  // (its callers want a safe default, not a crash), so counting its answer
+  // without checking the row first turned two empty slots into "2 stops": a
+  // number the bar cannot back up when you tap it.
+  return (Array.isArray(rows)?rows:[]).filter(r=>{
+    if(!r||typeof r!=='object')return false;
+    const k=_tlRailKind(r);
+    return k!=='drive'&&k!=='gap'&&k!=='off';
+  }).length;
+}
 // ONE bar chart, two levels (§7.3). A month drawn as weekly bars and a week
 // drawn as daily bars are the same picture with a different bucket on the x
 // axis, so they are the same function: hand it groups, get the chart. Building
@@ -1253,11 +1293,19 @@ function _tlBarsHtml(groups,opts){
       ?'<i class="tl-wbar-q" style="bottom:calc('+h.toFixed(2)+'% + 3px)" '+
         'title="'+escHtml(fm(gapMin)+' unaccounted, tap to answer')+'">?</i>'
       :'';
+    // The countable unknown, printed on the bar it counts. Only when the bar is
+    // tall enough to hold it: a number crammed into a 12px sliver is noise, and
+    // the short bars are the ones nobody is curious about anyway.
+    const stops=_tlStopCount(rows);
+    const stopTag=(stops>0&&h>=26)
+      ?'<i class="tl-wbar-n" aria-hidden="true">'+stops+'</i>'
+      :'';
     return '<li class="tl-wbar-col'+(e.min?'':' tl-wbar-none')+'">'+
-      '<button type="button" class="tl-wbar-hit" aria-label="'+escHtml(aria)+'" '+
+      '<button type="button" class="tl-wbar-hit" aria-label="'+escHtml(aria+
+          (stops?', '+stops+' stop'+(stops===1?'':'s'):''))+'" '+
         'onclick="'+escHtml(String(g.onclick||''))+'">'+
         '<span class="tl-wbar-plot">'+q+
-          '<span class="tl-wbar-stack" style="height:'+h.toFixed(2)+'%">'+segs+'</span>'+
+          '<span class="tl-wbar-stack" style="height:'+h.toFixed(2)+'%">'+segs+stopTag+'</span>'+
         '</span>'+
         '<span class="tl-wbar-dow">'+escHtml(String(g.label||''))+'</span>'+
         // The hours are TEXT under every column, so the comparison the chart

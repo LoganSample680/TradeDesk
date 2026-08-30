@@ -228,6 +228,133 @@ test.describe('week bars: markup', () => {
   });
 });
 
+// The affordance layer (owner 2026-08-30: "how do we make the bars scream
+// click me for more info without saying that?"). Two mechanisms, and only one
+// of them is testable in a DOM: the depth is CSS, but the countable unknown is
+// content, and content that lies is worse than no content at all.
+test.describe('week bars: the countable unknown', () => {
+  test.describe('the count itself', () => {
+    test.beforeEach(async ({ page }) => {
+      await mockAllExternal(page);
+      await page.goto('/index.html');
+      await waitForAppBoot(page);
+    });
+    test.afterEach(async ({ page }) => { assertNoErrors(page, 'stop count'); });
+
+    test('nothing in, zero out, never a throw', async ({ page }) => {
+      const r = await page.evaluate(() => {
+        const call = a => { try { return _tlStopCount(a); } catch (e) { return 'threw'; } };
+        return [call(null), call(undefined), call([]), call('rows'), call({}),
+                call(0), call([null, undefined])];
+      });
+      // A badge is a promise about what is behind the bar. Junk in has to mean
+      // no promise, not a "0" that reads as a real answer.
+      expect(r).toEqual([0, 0, 0, 0, 0, 0, 0]);
+    });
+
+    test('it counts places stopped, not rows: driving, holes and unpaid are not stops', async ({ page }) => {
+      const r = await page.evaluate(() => ({
+        drive: _tlStopCount([{ source: 'auto', rawSource: 'drive', detail: 'Drive time' }]),
+        gap:   _tlStopCount([{ source: 'unaccounted' }]),
+        off:   _tlStopCount([{ source: 'manual', unpaid: true }]),
+        job:   _tlStopCount([{ source: 'auto', rawSource: 'client' }]),
+        shop:  _tlStopCount([{ source: 'shop' }]),
+        load:  _tlStopCount([{ source: 'auto', rawSource: 'place-load' }]),
+        office:_tlStopCount([{ source: 'auto', rawSource: 'place-office' }]),
+      }));
+      expect([r.drive, r.gap, r.off]).toEqual([0, 0, 0]);
+      // A stop is anywhere the truck actually stopped, which includes the shop
+      // and the supply house. Counting only client sites would under-report the
+      // exact days the owner is trying to explain to somebody.
+      expect([r.job, r.shop, r.load, r.office]).toEqual([1, 1, 1, 1]);
+    });
+  });
+
+  test.describe('the badge on the bar', () => {
+    test.beforeEach(async ({ page }) => {
+      await mockAllExternal(page);
+      await page.goto('/index.html');
+      await waitForAppBoot(page);
+      await mountWeekBars(page);
+    });
+    test.afterEach(async ({ page }) => { assertNoErrors(page, 'stop badge'); });
+
+    test('each badge is the real number of stops on that day', async ({ page }) => {
+      const r = await page.evaluate(() =>
+        [...document.querySelectorAll('.tl-wbar-col')]
+          .map(c => (c.querySelector('.tl-wbar-n') || {}).textContent || ''));
+      // Sun and Mon logged nothing. Sat is a real 2h 35m day with one stop and
+      // still carries no badge: its bar is too short to hold a number without
+      // the number becoming the bar. That is deliberate, see below.
+      expect(r).toEqual(['', '', '3', '2', '4', '2', '']);
+    });
+
+    test('a bar too short to hold a number does not get one', async ({ page }) => {
+      const r = await page.evaluate(() => {
+        const cols = [...document.querySelectorAll('.tl-wbar-col')];
+        return cols.map(c => ({
+          h: Math.round(c.querySelector('.tl-wbar-stack').getBoundingClientRect().height),
+          badge: !!c.querySelector('.tl-wbar-n'),
+        }));
+      });
+      r.forEach(c => { if (c.badge) expect(c.h).toBeGreaterThanOrEqual(20); });
+      // Saturday: real hours, real stop, no room.
+      expect(r[6].badge).toBe(false);
+      expect(r[6].h).toBeGreaterThan(0);
+    });
+
+    test('the badge is painted ON the bar, it does not eat the bar', async ({ page }) => {
+      const r = await page.evaluate(() => {
+        const col = [...document.querySelectorAll('.tl-wbar-col')][4];   // Thu 8/27
+        const stack = col.querySelector('.tl-wbar-stack');
+        const segs = [...col.querySelectorAll('.tl-wbar-seg')];
+        const badge = col.querySelector('.tl-wbar-n');
+        const sb = stack.getBoundingClientRect(), bb = badge.getBoundingClientRect();
+        return {
+          segSum: segs.reduce((s, e) => s + e.getBoundingClientRect().height, 0),
+          stackH: sb.height,
+          pos: getComputedStyle(badge).position,
+          inside: bb.top >= sb.top - 1 && bb.bottom <= sb.bottom + 1
+                  && bb.left >= sb.left - 1 && bb.right <= sb.right + 1,
+        };
+      });
+      // The bar is a measurement of minutes. As a flex item the badge would
+      // have taken ~15px of height out of the segments and every stacked
+      // proportion in the chart would have been quietly wrong.
+      expect(r.pos).toBe('absolute');
+      expect(Math.abs(r.segSum - r.stackH)).toBeLessThanOrEqual(1.5);
+      expect(r.inside).toBe(true);
+    });
+
+    test('the number is decoration, the words are in the label', async ({ page }) => {
+      const r = await page.evaluate(() => {
+        const col = [...document.querySelectorAll('.tl-wbar-col')][4];
+        return { hidden: col.querySelector('.tl-wbar-n').getAttribute('aria-hidden'),
+                 aria: col.querySelector('.tl-wbar-hit').getAttribute('aria-label') };
+      });
+      // A screen reader hearing "4" between the hours and the day name learns
+      // nothing. It hears "4 stops" or it hears nothing (1.4.1 in spirit: the
+      // glyph is never the only carrier of the meaning).
+      expect(r.hidden).toBe('true');
+      expect(r.aria).toContain('4 stops');
+    });
+
+    test('one stop is a stop, not stops', async ({ page }) => {
+      const r = await page.evaluate(() => {
+        window._timeLogRows = [
+          { id: 'a', date: '2026-08-27', startTime: '2026-08-27T13:00:00Z',
+            endTime: '2026-08-27T21:00:00Z', minutes: 480, source: 'auto',
+            rawSource: 'client', clientName: 'Solo', detail: 'Solo',
+            personName: 'Logan Sample', personUid: null },
+        ];
+        return _tlBarsHtml([{ label: 'T', rows: window._timeLogRows, onclick: '' }], {});
+      });
+      expect(r).toContain(', 1 stop\"');
+      expect(r).not.toContain('1 stops');
+    });
+  });
+});
+
 test.describe('week bars: sharing a week as text', () => {
   test.beforeEach(async ({ page }) => {
     await mockAllExternal(page);

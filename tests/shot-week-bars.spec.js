@@ -40,3 +40,28 @@ test.describe('week rail screenshot, 320px', () => {
   test.use({ viewport: { width: 320, height: 760 } });
   test('narrow', async ({ page }) => { await shoot(page, 'week-bars-320.png'); });
 });
+
+// The affordance work, close up (owner 2026-08-30: "screenshot what the
+// physiological stuff looks like to get people to click into them"). Shot at
+// 3x and cropped to the chart itself, because the whole point is a 1px
+// highlight and a 2px shadow: at 1x on a full page they are real but they are
+// not reviewable.
+test.describe('bar affordance close-up', () => {
+  test.use({ deviceScaleFactor: 3 });
+  test('month and week charts', async ({ page }) => {
+    await mockAllExternal(page);
+    await page.goto('/index.html');
+    await waitForAppBoot(page);
+    await mountMonth(page);
+    await page.waitForTimeout(400);
+    await page.locator('.tl-wbar-wrap').first().screenshot({ path: 'afford-1-month.png' });
+    await page.evaluate(() => _tlDrillTo('week', '2026-08-23'));
+    await page.waitForTimeout(400);
+    await page.locator('.tl-wbar-wrap').first().screenshot({ path: 'afford-2-week.png' });
+    // Hover the tallest column: the raised state is half the affordance and it
+    // is invisible in a resting screenshot.
+    await page.locator('.tl-wbar-hit').nth(3).hover();
+    await page.waitForTimeout(200);
+    await page.locator('.tl-wbar-wrap').first().screenshot({ path: 'afford-3-hover.png' });
+  });
+});
