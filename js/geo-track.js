@@ -1659,7 +1659,7 @@ function _geoIsOffJobSource(s){return String(s||'')==='stop';}
 // the night), never an unpaid leg of a workday, and writing it is exactly
 // what let single days total more than 24 hours (owner rule 2026-08-24: "it's
 // not humanely possible for any day to have more than 24 hours"). Central
-// time is the app's day convention everywhere (_ctDateStr, js/finance.js);
+// time is the app's day convention everywhere (_bizDateStr, js/finance.js);
 // dateKey (js/utils.js, always loaded first) is the local-day fallback if
 // load order ever changes, never a UTC slice (the day-key lint bans those).
 // The interval is HALF-OPEN: [arrived, departed). A row that ends exactly at
@@ -1673,8 +1673,8 @@ function _geoIsOffJobSource(s){return String(s||'')==='stop';}
 function _geoStopCrossesMidnight(arrIso,depIso){
   const at=Date.parse(arrIso)||0,dep=Date.parse(depIso)||0;
   const a=new Date(at),d=new Date(dep>at?dep-1:dep);
-  return (typeof _ctDateStr==='function')
-    ? _ctDateStr(a)!==_ctDateStr(d)
+  return (typeof _bizDateStr==='function')
+    ? _bizDateStr(a)!==_bizDateStr(d)
     : dateKey(a)!==dateKey(d);
 }
 // Crossing midnight was only ever a PROXY for "the truck is home for the
@@ -1701,10 +1701,10 @@ function _geoStopIsOvernightPark(a,ms){
 }
 // The instant of the next Central midnight strictly after ms, or 0 if none
 // inside a day and a half (which cannot happen for a real dwell). Bisection on
-// _ctDateStr rather than a hand-kept offset, so CST/CDT is handled by the same
+// _bizDateStr rather than a hand-kept offset, so CST/CDT is handled by the same
 // Intl call the rest of the app trusts for the day convention.
-function _ctMidnightAfter(ms){
-  const day=(d)=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
+function _bizMidnightAfter(ms){
+  const day=(d)=>(typeof _bizDateStr==='function')?_bizDateStr(d):dateKey(d);
   const d0=day(new Date(ms));
   let lo=ms,hi=ms+36*3600000;
   if(day(new Date(hi))===d0)return 0;
@@ -1737,7 +1737,7 @@ function _geoWriteStop(a){
   const ms=dep-at;
   if(!(ms>0))return;
   if(_geoStopIsOvernightPark(a,ms)){_geoParkNote('stop-skip','overnight park, no unpaid row');return;}
-  const mid=_ctMidnightAfter(at);
+  const mid=_bizMidnightAfter(at);
   if(!(mid&&mid<dep)){
     _geoEnqueueStopRow(Math.max(0,Math.round(ms/60000)),a.at,a.lastAt);
     return;
@@ -1876,7 +1876,7 @@ function _geoIsWorkAnchorSource(s){
 // the same shape count as anchors too. Returns {uid:{'YYYY-MM-DD':{inMs,outMs}}}.
 function _geoShopCutoffs(entries){
   const out={};
-  const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
+  const dstr=d=>(typeof _bizDateStr==='function')?_bizDateStr(d):dateKey(d);
   const rows=(Array.isArray(entries)?entries:[]).filter(e=>{
     if(!e||!e.employee_user_id)return false;
     return (Date.parse(e.departed_at||'')||0)>0&&(Date.parse(e.arrived_at||'')||0)>0;
@@ -2131,7 +2131,7 @@ function _geoActiveTrim(tape,s,e,capMs){
 // rows, used only to veto a merge that would swallow one; `tape` is the
 // motion history from _geoMotionTape, or null/absent for dwell as before.
 function _geoShopPaidSpans(entries,win,others,tape){
-  const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
+  const dstr=d=>(typeof _bizDateStr==='function')?_bizDateStr(d):dateKey(d);
   const rows=(Array.isArray(entries)?entries:[]).map((e,i)=>{
     const arr=Date.parse((e&&e.arrived_at)||'')||0;
     const dep=Date.parse((e&&e.departed_at)||'')||0;
@@ -3961,7 +3961,7 @@ function _geoDiagFmtT(raw){
   try{
     const iso=/^\d{4}-/.test(raw)?raw:(new Date().getFullYear()+'-'+raw+'Z');
     const d=new Date(iso);
-    return isNaN(d.getTime())?raw:((typeof _ctStamp==='function')?_ctStamp(d):raw);
+    return isNaN(d.getTime())?raw:((typeof _bizStamp==='function')?_bizStamp(d):raw);
   }catch(_e){return raw;}
 }
 function _geoTdPlugin(){
@@ -4658,10 +4658,10 @@ async function _geoTdEvent(ev,replay){
     // close, and on the same Central day (the reconciler's own honesty rule,
     // so a report delivered after midnight can't backdate into yesterday).
     if(isFinite(a)&&a>0&&a<nowMs&&(nowMs-a)<=_GEO_VISIT_BACKDATE_MAX_MS&&
-       _ctDateStr(new Date(a))===_ctDateStr(new Date(nowMs))){
+       _bizDateStr(new Date(a))===_bizDateStr(new Date(nowMs))){
       _backdated=new Date(a).toISOString();
       _geoParkBackdate=_backdated;
-      _geoParkNote('visit-backdate',(typeof _ctHM==='function'?_ctHM(new Date(a)):_backdated.slice(11,16))+' ('+Math.round((nowMs-a)/60000)+'m late)');
+      _geoParkNote('visit-backdate',(typeof _bizHM==='function'?_bizHM(new Date(a)):_backdated.slice(11,16))+' ('+Math.round((nowMs-a)/60000)+'m late)');
     }
   }
   try{
@@ -5158,8 +5158,8 @@ async function _geoReconcileFromMileage(){
       // Central time (owner ask 2026-08-23), same shape as before: a full
       // start stamp, then just the end clock across the arrow. No trailing
       // 'Z': that marked UTC, and this is local now.
-      const _wTag=(typeof _ctStamp==='function'?_ctStamp(new Date(t1)).slice(0,-3):new Date(t1).toISOString().slice(5,16))+'→'+
-        (typeof _ctHM==='function'?_ctHM(new Date(t2)):new Date(t2).toISOString().slice(11,16))+' '+Math.round((t2-t1)/60000)+'m';
+      const _wTag=(typeof _bizStamp==='function'?_bizStamp(new Date(t1)).slice(0,-3):new Date(t1).toISOString().slice(5,16))+'→'+
+        (typeof _bizHM==='function'?_bizHM(new Date(t2)):new Date(t2).toISOString().slice(11,16))+' '+Math.round((t2-t1)/60000)+'m';
       if(!(t1>0&&t2>t1))continue;
       if(t2-t1<_GEO_RECON_MIN_GAP_MS)continue;
       // Unobserved hours are never claimed, but a real on-site stretch
@@ -5172,10 +5172,10 @@ async function _geoReconcileFromMileage(){
       // 4h29m on site, missed by 29 minutes because a shift is not a drive).
       // The real risk this guard exists for is an OVERNIGHT or multi-day
       // gap, not a long shift, so it is bounded by CALENDAR DAY (Central
-      // time, the app's own convention, _ctDateStr) instead of a flat
+      // time, the app's own convention, _bizDateStr) instead of a flat
       // duration: the same day is trusted whatever it adds up to, a gap
       // that crosses into a new day never is.
-      if(_ctDateStr(new Date(t1))!==_ctDateStr(new Date(t2))){_geoParkNote('recon-win',_wTag+': crosses midnight');continue;}
+      if(_bizDateStr(new Date(t1))!==_bizDateStr(new Date(t2))){_geoParkNote('recon-win',_wTag+': crosses midnight');continue;}
       // Which job were they at: nearest one within the fence plus the park
       // wander margin of where ANY leg in cluster A actually ended. Scanning
       // every member (not just A's last leg) is what lets a good fix inside
@@ -5740,7 +5740,7 @@ async function _geoMergeAdjacentVisits(){
       if(sr&&!sr.error&&Array.isArray(sr.data))shopRows=sr.data.filter(x=>x&&x.arrived_at&&x.departed_at);
     }catch(_e){}
     const P=x=>Date.parse(x)||0;
-    const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
+    const dstr=d=>(typeof _bizDateStr==='function')?_bizDateStr(d):dateKey(d);
     const _GEO_MERGE_GAP_MS=2*60000;
     // Ceiling on an EMPTY gap this sweep will bridge (see gapBlocked below).
     // 60 minutes: comfortably covers a fence blip or a short shop bounce
@@ -5978,7 +5978,7 @@ async function _geoRepairStopRows(){
       if(sr&&!sr.error&&Array.isArray(sr.data))shopRows=sr.data.filter(s=>s&&s.arrived_at&&s.departed_at);
     }catch(_e){}
     const P=s=>Date.parse(s)||0;
-    const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
+    const dstr=d=>(typeof _bizDateStr==='function')?_bizDateStr(d):dateKey(d);
     const onSite=s=>{const t=String(s||'');return /^(geofence|manual|place)$/.test(t)||/^(geofence|place)-/.test(t);};
     const isMerge=r=>/^merge-/.test(String(r.client_key||''));
     // Forensic corrections for Fri 8/21 BEFORE the generic fingerprints run
@@ -6740,7 +6740,7 @@ function _geoWholeDays(rows,tsKey,maxDays,cap){
     // middle that would reintroduce the bug by the back door, grouping an
     // evening row under tomorrow. The source guard in e2e-utils-exhaustive
     // caught this the moment it was written.
-    const day=(typeof _ctDateStr==='function')?_ctDateStr(new Date(t)):dateKey(new Date(t));
+    const day=(typeof _bizDateStr==='function')?_bizDateStr(new Date(t)):dateKey(new Date(t));
     if(seen.indexOf(day)<0){
       // Stop only at a day BOUNDARY, so the day already being collected is
       // never left partly done by either limit.
@@ -6872,9 +6872,9 @@ async function _geoTruncateDayAfter(cutMs){
   let n=0;
   try{
     if(!_supa||!_supaUser||!(cutMs>0))return 0;
-    if(typeof _ctDateStr!=='function')return 0;
+    if(typeof _bizDateStr!=='function')return 0;
     const cut=new Date(cutMs);
-    const day=_ctDateStr(cut);
+    const day=_bizDateStr(cut);
     if(!day)return 0;
     const cutIso=cut.toISOString();
     // A generous upper bound, then filtered back to the Central day itself.
@@ -6892,7 +6892,7 @@ async function _geoTruncateDayAfter(cutMs){
       // otherwise take the whole morning with it, which is precisely what the
       // test that forced this line does.
       const ids=data.filter(x=>x&&x[tsCol]&&(Date.parse(x[tsCol])||0)>=cutMs&&
-        _ctDateStr(new Date(x[tsCol]))===day).map(x=>x.id);
+        _bizDateStr(new Date(x[tsCol]))===day).map(x=>x.id);
       if(!ids.length)return;
       await _tdSoftDelete(tbl,ids,{userCol:'employee_user_id',userVal:_supaUser.id});
       n+=ids.length;
@@ -7079,7 +7079,7 @@ const _GEO_VERIFY_MAX_ROWS=40;    // bounded work per pass, one small query each
 function _geoVerifySeen(){
   try{
     const raw=JSON.parse(localStorage.getItem('zp3_geo_recon_seen')||'{}');
-    const day=(typeof _ctDateStr==='function')?_ctDateStr(new Date()):todayKey();
+    const day=(typeof _bizDateStr==='function')?_bizDateStr(new Date()):todayKey();
     if(raw&&raw.day===day&&Array.isArray(raw.ids))return{day,ids:new Set(raw.ids)};
     return{day,ids:new Set()};
   }catch(_e){return{day:'',ids:new Set()};}

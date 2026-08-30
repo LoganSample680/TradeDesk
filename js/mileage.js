@@ -1035,7 +1035,7 @@ async function _mileWorkdaySweep(){
     if(!ents.length)return 0;
     window._mileWorkdaySweepRan=true;
     const wins=_geoShopCutoffs(ents);
-    const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
+    const dstr=d=>(typeof _bizDateStr==='function')?_bizDateStr(d):dateKey(d);
     // Owner rows carry logged_by_id null and their time entries carry the
     // contractor id, the same null convention the reconciler uses.
     const winFor=(m,ms)=>{
@@ -1134,7 +1134,7 @@ async function _mileFlightSweep(){
       }
       if(!(mins>0))continue;                       // nothing to judge, leave it
       if(!_geoLegIsImpossible({lat:f.lat,lng:f.lng},{lat:t.lat,lng:t.lng},mins))continue;
-      const day=m.date||((typeof _ctDateStr==='function')?_ctDateStr(new Date(Date.parse(m.startedIso||'')||Date.now())):todayKey());
+      const day=m.date||((typeof _bizDateStr==='function')?_bizDateStr(new Date(Date.parse(m.startedIso||'')||Date.now())):todayKey());
       const ends=[t,f].filter(c=>c&&c.lat!=null);
       if(typeof _bizReceiptForStop==='function'&&
          ends.some(c=>_bizReceiptForStop({lat:c.lat,lng:c.lng,name:m.to_name||'',day})))continue;

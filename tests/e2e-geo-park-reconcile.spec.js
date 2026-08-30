@@ -35,6 +35,12 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // Name the business zone: the day-key and clock-stamp helpers follow the
+    // business address now, not a hardcoded Central (owner 2026-08-30), so a
+    // spec that does not say where the business is inherits the runner's zone
+    // (UTC in CI, Central on a Kansas laptop) and its result stops being about
+    // the code. Same rule as the clock pin, CLAUDE.md 5.2.2.
+    await page.evaluate(() => { S.bizTz = 'America/Chicago'; });
     // The app's own cross-device reconcile heartbeat (js/cloud.js
     // _heartbeatTick, every ~5s once _cloudTimersStarted) self-reschedules
     // forever after a signed-in boot and never stops on its own. It can call
@@ -570,10 +576,10 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // small hours (same determinism fix the overnight test already got).
     let T = Date.now();
     const gapHrs = (o && o.gapHrs) || 2;
-    while (_ctDateStr(new Date(T - (gapHrs + 2) * 3600000)) !== _ctDateStr(new Date(T))) T -= 4 * 3600000;
+    while (_bizDateStr(new Date(T - (gapHrs + 2) * 3600000)) !== _bizDateStr(new Date(T))) T -= 4 * 3600000;
     // The job is dated to the WINDOW'S day (its Central day-key), which is
     // what the reconciler's day-scoped job match compares against.
-    jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _ctDateStr(new Date(T - (gapHrs + 1) * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
+    jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _bizDateStr(new Date(T - (gapHrs + 1) * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
     const iso = (ms) => new Date(ms).toISOString();
     const A = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - (gapHrs + 2) * 3600000), endedIso: iso(T - (gapHrs + 1) * 3600000),
                 fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
@@ -889,8 +895,8 @@ test.describe('Geo park detection + mileage reconciliation', () => {
 
   // Owner ask 2026-08-23: the recon-win journal tag (the "08-21T12:55→22:07Z"
   // shape pasted straight off a live device) showed raw UTC, confusing to
-  // read against a phone on Central time. _wTag now builds off _ctStamp/
-  // _ctHM instead of a raw ISO slice.
+  // read against a phone on Central time. _wTag now builds off _bizStamp/
+  // _bizHM instead of a raw ISO slice.
   test('reconciliation: the recon-win journal tag shows Central time, not raw UTC', async () => {
     await geoReset();
     const seed = await seedReconPair(886005);
@@ -899,8 +905,8 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       const entry = _geoParkLog.slice().reverse().find(x => x.ev === 'recon-win' && x.x && x.x.indexOf('→') >= 0);
       return {
         entryText: entry ? entry.x : null,
-        expectedStart: _ctStamp(new Date(seed.A.endedIso)).slice(0, -3),
-        expectedEnd: _ctHM(new Date(seed.B.startedIso)),
+        expectedStart: _bizStamp(new Date(seed.A.endedIso)).slice(0, -3),
+        expectedEnd: _bizHM(new Date(seed.B.startedIso)),
       };
     }, seed);
     expect(r.entryText, 'a window tag was journaled for this recon pass').toBeTruthy();
@@ -929,8 +935,8 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       // day-key: the reconciler's day rules (midnight refusal, day-scoped
       // job match) both read Central time, a raw now/UTC date drifts on CI.
       let T = Date.now();
-      while (_ctDateStr(new Date(T - 3 * 3600000)) !== _ctDateStr(new Date(T))) T -= 4 * 3600000;
-      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _ctDateStr(new Date(T - 2 * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
+      while (_bizDateStr(new Date(T - 3 * 3600000)) !== _bizDateStr(new Date(T))) T -= 4 * 3600000;
+      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _bizDateStr(new Date(T - 2 * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
       const iso = (ms) => new Date(ms).toISOString();
       const A = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 3 * 3600000), endedIso: iso(T - 2 * 3600000),
                   fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
@@ -959,8 +965,8 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       // Same-Central-day anchor + job dated to the window's own Central
       // day-key, same reasoning as the no-fromCoord seed above.
       let T = Date.now();
-      while (_ctDateStr(new Date(T - 3 * 3600000)) !== _ctDateStr(new Date(T))) T -= 4 * 3600000;
-      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _ctDateStr(new Date(T - 2 * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
+      while (_bizDateStr(new Date(T - 3 * 3600000)) !== _bizDateStr(new Date(T))) T -= 4 * 3600000;
+      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _bizDateStr(new Date(T - 2 * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
       const iso = (ms) => new Date(ms).toISOString();
       const A = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 3 * 3600000), endedIso: iso(T - 2 * 3600000),
                   fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
@@ -1043,7 +1049,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     localStorage.setItem('zp3_nearby_geo', JSON.stringify({ [cid]: { lat: CL.lat, lon: CL.lon, addr } }));
     let T = Date.now();
     const gapHrs = (o && o.gapHrs) || 2;
-    while (_ctDateStr(new Date(T - (gapHrs + 2) * 3600000)) !== _ctDateStr(new Date(T))) T -= 4 * 3600000;
+    while (_bizDateStr(new Date(T - (gapHrs + 2) * 3600000)) !== _bizDateStr(new Date(T))) T -= 4 * 3600000;
     const iso = (ms) => new Date(ms).toISOString();
     const A = { id: 'mlc-A', gps: true, legKey: 'lgcA-' + cid, startedIso: iso(T - (gapHrs + 2) * 3600000), endedIso: iso(T - (gapHrs + 1) * 3600000),
                 fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: CL.lat, lng: CL.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
@@ -1093,7 +1099,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // A job at the exact same spot, same day, outranks the client fallback
     // (job is the strongest fence everywhere else in this file too).
     await page.evaluate((cid) => {
-      jobs.push({ id: 'job-' + cid, name: 'Same Spot Job', lat: 37.6872, lon: -97.3301, start: _ctDateStr(new Date()), days: 1, status: 'upcoming', eventType: 'job' });
+      jobs.push({ id: 'job-' + cid, name: 'Same Spot Job', lat: 37.6872, lon: -97.3301, start: _bizDateStr(new Date()), days: 1, status: 'upcoming', eventType: 'job' });
       _geoJobCoords = {};
     }, seed.cid);
     const r = await page.evaluate(async () => {
@@ -1948,7 +1954,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       window.__origJobs = jobs.slice(); window.__origClients = clients.slice(); window.__origBids = bids.slice();
       const cid = 990201;
       clients.push({ id: cid, name: 'John Doe' });
-      jobs.push({ id: jid, name: 'John Doe job', client_id: cid, bid_id: null, start: _ctDateStr(new Date()), days: 1, status: 'upcoming', eventType: 'job' });
+      jobs.push({ id: jid, name: 'John Doe job', client_id: cid, bid_id: null, start: _bizDateStr(new Date()), days: 1, status: 'upcoming', eventType: 'job' });
     }, [jid]);
     await page.evaluate(([jid]) => {
       window.__selRows = [
@@ -2826,7 +2832,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // 2026-08-21). A hardcoded "14 hours ago" no longer reliably proves
     // anything: depending on the wall-clock time CI happens to run, 14 real
     // hours may or may not cross a Central-time midnight. So walk t1
-    // backward from t2 using the app's own _ctDateStr until the day string
+    // backward from t2 using the app's own _bizDateStr until the day string
     // actually differs, this is deterministic regardless of when the test runs.
     const seed = await page.evaluate(([jid]) => {
       window.__origJobs = jobs.slice(); jobs.length = 0;
@@ -2839,7 +2845,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       const t2 = Date.now() - 1 * 3600000; // leg B leaves 1h ago, same anchor every other recon test uses
       let t1 = t2;
       const STEP = 30 * 60000;
-      while (_ctDateStr(new Date(t1)) === _ctDateStr(new Date(t2))) t1 -= STEP;
+      while (_bizDateStr(new Date(t1)) === _bizDateStr(new Date(t2))) t1 -= STEP;
       const A = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(t1 - 3600000), endedIso: iso(t1),
                   fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date(t1).toISOString().slice(0, 10) };
       const B = { id: 'ml-B', gps: true, legKey: 'lgB-' + jid, startedIso: iso(t2), endedIso: iso(t2 + 1800000),
@@ -2874,8 +2880,8 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       // Same-Central-day anchor + job dated to the window's own Central
       // day-key, same reasoning as the fromCoord seeds above.
       let T = Date.now();
-      while (_ctDateStr(new Date(T - 5 * 3600000)) !== _ctDateStr(new Date(T))) T -= 6 * 3600000;
-      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _ctDateStr(new Date(T - 4.8 * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
+      while (_bizDateStr(new Date(T - 5 * 3600000)) !== _bizDateStr(new Date(T))) T -= 6 * 3600000;
+      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _bizDateStr(new Date(T - 4.8 * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
       const iso = (ms) => new Date(ms).toISOString();
       // The morning cluster: two legs starting at the SAME instant (the
       // reported duplicate), pushed in this order so a stable sort keeps
@@ -2971,8 +2977,8 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       // Same-Central-day anchor + job dated to the window's own Central
       // day-key, same reasoning as the fromCoord seeds above.
       let T = Date.now();
-      while (_ctDateStr(new Date(T - 5 * 3600000)) !== _ctDateStr(new Date(T))) T -= 6 * 3600000;
-      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _ctDateStr(new Date(T - 4.8 * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
+      while (_bizDateStr(new Date(T - 5 * 3600000)) !== _bizDateStr(new Date(T))) T -= 6 * 3600000;
+      jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _bizDateStr(new Date(T - 4.8 * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
       const iso = (ms) => new Date(ms).toISOString();
       const legA = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 5 * 3600000), endedIso: iso(T - 4.833 * 3600000),
                      fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
@@ -3013,12 +3019,12 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       const JOB = { lat: 37.6872, lon: -97.3301 };
       _geoJobCoords = {};
       // Walk back to a moment on a PREVIOUS Central day whose 4-hour window
-      // sits entirely inside that day, using the app's own _ctDateStr so no
+      // sits entirely inside that day, using the app's own _bizDateStr so no
       // timezone/DST assumption is baked in.
-      const today = _ctDateStr(new Date());
+      const today = _bizDateStr(new Date());
       let T = Date.now() - 6 * 3600000;
-      while (_ctDateStr(new Date(T)) === today || _ctDateStr(new Date(T - 4 * 3600000)) !== _ctDateStr(new Date(T))) T -= 4 * 3600000;
-      const winDay = _ctDateStr(new Date(T - 3 * 3600000));
+      while (_bizDateStr(new Date(T)) === today || _bizDateStr(new Date(T - 4 * 3600000)) !== _bizDateStr(new Date(T))) T -= 4 * 3600000;
+      const winDay = _bizDateStr(new Date(T - 3 * 3600000));
       // The job's span was YESTERDAY (the window's day), one day only: under
       // the old _geoMyJobs matching this is invisible today, red before the fix.
       jobs.push({ id: jid, name: 'Yesterday Job', lat: JOB.lat, lon: JOB.lon, start: winDay, days: 1, status: 'upcoming', eventType: 'job' });
@@ -3048,8 +3054,8 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       const JOB = { lat: 37.6872, lon: -97.3301 };
       _geoJobCoords = {};
       let T = Date.now();
-      while (_ctDateStr(new Date(T - 3 * 3600000)) !== _ctDateStr(new Date(T))) T -= 4 * 3600000;
-      const winDay = _ctDateStr(new Date(T - 2 * 3600000));
+      while (_bizDateStr(new Date(T - 3 * 3600000)) !== _bizDateStr(new Date(T))) T -= 4 * 3600000;
+      const winDay = _bizDateStr(new Date(T - 2 * 3600000));
       // Worked this morning, marked done since: the exact finish-then-review
       // flow that used to erase reconcilability (_jobActiveOn excludes done).
       jobs.push({ id: jid, name: 'Done Job', lat: JOB.lat, lon: JOB.lon, start: winDay, days: 1, status: 'done', completion_date: winDay, eventType: 'job' });
@@ -3097,8 +3103,8 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       const JOB = { lat: 37.6872, lon: -97.3301 };
       _geoJobCoords = {};
       let T = Date.now();
-      while (_ctDateStr(new Date(T - 5 * 3600000)) !== _ctDateStr(new Date(T))) T -= 6 * 3600000;
-      const overrunDay = _ctDateStr(new Date(T - 4.8 * 3600000));
+      while (_bizDateStr(new Date(T - 5 * 3600000)) !== _bizDateStr(new Date(T))) T -= 6 * 3600000;
+      const overrunDay = _bizDateStr(new Date(T - 4.8 * 3600000));
       // Booked for 2 days ending the day BEFORE the window: exactly the
       // "supposed to be two days" overrun, invisible under the old
       // day-scoped match (which would find 0 jobs active on overrunDay).
@@ -3806,7 +3812,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       window.__origJobs = jobs.slice(); jobs.length = 0;
       _geoJobCoords = {};
       jobs.push({ id: 990001, name: 'Verify Job', lat: 37.6872, lon: -97.3301,
-                  start: _ctDateStr(new Date()), days: 1, status: 'upcoming', eventType: 'job' });
+                  start: _bizDateStr(new Date()), days: 1, status: 'upcoming', eventType: 'job' });
       const t1 = Date.now() - 5 * 3600000, t2 = t1 + 4 * 3600000;   // a 4h claim
       window.__selRows = [{
         id: o.id, employee_user_id: _supaUser.id,
@@ -3858,7 +3864,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
         window.__origJobs = jobs.slice(); jobs.length = 0;
         _geoJobCoords = {};
         jobs.push({ id: 990001, name: 'Verify Job', lat: 37.6872, lon: -97.3301,
-                    start: _ctDateStr(new Date()), days: 1, status: 'upcoming', eventType: 'job' });
+                    start: _bizDateStr(new Date()), days: 1, status: 'upcoming', eventType: 'job' });
         const t1 = Date.now() - 5 * 3600000, t2 = t1 + 4 * 3600000;   // 240 minutes
         window.__selRows = [{
           id: 'v-sparse', employee_user_id: _supaUser.id, job_id: '990001', dest_place: null,

@@ -29,6 +29,12 @@ test.describe('Wake region set for the dead app', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // Name the business zone: every midnight below is a business midnight now
+    // that the day-key helpers follow the business address rather than a
+    // hardcoded Central (owner 2026-08-30). Left unset it comes from the
+    // runner, UTC in CI and Central on a Kansas laptop, which is the machine
+    // deciding the result (CLAUDE.md 5.2.2).
+    await page.evaluate(() => { S.bizTz = 'America/Chicago'; });
     await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
   });
   test.afterAll(async () => { await page.context().close(); });

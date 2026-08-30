@@ -4125,9 +4125,9 @@ test.describe('Workforce time intelligence', () => {
       // the hour the runner happens to start can never decide the result.
       let T0 = Date.now() - 3 * 3600000;
       {
-        const today = _ctDateStr(new Date());
+        const today = _bizDateStr(new Date());
         let mid = Date.now();
-        while (_ctDateStr(new Date(mid - 900000)) === today) mid -= 900000;
+        while (_bizDateStr(new Date(mid - 900000)) === today) mid -= 900000;
         if (T0 < mid) T0 = mid + 60000;
       }
       const EMP = 'emp-shopoverlap-1';
@@ -4211,9 +4211,9 @@ test.describe('Workforce time intelligence', () => {
       // Same CT-date clamp as the sibling test above.
       let T0 = Date.now() - 3 * 3600000;
       {
-        const today = _ctDateStr(new Date());
+        const today = _bizDateStr(new Date());
         let mid = Date.now();
-        while (_ctDateStr(new Date(mid - 900000)) === today) mid -= 900000;
+        while (_bizDateStr(new Date(mid - 900000)) === today) mid -= 900000;
         if (T0 < mid) T0 = mid + 60000;
       }
       const EMP = 'emp-shopwrap-1';

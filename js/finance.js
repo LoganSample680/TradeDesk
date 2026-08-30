@@ -3034,20 +3034,40 @@ async function _openJobProfit(){
 }
 
 // ── Crew labor cost, per-employee rollup + dashboard tile ────────────────────
-function _ctDateStr(d){
-  try{return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);}
+// THE BUSINESS'S OWN CLOCK, not Central (owner 2026-08-30: "so it should be
+// synced to business location timezone?"). It should, and the app already
+// knew how: bizTz() (js/utils.js) resolves S.bizTz, else derives the zone
+// from the shop place's coordinates and state, else the device.
+//
+// These three used to hardcode America/Chicago while the Time Log RENDERED
+// its times through bizTz(). For a Central contractor the two agree exactly,
+// which is why nothing ever looked wrong; for one in Arizona a row logged
+// after ~10pm local was FILED under tomorrow while the log drew it as today,
+// so the day total and the day rail disagreed with the clock on the wall.
+// A day boundary decides which day gets paid, so that is a payroll bug, not
+// a cosmetic one.
+//
+// Named _biz*, not _ct*, because the old names now say the wrong thing: the
+// next person to read "ct" would reasonably assume Central and be wrong
+// everywhere outside it.
+function _bizTzName(){
+  try{if(typeof bizTz==='function')return bizTz()||'America/Chicago';}catch(_e){}
+  return 'America/Chicago';
+}
+function _bizDateStr(d){
+  try{return new Intl.DateTimeFormat('en-CA',{timeZone:_bizTzName(),year:'numeric',month:'2-digit',day:'2-digit'}).format(d);}
   catch(_e){return dateKey(d);}
 }
-// Central-time clock stamps, same purpose as _ctDateStr just above (owner
+// Business-clock stamps, same purpose as _bizDateStr just above (owner
 // ask 2026-08-23: the on-device location diagnostics panel, js/geo-track.js
 // _geoDiagPanel, showed raw UTC event times, confusing to read against a
-// phone that's on Central time). America/Chicago carries CDT/CST itself, so
-// this stays correct across the DST boundary without a hand-maintained
+// phone that's on the business's own time). A named IANA zone carries its
+// own DST rules, so this stays correct across the boundary without a hand-maintained
 // offset. 'MM-DDTHH:MM:SS' is the same compact shape the diagnostics log
 // already used, just in the right timezone now.
-function _ctStamp(d){
+function _bizStamp(d){
   try{
-    const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(d);
+    const parts=new Intl.DateTimeFormat('en-US',{timeZone:_bizTzName(),month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(d);
     const g=t=>(parts.find(p=>p.type===t)||{}).value||'';
     let hh=g('hour');if(hh==='24')hh='00'; // some engines return '24' at midnight under hour12:false
     return g('month')+'-'+g('day')+'T'+hh+':'+g('minute')+':'+g('second');
@@ -3056,9 +3076,9 @@ function _ctStamp(d){
 // HH:MM only, for a window's END clock (the reconciler's own recon-win tags
 // show a full start stamp, then just the time on the other side of the
 // arrow when it's the same day, see _wTag in _geoReconcileFromMileage).
-function _ctHM(d){
+function _bizHM(d){
   try{
-    const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d);
+    const parts=new Intl.DateTimeFormat('en-US',{timeZone:_bizTzName(),hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d);
     const g=t=>(parts.find(p=>p.type===t)||{}).value||'';
     let hh=g('hour');if(hh==='24')hh='00';
     return hh+':'+g('minute');
@@ -3160,11 +3180,11 @@ async function _crewCostRender(range){
   const body=document.getElementById('_crew-cost-body');if(!body)return;
   ['today','week','month','quarter','ytd'].forEach(r=>{const b=document.getElementById('_cc-'+r);if(b){const on=r===range;b.style.background=on?'var(--blue)':'var(--bg2)';b.style.color=on?'#fff':'var(--text)';b.style.borderColor=on?'var(--blue)':'var(--border2)';}});
   body.innerHTML=_tdSkelRows(5,12);
-  const todayStr=_ctDateStr(new Date());
+  const todayStr=_bizDateStr(new Date());
   const [yr,mo]=todayStr.split('-').map(Number);
   let sinceStr,label;
   if(range==='today'){sinceStr=todayStr;label='today';}
-  else if(range==='week'){sinceStr=_ctDateStr(new Date(Date.now()-6*86400000));label='this week';}
+  else if(range==='week'){sinceStr=_bizDateStr(new Date(Date.now()-6*86400000));label='this week';}
   else if(range==='month'){sinceStr=yr+'-'+String(mo).padStart(2,'0')+'-01';label='this month';}
   else if(range==='quarter'){const qm=Math.floor((mo-1)/3)*3+1;sinceStr=yr+'-'+String(qm).padStart(2,'0')+'-01';label='this quarter';}
   else{sinceStr=yr+'-01-01';label='this year';}
@@ -3177,10 +3197,10 @@ async function _crewCostRender(range){
   // null logged_by_uid means the owner; _fetchCrewLabor already resolves the
   // owner's rate/name under cid.
   const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(_supaUser&&_supaUser.id);
-  const manualEnts=timeEntries.filter(e=>e.start_time&&_ctDateStr(new Date(e.start_time))>=sinceStr)
+  const manualEnts=timeEntries.filter(e=>e.start_time&&_bizDateStr(new Date(e.start_time))>=sinceStr)
     .map(e=>({employee_user_id:e.logged_by_uid||cid,job_id:e.job_id,minutes:e.minutes||0,arrived_at:e.start_time,departed_at:e.end_time,source:'manual'}));
-  const ents=data.entries.filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr).concat(manualEnts);
-  const shopEnts=(data.shopEntries||[]).filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr);
+  const ents=data.entries.filter(en=>en.arrived_at&&_bizDateStr(new Date(en.arrived_at))>=sinceStr).concat(manualEnts);
+  const shopEnts=(data.shopEntries||[]).filter(en=>en.arrived_at&&_bizDateStr(new Date(en.arrived_at))>=sinceStr);
   if(!ents.length&&!shopEnts.length){body.innerHTML='<div style="padding:10px 0">No tracked time '+label+' yet. Crew time appears here once they\'re on site with sharing enabled.</div>';return;}
   // Nominal work day for the unaccounted-time estimate. This used to derive from
   // the configurable tracking window; that window is gone (tracking no longer
@@ -3221,7 +3241,7 @@ async function _crewCostRender(range){
     // caught, never paid labor (js/geo-track.js _geoRowInWorkday). Applied
     // here too so Crew Cost and the Time Log cannot disagree about a day.
     if(_geoIsDriveSource(en.source)&&typeof _geoRowInWorkday==='function'&&en.arrived_at){
-      const dd=_ctDateStr(new Date(en.arrived_at));
+      const dd=_bizDateStr(new Date(en.arrived_at));
       if(!_geoRowInWorkday(en.arrived_at,en.departed_at,((shopCut[uid]||{})[dd])||null))return;
     }
     const e=_emp(uid);let m=en.minutes||0;
@@ -3247,7 +3267,7 @@ async function _crewCostRender(range){
       const key=bidId!=null?String(bidId):'unknown';
       e.jobs[key]=(e.jobs[key]||0)+m;
     }
-    const day=_ctDateStr(new Date(en.arrived_at));e.dayMins[day]=(e.dayMins[day]||0)+m;
+    const day=_bizDateStr(new Date(en.arrived_at));e.dayMins[day]=(e.dayMins[day]||0)+m;
   });
   // The day auto clocks out at its last real work event, so yard dwell after
   // the last job or supply run (and yard dwell on a day with no work fence at
@@ -3286,7 +3306,7 @@ async function _crewCostRender(range){
       // a person whose whole week was after-hours yard dwell renders as a 0.0h row.
       if(m<1)return;
       const e=_emp(uid);
-      const day=_ctDateStr(new Date(sp.startMs));
+      const day=_bizDateStr(new Date(sp.startMs));
       e.min+=m;e.shopMin+=m;
       e.dayMins[day]=(e.dayMins[day]||0)+m;
     });

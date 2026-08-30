@@ -135,7 +135,7 @@ function _tlOpenEntries(){
 // from another device can still promote it back into view on the next open.
 function _tlStopAnchored(arrMs,depMs,anchors){
   if(!(arrMs>0&&depMs>=arrMs)||!Array.isArray(anchors))return false;
-  const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
+  const dstr=d=>(typeof _bizDateStr==='function')?_bizDateStr(d):dateKey(d);
   const day=dstr(new Date(arrMs));
   if(day!==dstr(new Date(depMs)))return false;   // spans midnight: never shown
   const SLACK=2*60000;   // kerb-edge timestamp rounding, same floor the merge gap used
@@ -370,7 +370,7 @@ async function _timeLogRows(sinceISO){
       // Same physical-impossibility bound the rest of the log honors: a dwell
       // that spans Central midnight is the truck sitting at the yard overnight,
       // not a shift, and must never land as paid time (owner rule 2026-08-24).
-      const dstr=d=>(typeof _ctDateStr==='function')?_ctDateStr(d):dateKey(d);
+      const dstr=d=>(typeof _bizDateStr==='function')?_bizDateStr(d):dateKey(d);
       const day=dstr(new Date(arr));
       if(day!==dstr(new Date(dep)))return;
       // (the span builder folds a blip-split visit into its first row, so a
@@ -424,7 +424,7 @@ async function _timeLogRows(sinceISO){
     // hide on-site time. js/geo-track.js _geoRowInWorkday carries the rule.
     if(typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(e.source)&&
        typeof _geoRowInWorkday==='function'){
-      const _dday=(typeof _ctDateStr==='function')?_ctDateStr(new Date(e.arrived_at)):dateKey(new Date(e.arrived_at));
+      const _dday=(typeof _bizDateStr==='function')?_bizDateStr(new Date(e.arrived_at)):dateKey(new Date(e.arrived_at));
       if(!_geoRowInWorkday(e.arrived_at,e.departed_at,((_shopCut[e.employee_user_id]||{})[_dday])||null))return;
     }
     // The anchor rule (owner 2026-08-24, see _tlStopAnchored above): an
@@ -440,7 +440,7 @@ async function _timeLogRows(sinceISO){
     const clientName=(info.clientName!=='-')?info.clientName:(e.dest_place||info.clientName);
     rows.push({
       id:'a'+e.job_id+'_'+e.employee_user_id+'_'+e.arrived_at,
-      source:'auto',date:(typeof _ctDateStr==='function')?_ctDateStr(new Date(e.arrived_at)):e.arrived_at.slice(0,10),
+      source:'auto',date:(typeof _bizDateStr==='function')?_bizDateStr(new Date(e.arrived_at)):e.arrived_at.slice(0,10),
       minutes:e.minutes||0,personName:crew.name[e.employee_user_id]||'Crew',personUid:e.employee_user_id,
       clientName,addr:info.addr,jobName:info.jobName,clientKey:e.client_key||null,unpaid:isUnpaid,
       detail:(typeof _tlSourceLabel==='function')?_tlSourceLabel(e.source):(e.source||''),
@@ -534,14 +534,14 @@ function _tlComputeWeeklyRunning(rows){
 // depending on where the person happened to be standing when they opened the
 // app, and the CSV export used the same function, so a payroll record changed
 // with the exporter's location. The DAY grouping was already pinned to Central
-// (_ctDateStr, js/finance.js), so travel also split the log against itself:
+// (_bizDateStr, js/finance.js), so travel also split the log against itself:
 // days in one zone, times in another, and near midnight they disagree outright.
 //
 // Hours are a fact about when work happened, not about where the phone is now.
 // One zone for the whole log: display, the Fix dialog, and the export.
 //
 // Reads S.bizTz so this stops being a Kansas assumption the day a contractor in
-// another state signs up, and falls back to the same Central zone _ctDateStr
+// another state signs up, and falls back to the same Central zone _bizDateStr
 // already hardcodes so the two can never disagree today.
 // Derived from the business ADDRESS, once, and shared with every other screen
 // (bizTz in js/utils.js). This used to hold its own copy of the rule, which is
@@ -706,7 +706,7 @@ async function _saveFixedAutoEntry(rowId){
   // create the very thing the flag exists to catch.
   const mins=Math.round((end.getTime()-start.getTime())/60000);
   if(mins>1440)return bad('One entry cannot be longer than 24 hours.');
-  if(typeof _ctDateStr==='function'&&_ctDateStr(start)!==_ctDateStr(end))return bad('An entry has to start and end on the same day.');
+  if(typeof _bizDateStr==='function'&&_bizDateStr(start)!==_bizDateStr(end))return bad('An entry has to start and end on the same day.');
   if(!window._supa||!window._supaUser)return bad('Not connected.');
   try{
     // client_key moves to a 'fixed-' key: that is what tells every sweep
@@ -897,7 +897,7 @@ function _tlAddUnaccounted(startIso,endIso,kind){
     job_id:null,
     // The CT date of the START, the same key every other row on this page is
     // filed under. A hole that runs past midnight belongs to the day it began.
-    date:(typeof _ctDateStr==='function')?_ctDateStr(new Date(a)):startIso.slice(0,10),
+    date:(typeof _bizDateStr==='function')?_bizDateStr(new Date(a)):startIso.slice(0,10),
     start_time:new Date(a).toISOString(),end_time:new Date(b).toISOString(),
     minutes:mins,scope_id:null,scope_label:label,
     unpaid,

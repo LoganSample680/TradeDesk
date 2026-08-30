@@ -42,6 +42,12 @@ test.describe('Automatic mileage from drive legs', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // Name the business zone: the day-key and clock-stamp helpers follow the
+    // business address now, not a hardcoded Central (owner 2026-08-30), so a
+    // spec that does not say where the business is inherits the runner's zone
+    // (UTC in CI, Central on a Kansas laptop) and its result stops being about
+    // the code. Same rule as the clock pin, CLAUDE.md 5.2.2.
+    await page.evaluate(() => { S.bizTz = 'America/Chicago'; });
     await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
     await page.evaluate((d) => {
       // ── The ENTIRE fixture is re-seedable, because none of it stays put ─────
@@ -259,10 +265,16 @@ test.describe('Automatic mileage from drive legs', () => {
       const out = await page.evaluate(() => {
         window.__origMileage = mileage.slice();
         mileage.length = 0;
-        const start = new Date(); start.setHours(9, 12, 0, 0);
-        const end = new Date(); end.setHours(10, 47, 0, 0);
-        mileage.push({ id: 991002, date: todayKey(), from_name: 'Shop', to_name: 'Miller Residence',
-          miles: 12.3, mins: 95, startedIso: start.toISOString(), endedIso: end.toISOString(),
+        // 9:12 IN THE BUSINESS'S ZONE, built through the app's own inverse
+        // converter, because the row RENDERS in that zone. setHours() builds
+        // the runner's 9:12, which is a different instant everywhere except a
+        // machine that happens to sit in the business's timezone, and the
+        // assertions below are about the clock a contractor reads.
+        const day = _bizDateStr(new Date());
+        const startIso = _tlBizInputToIso(day + 'T09:12');
+        const endIso = _tlBizInputToIso(day + 'T10:47');
+        mileage.push({ id: 991002, date: day, from_name: 'Shop', to_name: 'Miller Residence',
+          miles: 12.3, mins: 95, startedIso: startIso, endedIso: endIso,
           purpose: 'Job site', gps: true, created_at: new Date().toISOString() });
         renderAllMileage();
         const trip = document.querySelector('.mil-day-trip[data-lp-id="991002"]');
@@ -1430,7 +1442,7 @@ test.describe('Automatic mileage from drive legs', () => {
       // UTC and the slice happens to be right, so shared-context version of this
       // test passed with the bug still in. A test that cannot go red is not a
       // test. America/Chicago is the app's own reference zone (§2 version bumps,
-      // _ctDateStr in finance.js) and is behind UTC, so the evening genuinely
+      // _bizDateStr in finance.js) and is behind UTC, so the evening genuinely
       // rolls the UTC date over.
       const ctx = await browser.newContext({ timezoneId: 'America/Chicago', bypassCSP: true });
       const p2 = await ctx.newPage();
@@ -4829,11 +4841,11 @@ test.describe('Automatic mileage from drive legs', () => {
     // times, confusing to read against a phone that's on Central time.
     // _geoParkNote now stores the full ISO instant; _geoDiagFmtT converts
     // to Central at render time. August is CDT (UTC-5).
-    test('_ctStamp/_ctHM convert a UTC instant to Central time, DST-correct', async () => {
+    test('_bizStamp/_bizHM convert a UTC instant to Central time, DST-correct', async () => {
       const r = await page.evaluate(() => ({
-        augStamp: _ctStamp(new Date('2026-08-23T20:58:31.000Z')),   // CDT, UTC-5
-        augHM: _ctHM(new Date('2026-08-21T22:07:00.000Z')),
-        janStamp: _ctStamp(new Date('2026-01-15T20:58:31.000Z')),   // CST, UTC-6
+        augStamp: _bizStamp(new Date('2026-08-23T20:58:31.000Z')),   // CDT, UTC-5
+        augHM: _bizHM(new Date('2026-08-21T22:07:00.000Z')),
+        janStamp: _bizStamp(new Date('2026-01-15T20:58:31.000Z')),   // CST, UTC-6
       }));
       expect(r.augStamp).toBe('08-23T15:58:31');
       expect(r.augHM).toBe('17:07');
