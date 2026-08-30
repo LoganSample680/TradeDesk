@@ -1077,7 +1077,20 @@ function _tlRailRow(r){
   // the work on its own (1.4.1).
   const tag='<span class="tl-rail-tag">'+svgIcon(m.icon,{size:10})+' '+escHtml(m.word)+
     (r.unpaid&&!isGap?' · unpaid':'')+'</span>';
-  const dur='<div class="tl-rail-dur'+((r.unpaid||isGap)?' mute':'')+'">'+escHtml(fm(r.minutes||0))+'</div>';
+  // EDIT LIVES HERE NOW. The entries table was the only place a manual clock
+  // could be fixed, and the owner cut it off the week view as clutter
+  // (2026-08-30). Losing the ability to correct an entry was not part of that
+  // ask, so the control moved to the row it belongs to instead of disappearing
+  // with the table (§7.2: verify the capability survives before removing the
+  // UI that carried it). Same gate and the same modal as the table used, so
+  // there is still exactly one edit experience (§7.3).
+  const edit=(typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
+    ?'<button type="button" class="tl-rail-edit" onclick="_openEditTimeEntry('+r.rawId+')">Edit</button>'
+    :(typeof _tlCanFixAuto==='function'&&_tlCanFixAuto(r)&&r.rawId!=null)
+    ?'<button type="button" class="tl-rail-edit" onclick="_openFixAutoEntry(\''+escHtml(String(r.rawId))+'\')">Fix</button>'
+    :'';
+  const dur='<div class="tl-rail-dur'+((r.unpaid||isGap)?' mute':'')+'">'+escHtml(fm(r.minutes||0))+
+    (edit?'<span class="tl-rail-editwrap">'+edit+'</span>':'')+'</div>';
   return '<li class="tl-rail-row" data-kind="'+kind+'" style="--rail:'+m.c+'">'+
     '<div class="tl-rail-time"><span>'+escHtml(_tlFmtTime(r.startTime)||'—')+'</span></div>'+
     '<div class="tl-rail-spine" aria-hidden="true"><i></i><b></b></div>'+
@@ -1808,15 +1821,7 @@ function _tlRenderWeekBody(cacheKey){
     // mixes several people), and deleting it to force symmetry would lose
     // information nobody asked to lose. Week selections only; on a single day
     // the entries table below already lists every row.
-    // The per-day breakdown, in whichever form the week can carry. The bars
-    // ARE that breakdown drawn instead of listed: same days, same per-day
-    // totals, plus the shape. The plain list stays as the fallback for the
-    // case the bars refuse to draw (no rows on any of the seven days), so
-    // this never silently loses the days.
-    if(sel==='week'){
-      const bars=_tlWeekBarsHtml(scopeRows,days,cacheKey);
-      summaryHtml+=bars||_tlWeekMineHtml(scopeRows);
-    }
+    if(sel==='week')summaryHtml+=_tlWeekMineHtml(scopeRows);
   }
   // Entries: the only place a manual clock entry can still be edited or
   // deleted (Edit button, _tlRow), scoped to whatever the picker currently
@@ -1848,6 +1853,11 @@ function _tlRenderWeekBody(cacheKey){
   // be seven lines pretending to be one, which is exactly the thing the
   // owner objected to about the old broken-up bars.
   const isDayRail=sel!=='week'&&scopeRows.length;
+  // Bars only draw when a day in the week actually has rows; otherwise the
+  // week falls through to the old summary so a week is never a blank card.
+  // Built ONCE and reused below: it was being rendered twice per week, which
+  // is pure waste on a page that already made the owner wait on a skeleton.
+  const weekBars=(sel==='week'&&scopeRows.length)?_tlWeekBarsHtml(weekRows,days,cacheKey):'';
   const entriesHtml=isDayRail?
     '<div style="margin-top:4px">'+
       _tlRailHeadHtml(scopeRows,scopeLabel)+
@@ -1869,6 +1879,25 @@ function _tlRenderWeekBody(cacheKey){
   // printing scopeHdHtml and the employee card above it would say the day and
   // its total three times over.
   if(isDayRail)return pickerHtml+entriesHtml;
+  // A WEEK IS THE BARS AND NOTHING ELSE (owner 2026-08-30: "we don't need the
+  // entries and the truncated things that say what the time consisted of,
+  // clutter"). What went, and why each was genuinely redundant here:
+  //
+  //   - the entries accordion: it listed one row per day saying the day's
+  //     total and how many entries made it up, directly under seven bars
+  //     already saying the same totals with their shape. Its Edit button was
+  //     the one thing it carried alone, so that moved onto the day rail's own
+  //     rows (_tlRailRow) rather than leaving with it (§7.2).
+  //   - the person card: in Me scope it is one avatar restating a total the
+  //     header prints two lines above it, over a legend that wrapped to three
+  //     lines on a phone naming numbers the bars already draw.
+  //
+  // TEAM SCOPE IS UNTOUCHED and returns above this line with its per-person
+  // cards: a team week genuinely is several people and the card is the only
+  // thing that separates them. The Me/Team symmetry rule (owner 2026-08-26)
+  // still holds where it was aimed, at a single day: a day pick in either
+  // scope still renders the same split bar from the same fold.
+  if(weekBars)return pickerHtml+scopeHdHtml+weekBars;
   return pickerHtml+scopeHdHtml+'<div style="padding:0 2px 4px">'+summaryHtml+'</div>'+entriesHtml;
 }
 // Me/Team display toggle, for anyone with payroll/team permission. Owners

@@ -2551,6 +2551,22 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
+    // The week view is the bars now (owner 2026-08-30 cut the entries table
+    // and the person card off it as clutter). Anything that needs the ROW
+    // level has to drill into a day, exactly as a person does, so this does
+    // that: render, find the week holding a date, pick that weekday, and hand
+    // back the week body's HTML.
+    const openDay = (page, dateStr) => page.evaluate(async (d) => {
+      setTimeLogYear(new Date(d.slice(0, 4), 0, 1).getFullYear());
+      await renderTimeLog();
+      const key = Object.keys(_tlWeekCache).find(k =>
+        (_tlWeekCache[k].rows || []).some(r => r && r.date === d));
+      if (!key) return { found: false, html: '' };
+      const i = _tlWeekDayDates(_tlWeekCache[key].wk).indexOf(d);
+      setTimeLogDayPick(key, String(i));
+      return { found: true, html: document.getElementById(_tlWeekCache[key].domId).innerHTML };
+    }, dateStr);
+
     test('day accordions within a month, newest day sorts first', async () => {
       // Both the month container id and the expected day come from the PAGE
       // clock. Node's todayStr is the runner's real date, and under the
@@ -2559,12 +2575,33 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // vehicle-dispatch fixtures, closed the same way. toISOString is also
       // a UTC slice, which the day-key convention bans for exactly this
       // reason; todayKey() is the app's own answer.
+      // TEAM scope, because that is where the day accordion still lives. Me's
+      // week became the bars on 2026-08-30; the per-person cards, and the day
+      // table nested inside each one, are unchanged. The rule under test (a
+      // month lists its days, newest first) never moved, only the scope that
+      // renders it.
       const r = await page.evaluate(async () => {
+        // _tlScope is set DIRECTLY, not through setTimeLogScope: that helper
+        // fires renderTimeLog() without awaiting it (the same fire-and-forget
+        // convention setTimeLogYear uses), so calling it here left a second
+        // render in flight that could land after this test finished and leave
+        // the DOM in the wrong scope for the next one. Two runs, two different
+        // unrelated failures in this block, before this was tracked down.
+        const orig = _tlScope;
+        _tlScope = 'team';
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
         const day = todayKey();
         const monthEl = document.getElementById('bk-tl-mo-' + day.slice(0, 7));
-        return { day, ids: monthEl ? [...monthEl.querySelectorAll('.bk-day')].map(el => el.id) : [] };
+        const ids = monthEl ? [...monthEl.querySelectorAll('.bk-day')].map(el => el.id) : [];
+        // Restore the EXACT prior value, null included. setTimeLogScope
+        // rejects null (it is the "auto-detect" state, not a scope), so
+        // coercing it to 'me' here silently pinned scope for every later test
+        // in the file. That showed up only under the midnight pin, as an
+        // unrelated Team-scope test failing three hundred lines later.
+        _tlScope = orig;
+        await renderTimeLog();
+        return { day, ids };
       });
       expect(r.ids.length).toBeGreaterThan(0);
       // The current-day entry should appear in this month's day list.
@@ -2597,12 +2634,19 @@ test.describe('timelog.js: exhaustive coverage', () => {
           { id: 8990201, job_id: 87701, date: dateStr, start_time: early.toISOString(), end_time: new Date(early.getTime() + 30 * 60000).toISOString(), minutes: 30, logged_by_uid: null, logged_by_name: 'Owner (me)' },
           { id: 8990202, job_id: 87701, date: dateStr, start_time: late.toISOString(), end_time: new Date(late.getTime() + 30 * 60000).toISOString(), minutes: 30, logged_by_uid: null, logged_by_name: 'Owner (me)' }
         );
+        // TEAM scope: the entries table is the thing being ordered and it
+        // renders inside the per-person cards now, not on Me's week (which is
+        // the bars). The ordering rule is unchanged.
+        const origScope = _tlScope;
+        _tlScope = 'team';   // direct, not setTimeLogScope: see above
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
         const rows = [...document.querySelectorAll('#tl-list tr[data-lp-id]')];
         const idxOf = (id) => rows.findIndex(tr => tr.getAttribute('data-lp-id') === String(id));
         const result = { earlyIdx: idxOf(8990201), lateIdx: idxOf(8990202) };
         timeEntries = timeEntries.filter(e => e.id !== 8990201 && e.id !== 8990202);
+        _tlScope = origScope;   // exact prior value, null included (see above)
+        await renderTimeLog();
         return result;
       });
       expect(r.earlyIdx, 'the 8am entry must render').toBeGreaterThanOrEqual(0);
@@ -2671,14 +2715,43 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.empHasDollar).toBe(false);
     });
 
-    test('entries table (Edit button on manual rows) still renders nested inside a week', async () => {
+    // Was: "entries table (Edit button on manual rows) still renders nested
+    // inside a week". The entries table left the week view on 2026-08-30 and
+    // the Edit button moved onto the day rail's own rows rather than leaving
+    // with it. This is the §7.2 check that the CAPABILITY survived the UI
+    // that used to carry it, which is the only reason the old test existed.
+    test('a manual row can still be edited, now from the day rail itself', async () => {
+      const r = await page.evaluate(async () => {
+        const day = todayKey();
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        const key = Object.keys(_tlWeekCache).find(k =>
+          (_tlWeekCache[k].rows || []).some(r2 => r2 && r2.date === day));
+        if (!key) return { found: false, html: '' };
+        const i = _tlWeekDayDates(_tlWeekCache[key].wk).indexOf(day);
+        setTimeLogDayPick(key, String(i));
+        return { found: true, html: document.getElementById(_tlWeekCache[key].domId).innerHTML };
+      });
+      expect(r.found, 'the fixture day must land in a week').toBe(true);
+      expect(r.html, 'the rail is what renders a day now').toContain('tl-rail-row');
+      expect(r.html, 'and editing a manual clock has to still be reachable')
+        .toContain('_openEditTimeEntry(');
+    });
+
+    test('the week view itself is the bars, with no entries table under it', async () => {
+      // The other half of the same owner decision, pinned so the table cannot
+      // quietly come back: a week is the chart and nothing else.
       const r = await page.evaluate(async () => {
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
-        return document.getElementById('tl-list').innerHTML;
+        const html = document.getElementById('tl-list').innerHTML;
+        return { bars: html.includes('tl-wbar'), table: html.includes('data-lp-id='),
+                 card: html.includes('tl-emp-row'), send: html.includes('_tlShareWeekAt') };
       });
-      expect(r).toContain('_openEditTimeEntry(');
-      expect(r).toContain('data-lp-id=');
+      expect(r.bars).toBe(true);
+      expect(r.table, 'the entries table is gone from the week').toBe(false);
+      expect(r.card, 'so is the person card and its wrapping legend').toBe(false);
+      expect(r.send, 'sharing the week on screen replaced them').toBe(true);
     });
 
     // Really a Me/Team scope test (see the Me/Team describe block below), not
@@ -2786,12 +2859,32 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window._supaUser = { id: 'emp-test-uid' };
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
-        const html = document.getElementById('tl-list').innerHTML;
+        // The week is the bars now and the bars name nobody, so checking the
+        // week HTML for a client name would pass for the wrong reason: absent
+        // because nothing is named, not because the row was filtered. Drill
+        // into every day the cache holds, where the rail does name the client,
+        // and check the union. A leak anywhere in the week fails this.
+        let html = document.getElementById('tl-list').innerHTML;
+        for (const key of Object.keys(_tlWeekCache)) {
+          const wk = _tlWeekCache[key];
+          for (let i = 0; i < 7; i++) {
+            setTimeLogDayPick(key, String(i));
+            html += document.getElementById(wk.domId).innerHTML;
+          }
+          setTimeLogDayPick(key, 'week');
+        }
+        // The old version of this test read the client name out of the per-day
+        // list that used to sit on the week. That list is gone, and the rail
+        // titles a row by its ADDRESS when it has one, so a name search now
+        // proves nothing either way. What the test is actually for is the
+        // permission boundary, so: their own work RENDERS (rows exist, hours
+        // are non-zero), and nobody else's name reaches the DOM on any day.
+        const rendered = (html.match(/tl-rail-row/g) || []).length;
         window._isEmployee = origIsEmployee; window._employeeRecord = origEmpRecord; window._supaUser = origSupaUser;
-        return { hasOwn: html.includes('Timelog No-Bid Client'), hasOthers: html.includes('Timelog Test Client') };
+        return { rendered, hasOthers: html.includes('Timelog Test Client') };
       });
-      expect(r.hasOwn).toBe(true);
-      expect(r.hasOthers).toBe(false);
+      expect(r.rendered, 'their own work still renders').toBeGreaterThan(0);
+      expect(r.hasOthers, 'somebody else\'s never does, on any day of the week').toBe(false);
     });
 
     // "Always" used to be literal (owners defaulted to Team). Since
@@ -3259,7 +3352,17 @@ test.describe('timelog.js: exhaustive coverage', () => {
         setTimeLogScope('me');
         await renderTimeLog();
         const meShare = document.getElementById('tl-share').style.display !== 'none';
-        const meHtml = document.getElementById('tl-list').innerHTML;
+        // Me's week is the bars and names nobody, so whose rows are in scope
+        // has to be read a day at a time, where the rail names them.
+        let meHtml = document.getElementById('tl-list').innerHTML;
+        for (const key of Object.keys(_tlWeekCache)) {
+          const wk = _tlWeekCache[key];
+          for (let i = 0; i < 7; i++) {
+            setTimeLogDayPick(key, String(i));
+            meHtml += document.getElementById(wk.domId).innerHTML;
+          }
+          setTimeLogDayPick(key, 'week');
+        }
         // setTimeLogScope fires renderTimeLog() without awaiting it (same
         // fire-and-forget convention setTimeLogYear already uses), so an
         // explicit await here is required before reading the DOM, exactly
@@ -3274,7 +3377,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
         return {
           meShare, teamShare, scopeAfterTeam,
           meHasOwner: meHtml.includes('Owner (me)'),
-          meHasSelf: meHtml.includes('Test Crew Member'),
+          // Me's week names nobody now (the person card went with the clutter
+          // cut, 2026-08-30), and a rail row is titled by its site, not by who
+          // worked it. So "my own rows are here" is counted, not name-matched;
+          // "somebody else's are not" stays a name check, which is where a
+          // leak would actually show.
+          meRows: (meHtml.match(/tl-rail-row/g) || []).length,
           teamHasOwner: teamHtml.includes('Owner (me)'),
           teamHasSelf: teamHtml.includes('Test Crew Member'),
         };
@@ -3283,7 +3391,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.teamShare).toBe(false);
       expect(r.scopeAfterTeam).toBe('team');
       expect(r.meHasOwner).toBe(false); // Me scope: only the manager's own rows
-      expect(r.meHasSelf).toBe(true);
+      expect(r.meRows, 'and their own rows do render').toBeGreaterThan(0);
       expect(r.teamHasOwner).toBe(true); // Team scope: everyone
       expect(r.teamHasSelf).toBe(true);
     });
@@ -3459,36 +3567,59 @@ test.describe('timelog.js: exhaustive coverage', () => {
       return html;
     }, [WEEK, ROWS, scope, sel || null]);
 
-    test('the Me split bar exists and is the SAME markup as Team', async () => {
-      const me = await body('me');
-      const team = await body('team');
-      expect(me, 'Me had no split bar at all before this').toContain('tl-split-bar');
-      expect(me).toContain('tl-emp-row');
-      // The bar itself, byte for byte. Two renderers drifting apart is the
-      // thing this rule exists to stop.
+    // ── What this block guards, restated 2026-08-30 ────────────────────────
+    //
+    // The owner's rule (2026-08-26) was that Me must not render something
+    // WORSE and separate from Team: "everything on the team should be the
+    // exact same thing on me, same code, same constant, only difference is
+    // the fact me is just me and team is everybody." It was written when Me's
+    // week was a bare list with no split bar at all.
+    //
+    // On 2026-08-30 he cut the person card off Me's WEEK himself ("we don't
+    // need the entries and the truncated things that say what the time
+    // consisted of, clutter") and replaced it with the bars. That is the same
+    // rule pointing the other way: Me's week is now the richer view, and the
+    // card stays in Team because a team week genuinely is several people.
+    //
+    // So the symmetry claim moves to where it still bites, A SINGLE DAY, which
+    // both scopes still draw from the same fold over the same aggregator. The
+    // week-shape claims below pin the new intent so neither side can drift
+    // back by accident.
+    test('a day renders the SAME split bar in both scopes, byte for byte', async () => {
+      const me = await body('me', '2');       // Tuesday
+      const team = await body('team', '2');
       const bar = h => (h.match(/<div class="tl-split-bar">.*?<\/div>/s) || [''])[0];
+      expect(bar(me).length, 'Me had no split bar at all before this rule').toBeGreaterThan(0);
       expect(bar(me)).toBe(bar(team));
-      expect(bar(me).length).toBeGreaterThan(0);
     });
 
-    test('the same four buckets, with the same split, in both scopes', async () => {
-      const me = await body('me');
+    test('the same buckets, from the same table, in both scopes', async () => {
+      const me = await body('me', '2');
+      const team = await body('team', '2');
+      // Me draws the rail legend, Team draws the card legend. Different
+      // wrappers, one _TL_BUCKETS table. Both only name a bucket that has
+      // minutes in it, so the invariant is not "all five appear" (the fixture
+      // day has one) but "the two scopes name the SAME set". A day where Me
+      // says Driving and Team does not is the two disagreeing about what a
+      // minute was, which is the whole point of the rule.
+      // Compare the LEGENDS, not the whole page. A rail ROW is tagged by what
+      // kind of stop it was ("On site"), which is a different classification
+      // from what BUCKET its minutes landed in ("Supply/other"), and both
+      // strings live in Me's HTML. Conflating them made this test fail on a
+      // fixture day that is genuinely consistent.
+      const labels = await page.evaluate(() => _TL_BUCKETS.map(b => b.label));
+      const legendOf = h =>
+        (h.match(/class="tl-rail-legend">([\s\S]*?)<\/div>\s*<\/div>/) ||
+         h.match(/class="tl-split-legend">([\s\S]*?)<\/div>/) || ['', ''])[1];
+      const present = h => { const g = legendOf(h); return labels.filter(l => g.includes(l)); };
+      expect(present(me).length, 'the day has at least one bucket to compare').toBeGreaterThan(0);
+      expect(present(me)).toEqual(present(team));
+    });
+
+    test('Me is one person; Team is everybody', async () => {
+      // Team still cards every person on the week.
       const team = await body('team');
-      const legend = h => (h.match(/<div class="tl-split-legend">(.*?)<\/div>/s) || ['', ''])[1];
-      expect(legend(me)).toBe(legend(team));
-      // Five buckets now, not four: Loading was carved out of Supply/other so
-      // the day's legend can name it (owner 2026-08-30). Both scopes still
-      // read the same _TL_BUCKETS table, which is what this test guards.
-      expect(legend(me)).toContain('On site');
-      expect(legend(me), 'drive time is the number a person most wants off their own week').toContain('Driving');
-      expect(legend(me)).toContain('Supply/other');
-      expect(legend(me)).toContain('Shop');
-    });
-
-    test('one person in Me, and Team would show more', async () => {
-      const me = await body('me');
-      const rowCount = h => (h.match(/tl-emp-row/g) || []).length;
-      expect(rowCount(me), 'me is just me').toBe(1);
+      expect((team.match(/tl-emp-row/g) || []).length, 'me is just me').toBe(1);
       const two = await page.evaluate(([wk, rows]) => {
         const key = 'T2|' + wk;
         const mixed = rows.concat([{ date: '2026-08-18', minutes: 120, source: 'manual',
@@ -3501,13 +3632,24 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(two, 'team is everybody').toBe(2);
     });
 
-    // 7.2: the day list is the one thing Me has that Team cannot, since a team
-    // day mixes several people. Forcing symmetry by deleting it would lose
-    // information nobody asked to lose.
-    test('the per-day breakdown survives as an addition, not an alternative', async () => {
+    test('Me\'s week is the bars, Team\'s week is the cards', async () => {
       const me = await body('me');
-      expect(me).toContain('tl-emp-row');
-      expect(me, 'the day list still renders under the shared row').toMatch(/Tue 8\/18|8\/18/);
+      const team = await body('team');
+      expect(me, 'Me gets the chart').toContain('tl-wbar');
+      expect(me, 'and none of the clutter that used to sit above it').not.toContain('tl-emp-row');
+      expect(me).not.toContain('tl-split-legend');
+      expect(team, 'Team keeps the per-person cards').toContain('tl-emp-row');
+      expect(team, 'a team week is several people, not one chart').not.toContain('tl-wbar');
+    });
+
+    test('the per-day breakdown survives, drawn instead of listed', async () => {
+      // 7.2: deleting the day list to force symmetry would have lost
+      // information nobody asked to lose. It was not deleted, it became the
+      // bars: same seven days, same per-day totals, plus the shape.
+      const me = await body('me');
+      expect(me).toContain('tl-wbar-col');
+      expect((me.match(/tl-wbar-col/g) || []).length, 'seven days, every week').toBe(7);
+      expect(me, 'and each one still carries its own hours in words').toMatch(/tl-wbar-amt/);
     });
 
     test('a single-day pick still shows the shared row, same as Team does', async () => {

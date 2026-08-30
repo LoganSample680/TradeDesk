@@ -1268,6 +1268,14 @@ body.dark .cal-cell.other{background:var(--cream)}
 .tl-rail-dur{font-size:13px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;
   padding:9px 0 0 8px;white-space:nowrap}
 .tl-rail-dur.mute{font-weight:700;color:var(--text3)}
+/* Edit moved onto the row when the entries table left the week view. Right
+   column, under the duration, so it never competes with the clock for the eye
+   and never widens the row. 28px clears the 24px target minimum (2.5.8). */
+.tl-rail-editwrap{display:block;margin-top:4px}
+.tl-rail-edit{min-height:28px;padding:0 9px;border-radius:6px;border:1px solid var(--border2);
+  background:var(--bg-card);color:var(--text);font-family:inherit;font-size:11px;font-weight:700;
+  cursor:pointer;white-space:nowrap}
+.tl-rail-edit:hover{border-color:var(--ink)}
 /* A hole is the SHAPE OF A HOLE: dashed line, nothing measured. */
 .tl-rail-row[data-kind="gap"] .tl-rail-spine i{
   background:repeating-linear-gradient(to bottom,var(--border2) 0,var(--border2) 4px,transparent 4px,transparent 8px)}
