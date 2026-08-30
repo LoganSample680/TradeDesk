@@ -1116,7 +1116,7 @@ function _tlBucketFold(rows){
     _TL_BUCKETS.forEach(b=>{e[b.k]+=a[b.k]||0;});});
   return e;
 }
-function _tlRailHeadHtml(rows,label){
+function _tlRailHeadHtml(rows,label,noTotal){
   const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
   const e=_tlBucketFold(rows);
   const total=_tlBucketTotal(e)||1;
@@ -1126,7 +1126,10 @@ function _tlRailHeadHtml(rows,label){
     ' <b>'+escHtml(fm(e[b.k]))+'</b></span>').join('');
   return '<div class="tl-rail-head">'+
     (label?'<div class="tl-rail-head-day">'+escHtml(label)+'</div>':'')+
-    '<div class="tl-rail-head-total">'+escHtml(fm(e.min))+'</div>'+
+    // Suppressed inside the drill: the header one line above already prints
+    // this exact number, and the split bar and legend below are the part the
+    // rail head is actually for.
+    (noTotal?'':'<div class="tl-rail-head-total">'+escHtml(fm(e.min))+'</div>')+
     '<div class="tl-split-bar">'+segs+'</div>'+
     (legend?'<div class="tl-rail-legend">'+legend+'</div>':'')+
   '</div>';
@@ -1296,7 +1299,7 @@ function _tlWeekBarsHtml(weekRows,days,cacheKey){
     label:(typeof _tlDayShort==='function'?_tlDayShort(d):d).slice(0,1),
     aria:(typeof _tlDayFullLabel==='function'?_tlDayFullLabel(d):d),
     rows:byDay[d]||[],
-    onclick:'setTimeLogDayPick(\''+String(cacheKey)+'\',\''+i+'\')'
+    onclick:'_tlDrillTo(\'day\',\''+String(d)+'\')'
   })),{guideMin:_TL_BAR_GUIDE_MIN,guideLabel:'8h',share});
 }
 // A MONTH: one bar per week, guided at 40 hours.
@@ -1328,7 +1331,7 @@ function _tlMonthBarsHtml(monthRows,mo,scope){
     label:_tlWeekShortLabel(wk),
     aria:(typeof _tlWeekLabel==='function'?_tlWeekLabel(wk):wk),
     rows:byWeek[wk],
-    onclick:'_tlOpenWeek(\''+String(mo)+'\',\''+String(wk)+'\')'
+    onclick:'_tlDrillTo(\'week\',\''+String(wk)+'\')'
   })),{guideMin:_TL_MONTH_GUIDE_MIN,guideLabel:'40h',share});
 }
 // "8/23" for a weekly column: short enough for six columns on a 320px phone,
@@ -1466,6 +1469,94 @@ async function _tlShareMonth(mo){
   const text=_tlMonthShareText(rows,mo);
   if(typeof pwaShare==='function')await pwaShare({title:'Hours',text});
   return text;
+}
+// ── ONE drill, one idiom ───────────────────────────────────────────────────
+// Owner, 2026-08-30: "I'm so confused on this, love the bars and what they
+// show but I'm lost on how we drill down cleanly ... year up top, then month
+// which has four week bars, then drill to week then clicking the week lets you
+// drill to days, what's the cleanest way to do this?"
+//
+// He was lost because the page had FOUR navigation idioms stacked on it: a
+// dropdown for the year, an arrow stepper for the month, an accordion LIST for
+// the weeks, and chip tabs for the days. Three of them could reach the same
+// week, two charts could be on screen at once, and none of them agreed on what
+// tapping meant.
+//
+// This is his sentence, built literally, with one rule: ONE LEVEL ON SCREEN,
+// ONE CHART, and exactly three gestures, each meaning one thing.
+//
+//   Year   the selector already at the top of the page, unchanged
+//   Month  weekly bars      tap a bar to go down
+//   Week   daily bars       tap a bar to go down
+//   Day    the rail
+//
+//   ‹ ›    move sideways, to the next sibling that HAS hours
+//   bar    go down a level
+//   back   go up a level, and it names where it goes
+//
+// The week accordion list is gone. It was a second way to do the drill the
+// bars already do, it duplicated every total the chart above it was drawing,
+// and it is the single biggest reason this felt like a maze.
+let _tlDrill={level:'month',mo:null,wk:null,day:null};
+function _tlDrillTo(level,key,dir){
+  if(level==='month')_tlDrill={level:'month',mo:key||_tlDrill.mo,wk:null,day:null};
+  else if(level==='week')_tlDrill={level:'week',mo:_tlDrill.mo,wk:key,day:null};
+  else if(level==='day')_tlDrill={level:'day',mo:_tlDrill.mo,wk:_tlDrill.wk,day:key};
+  else return;
+  _tlMonthDir=(dir==='fwd'||dir==='back')?dir:'';
+  renderTimeLog();
+}
+function _tlDrillUp(){
+  if(_tlDrill.level==='day')_tlDrillTo('week',_tlDrill.wk);
+  else if(_tlDrill.level==='week')_tlDrillTo('month',_tlDrill.mo);
+}
+// The siblings of whatever is on screen, in calendar order, and ONLY the ones
+// with hours. Stepping onto an empty chart is the thing the arrows exist to
+// prevent.
+function _tlDrillSiblings(rows){
+  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&r.date);
+  const keys=[];
+  const push=k=>{if(k&&keys.indexOf(k)<0)keys.push(k);};
+  if(_tlDrill.level==='month')list.forEach(r=>push(String(r.date).slice(0,7)));
+  else if(_tlDrill.level==='week')
+    list.filter(r=>String(r.date).slice(0,7)===_tlDrill.mo).forEach(r=>push(_tlWeekKey(r.date)));
+  else if(_tlDrill.level==='day')
+    list.filter(r=>_tlWeekKey(r.date)===_tlDrill.wk).forEach(r=>push(r.date));
+  return keys.sort();
+}
+function _tlDrillStep(delta,rows){
+  const keys=_tlDrillSiblings(rows);
+  const cur=_tlDrill.level==='month'?_tlDrill.mo:_tlDrill.level==='week'?_tlDrill.wk:_tlDrill.day;
+  const i=keys.indexOf(cur);
+  if(i<0)return;
+  const next=keys[i+(delta>0?1:-1)];
+  if(!next)return;
+  _tlDrillTo(_tlDrill.level,next,delta>0?'fwd':'back');
+}
+// ONE header for every level (§7.3). Same stepper, same shape, so moving
+// between levels never changes what the controls mean.
+function _tlDrillHeadHtml(title,total,keys,cur,backLabel){
+  const i=keys.indexOf(cur);
+  const prev=i>0,next=i>=0&&i<keys.length-1;
+  const arrow=(dir,on,glyph,word)=>
+    '<button type="button" class="tl-monav-btn"'+(on?'':' disabled aria-disabled="true"')+
+    ' aria-label="'+escHtml(word)+'" onclick="_tlDrillStep('+dir+',_tlLastRows)">'+glyph+'</button>';
+  // The back link NAMES where it goes. "Back" alone makes somebody guess, and
+  // guessing is the thing this whole rebuild is undoing.
+  const back=backLabel
+    ?'<button type="button" class="tl-drill-back" onclick="_tlDrillUp()">'+
+       '\u2039 '+escHtml(backLabel)+'</button>'
+    :'';
+  return '<div class="tl-drill">'+back+
+    '<div class="tl-monav">'+
+      arrow(-1,prev,'\u2039','Previous')+
+      '<div class="tl-monav-mid" aria-live="polite">'+
+        '<div class="tl-monav-lbl">'+escHtml(title)+'</div>'+
+        '<div class="tl-monav-tot">'+escHtml(total)+'</div>'+
+      '</div>'+
+      arrow(1,next,'\u203a','Next')+
+    '</div>'+
+  '</div>';
 }
 // ── A gap answered on Saturday, covered by real rows on Sunday ─────────────
 // Owner, 2026-08-30, looking at a manual row on 08/27: "then saw shop time
@@ -2175,10 +2266,13 @@ async function _tlShareText(rows,wkStart,label){
 }
 // The week ON SCREEN, from the same cache the bars were drawn from, so what
 // gets sent is what he is looking at.
-async function _tlShareWeekAt(cacheKey){
-  const cache=_tlWeekCache[cacheKey];
-  if(!cache)return;
-  return _tlShareText(cache.rows,cache.wk,'Hours');
+// Takes a WEEK KEY now. It used to read _tlWeekCache, which the accordion
+// list populated; the drill does not build that list any more, so the week is
+// resolved from the rows the page is already holding. One source, and it
+// cannot go stale against what is on screen.
+async function _tlShareWeekAt(wk){
+  const rows=(_tlLastRows||[]).filter(r=>r&&_tlWeekKey(r.date)===wk);
+  return _tlShareText(rows,wk,'Hours');
 }
 // The current calendar week, for the button at the bottom of the page.
 async function _tlShareWeek(){
@@ -2401,64 +2495,56 @@ async function renderTimeLog(opts){
   // both arrows dead until something else happened to set it, which on a fresh
   // open is never.
   _tlMonthSel=selMo;
-  const navHtml=_tlMonthNavHtml(selMo,byMonth,fm(_tlPaidMin(byMonth[selMo]||[])));
-  el.innerHTML=navHtml+'<div class="bk-months">'+[selMo].map(mo=>{
-    const moRows=byMonth[mo]||[];
-    const byWeek={};
-    moRows.forEach(r=>{const wk=_tlWeekKey(r.date)||'unknown';(byWeek[wk]||(byWeek[wk]=[])).push(r);});
-    // Newest week first within the month (owner report 2026-08-20: opening a
-    // month buried the current week under every earlier one). This is the
-    // opposite of the month-level sort just above, and deliberately so: that
-    // one is the dated owner exception (January→December); nothing pinned
-    // week order to match it, and newest-first here matches every other
-    // Books accordion's normal convention.
-    const weeks=Object.keys(byWeek).sort((a,b)=>b.localeCompare(a));
-    // The picked month is always open: it IS the page now, not one row of a
-    // list somebody still has to tap.
-    const moOpen=true;
-    const moMin=_tlPaidMin(moRows);
-    let moSub=weeks.length+' week'+(weeks.length!==1?'s':'');
-    if(scope==='team'){
-      const empCount=Object.keys(_tlEmpWeekAgg(moRows,cid)).length;
-      moSub+=' · '+empCount+' employee'+(empCount!==1?'s':'');
+  // ── The drill: one level, one chart ────────────────────────────────────
+  // Team keeps its per-person cards, because a team week genuinely is several
+  // people and the cards are the only thing that separates them. Me gets the
+  // drill.
+  if(scope==='team'){
+    const teamKeys=months.slice();
+    el.innerHTML=_tlDrillHeadHtml(_bkMonthLabel(selMo),fm(_tlPaidMin(byMonth[selMo]||[])),
+        teamKeys,selMo,'')+
+      '<div style="margin-top:8px">'+_tlEmpAccHtml(selMo,byMonth[selMo]||[],cid,selfUid,selMo)+'</div>';
+    if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
+    return;
+  }
+  // The drill's month follows the month picked above, so the two can never
+  // point at different things.
+  _tlDrill.mo=selMo;
+  const moRows=byMonth[selMo]||[];
+  const byWeek={};
+  moRows.forEach(r=>{const wk=_tlWeekKey(r.date)||'';if(wk)(byWeek[wk]||(byWeek[wk]=[])).push(r);});
+  const weekKeys=Object.keys(byWeek).sort();
+  // A week that is no longer in this month (arrowed to a new month, or the
+  // data moved under us) falls back to the month's last week rather than
+  // drawing an empty chart.
+  if(_tlDrill.level!=='month'&&weekKeys.indexOf(_tlDrill.wk)<0)
+    _tlDrill.wk=weekKeys[weekKeys.length-1]||null;
+  if(!_tlDrill.wk&&_tlDrill.level!=='month')_tlDrill.level='month';
+
+  let head='',body='';
+  if(_tlDrill.level==='month'){
+    head=_tlDrillHeadHtml(_bkMonthLabel(selMo),fm(_tlPaidMin(moRows)),months,selMo,'');
+    body=_tlMonthBarsHtml(moRows,selMo,scope);
+  }else{
+    const wkRows=byWeek[_tlDrill.wk]||[];
+    const days=_tlWeekDayDates(_tlDrill.wk);
+    if(_tlDrill.level==='week'){
+      head=_tlDrillHeadHtml(_tlWeekLabel(_tlDrill.wk),fm(_tlPaidMin(wkRows)),
+        weekKeys,_tlDrill.wk,_bkMonthLabel(selMo));
+      body=_tlWeekBarsHtml(wkRows,days,_tlDrill.wk);
+    }else{
+      const dayKeys=days.filter(d=>wkRows.some(r=>r.date===d));
+      if(dayKeys.indexOf(_tlDrill.day)<0)_tlDrill.day=dayKeys[dayKeys.length-1]||null;
+      const dayRows=wkRows.filter(r=>r.date===_tlDrill.day);
+      head=_tlDrillHeadHtml(_tlDayFullLabel(_tlDrill.day),fm(_tlPaidMin(dayRows)),
+        dayKeys,_tlDrill.day,_tlWeekLabel(_tlDrill.wk));
+      body=_tlRailHeadHtml(dayRows,'',true)+_tlDayRailHtml(dayRows);
     }
-    const moTotalHtml='<div style="font-size:15px;font-weight:900;color:var(--text);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+fm(moMin)+'</div>';
-    const weeksHtml=weeks.map(wk=>{
-      const weekRows=byWeek[wk];
-      const wkId=wk.replace(/[^0-9]/g,'')||'x';
-      const domId='tl-wkbody-'+mo.replace(/[^0-9]/g,'')+'-'+wkId;
-      const cacheKey=mo+'|'+wk;
-      _tlWeekCache[cacheKey]={mo,wk,rows:weekRows,scope,cid,selfUid,domId};
-      const wkOpen=wk===curWk;
-      const wkLabel=_tlWeekLabel(wk);
-      const wkMin=_tlPaidMin(weekRows);
-      const wkTotalHtml='<div style="font-size:12.5px;font-weight:800;color:var(--text)">'+fm(wkMin)+'</div>';
-      let wkSub;
-      if(scope==='team'){
-        const empCount=Object.keys(_tlEmpWeekAgg(weekRows,cid)).length;
-        wkSub=empCount+' employee'+(empCount!==1?'s':'');
-      }else{
-        wkSub=weekRows.length+' entr'+(weekRows.length!==1?'ies':'y');
-      }
-      const bodyHtml='<div id="'+domId+'">'+_tlRenderWeekBody(cacheKey)+'</div>';
-      return _bkWeekAcc('tl',mo,wkId,wkLabel,wkSub,wkTotalHtml,bodyHtml,wkOpen);
-    }).join('');
-    // The month's own chart sits above its weeks: weekly bars, one per week,
-    // guided at 40 hours. Tapping a bar opens that week's accordion below.
-    const monthBars=_tlMonthBarsHtml(moRows,mo,scope);
-    // The direction rides on the element as a class, so the slide is pure CSS
-    // and the JS never touches a style property (§8.5).
-    const monthBarsHtml=monthBars
-      ?'<div class="tl-mbars'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+'">'+monthBars+'</div>'
-      :'';
-    // NO MONTH ACCORDION. The nav row above already names the month and now
-    // carries its total, so wrapping the page in a header that says both again
-    // is the same duplication the week body had (owner caught that one on
-    // 2026-08-30 as "lot of white space"). A month is not a row you open any
-    // more; it IS the page, so it gets a plain container.
-    return '<div class="bk-month open" id="bk-tl-mo-'+mo+'">'+
-      '<div class="bk-month-body">'+monthBarsHtml+weeksHtml+'</div></div>';
-  }).join('')+'</div>';
+  }
+  // The slide direction rides as a class so the animation is pure CSS and the
+  // JS never touches a style property (§8.5).
+  el.innerHTML=head+
+    '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+'">'+body+'</div>';
   // The page-level Share button is GONE. It said "this calendar week", which
   // on a screen that now carries Send this month and Send this week (the one
   // you are actually looking at) was a third Send button meaning a fourth

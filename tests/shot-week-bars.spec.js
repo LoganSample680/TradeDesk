@@ -24,11 +24,15 @@ test.describe('month screenshot', () => {
     await page.goto('/index.html');
     await waitForAppBoot(page);
     await mountMonth(page);
-    await page.screenshot({ path: 'month-bars-mobile.png', fullPage: false });
-    // Forward one month: the single-week month, and the arrows both live.
-    await page.evaluate(() => _tlMonthStep(1));
-    await page.waitForTimeout(400);
-    await page.screenshot({ path: 'month-one-week.png', fullPage: false });
+    await page.screenshot({ path: 'drill-1-month.png', fullPage: false });
+    // Down a level: the week.
+    await page.evaluate(() => _tlDrillTo('week', '2026-08-23'));
+    await page.waitForTimeout(350);
+    await page.screenshot({ path: 'drill-2-week.png', fullPage: false });
+    // Down again: the day.
+    await page.evaluate(() => _tlDrillTo('day', '2026-08-27'));
+    await page.waitForTimeout(350);
+    await page.screenshot({ path: 'drill-3-day.png', fullPage: false });
   });
 });
 
