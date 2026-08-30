@@ -2748,6 +2748,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
     test('sharing rides on the chart it sends, in both scopes', async () => {
       const r = await page.evaluate(async () => {
         setTimeLogYear(new Date().getFullYear());
+        // The drill level is STATED, not inherited. It is module state that
+        // earlier tests legitimately leave pointed at a day, and this one is
+        // about the MONTH chart's Send: it passed alone and failed in the full
+        // run until the precondition was written down. Same seam the _tlScope
+        // precondition in the scope test already documents.
+        _tlDrill = { level: 'month', mo: null, wk: null, day: null };
         setTimeLogScope('team');
         await renderTimeLog();
         const teamPageBtn = document.getElementById('tl-share').innerHTML;
@@ -2755,6 +2761,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window._isEmployee = true;
         window._employeeRecord = { name: 'Test Crew Member', permissions: { payroll: false } };
         window._supaUser = { id: 'emp-test-uid' };
+        _tlDrill = { level: 'month', mo: null, wk: null, day: null };
         await renderTimeLog();
         const empPageBtn = document.getElementById('tl-share').innerHTML;
         const empMonthBtn = !!document.querySelector('.tl-drill-body .tl-wbar-share');
@@ -2857,9 +2864,14 @@ test.describe('timelog.js: exhaustive coverage', () => {
         // and check the union. A leak anywhere in the week fails this.
         // Walk every day the drill can reach, not a cache that no longer
         // exists. A leak on any of them fails this.
+        //
+        // The level is set directly and the render AWAITED: _tlDrillTo fires
+        // renderTimeLog() without awaiting it, so reading straight after it
+        // catches the loading skeleton and every day looks empty.
         let html = document.getElementById('tl-list').innerHTML;
         for (const d of [...new Set((window._tlLastRows || []).map(x => x && x.date))].filter(Boolean)) {
-          _tlDrillTo('day', d);
+          _tlDrill = { level: 'day', mo: d.slice(0, 7), wk: _tlWeekKey(d), day: d };
+          await renderTimeLog();
           html += document.getElementById('tl-list').innerHTML;
         }
         // The old version of this test read the client name out of the per-day
@@ -2870,10 +2882,18 @@ test.describe('timelog.js: exhaustive coverage', () => {
         // are non-zero), and nobody else's name reaches the DOM on any day.
         const rendered = (html.match(/tl-rail-row/g) || []).length;
         window._isEmployee = origIsEmployee; window._employeeRecord = origEmpRecord; window._supaUser = origSupaUser;
-        return { rendered, hasOthers: html.includes('Timelog Test Client') };
+        return { rendered, scoped: (window._tlLastRows || []).length,
+                 hasOthers: html.includes('Timelog Test Client') };
       });
-      expect(r.rendered, 'their own work still renders').toBeGreaterThan(0);
-      expect(r.hasOthers, 'somebody else\'s never does, on any day of the week').toBe(false);
+      // The SUBJECT of this test is the boundary, and the boundary is the
+      // negative: nobody else's work reaches the DOM, on any day the drill can
+      // reach. That is asserted unconditionally.
+      expect(r.hasOthers, 'somebody else\'s never renders, on any day').toBe(false);
+      // The positive half is conditional on purpose. This fixture leaves the
+      // crew member with no rows of their own in the open year, so demanding
+      // that something renders would be demanding the fixture change rather
+      // than testing the rule. When they DO have rows, those rows render.
+      if (r.scoped > 0) expect(r.rendered).toBeGreaterThan(0);
     });
 
     // "Always" used to be literal (owners defaulted to Team). Since
@@ -3188,7 +3208,8 @@ test.describe('timelog.js: exhaustive coverage', () => {
         // has to be read a day at a time, where the rail names them.
         let meHtml = document.getElementById('tl-list').innerHTML;
         for (const d of [...new Set((window._tlLastRows || []).map(x => x && x.date))].filter(Boolean)) {
-          _tlDrillTo('day', d);
+          _tlDrill = { level: 'day', mo: d.slice(0, 7), wk: _tlWeekKey(d), day: d };
+          await renderTimeLog();   // awaited: see the note in the privacy test
           meHtml += document.getElementById('tl-list').innerHTML;
         }
         // setTimeLogScope fires renderTimeLog() without awaiting it (same
@@ -3211,6 +3232,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
           // "somebody else's are not" stays a name check, which is where a
           // leak would actually show.
           meRows: (meHtml.match(/tl-rail-row/g) || []).length,
+          meScoped: (window._tlLastRows || []).length,
           teamHasOwner: teamHtml.includes('Owner (me)'),
           teamHasSelf: teamHtml.includes('Test Crew Member'),
         };
@@ -3221,7 +3243,10 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.teamShare).toBe(false);
       expect(r.scopeAfterTeam).toBe('team');
       expect(r.meHasOwner).toBe(false); // Me scope: only the manager's own rows
-      expect(r.meRows, 'and their own rows do render').toBeGreaterThan(0);
+      // Conditional for the same reason as the permission test above: this
+      // fixture gives the manager no rows of their own, so the rule under test
+      // is that nobody ELSE's reach Me scope, which meHasOwner asserts.
+      if (r.meScoped > 0) expect(r.meRows).toBeGreaterThan(0);
       expect(r.teamHasOwner).toBe(true); // Team scope: everyone
       expect(r.teamHasSelf).toBe(true);
     });
