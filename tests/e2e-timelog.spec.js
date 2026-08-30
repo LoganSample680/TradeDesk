@@ -2993,111 +2993,11 @@ test.describe('timelog.js: exhaustive coverage', () => {
   // (avatar, split bar, OT badge, "(you)" tag). Works on any row-subset
   // aggregate (_tlEmpWeekAgg output), so tested directly against hand-built
   // byEmp maps rather than through a full render for every case.
-  test.describe('_tlWeekOwnerHtml', () => {
-    test('golden path: one row per uid, name, total, avatar label', async () => {
-      const r = await page.evaluate(() => {
-        const byEmp = { u1: { min: 90, onsiteMin: 90, driveMin: 0, placeMin: 0, weekOT: false, name: 'Dave Torres' } };
-        return _tlWeekOwnerHtml(byEmp, null);
-      });
-      expect(r).toContain('Dave Torres');
-      expect(r).toContain('1h 30m');
-      expect(r).toContain('DT'); // initials() avatar label
-      expect(r).toContain('tl-emp-row');
-      expect(r).toContain('tl-split-bar');
-    });
-
-    test('"Owner (me)" gets the "Me" avatar label, not broken initials', async () => {
-      const r = await page.evaluate(() => {
-        const byEmp = { owner1: { min: 60, onsiteMin: 60, driveMin: 0, placeMin: 0, weekOT: false, name: 'Owner (me)' } };
-        return _tlWeekOwnerHtml(byEmp, null);
-      });
-      expect(r).toContain('>Me<');
-      expect(r).not.toContain('O(');
-    });
-
-    test('selfUid tags exactly that row "(you)", never another row', async () => {
-      const r = await page.evaluate(() => {
-        const byEmp = {
-          u1: { min: 60, onsiteMin: 60, driveMin: 0, placeMin: 0, weekOT: false, name: 'Mike Sample' },
-          u2: { min: 30, onsiteMin: 30, driveMin: 0, placeMin: 0, weekOT: false, name: 'Dave Torres' },
-        };
-        const html = _tlWeekOwnerHtml(byEmp, 'u2');
-        const mikeIdx = html.indexOf('Mike Sample');
-        const daveIdx = html.indexOf('Dave Torres');
-        const youIdx = html.indexOf('(you)');
-        return { hasYou: html.includes('(you)'), youNearDave: youIdx > daveIdx && (mikeIdx < 0 || youIdx < mikeIdx || youIdx > mikeIdx + 200) };
-      });
-      expect(r.hasYou).toBe(true);
-    });
-
-    test('no selfUid match, "(you)" never appears', async () => {
-      const r = await page.evaluate(() => {
-        const byEmp = { u1: { min: 60, onsiteMin: 60, driveMin: 0, placeMin: 0, weekOT: false, name: 'Mike Sample' } };
-        return _tlWeekOwnerHtml(byEmp, 'someone-else');
-      });
-      expect(r).not.toContain('(you)');
-    });
-
-    test('weekOT true, renders the OT badge and the highlighted-row class', async () => {
-      const r = await page.evaluate(() => {
-        const byEmp = { u1: { min: 2500, onsiteMin: 2500, driveMin: 0, placeMin: 0, weekOT: true, name: 'Mike Sample' } };
-        return _tlWeekOwnerHtml(byEmp, null);
-      });
-      expect(r).toContain('tl-ot-badge');
-      expect(r).toContain('tl-emp-row ot');
-    });
-
-    test('weekOT false, no OT badge, no highlighted-row class', async () => {
-      const r = await page.evaluate(() => {
-        const byEmp = { u1: { min: 300, onsiteMin: 300, driveMin: 0, placeMin: 0, weekOT: false, name: 'Mike Sample' } };
-        return _tlWeekOwnerHtml(byEmp, null);
-      });
-      expect(r).not.toContain('tl-ot-badge');
-      expect(r).not.toContain('tl-emp-row ot');
-    });
-
-    test('drive/supply minutes over the 3-minute noise floor show in the split legend, under it are suppressed', async () => {
-      const r = await page.evaluate(() => {
-        const byEmp = { u1: { min: 100, onsiteMin: 90, driveMin: 10, placeMin: 2, weekOT: false, name: 'Mike Sample' } };
-        return _tlWeekOwnerHtml(byEmp, null);
-      });
-      // 'Drive' -> 'Driving' (2026-08-30): the legend labels now come from the
-      // single _TL_BUCKETS table the day rail also reads, so the two surfaces
-      // cannot print different words for the same bucket.
-      expect(r).toContain('Driving');
-      expect(r).not.toContain('Supply/other');
-    });
-
-    test('sorted by minutes descending', async () => {
-      const r = await page.evaluate(() => {
-        const byEmp = {
-          low: { min: 30, onsiteMin: 30, driveMin: 0, placeMin: 0, weekOT: false, name: 'Low Person' },
-          high: { min: 400, onsiteMin: 400, driveMin: 0, placeMin: 0, weekOT: false, name: 'High Person' },
-        };
-        const html = _tlWeekOwnerHtml(byEmp, null);
-        return html.indexOf('High Person') < html.indexOf('Low Person');
-      });
-      expect(r).toBe(true);
-    });
-
-    test('empty byEmp, returns empty string, no throw', async () => {
-      const r = await page.evaluate(() => {
-        try { return { ok: true, html: _tlWeekOwnerHtml({}, null) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.html).toBe('');
-    });
-
-    test('missing name falls back to "Crew", does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { return { ok: true, html: _tlWeekOwnerHtml({ u1: { min: 60, onsiteMin: 60, driveMin: 0, placeMin: 0, weekOT: false, name: null } }, null) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.html).toContain('Crew');
-    });
-  });
+  // _tlWeekOwnerHtml's tests were DELETED with the function (§7). Its only
+  // caller was the week body the drill replaced; Team's per-person cards come
+  // from _tlEmpAccHtml, which has its own coverage. The split-bar rendering
+  // those tests really cared about is _tlEmpCardHtml, still tested through the
+  // Me-mirrors-Team block on a single day.
 
   test.describe('_tlEmpWeekAgg', () => {
     test('golden path: sums minutes and classifies on-site/drive/place per employee', async () => {
@@ -3150,69 +3050,10 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
   });
 
-  test.describe('_tlWeekMineHtml', () => {
-    test('golden path: one line per day, sorted chronologically, minutes formatted', async () => {
-      const r = await page.evaluate(() => _tlWeekMineHtml([
-        { date: '2026-08-18', minutes: 60, clientName: 'John Doe' },
-        { date: '2026-08-17', minutes: 30, clientName: 'John Doe' },
-      ]));
-      expect(r.indexOf('8/17')).toBeLessThan(r.indexOf('8/18'));
-      expect(r).toContain('1h');
-      expect(r).toContain('30m');
-    });
-
-    test('a single client name shows as the label; multiple distinct names collapse to "N stops"', async () => {
-      const r = await page.evaluate(() => ({
-        one: _tlWeekMineHtml([{ date: '2026-08-17', minutes: 60, clientName: 'John Doe' }]),
-        many: _tlWeekMineHtml([
-          { date: '2026-08-17', minutes: 30, clientName: 'John Doe' },
-          { date: '2026-08-17', minutes: 30, clientName: 'Ace Supply' },
-        ]),
-      }));
-      expect(r.one).toContain('John Doe');
-      expect(r.many).toContain('2 stops');
-    });
-
-    // Owner report 2026-08-23, live device: a reconciliation bug summed one
-    // real calendar day to 2848 minutes (47h28m) and it rendered as a
-    // perfectly normal-looking number. One person physically cannot log
-    // more than 1440 minutes in one day, so this is flagged, never trusted.
-    test('a day over 1440 minutes (24h) renders as a flagged data error, not a normal total', async () => {
-      const r = await page.evaluate(() => _tlWeekMineHtml([
-        { date: '2026-08-21', minutes: 2848, clientName: 'John Doe' },
-      ]));
-      expect(r).toContain('Data error');
-      expect(r).toContain('var(--c-red-deep)');
-      // The raw (wrong) figure still shows, in the tooltip: seeing exactly
-      // how wrong it is is what makes the underlying bug reportable.
-      expect(r).toContain('47h 28m');
-    });
-
-    test('a day at exactly 1440 minutes (24h) is NOT flagged, only strictly over is', async () => {
-      const r = await page.evaluate(() => _tlWeekMineHtml([
-        { date: '2026-08-21', minutes: 1440, clientName: 'John Doe' },
-      ]));
-      expect(r).not.toContain('Data error');
-    });
-
-    test('unpaid rows are excluded from the day total, including from tripping the 24h flag', async () => {
-      const r = await page.evaluate(() => _tlWeekMineHtml([
-        { date: '2026-08-21', minutes: 1400, clientName: 'John Doe', unpaid: false },
-        { date: '2026-08-21', minutes: 200, clientName: 'John Doe', unpaid: true },
-      ]));
-      expect(r).not.toContain('Data error');
-      expect(r).toContain('23h 20m'); // 1400 min, the unpaid 200 never counted
-    });
-
-    test('empty rows, returns empty string, no throw', async () => {
-      const r = await page.evaluate(() => {
-        try { return { ok: true, html: _tlWeekMineHtml([]) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.html).toBe('');
-    });
-  });
+  // _tlWeekMineHtml's tests went the same way. Worth recording what it did,
+  // because the idea is a good one and may come back: it collapsed several
+  // client names on one day to "N stops". That is a countable unknown, which
+  // is exactly the kind of label that makes somebody want to open a day.
 
   test.describe('_tlWeekDayDates / _tlDayFullLabel', () => {
     test('golden path: 7 dates, Sunday through Saturday, starting from the given Sunday', async () => {
