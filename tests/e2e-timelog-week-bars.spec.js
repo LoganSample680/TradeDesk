@@ -22,18 +22,25 @@ test.describe('week bars: pure helpers', () => {
   // that can never fail.
   test.afterEach(async ({ page }) => { assertNoErrors(page, 'week bars helpers'); });
 
-  test('_tlBarAmt: zero-padded, hour-less under an hour, junk degrades to 0m', async ({ page }) => {
-    const r = await page.evaluate(() => [
-      _tlBarAmt(0), _tlBarAmt(5), _tlBarAmt(45), _tlBarAmt(60), _tlBarAmt(365),
-      _tlBarAmt(539), _tlBarAmt(714), _tlBarAmt(1440),
-      _tlBarAmt(null), _tlBarAmt(undefined), _tlBarAmt('x'), _tlBarAmt(-30),
+  test('_tlBarAmtParts: hours over minutes, nothing abbreviated, junk degrades', async ({ page }) => {
+    // Owner 2026-08-30: "don't want hours cutting off." Every earlier attempt
+    // shrank the number to fit the column; this one splits it across two lines
+    // so no value is ever truncated at any width.
+    const r = await page.evaluate(() => [0, 5, 45, 60, 365, 539, 714, 1440,
+      null, undefined, 'x', -30].map(_tlBarAmtParts));
+    expect(r.slice(0, 8)).toEqual([
+      { top: '0m', sub: '' },      // nothing
+      { top: '5m', sub: '' },      // under an hour: no hours line to draw
+      { top: '45m', sub: '' },
+      { top: '1h', sub: '' },      // a clean hour, never "1h" over a lonely 0m
+      { top: '6h', sub: '5m' },
+      { top: '8h', sub: '59m' },
+      { top: '11h', sub: '54m' },  // the one that used to overrun its neighbour
+      { top: '24h', sub: '' },
     ]);
-    expect(r.slice(0, 8)).toEqual(
-      ['0m', '5m', '45m', '1h00', '6h05', '8h59', '11h54', '24h00']);
-    // 6h05, never 6h5: at this size a stray single digit reads as a different
-    // number entirely.
-    expect(r[4]).toBe('6h05');
-    expect(r.slice(8)).toEqual(['0m', '0m', '0m', '0m']);
+    // Math.max(0, NaN) is NaN, so a garbage value once printed "NaNm".
+    expect(r.slice(8)).toEqual([{ top: '0m', sub: '' }, { top: '0m', sub: '' },
+                                { top: '0m', sub: '' }, { top: '0m', sub: '' }]);
   });
 
   test('_tlBarCeiling: headroom over the tallest day, never under four hours', async ({ page }) => {
@@ -159,11 +166,17 @@ test.describe('week bars: markup', () => {
   });
 
   test('the hours under each bar are text, and exclude unpaid time', async ({ page }) => {
-    const amts = await page.evaluate(() =>
-      [...document.querySelectorAll('.tl-wbar-amt')].map(el => el.textContent));
+    const r = await page.evaluate(() => ({
+      top: [...document.querySelectorAll('.tl-wbar-amt')].map(el => el.textContent),
+      sub: [...document.querySelectorAll('.tl-wbar-sub')].map(el => el.textContent),
+    }));
     // Wed carries a 45-minute unpaid hole that must not count:
     // 21 + 187 + 157 = 365 paid minutes.
-    expect(amts).toEqual(['—', '—', '8h59', '6h05', '9h54', '11h54', '2h35']);
+    expect(r.top).toEqual(['—', '—', '8h', '6h', '9h', '11h', '2h']);
+    expect(r.sub).toEqual(['', '', '59m', '5m', '54m', '54m', '35m']);
+    // The empty ones are still IN the DOM: a conditional span made those
+    // columns a row shorter and the seven bars stopped sharing a baseline.
+    expect(r.sub.length).toBe(7);
   });
 
   test('the stack is bucket-ordered bottom-up, same colours as the split bar', async ({ page }) => {
@@ -213,6 +226,88 @@ test.describe('week bars: markup', () => {
   });
 });
 
+test.describe('week bars: sharing a week as text', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockAllExternal(page);
+    await page.goto('/index.html');
+    await waitForAppBoot(page);
+    await page.evaluate(renderWeekRail, { rows: WEEK_ROWS, days: WEEK_DAYS });
+  });
+  test.afterEach(async ({ page }) => { assertNoErrors(page, 'week bars share'); });
+
+  test('the text is written for an SMS bubble, not a terminal', async ({ page }) => {
+    const t = await page.evaluate(([rows, days]) => _tlWeekShareText(rows, days[0]),
+      [WEEK_ROWS, WEEK_DAYS]);
+    // Tabs and runs of spaces are how a "neatly aligned" export turns into
+    // ragged noise the moment it lands in a message.
+    expect(t).not.toMatch(/\t/);
+    expect(t).not.toMatch(/ {2,}/);
+    expect(t.split('\n').every(l => l.length <= 72)).toBe(true);
+    // Days with nothing logged are left out, not printed as zeros.
+    expect(t).not.toContain('Sun 8/23');
+    expect(t).not.toContain('Mon 8/24');
+    expect(t).toContain('Thu 8/27: 9h 54m');
+    expect(t).toContain('Total: 39h 27m');
+    // The split, from the same fold the bars and the card use.
+    expect(t).toContain('On site 33h 46m');
+    expect(t).toContain('Driving 2h 51m');
+  });
+
+  test('an unanswered hole is named on the day it belongs to', async ({ page }) => {
+    // A number somebody is about to act on has to say when it is incomplete.
+    const t = await page.evaluate(([rows, days]) => _tlWeekShareText(rows, days[0]),
+      [WEEK_ROWS, WEEK_DAYS]);
+    expect(t).toContain('Wed 8/26: 6h 5m (45m unaccounted)');
+    expect((t.match(/unaccounted/g) || []).length).toBe(1);
+  });
+
+  test('it sends the week ON SCREEN, not whatever week today falls in', async ({ page }) => {
+    // The old share was hardwired to the current calendar week: open the week
+    // of the 23rd, tap share, get this week's numbers instead.
+    const r = await page.evaluate(async () => {
+      const shared = [];
+      window.pwaShare = async (a) => { shared.push(a); };
+      const key = Object.keys(_tlWeekCache)[0];
+      await _tlShareWeekAt(key);
+      return { n: shared.length, text: shared[0] && shared[0].text, key };
+    });
+    expect(r.n).toBe(1);
+    expect(r.text).toContain('Aug 23 – 29');
+    expect(r.text).toContain('Total: 39h 27m');
+  });
+
+  test('empty and junk input never share a misleading blank', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      const shared = [], toasts = [];
+      window.pwaShare = async (a) => { shared.push(a); };
+      window.showToast = (m) => { toasts.push(m); };
+      await _tlShareText([], '2026-08-23', 'x');
+      await _tlShareText(null, '2026-08-23', 'x');
+      return { shared: shared.length, toasts,
+               junk: _tlWeekShareText(null, null), noWk: _tlWeekShareText([], null) };
+    });
+    expect(r.shared).toBe(0);
+    expect(r.toasts.length).toBe(2);
+    // Never a share sheet with nothing in it, and never a throw.
+    expect(r.junk).toContain('Total: 0m');
+    expect(r.noWk).toContain('Total: 0m');
+  });
+
+  test('the button rides on the week it sends', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const b = document.querySelector('.tl-wbar-share');
+      return { inWrap: !!b.closest('.tl-wbar-wrap'), tag: b.tagName, type: b.type,
+               calls: b.getAttribute('onclick'),
+               h: Math.round(b.getBoundingClientRect().height) };
+    });
+    expect(r.inWrap).toBe(true);
+    expect(r.tag).toBe('BUTTON');
+    expect(r.type).toBe('button');
+    expect(r.calls).toContain('_tlShareWeekAt');
+    expect(r.h).toBeGreaterThanOrEqual(24);
+  });
+});
+
 test.describe('week bars: layout integrity (§15.3)', () => {
   for (const w of [320, 390]) {
     test('no bleed and no label collision at ' + w + 'px', async ({ page }) => {
@@ -224,11 +319,17 @@ test.describe('week bars: layout integrity (§15.3)', () => {
       const r = await page.evaluate(() => {
         const amts = [...document.querySelectorAll('.tl-wbar-amt')]
           .map(el => el.getBoundingClientRect());
+        const subs = [...document.querySelectorAll('.tl-wbar-sub')]
+          .map(el => el.getBoundingClientRect());
         // "11h 54m" used to run straight into the next day's number at 320px.
         // Two labels overlapping is a defect, not a cosmetic nit: it makes both
         // unreadable at exactly the width most phones use.
         let collisions = 0;
         for (let i = 1; i < amts.length; i++) if (amts[i].left < amts[i - 1].right - 0.5) collisions++;
+        for (let i = 1; i < subs.length; i++) {
+          if (!subs[i].width || !subs[i - 1].width) continue;
+          if (subs[i].left < subs[i - 1].right - 0.5) collisions++;
+        }
         return {
           sw: document.documentElement.scrollWidth, iw: window.innerWidth,
           collisions,

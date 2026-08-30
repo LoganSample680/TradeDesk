@@ -1156,21 +1156,29 @@ function _tlDayRailHtml(rows){
 //     look normal, which is the failure mode of every "scale to max" chart)
 //   - the amber ? on a day with an unanswered hole
 //   - the OT flag when the week itself crosses 40
-// The bar label, and it is its OWN format on purpose. At 320px a seven-column
-// grid gives each day about 35px. "11h 54m" overran its neighbour outright,
-// and "11h54m" still touched it. "11h54" fits with room, and the minutes are
-// zero-padded so "6h05" can never be misread as six hours and five hours.
-// Under an hour there are no hours to say, so it stays "45m".
-// The text matters: it is what keeps the height comparison readable to someone
-// who cannot judge a height, so shrinking it was never an option (1.4.1).
-function _tlBarAmt(min){
+// The bar label, split across TWO LINES instead of squeezed onto one.
+//
+// This went through "11h 54m" (overran its neighbour at 320px), then "11h54m"
+// (still touched it), then "11h54" (fit, but the owner's answer was "don't
+// want hours cutting off"). He is right, and the earlier versions were all the
+// same mistake: making the number smaller to fit a box, when the box was the
+// thing that should have changed. A seven-column grid gives each day about
+// 35px across and as much vertical room as we care to use, so the hours go
+// above the minutes and nothing is abbreviated at all.
+//
+// The text is not decoration. It is what keeps the height comparison readable
+// to someone who cannot judge a height (1.4.1), so shrinking or truncating it
+// was never actually on the table.
+function _tlBarAmtParts(min){
   // Math.max(0, NaN) is NaN, not 0, so a garbage minutes value printed "NaNm"
   // under a bar. Guarded, not clamped by accident.
   const n=Number(min);
   const t=Number.isFinite(n)?Math.max(0,Math.round(n)):0;
   const h=Math.floor(t/60),m=t%60;
-  if(!h)return m+'m';
-  return h+'h'+String(m).padStart(2,'0');
+  if(!t)return {top:'0m',sub:''};
+  if(!h)return {top:m+'m',sub:''};
+  // A clean hour says one thing, not "8h" over a lonely "0m".
+  return {top:h+'h',sub:m?m+'m':''};
 }
 const _TL_BAR_H=104;            // px of drawable column
 const _TL_BAR_GUIDE_MIN=8*60;   // the 8-hour line
@@ -1216,6 +1224,7 @@ function _tlWeekBarsHtml(weekRows,days,cacheKey){
     // The badge rides just above the TOP OF THE BAR, not at the top of the
     // column: parked at the ceiling it floated in space over a short day and
     // read as belonging to nothing.
+    const amt=_tlBarAmtParts(e.min);
     const q=gapMin
       ?'<i class="tl-wbar-q" style="bottom:calc('+h.toFixed(2)+'% + 3px)" '+
         'title="'+escHtml(fm(gapMin)+' unaccounted, tap to answer')+'">?</i>'
@@ -1233,13 +1242,26 @@ function _tlWeekBarsHtml(weekRows,days,cacheKey){
         // The hours are TEXT under every column, so the comparison the chart
         // makes by height is also there in words (1.4.1), and a day that is
         // simply short is never mistaken for a day that failed to record.
-        '<span class="tl-wbar-amt">'+escHtml(e.min?_tlBarAmt(e.min):'—')+'</span>'+
+        '<span class="tl-wbar-amt">'+escHtml(e.min?amt.top:'—')+'</span>'+
+        // ALWAYS emitted, empty or not. A conditional span made columns with
+        // no minutes part one row shorter, so the seven bars stopped sharing a
+        // baseline. Same reason the height is fixed in CSS rather than left to
+        // the line box.
+        '<span class="tl-wbar-sub">'+escHtml(amt.sub)+'</span>'+
       '</button>'+
     '</li>';
   }).join('');
+  // Share sits ON the week it sends, not at the bottom of the page, because
+  // the page-level button has always meant "this calendar week" and this one
+  // means "the week you are looking at." Two different things, so two
+  // controls, both through _tlWeekShareText.
+  const share='<button type="button" class="tl-wbar-share" '+
+    'onclick="_tlShareWeekAt(\''+escHtml(String(cacheKey))+'\')">'+
+    (typeof svgIcon==='function'?svgIcon('⬆',{size:12}):'')+' Send this week</button>';
   return '<div class="tl-wbar-wrap">'+
     '<div class="tl-wbar-plotarea">'+guide+'</div>'+
     '<ol class="tl-wbar">'+cols+'</ol>'+
+    share+
   '</div>';
 }
 // ── A gap answered on Saturday, covered by real rows on Sunday ─────────────
@@ -1865,18 +1887,77 @@ function setTimeLogScope(scope){
 // week, own rows only. _tlLastRows is only ever populated with Me-scoped
 // rows while the Share button is visible (renderTimeLog hides the button
 // entirely in Team scope), so no re-filtering by uid is needed here.
+// ── Sharing a week as plain text ───────────────────────────────────────────
+// Owner, 2026-08-30: "need a great way to export it to share via text."
+//
+// ONE builder, two entry points (§7.3). The old share existed but produced a
+// bare list of day totals, and it was hardwired to the CURRENT calendar week:
+// open the week of the 23rd, tap share, and you got this week's numbers
+// instead of the ones on screen. Both callers now go through here so they can
+// never say different things about the same week.
+//
+// Written for a text message and nothing else: no tabs, no aligned columns, no
+// box drawing. Every one of those survives a desktop terminal and none of them
+// survives an SMS bubble on a phone, which is the only place this is going.
+// Days with nothing logged are left out rather than printed as zeros; a week
+// where the crew worked four days should read as four lines.
+function _tlWeekShareText(rows,wkStart){
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object');
+  const days=(typeof _tlWeekDayDates==='function'&&wkStart)?_tlWeekDayDates(wkStart):[];
+  const byDay={};
+  days.forEach(d=>{byDay[d]=[];});
+  list.forEach(r=>{if(byDay[r.date])byDay[r.date].push(r);
+                   else if(!days.length)(byDay[r.date]=byDay[r.date]||[]).push(r);});
+  const order=days.length?days:Object.keys(byDay).sort();
+  const lines=[];
+  order.forEach(d=>{
+    const dayRows=byDay[d]||[];
+    const min=_tlPaidMin(dayRows);
+    if(!min)return;
+    // An unanswered hole is called out on the day it belongs to. A number
+    // somebody is about to act on should say when it is still incomplete.
+    const gap=dayRows.filter(r=>_tlRailKind(r)==='gap').reduce((s,r)=>s+(r.minutes||0),0);
+    lines.push(_tlDayShort(d)+': '+fm(min)+(gap?' ('+fm(gap)+' unaccounted)':''));
+  });
+  const e=_tlBucketFold(list);
+  const split=_TL_BUCKETS.filter(b=>(e[b.k]||0)>0).map(b=>b.label+' '+fm(e[b.k])).join(', ');
+  const head='Hours, '+(wkStart&&typeof _tlWeekLabel==='function'
+    ?String(_tlWeekLabel(wkStart)).replace(/^Week of /,''):'this week');
+  const out=[head,''];
+  if(lines.length)out.push(lines.join('\n'),'');
+  // _fmtMin(0) is the EMPTY STRING, which on the page is fine (nothing is
+  // drawn) and in a text message is a line reading "Total:" with a blank after
+  // it. A number nobody can read is worse than no message.
+  out.push('Total: '+(fm(e.min)||'0m'));
+  if(split)out.push(split);
+  // 40+ hours is the one number on here that changes what somebody does next,
+  // so it is stated rather than left to be worked out from the total.
+  if(e.ot)out.push('Over 40 hours this week, check overtime.');
+  return out.join('\n');
+}
+async function _tlShareText(rows,wkStart,label){
+  if(!rows||!rows.length){
+    typeof showToast==='function'&&showToast('No hours logged that week yet','📋');return;
+  }
+  const text=_tlWeekShareText(rows,wkStart);
+  if(typeof pwaShare==='function')await pwaShare({title:label||'Hours',text});
+  return text;
+}
+// The week ON SCREEN, from the same cache the bars were drawn from, so what
+// gets sent is what he is looking at.
+async function _tlShareWeekAt(cacheKey){
+  const cache=_tlWeekCache[cacheKey];
+  if(!cache)return;
+  return _tlShareText(cache.rows,cache.wk,'Hours');
+}
+// The current calendar week, for the button at the bottom of the page.
 async function _tlShareWeek(){
   const wkStart=new Date();wkStart.setHours(0,0,0,0);wkStart.setDate(wkStart.getDate()-wkStart.getDay());
   const wkEnd=new Date(wkStart);wkEnd.setDate(wkEnd.getDate()+6);
   const wkStartStr=dateKey(wkStart),wkEndStr=dateKey(wkEnd);
   const rows=_tlLastRows.filter(r=>r.date>=wkStartStr&&r.date<=wkEndStr);
-  if(!rows.length){typeof showToast==='function'&&showToast('No hours logged this week yet','📋');return;}
-  const byDay={};
-  rows.forEach(r=>{byDay[r.date]=(byDay[r.date]||0)+(r.minutes||0);});
-  const totalMin=_tlPaidMin(rows);
-  const lines=Object.keys(byDay).sort().map(d=>_tlDayShort(d)+': '+(typeof _fmtMin==='function'?_fmtMin(byDay[d]):byDay[d]+'m'));
-  const text='My hours this week ('+_tlWeekLabel(wkStartStr)+')\n'+lines.join('\n')+'\nTotal: '+(typeof _fmtMin==='function'?_fmtMin(totalMin):totalMin+'m');
-  if(typeof pwaShare==='function')await pwaShare({title:'This week\'s hours',text});
+  return _tlShareText(rows,wkStartStr,'This week\'s hours');
 }
 // ── The repair pass, moved OFF the critical path (owner report 2026-08-26:
 // "why the slowness on time log where skeleton takes forever") ──────────────

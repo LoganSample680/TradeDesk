@@ -1305,15 +1305,31 @@ body.dark .tl-wbar-guide{box-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,
 .tl-wbar-stack{display:flex;flex-direction:column;width:100%;overflow:hidden;
   border-radius:6px 6px 3px 3px;min-height:3px}
 .tl-wbar-seg{display:block;width:100%;min-height:2px}
-.tl-wbar-hit:hover .tl-wbar-plot{outline:1.5px solid var(--line-2);outline-offset:2px}
+/* The column has to LOOK pressable or the tap is a secret. The whole column
+   lights up, not just the bar, so the target and the affordance are the same
+   shape, and it presses on touch where there is no hover at all. */
+.tl-wbar-hit{border-radius:7px;transition:background .12s ease,transform .12s ease}
+.tl-wbar-hit:hover{background:var(--cream)}
+.tl-wbar-hit:active{background:var(--cream);transform:scale(.96)}
+.tl-wbar-hit:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.tl-wbar-share{display:block;margin:12px auto 0;padding:0 12px;height:34px;
+  border-radius:9px;border:1.5px solid var(--line-2);background:var(--bg-card);
+  color:var(--text);font-family:inherit;font-size:12px;font-weight:800;cursor:pointer;
+  display:flex;align-items:center;gap:6px}
+.tl-wbar-share:hover{border-color:var(--ink)}
 .tl-wbar-dow{font-size:11px;font-weight:800;color:var(--text2);margin-top:6px;line-height:1.1}
 /* The height comparison, restated in words: a chart that only encodes hours as
    a height is unreadable to anyone who cannot judge one, and a short day must
    never be mistakable for a day that recorded nothing (1.4.1). */
-/* nowrap is load-bearing: "11h 54m" wrapped to two lines in a 46px column and
-   pushed that one day's labels a row lower than the other six. */
-.tl-wbar-amt{font-size:9px;font-weight:800;color:var(--text);margin-top:2px;
-  font-variant-numeric:tabular-nums;line-height:1.2;white-space:nowrap;letter-spacing:-.2px}
+/* Hours over minutes, each on its own line, each short enough that nothing is
+   ever abbreviated or clipped (owner 2026-08-30: "don't want hours cutting
+   off"). Fixed line-heights so a day with no minutes part still leaves the
+   same vertical space and the seven columns stay bottom-aligned. */
+.tl-wbar-amt{font-size:11px;font-weight:800;color:var(--text);margin-top:3px;
+  font-variant-numeric:tabular-nums;line-height:13px;height:13px;white-space:nowrap}
+.tl-wbar-sub{font-size:9.5px;font-weight:700;color:var(--text3);
+  font-variant-numeric:tabular-nums;line-height:12px;height:12px;white-space:nowrap}
+
 .tl-wbar-col.tl-wbar-none .tl-wbar-amt{font-weight:700;color:var(--text3)}
 .tl-wbar-col.tl-wbar-none .tl-wbar-plot{opacity:.6}
 /* "Still needs an answer", as a character and not a colour (1.4.1).
