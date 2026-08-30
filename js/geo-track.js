@@ -6693,6 +6693,89 @@ function _geoLoadBeforeDrive(tape,driveMs){
 // load sits INSIDE NO EXISTING ROW: the shop dwell closed at 06:55 and the
 // loading happened at 07:43, so a pass that walks dwells can never see it. A
 // pass that walks DRIVES can, and a drive is what a load-out is for.
+// ── THE CLOCK IS THE TAPE, THE FENCE IS THE PLACE ────────────────────────────
+// Owner, 2026-08-29, stating the whole model in one go: "core motion graphs the
+// time stamp and the gps ping, which then confirms if you're in a fence to
+// showcase where you were, once you either go from drive to motion, fires
+// another gps ping and if it's in a fence it completes the mileage and time
+// starting the time where you are."
+//
+// So a transition is a boundary, and the segment between two of them is one
+// entry. A fence never sets a time; it only names a place. Every previous
+// sweep in this file was a patch on one symptom of getting that backwards, and
+// this replaces the timing half of all of them.
+//
+// His 08-27 is the proof. CoreMotion said driving at 07:49:43; the shop fence
+// did not release him until 07:51:16 and the drive row was dated 07:56:28, so
+// a 7-minute drive was recorded as 3 and the missing head showed up in the log
+// as a gap the app could not explain. Again at midday: driving at 12:01:35,
+// fence exit at 12:04:33, and another 3 minutes went missing. Snapping to the
+// tape closes both, and no gap can exist afterwards, because the segments
+// tile the day by construction.
+//
+// It only ever RE-TIMES. It never creates a row, never deletes one, and never
+// changes what a row is or where it was: the place came from the fence and the
+// fence was right about that.
+const _GEO_RETIME_MAX_MS=30*60000;   // a boundary this far off is not the same event
+const _GEO_RETIME_MIN_MS=45000;      // under this, the tape and the fence already agree
+async function _geoRetimeToTapeSweep(){
+  try{
+    if(window._geoRetimeRan)return 0;
+    window._geoRetimeRan=true;
+    if(!_supa||!_supaUser)return 0;
+    const probe=await _geoMotionTape(Date.now()-3600000,Date.now());
+    if(!Array.isArray(probe))return 0;
+    const sinceIso=new Date(Date.now()-7*86400000).toISOString();
+    const{data,error}=await _supa.from('job_time_entries')
+      .select('id,arrived_at,departed_at,minutes,source,dest_place,client_key,job_id').is('deleted_at',null)
+      .eq('employee_user_id',_supaUser.id).gte('arrived_at',sinceIso);
+    if(error||!Array.isArray(data)||!data.length)return 0;
+    const rows=data.filter(r=>r&&r.arrived_at&&r.departed_at&&r.source!=='manual')
+      .sort((a,b)=>Date.parse(b.arrived_at)-Date.parse(a.arrived_at)).slice(0,30);
+    let changed=0;
+    const tapes={};
+    for(const r of rows){
+      const s0=Date.parse(r.arrived_at)||0,e0=Date.parse(r.departed_at)||0;
+      if(!(e0>s0))continue;
+      // One tape per row window, padded either side so the boundary that
+      // matters is inside it even when the fence was minutes late.
+      const key=String(Math.floor(s0/3600000));
+      if(!(key in tapes))tapes[key]=await _geoMotionTape(s0-_GEO_RETIME_MAX_MS,e0+_GEO_RETIME_MAX_MS);
+      const tape=tapes[key];
+      if(!Array.isArray(tape)||!tape.length)continue;
+      const segs=_geoTapeSegments(tape,s0-_GEO_RETIME_MAX_MS,e0+_GEO_RETIME_MAX_MS);
+      if(!segs.length)continue;
+      // A drive row belongs to a drive segment; everything else belongs to the
+      // standing-still one. Best overlap wins, so a row cannot be dragged onto
+      // a neighbouring segment it barely touches.
+      const want=_geoIsDriveSource(r.source)?'drive':'onsite';
+      let best=null,bestOv=0;
+      for(const g of segs){
+        if(g.kind!==want)continue;
+        const ov=Math.min(g.b,e0)-Math.max(g.a,s0);
+        if(ov>bestOv){bestOv=ov;best=g;}
+      }
+      if(!best||bestOv<=0)continue;
+      const dS=Math.abs(best.a-s0),dE=Math.abs(best.b-e0);
+      if(dS<_GEO_RETIME_MIN_MS&&dE<_GEO_RETIME_MIN_MS)continue;   // already agree
+      if(dS>_GEO_RETIME_MAX_MS||dE>_GEO_RETIME_MAX_MS)continue;   // not the same event
+      const mins=Math.round((best.b-best.a)/60000);
+      if(mins<1)continue;
+      _geoEnqueue('job_time_entries',{
+        id:r.id,contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+        job_id:r.job_id||null,
+        arrived_at:new Date(best.a).toISOString(),
+        departed_at:new Date(best.b).toISOString(),
+        minutes:mins,dest_place:r.dest_place||null,
+        client_key:r.client_key,source:r.source
+      });
+      _geoParkNote('retime',String(r.id).slice(0,8)+' '+r.minutes+'m -> '+mins+'m');
+      changed++;
+    }
+    _geoParkNote('retime-done','rows='+rows.length+' changed='+changed);
+    return changed;
+  }catch(_e){return 0;}
+}
 async function _geoLoadRetroSweep(){
   try{
     if(window._geoLoadRetroRan)return 0;

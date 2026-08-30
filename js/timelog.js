@@ -73,7 +73,11 @@ function _tlJobClientInfo(jobId){
 function _tlSourceLabel(source){
   const s=String(source||'');
   if(/^geofence/.test(s))return '';
-  if(/^drive/.test(s))return 'Driving'+(s.indexOf('rider')>=0?' (rider)':s.indexOf('personal')>=0?' (personal vehicle)':'');
+  // "Drive time", "Shop time", "Loading time" (owner 2026-08-29): every badge
+  // on this table names a BLOCK OF TIME, so they all end in the same word. A
+  // bare gerund reads as a status the app is currently in ("Driving...") when
+  // the row is a finished, countable thing.
+  if(/^drive/.test(s))return 'Drive time'+(s.indexOf('rider')>=0?' (rider)':s.indexOf('personal')>=0?' (personal vehicle)':'');
   // A home office is TWO different kinds of work and the log now says which.
   // The words are the ones contractors actually use: Jobber ships "Office"
   // for desk time, and loading the truck is how the trade forums and the
@@ -380,7 +384,7 @@ async function _timeLogRows(sinceISO){
         clientName:(typeof S!=='undefined'&&S&&S.bname)?S.bname:'Shop',
         addr:(typeof _geoShopAddr==='function'&&_geoShopAddr())||'',jobName:'',
         clientKey:null,unpaid:false,
-        detail:trimmed?'Shop · auto clock-out':'Shop',
+        detail:trimmed?'Shop time · auto clock-out':'Shop time',
         // Unchanged edges keep the source string exactly: only an edge the
         // clock-out or the overlap clip actually moved is re-stamped.
         startTime:sp.clipped?new Date(sp.startMs).toISOString():e.arrived_at,
@@ -756,7 +760,7 @@ function _tlRow(r){
   const homeKind=r.source==='auto'
     ?(r.rawSource==='place-load'?'load':r.rawSource==='place-office'?'office':'')
     :'';
-  const jobLine=[driveFromTo||r.clientName,(!driveFromTo&&r.jobName&&r.jobName!==r.clientName)?r.jobName:null,(isAutoDrive||r.unpaid||homeKind||r.detail==='Shop')?null:(r.detail||null)]
+  const jobLine=[driveFromTo||r.clientName,(!driveFromTo&&r.jobName&&r.jobName!==r.clientName)?r.jobName:null,(isAutoDrive||r.unpaid||homeKind||r.detail==='Shop time')?null:(r.detail||null)]
     .filter(Boolean).map(escHtml).join(' · ');
   // Amber (#9F5B00) is the SAME color drive time already gets in the Team
   // split bar/legend (_tlWeekOwnerHtml above), reused rather than invented

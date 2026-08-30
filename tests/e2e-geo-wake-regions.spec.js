@@ -1025,5 +1025,122 @@ test.describe('Wake region set for the dead app', () => {
     });
   });
 
+  // ── The clock is the tape, the fence is the place ─────────────────────────
+  test.describe('_geoRetimeToTapeSweep snaps rows to the motion boundaries', () => {
+    const run = async (page, world) => page.evaluate(async (w) => {
+      const saved = { supa: window._supa, user: window._supaUser, tape: window._geoMotionTape,
+                      enq: window._geoEnqueue, ran: window._geoRetimeRan };
+      const wrote = [];
+      try {
+        window._geoRetimeRan = false;
+        window._supaUser = { id: 'u1' };
+        window._geoEnqueue = (tbl, row) => wrote.push({ tbl, ...row });
+        window._geoMotionTape = async () => w.tape;
+        const chain = { select: () => chain, is: () => chain, eq: () => chain,
+                        gte: () => Promise.resolve({ data: w.rows, error: null }) };
+        window._supa = { from: () => chain };
+        const n = await _geoRetimeToTapeSweep();
+        return { n, wrote };
+      } finally {
+        window._supa = saved.supa; window._supaUser = saved.user;
+        window._geoMotionTape = saved.tape; window._geoEnqueue = saved.enq;
+        window._geoRetimeRan = saved.ran;
+      }
+    }, world);
+
+    // His real 08-27, to the second, CT via UTC+5.
+    const T = (h, m, s2) => Date.UTC(2026, 7, 27, h + 5, m, s2 || 0);
+    const iso = (h, m, s2) => new Date(T(h, m, s2)).toISOString();
+    const row = (id, src, a, b) => ({ id, source: src, dest_place: null, job_id: null,
+      client_key: 'k' + id, arrived_at: a, departed_at: b,
+      minutes: Math.round((Date.parse(b) - Date.parse(a)) / 60000) });
+
+    // 07:43:54 cycling, 07:44:23 still, 07:49:43 driving, 07:59:06 onFoot.
+    const MORNING = [
+      { ts: T(7, 43, 54), kind: 'cycling' }, { ts: T(7, 44, 23), kind: 'still' },
+      { ts: T(7, 49, 43), kind: 'driving' }, { ts: T(7, 59, 6), kind: 'onFoot' },
+    ];
+
+    test('THE MORNING DRIVE: 3 minutes becomes the 9 it actually was', async () => {
+      const r = await run(page, {
+        // What the fence recorded: 07:56:28 to 07:59:25.
+        rows: [row('d1', 'drive-unassigned', iso(7, 56, 28), iso(7, 59, 25))],
+        tape: MORNING,
+      });
+      expect(r.wrote.length).toBe(1);
+      expect(r.wrote[0].arrived_at, 'starts where CoreMotion said driving').toBe(iso(7, 49, 43));
+      expect(r.wrote[0].departed_at, 'ends where he got out, not where the fence tripped').toBe(iso(7, 59, 6));
+      expect(r.wrote[0].minutes).toBe(9);
+    });
+
+    test('the drive keeps its place and its job: only the clock moves', async () => {
+      const r = await page.evaluate(async (w) => {
+        const saved = { supa: window._supa, user: window._supaUser, tape: window._geoMotionTape,
+                        enq: window._geoEnqueue, ran: window._geoRetimeRan };
+        const wrote = [];
+        try {
+          window._geoRetimeRan = false; window._supaUser = { id: 'u1' };
+          window._geoEnqueue = (t, r2) => wrote.push(r2);
+          window._geoMotionTape = async () => w.tape;
+          const c = { select: () => c, is: () => c, eq: () => c, gte: () => Promise.resolve({ data: w.rows, error: null }) };
+          window._supa = { from: () => c };
+          await _geoRetimeToTapeSweep();
+          return wrote[0];
+        } finally {
+          window._supa = saved.supa; window._supaUser = saved.user; window._geoMotionTape = saved.tape;
+          window._geoEnqueue = saved.enq; window._geoRetimeRan = saved.ran;
+        }
+      }, { rows: [{ id: 'd2', source: 'drive', dest_place: 'John Doe', job_id: 77, client_key: 'kd2',
+                    arrived_at: iso(7, 56, 28), departed_at: iso(7, 59, 25), minutes: 3 }], tape: MORNING });
+      expect(r.dest_place, 'the fence was right about where').toBe('John Doe');
+      expect(r.job_id).toBe(77);
+      expect(r.source).toBe('drive');
+      expect(r.client_key, 'same row, not a new one').toBe('kd2');
+    });
+
+    test('an on-site row snaps to the standing-still segment, not the drive', async () => {
+      const r = await run(page, {
+        // On site recorded as starting 07:59:06; the tape agrees, so nothing moves.
+        rows: [row('v1', 'client', iso(7, 59, 6), iso(11, 30, 0))],
+        tape: MORNING.concat([{ ts: T(11, 30, 0), kind: 'driving' }]),
+      });
+      expect(r.wrote.length, 'the tape and the fence already agree here').toBe(0);
+    });
+
+    test('a boundary further off than half an hour is a different event, left alone', async () => {
+      const r = await run(page, {
+        rows: [row('d3', 'drive', iso(6, 30, 0), iso(6, 40, 0))],
+        tape: MORNING,
+      });
+      expect(r.wrote.length).toBe(0);
+    });
+
+    test('no tape means no opinion', async () => {
+      const r = await run(page, { rows: [row('d4', 'drive', iso(7, 56, 28), iso(7, 59, 25))], tape: [] });
+      expect(r.wrote.length).toBe(0);
+    });
+
+    test('manual rows are never re-timed: a person typed those', async () => {
+      const r = await run(page, {
+        rows: [{ id: 'm1', source: 'manual', dest_place: null, job_id: null, client_key: 'km1',
+                 arrived_at: iso(7, 56, 28), departed_at: iso(7, 59, 25), minutes: 3 }],
+        tape: MORNING,
+      });
+      expect(r.wrote.length).toBe(0);
+    });
+
+    test('it runs once per session', async () => {
+      const first = await run(page, {
+        rows: [row('d5', 'drive', iso(7, 56, 28), iso(7, 59, 25))], tape: MORNING });
+      expect(first.wrote.length).toBe(1);
+      const again = await page.evaluate(async () => {
+        const s = window._geoRetimeRan;
+        try { window._geoRetimeRan = true; return await _geoRetimeToTapeSweep(); }
+        finally { window._geoRetimeRan = s; }
+      });
+      expect(again).toBe(0);
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });
