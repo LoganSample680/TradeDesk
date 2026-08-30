@@ -1311,6 +1311,13 @@ function _tlWeekBarsHtml(weekRows,days,cacheKey,opts){
 // normal. The weeks read oldest to newest left to right, because that is the
 // direction a month runs and the eye is being asked to see a trend.
 const _TL_MONTH_GUIDE_MIN=40*60;
+// The floor is the guide PLUS headroom, not the guide itself (owner
+// 2026-08-30: "40 hr benchmark looks odd at the top"). Floored at exactly 40h,
+// a month nobody crossed 40 in put the line at 100% of the plot, flush with
+// the top edge, where it read as the chart's border rather than as a mark to
+// be under, and its label had nowhere to sit but outside. 14% of air above it
+// makes it a line in a chart again.
+const _TL_MONTH_FLOOR=Math.round(_TL_MONTH_GUIDE_MIN*1.14);
 function _tlMonthBarsHtml(monthRows,mo,scope,uid){
   // ME ONLY, the same split the week already makes. Folding a whole crew into
   // one bar per week hides who did what, which is the single thing the
@@ -1353,7 +1360,7 @@ function _tlMonthBarsHtml(monthRows,mo,scope,uid){
     // The cost is deliberate: a light month draws short bars, which is the
     // true answer, and the hours are printed under every column anyway.
   })),{guideMin:_TL_MONTH_GUIDE_MIN,guideLabel:'40h',share,
-      floorMin:_TL_MONTH_GUIDE_MIN});
+      floorMin:_TL_MONTH_FLOOR});
 }
 // "8/23" for a weekly column: short enough for six columns on a 320px phone,
 // and unambiguous because the month picker above already names the month.

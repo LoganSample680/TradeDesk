@@ -31,6 +31,7 @@ test.describe('month bars: the ruler and the shape', () => {
         .map(e => e.getBoundingClientRect());
       return { there: !!g, label: g && g.querySelector('b').textContent, hours,
                inside: !!gb && gb.top >= pb.top - 1 && gb.bottom <= pb.bottom + 1,
+               guideTop: gb ? Math.round(gb.top) : 0, plotTop: Math.round(pb.top),
                above: !!gb && tall.every(b => b.top >= gb.top - 1) };
     });
     // The fixture's biggest week is 39h 27m. Before the floor, the ceiling was
@@ -42,6 +43,9 @@ test.describe('month bars: the ruler and the shape', () => {
     expect(r.label).toBe('40h');
     expect(r.inside).toBe(true);
     expect(r.above, '39h must sit UNDER the 40h line, not on it').toBe(true);
+    // And the line must be a line IN the chart, not its top edge: floored at
+    // exactly 40h it landed at 100% and read as the border.
+    expect(r.guideTop - r.plotTop).toBeGreaterThan(8);
   });
 
   test('the chart sits on a surface, and the guide still lands on the bars', async ({ page }) => {

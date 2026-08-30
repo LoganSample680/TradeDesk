@@ -1481,9 +1481,16 @@ body.dark .tl-wbar-hit:hover .tl-wbar-stack{
 /* "Still needs an answer", as a character and not a colour (1.4.1).
    --amber and --amber-lt are the one amber pair restated in BOTH palettes, so
    this stays readable in dark mode instead of going dark-on-dark. */
+/* The glyph is OPTICALLY centred, not box-centred (owner 2026-08-30: "the
+   amber question mark isn't centered on the circle"). A "?" is a cap-height
+   glyph sitting on the baseline, so a line box centred in the circle reserves
+   descender space underneath it and pushes the ink up: it was touching the top
+   of the ring with a gap below. The padding shifts the content box down by the
+   half-descender the font reserves and never uses here. */
 .tl-wbar-q{position:absolute;left:50%;transform:translateX(-50%);
+  box-sizing:border-box;padding-top:5px;
   font-style:normal;font-size:10px;font-weight:900;line-height:1;z-index:3;
-  width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;
   background:var(--amber-lt);color:var(--amber);border:1px solid var(--amber)}
 /* ── Mileage: trip rows ── */
 .mil-day-trip{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line)}
