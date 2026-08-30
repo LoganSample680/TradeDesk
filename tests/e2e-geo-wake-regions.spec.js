@@ -1143,4 +1143,45 @@ test.describe('Wake region set for the dead app', () => {
   });
 
   test('no console errors', async () => { await assertNoErrors(page); });
+
+  // The 30-row cap that cut a day in half (found 2026-08-30 against live data).
+  test.describe('_geoWholeDays: a day is never half swept', () => {
+    test('stops at a day boundary, never mid-day, even past the row cap', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [];
+        // Newest first: 29 rows on the 29th, then 9 on the 27th, exactly the
+        // shape that put 08/27 at positions 24..32 behind a cap of 30.
+        for (let i = 0; i < 29; i++) rows.push({ id: 'a' + i, arrived_at: '2026-08-29T' + String(23 - (i % 23)).padStart(2, '0') + ':00:00.000Z' });
+        for (let i = 0; i < 9; i++) rows.push({ id: 'b' + i, arrived_at: '2026-08-27T' + String(20 - i).padStart(2, '0') + ':00:00.000Z' });
+        const out = _geoWholeDays(rows, 'arrived_at', 7, 30);
+        const ids = out.map(x => x.id);
+        return {
+          n: out.length,
+          allNine: ids.filter(x => x[0] === 'b').length,
+          none: _geoWholeDays([], 'arrived_at', 7, 30).length,
+          junk: _geoWholeDays([null, { arrived_at: 'nope' }, undefined], 'arrived_at', 7, 30).length,
+          nullArr: _geoWholeDays([], 'arrived_at', 0, 0).length,
+        };
+      });
+      // The cap is exceeded rather than splitting 08/27: all nine or none.
+      expect(r.allNine, 'the day that broke this must arrive whole').toBe(9);
+      expect(r.n).toBe(38);
+      expect(r.none).toBe(0);
+      expect(r.junk, 'unparseable timestamps are skipped, never thrown on').toBe(0);
+      expect(r.nullArr).toBe(0);
+    });
+
+    test('the day limit counts days, not rows', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [];
+        ['29', '28', '27', '26'].forEach(d => {
+          for (let i = 0; i < 5; i++) rows.push({ id: d + i, arrived_at: '2026-08-' + d + 'T1' + i + ':00:00.000Z' });
+        });
+        const two = _geoWholeDays(rows, 'arrived_at', 2, 999);
+        return { n: two.length, days: [...new Set(two.map(x => x.id.slice(0, 2)))] };
+      });
+      expect(r.n).toBe(10);
+      expect(r.days.sort()).toEqual(['28', '29']);
+    });
+  });
 });

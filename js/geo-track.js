@@ -6718,6 +6718,34 @@ function _geoLoadBeforeDrive(tape,driveMs){
 // fence was right about that.
 const _GEO_RETIME_MAX_MS=30*60000;   // a boundary this far off is not the same event
 const _GEO_RETIME_MIN_MS=45000;      // under this, the tape and the fence already agree
+// The sweep is bounded by DAYS, never by a raw row count.
+//
+// It used to take the newest 30 rows, and that number cut 2026-08-27 in half:
+// its nine rows landed at positions 24 to 32, so the two that fell outside the
+// cap were the morning loading row and the 7:49 drive, which are exactly the
+// ones whose fence times were wrong. A cap that can end mid-day produces a day
+// that is half re-timed and half not, which is worse than either, and it fails
+// silently because a row that is never examined reports nothing.
+// Whole days only, so a day is always entirely done or entirely untouched.
+const _GEO_RETIME_DAYS=7;
+const _GEO_RETIME_ROW_CAP=200;       // a true runaway guard, not a working limit
+// Trim a newest-first row list to whole Central days, never mid-day.
+function _geoWholeDays(rows,tsKey,maxDays,cap){
+  const out=[];const seen=[];
+  for(const r of rows){
+    const t=Date.parse(r&&r[tsKey])||0;
+    if(!t)continue;
+    const day=(typeof _ctDateStr==='function')?_ctDateStr(new Date(t)):new Date(t).toISOString().slice(0,10);
+    if(seen.indexOf(day)<0){
+      // Stop only at a day BOUNDARY, so the day already being collected is
+      // never left partly done by either limit.
+      if(seen.length>=maxDays||out.length>=cap)break;
+      seen.push(day);
+    }
+    out.push(r);
+  }
+  return out;
+}
 async function _geoRetimeToTapeSweep(){
   try{
     if(window._geoRetimeRan)return 0;
@@ -6730,8 +6758,10 @@ async function _geoRetimeToTapeSweep(){
       .select('id,arrived_at,departed_at,minutes,source,dest_place,client_key,job_id').is('deleted_at',null)
       .eq('employee_user_id',_supaUser.id).gte('arrived_at',sinceIso);
     if(error||!Array.isArray(data)||!data.length)return 0;
-    const rows=data.filter(r=>r&&r.arrived_at&&r.departed_at&&r.source!=='manual')
-      .sort((a,b)=>Date.parse(b.arrived_at)-Date.parse(a.arrived_at)).slice(0,30);
+    const rows=_geoWholeDays(
+      data.filter(r=>r&&r.arrived_at&&r.departed_at&&r.source!=='manual')
+        .sort((a,b)=>Date.parse(b.arrived_at)-Date.parse(a.arrived_at)),
+      'arrived_at',_GEO_RETIME_DAYS,_GEO_RETIME_ROW_CAP);
     let changed=0;
     const tapes={};
     for(const r of rows){
@@ -6788,8 +6818,13 @@ async function _geoLoadRetroSweep(){
       .select('id,arrived_at,departed_at,source,dest_place,client_key').is('deleted_at',null)
       .eq('employee_user_id',_supaUser.id).gte('arrived_at',sinceIso);
     if(error||!Array.isArray(data)||!data.length)return 0;
-    const rows=data.filter(r=>r&&r.arrived_at&&_geoIsDriveSource(r.source))
-      .sort((a,b)=>Date.parse(b.arrived_at)-Date.parse(a.arrived_at)).slice(0,20);
+    // Same whole-day rule, same reason: a 20-row cap on drives silently skipped
+    // the oldest days' morning load-outs, which are the only ones this sweep
+    // exists to find.
+    const rows=_geoWholeDays(
+      data.filter(r=>r&&r.arrived_at&&_geoIsDriveSource(r.source))
+        .sort((a,b)=>Date.parse(b.arrived_at)-Date.parse(a.arrived_at)),
+      'arrived_at',_GEO_RETIME_DAYS,_GEO_RETIME_ROW_CAP);
     if(!rows.length)return 0;
     // Anything already on the books in that window means the minutes are
     // spoken for, so a re-run cannot stack a second load-out on the first.
