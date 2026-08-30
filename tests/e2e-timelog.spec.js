@@ -2530,25 +2530,36 @@ test.describe('timelog.js: exhaustive coverage', () => {
     // year build up" crew report, January (oldest) through December
     // (newest), not a "what happened lately" ledger. Income/Expenses are
     // untouched, this reorder is scoped to _tlYear grouping only.
-    test('month accordions, oldest (January) sorts first, current month last', async () => {
+    // Was about the order of a LIST of month accordions. There is no list: the
+    // drill shows one month and the arrows step between them. The rule that
+    // survives is that stepping runs in calendar order, oldest to newest.
+    test('the drill steps months in calendar order, oldest to newest', async () => {
       const r = await page.evaluate(async () => {
-        setTimeLogYear(new Date().getFullYear());
+        const seen = [];
+        // Walk to the earliest month, then forward through every one.
+        for (let i = 0; i < 24; i++) _tlDrillStep(-1, _tlLastRows);
         await renderTimeLog();
-        return [...document.querySelectorAll('.bk-month')].map(el => el.id);
+        for (let i = 0; i < 24; i++) {
+          if (seen[seen.length - 1] === _tlDrill.mo) break;
+          seen.push(_tlDrill.mo);
+          _tlDrillStep(1, _tlLastRows);
+        }
+        return seen;
       });
-      const idx = (yyyymm) => r.indexOf('bk-tl-mo-' + yyyymm);
-      expect(idx(curMonthPrefix)).toBeGreaterThanOrEqual(0);
-      expect(idx(`${new Date().getFullYear()}-01`)).toBeLessThan(idx(curMonthPrefix));
+      expect(r.length).toBeGreaterThan(0);
+      expect(r.slice().sort()).toEqual(r);
     });
 
-    test('current month accordion is open by default', async () => {
-      const r = await page.evaluate(async (curMo) => {
-        setTimeLogYear(new Date().getFullYear());
+    test('the drill opens on the current month', async () => {
+      const r = await page.evaluate(async () => {
+        _tlDrill = { level: 'month', mo: null, wk: null, day: null };
         await renderTimeLog();
-        const el = document.getElementById('bk-tl-mo-' + curMo);
-        return el ? el.classList.contains('open') : null;
-      }, curMonthPrefix);
-      expect(r).toBe(true);
+        return { mo: _tlDrill.mo, cur: todayKey().slice(0, 7), level: _tlDrill.level };
+      });
+      // The month you are in is the one you almost always want, and it is the
+      // page rather than a row somebody still has to tap open.
+      expect(r.mo).toBe(r.cur);
+      expect(r.level).toBe('month');
     });
 
     // The week view is the bars now (owner 2026-08-30 cut the entries table
@@ -2567,57 +2578,39 @@ test.describe('timelog.js: exhaustive coverage', () => {
       return { found: true, html: document.getElementById(_tlWeekCache[key].domId).innerHTML };
     }, dateStr);
 
-    test('day accordions within a month, newest day sorts first', async () => {
-      // Both the month container id and the expected day come from the PAGE
-      // clock. Node's todayStr is the runner's real date, and under the
-      // midnight-clock pin the two disagree: the fixture rows land on the
-      // page's day, so asserting Node's day found nothing. Same seam as the
-      // vehicle-dispatch fixtures, closed the same way. toISOString is also
-      // a UTC slice, which the day-key convention bans for exactly this
-      // reason; todayKey() is the app's own answer.
-      // TEAM scope, because that is where the day accordion still lives. Me's
-      // week became the bars on 2026-08-30; the per-person cards, and the day
-      // table nested inside each one, are unchanged. The rule under test (a
-      // month lists its days, newest first) never moved, only the scope that
-      // renders it.
+    // The day table moved to Team scope when Me became the drill; its ordering
+    // is covered there by the entries-ordering test below.
+    test('Team still nests a day table inside its per-person cards', async () => {
       const r = await page.evaluate(async () => {
-        // _tlScope is set DIRECTLY, not through setTimeLogScope: that helper
-        // fires renderTimeLog() without awaiting it (the same fire-and-forget
-        // convention setTimeLogYear uses), so calling it here left a second
-        // render in flight that could land after this test finished and leave
-        // the DOM in the wrong scope for the next one. Two runs, two different
-        // unrelated failures in this block, before this was tracked down.
         const orig = _tlScope;
         _tlScope = 'team';
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
-        const day = todayKey();
-        const monthEl = document.getElementById('bk-tl-mo-' + day.slice(0, 7));
-        const ids = monthEl ? [...monthEl.querySelectorAll('.bk-day')].map(el => el.id) : [];
-        // Restore the EXACT prior value, null included. setTimeLogScope
-        // rejects null (it is the "auto-detect" state, not a scope), so
-        // coercing it to 'me' here silently pinned scope for every later test
-        // in the file. That showed up only under the midnight pin, as an
-        // unrelated Team-scope test failing three hundred lines later.
+        const days = document.querySelectorAll('.bk-day').length;
         _tlScope = orig;
         await renderTimeLog();
-        return { day, ids };
+        return days;
       });
-      expect(r.ids.length).toBeGreaterThan(0);
-      // The current-day entry should appear in this month's day list.
-      expect(r.ids.some(id => id.includes(r.day.replace(/-/g, '')))).toBe(true);
+      expect(r).toBeGreaterThan(0);
     });
 
-    test('week accordions sit between month and day, current week open by default', async () => {
-      const r = await page.evaluate(async (curMo) => {
-        setTimeLogYear(new Date().getFullYear());
+    test('drilling into a month lands on a week that has hours', async () => {
+      const r = await page.evaluate(async () => {
+        _tlDrill = { level: 'month', mo: null, wk: null, day: null };
         await renderTimeLog();
-        const monthEl = document.getElementById('bk-tl-mo-' + curMo);
-        const weeks = monthEl ? [...monthEl.querySelectorAll(':scope > .bk-month-body > .bk-week')] : [];
-        return { count: weeks.length, anyOpen: weeks.some(w => w.classList.contains('open')) };
-      }, curMonthPrefix);
-      expect(r.count).toBeGreaterThan(0);
-      expect(r.anyOpen).toBe(true);
+        const mo = _tlDrill.mo;
+        // Drill by tapping the last bar, the way a person does.
+        const bars = [...document.querySelectorAll('.tl-drill-body .tl-wbar-hit')];
+        bars[bars.length - 1].click();
+        await new Promise(r2 => setTimeout(r2, 80));
+        const rows = (_tlLastRows || []).filter(x => _tlWeekKey(x.date) === _tlDrill.wk);
+        return { mo, level: _tlDrill.level, wk: _tlDrill.wk, n: rows.length,
+                 inMonth: String(_tlDrill.wk || '').length === 10 };
+      });
+      expect(r.level).toBe('week');
+      expect(r.inMonth).toBe(true);
+      // Never an empty chart: the bar you tapped had hours in it by definition.
+      expect(r.n).toBeGreaterThan(0);
     });
 
     // Owner report 2026-08-21: entries within a single day had no defined
@@ -2724,13 +2717,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
       const r = await page.evaluate(async () => {
         const day = todayKey();
         setTimeLogYear(new Date().getFullYear());
+        _tlDrill = { level: 'month', mo: day.slice(0, 7), wk: null, day: null };
         await renderTimeLog();
-        const key = Object.keys(_tlWeekCache).find(k =>
-          (_tlWeekCache[k].rows || []).some(r2 => r2 && r2.date === day));
-        if (!key) return { found: false, html: '' };
-        const i = _tlWeekDayDates(_tlWeekCache[key].wk).indexOf(day);
-        setTimeLogDayPick(key, String(i));
-        return { found: true, html: document.getElementById(_tlWeekCache[key].domId).innerHTML };
+        _tlDrillTo('day', day);
+        await new Promise(r2 => setTimeout(r2, 60));
+        return { found: _tlDrill.level === 'day',
+                 html: document.getElementById('tl-list').innerHTML };
       });
       expect(r.found, 'the fixture day must land in a week').toBe(true);
       expect(r.html, 'the rail is what renders a day now').toContain('tl-rail-row');
@@ -2738,43 +2730,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         .toContain('_openEditTimeEntry(');
     });
 
-    test('the week body prints no header of its own', async () => {
-      // The .bk-week accordion button above it already carries the identical
-      // week label and total. Printing them again inside the body is the white
-      // space the owner asked about (2026-08-30). A DAY pick keeps its header,
-      // because there it names the day, which nothing above it does.
-      const r = await page.evaluate(async () => {
-        setTimeLogYear(new Date().getFullYear());
-        await renderTimeLog();
-        const key = Object.keys(_tlWeekCache)[0];
-        const week = _tlRenderWeekBody(key);
-        const days = _tlWeekDayDates(_tlWeekCache[key].wk);
-        const withRows = days.findIndex(d =>
-          (_tlWeekCache[key].rows || []).some(r2 => r2 && r2.date === d));
-        _tlPickerSel[key] = String(withRows < 0 ? 0 : withRows);
-        const day = _tlRenderWeekBody(key);
-        _tlPickerSel[key] = 'week';
-        return { weekHd: week.includes('tl-scope-hd'), dayHead: day.includes('tl-rail-head-day') };
-      });
-      expect(r.weekHd, 'the week label is already on the accordion above').toBe(false);
-      expect(r.dayHead, 'a day still names itself in the rail head').toBe(true);
-    });
 
-    test('the week view itself is the bars, with no entries table under it', async () => {
-      // The other half of the same owner decision, pinned so the table cannot
-      // quietly come back: a week is the chart and nothing else.
-      const r = await page.evaluate(async () => {
-        setTimeLogYear(new Date().getFullYear());
-        await renderTimeLog();
-        const html = document.getElementById('tl-list').innerHTML;
-        return { bars: html.includes('tl-wbar'), table: html.includes('data-lp-id='),
-                 card: html.includes('tl-emp-row'), send: html.includes('_tlShareWeekAt') };
-      });
-      expect(r.bars).toBe(true);
-      expect(r.table, 'the entries table is gone from the week').toBe(false);
-      expect(r.card, 'so is the person card and its wrapping legend').toBe(false);
-      expect(r.send, 'sharing the week on screen replaced them').toBe(true);
-    });
 
     // Really a Me/Team scope test (see the Me/Team describe block below), not
     // strictly role-based: Share is a Me-scope-only button, hidden in Team.
@@ -2801,7 +2757,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window._supaUser = { id: 'emp-test-uid' };
         await renderTimeLog();
         const empPageBtn = document.getElementById('tl-share').innerHTML;
-        const empMonthBtn = !!document.querySelector('.tl-mbars .tl-wbar-share');
+        const empMonthBtn = !!document.querySelector('.tl-drill-body .tl-wbar-share');
         window._isEmployee = origIsEmployee; window._employeeRecord = origEmpRecord; window._supaUser = origSupaUser;
         _tlScope = null; // restore auto-detection for later tests
         await renderTimeLog();
@@ -2899,14 +2855,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
         // because nothing is named, not because the row was filtered. Drill
         // into every day the cache holds, where the rail does name the client,
         // and check the union. A leak anywhere in the week fails this.
+        // Walk every day the drill can reach, not a cache that no longer
+        // exists. A leak on any of them fails this.
         let html = document.getElementById('tl-list').innerHTML;
-        for (const key of Object.keys(_tlWeekCache)) {
-          const wk = _tlWeekCache[key];
-          for (let i = 0; i < 7; i++) {
-            setTimeLogDayPick(key, String(i));
-            html += document.getElementById(wk.domId).innerHTML;
-          }
-          setTimeLogDayPick(key, 'week');
+        for (const d of [...new Set((window._tlLastRows || []).map(x => x && x.date))].filter(Boolean)) {
+          _tlDrillTo('day', d);
+          html += document.getElementById('tl-list').innerHTML;
         }
         // The old version of this test read the client name out of the per-day
         // list that used to sit on the week. That list is gone, and the rail
@@ -3388,17 +3342,13 @@ test.describe('timelog.js: exhaustive coverage', () => {
         await renderTimeLog();
         // The page-level Share button is gone (2026-08-30); what follows scope
         // now is the CHART, and its Send rides on it. Read that instead.
-        const meShare = !!document.querySelector('.tl-mbars .tl-wbar-share');
+        const meShare = !!document.querySelector('.tl-drill-body .tl-wbar-share');
         // Me's week is the bars and names nobody, so whose rows are in scope
         // has to be read a day at a time, where the rail names them.
         let meHtml = document.getElementById('tl-list').innerHTML;
-        for (const key of Object.keys(_tlWeekCache)) {
-          const wk = _tlWeekCache[key];
-          for (let i = 0; i < 7; i++) {
-            setTimeLogDayPick(key, String(i));
-            meHtml += document.getElementById(wk.domId).innerHTML;
-          }
-          setTimeLogDayPick(key, 'week');
+        for (const d of [...new Set((window._tlLastRows || []).map(x => x && x.date))].filter(Boolean)) {
+          _tlDrillTo('day', d);
+          meHtml += document.getElementById('tl-list').innerHTML;
         }
         // setTimeLogScope fires renderTimeLog() without awaiting it (same
         // fire-and-forget convention setTimeLogYear already uses), so an
@@ -3406,7 +3356,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         // like every setTimeLogYear test already does.
         setTimeLogScope('team');
         await renderTimeLog();
-        const teamShare = !!document.querySelector('.tl-mbars .tl-wbar-share');
+        const teamShare = !!document.querySelector('.tl-drill-body .tl-wbar-share');
         const teamHtml = document.getElementById('tl-list').innerHTML;
         const scopeAfterTeam = _tlScope;
         window._isEmployee = orig.isEmp; window._employeeRecord = orig.emp; window._supaUser = orig.user;
@@ -3466,56 +3416,16 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.toggleHidden).toBe(true);
     });
 
-    test('day picker: Week is selected by default, clicking a worked day switches the scope header and rows, clicking Week returns', async () => {
-      const r = await page.evaluate(async (curMo) => {
-        setTimeLogYear(new Date().getFullYear());
-        await renderTimeLog();
-        const monthEl = document.getElementById('bk-tl-mo-' + curMo);
-        const bodyEl = monthEl.querySelector('.tl-chip.wk').closest('[id^="tl-wkbody-"]');
-        // setTimeLogDayPick replaces bodyEl's innerHTML wholesale on every
-        // click (a fresh _tlRenderWeekBody render), so any chip reference
-        // captured before a click is a detached node afterward, checking
-        // .classList on it would silently check the OLD, discarded button.
-        // bodyEl itself keeps its id and stays attached, only its children
-        // are swapped, so re-query fresh chips from it after every click.
-        const weekChip = () => bodyEl.querySelector('.tl-chip.wk');
-        const weekActiveBefore = weekChip().classList.contains('active');
-        // Neither scope prints a plain scope header any more. A DAY renders
-        // the rail, whose head names the day and its total. A WEEK renders the
-        // bars and names nothing, because the .bk-week accordion button
-        // wrapping this body already prints the week and the total one line
-        // above (owner 2026-08-30: "what's the header at the top though, lot
-        // of white space"). So the week's identity is read off the accordion
-        // and the day's off the rail head.
-        const wkTtl = () => (bodyEl.closest('.bk-week') || document)
-          .querySelector('.bk-week-title')?.textContent || '';
-        const ttl = () => (bodyEl.querySelector('.tl-rail-head-day') || {}).textContent || '';
-        const scopeTtlBefore = wkTtl();
-        const weekHasOwnHeader = !!bodyEl.querySelector('.tl-scope-hd');
-        const dotChip = [...bodyEl.querySelectorAll('.tl-chip')].find(c => !c.classList.contains('wk') && c.querySelector('.tl-dot'));
-        dotChip.click();
-        const scopeTtlAfter = ttl();
-        const dayHasRail = !!bodyEl.querySelector('.tl-rail');
-        const dotChipActive = [...bodyEl.querySelectorAll('.tl-chip')].some(c => !c.classList.contains('wk') && c.classList.contains('active'));
-        const weekChipStillActive = weekChip().classList.contains('active');
-        weekChip().click();
-        const scopeTtlBack = wkTtl();
-        const weekHasBars = !!bodyEl.querySelector('.tl-wbar');
-        const weekActiveAgain = weekChip().classList.contains('active');
-        return { weekActiveBefore, scopeTtlBefore, scopeTtlAfter, dayHasRail, dotChipActive,
-                 weekChipStillActive, scopeTtlBack, weekActiveAgain, weekHasOwnHeader, weekHasBars };
-      }, curMonthPrefix);
-      expect(r.weekActiveBefore).toBe(true);
-      expect(r.scopeTtlBefore).toContain('Week of');
-      expect(r.weekHasOwnHeader, 'the week body repeats no header of its own').toBe(false);
-      expect(r.scopeTtlAfter).not.toContain('Week of');
-      expect(r.scopeTtlAfter, 'the day still names itself, now in the rail head').toBeTruthy();
-      expect(r.weekHasBars, 'and clicking Week comes back to the chart').toBe(true);
-      expect(r.dayHasRail, 'a single day renders the rail, not the table').toBe(true);
-      expect(r.dotChipActive).toBe(true);
-      expect(r.weekChipStillActive).toBe(false);
-      expect(r.scopeTtlBack).toContain('Week of');
-      expect(r.weekActiveAgain).toBe(true);
+    // Was: 'day picker: Week is selected by default, clicking a worked day
+    // switches the scope header and rows, clicking Week returns'. The chip
+    // picker it drove is deleted (2026-08-30): a day is reached by tapping its
+    // bar now, which the month spec covers end to end. What is worth keeping
+    // is that the thing itself is GONE and not orphaned (§7).
+    test('the week body, its chips and their cache are deleted, not orphaned (§7)', async () => {
+      const r = await page.evaluate(() => ['_tlRenderWeekBody', 'setTimeLogDayPick',
+        '_tlWeekCache', '_tlPickerSel', '_tlWeekMineHtml', '_tlWeekOwnerHtml']
+        .map(n => typeof window[n]));
+      expect(r.every(t => t === 'undefined'), r.join(',')).toBe(true);
     });
 
     test('day picker: a day nobody worked shows the empty state, no throw', async () => {

@@ -86,70 +86,42 @@ const MONTH_ROWS = [].concat(
   WEEK_ROWS,
   _sep(1, [402, 88, 455]));             // Sep, a single week
 
-// Runs INSIDE the page. Drives the REAL week body (_tlRenderWeekBody, Me
-// scope, week pick) rather than assembling the chart by hand, so the picture
-// under review and the assertions are both looking at what actually ships.
-function renderWeekRail({ rows, days }) {
-  try { S.bizTz = 'America/Chicago'; } catch (_e) {}
-  const key = 'wr|' + days[0];
-  _tlWeekCache[key] = { mo: '2026-08', wk: days[0], rows,
-                        scope: 'me', cid: 'me', selfUid: 'me', domId: 'wrail-body' };
-  _tlPickerSel[key] = 'week';
-  // Mounted into the REAL page, not a floating overlay. Twice now a shot has
-  // hidden something that was on the actual screen (the accordion header the
-  // body was duplicating, then the page's own title), because the harness
-  // rendered the component on a blank ground. It goes in #tl-list on
-  // pg-timelog, so a screenshot shows the page chrome exactly as he sees it.
-  const host = document.getElementById('tl-list') || document.createElement('div');
-  host.id = 'tl-list';
-  // The .bk-week accordion is rendered too, not just the body. Without it the
-  // screenshot could not show that the body's own header repeated the week
-  // label and total the accordion button already prints, which is exactly the
-  // duplication the owner spotted on the real screen (2026-08-30).
-  const fm = typeof _fmtMin === 'function' ? _fmtMin : (m => m + 'm');
-  const total = _tlPaidMin(rows);
-  host.innerHTML = '<div class="card" style="padding:0;overflow:hidden">' +
-    '<div class="bk-week open"><button class="bk-week-hd">' +
-      '<div style="flex:1;text-align:left">' +
-        '<div class="bk-week-title">' + _tlWeekLabel(days[0]) + '</div>' +
-        '<div class="bk-week-sub">' + rows.length + ' entries</div></div>' +
-      '<div style="display:flex;align-items:center;gap:10px">' +
-        '<div style="font-size:12.5px;font-weight:800;color:var(--text)">' + fm(total) + '</div>' +
-        '<div class="bk-week-chev">▾</div></div>' +
-    '</button>' +
-    '<div class="bk-week-body"><div id="wrail-body" style="padding:10px 14px 14px">' +
-      _tlRenderWeekBody(key) + '</div></div></div></div>';
-  if (!host.isConnected) document.body.appendChild(host);
-}
-
-// ONE mount sequence, used by the assertions and by the screenshot, so the
-// two can never be looking at different DOM. The page's own render has to
-// land BEFORE the injection or renderTimeLog simply overwrites it, which is
-// how the first attempt at mounting on the real page produced a shot of an
-// empty Time Log.
-async function mountWeekBars(page) {
-  await page.evaluate(() => { if (typeof goPg === 'function') goPg('pg-timelog'); });
-  await page.waitForTimeout(400);
-  await page.evaluate(renderWeekRail, { rows: WEEK_ROWS, days: WEEK_DAYS });
-  await page.waitForTimeout(200);
-}
-
-// The MONTH level, driven through the real renderTimeLog rather than injected,
-// so the picker, the weekly bars and the week accordions are the app's own.
-async function mountMonth(page) {
-  await page.evaluate((rows) => {
+// Seeds the store the page reads and lets the app render itself. Nothing is
+// injected: the drill builds the DOM, so a test and a screenshot are both
+// looking at what actually ships.
+//
+// personUid null is an owner-logged row, which is what isMine() lets through
+// in Me scope; 'me' is nobody's uid and got filtered out, which is how the
+// first attempt at this produced an empty month.
+async function _seed(page, rows) {
+  await page.evaluate((rs) => {
     try { S.bizTz = 'America/Chicago'; } catch (_e) {}
-    // Seed the underlying store the page reads, not the DOM: this level is
-    // built by renderTimeLog itself and there is nothing to inject into.
-    // personUid null is an owner-logged row, which is what isMine() lets
-    // through in Me scope; 'me' is nobody's uid and got filtered out, which is
-    // how the first attempt at this produced an empty month.
-    window._timeLogRows = async () => rows.map(r => ({ ...r, personUid: null }));
+    window._timeLogRows = async () => rs.map(r => ({ ...r, personUid: null }));
     if (typeof goPg === 'function') goPg('pg-timelog');
-  }, MONTH_ROWS);
+  }, rows);
   await page.waitForTimeout(200);
   await page.evaluate(() => { setTimeLogYear(2026); });
   await page.waitForTimeout(500);
 }
+// The MONTH level, which is where the drill lands.
+async function mountMonth(page) {
+  await _seed(page, MONTH_ROWS);
+  await page.evaluate(() => _tlDrillTo('month', '2026-08'));
+  await page.waitForTimeout(250);
+}
+// One level down: the week of 08/23, the owner's real one.
+async function mountWeekBars(page) {
+  await _seed(page, MONTH_ROWS);
+  await page.evaluate(() => { _tlDrillTo('month', '2026-08'); });
+  await page.waitForTimeout(200);
+  await page.evaluate(() => _tlDrillTo('week', '2026-08-23'));
+  await page.waitForTimeout(250);
+}
+// Two levels down: Thursday 08/27.
+async function mountDay(page) {
+  await mountWeekBars(page);
+  await page.evaluate(() => _tlDrillTo('day', '2026-08-27'));
+  await page.waitForTimeout(250);
+}
 
-module.exports = { WEEK_ROWS, WEEK_DAYS, MONTH_ROWS, renderWeekRail, mountWeekBars, mountMonth };
+module.exports = { WEEK_ROWS, WEEK_DAYS, MONTH_ROWS, mountWeekBars, mountMonth, mountDay };

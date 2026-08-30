@@ -199,7 +199,9 @@ test.describe('week bars: markup', () => {
       [...document.querySelectorAll('.tl-wbar-hit')].map((b, i) => ({
         tag: b.tagName, type: b.type,
         aria: b.getAttribute('aria-label'),
-        drills: (b.getAttribute('onclick') || '').includes("'" + i + "'"),
+        // The bar goes DOWN a level now, to that day, instead of switching a
+        // chip in a picker that no longer exists.
+        drills: (b.getAttribute('onclick') || '').includes("_tlDrillTo('day'"),
         w: Math.round(b.getBoundingClientRect().width),
         h: Math.round(b.getBoundingClientRect().height),
       })));
@@ -267,9 +269,10 @@ test.describe('week bars: sharing a week as text', () => {
     const r = await page.evaluate(async () => {
       const shared = [];
       window.pwaShare = async (a) => { shared.push(a); };
-      const key = Object.keys(_tlWeekCache)[0];
-      await _tlShareWeekAt(key);
-      return { n: shared.length, text: shared[0] && shared[0].text, key };
+      // A WEEK KEY now. It used to read _tlWeekCache, which the accordion list
+      // populated and nothing does since the drill replaced it.
+      await _tlShareWeekAt(_tlDrill.wk);
+      return { n: shared.length, text: shared[0] && shared[0].text, key: _tlDrill.wk };
     });
     expect(r.n).toBe(1);
     expect(r.text).toContain('Aug 23 – 29');

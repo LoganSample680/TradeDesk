@@ -1356,82 +1356,21 @@ function _tlWeekShortLabel(wk){
 // control that happens to look similar. A month with nothing logged is still
 // shown, disabled: which months a year HAS is information, and a gap in the
 // row says "nothing that month" better than a missing chip does.
-let _tlMonthSel=null;
 // Which way the chart should slide on the next render: set by an arrow tap,
 // cleared by anything else. Declared beside the selection it belongs to and
 // ABOVE setTimeLogMonth, which writes it.
 let _tlMonthDir='';
+// Kept as the public way to jump to a month. It routes through the drill so
+// there is still exactly one path that changes what month is on screen.
 function setTimeLogMonth(mo,dir){
   if(!/^\d{4}-\d{2}$/.test(String(mo||'')))return;
-  // A jump with no direction clears the last one, so a programmatic change
-  // never inherits the previous arrow tap's animation.
-  _tlMonthDir=(dir==='fwd'||dir==='back')?dir:'';
-  _tlMonthSel=mo;
-  renderTimeLog();
+  _tlDrillTo('month',mo,dir);
 }
-// Scroll the week open inside the month, from its bar. The bar is the map and
-// the accordion is the detail, same relationship the week's bars have with the
-// day rail.
-function _tlOpenWeek(mo,wk){
-  const wkId=String(wk||'').replace(/[^0-9]/g,'')||'x';
-  const el=document.getElementById('bk-tl-wk-'+mo+'-'+wkId);
-  if(!el)return;
-  if(!el.classList.contains('open')&&typeof _bkTogWeek==='function')_bkTogWeek('tl',mo,wkId);
-  if(typeof el.scrollIntoView==='function')el.scrollIntoView({behavior:'smooth',block:'start'});
-}
-// ── Moving between months ──────────────────────────────────────────────────
-// Owner, 2026-08-30: "would like something that you click a back arrow with
-// the month in the middle and smooth css animations."
-//
-// The twelve-chip row was wrong twice over. It never fit a phone, so it
-// scrolled, so the month you wanted was usually off-screen and the control had
-// to scroll ITSELF back into view to be usable at all. And it spent a whole
-// row of the page on eleven months that are almost never the one you want.
-// A back arrow, the month, a forward arrow: one line, no scrolling, and the
-// month you are looking at is the biggest thing on it.
-//
-// The arrows step to the next month that HAS hours, not to the next calendar
-// month, so a tap never lands on an empty chart. At the ends they disable
-// rather than disappear: a control that vanishes makes the row jump and leaves
-// you wondering whether you broke something.
-//
-// Which way the chart slides is decided HERE, from the step, because only the
-// caller knows whether this was a back or a forward.
-function _tlMonthStep(delta){
-  const list=(_tlLastRows||[]).reduce((acc,r)=>{
-    const mo=String((r&&r.date)||'').slice(0,7);
-    if(/^\d{4}-\d{2}$/.test(mo)&&acc.indexOf(mo)<0)acc.push(mo);
-    return acc;
-  },[]).sort();
-  const i=list.indexOf(_tlMonthSel);
-  if(i<0)return;
-  const next=list[i+(delta>0?1:-1)];
-  if(!next)return;
-  setTimeLogMonth(next,delta>0?'fwd':'back');
-}
-function _tlMonthNavHtml(sel,byMonth,totalHtml){
-  const list=Object.keys(byMonth||{})
-    .filter(m=>/^\d{4}-\d{2}$/.test(m)&&byMonth[m]&&byMonth[m].length).sort();
-  const i=list.indexOf(sel);
-  const prev=i>0?list[i-1]:null;
-  const next=(i>=0&&i<list.length-1)?list[i+1]:null;
-  const label=(typeof _bkMonthLabel==='function')?_bkMonthLabel(sel):String(sel);
-  const arrow=(dir,to,glyph,word)=>
-    '<button type="button" class="tl-monav-btn"'+(to?'':' disabled aria-disabled="true"')+
-    ' aria-label="'+escHtml(word+(to&&typeof _bkMonthLabel==='function'?', '+_bkMonthLabel(to):''))+'"'+
-    ' onclick="_tlMonthStep('+dir+')">'+glyph+'</button>';
-  return '<div class="tl-monav">'+
-    arrow(-1,prev,'\u2039','Previous month')+
-    // aria-live: the label is the only thing on this row that changes, and a
-    // reader following focus on the arrow would otherwise never hear what it
-    // changed to.
-    '<div class="tl-monav-mid" aria-live="polite">'+
-      '<div class="tl-monav-lbl">'+escHtml(label)+'</div>'+
-      (totalHtml?'<div class="tl-monav-tot">'+totalHtml+'</div>':'')+
-    '</div>'+
-    arrow(1,next,'\u203a','Next month')+
-  '</div>';
-}
+// _tlOpenWeek, _tlMonthStep and _tlMonthNavHtml were DELETED here, not left
+// orphaned (§7). They were the accordion-and-chip navigation the drill
+// replaced: opening a week in a list below the chart, stepping months through
+// a picker that no longer exists, and a nav bar whose job _tlDrillHeadHtml now
+// does at every level instead of only this one.
 // The month as text, same shape and the same builder family as the week's
 // (§7.3): one line per week, the split, and the total.
 function _tlMonthShareText(rows,mo){
@@ -2003,194 +1942,21 @@ function _tlEmpCardHtml(uid,e,selfUid,extraHtml){
     '<div class="tl-emp-total">'+fm(e.min)+'</div>'+
   '</div>';
 }
-function _tlWeekOwnerHtml(byEmp,selfUid){
-  const uids=Object.keys(byEmp).sort((a,b)=>byEmp[b].min-byEmp[a].min);
-  return uids.map(uid=>_tlEmpCardHtml(uid,byEmp[uid],selfUid,'')).join('');
-}
-// Me-scope EXTRA, under the shared split-bar row: your own days listed out.
-// Not an alternative to the team component (see _tlRenderWeekBody), an
-// addition, and the one thing Me shows that Team cannot, since a team day
-// mixes several people. Week selections only.
-function _tlWeekMineHtml(rows){
-  const byDay={};
-  rows.forEach(r=>{
-    if(r.unpaid)return;   // off-job time never counts toward a worked day's total
-    const d=r.date||'unknown';
-    const e=byDay[d]||(byDay[d]={min:0,labels:new Set()});
-    e.min+=r.minutes||0;
-    if(r.clientName)e.labels.add(r.clientName);
-  });
-  const days=Object.keys(byDay).sort();
-  return days.map(d=>{
-    const e=byDay[d];const labels=[...e.labels];
-    const label=labels.length===1?labels[0]:(labels.length>1?labels.length+' stops':'');
-    // Owner report 2026-08-23: a reconciliation bug once summed one real
-    // calendar day to 47+ hours, and it rendered as a perfectly normal-
-    // looking number. One person cannot log more than 1440 minutes (24h)
-    // in one day; that is a physical fact, not a business rule, so it is
-    // never a "maybe" and never silently trusted. Flagged, not clamped:
-    // showing the raw wrong number (instead of a guessed-correct one)
-    // is what makes the underlying data bug findable and reportable.
-    const impossible=e.min>1440;
-    const amt=(typeof _fmtMin==='function'?_fmtMin(e.min):e.min+'m');
-    return '<div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text3);padding:3px 0">'+
-      '<span>'+_tlDayShort(d)+(label?' · '+escHtml(label):'')+'</span>'+
-      (impossible
-        ?'<span style="font-weight:800;color:var(--c-red-deep)" title="'+escHtml(amt)+' in one day is not physically possible, this entry needs review">'+svgIcon('⚠',{size:11})+' Data error</span>'
-        :'<span style="font-weight:700;color:var(--text)">'+amt+'</span>')+
-    '</div>';
-  }).join('');
-}
-// Per-week render state. Keyed by "mo|wk" (a week can straddle two calendar
-// months, so mo alone or wk alone can't be trusted as a unique key on their
-// own; see the cache population in renderTimeLog). Populated fresh every
-// renderTimeLog() call; setTimeLogDayPick reads it later, outside that call,
-// to redraw just one week's body without re-rendering the whole page (which
-// would otherwise blow away every other month/week the viewer had opened).
-let _tlWeekCache={};
-// Which chip (day picker) is selected per week, 'week' or a weekday index
-// '0'..'6'. Deliberately NOT reset on scope/year switches: staying on the
-// same weekday when you flip Me/Team, or paging between weeks, reads as
-// continuity, not a bug.
-let _tlPickerSel={};
-function setTimeLogDayPick(cacheKey,sel){
-  const cache=_tlWeekCache[cacheKey];if(!cache)return;
-  _tlPickerSel[cacheKey]=sel;
-  const el=document.getElementById(cache.domId);
-  if(el)el.innerHTML=_tlRenderWeekBody(cacheKey);
-}
-// Builds one week's inner content: the Week/S/M/T/W/T/F/S picker, the
-// current scope's total, the Team/Me summary for whatever's picked, and the
-// entries table (Edit/Delete on manual rows) scoped to the same picked range.
-function _tlRenderWeekBody(cacheKey){
-  const cache=_tlWeekCache[cacheKey];if(!cache)return '';
-  const{mo,wk,rows:weekRows,scope,cid,selfUid}=cache;
-  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
-  const sel=_tlPickerSel[cacheKey]||'week';
-  const days=_tlWeekDayDates(wk);
-  const workedIdx=new Set(weekRows.map(r=>days.indexOf(r.date)).filter(i=>i>=0));
-  const pickerHtml='<div class="tl-picker">'+
-    '<button class="tl-chip wk'+(sel==='week'?' active':'')+'" onclick="setTimeLogDayPick(\''+cacheKey+'\',\'week\')">Week</button>'+
-    ['S','M','T','W','T','F','S'].map((d,i)=>
-      '<button class="tl-chip'+(sel===String(i)?' active':'')+'" onclick="setTimeLogDayPick(\''+cacheKey+'\',\''+i+'\')">'+d+
-        (workedIdx.has(i)?'<span class="tl-dot"></span>':'')+
-      '</button>'
-    ).join('')+
-  '</div>';
-  let scopeRows,scopeLabel;
-  if(sel==='week'){scopeRows=weekRows;scopeLabel=_tlWeekLabel(wk);}
-  else{const d=days[parseInt(sel,10)]||'';scopeRows=weekRows.filter(r=>r.date===d);scopeLabel=_tlDayFullLabel(d);}
-  const scopeMin=_tlPaidMin(scopeRows);
-  const scopeHdHtml='<div class="tl-scope-hd"><div class="tl-scope-ttl">'+escHtml(scopeLabel)+'</div><div class="tl-scope-amt">'+fm(scopeMin)+'</div></div>';
-  let summaryHtml;
-  if(!scopeRows.length){
-    summaryHtml='<div class="tl-empty">No hours logged '+(sel==='week'?'this week.':'this day.')+'</div>';
-  }else{
-    // ONE component for both scopes (owner rule 2026-08-26: "everything on the
-    // team should be the exact same thing on me, same code, same constant,
-    // only difference is the fact me is just me and team is everybody").
-    //
-    // Me used to render something else entirely: a plain per-day list with a
-    // total and no split bar, so the one person who most wants to know how
-    // much of their day went to driving was the only person who could not see
-    // it. _tlEmpWeekAgg already works on any row subset, and in Me scope that
-    // subset is one person, so the same call produces a one-row version of the
-    // team view for free. No second layout to keep in step.
-    summaryHtml=_tlWeekOwnerHtml(_tlEmpWeekAgg(scopeRows,cid),selfUid);
-    // The per-day breakdown stays, as an ADDITION rather than an alternative:
-    // it is the one thing Me has that Team cannot (a team day legitimately
-    // mixes several people), and deleting it to force symmetry would lose
-    // information nobody asked to lose. Week selections only; on a single day
-    // the entries table below already lists every row.
-    if(sel==='week')summaryHtml+=_tlWeekMineHtml(scopeRows);
-  }
-  // Entries: the only place a manual clock entry can still be edited or
-  // deleted (Edit button, _tlRow), scoped to whatever the picker currently
-  // shows (a whole week or one day) instead of always the whole week.
-  // Newest entry first within a day, oldest at the bottom (owner request
-  // 2026-08-21). _bkRenderDays groups by day but otherwise renders rows in
-  // whatever order they arrive, so the sort happens here rather than in that
-  // shared helper (Income/Expenses/Client timeline all read it unchanged).
-  const entryRows=scopeRows.slice().sort((a,b)=>(b.startTime||'').localeCompare(a.startTime||''));
-  // Same impossible-day guard as _tlWeekMineHtml, applied to this
-  // accordion's own per-day header (owner report 2026-08-23). Only in Me
-  // scope: a Team-scope day legitimately combines several people's hours
-  // and can exceed 24h with nobody's individual day being wrong, so the
-  // default dr.length+total meta stays untouched there.
-  // TEAM: one collapsed card per person, never one interleaved table (owner
-  // 2026-08-29). Me is already one person, so it keeps the flat entries list;
-  // wrapping a single card around yourself would be a click to reach your own
-  // hours and nothing else.
-  if(scope==='team'&&scopeRows.length){
-    // The cards ARE the summary here. _tlWeekOwnerHtml renders the same
-    // avatar, split bar and total per person, so keeping both would print
-    // every employee twice, once uselessly. Me still gets the summary, where
-    // there is no card to replace it.
-    return pickerHtml+scopeHdHtml+
-      '<div style="margin-top:8px">'+_tlEmpAccHtml(cacheKey,scopeRows,cid,selfUid,mo)+'</div>';
-  }
-  // A SINGLE DAY gets the rail; a week keeps the per-day accordion table.
-  // The rail draws one continuous line down one day, so a week of them would
-  // be seven lines pretending to be one, which is exactly the thing the
-  // owner objected to about the old broken-up bars.
-  const isDayRail=sel!=='week'&&scopeRows.length;
-  // Bars only draw when a day in the week actually has rows; otherwise the
-  // week falls through to the old summary so a week is never a blank card.
-  // Built ONCE and reused below: it was being rendered twice per week, which
-  // is pure waste on a page that already made the owner wait on a skeleton.
-  const weekBars=(sel==='week'&&scopeRows.length)?_tlWeekBarsHtml(weekRows,days,cacheKey):'';
-  const entriesHtml=isDayRail?
-    '<div style="margin-top:4px">'+
-      _tlRailHeadHtml(scopeRows,scopeLabel)+
-      _tlDayRailHtml(scopeRows)+
-    '</div>'
-   :scopeRows.length?
-    '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)">'+
-      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:0 2px 6px">Entries</div>'+
-      _bkRenderDays('tl',mo,entryRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,fm,
-        scope==='team'?{closed:true,tblClass:'tl-tbl'}:{closed:true,tblClass:'tl-tbl',metaFn:dr=>{
-          const min=dr.filter(r=>!r.unpaid).reduce((s,r)=>s+(r.minutes||0),0);
-          const amt=fm(min);
-          return min>1440
-            ?'<span style="font-weight:800;color:var(--c-red-deep)" title="'+escHtml(amt)+' in one day is not physically possible, this entry needs review">'+svgIcon('⚠',{size:11})+' Data error</span>'
-            :dr.length+' · '+amt;
-        }})+
-    '</div>':'';
-  // On a rail day the header IS the summary (same aggregator, same bar), so
-  // printing scopeHdHtml and the employee card above it would say the day and
-  // its total three times over.
-  if(isDayRail)return pickerHtml+entriesHtml;
-  // A WEEK IS THE BARS AND NOTHING ELSE (owner 2026-08-30: "we don't need the
-  // entries and the truncated things that say what the time consisted of,
-  // clutter"). What went, and why each was genuinely redundant here:
-  //
-  //   - the entries accordion: it listed one row per day saying the day's
-  //     total and how many entries made it up, directly under seven bars
-  //     already saying the same totals with their shape. Its Edit button was
-  //     the one thing it carried alone, so that moved onto the day rail's own
-  //     rows (_tlRailRow) rather than leaving with it (§7.2).
-  //   - the person card: in Me scope it is one avatar restating a total the
-  //     header prints two lines above it, over a legend that wrapped to three
-  //     lines on a phone naming numbers the bars already draw.
-  //
-  // TEAM SCOPE IS UNTOUCHED and returns above this line with its per-person
-  // cards: a team week genuinely is several people and the card is the only
-  // thing that separates them. The Me/Team symmetry rule (owner 2026-08-26)
-  // still holds where it was aimed, at a single day: a day pick in either
-  // scope still renders the same split bar from the same fold.
-  // NO SCOPE HEADER ON A WEEK. This body is rendered INSIDE a .bk-week
-  // accordion whose own button already prints the identical week label and
-  // the identical total, one line above (owner 2026-08-30: "what's the header
-  // at the top though"). It was invisible in the screenshots because the
-  // fixture mounted the body on its own, without the accordion around it,
-  // which is exactly the kind of thing a harness should not hide: the shot
-  // now renders the accordion too.
-  //
-  // A DAY pick keeps its header, because there it says "Wed, Aug 19" and the
-  // day's total, which the week accordion above does not say.
-  if(weekBars)return pickerHtml+weekBars;
-  return pickerHtml+scopeHdHtml+'<div style="padding:0 2px 4px">'+summaryHtml+'</div>'+entriesHtml;
-}
+// ── DELETED: the week body, its day-picker chips and their cache (§7) ─────
+// _tlWeekMineHtml, _tlWeekCache, _tlPickerSel, setTimeLogDayPick and
+// _tlRenderWeekBody all lived here. They were the week-inside-an-accordion
+// world: a chip row to pick a day, a per-week render cache so one accordion
+// could redraw without touching the others, and a body that stitched them
+// together.
+//
+// The drill (2026-08-30) replaced every one of those jobs. There is one level
+// on screen, so there is nothing to redraw selectively and no cache to keep;
+// a day is reached by tapping its bar, so there are no chips; and the level's
+// body is built straight in renderTimeLog. Left in place they would have been
+// ~150 lines nothing calls, which is exactly what §7 forbids.
+//
+// _tlWeekOwnerHtml went with them: its only caller was the week body. Team's
+// per-person cards come from _tlEmpAccHtml, which is untouched.
 // Me/Team display toggle, for anyone with payroll/team permission. Owners
 // default to Team, managers default to Me (see renderTimeLog); either can
 // switch any time and the choice sticks for the rest of the session, same
@@ -2482,19 +2248,22 @@ async function renderTimeLog(opts){
   const months=Object.keys(byMonth).sort((a,b)=>a.localeCompare(b));
   const curMo=todayKey().slice(0,7);
   const curWk=_tlWeekKey(todayKey());
-  _tlWeekCache={};
   // ONE month at a time (owner 2026-08-30). The picker replaced the list of
   // twelve collapsed month accordions: two navigations for one job, and the
   // second one was the clutter. Default to the current month when the open
   // year has it, otherwise the latest month that actually has hours, never a
   // blank chart on an empty month.
-  const selMo=(_tlMonthSel&&byMonth[_tlMonthSel])?_tlMonthSel
+  // _tlDrill.mo IS the selected month, and the only thing that is. There were
+  // briefly two (_tlMonthSel and _tlDrill.mo); the arrows wrote one and the
+  // render read the other, so stepping to September rendered August and the
+  // arrows looked broken. Two variables for one fact is how that happens, so
+  // there is one.
+  const selMo=(_tlDrill.mo&&byMonth[_tlDrill.mo])?_tlDrill.mo
     :(byMonth[curMo]?curMo:months[months.length-1]);
-  // STORED, not just computed. _tlMonthStep looks up the current month to find
-  // its neighbours, so leaving the default un-stored left indexOf at -1 and
-  // both arrows dead until something else happened to set it, which on a fresh
-  // open is never.
-  _tlMonthSel=selMo;
+  // STORED, not just computed: _tlDrillStep looks the current month up to find
+  // its neighbours, and an un-stored default left indexOf at -1 with both
+  // arrows dead on a fresh open, which is every open.
+  _tlDrill.mo=selMo;
   // ── The drill: one level, one chart ────────────────────────────────────
   // Team keeps its per-person cards, because a team week genuinely is several
   // people and the cards are the only thing that separates them. Me gets the

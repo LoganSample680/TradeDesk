@@ -3,7 +3,7 @@
 // component with the owner's real 08/27 geometry so the picture can be
 // reviewed before anything is deployed.
 const { test, mockAllExternal, waitForAppBoot } = require('./helpers');
-const { mountWeekBars, mountMonth } = require('./week-bars-fixture');
+const { mountWeekBars, mountMonth, mountDay } = require('./week-bars-fixture');
 
 async function shoot(page, path) {
   await mockAllExternal(page);

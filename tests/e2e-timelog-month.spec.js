@@ -65,11 +65,11 @@ test.describe('month bars: pure helpers', () => {
 
   test('setTimeLogMonth refuses anything that is not a month', async ({ page }) => {
     const r = await page.evaluate(() => {
-      const before = _tlMonthSel;
+      const before = _tlDrill.mo;
       ['', null, undefined, '2026', '2026-13-01', 'August', 13, {}].forEach(v => {
         try { setTimeLogMonth(v); } catch (_e) {}
       });
-      return { before, after: _tlMonthSel };
+      return { before, after: _tlDrill.mo };
     });
     expect(r.after).toBe(r.before);
   });
@@ -110,6 +110,12 @@ test.describe('month bars: the page', () => {
   });
   test.afterEach(async ({ page }) => { assertNoErrors(page, 'month page'); });
 
+  test('the accordion-and-chip navigation is deleted, not orphaned (§7)', async ({ page }) => {
+    const r = await page.evaluate(() => ['_tlOpenWeek', '_tlMonthStep', '_tlMonthNavHtml',
+      '_tlMonthPickerHtml', '_tlScrollMonthIntoView'].map(n => typeof window[n]));
+    expect(r).toEqual(['undefined', 'undefined', 'undefined', 'undefined', 'undefined']);
+  });
+
   test('a back arrow, the month, a forward arrow', async ({ page }) => {
     // Replaced a twelve-chip row that never fit a phone, scrolled, and so had
     // to scroll ITSELF back into view to be usable (owner 2026-08-30).
@@ -118,6 +124,7 @@ test.describe('month bars: the page', () => {
       const btns = [...nav.querySelectorAll('.tl-monav-btn')];
       return {
         chips: document.querySelectorAll('.tl-mpicker').length,
+        back: !!nav.parentElement.querySelector('.tl-drill-back'),
         label: nav.querySelector('.tl-monav-lbl').textContent,
         total: nav.querySelector('.tl-monav-tot').textContent,
         n: btns.length,
@@ -135,9 +142,10 @@ test.describe('month bars: the page', () => {
     // The month's total moved here from the accordion header this replaced.
     expect(r.total).toBe('97h 42m');
     expect(r.n).toBe(2);
-    expect(r.aria[0]).toContain('Previous month');
-    expect(r.aria[1]).toContain('Next month');
-    expect(r.aria[1]).toContain('September 2026');
+    expect(r.aria[0]).toContain('Previous');
+    expect(r.aria[1]).toContain('Next');
+    // Month is the TOP of the drill, so there is nothing to go back up to.
+    expect(r.back).toBe(false);
     // August is the earliest month with hours, so back is dead and forward is
     // live. Disabled, never hidden: a control that vanishes makes the row jump.
     expect(r.disabled).toEqual([true, false]);
@@ -149,16 +157,17 @@ test.describe('month bars: the page', () => {
     const r = await page.evaluate(async () => {
       const label = () => document.querySelector('.tl-monav-lbl').textContent;
       const out = { start: label() };
-      _tlMonthStep(1); await new Promise(r2 => setTimeout(r2, 60));
+      const step = (d) => _tlDrillStep(d, _tlLastRows);
+      step(1); await new Promise(r2 => setTimeout(r2, 60));
       out.fwd = label();
       out.dirFwd = _tlMonthDir;
       // Past the end is a no-op, never a blank chart.
-      _tlMonthStep(1); await new Promise(r2 => setTimeout(r2, 60));
+      step(1); await new Promise(r2 => setTimeout(r2, 60));
       out.past = label();
-      _tlMonthStep(-1); await new Promise(r2 => setTimeout(r2, 60));
+      step(-1); await new Promise(r2 => setTimeout(r2, 60));
       out.back = label();
       out.dirBack = _tlMonthDir;
-      _tlMonthStep(-1); await new Promise(r2 => setTimeout(r2, 60));
+      step(-1); await new Promise(r2 => setTimeout(r2, 60));
       out.before = label();
       return out;
     });
@@ -177,19 +186,24 @@ test.describe('month bars: the page', () => {
     // It used to be computed for the render and thrown away, which left
     // _tlMonthStep looking up index -1 and both arrows dead until something
     // else happened to set the month. On a fresh open that is never.
-    const r = await page.evaluate(() => _tlMonthSel);
-    expect(r).toBe('2026-08');
+    // ONE variable holds the selected month. There were briefly two, and the
+    // arrows wrote one while the render read the other, so stepping to
+    // September rendered August and the arrows looked broken.
+    const r = await page.evaluate(() => ({ drill: _tlDrill.mo, gone: typeof window._tlMonthSel }));
+    expect(r.drill).toBe('2026-08');
+    expect(r.gone).toBe('undefined');
   });
 
   test('the chart slides in from the side you came from', async ({ page }) => {
     const r = await page.evaluate(async () => {
-      _tlMonthStep(1); await new Promise(r2 => setTimeout(r2, 60));
-      const fwd = document.querySelector('.tl-mbars').className;
-      _tlMonthStep(-1); await new Promise(r2 => setTimeout(r2, 60));
-      const back = document.querySelector('.tl-mbars').className;
+      const cls = () => document.querySelector('.tl-drill-body').className;
+      _tlDrillStep(1, _tlLastRows); await new Promise(r2 => setTimeout(r2, 60));
+      const fwd = cls();
+      _tlDrillStep(-1, _tlLastRows); await new Promise(r2 => setTimeout(r2, 60));
+      const back = cls();
       // A jump with no direction must not inherit the last tap's animation.
-      setTimeLogMonth('2026-09'); await new Promise(r2 => setTimeout(r2, 60));
-      const jump = document.querySelector('.tl-mbars').className;
+      _tlDrillTo('month', '2026-09'); await new Promise(r2 => setTimeout(r2, 60));
+      const jump = cls();
       return { fwd, back, jump };
     });
     expect(r.fwd).toContain('tl-mbars-fwd');
@@ -198,23 +212,28 @@ test.describe('month bars: the page', () => {
     expect(r.jump).not.toContain('tl-mbars-back');
   });
 
-  test('one month at a time, and it prints no header of its own', async ({ page }) => {
+  test('one level on screen, one chart, one header', async ({ page }) => {
+    // The rule the whole rebuild rests on. The week accordion list under the
+    // month chart was the maze: a second way to do the drill the bars already
+    // do, repeating every total the chart above it drew.
     const r = await page.evaluate(() => ({
-      months: document.querySelectorAll('.bk-month').length,
-      // The nav above already names the month and carries its total, so an
-      // accordion header saying both again is the duplication the week body
-      // was already caught for.
-      hdrs: document.querySelectorAll('.bk-month-hd').length,
-      titles: document.querySelectorAll('.bk-month-title').length,
+      charts: document.querySelectorAll('.tl-wbar').length,
+      heads: document.querySelectorAll('.tl-monav').length,
+      weekAccordions: document.querySelectorAll('.bk-week').length,
+      monthAccordions: document.querySelectorAll('.bk-month').length,
+      // Chip tabs were the fourth idiom on the page.
+      chips: document.querySelectorAll('.tl-picker').length,
     }));
-    expect(r.months).toBe(1);
-    expect(r.hdrs).toBe(0);
-    expect(r.titles).toBe(0);
+    expect(r.charts).toBe(1);
+    expect(r.heads).toBe(1);
+    expect(r.weekAccordions, 'the accordion list is gone, not hidden').toBe(0);
+    expect(r.monthAccordions).toBe(0);
+    expect(r.chips).toBe(0);
   });
 
   test('one bar per week, oldest first, each drilling into its own week', async ({ page }) => {
     const r = await page.evaluate(() => {
-      const bars = document.querySelector('.tl-mbars');
+      const bars = document.querySelector('.tl-drill-body');
       const cols = [...bars.querySelectorAll('.tl-wbar-col')];
       return {
         n: cols.length,
@@ -232,38 +251,60 @@ test.describe('month bars: the page', () => {
     // 40 hours is the line that changes what somebody does next at this zoom,
     // the way 8 hours is at the week's.
     expect(r.guide).toBe('40h');
-    r.opens.forEach(o => expect(o).toContain('_tlOpenWeek('));
+    // A bar goes DOWN a level now, instead of opening an accordion below.
+    r.opens.forEach(o => expect(o).toContain("_tlDrillTo('week'"));
     expect(r.opens[3]).toContain('2026-08-23');
   });
 
   test('the unanswered hole is flagged at month zoom too', async ({ page }) => {
     const which = await page.evaluate(() =>
-      [...document.querySelectorAll('.tl-mbars .tl-wbar-col')]
+      [...document.querySelectorAll('.tl-drill-body .tl-wbar-col')]
         .map(c => !!c.querySelector('.tl-wbar-q')));
     // Only the week of 08/23 carries the 45-minute unaccounted stretch.
     expect(which).toEqual([false, false, false, true]);
   });
 
-  test('tapping a week bar opens that week below', async ({ page }) => {
-    const before = await page.evaluate(() =>
-      !!document.querySelector('#bk-tl-wk-2026-08-20260816.open'));
-    await page.evaluate(() => {
-      const cols = [...document.querySelectorAll('.tl-mbars .tl-wbar-hit')];
-      cols[2].click();          // week of 08/16
+  test('tapping a week bar goes DOWN to that week', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      const before = { level: _tlDrill.level, charts: document.querySelectorAll('.tl-wbar').length };
+      [...document.querySelectorAll('.tl-drill-body .tl-wbar-hit')][2].click();  // week of 08/16
+      await new Promise(r2 => setTimeout(r2, 80));
+      return {
+        before,
+        level: _tlDrill.level, wk: _tlDrill.wk,
+        // Still ONE chart: the level replaced itself rather than stacking a
+        // second one underneath, which is what the accordion list used to do.
+        charts: document.querySelectorAll('.tl-wbar').length,
+        back: (document.querySelector('.tl-drill-back') || {}).textContent,
+        title: document.querySelector('.tl-monav-lbl').textContent,
+      };
     });
-    await page.waitForTimeout(150);
-    const after = await page.evaluate(() =>
-      !!document.querySelector('#bk-tl-wk-2026-08-20260816.open'));
-    expect(before).toBe(false);
-    expect(after, 'the bar is the map, the accordion is the detail').toBe(true);
+    expect(r.before.level).toBe('month');
+    expect(r.before.charts).toBe(1);
+    expect(r.level).toBe('week');
+    expect(r.wk).toBe('2026-08-16');
+    expect(r.charts, 'one level, one chart').toBe(1);
+    expect(r.title).toContain('Aug 16');
+    // The back link NAMES where it goes, because "back" alone makes somebody
+    // guess and guessing is what this rebuild undoes.
+    expect(r.back).toContain('August 2026');
   });
 
-  test('_tlOpenWeek on a week that is not on screen is a no-op, never a throw', async ({ page }) => {
-    const ok = await page.evaluate(() => {
-      try { _tlOpenWeek('2026-03', '2026-03-01'); _tlOpenWeek('', ''); _tlOpenWeek(null, null);
-            return true; } catch (_e) { return false; }
+  test('drilling to something that is not there degrades, never throws', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      try {
+        _tlDrillTo('week', '2026-03-01');      // a week in another month
+        _tlDrillTo('day', 'nonsense');
+        _tlDrillTo('nowhere', 'x');
+        _tlDrillTo(null, null);
+        _tlDrillUp(); _tlDrillUp(); _tlDrillUp();
+        return { ok: true, level: _tlDrill.level };
+      } catch (_e) { return { ok: false, err: String(_e && _e.message) }; }
     });
-    expect(ok).toBe(true);
+    expect(r.ok).toBe(true);
+    // Whatever it was handed, it lands somewhere real rather than on a blank
+    // chart: an out-of-month week falls back to the month's own last week.
+    expect(['month', 'week', 'day']).toContain(r.level);
   });
 
   test('the page-level Share button is gone, not hidden behind the other two', async ({ page }) => {
@@ -274,7 +315,7 @@ test.describe('month bars: the page', () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('tl-share');
       return { display: el.style.display, html: el.innerHTML,
-               month: !!document.querySelector('.tl-mbars .tl-wbar-share'),
+               month: !!document.querySelector('.tl-drill-body .tl-wbar-share'),
                fn: typeof _tlShareWeek };
     });
     expect(r.display).toBe('none');
@@ -291,12 +332,12 @@ test.describe('month bars: the page', () => {
       const orig = _tlScope;
       _tlScope = 'team';
       await renderTimeLog();
-      const team = { bars: !!document.querySelector('.tl-mbars'),
+      const team = { bars: !!document.querySelector('.tl-wbar'),
                      cards: !!document.querySelector('.tl-emp-row'),
                      nav: !!document.querySelector('.tl-monav') };
       _tlScope = orig;
       await renderTimeLog();
-      const me = { bars: !!document.querySelector('.tl-mbars') };
+      const me = { bars: !!document.querySelector('.tl-wbar') };
       return { team, me };
     });
     expect(r.team.bars).toBe(false);
