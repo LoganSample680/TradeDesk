@@ -596,9 +596,33 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     _geoJobCoords = {};
   });
 
+  // WAIT FOR THE DRAIN, DO NOT GUESS AT IT.
+  //
+  // This was `setTimeout(60)`, a guessed number, and 29 tests read their result
+  // through it. The enqueue drain is asynchronous, so on a runner that is busy
+  // enough the row simply has not landed in the recorder yet when the assertion
+  // reads it, and the failure is ZERO rows rather than wrong ones: "expected 1,
+  // received 0" (CI shard 2, webkit, 2026-08-30). A test that fails because the
+  // machine was slow is not testing the reconciler.
+  //
+  // So: settle on the CONDITION. Return the moment a reconciled row lands, and
+  // otherwise return once the recorder has been quiet for three consecutive
+  // polls, which is the same ~60ms of stillness the old sleep was reaching for
+  // and is what the handful of tests expecting no rows actually need. The 2s
+  // cap keeps a genuinely broken reconciler failing fast instead of hanging.
   const runRecon = () => page.evaluate(async () => {
     await _geoReconcileFromMileage();
-    await new Promise(res => setTimeout(res, 60)); // let the enqueue drain hit the recorder
+    const rows = () => window.__rec.upserts.filter(u =>
+      u.tbl === 'job_time_entries' && (u.row.source || '') === 'geofence-reconciled');
+    let quiet = 0, last = -1;
+    for (let i = 0; i < 100; i++) {
+      if (rows().length) break;
+      const n = window.__rec.upserts.length + window.__rec.updates.length;
+      quiet = (n === last) ? quiet + 1 : 0;
+      last = n;
+      if (quiet >= 3) break;
+      await new Promise(res => setTimeout(res, 20));
+    }
     return {
       recRows: window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && (u.row.source || '') === 'geofence-reconciled').map(u => u.row),
       updates: window.__rec.updates.slice(),
