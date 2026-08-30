@@ -390,8 +390,27 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
     await dwell(GEO.JOB1, 8);
     await ping(GEO.JOB1, 0); await ff(1);
     for (const p of OUT) { await ping(p, 13); await ff(0.7); }
-    // The pickup: five fixes at the same kerb, ~3.2 minutes of anchor dwell.
-    for (let i = 0; i < 5; i++) { await ping(PIZZA, 0); await ff(0.8); }
+    // The pickup: five fixes at the same kerb, four minutes of anchor dwell.
+    //
+    // FOUR, not the 3.2 it was, and the change is about headroom rather than
+    // realism. A pause is 2.5 minutes or more (_GEO_PAUSE_MS) and under five
+    // (_GEO_STOP_MS, past which it is a real stop and belongs to the split
+    // machinery). At 3.2 minutes the fixture sat 42 seconds above the floor,
+    // which is LESS THAN ONE of its own 48-second ticks: lose a single tick
+    // anywhere in the sit and the dwell measures 2.4 minutes, the leg is never
+    // marked paused, the observed-miles floor collects and the day reports 4.2
+    // where the direct route is 3. That is the exact CI signature, twice now
+    // (2026-08-21, and again 2026-08-30 on a shard reshuffle), and it is not a
+    // fact about the app: the rule, the branch and the assertion are identical
+    // either way. It was a fixture whose outcome depended on tick-perfect
+    // delivery instead of on the behaviour it exists to prove.
+    //
+    // Four minutes sits 90 seconds above the floor and 60 below the ceiling,
+    // so both margins are at least one whole tick and a lost one cannot flip
+    // the branch in either direction. ffMs's verify-and-retry loop and its
+    // lossy-clock regression below still stand; this removes the knife-edge
+    // they were being asked to balance on.
+    for (let i = 0; i < 5; i++) { await ping(PIZZA, 0); await ff(1); }
     for (const p of BACK) { await ping(p, 13); await ff(0.7); }
     await ping(GEO.SHOP, 0); await ff(0.5);
     await dwell(GEO.SHOP, 8);
