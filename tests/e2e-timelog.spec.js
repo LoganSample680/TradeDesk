@@ -437,7 +437,9 @@ test.describe('timelog.js: exhaustive coverage', () => {
       const rows = await withShop([YARD_MID], DAY);
       const shop = rows.filter(r => r.source === 'shop');
       expect(shop.length, 'the midday yard stop is listed').toBe(1);
-      expect(shop[0].detail).toBe('Shop');
+      // "Shop time", not "Shop" (owner 2026-08-29): every badge on this table
+      // names a block of time, so they all end in the same word.
+      expect(shop[0].detail).toBe('Shop time');
       expect(shop[0].minutes).toBe(60);
       expect(shop[0].unpaid, 'inside the workday, so it counts').toBe(false);
     });
@@ -529,7 +531,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       const shop = rows.filter(r => r.source === 'shop');
       expect(shop.length).toBe(1);
       expect(shop[0].minutes, '30 minutes of unload, not the whole evening').toBe(30);
-      expect(shop[0].detail, 'the rule is visible, not silently eating minutes').toBe('Shop · auto clock-out');
+      expect(shop[0].detail, 'the rule is visible, not silently eating minutes').toBe('Shop time · auto clock-out');
       expect(shop[0].endTime, 'the row ends when the clock stopped').toBe('2026-08-20T22:00:00.000Z');
     });
 
