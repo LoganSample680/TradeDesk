@@ -3,7 +3,7 @@
 // component with the owner's real 08/27 geometry so the picture can be
 // reviewed before anything is deployed.
 const { test, mockAllExternal, waitForAppBoot } = require('./helpers');
-const { WEEK_ROWS, WEEK_DAYS, renderWeekRail } = require('./week-rail-fixture');
+const { WEEK_ROWS, WEEK_DAYS, renderWeekRail } = require('./week-bars-fixture');
 
 async function shoot(page, path) {
   await mockAllExternal(page);
@@ -15,10 +15,10 @@ async function shoot(page, path) {
 }
 
 test.describe('week rail screenshot', () => {
-  test('phone', async ({ page }) => { await shoot(page, 'week-rail-mobile.png'); });
+  test('phone', async ({ page }) => { await shoot(page, 'week-bars-mobile.png'); });
 });
 
 test.describe('week rail screenshot, 320px', () => {
   test.use({ viewport: { width: 320, height: 760 } });
-  test('narrow', async ({ page }) => { await shoot(page, 'week-rail-320.png'); });
+  test('narrow', async ({ page }) => { await shoot(page, 'week-bars-320.png'); });
 });

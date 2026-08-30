@@ -13,6 +13,7 @@ tests/flow/.local-accounts.json
 # Local screenshot scratch (never repo content)
 _shot_*.png
 week-rail-*.png
+week-bars-*.png
 
 # native/ is a real npm package the iOS build needs; the blanket package.json
 # ignore above predates it and silently dropped it from the first workflow PR.

@@ -1272,47 +1272,57 @@ body.dark .cal-cell.other{background:var(--cream)}
 .tl-rail-row[data-kind="gap"] .tl-rail-spine i{
   background:repeating-linear-gradient(to bottom,var(--border2) 0,var(--border2) 4px,transparent 4px,transparent 8px)}
 .tl-rail-row[data-kind="gap"] .tl-rail-spine b{border-color:var(--border2)}
-/* ── Time log: the week rail ──
-   Seven lanes, ONE axis. The three columns are identical on the axis strip and
-   on every lane, which is what makes 8am land at the same x on all of them:
-   change the template in one place and you must change it in the other, or the
-   labels stop meaning anything. minmax(0,...) again so the whole thing reflows
-   to 320px instead of scrolling sideways (1.4.10). */
-.tl-wrail-wrap{margin-top:2px}
-.tl-wrail-axis,.tl-wrail-hit{display:grid;
-  grid-template-columns:minmax(0,4.2rem) minmax(0,1fr) minmax(0,4.6rem);
-  column-gap:7px;align-items:center;width:100%}
-.tl-wrail-axis{height:13px;margin-bottom:3px}
-.tl-wrail-axis-in{position:relative;height:13px;display:block}
-.tl-wrail-axis-in b{position:absolute;top:0;transform:translateX(-50%);font-size:9.5px;font-weight:700;
-  color:var(--text3);font-variant-numeric:tabular-nums;white-space:nowrap;line-height:13px}
-.tl-wrail{list-style:none;margin:0;padding:0}
-.tl-wrail-lane+.tl-wrail-lane{border-top:1px solid var(--line)}
-.tl-wrail-hit{background:none;border:0;padding:7px 0;margin:0;font-family:inherit;text-align:left;
-  cursor:pointer;border-radius:6px}
-.tl-wrail-hit:hover .tl-wrail-track{outline:1px solid var(--line-2);outline-offset:2px}
-.tl-wrail-day{font-size:11px;font-weight:700;color:var(--text3);font-variant-numeric:tabular-nums;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tl-wrail-track{position:relative;display:block;height:16px;border-radius:4px;
-  background:var(--cream);overflow:hidden}
-/* The hour gridlines live inside each track rather than as one overlay, so
-   they cannot drift out of step with the lane they are measuring. */
-.tl-wrail-grid{position:absolute;top:0;bottom:0;width:1px;background:var(--line);display:block}
-.tl-wrail-seg{position:absolute;top:2px;bottom:2px;background:var(--rail);border-radius:2px;display:block}
-/* A hole is the shape of a hole here too: hatched, not filled. */
-.tl-wrail-seg[data-kind="gap"]{background:repeating-linear-gradient(45deg,
-  var(--border2) 0,var(--border2) 2px,transparent 2px,transparent 5px);
-  border:1px solid var(--border2);box-sizing:border-box}
-.tl-wrail-amt{font-size:11.5px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;
-  text-align:right;white-space:nowrap;display:flex;align-items:center;justify-content:flex-end;gap:4px}
-.tl-wrail-lane[data-empty] .tl-wrail-amt{font-weight:700;color:var(--text3)}
-.tl-wrail-lane[data-empty] .tl-wrail-track{opacity:.5}
-/* "Still needs an answer", as a character and not a colour (1.4.1). */
-.tl-wrail-q{font-style:normal;font-size:10px;font-weight:900;line-height:1;
-  width:14px;height:14px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
-/* --amber and --amber-lt are the one amber pair restated in BOTH palettes, so
+/* ── Time log: the week bars ──
+   Seven columns, one big number above them (the shared employee card), and a
+   guide line at 8 hours so a long day is over a LINE and not merely taller
+   than its neighbour. The plot area is an absolute overlay across the top
+   _TL_BAR_H pixels of the wrap, which is exactly the height of each column's
+   .tl-wbar-plot, so the guide lands on the same y as the bars measure from.
+   Change one of those heights and you must change the other. */
+.tl-wbar-wrap{position:relative;margin:10px 0 2px}
+.tl-wbar-plotarea{position:absolute;left:0;right:0;top:0;height:104px;pointer-events:none;z-index:3}
+/* Dark enough to read on the blue of a tall bar AND on the page behind a short
+   one, with a light halo either side so it never dissolves into the bar it is
+   crossing. A pale line here was invisible on exactly the long days it exists
+   to flag. */
+.tl-wbar-guide{position:absolute;left:0;right:0;height:0;display:block;
+  border-top:1px dashed var(--text3);
+  box-shadow:0 1px 0 rgba(255,255,255,.55),0 -1px 0 rgba(255,255,255,.55)}
+body.dark .tl-wbar-guide{box-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,.45)}
+.tl-wbar-guide b{position:absolute;right:0;top:-13px;font-size:9px;font-weight:800;
+  color:var(--text3);background:var(--bg-card);padding:0 3px;line-height:12px}
+.tl-wbar{list-style:none;margin:0;padding:0;display:grid;
+  grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;position:relative;z-index:2}
+.tl-wbar-col{min-width:0}
+.tl-wbar-hit{display:flex;flex-direction:column;align-items:stretch;width:100%;min-width:0;
+  background:none;border:0;padding:0;margin:0;font-family:inherit;cursor:pointer}
+/* The column the bar grows inside. Height is fixed so every day is measured
+   against the same ruler; the bar itself is a percentage of it. A BASELINE,
+   not a filled track: a full-height grey box on a day with nothing logged read
+   heavier than the real bars beside it, which is backwards. */
+.tl-wbar-plot{position:relative;height:104px;display:flex;align-items:flex-end;
+  box-shadow:inset 0 -2px 0 var(--line-2)}
+.tl-wbar-stack{display:flex;flex-direction:column;width:100%;overflow:hidden;
+  border-radius:6px 6px 3px 3px;min-height:3px}
+.tl-wbar-seg{display:block;width:100%;min-height:2px}
+.tl-wbar-hit:hover .tl-wbar-plot{outline:1.5px solid var(--line-2);outline-offset:2px}
+.tl-wbar-dow{font-size:11px;font-weight:800;color:var(--text2);margin-top:6px;line-height:1.1}
+/* The height comparison, restated in words: a chart that only encodes hours as
+   a height is unreadable to anyone who cannot judge one, and a short day must
+   never be mistakable for a day that recorded nothing (1.4.1). */
+/* nowrap is load-bearing: "11h 54m" wrapped to two lines in a 46px column and
+   pushed that one day's labels a row lower than the other six. */
+.tl-wbar-amt{font-size:9px;font-weight:800;color:var(--text);margin-top:2px;
+  font-variant-numeric:tabular-nums;line-height:1.2;white-space:nowrap;letter-spacing:-.2px}
+.tl-wbar-col.tl-wbar-none .tl-wbar-amt{font-weight:700;color:var(--text3)}
+.tl-wbar-col.tl-wbar-none .tl-wbar-plot{opacity:.6}
+/* "Still needs an answer", as a character and not a colour (1.4.1).
+   --amber and --amber-lt are the one amber pair restated in BOTH palettes, so
    this stays readable in dark mode instead of going dark-on-dark. */
-  background:var(--amber-lt);color:var(--amber);flex-shrink:0}
+.tl-wbar-q{position:absolute;left:50%;transform:translateX(-50%);
+  font-style:normal;font-size:10px;font-weight:900;line-height:1;z-index:3;
+  width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:var(--amber-lt);color:var(--amber);border:1px solid var(--amber)}
 /* ── Mileage: trip rows ── */
 .mil-day-trip{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line)}
 .mil-day-trip:last-child{border-bottom:none}

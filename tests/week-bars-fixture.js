@@ -1,4 +1,4 @@
-// Shared fixture for the week rail: the owner's real week of 08/23 to 08/29.
+// Shared fixture for the week bars: the owner's real week of 08/23 to 08/29.
 // Wednesday 08/27 is his actual day, row for row, off the live tables (the
 // re-timed CoreMotion tape, 9h 54m), so both the assertions and the screenshot
 // are looking at the same thing he is.
@@ -51,7 +51,7 @@ const WEEK_DAYS = ['2026-08-23','2026-08-24','2026-08-25','2026-08-26',
                    '2026-08-27','2026-08-28','2026-08-29'];
 
 // Runs INSIDE the page. Drives the REAL week body (_tlRenderWeekBody, Me
-// scope, week pick) rather than assembling the rail by hand, so the picture
+// scope, week pick) rather than assembling the chart by hand, so the picture
 // under review and the assertions are both looking at what actually ships.
 function renderWeekRail({ rows, days }) {
   try { S.bizTz = 'America/Chicago'; } catch (_e) {}
