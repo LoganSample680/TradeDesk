@@ -2171,12 +2171,17 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(out.load).not.toContain('On-site');
       expect(out.office).toContain('Office');
       expect(out.office).not.toContain('On-site');
-      // Teal, the colour this page already uses for "your own premises, paid,
-      // not job-site labour", and the matching left-edge accent the Shop row
-      // gets for the same fast-scroll reason. Never the drive amber.
-      expect(out.load).toContain('#0E6B6B');
-      expect(out.load).toContain('border-left:3px solid #0E6B6B');
+      // Loading moved off teal to violet on 2026-08-30. It shared teal with
+      // Shop and Office while it lived inside the Supply/other bucket and had
+      // no dot of its own; the day rail's legend gave it one, and two
+      // identical dots is the exact ambiguity a legend is there to remove.
+      // Office keeps the teal that still means "your own premises, paid, not
+      // job-site labour". Neither is ever the drive amber.
+      expect(out.load).toContain('#6D28D9');
+      expect(out.load).toContain('border-left:3px solid #6D28D9');
       expect(out.load).not.toContain('#9F5B00');
+      expect(out.office).toContain('#0E6B6B');
+      expect(out.office).toContain('border-left:3px solid #0E6B6B');
       // The word is on the badge, so it is not repeated in the job line, the
       // same not-repeated rule the Driving and Shop rows already follow.
       expect((out.load.match(/Loading/g) || []).length).toBe(1);
@@ -2968,7 +2973,10 @@ test.describe('timelog.js: exhaustive coverage', () => {
         const byEmp = { u1: { min: 100, onsiteMin: 90, driveMin: 10, placeMin: 2, weekOT: false, name: 'Mike Sample' } };
         return _tlWeekOwnerHtml(byEmp, null);
       });
-      expect(r).toContain('Drive');
+      // 'Drive' -> 'Driving' (2026-08-30): the legend labels now come from the
+      // single _TL_BUCKETS table the day rail also reads, so the two surfaces
+      // cannot print different words for the same bucket.
+      expect(r).toContain('Driving');
       expect(r).not.toContain('Supply/other');
     });
 
@@ -3319,20 +3327,27 @@ test.describe('timelog.js: exhaustive coverage', () => {
         // are swapped, so re-query fresh chips from it after every click.
         const weekChip = () => bodyEl.querySelector('.tl-chip.wk');
         const weekActiveBefore = weekChip().classList.contains('active');
-        const scopeTtlBefore = bodyEl.querySelector('.tl-scope-ttl').textContent;
+        // A day now renders the rail, whose head carries the day and the
+        // total; the generic scope header would print both a second time, so
+        // it is suppressed there. Read whichever one the scope actually has.
+        const ttl = () => (bodyEl.querySelector('.tl-scope-ttl') || bodyEl.querySelector('.tl-rail-head-day') || {}).textContent || '';
+        const scopeTtlBefore = ttl();
         const dotChip = [...bodyEl.querySelectorAll('.tl-chip')].find(c => !c.classList.contains('wk') && c.querySelector('.tl-dot'));
         dotChip.click();
-        const scopeTtlAfter = bodyEl.querySelector('.tl-scope-ttl').textContent;
+        const scopeTtlAfter = ttl();
+        const dayHasRail = !!bodyEl.querySelector('.tl-rail');
         const dotChipActive = [...bodyEl.querySelectorAll('.tl-chip')].some(c => !c.classList.contains('wk') && c.classList.contains('active'));
         const weekChipStillActive = weekChip().classList.contains('active');
         weekChip().click();
-        const scopeTtlBack = bodyEl.querySelector('.tl-scope-ttl').textContent;
+        const scopeTtlBack = ttl();
         const weekActiveAgain = weekChip().classList.contains('active');
-        return { weekActiveBefore, scopeTtlBefore, scopeTtlAfter, dotChipActive, weekChipStillActive, scopeTtlBack, weekActiveAgain };
+        return { weekActiveBefore, scopeTtlBefore, scopeTtlAfter, dayHasRail, dotChipActive, weekChipStillActive, scopeTtlBack, weekActiveAgain };
       }, curMonthPrefix);
       expect(r.weekActiveBefore).toBe(true);
       expect(r.scopeTtlBefore).toContain('Week of');
       expect(r.scopeTtlAfter).not.toContain('Week of');
+      expect(r.scopeTtlAfter, 'the day still names itself, now in the rail head').toBeTruthy();
+      expect(r.dayHasRail, 'a single day renders the rail, not the table').toBe(true);
       expect(r.dotChipActive).toBe(true);
       expect(r.weekChipStillActive).toBe(false);
       expect(r.scopeTtlBack).toContain('Week of');
@@ -3455,8 +3470,11 @@ test.describe('timelog.js: exhaustive coverage', () => {
       const team = await body('team');
       const legend = h => (h.match(/<div class="tl-split-legend">(.*?)<\/div>/s) || ['', ''])[1];
       expect(legend(me)).toBe(legend(team));
-      expect(legend(me)).toContain('On-site');
-      expect(legend(me), 'drive time is the number a person most wants off their own week').toContain('Drive');
+      // Five buckets now, not four: Loading was carved out of Supply/other so
+      // the day's legend can name it (owner 2026-08-30). Both scopes still
+      // read the same _TL_BUCKETS table, which is what this test guards.
+      expect(legend(me)).toContain('On site');
+      expect(legend(me), 'drive time is the number a person most wants off their own week').toContain('Driving');
       expect(legend(me)).toContain('Supply/other');
       expect(legend(me)).toContain('Shop');
     });
@@ -3746,7 +3764,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(words[0]).toContain('Loading time');
       expect(words[1]).toContain('Drive time');
       expect(words[2]).toContain('On site');
-      expect(words[3]).toContain('Between jobs');
+      expect(words[3]).toContain('Unaccounted');
     });
 
     // Owner 2026-08-29: "don't want to say nothing recorded since that instills
@@ -3760,7 +3778,10 @@ test.describe('timelog.js: exhaustive coverage', () => {
       }, ROWS());
       expect(r.text).not.toMatch(/nothing recorded/i);
       expect(r.text).toContain('Away from every job site');
+      expect(r.text).toContain('unaccounted');
       expect(r.text).toContain('What was this?');
+      // Owner 2026-08-30: our vocabulary is not the contractor's.
+      expect(r.text, 'no jargon a contractor would not use').not.toMatch(/geofence|motion|coremotion|gps/i);
       expect(r.chips.length).toBe(3);
       expect(r.chips[0]).toBe('Work time');
       expect(r.chips[2]).toBe('Personal');
@@ -3949,6 +3970,75 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.chipH).toBeGreaterThanOrEqual(24);
       expect(r.cols.split(' ').length, 'four tracks: time, spine, body, duration').toBe(4);
       expect(r.overflow, 'the rail must reflow at 320px, never bleed').toBe(true);
+    });
+
+    test('the day header totals the same buckets the employee card draws', async () => {
+      const r = await page.evaluate((rows) => {
+        const d = document.createElement('div');
+        d.innerHTML = _tlRailHeadHtml(rows, 'Thu, Aug 27');
+        const legend = [...d.querySelectorAll('.tl-rail-leg')].map(e => e.textContent.trim());
+        const widths = [...d.querySelectorAll('.tl-split-bar span')]
+          .map(e => parseFloat(e.style.width) || 0);
+        return { day: d.querySelector('.tl-rail-head-day').textContent,
+                 total: d.querySelector('.tl-rail-head-total').textContent,
+                 legend, sum: Math.round(widths.reduce((a, b) => a + b, 0)),
+                 dots: d.querySelectorAll('.tl-rail-leg i').length };
+      }, ROWS());
+      expect(r.day).toBe('Thu, Aug 27');
+      // 11 + 9 + 120 paid; the 40m hole is unpaid and must not be in the total.
+      expect(r.total).toContain('2h 20m');
+      expect(r.sum, 'the bar always fills exactly once').toBe(100);
+      expect(r.dots, 'every legend entry carries its colour as a dot').toBe(r.legend.length);
+      expect(r.legend.join(' ')).toContain('Loading');
+      expect(r.legend.join(' ')).toContain('Driving');
+      expect(r.legend.join(' ')).toContain('On site');
+    });
+
+    test('loading is its own bucket, carved out of supply/other, in ONE aggregator', async () => {
+      const r = await page.evaluate(() => {
+        const agg = _tlEmpWeekAgg([
+          { personUid: 'u', minutes: 6,  source: 'auto', rawSource: 'place-load' },
+          { personUid: 'u', minutes: 20, source: 'auto', rawSource: 'place' },
+          { personUid: 'u', minutes: 9,  source: 'auto', rawSource: 'drive' },
+        ], 'c');
+        const e = agg.u;
+        return { load: e.loadMin, place: e.placeMin, drive: e.driveMin,
+                 total: _tlBucketTotal(e), card: _tlEmpCardHtml('u', e, null, '') };
+      });
+      expect(r.load).toBe(6);
+      expect(r.place, 'loading no longer hides inside supply/other').toBe(20);
+      expect(r.drive).toBe(9);
+      expect(r.total).toBe(35);
+      expect(r.card, 'the card names it too, from the same table').toContain('Loading');
+    });
+
+    test('a real segment prints its end time; the left column alone never shows it', async () => {
+      const r = await page.evaluate((rows) => {
+        const d = document.createElement('div'); d.innerHTML = _tlDayRailHtml(rows);
+        return (d.querySelector('li[data-kind="job"] .tl-rail-sub') || {}).textContent || '';
+      }, ROWS());
+      expect(r).toMatch(/ to /);
+    });
+
+    test('the header survives an empty day and rows with no buckets', async () => {
+      const r = await page.evaluate(() => ({
+        empty: _tlRailHeadHtml([], 'Thu'),
+        nul: _tlRailHeadHtml(null, ''),
+        junk: _tlRailHeadHtml([null, { unpaid: true, minutes: 30 }], 'Thu'),
+      }));
+      expect(r.empty).toContain('tl-rail-head');
+      expect(r.nul).toContain('tl-rail-head');
+      expect(r.junk, 'an all-unpaid day is 0m, never NaN').not.toMatch(/NaN/);
+    });
+
+    // Two identical dots in one legend is the ambiguity a legend exists to
+    // remove, and colour is the only thing separating the entries there.
+    test('every legend bucket has its own colour', async () => {
+      const r = await page.evaluate(() => {
+        const cs = _TL_BUCKETS.map(b => b.c);
+        return { n: cs.length, unique: new Set(cs).size };
+      });
+      expect(r.unique).toBe(r.n);
     });
 
     test('row content is escaped, never injected', async () => {

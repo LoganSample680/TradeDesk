@@ -1230,6 +1230,17 @@ body.dark .cal-cell.other{background:var(--cream)}
    broken spine is the exact thing this replaced.
    Tracks are minmax(0,...) so the whole thing reflows to 320px and survives
    200% zoom (WCAG 1.4.4/1.4.10) without clipping the job name. */
+.tl-rail-head{padding:2px 2px 12px}
+.tl-rail-head-day{font-size:12.5px;font-weight:700;color:var(--text3)}
+.tl-rail-head-total{font-family:var(--font-display);font-size:30px;font-weight:900;letter-spacing:-.8px;
+  line-height:1.1;color:var(--text);font-variant-numeric:tabular-nums;margin:1px 0 8px}
+.tl-rail-head .tl-split-bar{height:6px;border-radius:3px;margin-bottom:8px}
+.tl-rail-legend{display:flex;flex-wrap:wrap;gap:6px 14px}
+/* The dot carries the colour so the bar is readable without separating its
+   segments by hue, and the word and the number sit right beside it. */
+.tl-rail-leg{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--text3);white-space:nowrap}
+.tl-rail-leg i{width:8px;height:8px;border-radius:50%;flex-shrink:0;display:block}
+.tl-rail-leg b{color:var(--text);font-weight:800;font-variant-numeric:tabular-nums}
 .tl-rail{list-style:none;margin:0;padding:0}
 .tl-rail-row{display:grid;grid-template-columns:minmax(0,4.4rem) 14px minmax(0,1fr) auto;
   column-gap:8px;align-items:stretch;margin:0;padding:0}

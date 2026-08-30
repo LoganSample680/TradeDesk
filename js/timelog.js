@@ -800,7 +800,7 @@ function _tlRow(r){
   const sourceTag=isGap
     ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('❓',{size:9})+' Unaccounted</span>'
     :homeKind
-    ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:800;padding:1px 6px;border-radius:4px;background:#0E6B6B22;color:#0E6B6B">'+
+    ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:800;padding:1px 6px;border-radius:4px;background:'+(homeKind==='load'?'#6D28D922':'#0E6B6B22')+';color:'+(homeKind==='load'?'#6D28D9':'#0E6B6B')+'">'+
        svgIcon(homeKind==='load'?'📦':'📋',{size:9})+' '+(homeKind==='load'?'Loading time':'Office')+'</span>'
     :r.source==='shop'
     ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:#0E6B6B">'+svgIcon('🔧',{size:9})+' Shop</span>'
@@ -817,7 +817,7 @@ function _tlRow(r){
   // nothing and reads clearer on a fast scroll down a long day). Unpaid gets
   // a neutral gray accent, same idea, so it never reads as ordinary paid time
   // on a fast scroll down the day.
-  const rowAccent=isGap?' style="border-left:3px dashed var(--border2);opacity:.72"':isAutoDrive?' style="border-left:3px solid #9F5B00"':(r.source==='shop'||homeKind)?' style="border-left:3px solid #0E6B6B"':r.unpaid?' style="border-left:3px solid var(--border2)"':'';
+  const rowAccent=isGap?' style="border-left:3px dashed var(--border2);opacity:.72"':isAutoDrive?' style="border-left:3px solid #9F5B00"':homeKind==='load'?' style="border-left:3px solid #6D28D9"':(r.source==='shop'||homeKind)?' style="border-left:3px solid #0E6B6B"':r.unpaid?' style="border-left:3px solid var(--border2)"':'';
   return '<tr'+lpAttrs+rowAccent+'>'+
     '<td class="bold" data-label="Person">'+escHtml(r.personName)+'</td>'+
     '<td data-label="Job site">'+
@@ -959,11 +959,11 @@ const _TL_RAIL_META={
   job:   {c:'var(--blue)',       icon:'📍', word:'On site'},
   drive: {c:'#9F5B00',           icon:'🚗', word:'Drive time'},
   shop:  {c:'#0E6B6B',           icon:'🔧', word:'Shop time'},
-  load:  {c:'#0E6B6B',           icon:'📦', word:'Loading time'},
+  load:  {c:'#6D28D9',           icon:'📦', word:'Loading time'},
   office:{c:'#0E6B6B',           icon:'📋', word:'Office'},
   off:   {c:'var(--text3)',      icon:'🍽', word:'Break'},
   manual:{c:'var(--text3)',      icon:'▶',  word:'Manual'},
-  gap:   {c:'var(--border2)',    icon:'❓', word:'Between jobs'}
+  gap:   {c:'var(--border2)',    icon:'❓', word:'Unaccounted'}
 };
 function _tlRailMeta(kind){return _TL_RAIL_META[kind]||_TL_RAIL_META.job;}
 // The gap row. It is the reason this rail exists in the shape it does.
@@ -985,8 +985,14 @@ function _tlRailGapBody(r){
     'onclick="_tlAddUnaccounted(\''+a+'\',\''+b+'\',\''+k+'\')">'+escHtml(txt)+'</button>';
   // No title line: the tag above already reads "Between jobs" and printing it
   // twice is the kind of duplication that makes a dense day harder to scan.
-  return '<div class="tl-rail-sub" style="margin-top:3px">Away from every job site for '+escHtml(fm(mins))+'. '+
-      'Motion was tracked, no geofence matched.</div>'+
+  // "geofence" is our word, not a contractor's (owner 2026-08-30: "say
+  // something that's not jargon and a contractor would understand, geofence
+  // isn't something they would know"). The sentence now describes what
+  // happened in the only terms that matter on a truck: the phone was running
+  // and you were not at the shop or at a job.
+  return '<div class="tl-rail-ttl">Away from every job site</div>'+
+    '<div class="tl-rail-sub">'+escHtml(fm(mins))+' unaccounted. Your phone was tracking the whole time, '+
+      'you just were not at the shop or at any job address.</div>'+
     '<div class="tl-rail-ask">What was this?</div>'+
     '<div class="tl-rail-chips">'+
       chip('work','Work time')+
@@ -1015,8 +1021,13 @@ function _tlRailRow(r){
     const inTtl=v=>!!v&&ttl.indexOf(v)>=0;
     const subBits=[inTtl(r.clientName)?null:r.clientName,
                    (r.jobName&&r.jobName!==r.clientName&&!inTtl(r.jobName))?r.jobName:null].filter(Boolean);
+    // "7:59 AM to 12:02 PM" under the title: the left column gives the start,
+    // and on a 4-hour block the end is the thing you actually go looking for.
+    const span=[_tlFmtTime(r.startTime),_tlFmtTime(r.endTime)].filter(Boolean);
+    const rangeTxt=span.length===2?(span[0]+' to '+span[1]):'';
+    const sub=[subBits.join(' · '),rangeTxt].filter(Boolean).join(' · ');
     body='<div class="tl-rail-ttl">'+escHtml(ttl)+'</div>'+
-         (subBits.length?'<div class="tl-rail-sub">'+escHtml(subBits.join(' · '))+'</div>':'');
+         (sub?'<div class="tl-rail-sub">'+escHtml(sub)+'</div>':'');
   }
   // The word rides with the icon in every case, so the colour is never doing
   // the work on its own (1.4.1).
@@ -1029,6 +1040,31 @@ function _tlRailRow(r){
     '<div class="tl-rail-body">'+tag+body+'</div>'+
     dur+
   '</li>';
+}
+// The day's headline: total, the same split bar the employee card draws, and
+// a legend whose DOT carries the colour so the bar is readable by anyone who
+// cannot separate its segments by hue alone (1.4.1 again: the number and the
+// word are right there beside the dot).
+function _tlRailHeadHtml(rows,label){
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object');
+  const agg=_tlEmpWeekAgg(list,'day');
+  // Every person in scope folded into one day total: the rail draws a day,
+  // not a person, and Me scope is one person anyway.
+  const e={min:0,onsiteMin:0,driveMin:0,placeMin:0,shopMin:0,loadMin:0};
+  Object.keys(agg).forEach(u=>{const a=agg[u];
+    e.min+=a.min||0;_TL_BUCKETS.forEach(b=>{e[b.k]+=a[b.k]||0;});});
+  const total=_tlBucketTotal(e)||1;
+  const segs=_TL_BUCKETS.map(b=>'<span style="width:'+((e[b.k]||0)/total*100).toFixed(1)+'%;background:'+b.c+'"></span>').join('');
+  const legend=_TL_BUCKETS.filter(b=>(e[b.k]||0)>0).map(b=>
+    '<span class="tl-rail-leg"><i style="background:'+b.c+'"></i>'+escHtml(b.label)+
+    ' <b>'+escHtml(fm(e[b.k]))+'</b></span>').join('');
+  return '<div class="tl-rail-head">'+
+    (label?'<div class="tl-rail-head-day">'+escHtml(label)+'</div>':'')+
+    '<div class="tl-rail-head-total">'+escHtml(fm(e.min))+'</div>'+
+    '<div class="tl-split-bar">'+segs+'</div>'+
+    (legend?'<div class="tl-rail-legend">'+legend+'</div>':'')+
+  '</div>';
 }
 // One day, oldest first. Chronological is not a preference here: a spine that
 // runs down the page is a picture of time passing, and time does not run
@@ -1142,7 +1178,7 @@ function _tlEmpWeekAgg(rows,cid){
   rows.forEach(r=>{
     if(r.unpaid)return;
     const uid=r.personUid||cid;
-    const e=byEmp[uid]||(byEmp[uid]={min:0,onsiteMin:0,driveMin:0,placeMin:0,shopMin:0,weekOT:false,name:r.personName});
+    const e=byEmp[uid]||(byEmp[uid]={min:0,onsiteMin:0,driveMin:0,placeMin:0,shopMin:0,loadMin:0,weekOT:false,name:r.personName});
     e.min+=r.minutes||0;
     if(r.weekOT)e.weekOT=true;
     // Shop/yard dwell is its own bucket (owner request 2026-08-24): it is paid
@@ -1162,6 +1198,11 @@ function _tlEmpWeekAgg(rows,cid){
     if(r.source==='shop')e.shopMin+=r.minutes||0;
     else if(r.source==='manual')e.onsiteMin+=r.minutes||0;
     else if(typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(_src))e.driveMin+=r.minutes||0;
+    // Loading the truck is carved OUT of the supply/other bucket (owner
+    // 2026-08-30, who wants it named on the day's legend). One aggregator
+    // still, not a second one computed inside the rail: the card and the rail
+    // must never be able to disagree about what a minute was.
+    else if(_src==='place-load')e.loadMin+=r.minutes||0;
     else if(typeof _geoIsPlaceSource==='function'&&_geoIsPlaceSource(_src))e.placeMin+=r.minutes||0;
     else e.onsiteMin+=r.minutes||0;
     if(!e.name&&r.personName)e.name=r.personName;
@@ -1300,24 +1341,33 @@ function _tlFlagChips(f){
 // is just me and team is everybody"). Team wraps this in a collapsible shell;
 // Me shows it directly. Neither one has its own copy of the markup, which is
 // what let the two drift apart the first time.
+// THE buckets, in bar order, with the colour each one means on this page.
+// One table, read by the employee card AND the day rail's legend, so the two
+// can never drift into disagreeing about what a minute was or what colour it
+// is. Colours are the ones already in use (§7.3), not new ones.
+const _TL_BUCKETS=[
+  {k:'onsiteMin', label:'On site',      c:'var(--blue)'},
+  {k:'shopMin',   label:'Shop',         c:'var(--c-teal,#0E6B6B)'},
+  {k:'driveMin',  label:'Driving',      c:'#9F5B00'},
+  {k:'loadMin',   label:'Loading',      c:'#6D28D9'},
+  {k:'placeMin',  label:'Supply/other', c:'var(--text3)'}
+];
+function _tlBucketTotal(e){
+  return _TL_BUCKETS.reduce((s,b)=>s+((e&&e[b.k])||0),0);
+}
 function _tlEmpCardHtml(uid,e,selfUid,extraHtml){
   const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
   const name=e.name||'Crew';
   const pal=_tlAvatarPalette(name);
-  const parts=[];
-  if(e.onsiteMin>3)parts.push('On-site '+fm(e.onsiteMin));
-  if(e.driveMin>3)parts.push('Drive '+fm(e.driveMin));
-  if(e.placeMin>3)parts.push('Supply/other '+fm(e.placeMin));
-  if((e.shopMin||0)>3)parts.push('Shop '+fm(e.shopMin));
-  const total=(e.onsiteMin+e.driveMin+e.placeMin+(e.shopMin||0))||1;
-  const pOn=(e.onsiteMin/total*100).toFixed(1),pDr=(e.driveMin/total*100).toFixed(1),pPl=(e.placeMin/total*100).toFixed(1),
-        pSh=((e.shopMin||0)/total*100).toFixed(1);
+  const total=_tlBucketTotal(e)||1;
+  const parts=_TL_BUCKETS.filter(b=>(e[b.k]||0)>3).map(b=>b.label+' '+fm(e[b.k]));
+  const segs=_TL_BUCKETS.map(b=>'<span style="width:'+((e[b.k]||0)/total*100).toFixed(1)+'%;background:'+b.c+'"></span>').join('');
   const otBadge=e.weekOT?'<span class="tl-ot-badge" title="'+escHtml(name)+' logged 40+ hrs this week, verify overtime eligibility with your state; not payroll advice">OT</span>':'';
   const youTag=(selfUid&&String(uid)===String(selfUid))?' <span style="color:var(--text3);font-weight:600;font-size:11px">(you)</span>':'';
   return '<div class="tl-emp-row'+(e.weekOT?' ot':'')+'">'+
     '<div class="tl-avatar" style="background:'+pal.bg+';color:'+pal.fg+'">'+escHtml(_tlAvatarLabel(name))+'</div>'+
     '<div class="tl-emp-mid"><div class="tl-emp-name-row"><span class="tl-emp-name">'+escHtml(name)+'</span>'+youTag+otBadge+'</div>'+
-      '<div class="tl-split"><div class="tl-split-bar"><span style="width:'+pOn+'%;background:var(--blue)"></span><span style="width:'+pDr+'%;background:#9F5B00"></span><span style="width:'+pPl+'%;background:var(--text3)"></span><span style="width:'+pSh+'%;background:var(--c-teal,#0E6B6B)"></span></div>'+
+      '<div class="tl-split"><div class="tl-split-bar">'+segs+'</div>'+
       '<div class="tl-split-legend">'+parts.join(' · ')+'</div></div>'+(extraHtml||'')+'</div>'+
     '<div class="tl-emp-total">'+fm(e.min)+'</div>'+
   '</div>';
@@ -1452,9 +1502,10 @@ function _tlRenderWeekBody(cacheKey){
   // The rail draws one continuous line down one day, so a week of them would
   // be seven lines pretending to be one, which is exactly the thing the
   // owner objected to about the old broken-up bars.
-  const entriesHtml=(sel!=='week'&&scopeRows.length)?
-    '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)">'+
-      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:0 2px 6px">The day</div>'+
+  const isDayRail=sel!=='week'&&scopeRows.length;
+  const entriesHtml=isDayRail?
+    '<div style="margin-top:4px">'+
+      _tlRailHeadHtml(scopeRows,scopeLabel)+
       _tlDayRailHtml(scopeRows)+
     '</div>'
    :scopeRows.length?
@@ -1469,6 +1520,10 @@ function _tlRenderWeekBody(cacheKey){
             :dr.length+' · '+amt;
         }})+
     '</div>':'';
+  // On a rail day the header IS the summary (same aggregator, same bar), so
+  // printing scopeHdHtml and the employee card above it would say the day and
+  // its total three times over.
+  if(isDayRail)return pickerHtml+entriesHtml;
   return pickerHtml+scopeHdHtml+'<div style="padding:0 2px 4px">'+summaryHtml+'</div>'+entriesHtml;
 }
 // Me/Team display toggle, for anyone with payroll/team permission. Owners
