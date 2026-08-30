@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.29.26.40';
+const APP_VERSION='08.29.26.41';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -8325,6 +8325,11 @@ async function supaLoadFromCloud({silent=false}={}){
     // drive's start, so it has to see the drive's real start rather than the
     // fence's late one.
     try{if(typeof _geoRetimeToTapeSweep==='function')await _geoRetimeToTapeSweep();}catch(_e){}
+    // The reconciler proper: drives the tape shows and no row carries, with
+    // the arrival-side fence row as the confirmation. AFTER retime so the
+    // rows it measures overlap against sit on their true boundaries, BEFORE
+    // the load sweep so a filled drive can grow its load-out the same boot.
+    try{if(typeof _geoTapeFillSweep==='function')await _geoTapeFillSweep();}catch(_e){}
     try{if(typeof _geoLoadRetroSweep==='function')_geoLoadRetroSweep();}catch(_e){}
     // LAST, deliberately: it trims the person's gap answers against the
     // derived rows, so it has to see those rows in their settled state. Run

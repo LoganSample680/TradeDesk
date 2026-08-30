@@ -1314,6 +1314,145 @@ test.describe('Wake region set for the dead app', () => {
 
   test('no console errors', async () => { await assertNoErrors(page); });
 
+  // The reconciler (owner 2026-08-30: "build the reconciler that just runs
+  // the live code"): a drive the tape swears happened and no row carries.
+  test.describe('_geoTapeFillSweep: the drive the tape has and the tables lack', () => {
+    const T = (h, m, s2) => Date.UTC(2026, 7, 27, h + 5, m, s2 || 0);
+    const iso = (h, m, s2) => new Date(T(h, m, s2)).toISOString();
+    const MIDDAY = [
+      { ts: T(11, 59, 58), kind: 'onFoot' },
+      { ts: T(12, 1, 35), kind: 'driving' }, { ts: T(12, 13, 3), kind: 'onFoot' },
+      { ts: T(12, 13, 54), kind: 'still' },
+      { ts: T(12, 48, 5), kind: 'driving' }, { ts: T(12, 57, 43), kind: 'onFoot' },
+    ];
+    const fill = async (page, world) => page.evaluate(async (w) => {
+      const saved = { supa: window._supa, user: window._supaUser, tape: window._geoMotionTape,
+                      enq: window._geoEnqueue, ran: window._geoTapeFillRan, places: window.places };
+      const wrote = [];
+      try {
+        window._geoTapeFillRan = false;
+        window._supaUser = { id: 'u1' };
+        window._geoEnqueue = (tbl, row) => wrote.push({ tbl, ...row });
+        window._geoMotionTape = async (a, b) => Array.isArray(w.tape)
+          ? w.tape.filter(x => x && x.ts >= a && x.ts <= b) : w.tape;
+        window.places = [{ id: 'shp', kind: 'shop', name: 'TradeDesk shop' }];
+        window._supa = { from: (tbl) => {
+          const rows = tbl === 'shop_time_entries' ? (w.shopRows || []) : (w.jobRows || []);
+          const chain = { select: () => chain, is: () => chain, eq: () => chain,
+                          gte: () => Promise.resolve({ data: rows, error: null }) };
+          return chain;
+        } };
+        const n = await _geoTapeFillSweep();
+        return { n, wrote };
+      } finally {
+        window._supa = saved.supa; window._supaUser = saved.user;
+        window._geoMotionTape = saved.tape; window._geoEnqueue = saved.enq;
+        window._geoTapeFillRan = saved.ran; window.places = saved.places;
+      }
+    }, world);
+    // His real midday, minus the drive row live never wrote.
+    const JOB = () => ([
+      { id: 'J1', arrived_at: iso(7, 59, 6), departed_at: iso(12, 1, 35),
+        source: 'client', dest_place: 'John Doe', job_id: 701, deleted_at: null },
+    ]);
+    const SHOP = () => ([
+      { id: 'S1', arrived_at: iso(12, 13, 3), departed_at: iso(12, 48, 5), deleted_at: null },
+    ]);
+
+    test('a tape drive with an arrival row is written, on its transitions', async () => {
+      const r = await fill(page, { tape: MIDDAY, jobRows: JOB(), shopRows: SHOP() });
+      expect(r.n).toBe(1);
+      expect(r.wrote[0].tbl).toBe('job_time_entries');
+      expect(r.wrote[0].id, 'a fill is an INSERT, never an update').toBeUndefined();
+      expect(r.wrote[0].arrived_at).toBe(iso(12, 1, 35));
+      expect(r.wrote[0].departed_at).toBe(iso(12, 13, 3));
+      expect(r.wrote[0].minutes).toBe(11);
+      expect(r.wrote[0].source).toBe('drive-unassigned');
+      // The arrival was the shop dwell, so the fence names the shop.
+      expect(r.wrote[0].dest_place).toBe('TradeDesk shop');
+      expect(r.wrote[0].job_id).toBe(null);
+    });
+
+    test('a soft-deleted row over the segment is a decision, never resurrected', async () => {
+      const jobRows = JOB().concat([{ id: 'J2', arrived_at: iso(12, 2, 0), departed_at: iso(12, 12, 0),
+        source: 'drive', dest_place: 'John Doe', job_id: null, deleted_at: '2026-08-29T00:00:00Z' }]);
+      const r = await fill(page, { tape: MIDDAY, jobRows, shopRows: SHOP() });
+      expect(r.n, 'the owner struck that drive; it stays struck').toBe(0);
+    });
+
+    test('no arrival row means no fence said yes, so nothing is written', async () => {
+      // Same tape, but the shop dwell is gone: the drive lands nowhere known.
+      const r = await fill(page, { tape: MIDDAY, jobRows: JOB(), shopRows: [] });
+      expect(r.n).toBe(0);
+      expect(r.wrote).toEqual([]);
+    });
+
+    test('a drive outside the workday span is left to the rail, not written', async () => {
+      // Evening driving after the last surviving row of the day.
+      const tape = MIDDAY.concat([{ ts: T(19, 54, 0), kind: 'driving' }, { ts: T(19, 56, 35), kind: 'onFoot' }]);
+      const r = await fill(page, { tape, jobRows: JOB(), shopRows: SHOP() });
+      // Only the midday fill; the 19:54 drive has no surviving rows around it.
+      expect(r.n).toBe(1);
+      expect(r.wrote[0].arrived_at).toBe(iso(12, 1, 35));
+    });
+
+    test('once the row exists a second pass writes nothing: the fill is idempotent', async () => {
+      const first = await fill(page, { tape: MIDDAY, jobRows: JOB(), shopRows: SHOP() });
+      const jobRows = JOB().concat([{ id: 'F1', arrived_at: first.wrote[0].arrived_at,
+        departed_at: first.wrote[0].departed_at, source: 'drive-unassigned',
+        dest_place: 'TradeDesk shop', job_id: null, deleted_at: null }]);
+      const second = await fill(page, { tape: MIDDAY, jobRows, shopRows: SHOP() });
+      expect(second.n).toBe(0);
+    });
+
+    test('today is never filled: the live writer owns it', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = { supa: window._supa, user: window._supaUser, tape: window._geoMotionTape,
+                        enq: window._geoEnqueue, ran: window._geoTapeFillRan };
+        const wrote = [];
+        try {
+          window._geoTapeFillRan = false;
+          window._supaUser = { id: 'u1' };
+          window._geoEnqueue = (tbl, row) => wrote.push(row);
+          const now = Date.now();
+          const at = (min) => new Date(now - min * 60000).toISOString();
+          const ts = (min) => now - min * 60000;
+          // A clean fillable shape, but dated TODAY.
+          window._geoMotionTape = async (a, b) => [
+            { ts: ts(140), kind: 'onFoot' }, { ts: ts(120), kind: 'driving' },
+            { ts: ts(110), kind: 'onFoot' },
+          ].filter(x => x.ts >= a && x.ts <= b);
+          const jobRows = [{ id: 'T1', arrived_at: at(200), departed_at: at(120),
+            source: 'client', dest_place: 'X', job_id: null, deleted_at: null },
+            { id: 'T2', arrived_at: at(110), departed_at: at(30),
+            source: 'client', dest_place: 'Y', job_id: null, deleted_at: null }];
+          const chain = { select: () => chain, is: () => chain, eq: () => chain,
+                          gte: () => Promise.resolve({ data: jobRows, error: null }) };
+          window._supa = { from: (tbl) => tbl === 'shop_time_entries'
+            ? { select: () => ({ is: () => ({ eq: () => ({ gte: async () => ({ data: [], error: null }) }) }) }),
+                is: () => chain, eq: () => chain, gte: () => Promise.resolve({ data: [], error: null }) }
+            : chain };
+          // shop chain shape mismatch is fine: fill tolerates error/[] there.
+          const n = await _geoTapeFillSweep();
+          return { n, wrote: wrote.length };
+        } finally {
+          window._supa = saved.supa; window._supaUser = saved.user;
+          window._geoMotionTape = saved.tape; window._geoEnqueue = saved.enq;
+          window._geoTapeFillRan = saved.ran;
+        }
+      });
+      expect(r.n, 'two writers on one stretch of road is the thing this refuses').toBe(0);
+      expect(r.wrote).toBe(0);
+    });
+
+    test('junk input never throws and never writes', async () => {
+      const a = await fill(page, { tape: [], jobRows: JOB(), shopRows: SHOP() });
+      const b = await fill(page, { tape: null, jobRows: JOB(), shopRows: SHOP() });
+      const c = await fill(page, { tape: MIDDAY, jobRows: [null, { id: 'x' }], shopRows: [undefined] });
+      expect(a.n).toBe(0); expect(b.n).toBe(0); expect(c.n).toBe(0);
+    });
+  });
+
   // The 30-row cap that cut a day in half (found 2026-08-30 against live data).
   test.describe('_geoWholeDays: a day is never half swept', () => {
     test('stops at a day boundary, never mid-day, even past the row cap', async () => {

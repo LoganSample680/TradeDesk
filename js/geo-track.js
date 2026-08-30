@@ -6897,6 +6897,106 @@ async function _geoRetimeToTapeSweep(){
     return changed;
   }catch(_e){return 0;}
 }
+// ── The reconciler: what the tape shows and the tables lack ────────────────
+// Owner 2026-08-30: "build the reconciler that just runs the live code." This
+// is that, made retroactive. The live feature is: a motion transition fires,
+// a ping lands in a fence, and that pairing writes the row. When the app was
+// dead or the fence never fired, the transition still exists in the
+// coprocessor's 7-day history; the sweeps above already move EXISTING rows
+// onto those transitions. This sweep is the missing half: a drive the tape
+// swears happened and no row carries at all.
+//
+// It runs the same rules the live path runs, through the same helpers:
+// _geoTapeSegments says when the wheels turned, and the FENCE half of the
+// feature is the arrival-side row that already exists (the dwell the fence
+// opened where this drive ended). The owner's own sign-off rule from 08/27
+// is the gate: "needs a geo fence to say yes we're saving that drive." A tape
+// drive with no arrival row is NOT written; it stays unaccounted, and the day
+// rail asks the human, which is that feature's whole job.
+//
+// CREATES DRIVES ONLY. On-site time is what the rail asks about; drives are
+// objective from the tape plus the arrival fence. And it creates nothing
+// where ANY row already stands, soft-deleted included: a deleted row is a
+// DECISION (a personal trip dropped, a truncated evening, an owner
+// strike-through), not an absence, and resurrecting one would undo the very
+// cleanups the owner signed off. That interlock is why the overlap check
+// reads both tables without the deleted filter.
+const _GEO_FILL_MIN_MS=2*60000;        // live's own floor for a real leg
+const _GEO_FILL_NEIGHBOR_MS=30*60000;  // arrival row must start this close
+async function _geoTapeFillSweep(){
+  try{
+    if(window._geoTapeFillRan)return 0;
+    window._geoTapeFillRan=true;
+    if(!_supa||!_supaUser)return 0;
+    const probe=await _geoMotionTape(Date.now()-3600000,Date.now());
+    if(!Array.isArray(probe))return 0;
+    const sinceIso=new Date(Date.now()-7*86400000).toISOString();
+    // Deleted included, deliberately: see the interlock above.
+    const jt=await _supa.from('job_time_entries')
+      .select('id,arrived_at,departed_at,source,dest_place,job_id,deleted_at')
+      .eq('employee_user_id',_supaUser.id).gte('arrived_at',sinceIso);
+    if(jt.error||!Array.isArray(jt.data)||!jt.data.length)return 0;
+    const st=await _supa.from('shop_time_entries')
+      .select('id,arrived_at,departed_at,deleted_at')
+      .eq('employee_user_id',_supaUser.id).gte('arrived_at',sinceIso);
+    const stRows=(st.error||!Array.isArray(st.data))?[]:st.data;
+    const all=jt.data.map(r=>({...r,_tbl:'job'})).concat(stRows.map(r=>({...r,_tbl:'shop'})))
+      .filter(r=>r&&r.arrived_at&&r.departed_at)
+      .map(r=>({...r,_a:Date.parse(r.arrived_at)||0,_b:Date.parse(r.departed_at)||0}))
+      .filter(r=>r._b>r._a);
+    if(!all.length)return 0;
+    const byDay={};
+    all.forEach(r=>{const d=(typeof _bizDateStr==='function')?_bizDateStr(new Date(r._a)):dateKey(new Date(r._a));(byDay[d]||(byDay[d]=[])).push(r);});
+    const today=(typeof _bizDateStr==='function')?_bizDateStr(new Date()):dateKey(new Date());
+    let made=0;
+    for(const day of Object.keys(byDay)){
+      // Never today: the live handlers are still writing it, and a fill racing
+      // an open leg would be two writers on one stretch of road.
+      if(day===today)continue;
+      const rows=byDay[day];
+      const live=rows.filter(r=>!r.deleted_at).sort((a,b)=>a._a-b._a);
+      if(!live.length)continue;
+      // The workday is what the surviving rows span. Everything the owner
+      // struck from an evening sits outside this span or under a deleted row,
+      // and both are refusals here.
+      const spanA=live[0]._a,spanB=live[live.length-1]._b;
+      if(!(spanB>spanA))continue;
+      const winA=spanA-_GEO_RETIME_MAX_MS,winB=spanB+_GEO_RETIME_MAX_MS;
+      const tape=await _geoMotionTape(winA,winB);
+      if(!Array.isArray(tape)||!tape.length)continue;
+      const segs=_geoTapeSegments(tape,winA,winB);
+      for(const g of segs){
+        if(g.kind!=='drive')continue;
+        // Both edges must be real transitions, the same no-vote rule the
+        // re-time sweep learned the hard way.
+        if(!(g.a>winA&&g.b<winB))continue;
+        if(g.b-g.a<_GEO_FILL_MIN_MS)continue;
+        if(g.a<spanA-60000||g.b>spanB+60000)continue;   // outside the workday
+        // ANY overlapping row, either table, deleted or not, means this
+        // stretch is spoken for or was deliberately removed.
+        if(all.some(r=>Math.min(r._b,g.b)-Math.max(r._a,g.a)>0))continue;
+        // The fence half: the row that opened where this drive ended.
+        const arrival=live.find(r=>r._a>=g.b-60000&&r._a-g.b<=_GEO_FILL_NEIGHBOR_MS);
+        if(!arrival)continue;
+        const shopPl=(typeof places!=='undefined'&&Array.isArray(places))
+          ?places.find(p=>p&&p.kind==='shop'):null;
+        const dest=arrival._tbl==='shop'?((shopPl&&shopPl.name)||'Shop'):(arrival.dest_place||null);
+        _geoEnqueue('job_time_entries',{
+          contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+          job_id:arrival._tbl==='shop'?null:(arrival.job_id||null),
+          arrived_at:new Date(g.a).toISOString(),
+          departed_at:new Date(g.b).toISOString(),
+          minutes:Math.round((g.b-g.a)/60000),
+          dest_place:dest,client_key:null,source:'drive-unassigned'
+        });
+        _geoParkNote('tape-fill',day+' drive '+Math.round((g.b-g.a)/60000)+'m -> '+(dest||'?'));
+        made++;
+      }
+    }
+    if(made)_geoParkNote('tape-fill-done','made='+made);
+    return made;
+  }catch(_e){return 0;}
+}
 async function _geoLoadRetroSweep(){
   try{
     if(window._geoLoadRetroRan)return 0;
