@@ -6735,7 +6735,12 @@ function _geoWholeDays(rows,tsKey,maxDays,cap){
   for(const r of rows){
     const t=Date.parse(r&&r[tsKey])||0;
     if(!t)continue;
-    const day=(typeof _ctDateStr==='function')?_ctDateStr(new Date(t)):new Date(t).toISOString().slice(0,10);
+    // dateKey, never toISOString().slice: a UTC-derived key moves the day
+    // boundary, and in a sweep whose whole job is to stop cutting a day in the
+    // middle that would reintroduce the bug by the back door, grouping an
+    // evening row under tomorrow. The source guard in e2e-utils-exhaustive
+    // caught this the moment it was written.
+    const day=(typeof _ctDateStr==='function')?_ctDateStr(new Date(t)):dateKey(new Date(t));
     if(seen.indexOf(day)<0){
       // Stop only at a day BOUNDARY, so the day already being collected is
       // never left partly done by either limit.
