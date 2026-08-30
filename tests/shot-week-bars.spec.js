@@ -3,14 +3,13 @@
 // component with the owner's real 08/27 geometry so the picture can be
 // reviewed before anything is deployed.
 const { test, mockAllExternal, waitForAppBoot } = require('./helpers');
-const { WEEK_ROWS, WEEK_DAYS, renderWeekRail } = require('./week-bars-fixture');
+const { mountWeekBars } = require('./week-bars-fixture');
 
 async function shoot(page, path) {
   await mockAllExternal(page);
   await page.goto('/index.html');
   await waitForAppBoot(page);
-  await page.evaluate(renderWeekRail, { rows: WEEK_ROWS, days: WEEK_DAYS });
-  await page.waitForTimeout(300);
+  await mountWeekBars(page);
   await page.screenshot({ path, fullPage: false });
 }
 

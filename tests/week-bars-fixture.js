@@ -59,10 +59,13 @@ function renderWeekRail({ rows, days }) {
   _tlWeekCache[key] = { mo: '2026-08', wk: days[0], rows,
                         scope: 'me', cid: 'me', selfUid: 'me', domId: 'wrail-body' };
   _tlPickerSel[key] = 'week';
-  const host = document.createElement('div');
-  host.id = 'wrail-host';
-  host.style.cssText = 'position:fixed;inset:0;z-index:99999;overflow:auto;' +
-    'background:var(--paper);padding:14px 12px 24px';
+  // Mounted into the REAL page, not a floating overlay. Twice now a shot has
+  // hidden something that was on the actual screen (the accordion header the
+  // body was duplicating, then the page's own title), because the harness
+  // rendered the component on a blank ground. It goes in #tl-list on
+  // pg-timelog, so a screenshot shows the page chrome exactly as he sees it.
+  const host = document.getElementById('tl-list') || document.createElement('div');
+  host.id = 'tl-list';
   // The .bk-week accordion is rendered too, not just the body. Without it the
   // screenshot could not show that the body's own header repeated the week
   // label and total the accordion button already prints, which is exactly the
@@ -80,7 +83,19 @@ function renderWeekRail({ rows, days }) {
     '</button>' +
     '<div class="bk-week-body"><div id="wrail-body" style="padding:10px 14px 14px">' +
       _tlRenderWeekBody(key) + '</div></div></div></div>';
-  document.body.appendChild(host);
+  if (!host.isConnected) document.body.appendChild(host);
 }
 
-module.exports = { WEEK_ROWS, WEEK_DAYS, renderWeekRail };
+// ONE mount sequence, used by the assertions and by the screenshot, so the
+// two can never be looking at different DOM. The page's own render has to
+// land BEFORE the injection or renderTimeLog simply overwrites it, which is
+// how the first attempt at mounting on the real page produced a shot of an
+// empty Time Log.
+async function mountWeekBars(page) {
+  await page.evaluate(() => { if (typeof goPg === 'function') goPg('pg-timelog'); });
+  await page.waitForTimeout(400);
+  await page.evaluate(renderWeekRail, { rows: WEEK_ROWS, days: WEEK_DAYS });
+  await page.waitForTimeout(200);
+}
+
+module.exports = { WEEK_ROWS, WEEK_DAYS, renderWeekRail, mountWeekBars };

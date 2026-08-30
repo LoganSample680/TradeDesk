@@ -8,7 +8,7 @@
 // these tests are about totals, the 8-hour line and the unanswered-hole badge,
 // and not about where a segment sits on a clock.
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
-const { WEEK_ROWS, WEEK_DAYS, renderWeekRail } = require('./week-bars-fixture');
+const { WEEK_ROWS, WEEK_DAYS, renderWeekRail, mountWeekBars } = require('./week-bars-fixture');
 
 test.describe('week bars: pure helpers', () => {
   test.beforeEach(async ({ page }) => {
@@ -74,7 +74,7 @@ test.describe('week bars: markup', () => {
     await mockAllExternal(page);
     await page.goto('/index.html');
     await waitForAppBoot(page);
-    await page.evaluate(renderWeekRail, { rows: WEEK_ROWS, days: WEEK_DAYS });
+    await mountWeekBars(page);
   });
   test.afterEach(async ({ page }) => { assertNoErrors(page, 'week bars markup'); });
 
@@ -231,7 +231,7 @@ test.describe('week bars: sharing a week as text', () => {
     await mockAllExternal(page);
     await page.goto('/index.html');
     await waitForAppBoot(page);
-    await page.evaluate(renderWeekRail, { rows: WEEK_ROWS, days: WEEK_DAYS });
+    await mountWeekBars(page);
   });
   test.afterEach(async ({ page }) => { assertNoErrors(page, 'week bars share'); });
 
@@ -315,7 +315,7 @@ test.describe('week bars: layout integrity (§15.3)', () => {
       await mockAllExternal(page);
       await page.goto('/index.html');
       await waitForAppBoot(page);
-      await page.evaluate(renderWeekRail, { rows: WEEK_ROWS, days: WEEK_DAYS });
+      await mountWeekBars(page);
       const r = await page.evaluate(() => {
         const amts = [...document.querySelectorAll('.tl-wbar-amt')]
           .map(el => el.getBoundingClientRect());
