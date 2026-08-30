@@ -1122,6 +1122,144 @@ function _tlDayRailHtml(rows){
   if(!list.length)return '';
   return '<ol class="tl-rail">'+list.map(_tlRailRow).join('')+'</ol>';
 }
+// ── The week rail: seven lanes on ONE clock ────────────────────────────────
+// Owner, 2026-08-30: "we have a badass day rail but what about a badass week
+// rail?"
+//
+// The obvious answer is seven day rails stacked, and it is the wrong one. A
+// day has an ORDER worth drawing as a line. A week has a SHAPE: which day
+// started late, which one ran until eight, whether Thursday was long because
+// of the job or because of the driving, and where the holes are. Seven
+// vertical spines side by side draw the order seven times and the shape not
+// once.
+//
+// So the week is seven horizontal lanes sharing ONE axis. 8am sits at the
+// same x on every lane, and that is the entire point: a per-day bar scaled to
+// its own length would make a four-hour Tuesday and a twelve-hour Wednesday
+// the same width and lie about the week it is drawing.
+//
+// Palette is _TL_BUCKETS by way of _tlRailMeta, never a new one (§7.3), so a
+// colour still means exactly one thing everywhere on this page. Tapping a
+// lane opens that day's rail through the picker that is already there: the
+// week is the map, the day is the street view.
+//
+// Minute of the business-day for an ISO instant, 0..1439. The axis is drawn in
+// the business's own clock for the same reason every other stamp on this page
+// is (§ bizTz): a crew in Denver reading a Central shop's week should see the
+// hours the work actually happened, not their own phone's offset.
+function _tlMinOfDay(iso){
+  // new Date(null) and new Date(0) are BOTH the epoch, a perfectly valid
+  // instant, so a row with a null start_time would not be dropped: it would
+  // be drawn as a segment at 6pm (the epoch in Central) on whatever lane it
+  // landed on. Only a real timestamp gets past this line.
+  if(typeof iso!=='string'&&!(iso instanceof Date))return null;
+  if(iso==='')return null;
+  const d=(iso instanceof Date)?iso:new Date(iso);
+  if(isNaN(d.getTime()))return null;
+  try{
+    const hm=(typeof _bizHM==='function')?_bizHM(d):'';
+    if(/^\d\d:\d\d$/.test(hm))return parseInt(hm.slice(0,2),10)*60+parseInt(hm.slice(3),10);
+  }catch(_e){}
+  return d.getHours()*60+d.getMinutes();
+}
+function _tlHourLabel(m){
+  const h=Math.floor((m%1440)/60);
+  return h===0?'12a':h<12?h+'a':h===12?'12p':(h-12)+'p';
+}
+// One lane's segments, clipped to its own calendar day. A row that runs past
+// business midnight (a 7pm arrival that ends at 5am) belongs to the day it
+// STARTED, which is the day it is filed under, so it is drawn to the right
+// edge and no further. Stretching it onto the next lane would put hours on a
+// day the row does not claim.
+function _tlWeekLaneSegs(rows){
+  return (Array.isArray(rows)?rows:[]).map(r=>{
+    if(!r||typeof r!=='object')return null;
+    const a=_tlMinOfDay(r.startTime);
+    if(a==null)return null;
+    let b=r.endTime?_tlMinOfDay(r.endTime):null;
+    if(b==null)b=a+(r.minutes||0);
+    // STRICTLY earlier, not "not later". A row that ends before it starts has
+    // crossed business midnight and runs to the edge of its lane. A row that
+    // ends exactly when it starts is a zero-minute row, and treating that as a
+    // crossing would paint the entire rest of the day for nothing.
+    if(b<a)b=1440;
+    return {a:Math.max(0,Math.min(1440,a)),b:Math.max(0,Math.min(1440,b)),kind:_tlRailKind(r),r};
+  }).filter(s=>s&&s.b>s.a).sort((x,y)=>x.a-y.a);
+}
+function _tlWeekRailHtml(weekRows,days,cacheKey){
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  const list=(Array.isArray(weekRows)?weekRows:[]).filter(r=>r&&typeof r==='object');
+  const dayList=Array.isArray(days)?days:[];
+  if(!list.length||!dayList.length)return '';
+  const byDay={};
+  dayList.forEach(d=>{byDay[d]=[];});
+  list.forEach(r=>{if(byDay[r.date])byDay[r.date].push(r);});
+  const segsByDay={};
+  let lo=1440,hi=0;
+  dayList.forEach(d=>{
+    const s=_tlWeekLaneSegs(byDay[d]);
+    segsByDay[d]=s;
+    s.forEach(x=>{if(x.a<lo)lo=x.a;if(x.b>hi)hi=x.b;});
+  });
+  if(hi<=lo){lo=6*60;hi=18*60;}
+  lo=Math.max(0,Math.floor(lo/60)*60);
+  hi=Math.min(1440,Math.ceil(hi/60)*60);
+  // A week with one short day would otherwise stretch forty minutes across the
+  // whole screen and read as a full shift. Four hours is the narrowest axis
+  // that still looks like a working day.
+  if(hi-lo<240){lo=Math.max(0,Math.min(lo,1440-240));hi=lo+240;}
+  const span=hi-lo;
+  const pct=m=>(m-lo)/span*100;
+  // Thinned so a fourteen-hour week does not print fourteen labels across a
+  // 320px phone (1.4.10: this has to reflow, not scroll sideways).
+  const stepH=span>10*60?3:(span>5*60?2:1);
+  // Strictly INSIDE the axis: lo is floored to the hour, so the first tick
+  // would otherwise land at 0% and its label, centred on the line, would be
+  // sliced in half by the edge of the column.
+  const ticks=[];
+  for(let m=Math.floor(lo/(60*stepH))*60*stepH+stepH*60;m<hi;m+=stepH*60)if(m>lo)ticks.push(m);
+  const grid=ticks.map(m=>'<i class="tl-wrail-grid" style="left:'+pct(m).toFixed(2)+'%"></i>').join('');
+  const axis='<div class="tl-wrail-axis"><span></span><span class="tl-wrail-axis-in">'+
+    ticks.map(m=>'<b style="left:'+pct(m).toFixed(2)+'%">'+escHtml(_tlHourLabel(m))+'</b>').join('')+
+    '</span><span></span></div>';
+  const lanes=dayList.map((d,i)=>{
+    const rows=byDay[d]||[];
+    const segs=segsByDay[d]||[];
+    const paid=(typeof _tlPaidMin==='function')?_tlPaidMin(rows):rows.reduce((s,r)=>s+(r.unpaid?0:(r.minutes||0)),0);
+    const gapMin=rows.filter(r=>_tlRailKind(r)==='gap').reduce((s,r)=>s+(r.minutes||0),0);
+    const bars=segs.map(s=>{
+      const m=_tlRailMeta(s.kind);
+      // Never below hairline width: a six-minute load on a twelve-hour axis is
+      // half a pixel, and a segment you cannot see is a segment the week is
+      // hiding. It stays legible without moving anything either side of it.
+      const w=Math.max(0.7,pct(s.b)-pct(s.a));
+      const clock=[_tlFmtTime(s.r.startTime),_tlFmtTime(s.r.endTime)].filter(Boolean).join(' to ');
+      return '<i class="tl-wrail-seg" data-kind="'+s.kind+'" style="left:'+pct(s.a).toFixed(2)+'%;width:'+w.toFixed(2)+'%;--rail:'+m.c+'" '+
+        'title="'+escHtml(m.word+(clock?' · '+clock:'')+' · '+fm(s.r.minutes||0))+'"></i>';
+    }).join('');
+    // The number is text and the question mark is a character, so neither the
+    // length of a day nor "this one still needs an answer" is carried by
+    // colour alone (1.4.1).
+    const amt=rows.length?fm(paid):'—';
+    const aria=(typeof _tlDayFullLabel==='function'?_tlDayFullLabel(d):d)+', '+
+      (rows.length?fm(paid):'nothing logged')+(gapMin?', '+fm(gapMin)+' unaccounted':'');
+    // A day with nothing on it is marked with an ATTRIBUTE, never a class
+    // called "empty": index.html already owns a global `.empty` (the
+    // centred 48px empty-state block), and a lane wearing it grows to 126px
+    // and shoves the week apart. Found by measuring, not by looking.
+    return '<li class="tl-wrail-lane"'+(rows.length?'':' data-empty="1"')+'>'+
+      '<button type="button" class="tl-wrail-hit" aria-label="'+escHtml(aria)+'" '+
+        'onclick="setTimeLogDayPick(\''+escHtml(String(cacheKey))+'\',\''+i+'\')">'+
+        '<span class="tl-wrail-day">'+escHtml(_tlDayShort(d))+'</span>'+
+        '<span class="tl-wrail-track">'+grid+bars+'</span>'+
+        '<span class="tl-wrail-amt">'+escHtml(amt)+
+          (gapMin?'<i class="tl-wrail-q" title="'+escHtml(fm(gapMin)+' unaccounted, tap the day to answer')+'">?</i>':'')+
+        '</span>'+
+      '</button>'+
+    '</li>';
+  }).join('');
+  return '<div class="tl-wrail-wrap">'+axis+'<ol class="tl-wrail">'+lanes+'</ol></div>';
+}
 // ── A gap answered on Saturday, covered by real rows on Sunday ─────────────
 // Owner, 2026-08-30, looking at a manual row on 08/27: "then saw shop time
 // manual at 12:13 pm what's up with that?"
@@ -1666,7 +1804,15 @@ function _tlRenderWeekBody(cacheKey){
     // mixes several people), and deleting it to force symmetry would lose
     // information nobody asked to lose. Week selections only; on a single day
     // the entries table below already lists every row.
-    if(sel==='week')summaryHtml+=_tlWeekMineHtml(scopeRows);
+    // The per-day breakdown, in whichever form the week can carry. The lanes
+    // ARE that breakdown drawn instead of listed: same days, same per-day
+    // totals, plus when each one started and stopped. The plain list stays as
+    // the fallback for the case the rail refuses to draw (no rows with real
+    // clock times), so this never silently loses the days.
+    if(sel==='week'){
+      const lanes=_tlWeekRailHtml(scopeRows,days,cacheKey);
+      summaryHtml+=lanes||_tlWeekMineHtml(scopeRows);
+    }
   }
   // Entries: the only place a manual clock entry can still be edited or
   // deleted (Edit button, _tlRow), scoped to whatever the picker currently
