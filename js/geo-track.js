@@ -6759,34 +6759,36 @@ async function _geoRetimeToTapeSweep(){
     const probe=await _geoMotionTape(Date.now()-3600000,Date.now());
     if(!Array.isArray(probe))return 0;
     const sinceIso=new Date(Date.now()-7*86400000).toISOString();
-    const{data,error}=await _supa.from('job_time_entries')
-      .select('id,arrived_at,departed_at,minutes,source,dest_place,client_key,job_id').is('deleted_at',null)
-      .eq('employee_user_id',_supaUser.id).gte('arrived_at',sinceIso);
-    if(error||!Array.isArray(data)||!data.length)return 0;
-    const rows=_geoWholeDays(
-      data.filter(r=>r&&r.arrived_at&&r.departed_at&&r.source!=='manual')
-        .sort((a,b)=>Date.parse(b.arrived_at)-Date.parse(a.arrived_at)),
-      'arrived_at',_GEO_RETIME_DAYS,_GEO_RETIME_ROW_CAP);
     let changed=0;
+    // Keyed by the EXACT window, never by the row's start hour. The hour key
+    // was the third 08/27 bug (owner: "look at the times, still not all the
+    // way there"): the 12:04 and 12:48 drives share an hour, the 12:48 row is
+    // processed first because the list is newest-first, and the tape cached
+    // for ITS window does not reach back to 12:01:35, so the 12:04 row found
+    // no drive segment at all and was silently skipped. A cache key that
+    // does not encode what was fetched is not a cache, it is a lottery.
     const tapes={};
-    for(const r of rows){
-      const s0=Date.parse(r.arrived_at)||0,e0=Date.parse(r.departed_at)||0;
-      if(!(e0>s0))continue;
-      // One tape per row window, padded either side so the boundary that
-      // matters is inside it even when the fence was minutes late.
-      const winA=s0-_GEO_RETIME_MAX_MS,winB=e0+_GEO_RETIME_MAX_MS;
-      const key=String(Math.floor(s0/3600000));
+    const tapeFor=async(winA,winB)=>{
+      const key=winA+':'+winB;
       if(!(key in tapes))tapes[key]=await _geoMotionTape(winA,winB);
-      const tape=tapes[key];
-      if(!Array.isArray(tape)||!tape.length)continue;
+      return tapes[key];
+    };
+    // One rule for every row in either table; the table only decides which
+    // kind of segment the row is allowed to claim and where the fix is written.
+    const retimeOne=async(r,tbl)=>{
+      const s0=Date.parse(r.arrived_at)||0,e0=Date.parse(r.departed_at)||0;
+      if(!(e0>s0))return 0;
+      const winA=s0-_GEO_RETIME_MAX_MS,winB=e0+_GEO_RETIME_MAX_MS;
+      const tape=await tapeFor(winA,winB);
+      if(!Array.isArray(tape)||!tape.length)return 0;
       const segs=_geoTapeSegments(tape,winA,winB);
-      if(!segs.length)continue;
+      if(!segs.length)return 0;
       let best=null,bestOv=0;
-      if(r.source==='place-office'){
+      if(tbl==='job_time_entries'&&r.source==='place-office'){
         // An office row's start is not a fence artifact either, and there is
         // no tape shape that says "began desk work". Left alone.
-        continue;
-      }else if(r.source==='place-load'){
+        return 0;
+      }else if(tbl==='job_time_entries'&&r.source==='place-load'){
         // LOADING IS NOT THE WHOLE TIME YOU STOOD STILL. Its start is a
         // computed judgement (the last stretch of moving about before the
         // wheels turn), so snapping it to the best-overlapping still segment
@@ -6802,20 +6804,24 @@ async function _geoRetimeToTapeSweep(){
         // The row's END is the driving transition and is already right, which
         // is exactly what that helper wants as its anchor.
         const win=_geoLoadBeforeDrive(tape,e0);
-        if(!win)continue;
+        if(!win)return 0;
         best={a:win[0],b:win[1],kind:'onsite'};bestOv=1;
       }else{
-        // A drive row belongs to a drive segment; everything else belongs to
-        // the standing-still one. Best overlap wins, so a row cannot be
-        // dragged onto a neighbouring segment it barely touches.
-        const want=_geoIsDriveSource(r.source)?'drive':'onsite';
+        // A drive row belongs to a drive segment; everything else, a shop
+        // dwell included, belongs to the standing-still one: an onsite
+        // segment starts where the wheels stopped and ends where they turn
+        // again, which is exactly the shop stretch the fence used to
+        // mis-stamp (12:11:06 against a drive that ran to 12:13:03). Best
+        // overlap wins, so a row cannot be dragged onto a neighbouring
+        // segment it barely touches.
+        const want=(tbl==='job_time_entries'&&_geoIsDriveSource(r.source))?'drive':'onsite';
         for(const g of segs){
           if(g.kind!==want)continue;
           const ov=Math.min(g.b,e0)-Math.max(g.a,s0);
           if(ov>bestOv){bestOv=ov;best=g;}
         }
       }
-      if(!best||bestOv<=0)continue;
+      if(!best||bestOv<=0)return 0;
       // A SEGMENT EDGE THAT SITS ON THE WINDOW EDGE IS NOT A TRANSITION.
       //
       // _geoTapeSegments tiles whatever window it is handed: its first onsite
@@ -6834,22 +6840,58 @@ async function _geoRetimeToTapeSweep(){
       // inside the window may move a boundary.
       const startIsReal=best.a>winA, endIsReal=best.b<winB;
       const A=startIsReal?best.a:s0, B=endIsReal?best.b:e0;
-      if(!(B>A))continue;
+      if(!(B>A))return 0;
       const dS=Math.abs(A-s0),dE=Math.abs(B-e0);
-      if(dS<_GEO_RETIME_MIN_MS&&dE<_GEO_RETIME_MIN_MS)continue;   // already agree
-      if(dS>_GEO_RETIME_MAX_MS||dE>_GEO_RETIME_MAX_MS)continue;   // not the same event
+      if(dS<_GEO_RETIME_MIN_MS&&dE<_GEO_RETIME_MIN_MS)return 0;   // already agree
+      if(dS>_GEO_RETIME_MAX_MS||dE>_GEO_RETIME_MAX_MS)return 0;   // not the same event
       const mins=Math.round((B-A)/60000);
-      if(mins<1)continue;
-      _geoEnqueue('job_time_entries',{
-        id:r.id,contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
-        job_id:r.job_id||null,
-        arrived_at:new Date(A).toISOString(),
-        departed_at:new Date(B).toISOString(),
-        minutes:mins,dest_place:r.dest_place||null,
-        client_key:r.client_key,source:r.source
-      });
+      if(mins<1)return 0;
+      if(tbl==='shop_time_entries'){
+        // Same column set _geoDwellRetroSweep already writes for this table.
+        _geoEnqueue('shop_time_entries',{
+          id:r.id,contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+          arrived_at:new Date(A).toISOString(),
+          departed_at:new Date(B).toISOString(),
+          minutes:mins,client_key:r.client_key
+        });
+      }else{
+        _geoEnqueue('job_time_entries',{
+          id:r.id,contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+          job_id:r.job_id||null,
+          arrived_at:new Date(A).toISOString(),
+          departed_at:new Date(B).toISOString(),
+          minutes:mins,dest_place:r.dest_place||null,
+          client_key:r.client_key,source:r.source
+        });
+      }
       _geoParkNote('retime',String(r.id).slice(0,8)+' '+r.minutes+'m -> '+mins+'m');
-      changed++;
+      return 1;
+    };
+    const{data,error}=await _supa.from('job_time_entries')
+      .select('id,arrived_at,departed_at,minutes,source,dest_place,client_key,job_id').is('deleted_at',null)
+      .eq('employee_user_id',_supaUser.id).gte('arrived_at',sinceIso);
+    // An empty job table only skips the job PASS. The first version returned
+    // outright here, and the shop pass below silently never ran on a day with
+    // shop rows and no job rows; the new shop test tripped it immediately.
+    const rows=(error||!Array.isArray(data))?[]:_geoWholeDays(
+      data.filter(r=>r&&r.arrived_at&&r.departed_at&&r.source!=='manual')
+        .sort((a,b)=>Date.parse(b.arrived_at)-Date.parse(a.arrived_at)),
+      'arrived_at',_GEO_RETIME_DAYS,_GEO_RETIME_ROW_CAP);
+    for(const r of rows)changed+=await retimeOne(r,'job_time_entries');
+    // SHOP ROWS TOO. They were left out of the first version entirely, and
+    // the gap showed immediately on live data: the fence stamped a shop dwell
+    // starting 12:11:06 while the tape's drive ran to 12:13:03, two minutes
+    // paid in two places at once. The clock is the tape for this table for
+    // exactly the same reason it is for the other one.
+    const sh=await _supa.from('shop_time_entries')
+      .select('id,arrived_at,departed_at,minutes,client_key').is('deleted_at',null)
+      .eq('employee_user_id',_supaUser.id).gte('arrived_at',sinceIso);
+    if(!sh.error&&Array.isArray(sh.data)&&sh.data.length){
+      const shopRows=_geoWholeDays(
+        sh.data.filter(r=>r&&r.arrived_at&&r.departed_at)
+          .sort((a,b)=>Date.parse(b.arrived_at)-Date.parse(a.arrived_at)),
+        'arrived_at',_GEO_RETIME_DAYS,_GEO_RETIME_ROW_CAP);
+      for(const r of shopRows)changed+=await retimeOne(r,'shop_time_entries');
     }
     _geoParkNote('retime-done','rows='+rows.length+' changed='+changed);
     return changed;

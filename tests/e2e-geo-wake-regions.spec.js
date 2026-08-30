@@ -1041,10 +1041,18 @@ test.describe('Wake region set for the dead app', () => {
         window._geoRetimeRan = false;
         window._supaUser = { id: 'u1' };
         window._geoEnqueue = (tbl, row) => wrote.push({ tbl, ...row });
-        window._geoMotionTape = async () => w.tape;
-        const chain = { select: () => chain, is: () => chain, eq: () => chain,
-                        gte: () => Promise.resolve({ data: w.rows, error: null }) };
-        window._supa = { from: () => chain };
+        // Sliced to the window it was asked for, the way the real motionSince
+        // behaves. The mock used to hand back the whole fixture regardless of
+        // the arguments, which is exactly how the hour-keyed-cache bug stayed
+        // invisible in here while live data was skipping rows.
+        window._geoMotionTape = async (a, b) => Array.isArray(w.tape)
+          ? w.tape.filter(x => x && x.ts >= a && x.ts <= b) : w.tape;
+        window._supa = { from: (tbl) => {
+          const rows = tbl === 'shop_time_entries' ? (w.shopRows || null) : w.rows;
+          const chain = { select: () => chain, is: () => chain, eq: () => chain,
+                          gte: () => Promise.resolve({ data: rows, error: null }) };
+          return chain;
+        } };
         const n = await _geoRetimeToTapeSweep();
         return { n, wrote };
       } finally {
@@ -1066,6 +1074,68 @@ test.describe('Wake region set for the dead app', () => {
       { ts: T(7, 43, 54), kind: 'cycling' }, { ts: T(7, 44, 23), kind: 'still' },
       { ts: T(7, 49, 43), kind: 'driving' }, { ts: T(7, 59, 6), kind: 'onFoot' },
     ];
+
+    // His real midday tape, to the second. Two drives in the same clock hour,
+    // which is the shape that exposed the cache bug.
+    const MIDDAY = [
+      { ts: T(11, 59, 58), kind: 'onFoot' },
+      { ts: T(12, 1, 35), kind: 'driving' }, { ts: T(12, 13, 3), kind: 'onFoot' },
+      { ts: T(12, 13, 54), kind: 'still' },
+      { ts: T(12, 48, 5), kind: 'driving' }, { ts: T(12, 57, 43), kind: 'onFoot' },
+      { ts: T(12, 59, 22), kind: 'still' },
+    ];
+
+    // Owner 2026-08-30: "look at the times, still not all the way there." The
+    // 12:04 drive had not moved to the tape's 12:01:35, and the reason was the
+    // tape cache being keyed by the row's start HOUR: the 12:48 drive shares
+    // that hour, is processed first (newest-first), and the tape fetched for
+    // ITS window does not reach 12:01:35, so the 12:04 row saw no drive
+    // segment at all and was skipped without a trace.
+    test('two rows in the same hour never share a mis-sized tape', async () => {
+      const r = await run(page, {
+        tape: MIDDAY,
+        rows: [
+          row('D2', 'drive-unassigned', iso(12, 48, 5), iso(12, 57, 43)),   // newest first
+          row('D1', 'drive-unassigned', iso(12, 4, 33), iso(12, 11, 23)),
+        ],
+      });
+      // D2 already sits on its transitions and stays put; D1 must move.
+      expect(r.n).toBe(1);
+      expect(r.wrote[0].arrived_at, 'the wheels turned at 12:01:35').toBe(iso(12, 1, 35));
+      expect(r.wrote[0].departed_at, 'and stopped at 12:13:03').toBe(iso(12, 13, 3));
+      expect(r.wrote[0].minutes).toBe(11);
+    });
+
+    // The other half of the same owner report: the shop dwell started at
+    // 12:11:06 while the tape's drive ran to 12:13:03, two minutes paid in
+    // two places at once, because shop_time_entries was never in the sweep's
+    // scope at all.
+    test('a shop dwell is re-timed too: it starts where the wheels stopped', async () => {
+      const r = await run(page, {
+        tape: MIDDAY,
+        rows: [],
+        shopRows: [{ id: 'S1', client_key: 'ck1',
+          arrived_at: iso(12, 11, 6), departed_at: iso(12, 48, 5),
+          minutes: 37 }],
+      });
+      expect(r.n).toBe(1);
+      expect(r.wrote[0].tbl).toBe('shop_time_entries');
+      expect(r.wrote[0].arrived_at).toBe(iso(12, 13, 3));
+      expect(r.wrote[0].departed_at, 'the end was already the next drive').toBe(iso(12, 48, 5));
+      expect(r.wrote[0].minutes).toBe(35);
+      expect(r.wrote[0].client_key, 'the visit key rides along, same as the dwell sweep').toBe('ck1');
+    });
+
+    test('a shop dwell already on its transitions is left alone', async () => {
+      const r = await run(page, {
+        tape: MIDDAY,
+        rows: [],
+        shopRows: [{ id: 'S2', client_key: 'ck2',
+          arrived_at: iso(12, 13, 3), departed_at: iso(12, 48, 5), minutes: 35 }],
+      });
+      expect(r.n).toBe(0);
+      expect(r.wrote).toEqual([]);
+    });
 
     // THE RUNAWAY, found in production 2026-08-30: 6 minutes became 36, then
     // 66, thirty per boot. _geoTapeSegments tiles the window it is handed, so
