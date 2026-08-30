@@ -582,9 +582,9 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _bizDateStr(new Date(T - (gapHrs + 1) * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
     const iso = (ms) => new Date(ms).toISOString();
     const A = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - (gapHrs + 2) * 3600000), endedIso: iso(T - (gapHrs + 1) * 3600000),
-                fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+                fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: _bizDateStr(new Date(T)) };
     const B = { id: 'ml-B', gps: true, legKey: 'lgB-' + jid, startedIso: iso(T - 1 * 3600000), endedIso: iso(T - 0.5 * 3600000),
-                fromCoord: { lat: JOB.lat, lng: JOB.lon }, toCoord: { lat: 37.7500, lng: -97.4500 }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+                fromCoord: { lat: JOB.lat, lng: JOB.lon }, toCoord: { lat: 37.7500, lng: -97.4500 }, miles: 9, date: _bizDateStr(new Date(T)) };
     mileage.push(A, B);
     return { A: { legKey: A.legKey, endedIso: A.endedIso }, B: { startedIso: B.startedIso }, jid: String(jid) };
   }, [jobId, opts || {}]);
@@ -939,11 +939,11 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _bizDateStr(new Date(T - 2 * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
       const iso = (ms) => new Date(ms).toISOString();
       const A = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 3 * 3600000), endedIso: iso(T - 2 * 3600000),
-                  fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+                  fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: _bizDateStr(new Date(T)) };
       // B's departure leg never got a clean fix leaving the site: no
       // fromCoord at all, same shape a stale/gap-inferred leg can carry.
       const B = { id: 'ml-B', gps: true, legKey: 'lgB-' + jid, startedIso: iso(T - 1 * 3600000), endedIso: iso(T - 0.5 * 3600000),
-                  toCoord: { lat: 39.0, lng: -95.0 }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+                  toCoord: { lat: 39.0, lng: -95.0 }, miles: 9, date: _bizDateStr(new Date(T)) };
       mileage.push(A, B);
       return { A: { legKey: A.legKey, endedIso: A.endedIso }, B: { startedIso: B.startedIso }, jid: String(jid) };
     }, [886005]);
@@ -969,10 +969,10 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _bizDateStr(new Date(T - 2 * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
       const iso = (ms) => new Date(ms).toISOString();
       const A = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 3 * 3600000), endedIso: iso(T - 2 * 3600000),
-                  fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+                  fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: _bizDateStr(new Date(T)) };
       // B thinks it started 20+ miles away, a stale/garbage origin fix.
       const B = { id: 'ml-B', gps: true, legKey: 'lgB-' + jid, startedIso: iso(T - 1 * 3600000), endedIso: iso(T - 0.5 * 3600000),
-                  fromCoord: { lat: 38.0, lng: -96.0 }, toCoord: { lat: 39.0, lng: -95.0 }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+                  fromCoord: { lat: 38.0, lng: -96.0 }, toCoord: { lat: 39.0, lng: -95.0 }, miles: 9, date: _bizDateStr(new Date(T)) };
       mileage.push(A, B);
       return { A: { legKey: A.legKey, endedIso: A.endedIso }, B: { startedIso: B.startedIso }, jid: String(jid) };
     }, [886006]);
@@ -1052,9 +1052,9 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     while (_bizDateStr(new Date(T - (gapHrs + 2) * 3600000)) !== _bizDateStr(new Date(T))) T -= 4 * 3600000;
     const iso = (ms) => new Date(ms).toISOString();
     const A = { id: 'mlc-A', gps: true, legKey: 'lgcA-' + cid, startedIso: iso(T - (gapHrs + 2) * 3600000), endedIso: iso(T - (gapHrs + 1) * 3600000),
-                fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: CL.lat, lng: CL.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+                fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: CL.lat, lng: CL.lon }, miles: 9, date: _bizDateStr(new Date(T)) };
     const B = { id: 'mlc-B', gps: true, legKey: 'lgcB-' + cid, startedIso: iso(T - 1 * 3600000), endedIso: iso(T - 0.5 * 3600000),
-                fromCoord: { lat: CL.lat, lng: CL.lon }, toCoord: { lat: 37.7500, lng: -97.4500 }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+                fromCoord: { lat: CL.lat, lng: CL.lon }, toCoord: { lat: 37.7500, lng: -97.4500 }, miles: 9, date: _bizDateStr(new Date(T)) };
     mileage.push(A, B);
     return { A: { legKey: A.legKey, endedIso: A.endedIso }, B: { startedIso: B.startedIso }, cid: String(cid) };
   }, [clientId, opts || {}]);
@@ -2887,12 +2887,12 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       // reported duplicate), pushed in this order so a stable sort keeps
       // legA first. Both end at the job.
       const legA = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 5 * 3600000), endedIso: iso(T - 4.833 * 3600000),
-                     fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+                     fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: _bizDateStr(new Date(T)) };
       const legA2 = { id: 'ml-A2', gps: true, legKey: 'lgA2-' + jid, startedIso: iso(T - 5 * 3600000), endedIso: iso(T - 4.8 * 3600000),
-                      fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+                      fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: _bizDateStr(new Date(T)) };
       // The real leg well after the cluster: proof the visit ended.
       const legB = { id: 'ml-B', gps: true, legKey: 'lgB-' + jid, startedIso: iso(T - 1 * 3600000), endedIso: iso(T - 0.9 * 3600000),
-                     fromCoord: { lat: JOB.lat, lng: JOB.lon }, toCoord: { lat: 37.7500, lng: -97.4500 }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+                     fromCoord: { lat: JOB.lat, lng: JOB.lon }, toCoord: { lat: 37.7500, lng: -97.4500 }, miles: 9, date: _bizDateStr(new Date(T)) };
       mileage.push(legA, legA2, legB);
       return { legA2End: legA2.endedIso, legBStart: legB.startedIso, jid: String(jid) };
     }, [886010]);
@@ -2981,13 +2981,13 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       jobs.push({ id: jid, name: 'Recon Job', lat: JOB.lat, lon: JOB.lon, start: _bizDateStr(new Date(T - 4.8 * 3600000)), days: 1, status: 'upcoming', eventType: 'job' });
       const iso = (ms) => new Date(ms).toISOString();
       const legA = { id: 'ml-A', gps: true, legKey: 'lgA-' + jid, startedIso: iso(T - 5 * 3600000), endedIso: iso(T - 4.833 * 3600000),
-                     fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+                     fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: JOB.lat, lng: JOB.lon }, miles: 9, date: _bizDateStr(new Date(T)) };
       // legA2 sorts second (same start as legA) and is the leg immediately
       // adjacent to legB: a GARBAGE toCoord, 20+ miles from the job.
       const legA2 = { id: 'ml-A2', gps: true, legKey: 'lgA2-' + jid, startedIso: iso(T - 5 * 3600000), endedIso: iso(T - 4.8 * 3600000),
-                      fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: 39.0, lng: -95.0 }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+                      fromCoord: { lat: 37.7500, lng: -97.4500 }, toCoord: { lat: 39.0, lng: -95.0 }, miles: 9, date: _bizDateStr(new Date(T)) };
       const legB = { id: 'ml-B', gps: true, legKey: 'lgB-' + jid, startedIso: iso(T - 1 * 3600000), endedIso: iso(T - 0.9 * 3600000),
-                     fromCoord: { lat: JOB.lat, lng: JOB.lon }, toCoord: { lat: 37.7500, lng: -97.4500 }, miles: 9, date: new Date().toISOString().slice(0, 10) };
+                     fromCoord: { lat: JOB.lat, lng: JOB.lon }, toCoord: { lat: 37.7500, lng: -97.4500 }, miles: 9, date: _bizDateStr(new Date(T)) };
       mileage.push(legA, legA2, legB);
       return { legA2End: legA2.endedIso, legBStart: legB.startedIso, legAKey: legA.legKey, jid: String(jid) };
     }, [886011]);
