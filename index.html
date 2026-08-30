@@ -1349,8 +1349,16 @@ body.dark .tl-wbar-guide{box-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,
 /* A month with one week gave that week the whole page and it read as a block,
    not a bar (owner 2026-08-30: "one week looks awful"). The TRACK still splits
    evenly so every column keeps the same ruler; the bar inside it is capped and
-   centred, so one bar and seven bars are the same object at different counts. */
-.tl-wbar-col{min-width:0;justify-self:center;width:100%;max-width:104px}
+   centred, so one bar and seven bars are the same object at different counts.
+   THE CAP IS AN ASPECT RATIO, NOT A ROUND NUMBER. It was 104px, which is wider
+   than the 92px plot is tall, so any chart with two or three columns produced
+   bars wider than they were tall and they read as slabs again (owner
+   2026-08-30, on Jose's two-week card: "the bars don't look great"). 56px is
+   comfortably under the plot height, so a bar is a bar at every count: two
+   weeks, four weeks and seven days now all look like the same object, and the
+   seven-day week is unchanged because its tracks were already narrower than
+   this. */
+.tl-wbar-col{min-width:0;justify-self:center;width:100%;max-width:56px}
 .tl-wbar-hit{display:flex;flex-direction:column;align-items:stretch;width:100%;min-width:0;
   background:none;border:0;padding:0;margin:0;font-family:inherit;cursor:pointer}
 /* The column the bar grows inside. Height is fixed so every day is measured

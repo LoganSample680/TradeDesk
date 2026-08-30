@@ -8,6 +8,109 @@
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 const { MONTH_ROWS, mountMonth } = require('./week-bars-fixture');
 
+// ── What a bar is measured against, and what shape it comes out ───────────
+// Owner 2026-08-30, on a crew card holding two weeks: "the bars don't look
+// great." Two separate defects wearing one complaint, and neither was about
+// the data.
+test.describe('month bars: the ruler and the shape', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockAllExternal(page);
+    await page.goto('/index.html');
+    await waitForAppBoot(page);
+    await mountMonth(page);
+  });
+  test.afterEach(async ({ page }) => { assertNoErrors(page, 'month ruler'); });
+
+  test('the 40-hour line is drawn on a month nobody reached 40 in', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const g = document.querySelector('.tl-wbar-guide');
+      const plot = document.querySelector('.tl-wbar-plotarea');
+      const hours = [...document.querySelectorAll('.tl-wbar-amt')].map(e => e.textContent);
+      const gb = g && g.getBoundingClientRect(), pb = plot.getBoundingClientRect();
+      const tall = [...document.querySelectorAll('.tl-wbar-stack')]
+        .map(e => e.getBoundingClientRect());
+      return { there: !!g, label: g && g.querySelector('b').textContent, hours,
+               inside: !!gb && gb.top >= pb.top - 1 && gb.bottom <= pb.bottom + 1,
+               above: !!gb && tall.every(b => b.top >= gb.top - 1) };
+    });
+    // The fixture's biggest week is 39h 27m. Before the floor, the ceiling was
+    // that week plus 6%, the 40h line fell outside the chart and was never
+    // drawn, and the tallest bar read as a FULL week with nothing to measure
+    // it against. That is the exact failure a guide exists to prevent.
+    expect(r.hours).toContain('39h');
+    expect(r.there).toBe(true);
+    expect(r.label).toBe('40h');
+    expect(r.inside).toBe(true);
+    expect(r.above, '39h must sit UNDER the 40h line, not on it').toBe(true);
+  });
+
+  test('_tlBarCeiling: the floor is a floor, and junk never becomes one', async ({ page }) => {
+    const r = await page.evaluate(() => ({
+      // 40h floor holds a light month down to scale.
+      light: _tlBarCeiling([120, 90], 2400),
+      // A month that beats the floor scales to itself plus headroom.
+      heavy: _tlBarCeiling([3000], 2400),
+      // No floor given, or a nonsense one, falls back to the 4h default
+      // rather than collapsing the chart to zero height.
+      none: _tlBarCeiling([120]),
+      nul: _tlBarCeiling([120], null),
+      zero: _tlBarCeiling([120], 0),
+      neg: _tlBarCeiling([120], -500),
+      str: _tlBarCeiling([120], 'forty'),
+      nan: _tlBarCeiling([120], NaN),
+    }));
+    expect(r.light).toBe(2400);
+    expect(r.heavy).toBe(3180);
+    [r.none, r.nul, r.zero, r.neg, r.str, r.nan].forEach(v => expect(v).toBe(240));
+  });
+
+  test('a bar is always taller than it is wide, however few there are', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      const shot = () => [...document.querySelectorAll('.tl-wbar-col')].map(c => {
+        const b = c.getBoundingClientRect();
+        const plot = c.querySelector('.tl-wbar-plot').getBoundingClientRect();
+        return { w: Math.round(b.width), plotH: Math.round(plot.height) };
+      });
+      const month = shot();                       // four weekly bars
+      _tlDrillTo('week', '2026-08-23');
+      await new Promise(r2 => setTimeout(r2, 300));
+      const week = shot();                        // seven daily bars
+      _tlDrillTo('month', '2026-09');             // September holds ONE week
+      await new Promise(r2 => setTimeout(r2, 300));
+      const one = shot();
+      return { month, week, one };
+    });
+    // The cap was 104px against a 92px plot, so any chart with two or three
+    // columns produced bars wider than they were tall and they read as slabs.
+    // A bar is a bar at every count now.
+    expect(r.one.length).toBe(1);
+    [...r.month, ...r.week, ...r.one].forEach(c => {
+      expect(c.w).toBeLessThan(c.plotH);
+      // And still a real target: WCAG 2.5.8's 24px minimum.
+      expect(c.w).toBeGreaterThanOrEqual(24);
+    });
+  });
+
+  test('the unanswered badge never leaves the chart', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const q = document.querySelector('.tl-wbar-q');
+      const plot = document.querySelector('.tl-wbar-plotarea');
+      if (!q) return { there: false };
+      const qb = q.getBoundingClientRect(), pb = plot.getBoundingClientRect();
+      const lbl = document.querySelector('.tl-wbar-guide b').getBoundingClientRect();
+      const hit = !(qb.right < lbl.left || qb.left > lbl.right ||
+                    qb.bottom < lbl.top || qb.top > lbl.bottom);
+      return { there: true, above: qb.top >= pb.top - 1, overlapsLabel: hit };
+    });
+    // The fixture's 39h week carries the hole, so its badge sits at the very
+    // top of the chart: unclamped it floated out of the plot and landed on the
+    // guide's own "40h" label (§15.1).
+    expect(r.there).toBe(true);
+    expect(r.above, 'the badge stays inside the plot').toBe(true);
+    expect(r.overlapsLabel, 'and off the guide label').toBe(false);
+  });
+});
+
 test.describe('month bars: pure helpers', () => {
   test.beforeEach(async ({ page }) => {
     await mockAllExternal(page);

@@ -1141,11 +1141,13 @@ const _TL_BAR_FLOOR=4*60;       // a light week still shows its shape
 // makes an 11-hour week and a 4-hour week look identical, so the ceiling is the
 // tallest day plus headroom, never below four hours. The guide line is then
 // drawn only when 8 hours actually falls inside the chart.
-function _tlBarCeiling(dayMins){
+function _tlBarCeiling(dayMins,floorMin){
   const max=Math.max.apply(null,[0].concat(Array.isArray(dayMins)?dayMins:[]));
+  const f=Number(floorMin);
   // 6% of headroom, not 12%: enough that the tallest bar never looks clipped
   // against the ceiling, without banding empty space across the whole chart.
-  return Math.max(Math.round(max*1.06),_TL_BAR_FLOOR);
+  return Math.max(Math.round(max*1.06),
+    Number.isFinite(f)&&f>0?f:_TL_BAR_FLOOR);
 }
 // ── Making a bar look like something you can open ──────────────────────────
 // Owner, 2026-08-30: "how do we make the bars scream click me for more info
@@ -1202,7 +1204,7 @@ function _tlBarsHtml(groups,opts){
   const o=opts||{};
   const folds=list.map(g=>_tlBucketFold(g.rows));
   if(!folds.some(f=>f.min>0))return '';
-  const ceil=_tlBarCeiling(folds.map(f=>f.min));
+  const ceil=_tlBarCeiling(folds.map(f=>f.min),o.floorMin);
   const gMin=Number(o.guideMin)||0;
   const guide=(gMin>0&&gMin<=ceil)
     ?'<span class="tl-wbar-guide" style="bottom:'+(gMin/ceil*100).toFixed(2)+'%">'+
@@ -1227,8 +1229,16 @@ function _tlBarsHtml(groups,opts){
     // column: parked at the ceiling it floated in space over a short column
     // and read as belonging to nothing.
     const amt=_tlBarAmtParts(e.min);
+    // CLAMPED so it can never leave the plot. Parked at the top of a bar that
+    // nearly reaches the ceiling, the badge floated above the chart and landed
+    // on the guide's own "40h" label (§15.1: nothing overlaps). Past 86% it
+    // rides just inside the bar's top edge instead, where the amber ring keeps
+    // it readable against any segment colour.
+    // 78, not 86: the badge is drawn ABOVE its anchor, so the anchor plus its
+    // own 15px has to fit inside the 92px plot. 86% left it five pixels out.
+    const qb=Math.min(h,78);
     const q=gapMin
-      ?'<i class="tl-wbar-q" style="bottom:calc('+h.toFixed(2)+'% + 3px)" '+
+      ?'<i class="tl-wbar-q" style="bottom:calc('+qb.toFixed(2)+'% + 3px)" '+
         'title="'+escHtml(fm(gapMin)+' unaccounted, tap to answer')+'">?</i>'
       :'';
     // The countable unknown, printed on the bar it counts. Only when the bar is
@@ -1335,7 +1345,15 @@ function _tlMonthBarsHtml(monthRows,mo,scope,uid){
     rows:byWeek[wk],
     onclick:su?('_tlDrillPerson(\''+su+'\',\''+String(wk)+'\')')
               :('_tlDrillTo(\'week\',\''+String(wk)+'\')')
-  })),{guideMin:_TL_MONTH_GUIDE_MIN,guideLabel:'40h',share});
+    // THE 40-HOUR LINE IS ALWAYS ON SCREEN AT THIS ZOOM, which is what the
+    // floor buys: the ceiling can no longer fall below it, so the guide is
+    // drawn on every month instead of only on months somebody happened to
+    // cross it. Without this a crew member's 23h week was the tallest thing in
+    // its own chart and read as a full one (owner 2026-08-30, on Jose's card).
+    // The cost is deliberate: a light month draws short bars, which is the
+    // true answer, and the hours are printed under every column anyway.
+  })),{guideMin:_TL_MONTH_GUIDE_MIN,guideLabel:'40h',share,
+      floorMin:_TL_MONTH_GUIDE_MIN});
 }
 // "8/23" for a weekly column: short enough for six columns on a 320px phone,
 // and unambiguous because the month picker above already names the month.
