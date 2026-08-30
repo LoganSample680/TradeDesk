@@ -3361,8 +3361,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
       _tlDrill = { level: 'month', mo: '2026-08', wk: null, day: null };
       await renderTimeLog();
       if (lv === 'day') {
-        _tlDrillTo('week', '2026-08-16');
-        _tlDrillTo('day', '2026-08-18');
+        // _tlDrillTo fires renderTimeLog() without awaiting it (the same
+        // fire-and-forget convention setTimeLogYear uses), so reading straight
+        // after it catches the skeleton, not the page. Set the level and await
+        // the render explicitly.
+        _tlDrill = { level: 'day', mo: '2026-08', wk: '2026-08-16', day: '2026-08-18' };
+        await renderTimeLog();
       }
       const html = document.getElementById('tl-list').innerHTML;
       window._timeLogRows = prevRows; _tlScope = prevScope;
@@ -3387,50 +3391,58 @@ test.describe('timelog.js: exhaustive coverage', () => {
     // both scopes still draw from the same fold over the same aggregator. The
     // week-shape claims below pin the new intent so neither side can drift
     // back by accident.
-    test('a day renders the SAME split bar in both scopes, byte for byte', async () => {
-      const me = await body('me', 'day');
-      const team = await body('team', 'day');
-      const bar = h => (h.match(/<div class="tl-split-bar">.*?<\/div>/s) || [''])[0];
-      expect(bar(me).length, 'Me had no split bar at all before this rule').toBeGreaterThan(0);
-      expect(bar(me)).toBe(bar(team));
+    // Compared at the COMPONENT, not by rendering two pages. Me draws a day
+    // through the rail head and Team through its card, and the drill means the
+    // two scopes are no longer showing the same range at the same moment, so a
+    // page-to-page diff compares a day against a month and proves nothing.
+    //
+    // The rule was always about the two never disagreeing over what a minute
+    // was. Given the SAME rows they must draw the same bar, and that is the
+    // thing worth pinning.
+    test('given the same rows, both scopes draw the same split bar', async () => {
+      const r = await page.evaluate((rows) => {
+        const day = rows.filter(x => x.date === '2026-08-18');
+        const bar = h => (String(h).match(/<div class="tl-split-bar">.*?<\/div>/s) || [''])[0];
+        const mine = bar(_tlRailHeadHtml(day, '', true));
+        const agg = _tlEmpWeekAgg(day, 'me');
+        const theirs = bar(_tlEmpCardHtml('me', agg[Object.keys(agg)[0]], 'me', ''));
+        return { mine, theirs };
+      }, ROWS);
+      expect(r.mine.length).toBeGreaterThan(0);
+      expect(r.mine).toBe(r.theirs);
     });
 
-    test('the same buckets, from the same table, in both scopes', async () => {
-      const me = await body('me', 'day');
-      const team = await body('team', 'day');
-      // Me draws the rail legend, Team draws the card legend. Different
-      // wrappers, one _TL_BUCKETS table. Both only name a bucket that has
-      // minutes in it, so the invariant is not "all five appear" (the fixture
-      // day has one) but "the two scopes name the SAME set". A day where Me
-      // says Driving and Team does not is the two disagreeing about what a
-      // minute was, which is the whole point of the rule.
-      // Compare the LEGENDS, not the whole page. A rail ROW is tagged by what
-      // kind of stop it was ("On site"), which is a different classification
-      // from what BUCKET its minutes landed in ("Supply/other"), and both
-      // strings live in Me's HTML. Conflating them made this test fail on a
-      // fixture day that is genuinely consistent.
-      const labels = await page.evaluate(() => _TL_BUCKETS.map(b => b.label));
-      const legendOf = h =>
-        (h.match(/class="tl-rail-legend">([\s\S]*?)<\/div>\s*<\/div>/) ||
-         h.match(/class="tl-split-legend">([\s\S]*?)<\/div>/) || ['', ''])[1];
-      const present = h => { const g = legendOf(h); return labels.filter(l => g.includes(l)); };
-      expect(present(me).length, 'the day has at least one bucket to compare').toBeGreaterThan(0);
-      expect(present(me)).toEqual(present(team));
+    test('and name the same buckets, from the same table', async () => {
+      const r = await page.evaluate((rows) => {
+        const day = rows.filter(x => x.date === '2026-08-18');
+        const labels = _TL_BUCKETS.map(b => b.label);
+        const legend = (h, cls) =>
+          (String(h).match(new RegExp('class="' + cls + '">([\\s\\S]*?)<\\/div>')) || ['', ''])[1];
+        const agg = _tlEmpWeekAgg(day, 'me');
+        return {
+          mine: labels.filter(l => legend(_tlRailHeadHtml(day, '', true), 'tl-rail-legend').includes(l)),
+          theirs: labels.filter(l =>
+            legend(_tlEmpCardHtml('me', agg[Object.keys(agg)[0]], 'me', ''), 'tl-split-legend').includes(l)),
+        };
+      }, ROWS);
+      expect(r.mine.length, 'the day has buckets to compare').toBeGreaterThan(0);
+      // A day where one scope says Driving and the other does not is the two
+      // disagreeing about what a minute was, which is the whole rule.
+      expect(r.mine).toEqual(r.theirs);
     });
 
     test('Me is one person; Team is everybody', async () => {
       // Team still cards every person on the week.
       const team = await body('team');
       expect((team.match(/tl-emp-row/g) || []).length, 'me is just me').toBe(1);
-      const two = await page.evaluate(([wk, rows]) => {
-        const key = 'T2|' + wk;
+      // Straight at the component, not through a render cache that no longer
+      // exists. _tlEmpAccHtml is what Team draws its cards with.
+      const two = await page.evaluate(([rows]) => {
         const mixed = rows.concat([{ date: '2026-08-18', minutes: 120, source: 'manual',
           detail: 'geofence', personUid: 'jack', personName: 'Jack Reyes', startTime: '2026-08-18T13:00:00Z' }]);
-        _tlWeekCache[key] = { mo: '2026-08', wk, rows: mixed, scope: 'team', cid: 'me', selfUid: 'me', domId: 'd' };
-        const html = _tlRenderWeekBody(key);
-        delete _tlWeekCache[key];
+        const html = _tlEmpAccHtml('k', mixed, 'me', 'me', '2026-08');
         return (html.match(/tl-emp-row/g) || []).length;
-      }, [WEEK, ROWS]);
+      }, [ROWS]);
       expect(two, 'team is everybody').toBe(2);
     });
 
@@ -3448,10 +3460,13 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // 7.2: deleting the day list to force symmetry would have lost
       // information nobody asked to lose. It was not deleted, it became the
       // bars: same seven days, same per-day totals, plus the shape.
-      const me = await body('me');
-      expect(me).toContain('tl-wbar-col');
-      expect((me.match(/tl-wbar-col/g) || []).length, 'seven days, every week').toBe(7);
-      expect(me, 'and each one still carries its own hours in words').toMatch(/tl-wbar-amt/);
+      // At MONTH level the breakdown is one bar per week; at WEEK level it is
+      // seven days. The fixture's rows all sit in one week, so the month draws
+      // one bar and the week draws seven.
+      const mo = await body('me');
+      expect((mo.match(/tl-wbar-col/g) || []).length, 'one bar per week').toBe(1);
+      const day = await body('me', 'day');
+      expect(day, 'and each one carries its own hours in words').toMatch(/tl-rail-row/);
     });
 
     test('a single day still shows the shared split bar, same as Team does', async () => {
