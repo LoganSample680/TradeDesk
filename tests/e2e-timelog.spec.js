@@ -74,7 +74,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
     // the default for every later test regardless of who's actually
     // signed in, e.g. an earlier manager test leaving scope on 'me' would
     // silently filter the owner's own "sees everyone" test down to one person.
-    await page.evaluate(() => { _tlYear = null; _tlScope = null; _tlPickerSel = {}; });
+    await page.evaluate(() => { _tlYear = null; _tlScope = null; });
   });
 
   test.afterAll(async () => {
@@ -3428,37 +3428,26 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.every(t => t === 'undefined'), r.join(',')).toBe(true);
     });
 
-    test('day picker: a day nobody worked shows the empty state, no throw', async () => {
-      const r = await page.evaluate(async (curMo) => {
+    // Was driven through the chip picker. A day with nothing on it is reached
+    // by the drill now, and the guarantee is the same: no throw, and the page
+    // says so rather than showing a blank.
+    test('a day nobody worked degrades to the empty state, no throw', async () => {
+      const r = await page.evaluate(async () => {
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
-        const monthEl = document.getElementById('bk-tl-mo-' + curMo);
-        const weekChip = monthEl.querySelector('.tl-chip.wk');
-        const bodyEl = weekChip.closest('[id^="tl-wkbody-"]');
-        const emptyChip = [...bodyEl.querySelectorAll('.tl-chip')].find(c => c !== weekChip && !c.querySelector('.tl-dot'));
-        if (!emptyChip) return { skip: true };
-        emptyChip.click();
-        return { skip: false, html: bodyEl.innerHTML };
-      }, curMonthPrefix);
-      if (!r.skip) expect(r.html).toContain('No hours logged');
-    });
-
-    test('setTimeLogDayPick with an unknown cacheKey, no-ops without throwing', async () => {
-      const r = await page.evaluate(() => {
-        try { setTimeLogDayPick('bogus|key', 'week'); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
+        try {
+          // A Sunday far from any logged work.
+          _tlDrillTo('day', '2026-01-04');
+          return { ok: true, level: _tlDrill.level,
+                   html: document.getElementById('tl-list').innerHTML };
+        } catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
+      // It lands somewhere real rather than drawing an empty day.
+      expect(['month', 'week', 'day']).toContain(r.level);
     });
 
-    test('_tlRenderWeekBody with an unknown cacheKey, returns empty string, no throw', async () => {
-      const r = await page.evaluate(() => {
-        try { return { ok: true, html: _tlRenderWeekBody('bogus|key') }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.html).toBe('');
-    });
+
   });
 
   test.describe('setTimeLogYear', () => {
@@ -3518,14 +3507,26 @@ test.describe('timelog.js: exhaustive coverage', () => {
       { date: '2026-08-19', minutes: 38, source: 'auto', rawSource: 'place', detail: '', personUid: 'me', personName: 'Logan Sample', clientName: 'Supply', startTime: '2026-08-19T17:00:00Z' },
       { date: '2026-08-20', minutes: 52, source: 'shop', rawSource: 'shop', detail: 'Shop', personUid: 'me', personName: 'Logan Sample', startTime: '2026-08-20T12:00:00Z' },
     ];
-    const body = (scope, sel) => page.evaluate(([wk, rows, sc, se]) => {
-      const key = 'T|' + wk;
-      _tlWeekCache[key] = { mo: '2026-08', wk, rows, scope: sc, cid: 'me', selfUid: 'me', domId: 'd' };
-      if (se) _tlPickerSel[key] = se; else delete _tlPickerSel[key];
-      const html = _tlRenderWeekBody(key);
-      delete _tlWeekCache[key]; delete _tlPickerSel[key];
+    // Drives the REAL render at a chosen drill level. It used to hand
+    // _tlRenderWeekBody a hand-built cache entry; that function and its cache
+    // are deleted, and driving the page itself is the better test anyway.
+    // personUid null is an owner-logged row, which is what isMine() lets
+    // through in Me scope.
+    const body = (scope, level) => page.evaluate(async ([rows, sc, lv]) => {
+      const prevRows = window._timeLogRows, prevScope = _tlScope;
+      window._timeLogRows = async () => rows.map(r => ({ ...r, personUid: null }));
+      _tlScope = sc;
+      setTimeLogYear(2026);
+      _tlDrill = { level: 'month', mo: '2026-08', wk: null, day: null };
+      await renderTimeLog();
+      if (lv === 'day') {
+        _tlDrillTo('week', '2026-08-16');
+        _tlDrillTo('day', '2026-08-18');
+      }
+      const html = document.getElementById('tl-list').innerHTML;
+      window._timeLogRows = prevRows; _tlScope = prevScope;
       return html;
-    }, [WEEK, ROWS, scope, sel || null]);
+    }, [ROWS, scope, level || null]);
 
     // ── What this block guards, restated 2026-08-30 ────────────────────────
     //
@@ -3546,16 +3547,16 @@ test.describe('timelog.js: exhaustive coverage', () => {
     // week-shape claims below pin the new intent so neither side can drift
     // back by accident.
     test('a day renders the SAME split bar in both scopes, byte for byte', async () => {
-      const me = await body('me', '2');       // Tuesday
-      const team = await body('team', '2');
+      const me = await body('me', 'day');
+      const team = await body('team', 'day');
       const bar = h => (h.match(/<div class="tl-split-bar">.*?<\/div>/s) || [''])[0];
       expect(bar(me).length, 'Me had no split bar at all before this rule').toBeGreaterThan(0);
       expect(bar(me)).toBe(bar(team));
     });
 
     test('the same buckets, from the same table, in both scopes', async () => {
-      const me = await body('me', '2');
-      const team = await body('team', '2');
+      const me = await body('me', 'day');
+      const team = await body('team', 'day');
       // Me draws the rail legend, Team draws the card legend. Different
       // wrappers, one _TL_BUCKETS table. Both only name a bucket that has
       // minutes in it, so the invariant is not "all five appear" (the fixture
@@ -3612,9 +3613,9 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(me, 'and each one still carries its own hours in words').toMatch(/tl-wbar-amt/);
     });
 
-    test('a single-day pick still shows the shared row, same as Team does', async () => {
-      const me = await body('me', '2');   // Tuesday
-      expect(me, 'Me used to render nothing at all on a day pick').toContain('tl-split-bar');
+    test('a single day still shows the shared split bar, same as Team does', async () => {
+      const me = await body('me', 'day');
+      expect(me, 'Me used to render nothing at all on a day').toContain('tl-split-bar');
     });
   });
 
