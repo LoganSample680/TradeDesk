@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.30.26.23';
+const APP_VERSION='08.30.26.24';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -1562,7 +1562,7 @@ let _lpTimer=null,_lpFired=false,_lpStartX=0,_lpStartY=0;
     // real users. Time Log rows are the one exception, the gesture there
     // calls deleteTimeEntry(), a real soft-delete that already re-checks
     // ownership/permission itself (js/jobs.js) and is only rendered onto rows
-    // _tlCanEdit() already approved (js/timelog.js _tlRow), so it's safe to
+    // _tlCanEdit() already approved (js/timelog.js _tlRailRow), so it's safe to
     // let regular contractors/employees use it, not just dev mode.
     const devOk=typeof _canDelete==='function'&&_canDelete();
     const timelogOk=row.dataset.lpType==='timelog';

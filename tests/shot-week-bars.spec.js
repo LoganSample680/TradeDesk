@@ -65,3 +65,24 @@ test.describe('bar affordance close-up', () => {
     await page.locator('.tl-wbar-wrap').first().screenshot({ path: 'afford-3-hover.png' });
   });
 });
+
+// Team: the crew list, one card open onto that person's month, and the
+// per-person drill it leads into.
+const { mountTeam, mountTeamCard } = require('./week-bars-fixture');
+test.describe('team screenshot', () => {
+  test('crew list, open card, person week', async ({ page }) => {
+    await mockAllExternal(page);
+    await page.goto('/index.html');
+    await waitForAppBoot(page);
+    await mountTeam(page);
+    await page.screenshot({ path: 'team-1-list.png', fullPage: false });
+    await mountTeamCard(page, 'crew-jose');
+    await page.screenshot({ path: 'team-2-card.png', fullPage: false });
+    await page.evaluate(() => _tlDrillPerson('crew-jose', '2026-08-23'));
+    await page.waitForTimeout(350);
+    await page.screenshot({ path: 'team-3-week.png', fullPage: false });
+    await page.evaluate(() => _tlDrillTo('day', '2026-08-26'));
+    await page.waitForTimeout(350);
+    await page.screenshot({ path: 'team-4-day.png', fullPage: false });
+  });
+});

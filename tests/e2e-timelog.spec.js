@@ -1987,319 +1987,13 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
   });
 
-  test.describe('_tlRow: Edit/Delete controls', () => {
-    test('editable row, renders an Edit button and the long-press delete attributes, wired to the right entry id', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        const html = _tlRow({ id: 'm123', rawId: 123, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60 });
-        return html;
-      });
-      expect(r).toContain('_openEditTimeEntry(123)');
-      expect(r).toContain('data-lp-id="123"');
-      expect(r).toContain('data-lp-type="timelog"');
-      expect(r).not.toContain('>Delete<'); // no visible Delete button, long-press only
-    });
-
-    test('non-editable row (auto/GPS source), no Edit button, no long-press attributes', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a1', rawId: 1, source: 'auto', personName: 'Crew', personUid: 'someone', clientName: 'X', addr: '', jobName: 'Y', detail: 'geo', minutes: 60 });
-      });
-      expect(r).not.toContain('_openEditTimeEntry');
-      expect(r).not.toContain('data-lp-id');
-    });
-
-    test('non-editable row (someone else\'s manual entry, no permission), no Edit button, no long-press attributes', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = true;
-        window._employeeRecord = { permissions: { payroll: false } };
-        window._supaUser = { id: 'emp-test-uid' };
-        const html = _tlRow({ id: 'm5', rawId: 5, source: 'manual', personName: 'Someone Else', personUid: 'someone-else', clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60 });
-        window._isEmployee = false; window._employeeRecord = undefined; window._supaUser = undefined;
-        return html;
-      });
-      expect(r).not.toContain('_openEditTimeEntry');
-      expect(r).not.toContain('data-lp-id');
-    });
-
-    test('weekOT true, renders the "OT WK" badge', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'm7', rawId: 7, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60, date: '2026-07-13', weekOT: true });
-      });
-      expect(r).toContain('OT WK');
-    });
-
-    test('weekOT false/undefined: no "OT WK" badge', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'm8', rawId: 8, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60, date: '2026-07-13', weekOT: false });
-      });
-      expect(r).not.toContain('OT WK');
-    });
-
-    test('job-site address renders as the primary line, with client/job/source folded into the muted line below', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'm9', rawId: 9, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'Riverside Remodel', addr: '410 Riverside Dr', jobName: 'Kitchen repaint', detail: 'Sanding', minutes: 60 });
-      });
-      expect(r).toContain('data-label="Job site"');
-      expect(r).toContain('410 Riverside Dr');
-      expect(r).toContain('Riverside Remodel');
-      expect(r).toContain('Kitchen repaint');
-      expect(r).toContain('Sanding');
-      expect(r).toContain('Manual');
-    });
-
-    test('no address on file, falls back to client/job/source only, no empty address line', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'm10', rawId: 10, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'No-Addr Client', addr: '', jobName: 'Some Job', detail: '', minutes: 60 });
-      });
-      expect(r).toContain('No-Addr Client');
-      // The generic "Auto" tag was replaced (owner 2026-08-21: "wish there
-      // was a way for it to say drive and be color coded") with an explicit
-      // On-site/Driving badge, see the _tlRow describe block below.
-      expect(r).toContain('On-site');
-      expect(r).not.toContain('style="font-weight:700">'); // the bold address <div> is only emitted when addr is truthy
-    });
-
-    // Owner report 2026-08-21: "don't understand these many different
-    // entries, wish there was a way for it to say drive and be color coded
-    // with our system in some way, then if at a job it says the address".
-    test('a drive-sourced row gets the amber Driving badge and left-border accent', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        // detail comes from _tlSourceLabel, never a hand-typed word. Typing
-        // 'Driving' here is what let the 2026-08-29 rename break the badge
-        // without a single red shard: the app had stopped producing that
-        // string and this test was still handing it in (CLAUDE.md 10.4).
-        return _tlRow({ id: 'a2', rawId: 2, source: 'auto', rawSource: 'drive', personName: 'Crew A', personUid: 'u1', clientName: 'DEV A shop', addr: '', jobName: '', detail: _tlSourceLabel('drive'), minutes: 6 });
-      });
-      // #9F5B00 is the SAME amber the Team split bar already uses for drive
-      // time (_tlWeekOwnerHtml), reused rather than invented (§7.3).
-      expect(r).toContain('#9F5B00');
-      expect(r).toContain('Driving');
-      expect(r).toContain('border-left:3px solid #9F5B00');
-      // The badge word is not repeated in plain text next to the badge.
-      expect((r.match(/Driving/g) || []).length).toBe(1);
-    });
-
-    test('a drive-rider/personal-vehicle suffix still reads as a driving row (badge, not plain text)', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a3', rawId: 3, source: 'auto', rawSource: 'drive-rider', personName: 'Crew A', personUid: 'u1', clientName: 'Riverside Remodel', addr: '', jobName: '', detail: _tlSourceLabel('drive-rider'), minutes: 10 });
-      });
-      expect(r).toContain('#9F5B00');
-      expect(r).toContain('border-left:3px solid #9F5B00');
-    });
-
-    // Owner request 2026-08-23: "Time entry drive times should show from and
-    // to locations under job site." A drive row's job_time_entries.client_key
-    // is the SAME deterministic legKey _geoDriveEntry (js/geo-track.js) stamps
-    // on the matching mileage row, so the lookup is a straight local array
-    // find, never a network round trip.
-    test('a drive row with a matching mileage leg shows "From: X - To: Y" instead of just the destination', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        window.__origMileage = mileage.slice(); mileage.length = 0;
-        mileage.push({ id: 'ml-tl-1', legKey: 'tl-leg-1', from_name: 'Shop', to_name: 'John Doe' });
-        const html = _tlRow({ id: 'a5', rawId: 5, source: 'auto', rawSource: 'drive', personName: 'Crew A', personUid: 'u1', clientName: 'John Doe', addr: '', jobName: '', detail: _tlSourceLabel('drive'), minutes: 6, clientKey: 'tl-leg-1' });
-        mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
-        return html;
-      });
-      expect(r).toContain('From: Shop - To: John Doe');
-      // Not the old bare-destination text alongside the new from/to line.
-      expect((r.match(/John Doe/g) || []).length, 'the destination appears once, inside the from/to line, not repeated').toBe(1);
-    });
-
-    test('a drive row with no matching mileage leg falls back to the plain destination (old behavior)', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        window.__origMileage = mileage.slice(); mileage.length = 0;
-        // A leg exists, but for a DIFFERENT key: nothing here matches.
-        mileage.push({ id: 'ml-tl-2', legKey: 'some-other-leg', from_name: 'Shop', to_name: 'Riverside Remodel' });
-        const html = _tlRow({ id: 'a6', rawId: 6, source: 'auto', rawSource: 'drive', personName: 'Crew A', personUid: 'u1', clientName: 'DEV A shop', addr: '', jobName: '', detail: _tlSourceLabel('drive'), minutes: 6, clientKey: 'tl-leg-missing' });
-        mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
-        return html;
-      });
-      expect(r).toContain('DEV A shop');
-      expect(r).not.toContain('From:');
-    });
-
-    test('a drive row with no client_key at all (older row, written before client_key existed) falls back cleanly', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a7', rawId: 7, source: 'auto', rawSource: 'drive', personName: 'Crew A', personUid: 'u1', clientName: 'DEV A shop', addr: '', jobName: '', detail: _tlSourceLabel('drive'), minutes: 6 });
-      });
-      expect(r).toContain('DEV A shop');
-      expect(r).not.toContain('From:');
-    });
-
-    // Only a driving row ever does the leg lookup: an on-site row's own
-    // client_key (if it happens to carry one at all) must never trigger a
-    // from/to line, on-site time was never a drive.
-    test('an on-site row is never shown as a from/to line, even if it happens to carry a client_key', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        window.__origMileage = mileage.slice(); mileage.length = 0;
-        mileage.push({ id: 'ml-tl-3', legKey: 'tl-leg-3', from_name: 'Shop', to_name: 'John Doe' });
-        const html = _tlRow({ id: 'a8', rawId: 8, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'John Doe', addr: '123 Main St', jobName: 'Repaint', detail: '', minutes: 200, clientKey: 'tl-leg-3' });
-        mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
-        return html;
-      });
-      expect(r).toContain('On-site');
-      expect(r).not.toContain('From:');
-    });
-
-    test('an on-site (geofence) auto row gets NEITHER the amber badge nor the left-border accent', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a4', rawId: 4, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'John Doe', addr: '123 Main St', jobName: 'Repaint', detail: '', minutes: 200 });
-      });
-      expect(r).toContain('On-site');
-      expect(r).toContain('123 Main St');
-      expect(r).not.toContain('#9F5B00');
-      expect(r).not.toContain('border-left:3px solid');
-    });
-
-    test('the two halves of a home-office visit each get their own badge, never On-site', async () => {
-      // Owner 2026-08-29: "work is actively being done so it needs counted as
-      // its own thing." Before this, both rows fell into the plain On-site
-      // badge and read on the log as if the man had been on somebody's job.
-      const out = await page.evaluate(() => {
-        window._isEmployee = false;
-        const row = (rawSource, detail) => _tlRow({ id: 'a' + rawSource, rawId: 90, source: 'auto', rawSource,
-          personName: 'Jack', personUid: 'u1', clientName: 'Home Office', addr: '', jobName: '-', detail, minutes: 22 });
-        return { load: row('place-load', 'Loading time'), office: row('place-office', 'Office') };
-      });
-      expect(out.load).toContain('Loading time');
-      expect(out.load).not.toContain('On-site');
-      expect(out.office).toContain('Office');
-      expect(out.office).not.toContain('On-site');
-      // Loading moved off teal to violet on 2026-08-30. It shared teal with
-      // Shop and Office while it lived inside the Supply/other bucket and had
-      // no dot of its own; the day rail's legend gave it one, and two
-      // identical dots is the exact ambiguity a legend is there to remove.
-      // Office keeps the teal that still means "your own premises, paid, not
-      // job-site labour". Neither is ever the drive amber.
-      expect(out.load).toContain('#6D28D9');
-      expect(out.load).toContain('border-left:3px solid #6D28D9');
-      expect(out.load).not.toContain('#9F5B00');
-      expect(out.office).toContain('#0E6B6B');
-      expect(out.office).toContain('border-left:3px solid #0E6B6B');
-      // The word is on the badge, so it is not repeated in the job line, the
-      // same not-repeated rule the Driving and Shop rows already follow.
-      expect((out.load.match(/Loading/g) || []).length).toBe(1);
-      expect((out.office.match(/Office/g) || []).length).toBe(2);   // 'Home Office' + the badge
-    });
-
-    test('a place row that is NOT a home office keeps the plain on-site treatment', async () => {
-      // The line this must not move: a supply house is still a supply house.
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a91', rawId: 91, source: 'auto', rawSource: 'place', personName: 'Jack',
-          personUid: 'u1', clientName: 'Home Depot', addr: '', jobName: '-', detail: '', minutes: 15 });
-      });
-      expect(r).toContain('On-site');
-      expect(r).not.toContain('border-left:3px solid #0E6B6B');
-    });
-
-    test('a manual row never gets the driving badge, even with an unrelated detail/task label', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'm15', rawId: 15, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: 'Driving the crew to pick up materials', minutes: 30 });
-      });
-      // A manual row's own free-text detail can legitimately start with the
-      // word "Driving" (a task label, not the source), and must still be
-      // treated as Manual, not mistaken for a GPS drive leg.
-      expect(r).not.toContain('#9F5B00');
-      expect(r).toContain('Manual');
-      expect(r).toContain('Driving the crew to pick up materials');
-    });
-
-    // Owner request 2026-08-23: "the time away ... needs logged as lunches or
-    // unaccounted for time that needs to feed to the hour charts as unpaid
-    // time." The row must be visibly distinct (gray badge + gray accent,
-    // muted duration), never mistaken for ordinary paid on-site/driving time.
-    test('an unpaid row gets the gray Unpaid badge, gray left-border accent, and a muted (not bold) duration', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a20', rawId: 20, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'Sonic Drive-In', addr: '', jobName: '', detail: 'Unpaid', minutes: 43, unpaid: true });
-      });
-      expect(r).toContain('Unpaid');
-      expect(r).toContain('border-left:3px solid var(--border2)');
-      expect(r).not.toContain('#9F5B00'); // never the amber driving color
-      expect(r).not.toContain('class="bold" data-label="Duration"');
-      expect(r).toContain('class="mute" data-label="Duration"');
-    });
-
-    test('an unpaid row does not repeat "Unpaid" in the muted detail line, same not-repeated rule as the Driving badge', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a21', rawId: 21, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'Sonic Drive-In', addr: '', jobName: '', detail: 'Unpaid', minutes: 43, unpaid: true });
-      });
-      expect((r.match(/Unpaid/g) || []).length).toBe(1);
-    });
-
-    test('an unpaid row with a job name still shows the place name, just no plain-text detail duplicate', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a22', rawId: 22, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'Sonic Drive-In', addr: '', jobName: 'Lunch', detail: 'Unpaid', minutes: 43, unpaid: true });
-      });
-      expect(r).toContain('Sonic Drive-In');
-    });
-
-    test('a normal (non-unpaid) on-site row never gets the unpaid badge or gray accent', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'a23', rawId: 23, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'John Doe', addr: '123 Main St', jobName: 'Repaint', detail: '', minutes: 200 });
-      });
-      expect(r).not.toContain('Unpaid');
-      expect(r).not.toContain('border-left:3px solid var(--border2)');
-      expect(r).toContain('class="bold" data-label="Duration"');
-    });
-
-    test('renders Clock In / Clock Out columns from startTime/endTime', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'm11', rawId: 11, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 90, startTime: '2026-07-13T13:00:00.000Z', endTime: '2026-07-13T14:30:00.000Z' });
-      });
-      expect(r).toContain('data-label="Clock In"');
-      expect(r).toContain('data-label="Clock Out"');
-      expect(r).not.toContain('data-label="Clock In">-<'); // a real time was provided, not the em-dash fallback
-    });
-
-    test('missing startTime/endTime: Clock In/Out show an em-dash placeholder, not blank or throw', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        try { return { ok: true, html: _tlRow({ id: 'm12', rawId: 12, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 30, startTime: null, endTime: null }) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.html).toContain('data-label="Clock In">-<');
-      expect(r.html).toContain('data-label="Clock Out">-<');
-    });
-
-    test('renders the Week total column from weekRunningMin', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        return _tlRow({ id: 'm13', rawId: 13, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60, weekRunningMin: 2415 });
-      });
-      expect(r).toContain('data-label="Week total"');
-      expect(r).toContain('40h 15m');
-    });
-
-    test('missing weekRunningMin, Week total defaults to 0, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        window._isEmployee = false;
-        try { return { ok: true, html: _tlRow({ id: 'm14', rawId: 14, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60 }) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.html).toContain('data-label="Week total"');
-    });
-  });
+  // The _tlRow describe block was DELETED with the function it tested (§7).
+  // It covered the per-person day TABLE in Team, which is now that person's
+  // weekly bars. The one behaviour in it that was not about a <tr>, the
+  // 3-second hold-to-delete gesture and its _tlCanEdit gate, moved with the
+  // gesture onto the rail row and is covered in
+  // tests/e2e-timelog-team-bars.spec.js ('the 3-second hold moved onto the
+  // rail row'). Everything else asserted markup that no longer exists.
 
   test.describe('_lpDoDelete(type="timelog"): long-press delete dispatch', () => {
     // Every other [data-lp-id] type is DEV-ONLY (gated on _canDelete()): see
@@ -2518,10 +2212,21 @@ test.describe('timelog.js: exhaustive coverage', () => {
         await renderTimeLog();
         const html = document.getElementById('tl-list').innerHTML;
         _tlScope = null; // restore auto-detection for later tests
-        return html;
+        // _tlLastRows is a module-scope `let`, which lives in the global
+        // LEXICAL environment: reachable as a bare name, never as a property
+        // of window. Reading it off window silently gave [].
+        return { html, rows: (_tlLastRows || []).map(x => x.date) };
       });
-      expect(r).toContain('Timelog Test Client');
-      expect(r).toContain('Timelog No-Bid Client');
+      // WAS: two CLIENT names, which appeared because Team listed every entry
+      // in a table. Team's card now opens onto that person's chart, so client
+      // names are one drill deeper and the card names the PERSON. The rule
+      // under test (this year's entries, not last year's) is unchanged and is
+      // asserted on the rows the year filter actually produced.
+      expect(r.html).toContain('Owner (me)');
+      expect(r.html).toContain('Test Crew Member');
+      const yr = String(new Date().getFullYear());
+      expect(r.rows.length).toBeGreaterThan(0);
+      r.rows.forEach(d => expect(String(d).slice(0, 4)).toBe(yr));
     });
 
     // Old behavior (until 2026-08-20): newest month first, matching every
@@ -2580,18 +2285,28 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
     // The day table moved to Team scope when Me became the drill; its ordering
     // is covered there by the entries-ordering test below.
-    test('Team still nests a day table inside its per-person cards', async () => {
+    // WAS 'Team still nests a day table inside its per-person cards'. It does
+    // not any more (owner 2026-08-30): the card opens onto that person's
+    // weekly bars, which is the same drill Me has, instead of a six-column
+    // table that was the one navigation idiom the drill replaced.
+    test('Team nests that person\'s chart inside its per-person cards', async () => {
       const r = await page.evaluate(async () => {
         const orig = _tlScope;
         _tlScope = 'team';
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
-        const days = document.querySelectorAll('.bk-day').length;
+        const out = {
+          days: document.querySelectorAll('.bk-day').length,
+          bars: document.querySelectorAll('.bk-week .tl-wbar-col').length,
+          cards: document.querySelectorAll('.bk-week').length,
+        };
         _tlScope = orig;
         await renderTimeLog();
-        return days;
+        return out;
       });
-      expect(r).toBeGreaterThan(0);
+      expect(r.cards).toBeGreaterThan(0);
+      expect(r.bars).toBeGreaterThan(0);
+      expect(r.days, 'the day table is gone, not hidden').toBe(0);
     });
 
     test('drilling into a month lands on a week that has hours', async () => {
@@ -2615,36 +2330,54 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
     // Owner report 2026-08-21: entries within a single day had no defined
     // order at all (_bkRenderDays just renders whatever order they arrived
-    // in). Fixed to sort newest clock-in first, oldest last, matching how a
-    // day actually reads (what you're doing now belongs at the top).
-    test('entries within a day: newest clock-in sorts first (top), oldest last (bottom)', async () => {
+    // in). Fixed to sort newest clock-in first, oldest last.
+    //
+    // THAT ORDER IS DELIBERATELY REVERSED NOW, because the surface changed
+    // (§10.4). "Newest on top" was right for a LEDGER: a flat table of every
+    // day that month, where what you are doing now belongs at the top. The
+    // rail is ONE day drawn as a timeline, and a timeline that runs backwards
+    // is unreadable: 8am sits above 1pm because that is the order the day
+    // happened in. What survives is that the order is DEFINED and comes from
+    // the clock, never from whatever order the rows arrived in.
+    test('entries within a day run in clock order on the rail, earliest at the top', async () => {
       const r = await page.evaluate(async () => {
-        const now = new Date();
-        const dateStr = now.toISOString().slice(0, 10);
-        const early = new Date(now); early.setHours(8, 0, 0, 0);
-        const late = new Date(now); late.setHours(13, 0, 0, 0);
+        // todayKey(), not toISOString().slice(0,10): a UTC day key walks into
+        // the previous Central day for part of every evening (§5.2.2), and
+        // this fixture has to land on the day the rail is showing.
+        const dateStr = (typeof todayKey === 'function')
+          ? todayKey() : new Date().toISOString().slice(0, 10);
+        const early = new Date(dateStr + 'T08:00:00');
+        const late = new Date(dateStr + 'T13:00:00');
         timeEntries.push(
           { id: 8990201, job_id: 87701, date: dateStr, start_time: early.toISOString(), end_time: new Date(early.getTime() + 30 * 60000).toISOString(), minutes: 30, logged_by_uid: null, logged_by_name: 'Owner (me)' },
           { id: 8990202, job_id: 87701, date: dateStr, start_time: late.toISOString(), end_time: new Date(late.getTime() + 30 * 60000).toISOString(), minutes: 30, logged_by_uid: null, logged_by_name: 'Owner (me)' }
         );
-        // TEAM scope: the entries table is the thing being ordered and it
-        // renders inside the per-person cards now, not on Me's week (which is
-        // the bars). The ordering rule is unchanged.
         const origScope = _tlScope;
-        _tlScope = 'team';   // direct, not setTimeLogScope: see above
+        _tlScope = 'me';
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
-        const rows = [...document.querySelectorAll('#tl-list tr[data-lp-id]')];
-        const idxOf = (id) => rows.findIndex(tr => tr.getAttribute('data-lp-id') === String(id));
-        const result = { earlyIdx: idxOf(8990201), lateIdx: idxOf(8990202) };
-        timeEntries = timeEntries.filter(e => e.id !== 8990201 && e.id !== 8990202);
-        _tlScope = origScope;   // exact prior value, null included (see above)
+        _tlDrill = { level: 'day', mo: dateStr.slice(0, 7), wk: _tlWeekKey(dateStr),
+                     day: dateStr, uid: null };
         await renderTimeLog();
-        return result;
+        // BY ID, not by the clock face. Building the fixture with
+        // `new Date(dateStr+'T08:00:00')` parses in the RUNNER's zone, so on a
+        // UTC runner "8am" reaches the page as 3:00 AM Central and a test that
+        // greps the rendered time finds nothing. The ids are the same in every
+        // zone, and the ordering rule is about position, not about what the
+        // clock says.
+        const ids = [...document.querySelectorAll('.tl-rail-row')]
+          .map(li => li.getAttribute('data-lp-id'));
+        timeEntries = timeEntries.filter(e => e.id !== 8990201 && e.id !== 8990202);
+        _tlScope = origScope;
+        _tlDrill = { level: 'month', mo: null, wk: null, day: null, uid: null };
+        await renderTimeLog();
+        return { ids };
       });
-      expect(r.earlyIdx, 'the 8am entry must render').toBeGreaterThanOrEqual(0);
-      expect(r.lateIdx, 'the 1pm entry must render').toBeGreaterThanOrEqual(0);
-      expect(r.lateIdx, 'the later clock-in (1pm) must render before the earlier one (8am): newest on top').toBeLessThan(r.earlyIdx);
+      const early = r.ids.indexOf('8990201');
+      const late = r.ids.indexOf('8990202');
+      expect(early, 'the earlier entry must render').toBeGreaterThanOrEqual(0);
+      expect(late, 'the later entry must render').toBeGreaterThanOrEqual(0);
+      expect(early, 'a day reads top to bottom in the order it happened').toBeLessThan(late);
     });
 
     // Owner report 2026-08-21: opening Time Log well after a job finished
@@ -2910,7 +2643,10 @@ test.describe('timelog.js: exhaustive coverage', () => {
         const html = document.getElementById('tl-list').innerHTML;
         window._isEmployee = origIsEmployee;
         _tlScope = null; // restore auto-detection for later tests
-        return html.includes('Timelog Test Client') && html.includes('Timelog No-Bid Client');
+        // Same re-point as the year test above: Team names PEOPLE now, and
+        // the rule here was always "an owner sees everyone", which is exactly
+        // what a card per person says.
+        return html.includes('Owner (me)') && html.includes('Test Crew Member');
       });
       expect(r).toBe(true);
     });
@@ -3186,10 +2922,17 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
     test('setTimeLogScope switches a manager between Me and Team, Share button follows scope, sticks until changed again', async () => {
       const r = await page.evaluate(async () => {
-        const orig = { isEmp: window._isEmployee, emp: window._employeeRecord, user: window._supaUser };
+        const orig = { isEmp: window._isEmployee, emp: window._employeeRecord,
+                       user: window._supaUser, cid: window._contractorUserId };
         window._isEmployee = true;
         window._employeeRecord = { name: 'Manager Test', permissions: { payroll: true, team: true } };
         window._supaUser = { id: 'emp-test-uid' };
+        // A crew session in production always knows which business it is in.
+        // Without it, cid falls back to THIS employee's own uid, so the owner's
+        // personUid:null rows fold onto the employee's own card and the two
+        // people render as one. The old table hid that by listing every row's
+        // logged_by_name; the cards do not, which is the more honest surface.
+        window._contractorUserId = 'owner-test-uid';
         setTimeLogYear(new Date().getFullYear());
         // Establish Me scope explicitly. _tlScope is module state that earlier
         // tests in this file legitimately leave on 'team', and this test used
@@ -3221,7 +2964,8 @@ test.describe('timelog.js: exhaustive coverage', () => {
         const teamShare = !!document.querySelector('.tl-drill-body .tl-wbar-share');
         const teamHtml = document.getElementById('tl-list').innerHTML;
         const scopeAfterTeam = _tlScope;
-        window._isEmployee = orig.isEmp; window._employeeRecord = orig.emp; window._supaUser = orig.user;
+        window._isEmployee = orig.isEmp; window._employeeRecord = orig.emp;
+        window._supaUser = orig.user; window._contractorUserId = orig.cid;
         await renderTimeLog();
         return {
           meShare, teamShare, scopeAfterTeam,
@@ -3478,7 +3222,14 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(me, 'and none of the clutter that used to sit above it').not.toContain('tl-emp-row');
       expect(me).not.toContain('tl-split-legend');
       expect(team, 'Team keeps the per-person cards').toContain('tl-emp-row');
-      expect(team, 'a team week is several people, not one chart').not.toContain('tl-wbar');
+      // WAS: Team contained no chart at all. It now carries one PER CARD
+      // (owner 2026-08-30), which is not what that rule was protecting: what
+      // must never happen is a whole crew folded into one bar per week,
+      // because that hides who did what. So the assertion moved from "no
+      // chart" to "no chart ABOVE the cards".
+      expect(team.split('bk-week')[0], 'never a crew roll-up above the cards')
+        .not.toContain('tl-wbar');
+      expect(team, 'each card opens onto that person\'s own chart').toContain('tl-wbar-col');
     });
 
     test('the per-day breakdown survives, drawn instead of listed', async () => {

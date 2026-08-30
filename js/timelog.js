@@ -650,6 +650,26 @@ function setTimeLogYear(yr){_tlYear=String(yr);renderTimeLog();}
 // payroll permission Job Profit/Crew Cost already gate on. This is a DATA
 // ACCESS rule, independent of the Me/Team display toggle below: a manager can
 // edit anyone's entry whether they're currently looking at Me or Team.
+// "Mine", asked in ONE place. renderTimeLog computed this inline to filter Me
+// scope, and the gap chips need the same question for a different reason (see
+// _tlRailGapBody). Two copies of a permission predicate is how one of them
+// ends up wrong and nobody notices which (§7.3).
+function _tlRowIsMine(r){
+  if(!r||typeof r!=='object')return false;
+  const isEmp=typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser;
+  const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||
+            (typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
+  const selfUid=isEmp?_supaUser.id:cid;
+  // An owner's own manual rows carry personUid:null, which is why the owner
+  // side of this accepts two values and the employee side accepts one.
+  //
+  // null AND undefined, deliberately. Everywhere else in this file a row folds
+  // under `r.personUid||cid`, so a row that never got the column at all is the
+  // owner's. A strict ===null here was stricter than the rest of the app and
+  // silently dropped the gap chips off hand-built rows that carry no person.
+  const uid=(r.personUid==null)?null:r.personUid;
+  return isEmp?uid===selfUid:(uid===null||uid===selfUid);
+}
 function _tlCanEdit(r){
   if(r.source!=='manual')return false;
   if(typeof _canViewComp==='function'&&_canViewComp())return true;
@@ -740,124 +760,17 @@ async function _saveFixedAutoEntry(rowId){
   if(typeof showToast==='function')showToast('Clock times updated');
   if(typeof renderTimeLog==='function')renderTimeLog();
 }
-function _tlRow(r){
-  const canEdit=_tlCanEdit(r);
-  // Delete isn't a button here, it's the same 3s hold-to-confirm gesture used
-  // everywhere else in the app ([data-lp-id], js/cloud.js). The attributes are
-  // only emitted when canEdit is true, so the gesture is simply absent (does
-  // nothing) on GPS/auto rows and on entries this person isn't allowed to
-  // touch: same visibility rule the Edit button already follows.
-  const lpAttrs=canEdit?' data-lp-id="'+r.rawId+'" data-lp-type="timelog" data-lp-label="'+escHtml(r.personName+' · '+r.clientName)+'"':'';
-  // Driving vs on-site: the owner couldn't tell the entries apart ("don't
-  // understand these many different entries, wish there was a way for it to
-  // say drive and be color coded", 2026-08-21). r.detail is already the
-  // friendly _tlSourceLabel() text ('Driving'/'Driving (rider)'/etc for a
-  // drive-sourced auto row, '' for a geofence/place row), so a driving row
-  // is exactly one that starts with it.
-  // rawSource FIRST, label second, for the reason _tlEmpWeekAgg already
-  // learned the hard way: `detail` is the friendly label and the friendly
-  // label moves. It moved on 2026-08-29 ('Driving' -> 'Drive time') and this
-  // test, still matching the old word, silently dropped the amber badge and
-  // the amber accent off every GPS drive row on the table. CI did not catch
-  // it because the two specs covering this line hand _tlRow a hand-written
-  // detail:'Driving' instead of the string _tlSourceLabel actually returns,
-  // so they were asserting against a value the app had stopped producing.
-  // The raw column cannot drift like that. The label test stays only as the
-  // fallback for rows built without one, and now accepts either word.
-  const isAutoDrive=r.source==='auto'&&(
-    (typeof _geoIsDriveSource==='function'&&r.rawSource)
-      ?_geoIsDriveSource(r.rawSource)
-      :/^Driv(ing|e time)/.test(r.detail||''));
-  // Drive rows show FROM and TO locations under Job Site (owner request
-  // 2026-08-23: "Time entry drive times should show from and to locations"),
-  // not just the bare destination every drive row showed before this. The
-  // matching mileage leg is the only place the ORIGIN lives at all,
-  // job_time_entries itself never carried one: _geoDriveEntry (js/geo-track.js)
-  // stamps ONE deterministic legKey on both the mileage row (legKey) and this
-  // row (client_key) the moment the leg closes, so this is a straight lookup,
-  // never a re-derivation, same pairing _geoSyncDriveTimeEntries already
-  // trusts. Falls back to the plain destination name (the old behavior) when
-  // no leg survives locally: mileage not yet loaded for this viewer, or the
-  // leg was swept away by a mileage dedup/personal-stop pass.
-  const driveLeg=isAutoDrive&&r.clientKey&&typeof mileage!=='undefined'&&Array.isArray(mileage)
-    ?mileage.find(m=>m&&m.legKey===r.clientKey):null;
-  const driveFromTo=driveLeg?'From: '+(driveLeg.from_name||'—')+' - To: '+(driveLeg.to_name||r.clientName||'—'):null;
-  // Job address is the primary line (owner request 2026-07-11: "show the day,
-  // job address, person..."): client name/job/task fold into a muted second
-  // line along with the source tag, which used to be its own column. The
-  // driving row's own detail text is dropped here, the amber badge below
-  // already says it, so it is not repeated in plain gray right next to it.
-  // A lunch/off-job stop's own detail text is already the "Unpaid" the badge
-  // says (owner request 2026-08-23), same not-repeated rule the driving row
-  // already follows for its own badge just below.
-  // A plain shop row's detail is the literal word the Shop badge already
-  // shows, so it is dropped for the same not-repeated reason; the clock-out
-  // variant ('Shop · auto clock-out') carries new information and stays.
-  // Which half of a home-office visit this row is, or '' for everything else.
-  // Read off the RAW column, never the label, for the same reason the weekly
-  // split bar now does (see _tlEmpWeekAgg).
-  const homeKind=r.source==='auto'
-    ?(r.rawSource==='place-load'?'load':r.rawSource==='place-office'?'office':'')
-    :'';
-  const jobLine=[driveFromTo||r.clientName,(!driveFromTo&&r.jobName&&r.jobName!==r.clientName)?r.jobName:null,(isAutoDrive||r.unpaid||homeKind||r.detail==='Shop time')?null:(r.detail||null)]
-    .filter(Boolean).map(escHtml).join(' · ');
-  // Amber (#9F5B00) is the SAME color drive time already gets in the Team
-  // split bar/legend (_tlWeekOwnerHtml above), reused rather than invented
-  // (§7.3) so "amber" means "driving" consistently everywhere on this page.
-  // Loading and Office are their own badges, never the plain On-site one
-  // (owner 2026-08-29: "work is actively being done so it needs counted as
-  // its own thing"). Teal is REUSED, not invented: on this page it already
-  // means "your own premises, paid, but not job-site labour", which is
-  // exactly what both halves of a home-office visit are. Filled chips like
-  // the Driving badge, for the same reason that one is filled: this minute
-  // is real paid time and it is not on anybody's job.
-  // An unaccounted stretch is not an entry, it is the SHAPE OF A HOLE, and it
-  // has to read that way at a glance or it becomes just another gray row
-  // somebody scrolls past. Dashed accent and a question mark, deliberately
-  // unlike every filled badge on this page: nothing here was measured.
-  const isGap=r.source==='unaccounted';
-  const sourceTag=isGap
-    ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('❓',{size:9})+' Unaccounted</span>'
-    :homeKind
-    ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:800;padding:1px 6px;border-radius:4px;background:'+(homeKind==='load'?'#6D28D922':'#0E6B6B22')+';color:'+(homeKind==='load'?'#6D28D9':'#0E6B6B')+'">'+
-       svgIcon(homeKind==='load'?'📦':'📋',{size:9})+' '+(homeKind==='load'?'Loading time':'Office')+'</span>'
-    :r.source==='shop'
-    ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:#0E6B6B">'+svgIcon('🔧',{size:9})+' Shop</span>'
-    :r.unpaid
-    ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('🍽',{size:9})+' Unpaid</span>'
-    :r.source==='auto'
-      ?(isAutoDrive
-          ?'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:800;padding:1px 6px;border-radius:4px;background:#9F5B0022;color:#9F5B00">'+svgIcon('🚗',{size:9})+' Driving</span>'
-          :'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('📍',{size:9})+' On-site</span>')
-      :'<span style="display:inline-flex;align-items:center;gap:3px;font-weight:700;color:var(--text3)">'+svgIcon('▶',{size:9})+' Manual</span>';
-  // Left-edge accent on the whole row, same amber, so "this one's a drive"
-  // reads at a glance without hunting for the badge text (a colored border
-  // is the other option the ask named alongside a badge; doing both costs
-  // nothing and reads clearer on a fast scroll down a long day). Unpaid gets
-  // a neutral gray accent, same idea, so it never reads as ordinary paid time
-  // on a fast scroll down the day.
-  const rowAccent=isGap?' style="border-left:3px dashed var(--border2);opacity:.72"':isAutoDrive?' style="border-left:3px solid #9F5B00"':homeKind==='load'?' style="border-left:3px solid #6D28D9"':(r.source==='shop'||homeKind)?' style="border-left:3px solid #0E6B6B"':r.unpaid?' style="border-left:3px solid var(--border2)"':'';
-  return '<tr'+lpAttrs+rowAccent+'>'+
-    '<td class="bold" data-label="Person">'+escHtml(r.personName)+'</td>'+
-    '<td data-label="Job site">'+
-      (r.addr?'<div style="font-weight:700">'+escHtml(r.addr)+'</div>':'')+
-      '<div class="mute" style="font-size:11px;margin-top:'+(r.addr?'2px':'0')+';display:flex;align-items:center;flex-wrap:wrap;gap:5px">'+(jobLine?'<span>'+jobLine+'</span>':'')+sourceTag+'</div>'+
-    '</td>'+
-    '<td data-label="Clock In">'+(_tlFmtTime(r.startTime)||'-')+'</td>'+
-    '<td data-label="Clock Out">'+(_tlFmtTime(r.endTime)||'-')+'</td>'+
-    '<td class="'+(r.unpaid?'mute':'bold')+'" data-label="Duration" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.minutes):r.minutes+'m')+
-      (r.weekOT?' <span title="'+escHtml(r.personName)+' logged 40+ hrs the week of '+_tlWeekKey(r.date)+', verify overtime eligibility with your state; not payroll advice" style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:4px;background:var(--c-amber-soft);color:var(--c-amber-deep);margin-left:4px;white-space:nowrap">OT WK</span>':'')+
-    '</td>'+
-    '<td data-label="Week total" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.weekRunningMin||0):(r.weekRunningMin||0)+'m')+'</td>'+
-    '<td data-label="">'+(isGap?
-      '<button onclick="_tlAddUnaccounted(\''+escHtml(r.startTime)+'\',\''+escHtml(r.endTime)+'\')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Add</button>'
-      :canEdit?
-      '<button onclick="_openEditTimeEntry('+r.rawId+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Edit</button>'
-      :_tlCanFixAuto(r)?
-      '<button onclick="_openFixAutoEntry(\''+escHtml(String(r.rawId))+'\')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Fix</button>'
-      :'')+'</td>'+
-  '</tr>';
-}
+// _tlRow was DELETED here, not left orphaned (§7). It built one <tr> of the
+// per-person day table in Team, and that table is now the person's weekly
+// bars (see _tlEmpAccHtml). With the table gone it had no caller at all.
+//
+// It carried ONE capability nothing else had: the 3-second hold-to-delete
+// gesture on a time entry. That did not go with it (§7.2). The same
+// data-lp-* attributes, under the same _tlCanEdit gate, are now on the rail
+// row in _tlRailRow, which is where the Edit button already moved for
+// exactly this reason. Everything else it drew (the clock times, the
+// address, the drive from/to, the OT and unpaid flags) the rail row was
+// already drawing better.
 // ── Adding a hole to the day (owner 2026-08-29) ────────────────────────────
 // "unaccounted for time doesn't count to the total unless it's added."
 //
@@ -1029,6 +942,21 @@ function _tlRailGapBody(r){
   const a=escHtml(r.startTime||''),b=escHtml(r.endTime||'');
   const chip=(k,txt)=>'<button type="button" class="tl-rail-chip" data-kind="'+k+'" '+
     'onclick="_tlAddUnaccounted(\''+a+'\',\''+b+'\',\''+k+'\')">'+escHtml(txt)+'</button>';
+  // ANSWERING A HOLE STAMPS THE ANSWERER, NOT THE PERSON WHOSE HOLE IT IS.
+  // _tlAddUnaccounted builds its row from the CURRENT user (_supaUser / owner),
+  // by design: it was written for a man answering his own day. Now that a crew
+  // member's day rail is reachable from Team, offering these chips there would
+  // let one tap put the owner's own manual hours on somebody else's Thursday,
+  // with nothing on screen saying so and nothing in the row admitting it. So
+  // the question is still ASKED, because an unanswered hole in a crew week is
+  // exactly what payroll needs to see, and only the button to answer it is
+  // withheld.
+  if(!_tlRowIsMine(r)){
+    const who=String(r.personName||'').trim().split(/\s+/)[0];
+    return '<div class="tl-rail-ttl">What was this time?</div>'+
+      '<div class="tl-rail-sub">'+escHtml(who?'Only '+who+' can answer this':
+        'Only the person who logged it can answer this')+'</div>';
+  }
   // No title line: the tag above already reads "Between jobs" and printing it
   // twice is the kind of duplication that makes a dense day harder to scan.
   // Just the question (owner 2026-08-30: "hate this just say what was this
@@ -1091,7 +1019,17 @@ function _tlRailRow(r){
     :'';
   const dur='<div class="tl-rail-dur'+((r.unpaid||isGap)?' mute':'')+'">'+escHtml(fm(r.minutes||0))+
     (edit?'<span class="tl-rail-editwrap">'+edit+'</span>':'')+'</div>';
-  return '<li class="tl-rail-row" data-kind="'+kind+'" style="--rail:'+m.c+'">'+
+  // AND SO DOES DELETE, for the same reason and by the same rule (§7.2). The
+  // 3-second hold lived on the table row _tlRow drew; that table is gone, and
+  // losing the only way to delete a time entry was not part of removing it.
+  // Same attributes, same _tlCanEdit gate, same handler in js/cloud.js, which
+  // re-checks permission again on its own.
+  const lp=(typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
+    ?' data-lp-id="'+escHtml(String(r.rawId))+'" data-lp-type="timelog"'+
+     ' data-lp-label="'+escHtml(String(r.personName||'')+' · '+
+        String(r.clientName||r.addr||m.word))+'"'
+    :'';
+  return '<li class="tl-rail-row" data-kind="'+kind+'"'+lp+' style="--rail:'+m.c+'">'+
     '<div class="tl-rail-time"><span>'+escHtml(_tlFmtTime(r.startTime)||'—')+'</span></div>'+
     '<div class="tl-rail-spine" aria-hidden="true"><i></i><b></b></div>'+
     '<div class="tl-rail-body">'+tag+body+'</div>'+
@@ -1329,7 +1267,7 @@ function _tlBarsHtml(groups,opts){
   '</div>';
 }
 // A WEEK: seven days, guided at 8 hours.
-function _tlWeekBarsHtml(weekRows,days,cacheKey){
+function _tlWeekBarsHtml(weekRows,days,cacheKey,opts){
   const list=(Array.isArray(weekRows)?weekRows:[]).filter(r=>r&&typeof r==='object');
   const dayList=Array.isArray(days)?days:[];
   if(!list.length||!dayList.length)return '';
@@ -1340,7 +1278,12 @@ function _tlWeekBarsHtml(weekRows,days,cacheKey){
   // the page-level button has always meant "this calendar week" and this one
   // means "the week you are looking at." Two different things, so two
   // controls, both through _tlWeekShareText.
-  const share='<button type="button" class="tl-wbar-share" '+
+  // NOT inside a crew member's week. _tlShareWeekAt resolves its rows from
+  // _tlLastRows, which in Team scope is the whole crew, so the button would
+  // send everybody's hours under one person's heading. A per-person send is a
+  // real feature and it needs its own builder, not this one pointed sideways.
+  const share=(opts&&opts.share===false)?'':
+    '<button type="button" class="tl-wbar-share" '+
     'onclick="_tlShareWeekAt(\''+escHtml(String(cacheKey))+'\')">'+
     (typeof svgIcon==='function'?svgIcon('⬆',{size:12}):'')+' Send this week</button>';
   return _tlBarsHtml(dayList.map((d,i)=>({
@@ -1358,28 +1301,40 @@ function _tlWeekBarsHtml(weekRows,days,cacheKey){
 // normal. The weeks read oldest to newest left to right, because that is the
 // direction a month runs and the eye is being asked to see a trend.
 const _TL_MONTH_GUIDE_MIN=40*60;
-function _tlMonthBarsHtml(monthRows,mo,scope){
+function _tlMonthBarsHtml(monthRows,mo,scope,uid){
   // ME ONLY, the same split the week already makes. Folding a whole crew into
   // one bar per week hides who did what, which is the single thing the
   // per-person cards exist to show, so Team keeps the cards and skips the
   // chart rather than getting a prettier version of a worse answer.
-  if(scope==='team')return '';
+  // Team's PAGE still has no month chart, and that is still the reason: one
+  // bar per week for a whole crew hides who did what. Handed a uid the rows
+  // are ONE person's, which is not a fold at all, so the same function draws
+  // it (§7.3) rather than a second month chart existing for crew.
+  if(scope==='team'&&!uid)return '';
   const list=(Array.isArray(monthRows)?monthRows:[]).filter(r=>r&&typeof r==='object');
   if(!list.length)return '';
   const byWeek={};
   list.forEach(r=>{const wk=_tlWeekKey(r.date)||'';if(wk)(byWeek[wk]||(byWeek[wk]=[])).push(r);});
   const weeks=Object.keys(byWeek).sort();
   if(!weeks.length)return '';
-  const share='<button type="button" class="tl-wbar-share" '+
+  // Same reason the week's is suppressed, plus one more: these charts live in
+  // an accordion, so N open cards would mean N Send buttons on one screen
+  // (§15.1 allows exactly one primary Send per screen).
+  const share=uid?'':'<button type="button" class="tl-wbar-share" '+
     'onclick="_tlShareMonth(\''+escHtml(String(mo))+'\')">'+
     (typeof svgIcon==='function'?svgIcon('⬆',{size:12}):'')+' Send this month</button>';
+  // Sanitised, not escaped: this string is put INTO an onclick that _tlBarsHtml
+  // escapes once on the way out, so escaping it here too would double-encode
+  // it. Restricting the characters is both safe and idempotent.
+  const su=String(uid||'').replace(/[^0-9a-zA-Z_-]/g,'');
   return _tlBarsHtml(weeks.map(wk=>({
     // "Aug 23" reads as the week it starts, which is how a contractor names a
     // week out loud. The full label is on the accordion this scrolls to.
     label:_tlWeekShortLabel(wk),
     aria:(typeof _tlWeekLabel==='function'?_tlWeekLabel(wk):wk),
     rows:byWeek[wk],
-    onclick:'_tlDrillTo(\'week\',\''+String(wk)+'\')'
+    onclick:su?('_tlDrillPerson(\''+su+'\',\''+String(wk)+'\')')
+              :('_tlDrillTo(\'week\',\''+String(wk)+'\')')
   })),{guideMin:_TL_MONTH_GUIDE_MIN,guideLabel:'40h',share});
 }
 // "8/23" for a weekly column: short enough for six columns on a 320px phone,
@@ -1484,15 +1439,37 @@ async function _tlShareMonth(mo){
 // The week accordion list is gone. It was a second way to do the drill the
 // bars already do, it duplicated every total the chart above it was drawing,
 // and it is the single biggest reason this felt like a maze.
-let _tlDrill={level:'month',mo:null,wk:null,day:null};
+// uid is WHOSE rows the levels are showing, not a level of its own. In Me
+// scope it is always null. In Team it is set by tapping a week on a crew
+// member's card, rides along week to day, and is dropped on the way back up to
+// month, because the crew list is the one screen that is not about one person.
+let _tlDrill={level:'month',mo:null,wk:null,day:null,uid:null};
 function _tlDrillTo(level,key,dir){
-  if(level==='month')_tlDrill={level:'month',mo:key||_tlDrill.mo,wk:null,day:null};
-  else if(level==='week')_tlDrill={level:'week',mo:_tlDrill.mo,wk:key,day:null};
-  else if(level==='day')_tlDrill={level:'day',mo:_tlDrill.mo,wk:_tlDrill.wk,day:key};
+  const uid=_tlDrill.uid;
+  if(level==='month')_tlDrill={level:'month',mo:key||_tlDrill.mo,wk:null,day:null,uid:null};
+  else if(level==='week')_tlDrill={level:'week',mo:_tlDrill.mo,wk:key,day:null,uid:uid};
+  else if(level==='day')_tlDrill={level:'day',mo:_tlDrill.mo,wk:_tlDrill.wk,day:key,uid:uid};
   else return;
   _tlMonthDir=(dir==='fwd'||dir==='back')?dir:'';
   renderTimeLog();
 }
+// Into one crew member's week. The ONLY way uid is ever set, so there is one
+// door in and _tlDrillTo owns everything after it.
+function _tlDrillPerson(uid,wk){
+  // Falsy BEFORE stringifying: String(0) is '0', which is a perfectly truthy
+  // string and would have set the drill to a person who does not exist. No
+  // real id is falsy, so this costs nothing and closes the whole class.
+  if(!uid)return;
+  _tlDrill.uid=String(uid);
+  _tlDrillTo('week',wk);
+}
+// The identity key a row aggregates under, which is personUid except for the
+// owner's own manual rows: those carry null and fold under the contractor id,
+// the same rule _tlEmpWeekAgg and _tlEmpAccHtml already use. _tlLastCid is set
+// beside _tlLastRows on every render, for the same reason: the arrows are
+// clicked long after the render that drew them.
+let _tlLastCid=null;
+function _tlRowUid(r){return String((r&&r.personUid)||_tlLastCid);}
 function _tlDrillUp(){
   if(_tlDrill.level==='day')_tlDrillTo('week',_tlDrill.wk);
   else if(_tlDrill.level==='week')_tlDrillTo('month',_tlDrill.mo);
@@ -1501,7 +1478,11 @@ function _tlDrillUp(){
 // with hours. Stepping onto an empty chart is the thing the arrows exist to
 // prevent.
 function _tlDrillSiblings(rows){
-  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&r.date);
+  // Inside a crew member's drill the arrows step through THEIR weeks and days,
+  // never the whole crew's: stepping from one person's Tuesday to another
+  // person's Wednesday is not a sideways move, it is a different question.
+  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&r.date&&
+    (!_tlDrill.uid||_tlRowUid(r)===_tlDrill.uid));
   const keys=[];
   const push=k=>{if(k&&keys.indexOf(k)<0)keys.push(k);};
   if(_tlDrill.level==='month')list.forEach(r=>push(String(r.date).slice(0,7)));
@@ -1522,7 +1503,46 @@ function _tlDrillStep(delta,rows){
 }
 // ONE header for every level (§7.3). Same stepper, same shape, so moving
 // between levels never changes what the controls mean.
-function _tlDrillHeadHtml(title,total,keys,cur,backLabel){
+// THE WEEK AND DAY LEVELS, WRITTEN ONCE (§7.3).
+//
+// Me looking at his own week and an owner looking at Jose's week are the same
+// screen: same chart, same rail, same header, same arrows. The only things
+// that differ are whose rows go in, whose name sits on top, and where the back
+// link says it goes. Those are arguments. Building Team a second copy is how
+// the split bar and Crew Cost ended up disagreeing about what a minute was.
+//
+// Returns null when the drill is at month level, because a month is NOT the
+// same screen in both places: for Me it is a chart, for Team it is the crew
+// list. Each caller renders its own.
+//
+// It also RESOLVES the level, which is why it owns the writes to _tlDrill.wk
+// and .day: a week that vanished under us (arrowed into a new month, data
+// re-synced) falls back to the month's last week rather than drawing nothing.
+function _tlLevelsHtml(moRows,selMo,opts){
+  const o=opts||{};
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  const byWeek={};
+  (Array.isArray(moRows)?moRows:[]).forEach(r=>{
+    const wk=r&&_tlWeekKey(r.date)||'';if(wk)(byWeek[wk]||(byWeek[wk]=[])).push(r);});
+  const weekKeys=Object.keys(byWeek).sort();
+  if(_tlDrill.level!=='month'&&weekKeys.indexOf(_tlDrill.wk)<0)
+    _tlDrill.wk=weekKeys[weekKeys.length-1]||null;
+  if(!_tlDrill.wk&&_tlDrill.level!=='month')_tlDrill.level='month';
+  if(_tlDrill.level==='month')return null;
+  const wkRows=byWeek[_tlDrill.wk]||[];
+  const days=_tlWeekDayDates(_tlDrill.wk);
+  if(_tlDrill.level==='week')
+    return {head:_tlDrillHeadHtml(_tlWeekLabel(_tlDrill.wk),fm(_tlPaidMin(wkRows)),
+              weekKeys,_tlDrill.wk,o.backLabel||_bkMonthLabel(selMo),o.eyebrow),
+            body:_tlWeekBarsHtml(wkRows,days,_tlDrill.wk,{share:o.share})};
+  const dayKeys=days.filter(d=>wkRows.some(r=>r.date===d));
+  if(dayKeys.indexOf(_tlDrill.day)<0)_tlDrill.day=dayKeys[dayKeys.length-1]||null;
+  const dayRows=wkRows.filter(r=>r.date===_tlDrill.day);
+  return {head:_tlDrillHeadHtml(_tlDayFullLabel(_tlDrill.day),fm(_tlPaidMin(dayRows)),
+            dayKeys,_tlDrill.day,_tlWeekLabel(_tlDrill.wk),o.eyebrow),
+          body:_tlRailHeadHtml(dayRows,'',true)+_tlDayRailHtml(dayRows)};
+}
+function _tlDrillHeadHtml(title,total,keys,cur,backLabel,eyebrow){
   const i=keys.indexOf(cur);
   const prev=i>0,next=i>=0&&i<keys.length-1;
   const arrow=(dir,on,glyph,word)=>
@@ -1534,7 +1554,11 @@ function _tlDrillHeadHtml(title,total,keys,cur,backLabel){
     ?'<button type="button" class="tl-drill-back" onclick="_tlDrillUp()">'+
        '\u2039 '+escHtml(backLabel)+'</button>'
     :'';
-  return '<div class="tl-drill">'+back+
+  // Whose. Only Team sets it: on a crew member's week the title says which
+  // week and the total says how much, and without this nothing on the screen
+  // says which of five people you are looking at.
+  const who=eyebrow?'<div class="tl-drill-who">'+escHtml(String(eyebrow))+'</div>':'';
+  return '<div class="tl-drill">'+back+who+
     '<div class="tl-monav">'+
       arrow(-1,prev,'\u2039','Previous')+
       '<div class="tl-monav-mid" aria-live="polite">'+
@@ -1893,14 +1917,25 @@ function _tlEmpAccHtml(cacheKey,rows,cid,selfUid,mo){
     const e=byEmp[uid]||{min:0,onsiteMin:0,driveMin:0,placeMin:0,shopMin:0,
       name:(empRows.find(r=>r&&r.personName)||{}).personName||'Crew'};
     const card=_tlEmpCardHtml(uid,e,selfUid,_tlFlagChips(_tlEmpFlags(empRows)));
-    const dayRows=empRows.slice().sort((a,b)=>(b.startTime||'').localeCompare(a.startTime||''));
-    const body=_bkRenderDays('tl',safeMo+'e'+i,dayRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,fm,{closed:true,tblClass:'tl-tbl',metaFn:dr=>{
-      const min=_tlPaidMin(dr);
-      const amt=fm(min);
-      return min>1440
-        ?'<span style="font-weight:800;color:var(--c-red-deep)" title="'+escHtml(amt)+' in one day is not physically possible, this entry needs review">'+svgIcon('⚠',{size:11})+' Data error</span>'
-        :dr.length+' · '+amt;
-    }});
+    // THE CARD OPENS ONTO THAT PERSON'S MONTH, AS BARS (owner 2026-08-30,
+    // asked how the bar affordance carries to Team: "1").
+    //
+    // What was here was a flat table of every day, six columns wide, scrolling
+    // sideways on a phone: the same shape the drill replaced on the Me side
+    // earlier today. Keeping it would have left Team with two navigation
+    // idioms and Me with one, and it answered "which day looks wrong" by
+    // making you read every row.
+    //
+    // Nothing is lost, it is one tap further in (§7.2). The table's columns
+    // were Clock In, Clock Out, Duration and a per-day total, and a bar drills
+    // to that person's week and then to the same day rail the owner already
+    // has for himself, which carries all of it plus where they actually were.
+    // The table's one unique signal, the >24h "Data error" marker, is already
+    // on the card above as a flag chip, so it did not travel down with it.
+    const body='<div class="tl-emp-bars">'+
+      (_tlMonthBarsHtml(empRows,mo,'team',uid)||
+        '<div class="tl-emp-nobars">No paid hours logged this month.</div>')+
+      '</div>';
     // _bkTogWeek's own DOM contract (id, .bk-week, .bk-week-body), so the
     // shell opens and closes with the same code every other Books accordion
     // uses. Built here rather than through _bkWeekAcc because that helper
@@ -2014,6 +2049,10 @@ function _tlEmpCardHtml(uid,e,selfUid,extraHtml){
 let _tlScope=null;
 function setTimeLogScope(scope){
   if(scope!=='me'&&scope!=='team')return;
+  // A crew member is a Team idea. Carrying one into Me scope leaves the arrows
+  // filtering your own weeks by somebody else's id, which reads as both arrows
+  // simply being dead.
+  _tlDrill.uid=null;
   _tlScope=scope;
   renderTimeLog();
 }
@@ -2258,7 +2297,11 @@ async function renderTimeLog(opts){
     }
   }
 
-  const isMine=r=>isEmp?r.personUid===selfUid:(r.personUid===null||r.personUid===selfUid);
+  // The arrows and the person drill both ask "whose row is this?" long after
+  // this render finished, so the id they fold under is parked beside the rows
+  // themselves (see _tlRowUid).
+  _tlLastCid=cid;
+  const isMine=_tlRowIsMine;
   const visible=scope==='team'?allRows:allRows.filter(isMine);
   // "This week" is a live indicator, not tied to the year selector, a
   // contractor running payroll cares about the current pay period regardless
@@ -2318,9 +2361,29 @@ async function renderTimeLog(opts){
   // drill.
   if(scope==='team'){
     const teamKeys=months.slice();
-    el.innerHTML=_tlDrillHeadHtml(_bkMonthLabel(selMo),fm(_tlPaidMin(byMonth[selMo]||[])),
+    const teamRows=byMonth[selMo]||[];
+    // Inside one crew member: the same week and day screens Me gets, on their
+    // rows. Back from the week says "All crew" because that is where it lands,
+    // and _tlDrillTo drops the uid on the way to month so it really does.
+    if(_tlDrill.uid){
+      const pRows=teamRows.filter(r=>_tlRowUid(r)===_tlDrill.uid);
+      const lv=pRows.length?_tlLevelsHtml(pRows,selMo,{
+        eyebrow:(pRows.find(r=>r&&r.personName)||{}).personName||'Crew',
+        backLabel:'All crew',share:false}):null;
+      if(lv){
+        el.innerHTML=lv.head+
+          '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+'">'+lv.body+'</div>';
+        if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
+        return;
+      }
+      // Nothing of theirs in this month (arrowed to a month they did not work,
+      // or the id in the drill no longer matches any row). The crew list is
+      // always a truthful answer, so fall back to it rather than a blank.
+      _tlDrill.uid=null;_tlDrill.level='month';
+    }
+    el.innerHTML=_tlDrillHeadHtml(_bkMonthLabel(selMo),fm(_tlPaidMin(teamRows)),
         teamKeys,selMo,'')+
-      '<div style="margin-top:8px">'+_tlEmpAccHtml(selMo,byMonth[selMo]||[],cid,selfUid,selMo)+'</div>';
+      '<div style="margin-top:8px">'+_tlEmpAccHtml(selMo,teamRows,cid,selfUid,selMo)+'</div>';
     if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
     return;
   }
@@ -2328,36 +2391,9 @@ async function renderTimeLog(opts){
   // point at different things.
   _tlDrill.mo=selMo;
   const moRows=byMonth[selMo]||[];
-  const byWeek={};
-  moRows.forEach(r=>{const wk=_tlWeekKey(r.date)||'';if(wk)(byWeek[wk]||(byWeek[wk]=[])).push(r);});
-  const weekKeys=Object.keys(byWeek).sort();
-  // A week that is no longer in this month (arrowed to a new month, or the
-  // data moved under us) falls back to the month's last week rather than
-  // drawing an empty chart.
-  if(_tlDrill.level!=='month'&&weekKeys.indexOf(_tlDrill.wk)<0)
-    _tlDrill.wk=weekKeys[weekKeys.length-1]||null;
-  if(!_tlDrill.wk&&_tlDrill.level!=='month')_tlDrill.level='month';
-
-  let head='',body='';
-  if(_tlDrill.level==='month'){
-    head=_tlDrillHeadHtml(_bkMonthLabel(selMo),fm(_tlPaidMin(moRows)),months,selMo,'');
-    body=_tlMonthBarsHtml(moRows,selMo,scope);
-  }else{
-    const wkRows=byWeek[_tlDrill.wk]||[];
-    const days=_tlWeekDayDates(_tlDrill.wk);
-    if(_tlDrill.level==='week'){
-      head=_tlDrillHeadHtml(_tlWeekLabel(_tlDrill.wk),fm(_tlPaidMin(wkRows)),
-        weekKeys,_tlDrill.wk,_bkMonthLabel(selMo));
-      body=_tlWeekBarsHtml(wkRows,days,_tlDrill.wk);
-    }else{
-      const dayKeys=days.filter(d=>wkRows.some(r=>r.date===d));
-      if(dayKeys.indexOf(_tlDrill.day)<0)_tlDrill.day=dayKeys[dayKeys.length-1]||null;
-      const dayRows=wkRows.filter(r=>r.date===_tlDrill.day);
-      head=_tlDrillHeadHtml(_tlDayFullLabel(_tlDrill.day),fm(_tlPaidMin(dayRows)),
-        dayKeys,_tlDrill.day,_tlWeekLabel(_tlDrill.wk));
-      body=_tlRailHeadHtml(dayRows,'',true)+_tlDayRailHtml(dayRows);
-    }
-  }
+  const lv=_tlLevelsHtml(moRows,selMo,{});
+  const head=lv?lv.head:_tlDrillHeadHtml(_bkMonthLabel(selMo),fm(_tlPaidMin(moRows)),months,selMo,'');
+  const body=lv?lv.body:_tlMonthBarsHtml(moRows,selMo,scope);
   // The slide direction rides as a class so the animation is pure CSS and the
   // JS never touches a style property (§8.5).
   el.innerHTML=head+

@@ -1383,6 +1383,15 @@ body.dark .tl-wbar-guide{box-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,
   .tl-monav-btn{transition:none}
 }
 .tl-wbar-seg{display:block;width:100%;min-height:2px}
+/* Whose week this is. Sits between the back link and the stepper because that
+   is the reading order of the question: where am I going back to, whose data
+   is this, which week. Only Team ever sets it. */
+.tl-drill-who{font-size:12px;font-weight:800;color:var(--text2);margin:2px 0 0;
+  line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The chart inside an expanded crew card. Padded off the card's own edges so
+   the bars are not flush against the accordion border. */
+.tl-emp-bars{padding:10px 12px 6px}
+.tl-emp-nobars{padding:10px 2px;font-size:12px;color:var(--text3);font-weight:600}
 /* ── Why the bars look like objects instead of pictures ──
    Two different jobs, and they are not the same job.
 

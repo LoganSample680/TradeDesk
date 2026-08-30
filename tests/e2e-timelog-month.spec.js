@@ -325,22 +325,32 @@ test.describe('month bars: the page', () => {
     expect(r.fn).toBe('function');
   });
 
-  test('Team keeps the cards and skips the chart, same split the week makes', async ({ page }) => {
-    // Folding a whole crew into one bar per week hides who did what, which is
-    // the single thing the per-person cards exist to show.
+  // WAS 'Team keeps the cards and skips the chart'. Team now has a chart per
+  // CARD (owner 2026-08-30), which was never what this rule forbade. The rule
+  // is about the fold: one bar per week for a whole crew hides who did what,
+  // which is the single thing the cards exist to show. One person's chart is
+  // not a fold, so the assertion is now about WHERE the chart is, not whether
+  // one exists.
+  test('Team has no crew roll-up above the cards, only a chart inside each one', async ({ page }) => {
     const r = await page.evaluate(async () => {
       const orig = _tlScope;
       _tlScope = 'team';
       await renderTimeLog();
-      const team = { bars: !!document.querySelector('.tl-wbar'),
+      const el = document.getElementById('tl-list');
+      const team = { pageChart: !!el.querySelector(':scope > .tl-wbar-wrap'),
+                     cardCharts: el.querySelectorAll('.bk-week .tl-wbar-col').length,
                      cards: !!document.querySelector('.tl-emp-row'),
-                     nav: !!document.querySelector('.tl-monav') };
+                     nav: !!document.querySelector('.tl-monav'),
+                     // The fold itself, asked directly: no uid, no chart.
+                     folded: _tlMonthBarsHtml(_tlLastRows, _tlDrill.mo, 'team') };
       _tlScope = orig;
       await renderTimeLog();
       const me = { bars: !!document.querySelector('.tl-wbar') };
       return { team, me };
     });
-    expect(r.team.bars).toBe(false);
+    expect(r.team.pageChart, 'never a whole-crew chart on the page').toBe(false);
+    expect(r.team.folded, 'and the fold refuses to draw one').toBe('');
+    expect(r.team.cardCharts, 'each person opens onto their own').toBeGreaterThan(0);
     expect(r.team.cards, 'Team still separates people').toBe(true);
     // The nav is navigation, not a chart: both scopes need to reach a month.
     expect(r.team.nav).toBe(true);
