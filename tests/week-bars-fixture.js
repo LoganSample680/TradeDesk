@@ -93,6 +93,20 @@ const MONTH_ROWS = [].concat(
 // personUid null is an owner-logged row, which is what isMine() lets through
 // in Me scope; 'me' is nobody's uid and got filtered out, which is how the
 // first attempt at this produced an empty month.
+// Waits for the bars to finish growing before anything measures them.
+//
+// The entrance animation is a scaleY from 0, staggered per column, so a
+// getBoundingClientRect() taken while it runs reports a FRACTION of the real
+// height: on CI that showed up as a tallest bar of 63 where 61 was expected,
+// an 8-hour guide that did not cross Friday, and segment heights of zero.
+// Waiting on the animations themselves rather than sleeping a guessed number
+// of milliseconds keeps it deterministic on a slow runner.
+async function settleBars(page) {
+  await page.evaluate(async () => {
+    if (typeof document.getAnimations !== 'function') return;
+    await Promise.all(document.getAnimations().map(a => a.finished.catch(() => {})));
+  });
+}
 async function _seed(page, rows) {
   await page.evaluate((rs) => {
     try { S.bizTz = 'America/Chicago'; } catch (_e) {}
@@ -108,6 +122,7 @@ async function mountMonth(page) {
   await _seed(page, MONTH_ROWS);
   await page.evaluate(() => _tlDrillTo('month', '2026-08'));
   await page.waitForTimeout(250);
+  await settleBars(page);
 }
 // One level down: the week of 08/23, the owner's real one.
 async function mountWeekBars(page) {
@@ -116,12 +131,14 @@ async function mountWeekBars(page) {
   await page.waitForTimeout(200);
   await page.evaluate(() => _tlDrillTo('week', '2026-08-23'));
   await page.waitForTimeout(250);
+  await settleBars(page);
 }
 // Two levels down: Thursday 08/27.
 async function mountDay(page) {
   await mountWeekBars(page);
   await page.evaluate(() => _tlDrillTo('day', '2026-08-27'));
   await page.waitForTimeout(250);
+  await settleBars(page);
 }
 
-module.exports = { WEEK_ROWS, WEEK_DAYS, MONTH_ROWS, mountWeekBars, mountMonth, mountDay };
+module.exports = { WEEK_ROWS, WEEK_DAYS, MONTH_ROWS, mountWeekBars, mountMonth, mountDay, settleBars };

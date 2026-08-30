@@ -8,7 +8,7 @@
 // these tests are about totals, the 8-hour line and the unanswered-hole badge,
 // and not about where a segment sits on a clock.
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
-const { WEEK_ROWS, WEEK_DAYS, renderWeekRail, mountWeekBars } = require('./week-bars-fixture');
+const { WEEK_ROWS, WEEK_DAYS, mountWeekBars, settleBars } = require('./week-bars-fixture');
 
 test.describe('week bars: pure helpers', () => {
   test.beforeEach(async ({ page }) => {
@@ -315,6 +315,7 @@ test.describe('week bars: layout integrity (§15.3)', () => {
   for (const w of [320, 390]) {
     test('no bleed and no label collision at ' + w + 'px', async ({ page }) => {
       await page.setViewportSize({ width: w, height: 780 });
+      await settleBars(page);   // labels move as the bars grow
       await mockAllExternal(page);
       await page.goto('/index.html');
       await waitForAppBoot(page);
