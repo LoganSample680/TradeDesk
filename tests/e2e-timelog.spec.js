@@ -2738,6 +2738,28 @@ test.describe('timelog.js: exhaustive coverage', () => {
         .toContain('_openEditTimeEntry(');
     });
 
+    test('the week body prints no header of its own', async () => {
+      // The .bk-week accordion button above it already carries the identical
+      // week label and total. Printing them again inside the body is the white
+      // space the owner asked about (2026-08-30). A DAY pick keeps its header,
+      // because there it names the day, which nothing above it does.
+      const r = await page.evaluate(async () => {
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        const key = Object.keys(_tlWeekCache)[0];
+        const week = _tlRenderWeekBody(key);
+        const days = _tlWeekDayDates(_tlWeekCache[key].wk);
+        const withRows = days.findIndex(d =>
+          (_tlWeekCache[key].rows || []).some(r2 => r2 && r2.date === d));
+        _tlPickerSel[key] = String(withRows < 0 ? 0 : withRows);
+        const day = _tlRenderWeekBody(key);
+        _tlPickerSel[key] = 'week';
+        return { weekHd: week.includes('tl-scope-hd'), dayHead: day.includes('tl-rail-head-day') };
+      });
+      expect(r.weekHd, 'the week label is already on the accordion above').toBe(false);
+      expect(r.dayHead, 'a day still names itself in the rail head').toBe(true);
+    });
+
     test('the week view itself is the bars, with no entries table under it', async () => {
       // The other half of the same owner decision, pinned so the table cannot
       // quietly come back: a week is the chart and nothing else.
@@ -3441,11 +3463,18 @@ test.describe('timelog.js: exhaustive coverage', () => {
         // are swapped, so re-query fresh chips from it after every click.
         const weekChip = () => bodyEl.querySelector('.tl-chip.wk');
         const weekActiveBefore = weekChip().classList.contains('active');
-        // A day now renders the rail, whose head carries the day and the
-        // total; the generic scope header would print both a second time, so
-        // it is suppressed there. Read whichever one the scope actually has.
-        const ttl = () => (bodyEl.querySelector('.tl-scope-ttl') || bodyEl.querySelector('.tl-rail-head-day') || {}).textContent || '';
-        const scopeTtlBefore = ttl();
+        // Neither scope prints a plain scope header any more. A DAY renders
+        // the rail, whose head names the day and its total. A WEEK renders the
+        // bars and names nothing, because the .bk-week accordion button
+        // wrapping this body already prints the week and the total one line
+        // above (owner 2026-08-30: "what's the header at the top though, lot
+        // of white space"). So the week's identity is read off the accordion
+        // and the day's off the rail head.
+        const wkTtl = () => (bodyEl.closest('.bk-week') || document)
+          .querySelector('.bk-week-title')?.textContent || '';
+        const ttl = () => (bodyEl.querySelector('.tl-rail-head-day') || {}).textContent || '';
+        const scopeTtlBefore = wkTtl();
+        const weekHasOwnHeader = !!bodyEl.querySelector('.tl-scope-hd');
         const dotChip = [...bodyEl.querySelectorAll('.tl-chip')].find(c => !c.classList.contains('wk') && c.querySelector('.tl-dot'));
         dotChip.click();
         const scopeTtlAfter = ttl();
@@ -3453,14 +3482,18 @@ test.describe('timelog.js: exhaustive coverage', () => {
         const dotChipActive = [...bodyEl.querySelectorAll('.tl-chip')].some(c => !c.classList.contains('wk') && c.classList.contains('active'));
         const weekChipStillActive = weekChip().classList.contains('active');
         weekChip().click();
-        const scopeTtlBack = ttl();
+        const scopeTtlBack = wkTtl();
+        const weekHasBars = !!bodyEl.querySelector('.tl-wbar');
         const weekActiveAgain = weekChip().classList.contains('active');
-        return { weekActiveBefore, scopeTtlBefore, scopeTtlAfter, dayHasRail, dotChipActive, weekChipStillActive, scopeTtlBack, weekActiveAgain };
+        return { weekActiveBefore, scopeTtlBefore, scopeTtlAfter, dayHasRail, dotChipActive,
+                 weekChipStillActive, scopeTtlBack, weekActiveAgain, weekHasOwnHeader, weekHasBars };
       }, curMonthPrefix);
       expect(r.weekActiveBefore).toBe(true);
       expect(r.scopeTtlBefore).toContain('Week of');
+      expect(r.weekHasOwnHeader, 'the week body repeats no header of its own').toBe(false);
       expect(r.scopeTtlAfter).not.toContain('Week of');
       expect(r.scopeTtlAfter, 'the day still names itself, now in the rail head').toBeTruthy();
+      expect(r.weekHasBars, 'and clicking Week comes back to the chart').toBe(true);
       expect(r.dayHasRail, 'a single day renders the rail, not the table').toBe(true);
       expect(r.dotChipActive).toBe(true);
       expect(r.weekChipStillActive).toBe(false);

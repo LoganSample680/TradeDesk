@@ -63,8 +63,23 @@ function renderWeekRail({ rows, days }) {
   host.id = 'wrail-host';
   host.style.cssText = 'position:fixed;inset:0;z-index:99999;overflow:auto;' +
     'background:var(--paper);padding:14px 12px 24px';
-  host.innerHTML = '<div class="card" style="padding:14px 12px">' +
-    '<div id="wrail-body">' + _tlRenderWeekBody(key) + '</div></div>';
+  // The .bk-week accordion is rendered too, not just the body. Without it the
+  // screenshot could not show that the body's own header repeated the week
+  // label and total the accordion button already prints, which is exactly the
+  // duplication the owner spotted on the real screen (2026-08-30).
+  const fm = typeof _fmtMin === 'function' ? _fmtMin : (m => m + 'm');
+  const total = _tlPaidMin(rows);
+  host.innerHTML = '<div class="card" style="padding:0;overflow:hidden">' +
+    '<div class="bk-week open"><button class="bk-week-hd">' +
+      '<div style="flex:1;text-align:left">' +
+        '<div class="bk-week-title">' + _tlWeekLabel(days[0]) + '</div>' +
+        '<div class="bk-week-sub">' + rows.length + ' entries</div></div>' +
+      '<div style="display:flex;align-items:center;gap:10px">' +
+        '<div style="font-size:12.5px;font-weight:800;color:var(--text)">' + fm(total) + '</div>' +
+        '<div class="bk-week-chev">▾</div></div>' +
+    '</button>' +
+    '<div class="bk-week-body"><div id="wrail-body" style="padding:10px 14px 14px">' +
+      _tlRenderWeekBody(key) + '</div></div></div></div>';
   document.body.appendChild(host);
 }
 

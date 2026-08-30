@@ -1193,7 +1193,7 @@ function _tlBarAmtParts(min){
   // A clean hour says one thing, not "8h" over a lonely "0m".
   return {top:h+'h',sub:m?m+'m':''};
 }
-const _TL_BAR_H=104;            // px of drawable column
+const _TL_BAR_H=92;             // px of drawable column, matches .tl-wbar-plot
 const _TL_BAR_GUIDE_MIN=8*60;   // the 8-hour line
 const _TL_BAR_FLOOR=4*60;       // a light week still shows its shape
 // Bar heights need a ceiling to scale against. Scaling to the tallest day alone
@@ -1202,7 +1202,9 @@ const _TL_BAR_FLOOR=4*60;       // a light week still shows its shape
 // drawn only when 8 hours actually falls inside the chart.
 function _tlBarCeiling(dayMins){
   const max=Math.max.apply(null,[0].concat(Array.isArray(dayMins)?dayMins:[]));
-  return Math.max(Math.round(max*1.12),_TL_BAR_FLOOR);
+  // 6% of headroom, not 12%: enough that the tallest bar never looks clipped
+  // against the ceiling, without banding empty space across the whole chart.
+  return Math.max(Math.round(max*1.06),_TL_BAR_FLOOR);
 }
 function _tlWeekBarsHtml(weekRows,days,cacheKey){
   const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
@@ -1897,7 +1899,17 @@ function _tlRenderWeekBody(cacheKey){
   // thing that separates them. The Me/Team symmetry rule (owner 2026-08-26)
   // still holds where it was aimed, at a single day: a day pick in either
   // scope still renders the same split bar from the same fold.
-  if(weekBars)return pickerHtml+scopeHdHtml+weekBars;
+  // NO SCOPE HEADER ON A WEEK. This body is rendered INSIDE a .bk-week
+  // accordion whose own button already prints the identical week label and
+  // the identical total, one line above (owner 2026-08-30: "what's the header
+  // at the top though"). It was invisible in the screenshots because the
+  // fixture mounted the body on its own, without the accordion around it,
+  // which is exactly the kind of thing a harness should not hide: the shot
+  // now renders the accordion too.
+  //
+  // A DAY pick keeps its header, because there it says "Wed, Aug 19" and the
+  // day's total, which the week accordion above does not say.
+  if(weekBars)return pickerHtml+weekBars;
   return pickerHtml+scopeHdHtml+'<div style="padding:0 2px 4px">'+summaryHtml+'</div>'+entriesHtml;
 }
 // Me/Team display toggle, for anyone with payroll/team permission. Owners
