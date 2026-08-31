@@ -837,6 +837,11 @@ function _ptrPaint(el,yr,data){
 function _placeKindChanged(kind){
   const note=document.getElementById('place-ho-note');
   if(note)note.style.display=(kind==='home_office')?'block':'none';
+  // The picker opens on a greyed placeholder, so it paints muted until a real
+  // type is chosen and normal text once one is. Same --text3 the hints beside
+  // it use, never a hardcoded grey.
+  const sel=document.getElementById('place-kind');
+  if(sel)sel.style.color=kind?'var(--text)':'var(--text3)';
 }
 // Add / edit. lat+lon are passed when promoting a suggestion, since that stop
 // already has coordinates and asking for an address would be absurd.
@@ -847,8 +852,18 @@ function openPlaceModal(id,lat,lon){
   const ov=document.createElement('div');
   ov.id='place-modal';ov.className='zmodal-overlay';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  const kindOpts=Object.keys(PLACE_KINDS).map(k=>
-    '<option value="'+k+'"'+((pl&&pl.kind===k)||(!pl&&k==='supply')?' selected':'')+'>'+PLACE_KINDS[k]+'</option>').join('');
+  // Nothing is pre-picked (owner 2026-08-31: "dont want to pre fill things in").
+  // Type used to open ON Supply house, so a shop, a home office and a supplier
+  // all saved as a supply house unless the contractor noticed the picker and
+  // changed it. A wrong kind is not cosmetic: it decides how that stop's trips
+  // deduct and which bucket the mileage report puts them in (_autoTripPurpose).
+  // It opens on a greyed placeholder instead, and Save refuses until a real
+  // type is chosen (_savePlaceFromModal). An EDIT still opens on the saved
+  // kind, the placeholder is only ever the state of a place with no type yet.
+  const _plKind=(pl&&PLACE_KINDS[pl.kind])?pl.kind:'';
+  const kindOpts='<option value="" disabled'+(_plKind?'':' selected')+'>Choose a type</option>'+
+    Object.keys(PLACE_KINDS).map(k=>
+      '<option value="'+k+'"'+(_plKind===k?' selected':'')+'>'+PLACE_KINDS[k]+'</option>').join('');
   // Centred on the shared .zmodal chrome, like every other prompt in this flow
   // (owner call 2026-08-01). It was the last bottom sheet left in Places, so
   // naming a location slid up from the bottom while the truck and vehicle
@@ -871,12 +886,12 @@ function openPlaceModal(id,lat,lon){
     '<div class="zmodal-title" style="text-align:center">'+(pl?'Edit location':'Add a location')+'</div>'+
     (_lat==null?searchFieldHtml:nameFieldHtml)+
     '<div class="f" style="margin-bottom:12px"><label>Type</label>'+
-      '<select id="place-kind" onchange="_placeKindChanged(this.value)" style="font-size:15px;padding:11px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+kindOpts+'</select></div>'+
+      '<select id="place-kind" onchange="_placeKindChanged(this.value)" style="font-size:15px;padding:11px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:'+(_plKind?'var(--text)':'var(--text3)')+';width:100%;box-sizing:border-box">'+kindOpts+'</select></div>'+
     // A home office changes whether the first trip of the day is deductible, so
     // it is stated plainly rather than buried as a dropdown value, but only
     // when that is actually the type picked: every other kind got a home-
     // office tax disclaimer nobody asked for.
-    '<div id="place-ho-note" style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:14px;display:'+((pl?pl.kind:'supply')==='home_office'?'block':'none')+'">Mark somewhere as a Home office only if it qualifies as your principal place of business. It changes whether your first trip of the day is deductible, so check with your CPA.</div>'+
+    '<div id="place-ho-note" style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:14px;display:'+(_plKind==='home_office'?'block':'none')+'">Mark somewhere as a Home office only if it qualifies as your principal place of business. It changes whether your first trip of the day is deductible, so check with your CPA.</div>'+
     '<input type="hidden" id="place-lat" value="'+(_lat!=null?_lat:'')+'"><input type="hidden" id="place-lon" value="'+(_lon!=null?_lon:'')+'">'+
     (_lat!=null
       // Raw lat/lon means nothing to a contractor, the address (when there is
@@ -902,8 +917,11 @@ function openPlaceModal(id,lat,lon){
       const n=document.getElementById('place-name');
       if(!n||n.value.trim())return;
       n.value=poi.name;
-      const k=document.getElementById('place-kind');
-      if(k&&typeof _poiPlaceKind==='function')k.value=_poiPlaceKind(poi.category);
+      // The name only. This used to stamp the Type too, via _poiPlaceKind,
+      // which returns 'supply' for everything that is not a restaurant, so
+      // promoting a repeat stop pre-filled Supply house exactly the way the
+      // static default did. A category guess is not the contractor telling us
+      // what a place is, and that is the one thing this picker asks for.
     }).catch(()=>{});
   }
 }
@@ -958,11 +976,12 @@ function _placePickAddr(i){
 }
 function _savePlaceFromModal(id){
   const name=(document.getElementById('place-name')?.value||'').trim();
-  const kind=document.getElementById('place-kind')?.value||'supply';
+  const kind=document.getElementById('place-kind')?.value||'';
   const lat=parseFloat(document.getElementById('place-lat')?.value);
   const lon=parseFloat(document.getElementById('place-lon')?.value);
   const addr=(document.getElementById('place-addr')?.value||'').trim();
   if(!name){showToast('Give it a name','⚠️');return;}
+  if(!kind){showToast('Pick a type','⚠️');return;}
   if(!isFinite(lat)||!isFinite(lon)){showToast('Search the address to drop the pin first','⚠️');return;}
   savePlace({id:id||undefined,name,kind,lat,lon,addr:addr||undefined,confirmedBy:id?undefined:'manual'});
   if(typeof dismissPlaceSuggestion==='function')dismissPlaceSuggestion(lat,lon);

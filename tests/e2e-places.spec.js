@@ -866,10 +866,15 @@ test.describe('Places, drive attribution and the map', () => {
     const out = await page.evaluate(() => {
       document.getElementById('place-modal')?.remove();
       openPlaceModal(null, 1, 2);
-      const opts = [...document.querySelectorAll('#place-kind option')].map(o => o.value);
+      const all = [...document.querySelectorAll('#place-kind option')];
+      // The first option is the "nothing picked yet" placeholder (owner
+      // 2026-08-31). It is not a kind, so it is excluded from the vocabulary
+      // check below and asserted on its own in the prefill tests.
+      const opts = all.slice(1).map(o => o.value);
       document.getElementById('place-modal')?.remove();
-      return { opts, kinds: Object.keys(PLACE_KINDS) };
+      return { opts, placeholder: all[0].value, kinds: Object.keys(PLACE_KINDS) };
     });
+    expect(out.placeholder, 'the first option is the empty placeholder, not a kind').toBe('');
     expect(out.opts.sort()).toEqual(['business_meeting', 'home_office', 'other', 'shop', 'supply'].sort());
     // Every PLACE_KINDS entry renders as an actual <option>, the picker is not
     // hand-maintained separately from the source of truth it reads from.
@@ -884,8 +889,8 @@ test.describe('Places, drive attribution and the map', () => {
   test('the home-office disclaimer shows only when Home office is the selected Type', async () => {
     const out = await page.evaluate(() => {
       document.getElementById('place-modal')?.remove();
-      openPlaceModal(null, 1, 2);               // defaults to Type=supply
-      const hiddenBySupplyDefault = document.getElementById('place-ho-note').style.display === 'none';
+      openPlaceModal(null, 1, 2);               // opens with NO Type picked
+      const hiddenBeforeAnyPick = document.getElementById('place-ho-note').style.display === 'none';
       // Real select-and-fire, not a direct function call: the onchange
       // wiring itself is what's under test.
       const sel = document.getElementById('place-kind');
@@ -896,9 +901,9 @@ test.describe('Places, drive attribution and the map', () => {
       sel.dispatchEvent(new Event('change'));
       const hiddenAgainAfterSwitch = document.getElementById('place-ho-note').style.display === 'none';
       document.getElementById('place-modal')?.remove();
-      return { hiddenBySupplyDefault, shownForHomeOffice, hiddenAgainAfterSwitch };
+      return { hiddenBeforeAnyPick, shownForHomeOffice, hiddenAgainAfterSwitch };
     });
-    expect(out.hiddenBySupplyDefault, 'not shown for the default Type').toBe(true);
+    expect(out.hiddenBeforeAnyPick, 'not shown before a Type is picked').toBe(true);
     expect(out.shownForHomeOffice, 'shows once Home office is picked').toBe(true);
     expect(out.hiddenAgainAfterSwitch, 'hides again switching away from Home office').toBe(true);
   });
@@ -914,6 +919,169 @@ test.describe('Places, drive attribution and the map', () => {
       return { shown };
     });
     expect(out.shown, 'no onchange has fired yet, the note has to reflect the SAVED kind on open').toBe(true);
+  });
+
+  // ── Type is asked, never assumed ───────────────────────────────────────────
+  // Owner 2026-08-31: "when we add a place it always pre fills with supply
+  // house, make that grey but required, dont want to pre fill things in."
+  // The old picker opened ON Supply house, so a shop, a home office and a
+  // supplier all saved as a supply house unless the contractor noticed the
+  // control and changed it, and the kind is what decides how that place's
+  // trips deduct and report (_autoTripPurpose). It now opens on a greyed
+  // placeholder and Save refuses until a real type is chosen.
+
+  test('adding a place opens with NO type picked, on a greyed placeholder', async () => {
+    const out = await page.evaluate(() => {
+      const read = () => {
+        const sel = document.getElementById('place-kind');
+        const first = sel.options[0];
+        return {
+          value: sel.value,
+          selectedIsPlaceholder: sel.selectedIndex === 0,
+          placeholderLabel: first.textContent,
+          placeholderDisabled: first.disabled,     // cannot be re-picked as a kind
+          // The muted colour is the app's own --text3 token, never a hardcoded grey.
+          grey: sel.style.color === 'var(--text3)',
+          // Nothing else in the picker is pre-selected either.
+          nSelected: [...sel.options].filter(o => o.selected).length,
+        };
+      };
+      document.getElementById('place-modal')?.remove();
+      openPlaceModal(null, 1, 2);                 // promoted repeat stop (has a pin)
+      const pinned = read();
+      document.getElementById('place-modal')?.remove();
+      openPlaceModal();                           // the "+ Add" button path (no pin)
+      const pinless = read();
+      document.getElementById('place-modal')?.remove();
+      return { pinned, pinless };
+    });
+    [['a promoted stop', out.pinned], ['+ Add', out.pinless]].forEach(([who, r]) => {
+      expect(r.value, `${who}: no type is pre-filled`).toBe('');
+      expect(r.selectedIsPlaceholder, `${who}: the placeholder is what is showing`).toBe(true);
+      expect(r.placeholderLabel, `${who}: the placeholder asks for a pick`).toBe('Choose a type');
+      expect(r.placeholderDisabled, `${who}: the placeholder is not a selectable kind`).toBe(true);
+      expect(r.grey, `${who}: it paints muted, not like a real chosen value`).toBe(true);
+      expect(r.nSelected, `${who}: exactly one option is selected, the placeholder`).toBe(1);
+    });
+  });
+
+  test('picking a type un-greys the control', async () => {
+    const out = await page.evaluate(() => {
+      document.getElementById('place-modal')?.remove();
+      openPlaceModal(null, 1, 2);
+      const sel = document.getElementById('place-kind');
+      const greyBefore = sel.style.color === 'var(--text3)';
+      // Real select-and-fire: the onchange wiring is part of what is under test.
+      sel.value = 'shop';
+      sel.dispatchEvent(new Event('change'));
+      const colorAfter = sel.style.color;
+      document.getElementById('place-modal')?.remove();
+      return { greyBefore, colorAfter };
+    });
+    expect(out.greyBefore).toBe(true);
+    expect(out.colorAfter, 'a chosen type reads like a real value').toBe('var(--text)');
+  });
+
+  test('save is blocked until a type is picked, and goes through once it is', async () => {
+    const out = await page.evaluate(() => {
+      places.length = 0;
+      const origToast = window.showToast;
+      const toasts = [];
+      window.showToast = (msg) => { toasts.push(String(msg)); };
+      try {
+        document.getElementById('place-modal')?.remove();
+        openPlaceModal(null, 37.5, -97.5);
+        document.getElementById('place-name').value = 'Ferguson';
+        _savePlaceFromModal(null);                    // name + pin, but no type
+        const savedWithoutType = places.length;
+        const modalStillOpen = !!document.getElementById('place-modal');
+        const sel = document.getElementById('place-kind');
+        sel.value = 'shop';
+        sel.dispatchEvent(new Event('change'));
+        _savePlaceFromModal(null);
+        return {
+          savedWithoutType, modalStillOpen, toasts,
+          savedAfter: places.length,
+          kind: places[0] && places[0].kind,
+          modalClosed: !document.getElementById('place-modal'),
+        };
+      } finally { window.showToast = origToast; }
+    });
+    expect(out.savedWithoutType, 'a place with no type never reaches the array').toBe(0);
+    expect(out.modalStillOpen, 'the modal stays open so the type can be picked').toBe(true);
+    // The app's own inline validation, the same showToast('...','⚠️') shape the
+    // missing-name and missing-pin checks beside it already use.
+    expect(out.toasts[0]).toBe('Pick a type');
+    expect(out.savedAfter).toBe(1);
+    expect(out.kind, 'what saves is what the contractor picked, not a default').toBe('shop');
+    expect(out.modalClosed).toBe(true);
+  });
+
+  test('a blocked save never writes a blank or defaulted kind', async () => {
+    // The regression that matters downstream: geo-track, mileage and finance
+    // all reason about kind === 'supply'. A place must never reach them with
+    // an empty kind, and must never be silently stamped 'supply' either.
+    const out = await page.evaluate(() => {
+      places.length = 0;
+      const origToast = window.showToast;
+      window.showToast = () => {};
+      try {
+        document.getElementById('place-modal')?.remove();
+        openPlaceModal(null, 37.6, -97.6);
+        document.getElementById('place-name').value = 'Blank Kind';
+        _savePlaceFromModal(null);
+        _savePlaceFromModal(null);                    // twice, same answer
+        return { n: places.length, kinds: places.map(p => p.kind) };
+      } finally { window.showToast = origToast; }
+    });
+    expect(out.n).toBe(0);
+    expect(out.kinds).toEqual([]);
+  });
+
+  test('editing an existing place opens on its SAVED type, not the placeholder', async () => {
+    const out = await page.evaluate(() => {
+      const rows = ['shop', 'home_office', 'supply', 'business_meeting', 'other'].map((k, i) => {
+        places.length = 0;
+        const pl = savePlace({ name: 'Saved ' + k, kind: k, lat: 10 + i, lon: 20 + i, confirmedBy: 'manual' });
+        document.getElementById('place-modal')?.remove();
+        openPlaceModal(pl.id);
+        const sel = document.getElementById('place-kind');
+        const r = {
+          kind: k,
+          value: sel.value,
+          label: sel.options[sel.selectedIndex].textContent,
+          want: PLACE_KINDS[k],
+          onPlaceholder: sel.selectedIndex === 0,
+          grey: sel.style.color === 'var(--text3)',
+        };
+        document.getElementById('place-modal')?.remove();
+        return r;
+      });
+      return rows;
+    });
+    out.forEach(r => {
+      expect(r.value, `editing a ${r.kind} place shows ${r.kind}`).toBe(r.kind);
+      expect(r.label, `editing a ${r.kind} place shows its real label`).toBe(r.want);
+      expect(r.onPlaceholder, `editing a ${r.kind} place never opens on the placeholder`).toBe(false);
+      expect(r.grey, `a saved type is not greyed out`).toBe(false);
+    });
+  });
+
+  test('re-saving an edited place keeps the kind it already had', async () => {
+    // Existing saved places must be completely unaffected by the prefill change:
+    // open, save, and the kind is exactly what it was.
+    const out = await page.evaluate(() => {
+      places.length = 0;
+      const pl = savePlace({ name: 'The Yard', kind: 'shop', lat: 3, lon: 4, addr: '1 Yard Rd', confirmedBy: 'expense' });
+      document.getElementById('place-modal')?.remove();
+      openPlaceModal(pl.id);
+      _savePlaceFromModal(pl.id);                     // nothing touched, straight Save
+      return { n: places.length, kind: places[0].kind, name: places[0].name, src: places[0].confirmedBy };
+    });
+    expect(out.n).toBe(1);
+    expect(out.kind, 'an edit with no changes must not lose or rewrite the kind').toBe('shop');
+    expect(out.name).toBe('The Yard');
+    expect(out.src).toBe('expense');
   });
 
   test('every remaining place kind tags its automatic trips into the matching mileage-report purpose', async () => {
@@ -1044,6 +1212,9 @@ test.describe('Places, drive attribution and the map', () => {
       // Accept it through the real modal path.
       openPlaceModal(null, 37.81, -97.21);
       document.getElementById('place-name').value = 'Ferguson';
+      // Type is no longer assumed (owner 2026-08-31): a promoted stop is saved
+      // as a supply house because the contractor SAYS so, not by default.
+      document.getElementById('place-kind').value = 'supply';
       _savePlaceFromModal(null);
       const gone = document.getElementById('place-suggestions').innerHTML === '';
       return { shown, gone, saved: places.length, kind: places[0] && places[0].kind };
@@ -1073,6 +1244,7 @@ test.describe('Places, drive attribution and the map', () => {
     const out = await page.evaluate(() => {
       places.length = 0;
       openPlaceModal(null, 37.9, -97.9);
+      document.getElementById('place-kind').value = 'supply';
       document.getElementById('place-name').value = '';
       _savePlaceFromModal(null);
       const afterNoName = places.length;
@@ -1151,6 +1323,7 @@ test.describe('Places, drive attribution and the map', () => {
       const pinned = pinNote.includes('2121 E Douglas Ave');
       const noRawCoords = !/\d{2}\.\d{4,}/.test(pinNote);
       const boxHidden = box.style.display === 'none';
+      document.getElementById('place-kind').value = 'supply';
       _savePlaceFromModal(null);
       window._geocodeAddress = orig;
       return { shown, nBtns, lat, lon, name, pinned, noRawCoords, boxHidden,
@@ -1176,6 +1349,7 @@ test.describe('Places, drive attribution and the map', () => {
       document.getElementById('place-modal')?.remove();
       openPlaceModal();
       document.getElementById('place-name').value = 'No Pin Yet';
+      document.getElementById('place-kind').value = 'supply';
       _savePlaceFromModal(null);                      // no coordinates picked
       const refusedCount = places.length;
       const orig = window._geocodeAddress;

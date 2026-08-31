@@ -1859,6 +1859,11 @@ test.describe('Automatic mileage from drive legs', () => {
         openPlaceModal(null, 39.03, -95.77);
         await new Promise(r => setTimeout(r, 150));
         const filled = document.getElementById('place-name').value;
+        // The lookup fills the NAME only. It used to stamp the Type as well,
+        // through _poiPlaceKind, which answers 'supply' for everything that is
+        // not a restaurant, so promoting a stop pre-filled Supply house exactly
+        // the way the old static default did (owner 2026-08-31: "dont want to
+        // pre fill things in"). Type is now the contractor's answer, always.
         const kind = document.getElementById('place-kind').value;
         document.getElementById('place-modal')?.remove();
 
@@ -1871,7 +1876,7 @@ test.describe('Automatic mileage from drive legs', () => {
         return { filled, kind, kept };
       });
       expect(out.filled).toBe('The Home Depot');
-      expect(out.kind).toBe('supply');
+      expect(out.kind, 'a category guess is not the contractor saying what a place is').toBe('');
       expect(out.kept).toBe("Bob's Electric Supply");
     });
 

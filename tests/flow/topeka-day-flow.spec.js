@@ -552,7 +552,7 @@ test.describe('A full Topeka day', () => {
     await step(page, {
       label: 'the supply stop comes back as Home Depot and saves as a supply place',
       page: 'places', role: 'contractor',
-      suspect: 'mileage.js _poiAt / _poiPlaceKind → places.js openPlaceModal prefill',
+      suspect: 'mileage.js _poiAt / _poiPlaceKind (this step calls savePlace directly; openPlaceModal no longer prefills a kind)',
       ruleText: 'MapKit names the business at the pin and the place saves as a supply house',
       expected: engine.mapkitReady ? 'a place named Home Depot with kind supply'
                                    : 'MapKit not authorised here, so there is no name to save',
