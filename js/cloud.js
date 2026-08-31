@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.30.26.33';
+const APP_VERSION='08.30.26.34';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -714,6 +714,21 @@ let _lastKnownIds={
 // authoritative source of "what the server has"); an offline/cache boot leaves it empty
 // → safe full upload on reconnect.
 let _syncedHash={};
+// IS THIS ROW ACTUALLY IN THE CLOUD?
+//
+// _syncedHash holds one hash per id for every row the cloud is known to have:
+// seeded on a full load, restored from the delta meta on a delta load, and
+// written after each successful upsert batch. So membership answers "has this
+// been persisted" honestly and without a round trip, which is what a caller
+// about to DELETE something on the strength of another row needs to know.
+//
+// Deliberately conservative: an id it has never seen reads as not-in-cloud. A
+// false "no" costs a deferral; a false "yes" costs data.
+function _cloudHasRow(tbl,id){
+  try{const m=_syncedHash&&_syncedHash[tbl];return !!(m&&m.has(String(id)));}
+  catch(_e){return false;}
+}
+window._cloudHasRow=_cloudHasRow;
 // PENDING-EDIT GATE for the Phase-3 per-field merge: _rowSyncedAt[tbl] = Map(id → client-ms
 // of the last moment this row was KNOWN IN SYNC with the cloud (uploaded by us, loaded from
 // the cloud, or taken whole from a realtime event). _opApplyIncoming only protects a local

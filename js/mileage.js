@@ -865,8 +865,32 @@ async function _mileServerRefine(){
       // the legKey: the two writers date the same departure differently, so an
       // exact-key test never fired and the duplicate got promoted instead.
       // The key check stays first as the cheap exact case.
-      if(mileage.some(x=>x&&x!==m&&!x.provisional&&
-         (x.legKey===m.legKey||_mileSameDrive(x,m)))){kill(m,'client row exists');continue;}
+      // THE SURVIVOR HAS TO BE IN THE CLOUD BEFORE THE EVIDENCE IS DESTROYED.
+      //
+      // Live incident, Jack, 2026-08-30: the server recorded an 8.4-mile drive
+      // home while the app was closed. He opened the app for eight seconds, this
+      // sweep matched the server's leg against the phone's own in-memory copy,
+      // deleted the server's, and the phone's copy never reached the cloud. Net
+      // result, the drive is gone: the only two records of it were one row that
+      // was deleted and one that was never saved. Same shape on 2026-08-27.
+      //
+      // The dedupe itself is right, and stays. What was wrong is trusting a
+      // survivor that exists only in this session's memory. A row that has
+      // never been persisted cannot be the reason to destroy the one that has.
+      // So the drop waits: leave both, and the next session (by which point the
+      // client row has either landed or does not exist) does it properly.
+      // Deferring costs one duplicate for one session. Not deferring costs the
+      // trip, permanently, and silently.
+      const dup=mileage.find(x=>x&&x!==m&&!x.provisional&&
+         (x.legKey===m.legKey||_mileSameDrive(x,m)));
+      if(dup){
+        if(typeof _cloudHasRow==='function'&&!_cloudHasRow('td_mileage',dup.id)){
+          try{if(typeof _geoParkNote==='function')_geoParkNote('srv-refine',
+            String(m.id)+' kept: survivor '+String(dup.id)+' not in cloud yet');}catch(_e){}
+          continue;
+        }
+        kill(m,'client row exists');continue;
+      }
       // 2. Commute out of home, exactly the live rule: only the OWNER with a
       // declared home office keeps a leg that starts at the likely-home pin.
       const likelyHome=(typeof _placeIsLikelyHome==='function')&&_placeIsLikelyHome({lat:m.fromCoord.lat,lng:m.fromCoord.lng},0);

@@ -119,11 +119,16 @@ test.describe('geofence ingest contract', () => {
     expect(r.calc).toBe('auto_route');
   });
 
+  // The survivor now has to be IN THE CLOUD before the server's copy is
+  // destroyed, so this test seeds _syncedHash for it. That is not test
+  // scaffolding for its own sake: it is the precondition the drop depends on,
+  // and the test below proves what happens without it.
   test('a provisional row whose legKey the client engine already owns is dropped and its delete recorded', async () => {
     const r = await page.evaluate(async (row) => {
       const clientRow = { id: 991122, legKey: row.legKey, gps: true, miles: 4.1, calc_method: 'auto_route', fromCoord: row.fromCoord, toCoord: row.toCoord, startedIso: row.startedIso, endedIso: row.endedIso };
       const saved = { mileage: mileage.slice(), route: window._routeDistance, home: window._placeIsLikelyHome };
       mileage.length = 0; mileage.push(row, clientRow);
+      _syncedHash.td_mileage = (_syncedHash.td_mileage || new Map()).set('991122', 'h');
       window._mileServerRefineRan = false;
       _routeDistance = async () => ({ miles: 4.4, mins: 11 });
       _placeIsLikelyHome = () => false;
@@ -134,6 +139,7 @@ test.describe('geofence ingest contract', () => {
         deleteRecorded: !!(_locallyDeletedIds && _locallyDeletedIds.td_mileage && _locallyDeletedIds.td_mileage.has(String(row.id))),
       };
       _locallyDeletedIds.td_mileage.delete(String(row.id));
+      _syncedHash.td_mileage.delete('991122');
       mileage.length = 0; saved.mileage.forEach(m => mileage.push(m));
       _routeDistance = saved.route; _placeIsLikelyHome = saved.home;
       window._mileServerRefineRan = false;
@@ -142,6 +148,67 @@ test.describe('geofence ingest contract', () => {
     expect(r.count).toBe(1);
     expect(r.survivorId).toBe(991122);
     expect(r.deleteRecorded).toBe(true);
+  });
+
+  // ── The live incident this guard exists for ───────────────────────────────
+  // Jack, 2026-08-30: the server recorded an 8.4-mile drive home while the app
+  // was closed. He opened the app for EIGHT SECONDS. This sweep matched the
+  // server's leg to the phone's own in-memory copy, deleted the server's, and
+  // the phone's copy never reached the cloud. Both records of the drive were
+  // gone: one deleted, one never saved. Same shape on 08-27.
+  test('a survivor that is not in the cloud yet does NOT get to delete the server row', async () => {
+    const r = await page.evaluate(async (row) => {
+      const clientRow = { id: 991133, legKey: row.legKey, gps: true, miles: 4.1, calc_method: 'auto_route', fromCoord: row.fromCoord, toCoord: row.toCoord, startedIso: row.startedIso, endedIso: row.endedIso };
+      const saved = { mileage: mileage.slice(), route: window._routeDistance, home: window._placeIsLikelyHome };
+      mileage.length = 0; mileage.push(row, clientRow);
+      // The whole point: 991133 is NOT in _syncedHash, i.e. the cloud has
+      // never seen it. It is exactly the row that vanished on Jack's phone.
+      if (_syncedHash.td_mileage) _syncedHash.td_mileage.delete('991133');
+      window._mileServerRefineRan = false;
+      _routeDistance = async () => ({ miles: 4.4, mins: 11 });
+      _placeIsLikelyHome = () => false;
+      await _mileServerRefine();
+      const out = {
+        count: mileage.length,
+        ids: mileage.map(m => String(m.id)).sort(),
+        deleteRecorded: !!(_locallyDeletedIds && _locallyDeletedIds.td_mileage && _locallyDeletedIds.td_mileage.has(String(row.id))),
+        stillProvisional: !!(mileage.find(m => String(m.id) === String(row.id)) || {}).provisional,
+      };
+      mileage.length = 0; saved.mileage.forEach(m => mileage.push(m));
+      _routeDistance = saved.route; _placeIsLikelyHome = saved.home;
+      window._mileServerRefineRan = false;
+      return out;
+    }, SRV_ROW());
+    // BOTH rows survive. A duplicate for one session is the price, and it is
+    // the right price: the alternative is the trip, permanently and silently.
+    expect(r.count).toBe(2);
+    expect(r.deleteRecorded, 'nothing may be queued for deletion').toBe(false);
+    // And it stays provisional, so the NEXT session re-evaluates it properly
+    // rather than promoting an orphan into a first-class duplicate.
+    expect(r.stillProvisional).toBe(true);
+  });
+
+  test('_cloudHasRow answers only for rows the cloud has actually seen', async () => {
+    const r = await page.evaluate(() => {
+      const had = _syncedHash.td_mileage;
+      _syncedHash.td_mileage = new Map([['abc', 'h']]);
+      const out = {
+        known: _cloudHasRow('td_mileage', 'abc'),
+        numeric: _cloudHasRow('td_mileage', 'abc') === _cloudHasRow('td_mileage', String('abc')),
+        unknown: _cloudHasRow('td_mileage', 'nope'),
+        nullId: _cloudHasRow('td_mileage', null),
+        undefId: _cloudHasRow('td_mileage', undefined),
+        noTable: _cloudHasRow('td_nothing', 'abc'),
+        noArgs: _cloudHasRow(),
+      };
+      if (had) _syncedHash.td_mileage = had; else delete _syncedHash.td_mileage;
+      return out;
+    });
+    // A false yes costs data, so everything it is unsure about reads as no.
+    expect(r.known).toBe(true);
+    expect(r.numeric).toBe(true);
+    expect([r.unknown, r.nullId, r.undefId, r.noTable, r.noArgs])
+      .toEqual([false, false, false, false, false]);
   });
 
   // ── The real duplicate: two writers, two legKeys, one drive ───────────────
@@ -159,6 +226,9 @@ test.describe('geofence ingest contract', () => {
         startedIso: '2026-08-27T14:00:03.000Z', endedIso: '2026-08-27T14:30:16.000Z' };
       const saved = { mileage: mileage.slice(), route: window._routeDistance, home: window._placeIsLikelyHome };
       mileage.length = 0; mileage.push(row, clientRow);
+      // The phone row is already in the cloud, which is the precondition for
+      // dropping the server's copy of the same drive (see the guard below).
+      _syncedHash.td_mileage = (_syncedHash.td_mileage || new Map()).set('1787870093125087', 'h');
       window._mileServerRefineRan = false;
       _routeDistance = async () => ({ miles: 4.4, mins: 11 });
       _placeIsLikelyHome = () => false;
@@ -170,6 +240,7 @@ test.describe('geofence ingest contract', () => {
         deleteRecorded: !!(_locallyDeletedIds && _locallyDeletedIds.td_mileage && _locallyDeletedIds.td_mileage.has(String(row.id))),
       };
       _locallyDeletedIds.td_mileage.delete(String(row.id));
+      _syncedHash.td_mileage.delete('1787870093125087');
       mileage.length = 0; saved.mileage.forEach(m => mileage.push(m));
       _routeDistance = saved.route; _placeIsLikelyHome = saved.home;
       window._mileServerRefineRan = false;
