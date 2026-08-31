@@ -1375,6 +1375,165 @@ test.describe('Wake region set for the dead app', () => {
       expect(r.wrote.length).toBe(0);
     });
 
+    // ── ONE LEG, ONE CLOCK ────────────────────────────────────────────────
+    // Owner, 2026-08-31, looking at his own morning: "one mileage row but with
+    // incorrect times." A drive is written to TWO tables from one derivation,
+    // the time entry and the mileage row that shares its legKey, and this
+    // sweep corrected only the time entry. Measured on his account that day:
+    // 8 of his last 10 drives had a time entry disagreeing with its own
+    // mileage row, by 82 seconds to 6.75 minutes, always the same direction.
+    // He confirmed the tape was right and the mileage row was the wrong one.
+    const withMileage = (page, world) => page.evaluate(async (w) => {
+      const saved = { supa: window._supa, user: window._supaUser, tape: window._geoMotionTape,
+                      enq: window._geoEnqueue, ran: window._geoRetimeRan, save: window.saveAll };
+      const before = (typeof mileage !== 'undefined' && Array.isArray(mileage)) ? mileage.slice() : null;
+      let saves = 0;
+      try {
+        window._geoRetimeRan = false; window._supaUser = { id: 'u1' };
+        window._geoEnqueue = () => {};
+        window.saveAll = () => { saves++; };
+        window._geoMotionTape = async (a, b) => Array.isArray(w.tape)
+          ? w.tape.filter(x => x && x.ts >= a && x.ts <= b) : w.tape;
+        const c = { select: () => c, is: () => c, eq: () => c,
+                    gte: () => Promise.resolve({ data: w.rows, error: null }) };
+        window._supa = { from: () => c };
+        if (Array.isArray(w.mileage)) { mileage.length = 0; w.mileage.forEach(m => mileage.push(m)); }
+        await _geoRetimeToTapeSweep();
+        return { saves, rows: mileage.map(m => ({ legKey: m.legKey, gps: m.gps, miles: m.miles,
+                 startedIso: m.startedIso, endedIso: m.endedIso, mins: m.mins, date: m.date })) };
+      } finally {
+        window._supa = saved.supa; window._supaUser = saved.user; window._geoMotionTape = saved.tape;
+        window._geoEnqueue = saved.enq; window._geoRetimeRan = saved.ran; window.saveAll = saved.save;
+        if (before) { mileage.length = 0; before.forEach(m => mileage.push(m)); }
+      }
+    }, world);
+
+    // The legKey a real drive would carry: base36 of its start, exactly as
+    // _geoLegKey mints it. Written out so the tests read like the data does.
+    const legKeyAt = (ms) => 'u1-leg-' + ms.toString(36);
+
+    const MILE = (startMs, endMs, extra) => Object.assign({
+      id: 'm1', gps: true, legKey: legKeyAt(startMs), miles: 3.2, gpsMiles: 3.1,
+      startedIso: new Date(startMs).toISOString(), endedIso: new Date(endMs).toISOString(),
+      mins: Math.round((endMs - startMs) / 60000), date: '2026-08-27',
+      from_name: 'Shop', to_name: 'John Doe',
+    }, extra || {});
+
+    test('re-timing a drive moves its mileage row to the same clock', async () => {
+      // His 08-27 morning: the fence stamped 07:56:28, the wheels turned at
+      // 07:49:43. The time entry moves, and now so does the leg.
+      const key = legKeyAt(T(7, 56, 28));
+      const r = await withMileage(page, {
+        tape: MORNING,
+        rows: [{ id: 'd9', source: 'drive', dest_place: 'John Doe', job_id: null, client_key: key,
+                 arrived_at: iso(7, 56, 28), departed_at: iso(7, 59, 25), minutes: 3 }],
+        mileage: [MILE(T(7, 56, 28), T(7, 59, 25))],
+      });
+      const m = r.rows.find(x => x.legKey === key);
+      expect(m.startedIso, 'the wheels turned at 07:49:43').toBe(iso(7, 49, 43));
+      expect(m.endedIso, 'and stopped at 07:59:06').toBe(iso(7, 59, 6));
+      expect(m.mins).toBe(9);
+      expect(r.saves, 'the corrected leg has to reach the cloud').toBeGreaterThan(0);
+    });
+
+    test('the distance is never restated: only the clock moves', async () => {
+      // Miles are measured geocode to geocode by the router and do not depend
+      // on what the clock says. Moving an edge by ninety seconds must never
+      // quietly change the deduction.
+      const key = legKeyAt(T(7, 56, 28));
+      const r = await withMileage(page, {
+        tape: MORNING,
+        rows: [{ id: 'd10', source: 'drive', dest_place: null, job_id: null, client_key: key,
+                 arrived_at: iso(7, 56, 28), departed_at: iso(7, 59, 25), minutes: 3 }],
+        mileage: [MILE(T(7, 56, 28), T(7, 59, 25))],
+      });
+      expect(r.rows.find(x => x.legKey === key).miles).toBe(3.2);
+    });
+
+    test('the legKey is identity and never re-minted from the new start', async () => {
+      // Re-deriving it would mint a SECOND key for one drive and duplicate the
+      // leg, which is the exact bug the deterministic key exists to prevent.
+      const key = legKeyAt(T(7, 56, 28));
+      const r = await withMileage(page, {
+        tape: MORNING,
+        rows: [{ id: 'd11', source: 'drive', dest_place: null, job_id: null, client_key: key,
+                 arrived_at: iso(7, 56, 28), departed_at: iso(7, 59, 25), minutes: 3 }],
+        mileage: [MILE(T(7, 56, 28), T(7, 59, 25))],
+      });
+      expect(r.rows.length, 'one drive, one row, still').toBe(1);
+      expect(r.rows[0].legKey).toBe(key);
+    });
+
+    test('a hand-typed trip has no legKey and is out of reach', async () => {
+      const key = legKeyAt(T(7, 56, 28));
+      const r = await withMileage(page, {
+        tape: MORNING,
+        rows: [{ id: 'd12', source: 'drive', dest_place: null, job_id: null, client_key: key,
+                 arrived_at: iso(7, 56, 28), departed_at: iso(7, 59, 25), minutes: 3 }],
+        mileage: [{ id: 'hand', gps: false, miles: 12, startedIso: iso(7, 56, 28),
+                    endedIso: iso(7, 59, 25), mins: 3, date: '2026-08-27' }],
+      });
+      const m = r.rows[0];
+      expect(m.startedIso, 'a trip somebody typed is theirs, not the tape\'s').toBe(iso(7, 56, 28));
+      expect(m.miles).toBe(12);
+    });
+
+    test('a different leg is not dragged along', async () => {
+      const key = legKeyAt(T(7, 56, 28));
+      const other = legKeyAt(T(12, 48, 5));
+      const r = await withMileage(page, {
+        tape: MORNING,
+        rows: [{ id: 'd13', source: 'drive', dest_place: null, job_id: null, client_key: key,
+                 arrived_at: iso(7, 56, 28), departed_at: iso(7, 59, 25), minutes: 3 }],
+        mileage: [MILE(T(7, 56, 28), T(7, 59, 25)),
+                  Object.assign(MILE(T(12, 48, 5), T(12, 57, 43)), { id: 'm2', legKey: other })],
+      });
+      expect(r.rows.find(x => x.legKey === other).startedIso).toBe(iso(12, 48, 5));
+    });
+
+    test('no matching leg, no crash and no write', async () => {
+      const r = await withMileage(page, {
+        tape: MORNING,
+        rows: [{ id: 'd14', source: 'drive', dest_place: null, job_id: null, client_key: 'u1-leg-nope',
+                 arrived_at: iso(7, 56, 28), departed_at: iso(7, 59, 25), minutes: 3 }],
+        mileage: [],
+      });
+      expect(r.rows.length).toBe(0);
+      expect(r.saves, 'nothing changed, nothing saved').toBe(0);
+    });
+
+    test('a leg already on the tape\'s clock is left completely alone', async () => {
+      // Idempotence. The sweep is one-shot per session but the row it wrote
+      // is read again on the next boot, and re-saving an unchanged row churns
+      // the sync queue for nothing.
+      const key = legKeyAt(T(7, 56, 28));
+      const r = await withMileage(page, {
+        tape: MORNING,
+        rows: [{ id: 'd15', source: 'drive', dest_place: null, job_id: null, client_key: key,
+                 arrived_at: iso(7, 56, 28), departed_at: iso(7, 59, 25), minutes: 3 }],
+        mileage: [Object.assign(MILE(T(7, 56, 28), T(7, 59, 25)),
+                   { startedIso: iso(7, 49, 43), endedIso: iso(7, 59, 6), mins: 9 })],
+      });
+      expect(r.saves).toBe(0);
+    });
+
+    test('the helper refuses junk directly: no key, no order, no array', async () => {
+      const r = await page.evaluate(() => {
+        const before = mileage.slice();
+        try {
+          const out = {
+            noKey: _geoRetimeMileageLeg(null, 1000, 2000, 1),
+            empty: _geoRetimeMileageLeg('', 1000, 2000, 1),
+            backwards: _geoRetimeMileageLeg('k', 2000, 1000, 1),
+            zero: _geoRetimeMileageLeg('k', 0, 2000, 1),
+            equal: _geoRetimeMileageLeg('k', 2000, 2000, 0),
+          };
+          return out;
+        } finally { mileage.length = 0; before.forEach(m => mileage.push(m)); }
+      });
+      Object.entries(r).forEach(([k, v]) => expect(v, k + ' must be refused').toBe(0));
+    });
+
     test('it runs once per session', async () => {
       const first = await run(page, {
         rows: [row('d5', 'drive', iso(7, 56, 28), iso(7, 59, 25))], tape: MORNING });

@@ -1911,10 +1911,43 @@ function _geoIsWorkAnchorSource(s){
 //
 // `entries` are job_time_entries-shaped rows; manual clock entries mapped into
 // the same shape count as anchors too. Returns {uid:{'YYYY-MM-DD':{inMs,outMs}}}.
+// THE VISIT YOU ARE STANDING IN IS THE STRONGEST ANCHOR THERE IS ────────────
+// Owner report 2026-08-31: a day with 4h41m of shop time, a logged drive, and
+// him parked at John Doe's since 7:58am read as a completely empty Time Log.
+// The window below is built from CLOSED rows, and he had not left yet, so the
+// day had no anchor and every finished row on it was judged outside a workday
+// that had not been allowed to start.
+//
+// An OPEN visit is not weaker evidence than a closed one, it is the same
+// evidence still accumulating. It anchors at [arrived, now]: `now` is honest
+// (he is there at this instant) and it can only ever widen, never bill, since
+// nothing reads this window as minutes.
+//
+// Deliberately inside _geoShopCutoffs rather than at the Time Log's call
+// site: js/finance.js _openCrewCost calls this too, and the two must never
+// disagree about a paid minute (see _ccShopTape). One rule, both readers.
+function _geoOpenVisitAnchor(){
+  try{
+    if(typeof _supaUser==='undefined'||!_supaUser)return null;
+    const uid=_supaUser.id,now=new Date().toISOString();
+    const row=(arrivedAt,source)=>(arrivedAt&&Date.parse(arrivedAt)>0)
+      ? {employee_user_id:uid,arrived_at:arrivedAt,departed_at:now,source}
+      : null;
+    // Same precedence the fence machine itself uses: a job outranks a place,
+    // a place outranks a client. The shop is NOT here on purpose, it is the
+    // one presence that has never been allowed to open a workday (owner rule
+    // 2026-08-24: a Saturday at the yard is not a shift).
+    return row(_geoArrivedAt,'geofence')
+        || row(_geoPlaceArrivedAt,'place')
+        || row(_geoClientArrivedAt,'client')
+        || null;
+  }catch(_e){return null;}
+}
 function _geoShopCutoffs(entries){
   const out={};
   const dstr=d=>(typeof _bizDateStr==='function')?_bizDateStr(d):dateKey(d);
-  const rows=(Array.isArray(entries)?entries:[]).filter(e=>{
+  const _open=_geoOpenVisitAnchor();
+  const rows=(Array.isArray(entries)?entries:[]).concat(_open?[_open]:[]).filter(e=>{
     if(!e||!e.employee_user_id)return false;
     return (Date.parse(e.departed_at||'')||0)>0&&(Date.parse(e.arrived_at||'')||0)>0;
   });
@@ -6864,6 +6897,39 @@ function _geoWholeDays(rows,tsKey,maxDays,cap){
   }
   return out;
 }
+// The mileage half of a re-timed leg (owner rule 2026-08-31: "everything
+// should be writing off the core motion state change plus GPS ping"). One
+// derivation, so one clock on both rows the derivation produced.
+//
+// Distance is deliberately NOT touched. It is measured geocode to geocode by
+// the router and does not depend on what the clock says, so moving an edge by
+// ninety seconds must never silently restate the deduction. Only the clock
+// moves, and the day with it when an edge crosses Central midnight, or the
+// row would sit under the wrong date in the IRS log.
+//
+// Keyed on legKey, which is exactly the guard that keeps a hand-typed trip
+// out of reach: autoLogDriveTrip is the only writer that stamps one, so a row
+// somebody entered themselves has none and can never be matched here.
+function _geoRetimeMileageLeg(legKey,startMs,endMs,mins){
+  try{
+    if(!legKey||typeof mileage==='undefined'||!Array.isArray(mileage))return 0;
+    if(!(startMs>0&&endMs>startMs))return 0;
+    const startedIso=new Date(startMs).toISOString(),endedIso=new Date(endMs).toISOString();
+    let n=0;
+    mileage.forEach(m=>{
+      if(!m||!m.gps||String(m.legKey||'')!==String(legKey))return;
+      if(m.startedIso===startedIso&&m.endedIso===endedIso)return;   // already agree
+      m.startedIso=startedIso;m.endedIso=endedIso;m.mins=mins;
+      m.date=(typeof dateKey==='function')?dateKey(new Date(startMs)):m.date;
+      n++;
+    });
+    if(n){
+      if(typeof saveAll==='function')saveAll();
+      _geoParkNote('retime-mileage',String(legKey).slice(-8)+' -> '+mins+'m');
+    }
+    return n;
+  }catch(_e){return 0;}
+}
 async function _geoRetimeToTapeSweep(){
   try{
     if(window._geoRetimeRan)return 0;
@@ -6984,6 +7050,22 @@ async function _geoRetimeToTapeSweep(){
           minutes:mins,dest_place:r.dest_place||null,
           client_key:r.client_key,source:r.source
         });
+        // ── ONE LEG, ONE CLOCK ────────────────────────────────────────────
+        // A drive is written to TWO tables from one derivation: the time
+        // entry here and the mileage row that shares its legKey. This swept
+        // only the time entry, so every correction it made split the pair,
+        // and the two halves of one drive then told different stories
+        // forever. Measured on the owner's account 2026-08-31: 8 of his last
+        // 10 drives had a time entry that disagreed with its own mileage row,
+        // by 82 seconds to 6.75 minutes, always in the same direction.
+        //
+        // He saw it as "one mileage row but with incorrect times", and the
+        // rule he gave is the fix: one derivation off the tape, both rows
+        // carrying it. The legKey is IDENTITY, not a fact, and stays exactly
+        // as minted; re-deriving it from the new start would mint a second
+        // key for the same drive and duplicate the leg, which is the bug the
+        // deterministic key exists to prevent.
+        _geoRetimeMileageLeg(r.client_key,A,B,mins);
       }
       _geoParkNote('retime',String(r.id).slice(0,8)+' '+r.minutes+'m -> '+mins+'m');
       return 1;

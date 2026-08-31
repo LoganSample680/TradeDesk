@@ -615,6 +615,135 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.outMs, 'the hand-logged clock-out closes the day').toBe(Date.parse('2026-08-20T21:35:00Z'));
     });
 
+    // ── THE VISIT YOU ARE STANDING IN ANCHORS THE DAY ────────────────────
+    // Owner report 2026-08-31: 4h41m of shop time, a logged drive, and him
+    // parked at a client since 7:58am, and the Time Log rendered an empty
+    // day. The window is built from CLOSED rows and he had not left yet, so
+    // the day had no anchor and every finished row on it was judged outside a
+    // workday that was never allowed to start.
+    //
+    // Asserted on the WINDOW, not on a rendered row: the anchor lands on
+    // TODAY by construction (its departed_at is now), and every other test in
+    // this file pins a fixed historical date, which is exactly what keeps
+    // them isolated from it.
+    // Bare identifiers, never window.*: these are module-level `let` bindings
+    // in a classic script, so they live in the global LEXICAL scope and are
+    // reachable by name from here but are not properties of window. Assigning
+    // window._geoArrivedAt makes a second, unrelated property and the engine
+    // never sees it, which is exactly how the first cut of these tests failed.
+    // Offsets in MINUTES, resolved to instants inside the page, and every
+    // instant the assertions use comes back out of the same evaluate.
+    // mockAllExternal pins the page's clock and the Playwright runner's is not
+    // pinned (CLAUDE.md §5.2.2), so a fixture built here from Date.now() and
+    // compared against a window built there is two clocks and hours of drift.
+    // The first cut of these tests did exactly that and failed by 36 minutes.
+    const withOpen = (page, state) => page.evaluate((st) => {
+      const saved = { u: _supaUser, j: _geoArrivedAt,
+                      p: _geoPlaceArrivedAt, c: _geoClientArrivedAt };
+      const ago = (m) => (m == null ? null : new Date(Date.now() - m * 60000).toISOString());
+      try {
+        const jobAt = st.jobMin != null ? ago(st.jobMin) : null;
+        const placeAt = st.placeMin != null ? ago(st.placeMin) : null;
+        const clientAt = st.badClient ? 'not-a-date' : (st.clientMin != null ? ago(st.clientMin) : null);
+        _supaUser = st.noUser ? null : { id: 'me' };
+        _geoArrivedAt = jobAt;
+        _geoPlaceArrivedAt = placeAt;
+        _geoClientArrivedAt = clientAt;
+        const rows = (st.driveFromMin != null && st.driveToMin != null)
+          ? [{ employee_user_id: 'me', source: 'drive-unassigned',
+               arrived_at: ago(st.driveFromMin), departed_at: ago(st.driveToMin) }]
+          : [];
+        const key = (typeof _bizDateStr === 'function') ? _bizDateStr(new Date()) : null;
+        const w = _geoShopCutoffs(rows);
+        const mine = (w.me || {})[key] || null;
+        const open = (typeof _geoOpenVisitAnchor === 'function') ? _geoOpenVisitAnchor() : undefined;
+        return { win: mine ? { inMs: mine.inMs, outMs: mine.outMs } : null,
+                 openSource: open ? open.source : null, openArr: open ? open.arrived_at : null,
+                 jobAt, placeAt, clientAt, now: Date.now(),
+                 driveFrom: rows.length ? Date.parse(rows[0].arrived_at) : null };
+      } finally {
+        _supaUser = saved.u; _geoArrivedAt = saved.j;
+        _geoPlaceArrivedAt = saved.p; _geoClientArrivedAt = saved.c;
+      }
+    }, state);
+
+    test('an open client visit opens the day, with no closed row anywhere', async () => {
+      // Exactly his 2026-08-31: nothing closed yet, still standing on the job.
+      const r = await withOpen(page, { clientMin: 90 });
+      expect(r.openSource, 'an open client visit is a work anchor').toBe('client');
+      expect(r.win, 'the day a person is standing in is not an empty day').not.toBeNull();
+      expect(r.win.inMs).toBe(Date.parse(r.clientAt));
+      // outMs is `now` and moves between the two reads, so it is bounded
+      // rather than pinned to a millisecond.
+      expect(r.win.outMs).toBeGreaterThanOrEqual(Date.parse(r.clientAt));
+      expect(r.win.outMs).toBeLessThanOrEqual(r.now + 1000);
+    });
+
+    test('a drive that ends where the open visit begins is inside the day', async () => {
+      // The whole point: his 7:52-7:58 leg was hidden because the visit it
+      // drove INTO had not closed. Chained through the second pass exactly
+      // like a drive into a closed visit.
+      const r = await withOpen(page, { clientMin: 60, driveFromMin: 67, driveToMin: 60 });
+      expect(r.win.inMs, 'the leg into the open visit widens the day back to the departure')
+        .toBe(r.driveFrom);
+    });
+
+    test('an open JOB outranks an open place or client, same as the fence machine', async () => {
+      const r = await withOpen(page, { jobMin: 30, clientMin: 90 });
+      expect(r.openSource).toBe('geofence');
+      expect(r.openArr).toBe(r.jobAt);
+    });
+
+    test('an open place anchors too, and is preferred over a client', async () => {
+      const r = await withOpen(page, { placeMin: 20, clientMin: 90 });
+      expect(r.openSource).toBe('place');
+      expect(r.openArr).toBe(r.placeAt);
+    });
+
+    test('nothing open, nothing invented: no anchor and no day', async () => {
+      // The honest limit. An anchor conjured from no open visit would open a
+      // workday on a Saturday nobody worked, which is the rule this must not
+      // break (owner 2026-08-24).
+      const r = await withOpen(page, {});
+      expect(r.openSource).toBeNull();
+      expect(r.win, 'no open visit, no closed row, no day').toBeNull();
+    });
+
+    test('signed out: the anchor is null rather than throwing', async () => {
+      const r = await withOpen(page, { clientMin: 5, noUser: true });
+      expect(r.openSource).toBeNull();
+      expect(r.win).toBeNull();
+    });
+
+    test('a malformed open timestamp is refused, not turned into a window', async () => {
+      const r = await withOpen(page, { badClient: true });
+      expect(r.openSource, 'an unparseable arrival anchors nothing').toBeNull();
+      expect(r.win).toBeNull();
+    });
+
+    test('the shop is NOT an open anchor: a Saturday at the yard is still not a shift', async () => {
+      // _geoWasInShop/_geoShopArrivedAt are deliberately absent from
+      // _geoOpenVisitAnchor. Yard presence has never been allowed to open a
+      // workday (owner rule 2026-08-24) and an OPEN yard session must not
+      // become the loophole that lets it.
+      const r = await page.evaluate(() => {
+        const saved = { u: _supaUser, s: _geoShopArrivedAt, w: _geoWasInShop,
+                        j: _geoArrivedAt, p: _geoPlaceArrivedAt, c: _geoClientArrivedAt };
+        try {
+          _supaUser = { id: 'me' };
+          _geoArrivedAt = null; _geoPlaceArrivedAt = null; _geoClientArrivedAt = null;
+          _geoWasInShop = true;
+          _geoShopArrivedAt = new Date(Date.now() - 4 * 3600000).toISOString();
+          const open = _geoOpenVisitAnchor();
+          return { open: open ? open.source : null };
+        } finally {
+          _supaUser = saved.u; _geoShopArrivedAt = saved.s; _geoWasInShop = saved.w;
+          _geoArrivedAt = saved.j; _geoPlaceArrivedAt = saved.p; _geoClientArrivedAt = saved.c;
+        }
+      });
+      expect(r.open).toBeNull();
+    });
+
     test('a shop dwell spanning Central midnight never renders', async () => {
       const rows = await withShop([
         // 8:00pm CT to 7:00am CT the next day: the truck parked at the yard.
