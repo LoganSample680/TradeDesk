@@ -4224,11 +4224,34 @@ test.describe('timelog.js: exhaustive coverage', () => {
         ['2026-08-27T17:11:06.000Z', '2026-08-27T17:48:05.000Z'],
         ['2026-08-27T17:48:05.000Z', '2026-08-27T17:57:43.000Z'],
       ];
-      const withSupa = (page, covers) => page.evaluate((covers) => {
+      // Narrow ONLY the two tables the sweep reads, and delegate every other
+      // call straight back to the real shim.
+      //
+      // This used to replace the whole _supa client with a one-query shape
+      // whose select() answered nothing but .is(). While it was installed,
+      // ANY other code path that touched _supa broke: the reconnect probe
+      // (_probeAndSync -> _onReconnect -> supaLoadFromCloud) calls
+      // .select(...).eq(...), got a builder with no .eq, and logged a real
+      // console error that landed in whichever spec asserted next. It only
+      // fires when that probe happens to land inside this window, so it
+      // passed locally and failed on CI shard 6 (2026-08-31), which is the
+      // "a stub missing a method the real code calls" class in section 5.2.1.
+      const SWEEP_TABLES = ['job_time_entries', 'shop_time_entries'];
+      const withSupa = (page, covers) => page.evaluate(({ covers, SWEEP_TABLES }) => {
         window.__tlPrevSupa = window._supa;
-        window._supa = { from: () => ({ select: () => ({ is: () => ({ eq: () => ({
-          gte: () => ({ lte: async () => ({ data: covers.map(([a, b]) =>
-            ({ arrived_at: a, departed_at: b })), error: null }) }) }) }) }) }) };
+        const real = window._supa;
+        window._supa = Object.assign({}, real, {
+          from: (tbl) => {
+            if (SWEEP_TABLES.indexOf(tbl) < 0) return real.from(tbl);
+            const rows = covers.map(([a, b]) => ({ arrived_at: a, departed_at: b }));
+            const c = {
+              select: () => c, is: () => c, eq: () => c, gte: () => c,
+              lte: async () => ({ data: rows, error: null }),
+              then: (res, rej) => Promise.resolve({ data: rows, error: null }).then(res, rej),
+            };
+            return c;
+          },
+        });
         window.__tlPrevUser = window._supaUser;
         window._supaUser = { id: 'u1' };
         // The sweep persists through the normal save path when it changes
@@ -4239,7 +4262,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window.__tlPrevSaveAll = window.saveAll;
         window.supaSaveToCloud = () => {};
         window.saveAll = () => {};
-      }, covers);
+      }, { covers, SWEEP_TABLES });
       const unSupa = (page) => page.evaluate(() => {
         window._supa = window.__tlPrevSupa; window._supaUser = window.__tlPrevUser;
         window.supaSaveToCloud = window.__tlPrevSave; window.saveAll = window.__tlPrevSaveAll;
@@ -4390,18 +4413,28 @@ test.describe('timelog.js: exhaustive coverage', () => {
         // the eight-spec composition). One evaluate has no such gap: the
         // busy flag covers every await inside it.
         await withSupa(page, COVERS);
-        const r = await page.evaluate(async () => {
-          const realFrom = window._supa.from;
-          window._supa = { from: () => { const c = { select: () => c, is: () => c, eq: () => c,
-            gte: () => Promise.resolve({ data: [], error: null }) }; return c; } };
+        const r = await page.evaluate(async (SWEEP_TABLES) => {
+          // Same rule as withSupa: narrow the sweep's own tables, pass
+          // everything else through, and put the WHOLE client back rather
+          // than a bare { from }, which dropped auth/rpc/storage for the
+          // rest of the run.
+          const covering = window._supa;
+          window._supa = Object.assign({}, covering, {
+            from: (tbl) => {
+              if (SWEEP_TABLES.indexOf(tbl) < 0) return covering.from(tbl);
+              const c = { select: () => c, is: () => c, eq: () => c,
+                gte: () => Promise.resolve({ data: [], error: null }) };
+              return c;
+            },
+          });
           window.__tlArm();
           const first = await _tlTrimCoveredGapRows();     // failed/empty read
           const latchedEarly = window._tlGapTrimRan === true;
-          window._supa = { from: realFrom };               // reconnect: covers arrive
+          window._supa = covering;                          // reconnect: covers arrive
           const n = await _tlTrimCoveredGapRows();
           return { first, latchedEarly, n,
                    latchedAfter: window._tlGapTrimRan === true, left: timeEntries.length };
-        });
+        }, SWEEP_TABLES);
         await unSupa(page); await restore(page);
         expect(r.first).toBe(0);
         expect(r.latchedEarly, 'a miss must not latch the guard').toBe(false);
