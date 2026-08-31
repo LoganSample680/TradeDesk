@@ -1517,18 +1517,68 @@ let _tlDrill={level:'month',mo:null,wk:null,day:null,uid:null};
 // looked exactly like a tap that changed which week it was showing. Ranking
 // the levels is what lets one line tell those apart.
 const _TL_LEVEL_RANK={month:0,week:1,day:2};
+// The month a day belongs to, and '' for anything that is not a real date, so
+// a junk key can never park the drill on a month that does not exist.
+function _tlMonthKey(dateStr){
+  return _tlWeekKey(dateStr)?String(dateStr).slice(0,7):'';
+}
+// Which month a WEEK belongs to, which is a real question because a week
+// straddles two of them five times a year (the week of Aug 30 is also the
+// first five days of September). The month chart is built one month at a
+// time, so a week key alone is not enough to find the week's rows: answer it
+// with the rows themselves, the month actually holding this week's hours, and
+// fall back to the week's own start date only when nothing is logged in it.
+// Getting this wrong is not cosmetic: land on a month whose chart has no such
+// week and the render snaps the week back to that month's last one, which is
+// the dead end all over again.
+function _tlWeekMonth(wk){
+  if(!wk)return '';
+  const seen={};
+  (_tlLastRows||[]).forEach(r=>{
+    if(!r||!r.date||_tlWeekKey(r.date)!==wk)return;
+    if(_tlDrill.uid&&_tlRowUid(r)!==_tlDrill.uid)return;
+    const mo=String(r.date).slice(0,7);seen[mo]=(seen[mo]||0)+1;
+  });
+  const months=Object.keys(seen);
+  if(!months.length)return _tlMonthKey(wk);
+  // Most hours wins a straddled week, ties to the earlier month, so the same
+  // week always resolves to the same side no matter which way you arrived.
+  return months.sort((a,b)=>seen[b]-seen[a]||a.localeCompare(b))[0];
+}
 function _tlDrillTo(level,key,dir){
   const uid=_tlDrill.uid,was=_tlDrill.level;
   if(level==='month')_tlDrill={level:'month',mo:key||_tlDrill.mo,wk:null,day:null,uid:null};
-  else if(level==='week')_tlDrill={level:'week',mo:_tlDrill.mo,wk:key,day:null,uid:uid};
-  else if(level==='day')_tlDrill={level:'day',mo:_tlDrill.mo,wk:_tlDrill.wk,day:key,uid:uid};
+  // The week and month a key sits in are DERIVED from the key, never carried
+  // over from whatever happened to be on screen. Owner, 2026-08-31: "week day
+  // changer only lets you go back to the start of the week but it should be
+  // smart enough to continue to go backwards into previous weeks with the
+  // arrow buttons." The arrows now hand this a day in the PREVIOUS week, and
+  // the render resolves the level against _tlDrill.wk/.mo: leave those
+  // pointing at the week you left and the day is snapped straight back into
+  // it, which IS the dead end. Deriving them is also what makes the
+  // "‹ Week of ..." back link follow the day over the boundary instead of
+  // naming a week that is no longer on screen.
+  else if(level==='week')_tlDrill={level:'week',mo:_tlWeekMonth(key)||_tlDrill.mo,
+    wk:key,day:null,uid:uid};
+  else if(level==='day')_tlDrill={level:'day',mo:_tlMonthKey(key)||_tlDrill.mo,
+    wk:_tlWeekKey(key)||_tlDrill.wk,day:key,uid:uid};
   else return;
   const a=_TL_LEVEL_RANK[was],b=_TL_LEVEL_RANK[level];
   // An explicit arrow direction always wins: stepping sideways is what the
   // caller asked for even when the level happens to be the same.
   _tlMonthDir=(dir==='fwd'||dir==='back')?dir
     :(b>a)?'down':(b<a)?'up':'';
-  renderTimeLog();
+  // FROM MEMORY, and this is the whole of the second defect. Owner,
+  // 2026-08-31: "like almost 2 seconds to change a day, thats awful." Every
+  // drill tap came back through renderTimeLog, which opens by AWAITING
+  // _timeLogRows: three round trips to Supabase (team_members,
+  // job_time_entries, shop_time_entries via _fetchCrewLabor) plus the
+  // CoreMotion tape _tlShopTape reads off the coprocessor, and only then does
+  // anything on screen move. None of that work can change the answer: a drill
+  // tap picks a different SLICE of rows the page is already holding. So it
+  // paints from the rows it already has, synchronously, in the same task as
+  // the tap, and _tlRevalidateRows checks the server afterwards.
+  renderTimeLog({cached:true});
 }
 // Into one crew member's week. The ONLY way uid is ever set, so there is one
 // door in and _tlDrillTo owns everything after it.
@@ -1562,11 +1612,19 @@ function _tlDrillSiblings(rows){
     (!_tlDrill.uid||_tlRowUid(r)===_tlDrill.uid));
   const keys=[];
   const push=k=>{if(k&&keys.indexOf(k)<0)keys.push(k);};
+  // NOT clipped to the month or the week on screen. Both lists used to be,
+  // and that is exactly what the owner hit on 2026-08-31: the first day of a
+  // week had no previous sibling, so the arrow was drawn disabled and the day
+  // stepper dead-ended at Sunday instead of carrying on into Saturday of the
+  // week before. A week is not the end of the calendar, it is a window on it.
+  // The bounds that are real are kept, and they are the two the list already
+  // had: only siblings that HAVE hours (stepping onto an empty chart is what
+  // the arrows exist to prevent, which also means there is nothing to step
+  // forward onto past today), and only inside the open year, because that is
+  // the whole set _tlLastRows holds and the year selector is its own control.
   if(_tlDrill.level==='month')list.forEach(r=>push(String(r.date).slice(0,7)));
-  else if(_tlDrill.level==='week')
-    list.filter(r=>String(r.date).slice(0,7)===_tlDrill.mo).forEach(r=>push(_tlWeekKey(r.date)));
-  else if(_tlDrill.level==='day')
-    list.filter(r=>_tlWeekKey(r.date)===_tlDrill.wk).forEach(r=>push(r.date));
+  else if(_tlDrill.level==='week')list.forEach(r=>push(_tlWeekKey(r.date)));
+  else if(_tlDrill.level==='day')list.forEach(r=>push(r.date));
   return keys.sort();
 }
 function _tlDrillStep(delta,rows){
@@ -1610,16 +1668,24 @@ function _tlLevelsHtml(moRows,selMo,opts){
   const days=_tlWeekDayDates(_tlDrill.wk);
   if(_tlDrill.level==='week')
     return {head:_tlDrillHeadHtml(_tlWeekLabel(_tlDrill.wk),fm(_tlPaidMin(wkRows)),
-              weekKeys,_tlDrill.wk,o.backLabel||_bkMonthLabel(selMo),o.eyebrow),
+              _tlDrill.wk,o.backLabel||_bkMonthLabel(selMo),o.eyebrow),
             body:_tlWeekBarsHtml(wkRows,days,_tlDrill.wk,{share:o.share})};
   const dayKeys=days.filter(d=>wkRows.some(r=>r.date===d));
   if(dayKeys.indexOf(_tlDrill.day)<0)_tlDrill.day=dayKeys[dayKeys.length-1]||null;
   const dayRows=wkRows.filter(r=>r.date===_tlDrill.day);
   return {head:_tlDrillHeadHtml(_tlDayFullLabel(_tlDrill.day),fm(_tlPaidMin(dayRows)),
-            dayKeys,_tlDrill.day,_tlWeekLabel(_tlDrill.wk),o.eyebrow),
+            _tlDrill.day,_tlWeekLabel(_tlDrill.wk),o.eyebrow),
           body:_tlRailHeadHtml(dayRows,'',true)+_tlDayRailHtml(dayRows)};
 }
-function _tlDrillHeadHtml(title,total,keys,cur,backLabel,eyebrow){
+// keys is NOT a parameter any more, and that is the other half of the dead
+// end (owner 2026-08-31). Every caller passed the list it happened to be
+// looping over, and at the day level that list was the days of ONE week: on
+// the first of them the back arrow was drawn disabled, so the step the arrows
+// were perfectly capable of making could not even be asked for. One authority
+// on what a sideways step does, and it is the same one that performs it
+// (7.3), so an arrow is live exactly when _tlDrillStep has somewhere to go.
+function _tlDrillHeadHtml(title,total,cur,backLabel,eyebrow){
+  const keys=_tlDrillSiblings(_tlLastRows);
   const i=keys.indexOf(cur);
   const prev=i>0,next=i>=0&&i<keys.length-1;
   const arrow=(dir,on,glyph,word)=>
@@ -2320,6 +2386,45 @@ async function _tlRepairAfterPaint(paintedRows,gen){
   }catch(_e){return false;}
   finally{_tlRepairRunning=false;}
 }
+// ── The rows the screen is currently painted from ─────────────────────────
+// Owner, 2026-08-31: "like almost 2 seconds to change a day, thats awful."
+// _timeLogRows is expensive by nature (three Supabase queries through
+// _fetchCrewLabor, plus the CoreMotion tape) and every drill tap was paying
+// for it before anything on screen moved. The rows do not depend on which
+// month, week or day is open, so a tap that only changes the slice paints
+// from this and never awaits at all. Every path that can actually CHANGE the
+// rows (a manual entry added, edited or deleted, a gap answered, a clock-out
+// fixed, the repair pass, opening the page) calls renderTimeLog with no opts
+// and refills this from the server exactly as before.
+let _tlRowsCache=null;
+let _tlRowsAt=0;
+// Same shape and same reason as _TL_REPAIR_MIN_GAP_MS above (7.3): the check
+// is free to the eye because it happens after the paint, but a contractor
+// holding the arrow down must not fire three queries per tap.
+const _TL_ROWS_REVALIDATE_MIN_GAP_MS=30000;
+let _tlRevalidating=false;
+// The other half of painting from memory: go and look anyway, after the
+// screen is already right, and repaint ONLY if the server disagrees. This is
+// what keeps a rail painted from cache from going stale when the tracker
+// writes a row from the truck or another device syncs one in. Fingerprint and
+// generation guards are the ones _tlRepairAfterPaint already uses, for the
+// same two reasons: an unchanged answer must not close what the viewer opened,
+// and a newer paint always owns the screen.
+async function _tlRevalidateRows(paintedRows,gen){
+  if(_tlRevalidating)return false;
+  if(_tlRowsAt&&Date.now()-_tlRowsAt<_TL_ROWS_REVALIDATE_MIN_GAP_MS)return false;
+  _tlRevalidating=true;
+  try{
+    const fresh=await _timeLogRows(null);
+    _tlRowsCache=fresh;_tlRowsAt=Date.now();
+    if(gen!==undefined&&gen!==_tlRenderGen)return false;
+    if(_tlRowsFingerprint(fresh)===_tlRowsFingerprint(paintedRows))return false;
+    // noRepair: this is a revalidate, not an open.
+    await renderTimeLog({noRepair:true});
+    return true;
+  }catch(_e){return false;}
+  finally{_tlRevalidating=false;}
+}
 async function renderTimeLog(opts){
   const el=document.getElementById('tl-list');if(!el)return;
   const _gen=++_tlRenderGen;
@@ -2332,8 +2437,16 @@ async function renderTimeLog(opts){
   // be redrawn from memory a few milliseconds later: a flash, not a load.
   if(!_tlSkelShown)el.innerHTML=_tlBarsSkelHtml();
   let allRows;
-  try{allRows=await _timeLogRows(null);}
-  catch(_e){el.innerHTML='<div class="empty">Couldn\'t load time entries.</div>';return;}
+  // cached: a drill tap. Nothing is awaited on this path, so the whole render
+  // down to el.innerHTML runs in the same task as the click and the new day
+  // is on screen on the very next frame instead of two seconds later.
+  const _cached=!!(opts&&opts.cached&&_tlRowsCache);
+  if(_cached)allRows=_tlRowsCache;
+  else{
+    try{allRows=await _timeLogRows(null);}
+    catch(_e){el.innerHTML='<div class="empty">Couldn\'t load time entries.</div>';return;}
+    _tlRowsCache=allRows;_tlRowsAt=Date.now();
+  }
   // Scheduled HERE, not at the end of this function, because the render has
   // several early returns after this point and the empty-hours one is the case
   // that matters most: the reconciler exists to backfill hours that are
@@ -2344,7 +2457,13 @@ async function renderTimeLog(opts){
   //
   // Not awaited, and it opens with an await of its own, so this yields
   // immediately and the synchronous render below still paints first.
-  if(!(opts&&opts.noRepair)){
+  //
+  // A drill tap gets the revalidate instead: it is not a new open, so it has
+  // not earned a repair pass (same rule the _tlRepairAt floor above exists
+  // for), but the rows it painted from came out of memory and something on
+  // the server may have moved since.
+  if(_cached){try{_tlRevalidateRows(allRows,_gen);}catch(_e){}}
+  else if(!(opts&&opts.noRepair)){
     try{_tlRepairAfterPaint(allRows,_gen);}catch(_e){}
   }
   // Set as soon as the rows are in hand, not at the end: the render has
@@ -2444,7 +2563,6 @@ async function renderTimeLog(opts){
   // people and the cards are the only thing that separates them. Me gets the
   // drill.
   if(scope==='team'){
-    const teamKeys=months.slice();
     const teamRows=byMonth[selMo]||[];
     // Inside one crew member: the same week and day screens Me gets, on their
     // rows. Back from the week says "All crew" because that is where it lands,
@@ -2466,7 +2584,7 @@ async function renderTimeLog(opts){
       _tlDrill.uid=null;_tlDrill.level='month';
     }
     el.innerHTML=_tlDrillHeadHtml(_bkMonthLabel(selMo),fm(_tlPaidMin(teamRows)),
-        teamKeys,selMo,'')+
+        selMo,'')+
       // The crew list moves too. Coming back out of one person's week is an UP
       // like any other, and arrowing between months is a sideways like any
       // other: without the class, the one screen you return to was the one
@@ -2481,7 +2599,7 @@ async function renderTimeLog(opts){
   _tlDrill.mo=selMo;
   const moRows=byMonth[selMo]||[];
   const lv=_tlLevelsHtml(moRows,selMo,{});
-  const head=lv?lv.head:_tlDrillHeadHtml(_bkMonthLabel(selMo),fm(_tlPaidMin(moRows)),months,selMo,'');
+  const head=lv?lv.head:_tlDrillHeadHtml(_bkMonthLabel(selMo),fm(_tlPaidMin(moRows)),selMo,'');
   const body=lv?lv.body:_tlMonthBarsHtml(moRows,selMo,scope);
   // The slide direction rides as a class so the animation is pure CSS and the
   // JS never touches a style property (§8.5).

@@ -1314,7 +1314,14 @@ body.dark .cal-cell.other{background:var(--cream)}
   line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
   transition:background .14s ease,border-color .14s ease,transform .14s cubic-bezier(.22,1,.36,1)}
 .tl-monav-btn:hover:not(:disabled){border-color:var(--ink);background:var(--cream)}
-.tl-monav-btn:active:not(:disabled){transform:scale(.92)}
+/* The press lands on the SAME FRAME (owner 2026-08-31: the arrows "are really
+   laggy to response"). Easing the scale IN over .14s means the thumb is
+   already lifting before the button has finished admitting it was touched;
+   the transition belongs on the RELEASE, where it reads as the control
+   settling back. Duration only, on the pressed state only: the properties,
+   the easing and the .92 scale are all unchanged, so it looks exactly as it
+   did, it just starts the moment you touch it. */
+.tl-monav-btn:active:not(:disabled){transform:scale(.92);transition-duration:0s}
 /* Disabled, never hidden: a control that vanishes makes the row jump and
    leaves somebody wondering whether they broke it. */
 .tl-monav-btn:disabled{opacity:.3;cursor:default}
