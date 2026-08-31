@@ -3942,6 +3942,33 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window.__tlPrevEntries = timeEntries.slice();
         timeEntries.length = 0;
         rows.forEach(r => timeEntries.push(r));
+        // ── AND A RE-ARM THE TEST CALLS FROM INSIDE ITS OWN EVALUATE ────────
+        // The seed above and the test's call are two SEPARATE page.evaluates,
+        // and the app's own load chain runs in the gap between them. It does
+        // not just trim (the latch covers that) or hold the busy flag (cleared
+        // above): it REPLACES timeEntries wholesale. The seeded claim is then
+        // gone by the time the call runs, claims.length is 0, and
+        // _tlTrimCoveredGapRows takes its empty-claims branch, which LATCHES.
+        // The test measuring the empty-covers interlock therefore sees a
+        // latched sweep and reads it as "the interlock did not stay armed".
+        //
+        // That is the midnight-clock failure of 2026-08-31, and it is the same
+        // family as the busy-flag one already fixed here: load-dependent, so it
+        // passes on a quiet runner and locally every time, and only shows up
+        // when 28 spec files share a machine.
+        //
+        // Nothing a seed can do from the outside closes a gap that opens after
+        // it returns. So the arming moves INSIDE the caller's evaluate: this
+        // closure re-applies the rows if they went missing, clears the guards,
+        // and unlatches, all in one synchronous block with the call itself.
+        window.__tlArm = () => {
+          const want = rows || [];
+          const missing = want.some(r => r && r.id != null &&
+            !timeEntries.some(x => x && x.id === r.id));
+          if (missing) { timeEntries.length = 0; want.forEach(r => timeEntries.push(r)); }
+          window._tlGapTrimBusy = false;
+          window._tlGapTrimRan = false;
+        };
       }, rows);
       const restore = (page) => page.evaluate(() => {
         timeEntries.length = 0;
@@ -3980,7 +4007,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
           start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
         await withSupa(page, COVERS);
         const r = await page.evaluate(async () => {
-          window._tlGapTrimRan = false;
+          window.__tlArm();
           const n = await _tlTrimCoveredGapRows();
           return { n, left: timeEntries.length };
         });
@@ -3995,7 +4022,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
           start_time: '2026-08-27T16:30:00.000Z', end_time: '2026-08-27T18:00:00.000Z' }]);
         await withSupa(page, COVERS);
         const r = await page.evaluate(async () => {
-          window._tlGapTrimRan = false;
+          window.__tlArm();
           const n = await _tlTrimCoveredGapRows();
           const e = timeEntries[0];
           return { n, mins: e && e.minutes, start: e && e.start_time, end: e && e.end_time,
@@ -4016,7 +4043,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
           start_time: '2026-08-27T20:00:00.000Z', end_time: '2026-08-27T20:30:00.000Z' }]);
         await withSupa(page, COVERS);
         const r = await page.evaluate(async () => {
-          window._tlGapTrimRan = false;
+          window.__tlArm();
           const n = await _tlTrimCoveredGapRows();
           const e = timeEntries[0];
           return { n, mins: e && e.minutes, start: e && e.start_time, mark: e && e._gapTrimmed };
@@ -4034,7 +4061,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
           start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
         await withSupa(page, COVERS);
         const r = await page.evaluate(async () => {
-          window._tlGapTrimRan = false;
+          window.__tlArm();
           const n = await _tlTrimCoveredGapRows();
           return { n, left: timeEntries.length, mins: timeEntries[0] && timeEntries[0].minutes };
         });
@@ -4051,7 +4078,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
           start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
         await withSupa(page, []);
         const r = await page.evaluate(async () => {
-          window._tlGapTrimRan = false;
+          window.__tlArm();
           const n = await _tlTrimCoveredGapRows();
           const stillArmed = window._tlGapTrimRan === false;
           // Re-latch before this evaluate ends so the unlatched state never
@@ -4071,7 +4098,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
             start_time: 'nope', end_time: 'also nope' }]);
         await withSupa(page, COVERS);
         const r = await page.evaluate(async () => {
-          window._tlGapTrimRan = false;
+          window.__tlArm();
           const first = await _tlTrimCoveredGapRows();
           const second = await _tlTrimCoveredGapRows();
           return { first, second, left: timeEntries.length };
@@ -4093,7 +4120,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         ]);
         await withSupa(page, COVERS);   // covers are elsewhere, so neither is withdrawn
         const r = await page.evaluate(async () => {
-          window._tlGapTrimRan = false;
+          window.__tlArm();
           const n = await _tlTrimCoveredGapRows();
           return { n, left: timeEntries.length,
                    label: timeEntries[0] && timeEntries[0].scope_label };
@@ -4123,7 +4150,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
           const realFrom = window._supa.from;
           window._supa = { from: () => { const c = { select: () => c, is: () => c, eq: () => c,
             gte: () => Promise.resolve({ data: [], error: null }) }; return c; } };
-          window._tlGapTrimRan = false;
+          window.__tlArm();
           const first = await _tlTrimCoveredGapRows();     // failed/empty read
           const latchedEarly = window._tlGapTrimRan === true;
           window._supa = { from: realFrom };               // reconnect: covers arrive
@@ -4145,7 +4172,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
           start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
         await withSupa(page, COVERS);
         const r = await page.evaluate(async () => {
-          window._tlGapTrimRan = false;
+          window.__tlArm();
           const results = await Promise.all([1, 2, 3, 4, 5].map(() => _tlTrimCoveredGapRows()));
           return { total: results.reduce((a, b) => a + b, 0), left: timeEntries.length };
         });
