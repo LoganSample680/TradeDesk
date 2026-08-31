@@ -1517,6 +1517,122 @@ test.describe('Wake region set for the dead app', () => {
       expect(r.saves).toBe(0);
     });
 
+    // ── THE WALK TO THE TRUCK IS NOT A HOLE IN THE DAY ────────────────────
+    // Owner, 2026-08-31, reading his own timeline: "job site says 12:22, then
+    // drive says 12:26? Drive should say 12:22." He left John Doe's on the
+    // walking edge and the next thing on record was the drive, with the walk
+    // to the truck belonging to neither. _geoTapeSegments carves that load-out
+    // off the tail of the on-site span and _geoFoldLoadIntoOnsite puts it back
+    // at a customer's; this sweep was not folding, so it trimmed the visit to
+    // where the load began and left the gap.
+    const withPlaces = (page, world) => page.evaluate(async (w) => {
+      const saved = { supa: window._supa, user: window._supaUser, tape: window._geoMotionTape,
+                      enq: window._geoEnqueue, ran: window._geoRetimeRan, gp: window.getPlaces };
+      const wrote = [];
+      try {
+        window._geoRetimeRan = false; window._supaUser = { id: 'u1' };
+        window._geoEnqueue = (tbl, row) => wrote.push({ tbl, ...row });
+        window.getPlaces = () => (w.places || []);
+        window._geoMotionTape = async (a, b) => Array.isArray(w.tape)
+          ? w.tape.filter(x => x && x.ts >= a && x.ts <= b) : w.tape;
+        const c = { select: () => c, is: () => c, eq: () => c,
+                    gte: () => Promise.resolve({ data: w.rows, error: null }) };
+        window._supa = { from: () => c };
+        await _geoRetimeToTapeSweep();
+        return { wrote };
+      } finally {
+        window._supa = saved.supa; window._supaUser = saved.user; window._geoMotionTape = saved.tape;
+        window._geoEnqueue = saved.enq; window._geoRetimeRan = saved.ran; window.getPlaces = saved.gp;
+      }
+    }, world);
+
+    // MORNING's walk is recorded as 'cycling', which the load finder does not
+    // count (only onFoot/walking/running), so it produces no load span at all.
+    // This tape is his 08-31 shape: get up and walk out, sit in the cab, pull
+    // away. The gap between the walk ending and the wheels turning is the
+    // stretch that used to belong to nothing.
+    const WALKOUT = [
+      { ts: T(6, 0, 0), kind: 'still' },
+      { ts: T(7, 43, 54), kind: 'walking' },
+      // 2m43s in the cab, inside _GEO_LOAD_STILL_MS. The first draft of this
+      // fixture sat 5m20s and produced no load segment at all, because that
+      // slack is the ceiling on how long a still stretch may sit between the
+      // last trip to the truck and pulling out before it stops being a
+      // load-out. Worth knowing the boundary is real and tested elsewhere.
+      { ts: T(7, 47, 0), kind: 'still' },
+      { ts: T(7, 49, 43), kind: 'driving' },
+      { ts: T(7, 59, 6), kind: 'onFoot' },
+    ];
+
+    test('a client visit runs through the walk to the truck, not up to it', async () => {
+      const r = await withPlaces(page, {
+        tape: WALKOUT,
+        places: [{ name: 'TradeDesk shop' }],
+        rows: [{ id: 'v1', source: 'client', dest_place: 'John Doe', job_id: null,
+                 client_key: 'kv1', arrived_at: iso(6, 30, 0), departed_at: iso(7, 40, 0),
+                 minutes: 70 }],
+      });
+      const w = r.wrote.find(x => x.id === 'v1');
+      expect(w, 'the visit is re-timed').toBeTruthy();
+      expect(w.departed_at, 'on site runs straight through to "this guy is now driving"')
+        .toBe(iso(7, 49, 43));
+    });
+
+    test('at a place the contractor OWNS the load stays its own line item', async () => {
+      // The other half of the same rule, and it must not move: loading the
+      // truck at your own yard is billable work in its own right, so the
+      // on-site span still ends where the load begins.
+      const r = await withPlaces(page, {
+        tape: WALKOUT,
+        places: [{ name: 'TradeDesk shop' }],
+        rows: [{ id: 'v2', source: 'place', dest_place: 'TradeDesk shop', job_id: null,
+                 client_key: 'kv2', arrived_at: iso(6, 30, 0), departed_at: iso(7, 40, 0),
+                 minutes: 70 }],
+      });
+      const w = r.wrote.find(x => x.id === 'v2');
+      expect(w, 'it still re-times').toBeTruthy();
+      expect(w.departed_at, 'the load-out is carved off, not folded in')
+        .toBe(iso(7, 43, 54));
+    });
+
+    test('the load segment itself now reaches the wheels turning', async () => {
+      // The hole, asserted directly on the segments rather than through a
+      // sweep. Sitting in the cab between the last trip to the truck and
+      // pulling out belonged to no segment at all.
+      const segs = await page.evaluate((t) => _geoTapeSegments(t, t[0].ts, t[t.length - 1].ts + 60000),
+        WALKOUT.map(x => ({ ts: x.ts, kind: x.kind })));
+      const load = segs.find(x => x.kind === 'load');
+      const drive = segs.find(x => x.kind === 'drive');
+      expect(load, 'a walk straight into a departure is a load-out').toBeTruthy();
+      expect(load.b, 'and it runs to the moment the wheels turn').toBe(drive.a);
+    });
+
+    test('the day tiles: no minute between the visit and the drive is unowned', async () => {
+      // The property the owner is actually asking for, asserted as a property
+      // rather than as two numbers.
+      const segs = await page.evaluate((t) => {
+        const raw = _geoTapeSegments(t, t[0].ts, t[t.length - 1].ts + 60000);
+        return _geoFoldLoadIntoOnsite(raw, false).sort((a, b) => a.a - b.a);
+      }, WALKOUT.map(x => ({ ts: x.ts, kind: x.kind })));
+      for (let i = 1; i < segs.length; i++) {
+        expect(segs[i].a, 'segment ' + i + ' must start where ' + (i - 1) + ' ended')
+          .toBe(segs[i - 1].b);
+      }
+    });
+
+    test('no places on file: a customer visit still folds', async () => {
+      // getPlaces returning empty must read as "owns nothing", never as a
+      // reason to skip the fold.
+      const r = await withPlaces(page, {
+        tape: WALKOUT,
+        places: [],
+        rows: [{ id: 'v4', source: 'client', dest_place: 'John Doe', job_id: null,
+                 client_key: 'kv4', arrived_at: iso(6, 30, 0), departed_at: iso(7, 40, 0),
+                 minutes: 70 }],
+      });
+      expect(r.wrote.find(x => x.id === 'v4').departed_at).toBe(iso(7, 49, 43));
+    });
+
     test('a leg is realigned even when the time row already matches the tape', async () => {
       // The backlog case, and the one the owner hit on a build that already
       // carried the pairing: "mileage start time still says 7:52 am rather

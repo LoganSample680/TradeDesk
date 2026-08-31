@@ -2473,7 +2473,19 @@ function _geoTapeSegments(tape,s,e){
     }
     if(!w)continue;
     const b=Math.min(w.b,d.a);
-    if(b>w.a&&d.a-b<=_GEO_LOAD_STILL_MS)loads.push({a:w.a,b:b});
+    // RUNS TO THE WHEELS TURNING, not to the end of the walking span. The
+    // still moment between putting the last thing in the truck and pulling out
+    // is somebody sitting in the cab, and it used to belong to NOTHING: the
+    // on-site span was cut at the walk's start, the load ended at the walk's
+    // end, and the minutes in between appeared in no segment at all.
+    //
+    // Owner, 2026-08-31, reading his own timeline: "job site says 12:22, then
+    // drive says 12:26? Drive should say 12:22." That four-minute hole is
+    // exactly this. The slack below was already the tolerance for it; it was
+    // being tolerated without ever being attributed. The segments are supposed
+    // to tile the day, and a day with holes in it is the thing this whole
+    // model exists to stop.
+    if(b>w.a&&d.a-b<=_GEO_LOAD_STILL_MS)loads.push({a:w.a,b:d.a});
   }
   // On site: the space between drives, with any load-out at its tail carved
   // out so the same minute is never both loading and standing on the job.
@@ -2500,6 +2512,16 @@ function _geoTapeSegments(tape,s,e){
 // map. This is the caller's half, applied once the fence has named the place.
 // Pass ownPlace=false and the load-out folds back into the on-site span it was
 // carved out of.
+// The places the contractor owns, by name. Loading is its own line item only
+// at one of these; the identical walk at a customer's is the tail of the job.
+// Shared so _geoRetimeToTapeSweep and _geoTapeRegradeSweep can never answer
+// that question differently for the same row.
+function _geoOwnPlaceNames(){
+  try{
+    return new Set(((typeof getPlaces==='function')?(getPlaces()||[]):[])
+      .filter(p=>p&&p.name).map(p=>String(p.name)));
+  }catch(_e){return new Set();}
+}
 function _geoFoldLoadIntoOnsite(segs,ownPlace){
   if(ownPlace||!Array.isArray(segs)||!segs.length)return Array.isArray(segs)?segs.slice():[];
   const out=segs.filter(x=>x&&x.kind!=='load').map(x=>({kind:x.kind,a:x.a,b:x.b}));
@@ -6613,8 +6635,7 @@ async function _geoTapeRegradeSweep(){
     if(!rows.length)return 0;
     // A visit at a place the contractor owns keeps loading as its own line
     // item; at a customer the same walk is the tail of the job.
-    const ownNames=new Set(((typeof getPlaces==='function')?(getPlaces()||[]):[])
-      .filter(p=>p&&p.name).map(p=>String(p.name)));
+    const ownNames=_geoOwnPlaceNames();
     let changed=0;
     for(const r of rows){
       const s0=Date.parse(r.arrived_at)||0,e0=Date.parse(r.departed_at)||0;
@@ -6989,7 +7010,26 @@ async function _geoRetimeToTapeSweep(){
       const winA=s0-_GEO_RETIME_MAX_MS,winB=e0+_GEO_RETIME_MAX_MS;
       const tape=await tapeFor(winA,winB);
       if(!Array.isArray(tape)||!tape.length)return 0;
-      const segs=_geoTapeSegments(tape,winA,winB);
+      // ── THE WALK TO THE TRUCK IS NOT A HOLE IN THE DAY ────────────────
+      // _geoTapeSegments carves the load-out off the tail of an on-site span,
+      // and _geoFoldLoadIntoOnsite puts it back whenever the stop is not a
+      // place the contractor owns, because at a CUSTOMER that same walk is the
+      // tail of the job. _geoTapeRegradeSweep folds. This sweep did not, so it
+      // trimmed a client visit to where the load began and left those minutes
+      // belonging to nothing at all.
+      //
+      // Owner, 2026-08-31, reading his own day: "job site says 12:22, then
+      // drive says 12:26? Drive should say 12:22." He left John Doe's at
+      // 12:22:13 on the walking edge and the next thing on record was the
+      // drive, with the walk to the truck in between owned by neither. The
+      // rule this restores is the one already written on _geoFoldLoadIntoOnsite
+      // in his own words: on site runs from "this guy's moving" straight
+      // through to "this guy is now driving".
+      //
+      // Same ownership test the regrade sweep uses, so the two sweeps can
+      // never disagree about where a visit ended.
+      const _own=(tbl==='job_time_entries')&&_geoOwnPlaceNames().has(String(r.dest_place||''));
+      const segs=_geoFoldLoadIntoOnsite(_geoTapeSegments(tape,winA,winB),_own);
       if(!segs.length)return 0;
       let best=null,bestOv=0,derived=false;
       if(tbl==='job_time_entries'&&r.source==='place-office'){
