@@ -649,13 +649,30 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // the real completion signal. The grace window covers the one case the
     // queue cannot answer: a reconciler that enqueues nothing at all, which is
     // what the tests expecting zero rows are asserting.
+    // AN EMPTY QUEUE MEANS THE DRAIN TOOK THE WORK, NOT THAT IT LANDED.
+    //
+    // Third occurrence of "expected 1, received 0" in this file, and the first
+    // two fixes both hardened the wrong end. The loop broke the instant the
+    // queue went from non-empty to empty and returned immediately, but the
+    // drain dequeues the item and THEN awaits the upsert. Between those two
+    // moments the queue reads 0 and window.__rec has recorded nothing, so the
+    // helper reported zero rows for work that was in flight and about to
+    // succeed. Nothing engine-specific about it; webkit just loses that race
+    // more often (shard 2, 2026-08-31, "fixes hugging both anchors").
+    //
+    // So the queue emptying starts a settle window instead of ending the wait:
+    // keep polling for the ROW, which is the only thing that actually answers
+    // the question. If more work gets queued in the meantime the window is
+    // cancelled, because the drain is evidently still going.
     const qlen = () => { try { return _geoQueueRead().length; } catch (_e) { return 0; } };
-    let sawWork = false;
-    for (let i = 0; i < 120; i++) {
-      if (rows().length) break;
+    const SETTLE_POLLS = 15;              // 300ms after the drain empties
+    let sawWork = false, drainedAt = -1;
+    for (let i = 0; i < 200; i++) {
+      if (rows().length) break;           // the write landed: done, and this is the only real success
       const n = qlen();
-      if (n > 0) sawWork = true;
-      if (sawWork && n === 0) break;      // enqueued, then drained: done
+      if (n > 0) { sawWork = true; drainedAt = -1; }
+      else if (sawWork && drainedAt < 0) drainedAt = i;
+      if (drainedAt >= 0 && i - drainedAt >= SETTLE_POLLS) break;
       if (!sawWork && i >= 10) break;     // 200ms and nothing was ever queued
       await new Promise(res => setTimeout(res, 20));
     }
