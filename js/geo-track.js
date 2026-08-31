@@ -2702,13 +2702,41 @@ function _geoWriteStopResolved(a,ms,stopLoc){
 // the native side caps again. Priority order decides who survives the cap,
 // strongest fence first, mirroring the ping path's own precedence.
 function _geoParkRegions(spot,spotRadius){
-  const out=[];const seen=new Set();
+  const out=[];
   const baseM=_geoFenceFt()*0.3048+60;
+  // ── ONE ADDRESS, ONE REGION ──────────────────────────────────────────────
+  // Owner, 2026-08-31: "why do we need two separate events laid out when we
+  // only want one?" Exactly right, and the dedupe that was supposed to prevent
+  // it missed by a ten-thousandth of a degree.
+  //
+  // It keyed on Number(lat).toFixed(4), about eleven metres, and his own house
+  // slipped straight through: the home_office place sits at -95.71127 and the
+  // shop place at -95.71121, which round to -95.7113 and -95.7112. Two regions
+  // armed at one address, so iOS fires every crossing TWICE, three
+  // milliseconds apart (his 07:52:14 exit arrived as both 'fence' and
+  // place-1787436272279016), and whichever landed first decided the row. It
+  // also spends one of the eighteen slots iOS grants on a duplicate.
+  //
+  // A distance test, not a rounded string, and 250 ft because that is the
+  // scale of "the same address": two buildings closer than that are one fence
+  // as far as a truck is concerned.
+  const MERGE_FT=250;
+  const isNamed=id=>/^(place-|client-|job-)/.test(String(id));
   const push=(id,lat,lng,radius)=>{
     if(out.length>=18||lat==null||lng==null)return;
-    const k=Number(lat).toFixed(4)+','+Number(lng).toFixed(4);
-    if(seen.has(k))return;seen.add(k);
-    out.push({id:String(id),lat:Number(lat),lng:Number(lng),radius:radius||baseM});
+    const here={lat:Number(lat),lng:Number(lng)};
+    const dupe=out.findIndex(p=>_geoDistFt({lat:p.lat,lng:p.lng},here)<=MERGE_FT);
+    if(dupe>=0){
+      // THE NAMED ONE WINS. The generic tiers are pushed first ('fence' for
+      // the kerb, 'shop' for the business address), so a plain first-wins
+      // dedupe would arm the anonymous id and drop the record that carries the
+      // address. regionName maps 'fence' to the literal string "Stop", which
+      // is the whole reason his rows could not say where a drive began.
+      if(!isNamed(id)||isNamed(out[dupe].id))return;
+      out[dupe]={id:String(id),lat:here.lat,lng:here.lng,radius:radius||out[dupe].radius||baseM};
+      return;
+    }
+    out.push({id:String(id),lat:here.lat,lng:here.lng,radius:radius||baseM});
   };
   if(spot)push('fence',spot.lat,spot.lng,spotRadius);
   if(S.officeLat&&S.officeLon)push('shop',S.officeLat,S.officeLon);

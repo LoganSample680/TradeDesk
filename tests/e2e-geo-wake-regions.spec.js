@@ -343,6 +343,56 @@ test.describe('Wake region set for the dead app', () => {
     expect(r.threw, r.msg || '').toBe(false);
   });
 
+  // ── ONE ADDRESS, ONE REGION ──────────────────────────────────────────────
+  // Owner, 2026-08-31: "why do we need two separate events laid out when we
+  // only want one?" His house is saved twice, once as a home_office place and
+  // once as a shop place, three metres apart. The old dedupe keyed on
+  // toFixed(4), about eleven metres, and -95.71127 vs -95.71121 round to
+  // DIFFERENT keys on the fourth decimal. Both armed, so every crossing fired
+  // twice, three milliseconds apart, and whichever landed first decided the
+  // row. 'fence' and 'shop' both render as anonymous names, which is how a
+  // drive out of his own driveway came to read "Stop".
+  test('two saved places at one address arm ONE region, and the named one wins', async () => {
+    const r = await page.evaluate(() => {
+      const savedPlaces = (typeof places !== 'undefined') ? places.slice() : [];
+      const savedOffice = [S.officeLat, S.officeLon];
+      try {
+        // His real coordinates, to the digit.
+        S.officeLat = 39.03071; S.officeLon = -95.71121;
+        places.length = 0;
+        places.push({ id: 'p-shop', name: 'TradeDesk shop', kind: 'shop', lat: 39.0307066, lon: -95.7112082 });
+        places.push({ id: 'p-ho', name: '2015 SW Randolph Ave', kind: 'home_office', lat: 39.0307378, lon: -95.7112674 });
+        const out = _geoParkRegions({ lat: 39.03072, lng: -95.71124 }, 180);
+        return { ids: out.map(x => x.id), n: out.length };
+      } finally {
+        places.length = 0; savedPlaces.forEach(p => places.push(p));
+        S.officeLat = savedOffice[0]; S.officeLon = savedOffice[1];
+      }
+    });
+    // One region for the address, not three. The kerb spot, the business
+    // address and both saved places are all inside 250 ft of each other.
+    const atHouse = r.ids.filter(id => id === 'fence' || id === 'shop' || /^place-p-/.test(id));
+    expect(atHouse.length, 'one address, one region: ' + JSON.stringify(r.ids)).toBe(1);
+    // ...and it is the one that can NAME the place, never 'fence' or 'shop'.
+    expect(atHouse[0]).toMatch(/^place-p-/);
+  });
+
+  test('a genuinely different address still gets its own region', async () => {
+    // The merge must not swallow real places. 250 ft is "the same address",
+    // not "the same neighbourhood".
+    const r = await page.evaluate(() => {
+      const savedPlaces = (typeof places !== 'undefined') ? places.slice() : [];
+      try {
+        places.length = 0;
+        places.push({ id: 'p-a', name: 'Yard', kind: 'supply', lat: 39.0400, lon: -95.7500 });
+        places.push({ id: 'p-b', name: 'Depot', kind: 'supply', lat: 39.0450, lon: -95.7550 });
+        return _geoParkRegions(null, 180).map(x => x.id);
+      } finally { places.length = 0; savedPlaces.forEach(p => places.push(p)); }
+    });
+    expect(r).toContain('place-p-a');
+    expect(r).toContain('place-p-b');
+  });
+
   test('the heartbeat is wired at all three shift moments (source guarantee)', async () => {
     const src = readJs('geo-track.js');
     // 1. Tracking start: alongside the force-close net in the watcher-on path.

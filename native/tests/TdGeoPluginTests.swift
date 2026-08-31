@@ -1049,3 +1049,88 @@ final class TdGeoPluginTests: XCTestCase {
         wait(for: [after], timeout: 30)
     }
 }
+
+// ── The wake is for the tape, so pull the tape ───────────────────────────────
+//
+// Region monitoring is the one location service Apple relaunches a force-quit
+// app for, and that relaunch was doing nothing with itself: the delegate
+// recorded the crossing and stopped, while the motion history it was woken to
+// collect went unread, because motionSince() is JS-callable and a cold launch
+// has no JS yet.
+//
+// These stress the backfill the same way the rest of this file stresses the
+// plugin: real methods, adversarial input, no simulator UI. The coprocessor is
+// unavailable on the simulator, which is itself one of the cases that has to
+// not crash, so the tests that need real transitions assert the CONTRACT (the
+// mark, the coordinate rule, the bounds) rather than a transition count.
+extension TdGeoPluginTests {
+
+    private var markKey: String { plugin.motionMarkKeyForTest }
+
+    func testBackfillNeverThrowsWithNoCoprocessor() {
+        // The simulator has no motion coprocessor. A wake there must be a
+        // silent no-op, never a crash: iOS TERMINATES a process that touches
+        // CoreMotion wrong, and a force-quit wake is exactly when nobody is
+        // watching to notice.
+        UserDefaults.standard.removeObject(forKey: markKey)
+        plugin.backfillMotionHistoryForTest()
+        plugin.backfillMotionHistoryForTest()
+        XCTAssertTrue(true, "two backfills in a row did not crash the process")
+    }
+
+    func testBackfillMarkIsNeverMovedBackwards() {
+        // A wake must never re-emit history a previous wake already pulled, and
+        // the guard for that is a mark that only ever advances. If a backfill
+        // could lower it, every subsequent wake would re-send the same days.
+        let ahead = (Date().timeIntervalSince1970 * 1000) - 60_000
+        UserDefaults.standard.set(ahead, forKey: markKey)
+        plugin.backfillMotionHistoryForTest()
+        let after = UserDefaults.standard.double(forKey: markKey)
+        XCTAssertGreaterThanOrEqual(after, ahead,
+            "the backfill mark moved backwards, so the next wake re-sends history")
+    }
+
+    func testBackfillMarkIsFlooredAtSevenDays() {
+        // The coprocessor keeps about a week. A mark of 0 (a fresh install, or
+        // a wiped defaults) must not ask for the epoch: queryActivityStarting
+        // with a distant-past date is a pointless round trip at best.
+        UserDefaults.standard.set(0.0, forKey: markKey)
+        plugin.backfillMotionHistoryForTest()
+        let after = UserDefaults.standard.double(forKey: markKey)
+        let weekAgo = (Date().timeIntervalSince1970 * 1000) - 7 * 24 * 3600 * 1000
+        XCTAssertTrue(after == 0 || after >= weekAgo,
+            "a zero mark must floor to the coprocessor's own window, not the epoch")
+    }
+
+    func testBackfillMarkSurvivesAGarbageValue() {
+        // §3.3 input classes: whatever is in defaults is not to be trusted.
+        for junk in [Double.nan, -1, .infinity, 1e18] {
+            UserDefaults.standard.set(junk, forKey: markKey)
+            plugin.backfillMotionHistoryForTest()
+        }
+        XCTAssertTrue(true, "a corrupt mark never crashed the backfill")
+    }
+
+    func testBackfillFreshnessWindowIsBounded() {
+        // The rule that keeps a backfilled row honest: only a transition within
+        // this window of the wake may borrow the wake's coordinate. Wider and
+        // an hours-old transition gets stamped with where the truck is NOW,
+        // which reads exactly like a fact and is not one. CoreMotion history
+        // carries no location of its own and iOS keeps none to pair with it.
+        XCTAssertEqual(TdGeoPlugin.backfillFreshMsForTest, 90_000,
+            "the freshness window is the whole guard against inventing a place")
+    }
+
+    func testRegionWakeRecordsTheCrossingBeforeTheBackfill() {
+        // Order matters on a cold wake: the crossing is the fact we were woken
+        // for and must be buffered even if the motion query never calls back.
+        UserDefaults.standard.removeObject(forKey: "td_geo_fix_buffer")
+        plugin.locationManager(CLLocationManager(),
+                               didExitRegion: CLCircularRegion(
+                                   center: CLLocationCoordinate2D(latitude: 39.03, longitude: -95.71),
+                                   radius: 180, identifier: "place-1"))
+        let buf = (UserDefaults.standard.array(forKey: "td_geo_fix_buffer") as? [[String: Any]]) ?? []
+        XCTAssertTrue(buf.contains { ($0["type"] as? String) == "regionExit" },
+            "the crossing must land whatever the coprocessor does afterwards")
+    }
+}

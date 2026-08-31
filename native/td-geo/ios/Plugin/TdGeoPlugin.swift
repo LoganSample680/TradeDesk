@@ -59,6 +59,11 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // the server. Never advanced on send, only on a 2xx, so a lost response
     // re-sends the tail and the server's dedupe index absorbs the overlap.
     private let flushMarkKey = "td_geo_flush_ts"
+    // How far the motion BACKFILL has already reached. Separate from the flush
+    // mark: the flush mark moves when bytes leave the device, this moves when
+    // history has been read off the coprocessor, and a wake must never re-emit
+    // transitions it already pulled.
+    private let motionMarkKey = "td_geo_motion_hist_ts"
     // taskIdentifier -> the batch's max ts, persisted so a delegate callback
     // arriving after a relaunch can still advance the watermark.
     private let flushInflightKey = "td_geo_flush_inflight"
@@ -603,6 +608,13 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // contract between the phone and the server.
     #if DEBUG
     func recordForTest(_ ev: [String: Any]) { record(ev) }
+    // The backfill is driven by a CoreLocation delegate callback the simulator
+    // will not fire on demand, so the tests reach it the same way the region
+    // wake does. Named ForTest so it is obvious this is not a shipping entry
+    // point; TdNativeTests is a DEBUG-configuration target (§3.3).
+    func backfillMotionHistoryForTest() { backfillMotionHistory() }
+    var motionMarkKeyForTest: String { motionMarkKey }
+    static var backfillFreshMsForTest: Double { backfillFreshMs }
     #endif
 
     private func record(_ ev: [String: Any]) {
@@ -898,16 +910,79 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         }
     }
 
+    // ── THE WAKE IS FOR THE TAPE, SO PULL THE TAPE ──────────────────────────
+    // Region monitoring is the ONE location service Apple will relaunch a
+    // force-quit app for. That relaunch was already happening and doing
+    // nothing with itself: the delegate recorded the crossing and stopped, and
+    // the motion history the wake existed to collect was never read, because
+    // motionSince() is JS-callable and on a cold launch there is no JS yet.
+    //
+    // Not a decision, which is what §3.2 reserves for JS: this reads a buffer
+    // the OS already filled and hands it over unaltered. What a transition
+    // MEANS is still decided in js/geo-track.js and ingest-geo.
+    //
+    // NO COORDINATE on a backfilled transition, deliberately. CoreMotion
+    // history is times and kinds only; there is no location in it and iOS
+    // keeps no queryable location history to pair it with. Stamping the wake
+    // fix onto an hours-old transition would claim it happened here, which is
+    // a lie that reads exactly like a fact. The one exception is a transition
+    // inside `freshMs` of the wake, where the fix genuinely does describe it.
+    private static let backfillFreshMs: Double = 90_000
+    private func backfillMotionHistory() {
+        guard CMMotionActivityManager.isActivityAvailable() else { return }
+        guard Bundle.main.object(forInfoDictionaryKey: "NSMotionUsageDescription") != nil else { return }
+        let d = UserDefaults.standard
+        let nowMs = Date().timeIntervalSince1970 * 1000
+        // The coprocessor keeps about seven days. Never reach further than it
+        // holds, and never re-read what a previous wake already pulled.
+        let floorMs = nowMs - 7 * 24 * 3600 * 1000
+        let mark = max(d.double(forKey: motionMarkKey), floorMs)
+        let from = Date(timeIntervalSince1970: mark / 1000)
+        guard from < Date() else { return }
+        let wakeLoc = mgr().location
+        motionMgr.queryActivityStarting(from: from, to: Date(), to: .main) { [weak self] acts, _ in
+            guard let self = self else { return }
+            var last = ""
+            var newest = mark
+            for a in acts ?? [] {
+                if a.confidence == .low { continue }
+                // The LIVE stream's vocabulary, not the history query's older
+                // one. Two spellings for one fact is how the server ended up
+                // able to see that a transition happened and never what it was.
+                let kind = a.automotive ? "automotive"
+                    : a.cycling ? "cycling"
+                    : a.running ? "running"
+                    : a.walking ? "walking"
+                    : a.stationary ? "still" : ""
+                if kind.isEmpty || kind == last { continue }
+                last = kind
+                let ts = a.startDate.timeIntervalSince1970 * 1000
+                if ts <= mark { continue }
+                if ts > newest { newest = ts }
+                var ev: [String: Any] = ["type": "motion", "ts": ts, "kind": kind, "hist": true]
+                if let l = wakeLoc, nowMs - ts <= TdGeoPlugin.backfillFreshMs {
+                    ev["lat"] = l.coordinate.latitude
+                    ev["lng"] = l.coordinate.longitude
+                    ev["acc"] = l.horizontalAccuracy
+                }
+                self.record(ev)
+            }
+            if newest > mark { d.set(newest, forKey: self.motionMarkKey) }
+        }
+    }
+
     // MARK: - CLLocationManagerDelegate
 
     public func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
         countWake("regionExit")
         record(event(type: "regionExit", loc: manager.location, regionId: region.identifier))
+        backfillMotionHistory()
     }
 
     public func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
         countWake("regionEnter")
         record(event(type: "regionEnter", loc: manager.location, regionId: region.identifier))
+        backfillMotionHistory()
     }
 
     public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
