@@ -4681,7 +4681,13 @@ async function _geoTdEvent(ev,replay){
       // to spend it (see _GEO_DRIVE_PENDING_MAX_MS). Same bargain the shop
       // dwell strikes: the tape sets the moment, the fence confirms the event.
       if(_auto(cur)&&!_auto(prev)){
-        const _at=Number(ev.ts)||now;
+        // Math.round, not the truncation `new Date(float)` does. The plugin
+        // sends a FLOAT ms (Date().timeIntervalSince1970*1000) and ingest-geo
+        // stores Math.round(e.ts). This side truncated: the owner's 08-31 edge
+        // is ...725328.x, so the phone minted a key off 328 and the server off
+        // 329, one millisecond and one whole extra mileage row apart. The two
+        // sides must round identically or sharing the clock buys nothing.
+        const _at=Math.round(Number(ev.ts))||now;
         // Never forward. A tape event stamped in the future (clock skew on a
         // replayed buffer) must not backdate a leg into next week.
         if(_at<=now){_geoDrivePendingAt=new Date(_at).toISOString();

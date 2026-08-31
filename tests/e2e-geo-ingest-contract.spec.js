@@ -14,6 +14,11 @@
 // routed miles), drops it when the client engine already owns the leg, and
 // applies the commute rule the server cannot.
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
+const fs = require('fs');
+const path = require('path');
+const readSrc = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
+const SERVER = () => readSrc('supabase/functions/ingest-geo/index.ts');
+const CLIENT = () => readSrc('js/geo-track.js');
 
 test.describe('geofence ingest contract', () => {
   let page;
@@ -27,6 +32,83 @@ test.describe('geofence ingest contract', () => {
   });
 
   test.afterAll(async () => { await page.close(); });
+
+  // ── ONE CLOCK, BOTH SIDES ────────────────────────────────────────────────
+  // The key derivations below are useless if the two sides feed them different
+  // numbers, and for four days they did. The phone opened its leg at the motion
+  // edge (2026-08-31) and the server at the raw regionExit, nine seconds apart
+  // on the owner's own drive, so base36(startMs) came out different and BOTH
+  // rows landed: 3.2 mi "2015 SW Randolph -> 2950 SW McClure" from the phone,
+  // 2.1 mi "Stop -> John Doe" from the server, for one 3.2-mile trip.
+  //
+  // A duplicate cannot be fixed with a better referee: the server's overlap
+  // guard asks whether the other writer got there first, which on a
+  // backgrounded phone is a coin flip on drain timing, and it lost that
+  // morning. The two sides have to START FROM THE SAME EVENT. These freeze
+  // that on both copies, because a drift of one second mints a different key.
+  test('both engines hold a foot->automotive edge and spend it on the fence exit', () => {
+    const srv = SERVER(), cli = CLIENT();
+    expect(cli.includes('let _geoDrivePendingAt=null;'), 'client holds the pending edge').toBe(true);
+    expect(/pending:\s*PendingDrive\s*\|\s*null/.test(srv), 'server holds the pending edge').toBe(true);
+    // The server's has to survive between POSTs: the coprocessor can hand over
+    // the edge in one flush and the fence exit in the next.
+    expect(srv.includes('state: { dwell, leg, pending,'), 'and carries it across POSTs').toBe(true);
+  });
+
+  test('both sides ROUND the plugin float the same way, not one round one truncate', () => {
+    const srv = SERVER(), cli = CLIENT();
+    // The plugin sends a FLOAT ms (Date().timeIntervalSince1970 * 1000).
+    // ingest-geo stores Math.round(e.ts). This side used to do
+    // `new Date(Number(ev.ts))`, which TRUNCATES. The owner's 08-31 edge is
+    // ...725328.x, so the phone minted a key off 328 and the server off 329:
+    // one millisecond, one different base36 string, one whole extra mileage
+    // row. Sharing the clock buys nothing if the two sides round differently.
+    expect(cli.includes('Math.round(Number(ev.ts))'), 'client rounds the edge').toBe(true);
+    expect(srv.includes('ts: Math.round(e.ts)'), 'server rounds the same value').toBe(true);
+  });
+
+  test('the staleness cap is the same number on both sides', () => {
+    const cliCap = /_GEO_DRIVE_PENDING_MAX_MS\s*=\s*(\d+)\s*\*\s*(\d+)\s*\*\s*(\d+)/.exec(CLIENT());
+    const srvCap = /DRIVE_PENDING_MAX_MS\s*=\s*(\d+)\s*\*\s*(\d+)\s*\*\s*(\d+)/.exec(SERVER());
+    expect(cliCap, 'client cap not found').not.toBeNull();
+    expect(srvCap, 'server cap not found').not.toBeNull();
+    const ms = (m) => Number(m[1]) * Number(m[2]) * Number(m[3]);
+    // 15 minutes. Past it the phone has been driving, stopping and starting,
+    // and the edge no longer describes THIS departure.
+    expect(ms(cliCap)).toBe(15 * 60 * 1000);
+    expect(ms(srvCap), 'a cap that differs by a second mints a different key').toBe(ms(cliCap));
+  });
+
+  test('both sides refuse a future-stamped edge and cancel on coming to rest', () => {
+    const srv = SERVER(), cli = CLIENT();
+    // Forward is never allowed: a clock-skewed replay must not backdate a leg
+    // into next week. Rest cancels: pulling forward ten feet and parking is not
+    // the departure a later exit would be describing.
+    expect(cli.includes('if(_at<=now){_geoDrivePendingAt='), 'client refuses a future edge').toBe(true);
+    expect(srv.includes('if (e.ts <= nowMs) pending ='), 'server refuses a future edge').toBe(true);
+    expect(cli.includes("if(_foot(cur)||cur==='still')_geoDrivePendingAt=null;"),
+      'client cancels on rest').toBe(true);
+    expect(/REST_KINDS\.has\(k\)\)\s*\{\s*\n\s*pending = null;/.test(srv),
+      'server cancels on rest').toBe(true);
+  });
+
+  test('the server drops the generic `fence` twin of a named crossing', () => {
+    const srv = SERVER();
+    // iOS fires one crossing under every id covering the point. regionName maps
+    // the bare literal 'fence' to the string "Stop", so taking whichever landed
+    // first in the array is where every `Stop -> somewhere` row came from.
+    expect(srv.includes('const namedCrossing = evs'), 'the twin filter exists').toBe(true);
+    // A WINDOW, not an equality. The owner's two exits are 3 ms apart, so an
+    // exact-ts match would never have fired once. Found by replaying his real
+    // 08-31 tape before this shipped, and it is the whole reason the filter
+    // works at all.
+    expect(/TWIN_MS = 2000/.test(srv), 'the twin match is a window').toBe(true);
+    expect(/Math\.abs\(n\.ts - e\.ts\) <= TWIN_MS/.test(srv), 'matched by distance, not equality').toBe(true);
+    expect(/const walk = evs\.filter/.test(srv), 'the state machine walks the filtered list').toBe(true);
+    // ...and the RAW insert still stores everything, so nothing is lost.
+    expect(srv.indexOf('from("geo_events").upsert') < srv.indexOf('const namedCrossing'),
+      'the filter must come AFTER the raw store, never before it').toBe(true);
+  });
 
   // ── Key derivations: the exact strings the server mints ───────────────────
   test('_geoLegKey is uid8-leg-base36(startMs), byte for byte', async () => {

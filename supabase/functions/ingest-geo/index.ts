@@ -72,9 +72,30 @@ const EST_ROUTE_FACTOR = 1.3;     // straight-line -> provisional road miles;
                                   //   the client refine replaces this with the
                                   //   real routed distance
 
+// ── The tape sets the clock, the fence only says a departure happened ───────
+// A geofence cannot fire until a line several hundred feet away is crossed,
+// and driving starts at the parking space. On 2026-08-31 the owner's exit
+// fired 522 m from his own driveway while the motion edge that preceded it
+// sat 6 m from his front door, nine seconds earlier.
+//
+// That gap is not just accuracy, it is the DUPLICATE. legKey is base36 of the
+// leg start, so the phone (which opens at the motion edge) and this function
+// (which opened at the raw regionExit) minted different keys for one drive and
+// both rows landed. The overlap guard below was the previous attempt at this
+// and it is a race: it asks whether the other writer got there first, which on
+// a backgrounded phone is a coin flip on drain timing. Same clock on both
+// sides, same key, and the second writer is a no-op the way the header claims.
+const DRIVE_PENDING_MAX_MS = 15 * 60 * 1000;   // js/geo-track.js _GEO_DRIVE_PENDING_MAX_MS
+const AUTO_KINDS = new Set(["automotive", "driving", "cycling"]);
+const REST_KINDS = new Set(["walking", "running", "onFoot", "still"]);
+
 type Ev = { type: string; ts: number; lat?: number; lng?: number; regionId?: string; arrivalTs?: number; kind?: string };
 type Dwell = { regionId: string; arrivedTs: number; lat: number; lon: number };
 type Leg = { startTs: number; lat: number; lon: number; regionId: string };
+// A foot -> automotive edge, held until a fence exit confirms a departure
+// actually happened. Never written on its own: a phone in a pocket reads
+// automotive from a ride in somebody else's truck.
+type PendingDrive = { ts: number; lat: number; lon: number };
 
 function isWorkRegion(rid: string): boolean {
   return rid === "shop" || rid.startsWith("job-") || rid.startsWith("place-") || rid.startsWith("client-");
@@ -157,9 +178,13 @@ Deno.serve(async (req) => {
     // ── The state machine ───────────────────────────────────────────────────
     const { data: stRow } = await svc.from("geo_device_state")
       .select("state").eq("employee_user_id", uid).eq("device_id", deviceId).maybeSingle();
-    const st = (stRow?.state || {}) as { dwell?: Dwell | null; leg?: Leg | null; lastTs?: number };
+    const st = (stRow?.state || {}) as
+      { dwell?: Dwell | null; leg?: Leg | null; lastTs?: number; pending?: PendingDrive | null };
     let dwell: Dwell | null = st.dwell || null;
     let leg: Leg | null = st.leg || null;
+    // Carried across POSTs on purpose: the coprocessor can hand over the
+    // automotive edge in one flush and the fence exit in the next.
+    let pending: PendingDrive | null = st.pending || null;
     const lastTs = Number(st.lastTs) || 0;
 
     // Region display names, one batched lookup per referenced table.
@@ -266,9 +291,52 @@ Deno.serve(async (req) => {
       });
     };
 
-    for (const e of evs) {
+    // ── ONE CROSSING, ONE EVENT ─────────────────────────────────────────────
+    // iOS fires the same crossing under every id that covers the point: the
+    // owner's 07:52:14 exit arrived twice, once as place-1787436272279016 and
+    // once as the bare literal 'fence'. The loop took whichever sat first in
+    // the array, and regionName maps 'fence' to the string "Stop", which is
+    // the entire origin of every `Stop -> somewhere` row on his account.
+    //
+    // Dropped for the STATE MACHINE only. The raw insert above keeps every
+    // event, and newLastTs still advances off the unfiltered array, so the
+    // cursor cannot skip past something this filter hid.
+    //
+    // A WINDOW, NOT AN EQUALITY. The first cut of this keyed on the exact ts
+    // and would never have fired once: the owner's two exits are 1788180734412
+    // and 1788180734415, THREE MILLISECONDS apart, because iOS delivers them
+    // as separate callbacks. Caught by replaying his real 08-31 tape before
+    // this shipped. Two genuinely different crossings inside two seconds do not
+    // happen, and if they did, preferring the named one is still correct.
+    const TWIN_MS = 2000;
+    const namedCrossing = evs
+      .filter((e) => (e.type === "regionExit" || e.type === "regionEnter") &&
+                     e.regionId && e.regionId !== "fence")
+      .map((e) => ({ type: e.type, ts: e.ts }));
+    const hasNamedTwin = (e: { type: string; ts: number }) =>
+      namedCrossing.some((n) => n.type === e.type && Math.abs(n.ts - e.ts) <= TWIN_MS);
+    const walk = evs.filter((e) =>
+      !((e.type === "regionExit" || e.type === "regionEnter") &&
+        e.regionId === "fence" && hasNamedTwin(e)));
+
+    const nowMs = Date.now();
+    for (const e of walk) {
       if (e.ts <= lastTs) continue;                                // already processed
       if (e.lat == null || e.lng == null) continue;
+      if (e.type === "motion") {
+        // The tape's own marks. An automotive edge is HELD; coming to rest
+        // cancels it, because whatever that edge was about, it is not the
+        // departure a fence exit ten minutes from now would describe.
+        const k = String(e.kind || "");
+        if (AUTO_KINDS.has(k)) {
+          // Never forward: a future-stamped event on a replayed buffer must
+          // not backdate a leg into next week.
+          if (e.ts <= nowMs) pending = { ts: e.ts, lat: e.lat, lon: e.lng };
+        } else if (REST_KINDS.has(k)) {
+          pending = null;
+        }
+        continue;
+      }
       if (e.type === "regionEnter") {
         closeLeg(e.ts, e.lat, e.lng, e.regionId);
         if (isWorkRegion(e.regionId) && (!dwell || dwell.regionId !== e.regionId)) {
@@ -277,7 +345,17 @@ Deno.serve(async (req) => {
         }
       } else if (e.type === "regionExit") {
         if (dwell && dwell.regionId === e.regionId) closeDwell(e.ts);
-        if (!leg) leg = { startTs: e.ts, lat: e.lat, lon: e.lng, regionId: e.regionId };
+        if (!leg) {
+          // Spend the held edge if it is earlier than the exit and recent
+          // enough to still describe it. Byte-for-byte the rule the client
+          // applies at its own drive-open site, so both mint the same key.
+          const p = pending;
+          const useTape = !!p && p.ts < e.ts && (e.ts - p.ts) <= DRIVE_PENDING_MAX_MS;
+          leg = (useTape && p)
+            ? { startTs: p.ts, lat: p.lat, lon: p.lon, regionId: e.regionId }
+            : { startTs: e.ts, lat: e.lat, lon: e.lng, regionId: e.regionId };
+          pending = null;
+        }
       }
       // 'fix' and 'visit' events are stored raw for the client's engine; this
       // state machine deliberately does not interpret them (§7.3).
@@ -366,7 +444,7 @@ Deno.serve(async (req) => {
     // writes above are idempotent) instead of losing rows.
     await svc.from("geo_device_state").upsert({
       employee_user_id: uid, device_id: deviceId, contractor_user_id: cid,
-      state: { dwell, leg, lastTs: newLastTs }, updated_at: new Date().toISOString(),
+      state: { dwell, leg, pending, lastTs: newLastTs }, updated_at: new Date().toISOString(),
     }, { onConflict: "employee_user_id,device_id" });
 
     // Fleet & Team liveness for free: the newest fix stamps the device row.
