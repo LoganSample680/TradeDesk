@@ -6635,11 +6635,22 @@ test.describe('Automatic mileage from drive legs', () => {
       const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
       const timerBlock = src.indexOf('if(!silent&&!_cloudTimersStarted)');
       expect(timerBlock, 'the cloud-timers registration point exists').toBeGreaterThan(0);
-      // Generous window: this block registers a dozen-plus timers/listeners
-      // in sequence (the sig-poll interval, the reconcile heartbeat, the
-      // inbound-message poll, then this fix), all inside the same guarded
-      // if-block before its own visibilitychange registration closes it out.
-      const region = src.slice(timerBlock, timerBlock + 8000);
+      // BOUNDED BY CONTENT, NOT BY A CHARACTER COUNT. This used to slice a
+      // magic `timerBlock + 8000`, which meant any code added inside the block
+      // silently shrank what the assertion could see. That is exactly what
+      // happened on 2026-08-31: the foreground-refresh fix
+      // (_refreshOnForeground) landed above these lines and pushed the
+      // _retryPendingTrips interval past 8000, and the test reported the
+      // sweep as MISSING when it was simply out of frame. A test whose scope
+      // moves when unrelated code is added is a test that will lie again.
+      //
+      // The cross-tab zp3_sig_notify listener is the last thing registered in
+      // this guarded block, after both things asserted below. If it ever moves
+      // or goes away this fails loudly on the anchor instead of quietly
+      // mis-scoping.
+      const blockEnd = src.indexOf('zp3_sig_notify', timerBlock);
+      expect(blockEnd, 'the end-of-block anchor exists').toBeGreaterThan(timerBlock);
+      const region = src.slice(timerBlock, blockEnd);
       expect(region, 'a periodic sweep runs alongside the other live-session timers, same cadence as the inbound poll')
         .toContain("setInterval(()=>{if(typeof _retryPendingTrips==='function')_retryPendingTrips();},30000);");
       const visIdx = region.indexOf("addEventListener('visibilitychange'");
