@@ -86,8 +86,12 @@ test.describe('geofence ingest contract', () => {
     // the departure a later exit would be describing.
     expect(cli.includes('if(_at<=now){_geoDrivePendingAt='), 'client refuses a future edge').toBe(true);
     expect(srv.includes('if (e.ts <= nowMs) pending ='), 'server refuses a future edge').toBe(true);
-    expect(cli.includes("if(_foot(cur)||cur==='still')_geoDrivePendingAt=null;"),
-      'client cancels on rest').toBe(true);
+    // The clause gained the flip id (2026-08-31): coming to rest cancels the
+    // mark AND the id that named it, or a refused departure would still label
+    // the next leg with a transition it was not opened from. Same rule, one
+    // more thing to forget, so the assertion names both.
+    expect(cli.includes("if(_foot(cur)||cur==='still'){_geoDrivePendingAt=null;_geoDrivePendingId=null;}"),
+      'client cancels on rest, mark and id together').toBe(true);
     expect(/REST_KINDS\.has\(k\)\)\s*\{\s*\n\s*pending = null;/.test(srv),
       'server cancels on rest').toBe(true);
   });
@@ -408,6 +412,60 @@ test.describe('geofence ingest contract', () => {
     expect(r.threw).toBe(false);
     expect(r.first).toBe(true);
     expect(r.second).toBe(0);
+  });
+
+  // ── ONE FLIP, ONE ID (owner rule 2026-08-31) ─────────────────────────────
+  // The duplicate rows were never a race, they were arithmetic: the leg key is
+  // base36 of the start millisecond, COMPUTED on both sides, and iOS emitted
+  // four automotive samples for his 1:19pm departure. The phone keyed off
+  // ...35.747, the server off ...35.529, and one drive home became two rows.
+  // These pin the sides together at the source, which is the only place a
+  // divergence like that can be caught without two devices and a real drive.
+
+  test('both sides prefer the flip id over anything derived', async () => {
+    const srv = SERVER(), cli = CLIENT();
+    expect(srv, 'server keys off flipId when it has one').toMatch(/flipId \? String\(flipId\)/);
+    expect(cli, 'client keys off flipId when it has one').toMatch(/if\(flipId\)return String\(flipId\);/);
+  });
+
+  test('both sides keep the derived fallback, byte for byte', async () => {
+    // Rows already on the books carry the derived shape and a phone on an
+    // older build sends no id, so dropping the fallback would orphan both.
+    const shape = /slice\(0, ?8\) ?\+ ?"-leg-" ?\+ ?startMs\.toString\(36\)/;
+    expect(SERVER()).toMatch(shape);
+    expect(CLIENT()).toMatch(/slice\(0,8\)\+'-leg-'\+\(\(Date\.parse\(startedIso\)\|\|0\)\)\.toString\(36\)/);
+  });
+
+  test('both sides carry the id on the pending mark, not just on the event', async () => {
+    // The mark is what survives between the flip and the fence exit that
+    // spends it, and on the server it survives between two POSTs. An id that
+    // does not ride the mark cannot name the leg it opens.
+    expect(SERVER()).toMatch(/pending = \{ ts: e\.ts, lat: e\.lat, lon: e\.lng, flipId: e\.flipId \}/);
+    expect(CLIENT()).toMatch(/_geoDrivePendingId=\(typeof ev\.flipId==='string'&&ev\.flipId\)\?ev\.flipId:null/);
+  });
+
+  test('both sides drop the id when the mark is refused', async () => {
+    // A leg labelled with a transition it was not opened from is worse than an
+    // unlabelled one: wrong, and it looks authoritative.
+    expect(SERVER()).toMatch(/regionId: e\.regionId, flipId: null \}/);
+    expect(CLIENT()).toMatch(/_geoLegFlipId=_useTape\?_geoDrivePendingId:null;/);
+  });
+
+  test('both sides take only a STRING id, so junk cannot become a key', async () => {
+    expect(SERVER()).toMatch(/typeof e\.flipId === "string"/);
+    expect(CLIENT()).toMatch(/typeof ev\.flipId==='string'/);
+  });
+
+  test('the plugin mints the id once per flip and remembers across re-arms', async () => {
+    // The other half, and the actual origin of the four samples: the live
+    // stream's memory of the last kind was in-memory and wiped on every
+    // re-arm, and it is re-armed from three places. Durable now, or one state
+    // change is reported once per re-arm forever.
+    const sw = readSrc('native/td-geo/ios/Plugin/TdGeoPlugin.swift');
+    expect(sw, 'the memory is durable, not per-process').toMatch(/lastMotionKindKey = "td_geo_last_motion_kind"/);
+    expect(sw, 'and nothing wipes it on re-arm').not.toMatch(/lastMotionKind = ""/);
+    expect(sw, 'a live flip is minted an id').toMatch(/"flipId": self\.newFlipId\(\)/);
+    expect(sw, 'and so is one recovered from history').toMatch(/"hist": true, "flipId": self\.newFlipId\(\)/);
   });
 
   test('no console errors', async () => {

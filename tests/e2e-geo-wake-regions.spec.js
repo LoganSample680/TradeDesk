@@ -410,10 +410,14 @@ test.describe('Wake region set for the dead app', () => {
     // at two sites and indexOf would silently grade the wrong one.
     const d = src.indexOf('_geoDriveStartedAt=_useTape?');
     expect(d).toBeGreaterThan(-1);
-    // 700, not 400: the tape-clock comment block now sits between the
-    // assignment and the sync. The heartbeat is still armed at the same site,
-    // it is just further down the page than it was.
-    expect(src.slice(d, d + 700).includes('_geoHeartbeatSync(null)'),
+    // 1100, and the number keeps growing because this site keeps earning
+    // comments: the tape clock (2026-08-31), then the flip id that names the
+    // leg (same day). Measured at 737 characters when this was last widened.
+    // The guarantee is that the heartbeat is armed AT the drive-open site, not
+    // that it is the next line, so the window only has to stay inside the
+    // block; a slice big enough to reach the following site would grade the
+    // wrong one and pass for the wrong reason.
+    expect(src.slice(d, d + 1100).includes('_geoHeartbeatSync(null)'),
       'a drive opening must arm the heartbeat').toBe(true);
     // 3. Park arm, with the park spot so home can turn it off.
     expect(src.includes('_geoHeartbeatSync(_at)'),

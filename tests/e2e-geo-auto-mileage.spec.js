@@ -7498,11 +7498,15 @@ test.describe('A drive opens at the moment the tape saw, not the moment the fenc
     _geoLegOrigin = null; _geoDrivePendingAt = null; _geoLastMotionKind = '';
     const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
     await ping(a.SHOPC);                       // inside the shop fence
+    _geoDrivePendingId = null; _geoLegFlipId = null;
     if (a.pendingAgeS != null) {
-      // The transition as the plugin delivers it: kind, prevKind, and the
-      // instant it happened. Fed through the real handler, not poked in.
-      await _geoTdEvent({ type: 'motion', kind: 'automotive', prevKind: 'walking',
-                          ts: Date.now() - a.pendingAgeS * 1000 }, !!a.replay);
+      // The transition as the plugin delivers it: kind, prevKind, the instant
+      // it happened, and (build 45+) the id it minted for this flip. Fed
+      // through the real handler, not poked in.
+      const ev = { type: 'motion', kind: 'automotive', prevKind: 'walking',
+                   ts: Date.now() - a.pendingAgeS * 1000 };
+      if (a.flipId) ev.flipId = a.flipId;
+      await _geoTdEvent(ev, !!a.replay);
     }
     if (a.thenRest) await _geoTdEvent({ type: 'motion', kind: 'still', prevKind: 'automotive', ts: Date.now() });
     const departedAtMs = Date.now();
@@ -7512,8 +7516,118 @@ test.describe('A drive opens at the moment the tape saw, not the moment the fenc
       opened: !!_geoDriveStartedAt,
       backdatedS: started ? Math.round((departedAtMs - started) / 1000) : null,
       pendingCleared: _geoDrivePendingAt === null,
+      legFlipId: _geoLegFlipId,
+      pendingId: _geoDrivePendingId,
+      key: _geoLegKey(_geoDriveStartedAt, _geoLegFlipId),
     };
   }, o);
+
+  // ── ONE FLIP, ONE ID, ONE ROW (owner rule 2026-08-31) ────────────────────
+  // "we should only write one, ever ... one ID that runs through the journey
+  // per core motion flip." The leg key used to be base36 of the start
+  // millisecond, COMPUTED independently by the phone and by ingest-geo. His
+  // 1:19pm departure fired automotive four times (18:20:35.529, .747, .788 and
+  // one a minute earlier), the two writers keyed off different samples, and one
+  // drive home became two rows with two distances. An id minted once at the
+  // flip cannot be computed differently, so the duplicate stops being
+  // something to detect and becomes something that cannot be made.
+
+  test('the flip names the leg: its id becomes the key, untouched', async () => {
+    const r = await depart({ SHOPC, AWAY, pendingAgeS: 180, flipId: 'fABC123' });
+    expect(r.opened).toBe(true);
+    expect(r.legFlipId, 'the leg remembers which flip opened it').toBe('fABC123');
+    expect(r.key, 'and that id IS the key, not a derivation of a timestamp').toBe('fABC123');
+  });
+
+  test('no flipId: the derived key still works, for older builds and old rows', async () => {
+    // The fallback has to stay. Every row already on the books carries the
+    // derived shape, and a phone that has not taken build 45 sends no id.
+    const r = await depart({ SHOPC, AWAY, pendingAgeS: 180 });
+    expect(r.opened).toBe(true);
+    expect(r.legFlipId).toBeNull();
+    expect(r.key).toMatch(/-leg-[0-9a-z]+$/);
+  });
+
+  test('a REFUSED mark takes its id with it', async () => {
+    // A stale edge does not open this leg, so it must not name it either. A
+    // leg labelled with a transition it was not opened from is worse than an
+    // unlabelled one: it is wrong and it looks authoritative.
+    const r = await depart({ SHOPC, AWAY, pendingAgeS: 40 * 60, flipId: 'fSTALE' });
+    expect(r.opened).toBe(true);
+    expect(r.legFlipId, 'the leg was not opened from that flip').toBeNull();
+    expect(r.key).not.toBe('fSTALE');
+  });
+
+  test('coming to rest clears the id along with the mark', async () => {
+    const r = await depart({ SHOPC, AWAY, pendingAgeS: 180, flipId: 'fGONE', thenRest: true });
+    expect(r.pendingCleared).toBe(true);
+    expect(r.pendingId).toBeNull();
+    expect(r.legFlipId).toBeNull();
+  });
+
+  test('a replayed flip still names its leg: that is the force-closed case', async () => {
+    const r = await depart({ SHOPC, AWAY, pendingAgeS: 240, flipId: 'fREPLAY', replay: true });
+    expect(r.legFlipId).toBe('fREPLAY');
+    expect(r.key).toBe('fREPLAY');
+  });
+
+  test('a non-string flipId is refused rather than stringified into a key', async () => {
+    const r = await page.evaluate(async () => {
+      const out = {};
+      for (const junk of [123, {}, [], true, '']) {
+        _geoDrivePendingAt = null; _geoDrivePendingId = null; _geoLastMotionKind = 'walking';
+        await _geoTdEvent({ type: 'motion', kind: 'automotive', prevKind: 'walking',
+                            ts: Date.now() - 60000, flipId: junk });
+        out[String(typeof junk) + ':' + String(junk)] = _geoDrivePendingId;
+      }
+      _geoDrivePendingAt = null; _geoDrivePendingId = null;
+      return out;
+    });
+    Object.entries(r).forEach(([k, v]) => expect(v, k + ' must not become an id').toBeNull());
+  });
+
+  test('_geoLegKey: the id wins, and only a real id wins', async () => {
+    const r = await page.evaluate(() => ({
+      withId: _geoLegKey('2026-08-31T12:52:05.328Z', 'fXYZ'),
+      empty: _geoLegKey('2026-08-31T12:52:05.328Z', ''),
+      nullId: _geoLegKey('2026-08-31T12:52:05.328Z', null),
+      undef: _geoLegKey('2026-08-31T12:52:05.328Z'),
+    }));
+    expect(r.withId).toBe('fXYZ');
+    // Every falsy id falls through to the derived shape rather than keying a
+    // leg on an empty string, which would collide every unlabelled leg in the
+    // account onto one row.
+    expect(r.empty).toMatch(/-leg-/);
+    expect(r.nullId).toMatch(/-leg-/);
+    expect(r.undef).toMatch(/-leg-/);
+    expect(r.empty).toBe(r.undef);
+  });
+
+  test('the leg identity survives the app being killed', async () => {
+    // Without this a drive restored after a kill is re-keyed off its clock and
+    // becomes a second row for one drive, which is the duplicate this whole id
+    // exists to prevent.
+    const r = await page.evaluate(() => {
+      const realUser = _supaUser;
+      try {
+        _supaUser = { id: 'u-flip' };
+        _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+        _geoShopArrivedAt = null; _geoCurrentClient = null; _geoClientArrivedAt = null;
+        _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+        _geoDriveStartedAt = new Date(Date.now() - 10 * 60000).toISOString();
+        _geoLegFlipId = 'fKEEP';
+        _geoPersistOpen(new Date().toISOString());
+        _geoDriveStartedAt = null; _geoLegFlipId = null;
+        window._geoOpenRestored = false;
+        _geoRestoreOpen();
+        return { drive: !!_geoDriveStartedAt, flip: _geoLegFlipId };
+      } finally {
+        _supaUser = realUser; _geoDriveStartedAt = null; _geoLegFlipId = null; _geoClearOpen();
+      }
+    });
+    expect(r.drive).toBe(true);
+    expect(r.flip).toBe('fKEEP');
+  });
 
   test('no tape edge: the drive still opens at the departing ping, unchanged', async () => {
     // The behaviour that has always been here, and the fallback whenever the

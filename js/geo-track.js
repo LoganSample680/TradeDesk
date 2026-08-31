@@ -75,6 +75,10 @@ function _geoConfirmShopDepart(nowMs){
   return true;
 }
 let _geoDriveStartedAt=null;// ISO timestamp when a drive leg began (leaving any fence)
+// The flip this leg was opened from, and therefore its key. Survives the boot
+// alongside driveStartedAt, or a leg restored after a kill would be re-keyed
+// off its clock and become a second row for the same drive.
+let _geoLegFlipId=null;
 // THE MOTION EDGE OWNS THE MOMENT, THE FENCE STILL OWNS THE EVENT.
 // Set when CoreMotion reports foot -> automotive: the instant the truck
 // actually pulled out. Held PENDING, never written on its own, because a
@@ -85,6 +89,9 @@ let _geoDriveStartedAt=null;// ISO timestamp when a drive leg began (leaving any
 // hundred feet and a minute or two late by construction. Exactly the bargain
 // the shop dwell already strikes (see _geoShopPendingClose).
 let _geoDrivePendingAt=null;
+// The flip that set the mark above, so the leg it opens is keyed by the
+// transition itself rather than by a timestamp anybody can round differently.
+let _geoDrivePendingId=null;
 // How stale a pending edge may be and still be believed. The fence normally
 // fires within a minute or two of pulling out, so a quarter hour is generous;
 // past it the phone has been driving, stopping and starting and the edge no
@@ -376,7 +383,20 @@ function _geoClientKey(){return ((_supaUser&&_supaUser.id)||'anon').slice(0,8)+'
 // contractor_user_id+client_key upsert) all wave the duplicate through: that is
 // exactly the owner's 2026-08-11 triple-logged drive. Same person + same leg
 // start = same key, so the second close is recognised as the first one again.
-function _geoLegKey(startedIso){
+// ── ONE FLIP, ONE ID (owner rule 2026-08-31) ────────────────────────────────
+// `flipId` is minted once, in the plugin, at the CoreMotion transition that
+// began this leg, and carried through the ping and the fence lookup to here.
+// When it is present it IS the key, unchanged, on both writers.
+//
+// The fallback is the old derivation, and the reason it must stay is the whole
+// reason the derivation was wrong: base36 of the start millisecond is COMPUTED,
+// so two writers reading two of the four samples iOS emitted for one departure
+// computed two different keys and wrote two rows. Rows already on the books
+// carry those keys, and a phone on an older build sends no flipId at all, so
+// the old shape has to keep working; it just stops being how new legs are
+// identified.
+function _geoLegKey(startedIso,flipId){
+  if(flipId)return String(flipId);
   return ((_supaUser&&_supaUser.id)||'anon').slice(0,8)+'-leg-'+((Date.parse(startedIso)||0)).toString(36);
 }
 // Same idea as _geoLegKey, for a VISIT close (job/shop/place/client/stop)
@@ -586,7 +606,11 @@ function _geoPersistOpen(hiddenAt){
         // that the common case rather than the rare one, because it is
         // designed to let iOS kill the app while parked.
         legOrigin:_geoLegOrigin,lastFenceLoc:_geoLastFenceLoc,lastFenceAt:_geoLastFenceAt,
-        drivePendingAt:_geoDrivePendingAt,
+        drivePendingAt:_geoDrivePendingAt,drivePendingId:_geoDrivePendingId,
+        // The open leg's identity. Without this a drive restored after a kill
+        // is re-keyed from its clock and becomes a second row for one drive,
+        // which is exactly the duplicate this id exists to make impossible.
+        legFlipId:_geoLegFlipId,
         stopAnchor:_geoStopAnchor,
         // Live banner display state (owner report: a UAT reload "kills" the
         // in-progress drive card and the Live Activity/Dynamic Island). None
@@ -654,7 +678,7 @@ function _geoRestoreOpen(){
           _geoEnqueue('job_time_entries',{
             contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
             job_id:null,arrived_at:s.driveStartedAt,departed_at:s.hiddenAt,minutes:mins,
-            dest_place:null,client_key:_geoLegKey(s.driveStartedAt),
+            dest_place:null,client_key:_geoLegKey(s.driveStartedAt,s.legFlipId),
             source:'drive-unassigned-salvaged'
           });
         }
@@ -693,6 +717,8 @@ function _geoRestoreOpen(){
     if(s.driveLastFix)_geoDriveLastFix=s.driveLastFix;
     if(!_geoLegOrigin&&s.legOrigin)_geoLegOrigin=s.legOrigin;
     if(!_geoDrivePendingAt&&s.drivePendingAt)_geoDrivePendingAt=s.drivePendingAt;
+    if(!_geoDrivePendingId&&s.drivePendingId)_geoDrivePendingId=s.drivePendingId;
+    if(!_geoLegFlipId&&s.legFlipId)_geoLegFlipId=s.legFlipId;
     if(!_geoLastFenceLoc&&s.lastFenceLoc)_geoLastFenceLoc=s.lastFenceLoc;
     if(!_geoLastFenceAt&&s.lastFenceAt)_geoLastFenceAt=s.lastFenceAt;
     // The stop they were parked at comes back too, so its own time entry and
@@ -1455,7 +1481,11 @@ async function _geoOnPing(pos){
         const _useTape=_pend>0&&_pend<nowMs&&(nowMs-_pend)<=_GEO_DRIVE_PENDING_MAX_MS;
         if(_useTape)_geoParkNote('drive-open-tape',Math.round((nowMs-_pend)/1000)+'s earlier');
         _geoDriveStartedAt=_useTape?new Date(_pend).toISOString():nowIso;
-        _geoDrivePendingAt=null;
+        // Only the flip we actually SPENT names this leg. A mark refused for
+        // being stale or in the future takes its id with it, or the leg would
+        // be labelled with a transition it was not opened from.
+        _geoLegFlipId=_useTape?_geoDrivePendingId:null;
+        _geoDrivePendingAt=null;_geoDrivePendingId=null;
         _geoLegOrigin=_geoLastFenceLoc;
         _geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs,acc};
         _geoDriveHadPause=false;
@@ -3141,7 +3171,7 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // fresh key and wrote a second row the idempotency was built to block (the
   // owner's 2026-08-11 truck-reposition duplicate, same 7:51a start logged
   // twice with two end times).
-  const legKey=_geoLegKey(driveStartedAt);
+  const legKey=_geoLegKey(driveStartedAt,_geoLegFlipId);
   if(!stale){
     _geoEnqueue('job_time_entries',{
       contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
@@ -4803,12 +4833,16 @@ async function _geoTdEvent(ev,replay){
         // Never forward. A tape event stamped in the future (clock skew on a
         // replayed buffer) must not backdate a leg into next week.
         if(_at<=now){_geoDrivePendingAt=new Date(_at).toISOString();
+          // The flip's own id rides along, and is what the leg will be keyed
+          // by. Null on an older build that sends no flipId, which falls back
+          // to the derived key exactly as before.
+          _geoDrivePendingId=(typeof ev.flipId==='string'&&ev.flipId)?ev.flipId:null;
           if(!replay)_geoParkNote('drive-pending',(prev||'?')+'->'+cur);}
       }
       // Coming to rest ends the claim: whatever this pending edge was about,
       // it is not the departure that a fence exit ten minutes from now would
       // be describing.
-      if(_foot(cur)||cur==='still')_geoDrivePendingAt=null;
+      if(_foot(cur)||cur==='still'){_geoDrivePendingAt=null;_geoDrivePendingId=null;}
       // Park mode keeps its own looser rule (any non-still motion may mean
       // they are leaving), so a parked truck still wakes on a walk past it.
       if(!replay&&(boundary||(_geoParkModeOn&&cur!=='still'))&&now-_geoMotionBurstAt>_GEO_MOTION_BURST_GAP_MS){
@@ -5118,6 +5152,7 @@ function stopGeoTracking(){
   _geoCurrentClient=null;_geoClientArrivedAt=null;_geoClientCacheMemo=null;
   _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;_geoLegAtShop=false;_geoHomeDwell=null;_geoWasAtHome=false;
   _geoLastFenceLoc=null;_geoLegOrigin=null;_geoLastMotionKind='';_geoDrivePendingAt=null;
+  _geoDrivePendingId=null;_geoLegFlipId=null;
   // A real stop-then-restart (sign-out/in, account switch) must get a REAL
   // restore/drain on the next _geoTrackInit(), unlike the twin-write case this
   // guard exists to block: that is two firings racing on the SAME boot, not a

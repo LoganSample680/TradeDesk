@@ -42,7 +42,17 @@ const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...CORS, "Content-Type": "application/json" } });
 
 // ── Client-identical key derivations (js/geo-track.js) ──────────────────────
-const legKeyOf = (uid: string, startMs: number) => uid.slice(0, 8) + "-leg-" + startMs.toString(36);
+// ── ONE FLIP, ONE ID (owner rule 2026-08-31) ────────────────────────────────
+// When the plugin sends a flipId, it IS the key, byte for byte, on both
+// writers. Nothing is computed, so nothing can be computed differently.
+//
+// The derived form stays only as the fallback for an older build that sends no
+// flipId, and it is exactly the thing that broke: base36 of the start
+// millisecond, computed independently by two writers, off four samples iOS
+// emitted for one departure. The phone keyed off ...35.747 and this keyed off
+// ...35.529, and one drive home became two rows with two distances.
+const legKeyOf = (uid: string, startMs: number, flipId?: string | null) =>
+  flipId ? String(flipId) : uid.slice(0, 8) + "-leg-" + startMs.toString(36);
 const visKeyOf = (uid: string, kind: string, id: string | null, arrMs: number) =>
   uid.slice(0, 8) + "-vis-" + kind + "-" + (id != null ? String(id) : "x") + "-" + arrMs.toString(36);
 
@@ -89,13 +99,13 @@ const DRIVE_PENDING_MAX_MS = 15 * 60 * 1000;   // js/geo-track.js _GEO_DRIVE_PEN
 const AUTO_KINDS = new Set(["automotive", "driving", "cycling"]);
 const REST_KINDS = new Set(["walking", "running", "onFoot", "still"]);
 
-type Ev = { type: string; ts: number; lat?: number; lng?: number; regionId?: string; arrivalTs?: number; kind?: string };
+type Ev = { type: string; ts: number; lat?: number; lng?: number; regionId?: string; arrivalTs?: number; kind?: string; flipId?: string };
 type Dwell = { regionId: string; arrivedTs: number; lat: number; lon: number };
-type Leg = { startTs: number; lat: number; lon: number; regionId: string };
+type Leg = { startTs: number; lat: number; lon: number; regionId: string; flipId?: string | null };
 // A foot -> automotive edge, held until a fence exit confirms a departure
 // actually happened. Never written on its own: a phone in a pocket reads
 // automotive from a ride in somebody else's truck.
-type PendingDrive = { ts: number; lat: number; lon: number };
+type PendingDrive = { ts: number; lat: number; lon: number; flipId?: string | null };
 
 function isWorkRegion(rid: string): boolean {
   return rid === "shop" || rid.startsWith("job-") || rid.startsWith("place-") || rid.startsWith("client-");
@@ -160,6 +170,8 @@ Deno.serve(async (req) => {
         // dropped it, so the server could see that a transition happened and
         // never what it was.
         kind: typeof e.kind === "string" ? e.kind.slice(0, 16) : null,
+        // The flip's own id, carried through untouched.
+        flipId: typeof e.flipId === "string" ? e.flipId.slice(0, 40) : null,
       }))
       .sort((a, b) => a.ts - b.ts);
     if (!evs.length) return json({ ok: true, stored: 0, derived: 0 });
@@ -221,7 +233,7 @@ Deno.serve(async (req) => {
       if (mins > MAX_LEG_HOURS * 60) return;                       // dead-app gap: client's job
       const ft = distFt(L.lat, L.lon, endLat, endLon);
       if (ft < BOUNCE_FT) return;                                  // fence bounce, not a drive
-      const key = legKeyOf(uid, L.startTs);
+      const key = legKeyOf(uid, L.startTs, L.flipId);
       const startedIso = new Date(L.startTs).toISOString(), endedIso = new Date(endTs).toISOString();
       // Drive TIME row: same client_key (the legKey) the live engine mints, so
       // the unique index dedupes against a client replay of the same leg.
@@ -331,7 +343,7 @@ Deno.serve(async (req) => {
         if (AUTO_KINDS.has(k)) {
           // Never forward: a future-stamped event on a replayed buffer must
           // not backdate a leg into next week.
-          if (e.ts <= nowMs) pending = { ts: e.ts, lat: e.lat, lon: e.lng };
+          if (e.ts <= nowMs) pending = { ts: e.ts, lat: e.lat, lon: e.lng, flipId: e.flipId };
         } else if (REST_KINDS.has(k)) {
           pending = null;
         }
@@ -351,9 +363,11 @@ Deno.serve(async (req) => {
           // applies at its own drive-open site, so both mint the same key.
           const p = pending;
           const useTape = !!p && p.ts < e.ts && (e.ts - p.ts) <= DRIVE_PENDING_MAX_MS;
+          // Only a SPENT mark names the leg, the same rule the client holds:
+          // a mark refused for being stale takes its id with it.
           leg = (useTape && p)
-            ? { startTs: p.ts, lat: p.lat, lon: p.lon, regionId: e.regionId }
-            : { startTs: e.ts, lat: e.lat, lon: e.lng, regionId: e.regionId };
+            ? { startTs: p.ts, lat: p.lat, lon: p.lon, regionId: e.regionId, flipId: p.flipId }
+            : { startTs: e.ts, lat: e.lat, lon: e.lng, regionId: e.regionId, flipId: null };
           pending = null;
         }
       }

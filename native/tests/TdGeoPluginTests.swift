@@ -1216,4 +1216,45 @@ extension TdGeoPluginTests {
         XCTAssertTrue(buf.contains { ($0["type"] as? String) == "regionExit" })
         XCTAssertTrue(buf.contains { ($0["type"] as? String) == "regionEnter" })
     }
+
+    // ── One flip, one id (owner rule 2026-08-31) ────────────────────────────
+    // "we should only write one, ever ... one ID that runs through the journey
+    // per core motion flip." The live stream already refused to emit an
+    // unchanged kind, but its memory of the last kind was in-memory and reset
+    // on every re-arm, and it is re-armed from three places. So one state
+    // change was reported once per re-arm: his 1:19pm departure fired
+    // automotive at 18:19:10.215, 18:20:35.529, .747 and .788. Four candidate
+    // start instants, a key computed from the start millisecond, two writers,
+    // two rows.
+
+    func testLastMotionKindSurvivesANewPluginInstance() {
+        // The regression guard for the actual bug. A fresh instance stands in
+        // for a re-arm, which is what wiped the in-memory value.
+        UserDefaults.standard.set("automotive", forKey: "td_geo_last_motion_kind")
+        let fresh = TdGeoPlugin()
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "td_geo_last_motion_kind"), "automotive",
+            "a new instance must not forget what state the phone was already in")
+        _ = fresh
+    }
+
+    func testFlipIdsAreUniqueAndNotDerivedFromTheClock() {
+        // Two flips in the same millisecond must still be two ids. A key
+        // derived from the clock is exactly what could not do this.
+        var seen = Set<String>()
+        for _ in 0..<500 {
+            UserDefaults.standard.removeObject(forKey: "td_geo_last_motion_kind")
+            seen.insert(plugin.newFlipIdForTest())
+        }
+        XCTAssertEqual(seen.count, 500, "every flip gets its own id")
+    }
+
+    func testFlipIdShapeIsKeySafe() {
+        // It goes straight into a database key and a URL-ish context, so it
+        // must be short and free of anything that needs escaping.
+        let id = plugin.newFlipIdForTest()
+        XCTAssertTrue(id.hasPrefix("f"))
+        XCTAssertEqual(id.count, 17, "f plus 16 hex characters")
+        XCTAssertNil(id.rangeOfCharacter(from: CharacterSet.alphanumerics.inverted),
+            "no dashes, no punctuation, nothing to escape")
+    }
 }

@@ -80,7 +80,35 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     private var heartbeatOn = false
     private var heartbeatStartedAt: Date?
     private var heartbeatTtlMs: Double = 0
-    private var lastMotionKind = ""
+    // ── ONE FLIP, ONE ID, ONE ROW (owner rule 2026-08-31) ────────────────────
+    // In memory this was wiped every time the stream was re-armed, and it is
+    // re-armed from three places (boot, relaunch, resume). Each re-arm made
+    // the next sample of an UNCHANGED state look like a fresh transition, so
+    // one departure was reported four times: his 1:19pm pull-out fired
+    // automotive at 18:19:10.215, 18:20:35.529, .747 and .788.
+    //
+    // That is the whole duplicate-row problem. The leg key is derived from the
+    // start millisecond, so with four candidate instants the phone keyed off
+    // .747 and the server off .529, and one drive became two rows with two
+    // distances and two clocks. Owner: "we should only write one, ever ...
+    // one ID that runs through the journey per core motion flip."
+    //
+    // So the memory is durable, and each genuine flip mints an id ONCE, here,
+    // at the only place that can see the flip first. Everything downstream
+    // carries that id instead of recomputing one from a timestamp, which is
+    // what made two writers able to disagree at all.
+    private let lastMotionKindKey = "td_geo_last_motion_kind"
+    private var lastMotionKind: String {
+        get { UserDefaults.standard.string(forKey: lastMotionKindKey) ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: lastMotionKindKey) }
+    }
+    // Short, opaque, and unique per flip. Not derived from anything, because
+    // anything derived can be derived differently by the other writer.
+    private func newFlipId() -> String {
+        // String(...) around the prefix: Substring does not concatenate with a
+        // String literal and this has to compile on the macOS runner, not here.
+        return "f" + String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(16))
+    }
 
     // THE WAKE HANDLER. iOS relaunches even a force-quit app, silently and in
     // the background, when a monitored region trips, a visit closes, or the
@@ -584,7 +612,6 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             self.endBurst()
             self.hbStop()
             self.motionMgr.stopActivityUpdates()
-            self.lastMotionKind = ""
             m.stopMonitoringSignificantLocationChanges()
             m.stopMonitoringVisits()
             for r in m.monitoredRegions { m.stopMonitoring(for: r) }
@@ -622,6 +649,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // while behind a debounce.
     func flushUrgentlyForTest() { flushUrgently() }
     func scheduleFlushForTest() { scheduleFlush() }
+    func newFlipIdForTest() -> String { newFlipId() }
+    var lastMotionKindKeyForTest: String { lastMotionKindKey }
     var flushCfgKeyForTest: String { flushCfgKey }
     var flushMarkKeyForTest: String { flushMarkKey }
     var bufferKeyForTest: String { bufferKey }
@@ -789,7 +818,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         // has the key (ios-beta.yml); this guard is for any host that lacks
         // it, where silently not streaming beats crashing the process.
         guard Bundle.main.object(forInfoDictionaryKey: "NSMotionUsageDescription") != nil else { return }
-        lastMotionKind = ""
+        // Deliberately NOT reset. See lastMotionKind above: wiping it here is
+        // what turned one state change into one event per re-arm.
         motionMgr.startActivityUpdates(to: .main) { [weak self] act in
             guard let self = self, let a = act else { return }
             if a.confidence == .low { return }
@@ -818,7 +848,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 "type": "motion",
                 "ts": Double(Date().timeIntervalSince1970 * 1000),
                 "kind": kind,
-                "prevKind": prev
+                "prevKind": prev,
+                // The id for this flip and everything it goes on to produce.
+                "flipId": self.newFlipId()
             ]
             if let l = self.mgr().location {
                 ev["lat"] = l.coordinate.latitude
@@ -1018,7 +1050,11 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 let ts = a.startDate.timeIntervalSince1970 * 1000
                 if ts <= mark { continue }
                 if ts > newest { newest = ts }
-                var ev: [String: Any] = ["type": "motion", "ts": ts, "kind": kind, "hist": true]
+                // A recovered flip gets an id exactly like a live one: it is
+                // the same fact, arriving late, and whatever leg it goes on to
+                // open must be keyed the same way on both sides.
+                var ev: [String: Any] = ["type": "motion", "ts": ts, "kind": kind,
+                                         "hist": true, "flipId": self.newFlipId()]
                 if let l = wakeLoc, nowMs - ts <= TdGeoPlugin.backfillFreshMs {
                     ev["lat"] = l.coordinate.latitude
                     ev["lng"] = l.coordinate.longitude
