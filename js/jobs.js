@@ -504,18 +504,94 @@ function clockOut(saveEntry,silent){
 function _rehydrateActiveTimer(){
   if(_activeTimer||!timeEntries||!timeEntries.length)return;
   const{loggedByUid}=_tlLoggedByInfo();
-  const mine=timeEntries.find(e=>e.open&&(e.logged_by_uid||null)===loggedByUid);
+  const mine=timeEntries.find(e=>e&&e.open&&(e.logged_by_uid||null)===loggedByUid);
   if(!mine)return;
-  const j=jobs.find(x=>x.id===mine.job_id);if(!j)return;
-  const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
-  const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
-  _activeTimer={jobId:j.id,jobName:j.name,clientName:c?c.name:j.name,scopeId:mine.scope_id||null,scopeLabel:mine.scope_label||null,startTime:new Date(mine.start_time).getTime(),timerInterval:null,entryId:mine.id};
-  _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
+  if(!_adoptOpenEntry(mine))return;
   showClockBanner();
+  // Paint the real elapsed time immediately instead of showing 0:00 for a
+  // second: this clock has been running since before the reload, and a resumed
+  // shift that starts again from zero reads as the time having been lost.
+  updateClockTimer();
   // A reload mid-shift restores the lock-screen card too, or the contractor
   // reopens the app to find the clock running in-app and gone from the lock
   // screen, which reads as the tracking having stopped.
   if(typeof _liveActClockIn==='function')_liveActClockIn(_activeTimer);
+}
+
+// Build the live timer state from a persisted open row. Split out because TWO
+// paths need it and they must agree: the boot rehydrate above, and
+// clockOutEntry() below when the Clock out button is pressed on a device that
+// never held this timer in memory.
+//
+// Owner report 2026-08-31 ("Jack just said its not letting him clock out").
+// This used to be inline in _rehydrateActiveTimer and read
+// `const j=jobs.find(x=>x.id===mine.job_id); if(!j)return;`, so a clock-in
+// with NO job on it could never be resumed. That is not a corner case:
+// clockIn(null,...) is a supported button, js/jobs.js:98, and it names the
+// session "General time". Jack clocked in general at 7:55am, the app reloaded,
+// _activeTimer (a `let`) was gone, this bailed on the null job_id, and from
+// then on there was no banner and no working way to stop the clock. His row
+// was still open fourteen hours later.
+//
+// String() on both sides for the same reason _tlJobClientInfo does it: a row
+// that came back from Supabase carries a string job_id while jobs[].id is a
+// local number, so a strict === silently misses and turns a real job into a
+// general one on every reload.
+function _adoptOpenEntry(row){
+  if(!row||!row.open)return false;
+  const startMs=new Date(row.start_time).getTime();
+  if(!(startMs>0))return false;   // a malformed row must not start a clock counting from 1970
+  const _jl=Array.isArray(jobs)?jobs:[];
+  const _bl=Array.isArray(bids)?bids:[];
+  const j=row.job_id!=null?(_jl.find(x=>x&&String(x.id)===String(row.job_id))||null):null;
+  const bid=(j&&j.bid_id)?(_bl.find(b=>b&&b.id===j.bid_id)||null):null;
+  const c=bid?getClientById(bid.client_id):(j?getClientById(j.client_id):null);
+  // The same words clockIn() uses for a job-less clock, so a reload never
+  // renames somebody's shift.
+  const jobName=j?j.name:'General time';
+  _activeTimer={
+    // Keep the row's own job_id even when the job itself is missing (deleted,
+    // or not synced onto this device yet). Dropping it here would quietly
+    // detach a real job's time; clockOut's `jobs.find` simply won't match and
+    // skips crediting hours, which is correct when there is no job to credit.
+    jobId:j?j.id:(row.job_id!=null?row.job_id:null),
+    jobName,clientName:c?c.name:jobName,
+    scopeId:row.scope_id||null,scopeLabel:row.scope_label||null,
+    startTime:startMs,timerInterval:null,entryId:row.id
+  };
+  _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
+  return true;
+}
+
+// Close one specific still-open row that belongs to YOU, from the Time Log
+// card, whether or not this device is the one that started it.
+//
+// The card's own-row button used to call clockOut() directly, whose first line
+// is `if(!_activeTimer)return;`. After a reload, or when the open row arrives
+// from the cloud after boot, _activeTimer is null and that button did nothing
+// at all: no toast, no error, no movement. A dead button in the exact
+// Â§13.1 sense, and the reason Jack ended up tapping Clock IN instead and
+// starting a second entry he immediately stopped (7 seconds, 12:43pm).
+//
+// It adopts the row and then hands off to the real clockOut(), rather than
+// closing the row itself: every side effect (haptic, live-activity end, job
+// hours, toast, saveAll, re-renders) then happens exactly once, in one place
+// (Â§7.3). It is NOT forceClockOutEntry: that one audit-tags who force-closed
+// somebody else's clock, and stamping your own name on your own clock-out
+// would be a lie in the record.
+function clockOutEntry(entryId){
+  const e=(Array.isArray(timeEntries)?timeEntries:[]).find(x=>x&&x.id===entryId&&x.open);
+  if(!e){
+    // The row is already gone or already closed (another device got there
+    // first). Still tidy up this device if it is somehow running something.
+    if(_activeTimer)clockOut();
+    return;
+  }
+  // This device is running a DIFFERENT entry: bank that one first rather than
+  // abandoning it open, then take over this row.
+  if(_activeTimer&&_activeTimer.entryId!==e.id)clockOut(true,true);
+  if(!_activeTimer&&!_adoptOpenEntry(e))return;
+  clockOut();
 }
 
 // Owner request 2026-07-11 ("bulletproof", matches Jobber's #1 timesheet
@@ -602,14 +678,21 @@ function _saveEditedTimeEntry(entryId){
   typeof renderTimeLog==='function'&&renderTimeLog();
 }
 
-function updateClockTimer(){
-  if(!_activeTimer)return;
-  const elapsed=Math.floor((Date.now()-_activeTimer.startTime)/1000);
+// "0:07", "12:34", "3h 04:09". One formatter, because the running clock is now
+// painted in two places at once: the app-wide clock banner and the Time Log's
+// "Currently clocked in" card (js/timelog.js _tlTickOpenElapsed). Two hand-rolled
+// versions of this would drift the moment either was touched (Â§7.3).
+function _clockElapsedStr(ms){
+  const elapsed=Math.max(0,Math.floor((Number(ms)||0)/1000));
   const h=Math.floor(elapsed/3600);
   const m=Math.floor((elapsed%3600)/60);
   const s=elapsed%60;
-  const timeStr=m+':'+(s<10?'0':'')+s;
-  const full=(h?h+'h ':'')+timeStr;
+  return (h?h+'h ':'')+m+':'+(s<10?'0':'')+s;
+}
+function updateClockTimer(){
+  if(!_activeTimer)return;
+  const elapsed=Math.floor((Date.now()-_activeTimer.startTime)/1000);
+  const full=_clockElapsedStr(Date.now()-_activeTimer.startTime);
   const el=document.getElementById('clock-banner-time');
   if(el)el.textContent=(_activeTimer.scopeLabel?_activeTimer.scopeLabel+' · ':'')+full;
   // Live time-on-site counter on the dashboard on-site card (minute granularity).

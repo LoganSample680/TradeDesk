@@ -2197,6 +2197,13 @@ test.describe('timelog.js: exhaustive coverage', () => {
         timeEntries = timeEntries.filter(e => e.id !== id);
         window._isEmployee = false; window._employeeRecord = undefined; window._supaUser = undefined;
         if (typeof _tlStopOpenRefresh === 'function') _tlStopOpenRefresh();
+        // _tlStartOpenRefresh now reconnects a running clock (a row can land
+        // from the cloud after boot), so a test that calls it can leave a live
+        // _activeTimer and its 1s interval behind for the rest of the file.
+        if (typeof _activeTimer !== 'undefined' && _activeTimer) {
+          clearInterval(_activeTimer.timerInterval); _activeTimer = null;
+          if (typeof hideClockBanner === 'function') hideClockBanner();
+        }
       }, OPEN_ID);
     });
 
@@ -2233,7 +2240,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.display).toBe('block');
       expect(r.html).toContain('Currently clocked in');
       expect(r.html).toContain('Timelog Test Client');
-      expect(r.html).toContain('onclick="clockOut();_tlRenderOpenBanner()"');
+      // Assertion changed 2026-08-31 (section 10.4). OLD: the own-row button
+      // called clockOut() bare, which was correct only while _activeTimer was
+      // guaranteed to hold this row. NEW: it calls clockOutEntry(id), which
+      // adopts the row first and then runs the same clockOut(). The old
+      // guarantee was never true after a reload, and the button was dead.
+      expect(r.html).toContain('onclick="clockOutEntry(' + OPEN_ID + ');_tlRenderOpenBanner()"');
       expect(r.html).not.toContain('forceClockOutEntry'); // own entry never uses the manager force-close path
       expect(r.html).not.toContain('LONG SHIFT');
     });
@@ -2306,6 +2318,99 @@ test.describe('timelog.js: exhaustive coverage', () => {
         const second = _tlOpenRefreshTimer;
         _tlStopOpenRefresh();
         return { changed: first !== second, clearedAfter: _tlOpenRefreshTimer === null };
+      });
+      expect(r.changed).toBe(true);
+      expect(r.clearedAfter).toBe(true);
+    });
+
+    // Owner report 2026-08-31: "Jack just said its not letting him clock out".
+    // He clocked in with no job at 7:55am, the app reloaded, and from then on
+    // the Clock out button on this card did nothing at all. These pin both
+    // halves of that: the row is named rather than shown as a dash, and the
+    // button closes it even when this device never held the timer.
+    test('a job-less clock reads "General time" on the card, never a bare dash', async () => {
+      const r = await page.evaluate((id) => {
+        timeEntries.push({ id, job_id: null, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 20 * 60000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Jack Test' });
+        const row = _tlOpenEntries().find(x => x.rawId === id);
+        window._isEmployee = false;
+        _tlRenderOpenBanner();
+        return { clientName: row.clientName, jobName: row.jobName, html: document.getElementById('tl-open').innerHTML };
+      }, OPEN_ID);
+      expect(r.clientName).toBe('General time');
+      expect(r.jobName).toBe('');
+      expect(r.html).toContain('General time');
+      expect(r.html).toContain('Jack Test');
+    });
+
+    test('the elapsed figure carries its start instant so it can tick without a re-render', async () => {
+      const r = await page.evaluate((id) => {
+        const startMs = Date.now() - 65 * 1000;
+        timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date(startMs).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+        window._isEmployee = false;
+        _tlRenderOpenBanner();
+        const n = document.querySelector('#tl-open [data-tl-open-start]');
+        return { has: !!n, attr: n ? Number(n.getAttribute('data-tl-open-start')) : 0, text: n ? n.textContent : '', startMs };
+      }, OPEN_ID);
+      expect(r.has).toBe(true);
+      expect(Math.abs(r.attr - r.startMs)).toBeLessThan(2000);
+      expect(r.text).toMatch(/^1:0\d$/);        // 1 minute and change, seconds visible
+    });
+
+    test('_tlTickOpenElapsed repaints the figure in place and leaves the button alone', async () => {
+      const r = await page.evaluate((id) => {
+        timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 30 * 1000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+        window._isEmployee = false;
+        _tlRenderOpenBanner();
+        const n = document.querySelector('#tl-open [data-tl-open-start]');
+        const before = n.textContent;
+        const btn = document.querySelector('#tl-open button');
+        // Wind the start back a full minute, then tick: only the text moves.
+        n.setAttribute('data-tl-open-start', String(Number(n.getAttribute('data-tl-open-start')) - 60000));
+        _tlTickOpenElapsed();
+        return { before, after: n.textContent, sameNode: document.querySelector('#tl-open [data-tl-open-start]') === n, sameBtn: document.querySelector('#tl-open button') === btn };
+      }, OPEN_ID);
+      expect(r.before).not.toBe(r.after);
+      expect(r.after).toMatch(/^1:\d\d$/);
+      expect(r.sameNode).toBe(true);   // repainted, not rebuilt
+      expect(r.sameBtn).toBe(true);    // the thumb target survives the tick
+    });
+
+    test('_tlTickOpenElapsed does not throw with a hidden or empty card', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          _tlRenderOpenBanner();               // no open rows: hidden
+          _tlTickOpenElapsed();
+          const el = document.getElementById('tl-open');
+          const keep = el.id; el.id = 'tl-open-gone-temp';
+          _tlTickOpenElapsed();
+          el.id = keep;
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('_tlStartOpenRefresh runs BOTH timers and _tlStopOpenRefresh clears both', async () => {
+      const r = await page.evaluate(() => {
+        _tlStartOpenRefresh();
+        const started = { slow: _tlOpenRefreshTimer !== null, fast: _tlOpenTickTimer !== null };
+        _tlStopOpenRefresh();
+        return { started, stopped: { slow: _tlOpenRefreshTimer === null, fast: _tlOpenTickTimer === null } };
+      });
+      expect(r.started.slow).toBe(true);
+      expect(r.started.fast).toBe(true);
+      expect(r.stopped.slow).toBe(true);
+      expect(r.stopped.fast).toBe(true);
+    });
+
+    test('calling _tlStartOpenRefresh twice does not leak a second TICK interval either', async () => {
+      const r = await page.evaluate(() => {
+        _tlStartOpenRefresh();
+        const first = _tlOpenTickTimer;
+        _tlStartOpenRefresh();
+        const second = _tlOpenTickTimer;
+        _tlStopOpenRefresh();
+        return { changed: first !== second, clearedAfter: _tlOpenTickTimer === null };
       });
       expect(r.changed).toBe(true);
       expect(r.clearedAfter).toBe(true);

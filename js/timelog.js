@@ -107,11 +107,19 @@ function _tlOpenEntries(){
   timeEntries.forEach(e=>{
     if(!e.open)return;
     const info=_tlJobClientInfo(e.job_id);
-    const elapsedMin=Math.max(0,Math.round((Date.now()-new Date(e.start_time).getTime())/60000));
+    const startMs=new Date(e.start_time).getTime();
+    const elapsedMin=Math.max(0,Math.round((Date.now()-startMs)/60000));
+    // clockIn(null,...) is a real button ("General time", js/jobs.js:98) and
+    // _tlJobClientInfo answers '-' for a job it cannot resolve. On this card
+    // that rendered as a lone dash where the client name goes, which reads as
+    // a broken row rather than as a clock with no job on it.
+    const general=e.job_id==null;
     rows.push({
       rawId:e.id,personName:e.logged_by_name||((typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)'),
-      personUid:e.logged_by_uid||null,clientName:info.clientName,addr:info.addr,jobName:info.jobName,
-      detail:e.scope_label||'',startTime:e.start_time,elapsedMin
+      personUid:e.logged_by_uid||null,
+      clientName:general?'General time':info.clientName,
+      addr:general?'':info.addr,jobName:general?'':info.jobName,
+      detail:e.scope_label||'',startTime:e.start_time,startMs:startMs>0?startMs:0,elapsedMin
     });
   });
   return rows.sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
@@ -1901,22 +1909,67 @@ function _tlRenderOpenBanner(){
           '<div style="font-size:11px;color:var(--text3)">since '+_tlFmtTime(r.startTime)+'</div>'+
         '</div>'+
         '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+
-          '<div style="font-size:13px;font-weight:800'+(r.elapsedMin>600?';color:var(--c-red-deep)':'')+'">'+(typeof _fmtMin==='function'?_fmtMin(r.elapsedMin):r.elapsedMin+'m')+'</div>'+
-          // Own entry: a real clockOut(): matches _activeTimer by construction
-          // (either this device's live session, or restored by
-          // _rehydrateActiveTimer() on boot). Someone else's entry: the
-          // manager-only force-close, which audit-tags who closed it.
-          (r.personUid===myUid?'<button onclick="clockOut();_tlRenderOpenBanner()" class="btn btn-sm" style="font-size:11px">Clock out</button>'
+          // data-tl-open-start carries the clock-in instant so the 1s tick can
+          // repaint just this node (_tlTickOpenElapsed) without re-rendering
+          // the card. Re-rendering every second would rebuild the Clock out
+          // button underneath a thumb that is already on it.
+          '<div'+(r.startMs?' data-tl-open-start="'+r.startMs+'"':'')+' style="font-variant-numeric:tabular-nums;font-size:13px;font-weight:800'+(r.elapsedMin>600?';color:var(--c-red-deep)':'')+'">'+
+            (r.startMs&&typeof _clockElapsedStr==='function'?_clockElapsedStr(Date.now()-r.startMs)
+              :(typeof _fmtMin==='function'?_fmtMin(r.elapsedMin):r.elapsedMin+'m'))+'</div>'+
+          // Own entry: clockOutEntry(id), which adopts this exact row and then
+          // runs the real clockOut(). It used to call clockOut() bare, and
+          // clockOut's first line is `if(!_activeTimer)return;`, so after a
+          // reload (or when the open row lands from the cloud after boot) the
+          // button silently did nothing (owner report 2026-08-31, Jack).
+          // Someone else's entry: the manager-only force-close, which
+          // audit-tags who closed it.
+          (r.personUid===myUid?'<button onclick="clockOutEntry('+r.rawId+');_tlRenderOpenBanner()" class="btn btn-sm" style="font-size:11px">Clock out</button>'
             :canForce?'<button onclick="forceClockOutEntry('+r.rawId+')" class="btn btn-sm" style="font-size:11px">Clock out</button>':'')+
         '</div>'+
       '</div>'
     ).join('')+
   '</div>';
 }
-function _tlStopOpenRefresh(){if(_tlOpenRefreshTimer){clearInterval(_tlOpenRefreshTimer);_tlOpenRefreshTimer=null;}}
+// Repaint ONLY the elapsed figures, once a second, straight off the DOM. It
+// reads the clock-in instant back out of data-tl-open-start rather than
+// walking timeEntries, so a ticking card costs one querySelectorAll a second
+// and touches no data at all.
+//
+// Owner 2026-08-31: "keep the counter ticking live in the card". It used to
+// move only on the 30s re-render, in whole minutes, so a clock that had just
+// been started sat on 0m for half a minute and looked stopped. The LONG SHIFT
+// badge and its red still land on the 30s pass: that threshold is ten hours,
+// so it has never needed a per-second check.
+let _tlOpenTickTimer=null;
+function _tlTickOpenElapsed(){
+  const host=document.getElementById('tl-open');
+  if(!host||host.style.display==='none')return;
+  const now=Date.now();
+  host.querySelectorAll('[data-tl-open-start]').forEach(n=>{
+    const t=Number(n.getAttribute('data-tl-open-start'));
+    if(t>0&&typeof _clockElapsedStr==='function')n.textContent=_clockElapsedStr(now-t);
+  });
+}
+function _tlStopOpenRefresh(){
+  if(_tlOpenRefreshTimer){clearInterval(_tlOpenRefreshTimer);_tlOpenRefreshTimer=null;}
+  if(_tlOpenTickTimer){clearInterval(_tlOpenTickTimer);_tlOpenTickTimer=null;}
+}
 function _tlStartOpenRefresh(){
   _tlStopOpenRefresh();
+  // The open row can arrive from the cloud after boot, in which case the boot
+  // rehydrate already ran and found nothing. Opening the Time Log is the next
+  // moment we know the data is here, so the running clock reconnects to the
+  // app-wide banner and the lock-screen card here too. It is a no-op when a
+  // timer is already live (js/jobs.js _rehydrateActiveTimer guards on it).
+  if(typeof _rehydrateActiveTimer==='function')_rehydrateActiveTimer();
   _tlRenderOpenBanner();
+  // Two intervals on purpose, and they do different jobs: this one moves the
+  // numbers, the 30s one below rebuilds the card when the SET of open rows
+  // changes (somebody else clocks in or out).
+  _tlOpenTickTimer=setInterval(()=>{
+    if(!document.getElementById('pg-timelog')?.classList.contains('active')){_tlStopOpenRefresh();return;}
+    _tlTickOpenElapsed();
+  },1000);
   _tlOpenRefreshTimer=setInterval(()=>{
     if(!document.getElementById('pg-timelog')?.classList.contains('active')){_tlStopOpenRefresh();return;}
     _tlRenderOpenBanner();

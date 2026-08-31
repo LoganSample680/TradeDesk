@@ -1044,6 +1044,176 @@ test.describe('jobs.js: exhaustive coverage', () => {
       expect(r.activeTimer).toBe(null);
     });
 
+    // Owner report 2026-08-31: "Jack just said its not letting him clock out",
+    // and then "it needs to survive app reloads". He clocked in with NO job
+    // (clockIn(null,...), the "General time" button) at 7:55am. On the next
+    // reload this bailed on `jobs.find(x=>x.id===null)` and _activeTimer was
+    // never restored, so there was no banner and the Time Log's Clock out
+    // button hit clockOut's `if(!_activeTimer)return;` and did nothing. His
+    // row was still open fourteen hours later.
+    test('_rehydrateActiveTimer restores a JOB-LESS clock across a reload (the Jack case)', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner;
+        window.showClockBanner = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          clockIn(null, null, null);
+          const entryId = _activeTimer.entryId;
+          clearInterval(_activeTimer.timerInterval);
+          _activeTimer = null;                       // the reload
+          _rehydrateActiveTimer();
+          return { ok: true, restored: !!_activeTimer, entryId: _activeTimer && _activeTimer.entryId, expectedId: entryId,
+                   jobId: _activeTimer && _activeTimer.jobId, jobName: _activeTimer && _activeTimer.jobName,
+                   ticking: !!(_activeTimer && _activeTimer.timerInterval) };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          window.showClockBanner = origBanner;
+          if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); clockOut(false, true); }
+        }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.restored).toBe(true);
+      expect(r.entryId).toBe(r.expectedId);
+      expect(r.jobId).toBe(null);
+      expect(r.jobName).toBe('General time');
+      expect(r.ticking).toBe(true);
+    });
+
+    test('_rehydrateActiveTimer matches a job_id that came back from Supabase as a string', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner;
+        window.showClockBanner = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          timeEntries.push({ id: 9911001, job_id: '77701', date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 3 * 60000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+          _activeTimer = null;
+          _rehydrateActiveTimer();
+          return { ok: true, jobId: _activeTimer && _activeTimer.jobId, jobName: _activeTimer && _activeTimer.jobName };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          window.showClockBanner = origBanner;
+          if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); _activeTimer = null; }
+          timeEntries = timeEntries.filter(e => e.id !== 9911001);
+        }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.jobId).toBe(77701);                 // the real job, not "General time"
+      expect(r.jobName).not.toBe('General time');
+    });
+
+    test('_rehydrateActiveTimer refuses a row with a malformed start_time (never a clock counting from 1970)', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner;
+        window.showClockBanner = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          timeEntries.push({ id: 9911002, job_id: null, date: '', start_time: 'not a date', end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+          _activeTimer = null;
+          _rehydrateActiveTimer();
+          return { ok: true, active: _activeTimer };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          window.showClockBanner = origBanner;
+          if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); _activeTimer = null; }
+          timeEntries = timeEntries.filter(e => e.id !== 9911002);
+        }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.active).toBe(null);
+    });
+
+    // The dead-button half. clockOut() alone returns on `if(!_activeTimer)`,
+    // so the Time Log card's own-row button silently did nothing whenever this
+    // device had not started the clock itself.
+    test('clockOutEntry closes a job-less open row with NO _activeTimer at all', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner, origHide = window.hideClockBanner, origRender = window.renderJobsPage;
+        window.showClockBanner = () => {}; window.hideClockBanner = () => {}; window.renderJobsPage = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          const id = 9911010;
+          timeEntries.push({ id, job_id: null, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 42 * 60000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Jack Test' });
+          _activeTimer = null;                       // exactly the post-reload state
+          clockOutEntry(id);
+          const row = timeEntries.find(e => e.id === id);
+          return { ok: true, open: row.open, minutes: row.minutes, hasEnd: !!row.end_time, cleared: _activeTimer === null,
+                   forceTagged: !!row.force_closed_by_name };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          window.showClockBanner = origBanner; window.hideClockBanner = origHide; window.renderJobsPage = origRender;
+          if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); _activeTimer = null; }
+          timeEntries = timeEntries.filter(e => e.id !== 9911010);
+        }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.open).toBe(false);
+      expect(r.minutes).toBe(42);
+      expect(r.hasEnd).toBe(true);
+      expect(r.cleared).toBe(true);
+      expect(r.forceTagged).toBe(false);   // your own clock-out is not a manager force-close
+    });
+
+    test('clockOutEntry banks a DIFFERENT running entry before taking over the one it was given', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner, origHide = window.hideClockBanner, origRender = window.renderJobsPage;
+        window.showClockBanner = () => {}; window.hideClockBanner = () => {}; window.renderJobsPage = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          const other = 9911020;
+          timeEntries.push({ id: other, job_id: null, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 17 * 60000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+          clockIn(77701, null, null);                // this device is running something else
+          const liveId = _activeTimer.entryId;
+          clockOutEntry(other);
+          const a = timeEntries.find(e => e.id === other), b = timeEntries.find(e => e.id === liveId);
+          return { ok: true, targetClosed: a.open === false, targetMin: a.minutes, otherClosed: b.open === false, stillOpen: timeEntries.filter(e => e.open).length };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          window.showClockBanner = origBanner; window.hideClockBanner = origHide; window.renderJobsPage = origRender;
+          if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); _activeTimer = null; }
+          timeEntries = timeEntries.filter(e => e.id !== 9911020);
+        }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.targetClosed).toBe(true);
+      expect(r.targetMin).toBe(17);
+      expect(r.otherClosed).toBe(true);   // banked, never abandoned open
+      expect(r.stillOpen).toBe(0);
+    });
+
+    test('clockOutEntry on an unknown, already-closed, or junk id does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          _activeTimer = null;
+          clockOutEntry(424242); clockOutEntry(null); clockOutEntry(undefined); clockOutEntry('nope');
+          return { ok: true, active: _activeTimer };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.active).toBe(null);
+    });
+
+    test('_clockElapsedStr: seconds, minutes, hours, and junk', async () => {
+      const r = await page.evaluate(() => ({
+        zero: _clockElapsedStr(0),
+        seven: _clockElapsedStr(7000),
+        min: _clockElapsedStr(65 * 1000),
+        hour: _clockElapsedStr(3 * 3600000 + 4 * 60000 + 9000),
+        long: _clockElapsedStr(14 * 3600000),
+        negative: _clockElapsedStr(-5000),
+        junk: _clockElapsedStr('nope'),
+        nothing: _clockElapsedStr(undefined),
+      }));
+      expect(r.zero).toBe('0:00');
+      expect(r.seven).toBe('0:07');
+      expect(r.min).toBe('1:05');
+      expect(r.hour).toBe('3h 4:09');
+      expect(r.long).toBe('14h 0:00');
+      expect(r.negative).toBe('0:00');     // a clock never runs backwards
+      expect(r.junk).toBe('0:00');
+      expect(r.nothing).toBe('0:00');
+    });
+
     test('_rehydrateActiveTimer does not clobber an already-running local timer', async () => {
       const r = await page.evaluate(() => {
         const origBanner = window.showClockBanner;
