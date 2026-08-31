@@ -483,6 +483,18 @@ function _tlYears(rows){
 // never wrong to offer.
 function _tlWeekKey(dateStr){
   if(!dateStr)return '';
+  // SHAPE FIRST, then parse. This used to hand anything at all to `new Date`
+  // and trust an Invalid Date to reject it, but parsing a string that is not
+  // ISO-8601 is implementation-defined: WebKit accepts "13T00:00:00" and
+  // Chromium does not, so _tlMonthKey(13) returned '' in one engine and "13"
+  // in the other. Caught by CI on 2026-08-31, and only by CI, because the
+  // local pre-push run is chromium (§5.2.1) and this is exactly the
+  // cross-browser class that run leaves to the shards.
+  //
+  // A real date-only key is the only thing any caller passes, so requiring
+  // that shape rejects junk identically everywhere. '2026-13-40' still fails,
+  // one line down, on being a date that does not exist.
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr)))return '';
   const d=new Date(dateStr+'T00:00:00');
   if(isNaN(d.getTime()))return '';
   d.setDate(d.getDate()-d.getDay());
