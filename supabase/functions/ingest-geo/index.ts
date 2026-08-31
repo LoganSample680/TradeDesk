@@ -193,279 +193,349 @@ Deno.serve(async (req) => {
     );
     if (insErr) return json({ ok: false, error: "geo_events: " + insErr.message }, 500);
 
-    // ── The state machine ───────────────────────────────────────────────────
-    const { data: stRow } = await svc.from("geo_device_state")
-      .select("state").eq("employee_user_id", uid).eq("device_id", deviceId).maybeSingle();
-    const st = (stRow?.state || {}) as
-      { dwell?: Dwell | null; leg?: Leg | null; lastTs?: number; pending?: PendingDrive | null };
-    let dwell: Dwell | null = st.dwell || null;
-    let leg: Leg | null = st.leg || null;
-    // Carried across POSTs on purpose: the coprocessor can hand over the
-    // automotive edge in one flush and the fence exit in the next.
-    let pending: PendingDrive | null = st.pending || null;
-    const lastTs = Number(st.lastTs) || 0;
-
-    // Region display names, one batched lookup per referenced table.
-    const jobIds = new Set<string>(), placeIds = new Set<string>(), clientIds = new Set<string>();
-    for (const e of evs) {
-      const rid = e.regionId;
-      if (rid.startsWith("job-")) jobIds.add(rid.slice(4));
-      else if (rid.startsWith("place-")) placeIds.add(rid.slice(6));
-      else if (rid.startsWith("client-")) clientIds.add(rid.slice(7));
-    }
-    const names: Record<string, string> = {};
-    const nameFetch = async (tbl: string, ids: Set<string>, prefix: string, pick: (d: any) => string) => {
-      if (!ids.size) return;
-      const { data } = await svc.from(tbl).select("id,data").eq("user_id", cid).in("id", [...ids]);
-      (data || []).forEach((r) => { const n = pick(r.data || {}); if (n) names[prefix + r.id] = String(n); });
-    };
-    await Promise.all([
-      nameFetch("td_jobs", jobIds, "job-", (d) => d.name || d.addr),
-      nameFetch("td_places", placeIds, "place-", (d) => d.name),
-      nameFetch("td_clients", clientIds, "client-", (d) => d.name),
-    ]);
-    const regionName = (rid: string) =>
-      rid === "shop" ? "Shop" : (names[rid] || (rid === "fence" ? "Stop" : "Stop"));
-
-    const timeRows: any[] = [];   // job_time_entries upserts
-    const shopRows: any[] = [];   // shop_time_entries upserts
-    const mileRows: any[] = [];   // td_mileage inserts (legKey-guarded)
-
-    const closeLeg = (endTs: number, endLat: number, endLon: number, endRegion: string) => {
-      if (!leg) return;
-      const L = leg; leg = null;
-      const mins = Math.round((endTs - L.startTs) / 60000);
-      if (mins < MIN_ROW_MINUTES) return;
-      if (mins > MAX_LEG_HOURS * 60) return;                       // dead-app gap: client's job
-      const ft = distFt(L.lat, L.lon, endLat, endLon);
-      if (ft < BOUNCE_FT) return;                                  // fence bounce, not a drive
-      const key = legKeyOf(uid, L.startTs, L.flipId);
-      const startedIso = new Date(L.startTs).toISOString(), endedIso = new Date(endTs).toISOString();
-      // Drive TIME row: same client_key (the legKey) the live engine mints, so
-      // the unique index dedupes against a client replay of the same leg.
-      // 'drive-unassigned' for crew (no vehicle pick is knowable here: the
-      // "no pick, no money claim" rule); the owner's own miles always count.
-      timeRows.push({
-        contractor_user_id: cid, employee_user_id: uid, job_id: null,
-        arrived_at: startedIso, departed_at: endedIso, minutes: mins,
-        dest_place: regionName(endRegion), client_key: key,
-        source: uid === cid ? "drive" : "drive-unassigned",
-      });
-      const straightMi = ft / 5280;
-      const est = Math.max(0.1, Math.round(straightMi * EST_ROUTE_FACTOR * 10) / 10);
-      mileRows.push({
-        id: "srv-" + key,
-        row: {
-          id: "srv-" + key, legKey: key, gps: true, provisional: true,
-          calc_method: "server_est", miles: est, gpsMiles: 0,
-          date: ctDate(L.startTs), startedIso, endedIso, mins,
-          from_name: regionName(L.regionId), from: regionName(L.regionId),
-          to_name: regionName(endRegion), to: regionName(endRegion),
-          fromCoord: { lat: L.lat, lng: L.lon }, toCoord: { lat: endLat, lng: endLon },
-          purpose: "Business", loggedAt: new Date().toISOString(),
-          ...(uid === cid ? {} : { vehicleUnknown: true, logged_by_id: uid, logged_by_name: empName || "Crew" }),
-        },
-      });
-    };
-
-    const closeDwell = (endTs: number) => {
-      if (!dwell) return;
-      const D = dwell; dwell = null;
-      const mins = Math.round((endTs - D.arrivedTs) / 60000);
-      if (mins < MIN_ROW_MINUTES) return;
-      const arrIso = new Date(D.arrivedTs).toISOString(), depIso = new Date(endTs).toISOString();
-      if (D.regionId === "shop") {
-        // The home-office "bill only active minutes" rule lives client-side
-        // and cannot be applied here, so an overnight-length shop dwell is
-        // left entirely to the client engine rather than risk inflating pay.
-        if (mins > MAX_SHOP_HOURS * 60) return;
-        shopRows.push({
-          contractor_user_id: cid, employee_user_id: uid,
-          arrived_at: arrIso, departed_at: depIso, minutes: mins,
-          client_key: visKeyOf(uid, "shop", null, D.arrivedTs),
-        });
-        return;
-      }
-      if (D.regionId.startsWith("job-")) {
-        const jid = D.regionId.slice(4);
-        timeRows.push({
-          contractor_user_id: cid, employee_user_id: uid, job_id: jid,
-          arrived_at: arrIso, departed_at: depIso, minutes: mins,
-          client_key: visKeyOf(uid, "job", jid, D.arrivedTs), source: "geofence",
-        });
-        return;
-      }
-      const kind = D.regionId.startsWith("place-") ? "place" : "client";
-      const id = D.regionId.slice(kind.length + 1);
-      timeRows.push({
-        contractor_user_id: cid, employee_user_id: uid, job_id: null,
-        arrived_at: arrIso, departed_at: depIso, minutes: mins,
-        dest_place: names[D.regionId] || null,
-        // Same split the client does (js/geo-track.js _geoCloseClientEntry):
-        // a customer's address is on-site work, a saved place is overhead.
-        // The server wrote 'place' for both, so a dwell resolved here landed
-        // in the supply bucket even when it was somebody's house.
-        client_key: visKeyOf(uid, kind, id, D.arrivedTs), source: kind === "client" ? "client" : "place",
-      });
-    };
-
-    // ── ONE CROSSING, ONE EVENT ─────────────────────────────────────────────
-    // iOS fires the same crossing under every id that covers the point: the
-    // owner's 07:52:14 exit arrived twice, once as place-1787436272279016 and
-    // once as the bare literal 'fence'. The loop took whichever sat first in
-    // the array, and regionName maps 'fence' to the string "Stop", which is
-    // the entire origin of every `Stop -> somewhere` row on his account.
+    // ── The state machine, under an optimistic lock ─────────────────────────
+    // geo_device_state was read, computed on, and written back blind. Two
+    // flushes landing at once therefore raced, and the LAST write won,
+    // silently discarding whatever the other one had just derived.
     //
-    // Dropped for the STATE MACHINE only. The raw insert above keeps every
-    // event, and newLastTs still advances off the unfiltered array, so the
-    // cursor cannot skip past something this filter hid.
+    // Observed live, owner's phone, 2026-08-31 17:07 CT, and the flip id is
+    // what made it visible rather than something to infer backwards from a
+    // wrong row. He walked out of a customer's fence and drove off. The
+    // plugin minted two flips and flushed them 4 ms apart:
+    //   17:04:34.962  walking     fAFE25EE54F55427E   (rest: CLEARS pending)
+    //   17:07:30.401  automotive  fA51E4D6352D24E1F   (the departure: SETS it)
+    // Both invocations read the same prior state; the walking one wrote last;
+    // the departure was erased. The server then held pending: null, so the
+    // fence exit that follows would have opened that drive at the exit
+    // instant with a null flip id, losing both the tape clock and the id.
     //
-    // A WINDOW, NOT AN EQUALITY. The first cut of this keyed on the exact ts
-    // and would never have fired once: the owner's two exits are 1788180734412
-    // and 1788180734415, THREE MILLISECONDS apart, because iOS delivers them
-    // as separate callbacks. Caught by replaying his real 08-31 tape before
-    // this shipped. Two genuinely different crossings inside two seconds do not
-    // happen, and if they did, preferring the named one is still correct.
-    const TWIN_MS = 2000;
-    const namedCrossing = evs
-      .filter((e) => (e.type === "regionExit" || e.type === "regionEnter") &&
-                     e.regionId && e.regionId !== "fence")
-      .map((e) => ({ type: e.type, ts: e.ts }));
-    const hasNamedTwin = (e: { type: string; ts: number }) =>
-      namedCrossing.some((n) => n.type === e.type && Math.abs(n.ts - e.ts) <= TWIN_MS);
-    const walk = evs.filter((e) =>
-      !((e.type === "regionExit" || e.type === "regionEnter") &&
-        e.regionId === "fence" && hasNamedTwin(e)));
-
-    const nowMs = Date.now();
-    for (const e of walk) {
-      if (e.ts <= lastTs) continue;                                // already processed
-      if (e.lat == null || e.lng == null) continue;
-      if (e.type === "motion") {
-        // The tape's own marks. An automotive edge is HELD; coming to rest
-        // cancels it, because whatever that edge was about, it is not the
-        // departure a fence exit ten minutes from now would describe.
-        const k = String(e.kind || "");
-        if (AUTO_KINDS.has(k)) {
-          // Never forward: a future-stamped event on a replayed buffer must
-          // not backdate a leg into next week.
-          if (e.ts <= nowMs) pending = { ts: e.ts, lat: e.lat, lon: e.lng, flipId: e.flipId };
-        } else if (REST_KINDS.has(k)) {
-          pending = null;
-        }
-        continue;
-      }
-      if (e.type === "regionEnter") {
-        closeLeg(e.ts, e.lat, e.lng, e.regionId);
-        if (isWorkRegion(e.regionId) && (!dwell || dwell.regionId !== e.regionId)) {
-          if (dwell) closeDwell(e.ts);                             // overlapping fences: old one ends here
-          dwell = { regionId: e.regionId, arrivedTs: e.ts, lat: e.lat, lon: e.lng };
-        }
-      } else if (e.type === "regionExit") {
-        if (dwell && dwell.regionId === e.regionId) closeDwell(e.ts);
-        if (!leg) {
-          // Spend the held edge if it is earlier than the exit and recent
-          // enough to still describe it. Byte-for-byte the rule the client
-          // applies at its own drive-open site, so both mint the same key.
-          const p = pending;
-          const useTape = !!p && p.ts < e.ts && (e.ts - p.ts) <= DRIVE_PENDING_MAX_MS;
-          // Only a SPENT mark names the leg, the same rule the client holds:
-          // a mark refused for being stale takes its id with it.
-          leg = (useTape && p)
-            ? { startTs: p.ts, lat: p.lat, lon: p.lon, regionId: e.regionId, flipId: p.flipId }
-            : { startTs: e.ts, lat: e.lat, lon: e.lng, regionId: e.regionId, flipId: null };
-          pending = null;
-        }
-      }
-      // 'fix' and 'visit' events are stored raw for the client's engine; this
-      // state machine deliberately does not interpret them (§7.3).
-    }
-    const newLastTs = Math.max(lastTs, evs[evs.length - 1].ts);
-
-    // ── Write the derived rows ──────────────────────────────────────────────
+    // Fixed by compare-and-swap on updated_at rather than a lock or a
+    // serializing RPC: the value is already on the row, so this needs no
+    // migration and no new column, and a loser simply re-derives against the
+    // winner's state and swaps again.
+    //
+    // A retry is safe and, more importantly, ORDER-INDEPENDENT, which is the
+    // property that actually fixes the incident above:
+    //   - Every derived write is already check-then-insert or
+    //     ignoreDuplicates (see insertByKey and the td_mileage guard), so
+    //     re-running a pass writes nothing twice.
+    //   - The lastTs cursor makes the re-run skip events the winner already
+    //     consumed. Replaying the incident: if the WALKING pass wins first,
+    //     the departure pass re-reads, still sees its own newer event, and
+    //     sets pending. If the DEPARTURE pass wins first, the walking pass
+    //     re-reads and its event (three minutes older) now falls under the
+    //     cursor and is skipped, so it can no longer clear the mark it never
+    //     should have outranked. Both orders end with the departure held.
+    //
+    // Rows still go in BEFORE the cursor moves, exactly as before, so a crash
+    // mid-pass re-derives instead of losing rows.
+    const STATE_CAS_TRIES = 4;
     let derived = 0;
-    // NOT an upsert. The idempotency index on (contractor_user_id, client_key)
-    // is PARTIAL (where client_key is not null, 20260719 migration), and
-    // Postgres cannot use a partial index as an ON CONFLICT target, so the
-    // upsert form errors and drops the whole batch: the exact failure the
-    // client's drain queue already works around with its own fallback chain
-    // (js/geo-track.js). Caught live by the geo-ingest flow test: the mileage
-    // row landed, the dwell silently did not. Check-then-insert instead; the
-    // narrow race between check and insert still lands on the unique index,
-    // where a duplicate error IS the dedupe working, absorbed row by row.
-    const insertByKey = async (tbl: string, rows: any[]) => {
-      if (!rows.length) return 0;
-      const { data: have } = await svc.from(tbl).select("client_key")
-        .eq("contractor_user_id", cid).in("client_key", rows.map((r) => r.client_key));
-      const haveSet = new Set((have || []).map((r) => r.client_key));
-      const fresh = rows.filter((r) => !haveSet.has(r.client_key));
-      if (!fresh.length) return 0;
-      const { error } = await svc.from(tbl).insert(fresh);
-      if (!error) return fresh.length;
-      let n = 0;
-      for (const r of fresh) {
-        const { error: e2 } = await svc.from(tbl).insert(r);
-        if (!e2) n++;
+    let casWon = false;
+    for (let attempt = 0; attempt < STATE_CAS_TRIES && !casWon; attempt++) {
+      // ── The state machine ───────────────────────────────────────────────────
+      const { data: stRow } = await svc.from("geo_device_state")
+        .select("state,updated_at").eq("employee_user_id", uid).eq("device_id", deviceId).maybeSingle();
+      // The compare half of the compare-and-swap below. null means "no row
+      // yet", which takes the insert path rather than an update that would
+      // match nothing and look like a lost race forever.
+      const prevUpdatedAt = (stRow && stRow.updated_at) ? String(stRow.updated_at) : null;
+      const st = (stRow?.state || {}) as
+        { dwell?: Dwell | null; leg?: Leg | null; lastTs?: number; pending?: PendingDrive | null };
+      let dwell: Dwell | null = st.dwell || null;
+      let leg: Leg | null = st.leg || null;
+      // Carried across POSTs on purpose: the coprocessor can hand over the
+      // automotive edge in one flush and the fence exit in the next.
+      let pending: PendingDrive | null = st.pending || null;
+      const lastTs = Number(st.lastTs) || 0;
+
+      // Region display names, one batched lookup per referenced table.
+      const jobIds = new Set<string>(), placeIds = new Set<string>(), clientIds = new Set<string>();
+      for (const e of evs) {
+        const rid = e.regionId;
+        if (rid.startsWith("job-")) jobIds.add(rid.slice(4));
+        else if (rid.startsWith("place-")) placeIds.add(rid.slice(6));
+        else if (rid.startsWith("client-")) clientIds.add(rid.slice(7));
       }
-      return n;
-    };
-    derived += await insertByKey("job_time_entries", timeRows);
-    derived += await insertByKey("shop_time_entries", shopRows);
-    if (mileRows.length) {
-      // td_mileage has no key column to conflict on (data is a JSON blob), so
-      // the guard is an existence check on the legKey inside data. The client
-      // side holds the same guard plus the refine sweep, so the narrow race
-      // window converges instead of duplicating.
-      const { data: existing } = await svc.from("td_mileage")
-        .select("id").eq("user_id", cid).is("deleted_at", null)
-        .in("id", mileRows.map((m) => m.id));
-      const have = new Set((existing || []).map((r) => String(r.id)));
-      // ...and the OTHER writer's row for the same drive. The id check above
-      // only stops this function duplicating ITSELF; it never looked for the
-      // phone's own row, and the legKey the two sides mint cannot match
-      // because each dates the departure from its own clock (the phone from
-      // the ping where JS noticed, this from the raw regionExit, seconds
-      // apart). That is how every drive on 2026-08-27 got written twice.
+      const names: Record<string, string> = {};
+      const nameFetch = async (tbl: string, ids: Set<string>, prefix: string, pick: (d: any) => string) => {
+        if (!ids.size) return;
+        const { data } = await svc.from(tbl).select("id,data").eq("user_id", cid).in("id", [...ids]);
+        (data || []).forEach((r) => { const n = pick(r.data || {}); if (n) names[prefix + r.id] = String(n); });
+      };
+      await Promise.all([
+        nameFetch("td_jobs", jobIds, "job-", (d) => d.name || d.addr),
+        nameFetch("td_places", placeIds, "place-", (d) => d.name),
+        nameFetch("td_clients", clientIds, "client-", (d) => d.name),
+      ]);
+      const regionName = (rid: string) =>
+        rid === "shop" ? "Shop" : (names[rid] || (rid === "fence" ? "Stop" : "Stop"));
+
+      const timeRows: any[] = [];   // job_time_entries upserts
+      const shopRows: any[] = [];   // shop_time_entries upserts
+      const mileRows: any[] = [];   // td_mileage inserts (legKey-guarded)
+
+      const closeLeg = (endTs: number, endLat: number, endLon: number, endRegion: string) => {
+        if (!leg) return;
+        const L = leg; leg = null;
+        const mins = Math.round((endTs - L.startTs) / 60000);
+        if (mins < MIN_ROW_MINUTES) return;
+        if (mins > MAX_LEG_HOURS * 60) return;                       // dead-app gap: client's job
+        const ft = distFt(L.lat, L.lon, endLat, endLon);
+        if (ft < BOUNCE_FT) return;                                  // fence bounce, not a drive
+        const key = legKeyOf(uid, L.startTs, L.flipId);
+        const startedIso = new Date(L.startTs).toISOString(), endedIso = new Date(endTs).toISOString();
+        // Drive TIME row: same client_key (the legKey) the live engine mints, so
+        // the unique index dedupes against a client replay of the same leg.
+        // 'drive-unassigned' for crew (no vehicle pick is knowable here: the
+        // "no pick, no money claim" rule); the owner's own miles always count.
+        timeRows.push({
+          contractor_user_id: cid, employee_user_id: uid, job_id: null,
+          arrived_at: startedIso, departed_at: endedIso, minutes: mins,
+          dest_place: regionName(endRegion), client_key: key,
+          source: uid === cid ? "drive" : "drive-unassigned",
+        });
+        const straightMi = ft / 5280;
+        const est = Math.max(0.1, Math.round(straightMi * EST_ROUTE_FACTOR * 10) / 10);
+        mileRows.push({
+          id: "srv-" + key,
+          row: {
+            id: "srv-" + key, legKey: key, gps: true, provisional: true,
+            calc_method: "server_est", miles: est, gpsMiles: 0,
+            date: ctDate(L.startTs), startedIso, endedIso, mins,
+            from_name: regionName(L.regionId), from: regionName(L.regionId),
+            to_name: regionName(endRegion), to: regionName(endRegion),
+            fromCoord: { lat: L.lat, lng: L.lon }, toCoord: { lat: endLat, lng: endLon },
+            purpose: "Business", loggedAt: new Date().toISOString(),
+            ...(uid === cid ? {} : { vehicleUnknown: true, logged_by_id: uid, logged_by_name: empName || "Crew" }),
+          },
+        });
+      };
+
+      const closeDwell = (endTs: number) => {
+        if (!dwell) return;
+        const D = dwell; dwell = null;
+        const mins = Math.round((endTs - D.arrivedTs) / 60000);
+        if (mins < MIN_ROW_MINUTES) return;
+        const arrIso = new Date(D.arrivedTs).toISOString(), depIso = new Date(endTs).toISOString();
+        if (D.regionId === "shop") {
+          // The home-office "bill only active minutes" rule lives client-side
+          // and cannot be applied here, so an overnight-length shop dwell is
+          // left entirely to the client engine rather than risk inflating pay.
+          if (mins > MAX_SHOP_HOURS * 60) return;
+          shopRows.push({
+            contractor_user_id: cid, employee_user_id: uid,
+            arrived_at: arrIso, departed_at: depIso, minutes: mins,
+            client_key: visKeyOf(uid, "shop", null, D.arrivedTs),
+          });
+          return;
+        }
+        if (D.regionId.startsWith("job-")) {
+          const jid = D.regionId.slice(4);
+          timeRows.push({
+            contractor_user_id: cid, employee_user_id: uid, job_id: jid,
+            arrived_at: arrIso, departed_at: depIso, minutes: mins,
+            client_key: visKeyOf(uid, "job", jid, D.arrivedTs), source: "geofence",
+          });
+          return;
+        }
+        const kind = D.regionId.startsWith("place-") ? "place" : "client";
+        const id = D.regionId.slice(kind.length + 1);
+        timeRows.push({
+          contractor_user_id: cid, employee_user_id: uid, job_id: null,
+          arrived_at: arrIso, departed_at: depIso, minutes: mins,
+          dest_place: names[D.regionId] || null,
+          // Same split the client does (js/geo-track.js _geoCloseClientEntry):
+          // a customer's address is on-site work, a saved place is overhead.
+          // The server wrote 'place' for both, so a dwell resolved here landed
+          // in the supply bucket even when it was somebody's house.
+          client_key: visKeyOf(uid, kind, id, D.arrivedTs), source: kind === "client" ? "client" : "place",
+        });
+      };
+
+      // ── ONE CROSSING, ONE EVENT ─────────────────────────────────────────────
+      // iOS fires the same crossing under every id that covers the point: the
+      // owner's 07:52:14 exit arrived twice, once as place-1787436272279016 and
+      // once as the bare literal 'fence'. The loop took whichever sat first in
+      // the array, and regionName maps 'fence' to the string "Stop", which is
+      // the entire origin of every `Stop -> somewhere` row on his account.
       //
-      // Same rule as the client's _mileSameDrive (js/mileage.js): overlapping
-      // time windows AND the same destination. Only the window is queryable
-      // here, so this is the coarse half and the client's refine sweep is the
-      // fine half; between them a duplicate is dropped whichever side wrote
-      // first, and both orders were observed live.
-      const spanLo = Math.min(...mileRows.map((m) => Date.parse(m.row.startedIso)));
-      const spanHi = Math.max(...mileRows.map((m) => Date.parse(m.row.endedIso)));
-      const PAD = 5 * 60000;
-      const { data: near } = await svc.from("td_mileage")
-        .select("id,data").eq("user_id", cid).is("deleted_at", null)
-        .gte("data->>startedIso", new Date(spanLo - PAD).toISOString())
-        .lte("data->>startedIso", new Date(spanHi + PAD).toISOString())
-        .limit(200);
-      const overlaps = (m: any) => (near || []).some((r: any) => {
-        const d = r.data || {};
-        if (d.provisional) return false;          // another srv row, not the phone's
-        const B1 = Date.parse(d.startedIso || ""), B2 = Date.parse(d.endedIso || "");
-        const A1 = Date.parse(m.row.startedIso), A2 = Date.parse(m.row.endedIso);
-        if (!(B1 && B2 && A1 && A2) || B2 <= B1 || A2 <= A1) return false;
-        const ov = Math.min(A2, B2) - Math.max(A1, B1);
-        return ov > 0 && ov >= Math.min(A2 - A1, B2 - B1) * 0.5;
-      });
-      const fresh = mileRows.filter((m) => !have.has(m.id) && !overlaps(m));
-      if (fresh.length) {
-        const ts = new Date().toISOString();
-        const { error } = await svc.from("td_mileage").upsert(
-          fresh.map((m) => ({ id: m.id, user_id: cid, data: m.row, updated_at: ts, deleted_at: null, archived_at: null })),
-          { onConflict: "id,user_id", ignoreDuplicates: true },
-        );
-        if (!error) derived += fresh.length;
+      // Dropped for the STATE MACHINE only. The raw insert above keeps every
+      // event, and newLastTs still advances off the unfiltered array, so the
+      // cursor cannot skip past something this filter hid.
+      //
+      // A WINDOW, NOT AN EQUALITY. The first cut of this keyed on the exact ts
+      // and would never have fired once: the owner's two exits are 1788180734412
+      // and 1788180734415, THREE MILLISECONDS apart, because iOS delivers them
+      // as separate callbacks. Caught by replaying his real 08-31 tape before
+      // this shipped. Two genuinely different crossings inside two seconds do not
+      // happen, and if they did, preferring the named one is still correct.
+      const TWIN_MS = 2000;
+      const namedCrossing = evs
+        .filter((e) => (e.type === "regionExit" || e.type === "regionEnter") &&
+                       e.regionId && e.regionId !== "fence")
+        .map((e) => ({ type: e.type, ts: e.ts }));
+      const hasNamedTwin = (e: { type: string; ts: number }) =>
+        namedCrossing.some((n) => n.type === e.type && Math.abs(n.ts - e.ts) <= TWIN_MS);
+      const walk = evs.filter((e) =>
+        !((e.type === "regionExit" || e.type === "regionEnter") &&
+          e.regionId === "fence" && hasNamedTwin(e)));
+
+      const nowMs = Date.now();
+      for (const e of walk) {
+        if (e.ts <= lastTs) continue;                                // already processed
+        if (e.lat == null || e.lng == null) continue;
+        if (e.type === "motion") {
+          // The tape's own marks. An automotive edge is HELD; coming to rest
+          // cancels it, because whatever that edge was about, it is not the
+          // departure a fence exit ten minutes from now would describe.
+          const k = String(e.kind || "");
+          if (AUTO_KINDS.has(k)) {
+            // Never forward: a future-stamped event on a replayed buffer must
+            // not backdate a leg into next week.
+            if (e.ts <= nowMs) pending = { ts: e.ts, lat: e.lat, lon: e.lng, flipId: e.flipId };
+          } else if (REST_KINDS.has(k)) {
+            pending = null;
+          }
+          continue;
+        }
+        if (e.type === "regionEnter") {
+          closeLeg(e.ts, e.lat, e.lng, e.regionId);
+          if (isWorkRegion(e.regionId) && (!dwell || dwell.regionId !== e.regionId)) {
+            if (dwell) closeDwell(e.ts);                             // overlapping fences: old one ends here
+            dwell = { regionId: e.regionId, arrivedTs: e.ts, lat: e.lat, lon: e.lng };
+          }
+        } else if (e.type === "regionExit") {
+          if (dwell && dwell.regionId === e.regionId) closeDwell(e.ts);
+          if (!leg) {
+            // Spend the held edge if it is earlier than the exit and recent
+            // enough to still describe it. Byte-for-byte the rule the client
+            // applies at its own drive-open site, so both mint the same key.
+            const p = pending;
+            const useTape = !!p && p.ts < e.ts && (e.ts - p.ts) <= DRIVE_PENDING_MAX_MS;
+            // Only a SPENT mark names the leg, the same rule the client holds:
+            // a mark refused for being stale takes its id with it.
+            leg = (useTape && p)
+              ? { startTs: p.ts, lat: p.lat, lon: p.lon, regionId: e.regionId, flipId: p.flipId }
+              : { startTs: e.ts, lat: e.lat, lon: e.lng, regionId: e.regionId, flipId: null };
+            pending = null;
+          }
+        }
+        // 'fix' and 'visit' events are stored raw for the client's engine; this
+        // state machine deliberately does not interpret them (§7.3).
+      }
+      const newLastTs = Math.max(lastTs, evs[evs.length - 1].ts);
+
+      // ── Write the derived rows ──────────────────────────────────────────────
+      derived = 0;
+      // NOT an upsert. The idempotency index on (contractor_user_id, client_key)
+      // is PARTIAL (where client_key is not null, 20260719 migration), and
+      // Postgres cannot use a partial index as an ON CONFLICT target, so the
+      // upsert form errors and drops the whole batch: the exact failure the
+      // client's drain queue already works around with its own fallback chain
+      // (js/geo-track.js). Caught live by the geo-ingest flow test: the mileage
+      // row landed, the dwell silently did not. Check-then-insert instead; the
+      // narrow race between check and insert still lands on the unique index,
+      // where a duplicate error IS the dedupe working, absorbed row by row.
+      const insertByKey = async (tbl: string, rows: any[]) => {
+        if (!rows.length) return 0;
+        const { data: have } = await svc.from(tbl).select("client_key")
+          .eq("contractor_user_id", cid).in("client_key", rows.map((r) => r.client_key));
+        const haveSet = new Set((have || []).map((r) => r.client_key));
+        const fresh = rows.filter((r) => !haveSet.has(r.client_key));
+        if (!fresh.length) return 0;
+        const { error } = await svc.from(tbl).insert(fresh);
+        if (!error) return fresh.length;
+        let n = 0;
+        for (const r of fresh) {
+          const { error: e2 } = await svc.from(tbl).insert(r);
+          if (!e2) n++;
+        }
+        return n;
+      };
+      derived += await insertByKey("job_time_entries", timeRows);
+      derived += await insertByKey("shop_time_entries", shopRows);
+      if (mileRows.length) {
+        // td_mileage has no key column to conflict on (data is a JSON blob), so
+        // the guard is an existence check on the legKey inside data. The client
+        // side holds the same guard plus the refine sweep, so the narrow race
+        // window converges instead of duplicating.
+        const { data: existing } = await svc.from("td_mileage")
+          .select("id").eq("user_id", cid).is("deleted_at", null)
+          .in("id", mileRows.map((m) => m.id));
+        const have = new Set((existing || []).map((r) => String(r.id)));
+        // ...and the OTHER writer's row for the same drive. The id check above
+        // only stops this function duplicating ITSELF; it never looked for the
+        // phone's own row, and the legKey the two sides mint cannot match
+        // because each dates the departure from its own clock (the phone from
+        // the ping where JS noticed, this from the raw regionExit, seconds
+        // apart). That is how every drive on 2026-08-27 got written twice.
+        //
+        // Same rule as the client's _mileSameDrive (js/mileage.js): overlapping
+        // time windows AND the same destination. Only the window is queryable
+        // here, so this is the coarse half and the client's refine sweep is the
+        // fine half; between them a duplicate is dropped whichever side wrote
+        // first, and both orders were observed live.
+        const spanLo = Math.min(...mileRows.map((m) => Date.parse(m.row.startedIso)));
+        const spanHi = Math.max(...mileRows.map((m) => Date.parse(m.row.endedIso)));
+        const PAD = 5 * 60000;
+        const { data: near } = await svc.from("td_mileage")
+          .select("id,data").eq("user_id", cid).is("deleted_at", null)
+          .gte("data->>startedIso", new Date(spanLo - PAD).toISOString())
+          .lte("data->>startedIso", new Date(spanHi + PAD).toISOString())
+          .limit(200);
+        const overlaps = (m: any) => (near || []).some((r: any) => {
+          const d = r.data || {};
+          if (d.provisional) return false;          // another srv row, not the phone's
+          const B1 = Date.parse(d.startedIso || ""), B2 = Date.parse(d.endedIso || "");
+          const A1 = Date.parse(m.row.startedIso), A2 = Date.parse(m.row.endedIso);
+          if (!(B1 && B2 && A1 && A2) || B2 <= B1 || A2 <= A1) return false;
+          const ov = Math.min(A2, B2) - Math.max(A1, B1);
+          return ov > 0 && ov >= Math.min(A2 - A1, B2 - B1) * 0.5;
+        });
+        const fresh = mileRows.filter((m) => !have.has(m.id) && !overlaps(m));
+        if (fresh.length) {
+          const ts = new Date().toISOString();
+          const { error } = await svc.from("td_mileage").upsert(
+            fresh.map((m) => ({ id: m.id, user_id: cid, data: m.row, updated_at: ts, deleted_at: null, archived_at: null })),
+            { onConflict: "id,user_id", ignoreDuplicates: true },
+          );
+          if (!error) derived += fresh.length;
+        }
+      }
+
+
+      // Persist the cursor last, so a crash before this point re-derives (all
+      // writes above are idempotent) instead of losing rows. CONDITIONAL: the
+      // row must still carry the updated_at this pass read, or another
+      // invocation has moved it and this pass is working from stale state.
+      const nextUpdatedAt = new Date().toISOString();
+      const nextState = { dwell, leg, pending, lastTs: newLastTs };
+      if (prevUpdatedAt) {
+        const { data: swapped } = await svc.from("geo_device_state")
+          .update({ state: nextState, contractor_user_id: cid, updated_at: nextUpdatedAt })
+          .eq("employee_user_id", uid).eq("device_id", deviceId)
+          .eq("updated_at", prevUpdatedAt)
+          .select("employee_user_id");
+        casWon = !!(swapped && swapped.length);
+      } else {
+        // No row yet. A plain insert IS the compare-and-swap here: whoever
+        // gets there second violates the primary key and retries, this time
+        // down the update path above.
+        const { error: insStErr } = await svc.from("geo_device_state").insert({
+          employee_user_id: uid, device_id: deviceId, contractor_user_id: cid,
+          state: nextState, updated_at: nextUpdatedAt,
+        });
+        casWon = !insStErr;
       }
     }
-
-    // Persist the cursor last, so a crash before this point re-derives (all
-    // writes above are idempotent) instead of losing rows.
-    await svc.from("geo_device_state").upsert({
-      employee_user_id: uid, device_id: deviceId, contractor_user_id: cid,
-      state: { dwell, leg, pending, lastTs: newLastTs }, updated_at: new Date().toISOString(),
-    }, { onConflict: "employee_user_id,device_id" });
+    // Four straight losses is not something a two-writer race produces (each
+    // retry reads the winner's state, so the second pass normally wins). If
+    // it somehow happens, the derived rows are already written and the cursor
+    // simply has not moved: the next flush re-derives from where it was, which
+    // is the same recovery a crash gets. Reported so it is visible rather
+    // than silent, which is the whole failure this section is about.
+    if (!casWon) console.error("geo_device_state: cursor contended, cursor not advanced", { uid, deviceId });
 
     // Fleet & Team liveness for free: the newest fix stamps the device row.
     const newest = [...evs].reverse().find((e) => e.lat != null);

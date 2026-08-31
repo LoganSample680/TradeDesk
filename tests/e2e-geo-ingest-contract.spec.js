@@ -52,7 +52,82 @@ test.describe('geofence ingest contract', () => {
     expect(/pending:\s*PendingDrive\s*\|\s*null/.test(srv), 'server holds the pending edge').toBe(true);
     // The server's has to survive between POSTs: the coprocessor can hand over
     // the edge in one flush and the fence exit in the next.
-    expect(srv.includes('state: { dwell, leg, pending,'), 'and carries it across POSTs').toBe(true);
+    //
+    // Assertion updated 2026-08-31 (section 10.4). OLD: the literal
+    // `state: { dwell, leg, pending,` matched the single blind upsert. NEW:
+    // the same four fields are assembled as `nextState` and written under a
+    // compare-and-swap. What this test is actually about, that pending is
+    // persisted rather than living only inside one request, is unchanged; the
+    // old string just happened to be how it was spelled.
+    expect(/const nextState = \{ dwell, leg, pending, lastTs: newLastTs \};/.test(srv),
+      'and carries it across POSTs').toBe(true);
+    expect(srv.includes('state: nextState'), 'and that is what gets written').toBe(true);
+  });
+
+  // ── ONE WRITER AT A TIME ─────────────────────────────────────────────────
+  // Holding the mark across POSTs is worth nothing if a second POST can
+  // erase it. On 2026-08-31 at 17:07 CT the owner's phone flushed a walking
+  // flip and an automotive flip 4 ms apart; both invocations read the same
+  // state, the walking one wrote last, and the departure was gone. The flip
+  // id is what made that legible instead of a mystery wrong start time.
+  test('the cursor write is a compare-and-swap, never a blind upsert', () => {
+    const srv = SERVER();
+    expect(srv.includes('.select("state,updated_at")'),
+      'the pass reads the value it will compare against').toBe(true);
+    expect(/\.eq\("updated_at", prevUpdatedAt\)/.test(srv),
+      'and swaps only while the row still carries it').toBe(true);
+    expect(/casWon = !!\(swapped && swapped\.length\)/.test(srv),
+      'a swap that matched no row is a LOSS, not a success').toBe(true);
+    // The old shape. If this ever comes back, the race comes back with it.
+    expect(/geo_device_state"\)\.upsert\(/.test(srv),
+      'no unconditional upsert on the state row').toBe(false);
+  });
+
+  test('a losing pass re-derives instead of dropping its work', () => {
+    const srv = SERVER();
+    expect(/for \(let attempt = 0; attempt < STATE_CAS_TRIES && !casWon; attempt\+\+\)/.test(srv),
+      'the read, the derive and the swap all sit inside the retry').toBe(true);
+    // The read must be INSIDE the loop, or a retry recomputes against the same
+    // stale state forever and can only ever lose again.
+    const loopAt = srv.indexOf('for (let attempt = 0; attempt < STATE_CAS_TRIES');
+    expect(srv.indexOf('.select("state,updated_at")') > loopAt,
+      'the state is re-read on every attempt').toBe(true);
+    expect(srv.indexOf('const prevUpdatedAt') > loopAt,
+      'and so is the value it compares against').toBe(true);
+  });
+
+  test('rows are still written BEFORE the cursor moves, so a crash re-derives', () => {
+    const srv = SERVER();
+    // The ordering the original code called out and this must not quietly
+    // invert: derived rows first, cursor last. Swapping them would mean a
+    // crash between the two advances past rows that were never written.
+    const rows = srv.indexOf('derived += await insertByKey("job_time_entries"');
+    const cursor = srv.indexOf('const nextState = { dwell, leg, pending');
+    expect(rows).toBeGreaterThan(-1);
+    expect(cursor).toBeGreaterThan(rows);
+  });
+
+  test('a contended cursor is reported, never swallowed', () => {
+    const srv = SERVER();
+    expect(srv.includes('if (!casWon) console.error('),
+      'four straight losses surface instead of looking like success').toBe(true);
+  });
+
+  test('the derive is safe to run twice: every write is idempotent', () => {
+    const srv = SERVER();
+    // This is what makes the retry legal at all. If any of these became a
+    // plain insert, a re-derived pass would duplicate his mileage.
+    expect(srv.includes('const fresh = rows.filter((r) => !haveSet.has(r.client_key));'),
+      'time rows are check-then-insert').toBe(true);
+    expect(srv.includes('{ onConflict: "id,user_id", ignoreDuplicates: true }'),
+      'mileage rows ignore a duplicate id').toBe(true);
+    expect(srv.includes('{ onConflict: "employee_user_id,type,ts,region_id", ignoreDuplicates: true }'),
+      'raw events ignore a re-flushed buffer').toBe(true);
+    // And the cursor is what stops a re-run reconsuming events the winner
+    // already took: the walking mark that lost the race must not get a second
+    // chance to clear a newer departure.
+    expect(srv.includes('if (e.ts <= lastTs) continue;'),
+      'a re-derived pass skips what the winner consumed').toBe(true);
   });
 
   test('both sides ROUND the plugin float the same way, not one round one truncate', () => {
