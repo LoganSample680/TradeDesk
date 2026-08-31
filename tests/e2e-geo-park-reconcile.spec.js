@@ -610,8 +610,29 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   // polls, which is the same ~60ms of stillness the old sleep was reaching for
   // and is what the handful of tests expecting no rows actually need. The 2s
   // cap keeps a genuinely broken reconciler failing fast instead of hanging.
+  // A REFUSED PASS IS NOT A PASS THAT WROTE NOTHING.
+  //
+  // _geoReconcileFromMileage returns FALSE when it declines to run at all
+  // (another pass or a GPS ping in flight), and its own doc comment says so:
+  // renderTimeLog retries a couple of times on false for exactly this reason.
+  // Both helpers here threw that answer away, so a refused call looked
+  // identical to a call that ran and found nothing, and the settle loop below
+  // then waited out its 200ms "nothing was ever queued" grace and reported
+  // zero rows. Load-dependent by construction, which is why it passes under
+  // one file and fails on a shard running five (chromium, 2026-08-31, the
+  // third failure in this file with the same "expected 1, received 0"
+  // signature; the two before it hardened the WAIT and left this alone).
+  //
+  // So: retry the call the way production does, and hand the outcome back so
+  // a never-ran fails as a never-ran instead of as a wrong assertion.
   const runRecon = () => page.evaluate(async () => {
-    await _geoReconcileFromMileage();
+    const ran = await (async () => {
+      for (let i = 0; i < 40; i++) {
+        if (await _geoReconcileFromMileage() !== false) return true;
+        await new Promise(res => setTimeout(res, 25));
+      }
+      return false;
+    })();
     const rows = () => window.__rec.upserts.filter(u =>
       u.tbl === 'job_time_entries' && (u.row.source || '') === 'geofence-reconciled');
     // WAIT ON THE QUEUE, NOT ON STILLNESS.
@@ -639,6 +660,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       await new Promise(res => setTimeout(res, 20));
     }
     return {
+      ran,
       recRows: window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && (u.row.source || '') === 'geofence-reconciled').map(u => u.row),
       updates: window.__rec.updates.slice(),
     };
@@ -687,6 +709,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     const seed = await seedReconPair(886101);
     await page.evaluate(() => { window.__selErr = { message: 'offline' }; });
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     await page.evaluate(() => { window.__selErr = null; });
     expect(r.recRows.length, 'fails open: a dead fetch never deletes a real visit').toBe(1);
     expect(r.recRows[0].minutes).toBe(120);
@@ -703,6 +726,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await seedPings([{ ts: new Date(Date.parse(seed.A.endedIso) - 6 * 3600000).toISOString(),
                        lat: 38.9, lon: -96.9, accuracy: 10 }]);
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length).toBe(1);
     expect(r.recRows[0].minutes, 'absence of evidence is not evidence they left').toBe(120);
     await seedPings([]);
@@ -715,6 +739,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     const seed = await seedReconPair(886103);
     await seedPings(pingsAcross(seed, [{}, {}, {}, {}, {}]));   // all at the job
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length).toBe(1);
     expect(r.recRows[0].minutes, 'a normal shift is untouched by this check').toBe(120);
     await seedPings([]);
@@ -729,6 +754,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // Two fixes at the job, then three that are hundreds of miles away.
     await seedPings(pingsAcross(seed, [{}, {}, { dLat: 1.2 }, { dLat: 2.4 }, { dLat: 3.1 }]));
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length, 'the visit is real, just shorter than claimed').toBe(1);
     const row = r.recRows[0];
     // Fixes sit at 1/6, 2/6 ... of the window, so the last on-site one is at
@@ -748,6 +774,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     const seed = await seedReconPair(886105);
     await seedPings(pingsAcross(seed, [{ dLat: 1.2 }, { dLat: 2.4 }, { dLat: 3.1 }]));
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length, 'nothing supports this claim, so nothing is written').toBe(0);
     await seedPings([]);
     await restoreReconSeed();
@@ -762,6 +789,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // a metal roof must not lose their afternoon to that.
     await seedPings(pingsAcross(seed, [{}, { dLat: 0.003, acc: 300 }, {}]));
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length).toBe(1);
     expect(r.recRows[0].minutes, 'accuracy widens the fence, it does not eject').toBe(120);
     await seedPings([]);
@@ -783,6 +811,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // is still a fix 400 miles away.
     await seedPings(pingsAcross(seed, [{}, {}, { dLat: 5.8, acc: 3000 }]));
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length).toBe(1);
     expect(r.recRows[0].minutes, 'the trailing off-site fix pulls the departure in').toBe(60);
     await seedPings([]);
@@ -807,6 +836,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       { min: 119, dLat: 2.9 }, { min: 119, dLat: 1.6 }, { min: 119, dLat: 0.03 },
     ]));
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length, 'the visit is real and must survive').toBe(1);
     expect(r.recRows[0].minutes, 'silence is being parked, not being absent').toBe(120);
     await seedPings([]);
@@ -823,6 +853,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       { min: 20 }, { min: 50, dLat: 0.4 }, { min: 60, dLat: 0.4 }, { min: 80 }, { min: 100 },
     ]));
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length).toBe(1);
     expect(r.recRows[0].minutes, 'they came back, so the claim stands').toBe(120);
     await seedPings([]);
@@ -837,6 +868,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       { min: 20, dLat: 0.9 }, { min: 40, dLat: 0.9 }, { min: 60 }, { min: 90 },
     ]));
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length).toBe(1);
     expect(r.recRows[0].minutes, 'on site from the first fix that says so, 60 to 120').toBe(60);
     expect(r.recRows[0].arrived_at, 'the arrival anchor moved, which mileage alone could not do')
@@ -855,6 +887,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       { min: 1, dLat: 3.0 }, { min: 5, dLat: 2.0 }, { min: 115, dLat: 2.0 }, { min: 119, dLat: 3.0 },
     ]));
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length, 'nothing in the middle was ever recorded').toBe(1);
     expect(r.recRows[0].minutes).toBe(120);
     await seedPings([]);
@@ -894,6 +927,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // 5-minute floor.
     await seedPings(pingsAcross(seed, [{ dLat: 2.0 }, { dLat: 2.4 }]));
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length).toBe(0);
     await seedPings([]);
     await restoreReconSeed();
@@ -909,6 +943,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
                   { ts: 'not-a-date', lat: JOB_AT.lat, lon: JOB_AT.lng, accuracy: 5 }];
     await seedPings(good.concat(junk));
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length).toBe(1);
     expect(r.recRows[0].minutes, 'a malformed row proves nothing either way').toBe(120);
     await seedPings([]);
@@ -919,7 +954,8 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   test('reconciliation: an uncovered job-anchored window between two legs is inserted whole', async () => {
     await geoReset();
     const seed = await seedReconPair(886001);
-    const r = await runRecon(); // __selRows = [], the server holds nothing
+    const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true); // __selRows = [], the server holds nothing
     expect(r.recRows.length, 'exactly one reconciled row').toBe(1);
     const row = r.recRows[0];
     expect(row.client_key).toBe('rec-' + seed.A.legKey);       // deterministic: re-runs are idempotent
@@ -987,6 +1023,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       return { A: { legKey: A.legKey, endedIso: A.endedIso }, B: { startedIso: B.startedIso }, jid: String(jid) };
     }, [886005]);
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length, 'the window closes on B\'s mere existence, not its origin').toBe(1);
     expect(r.recRows[0].departed_at).toBe(seed.B.startedIso);
     await restoreReconSeed();
@@ -1016,6 +1053,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       return { A: { legKey: A.legKey, endedIso: A.endedIso }, B: { startedIso: B.startedIso }, jid: String(jid) };
     }, [886006]);
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length, 'a wrong-looking B origin no longer refuses the pairing').toBe(1);
     expect(r.recRows[0].departed_at).toBe(seed.B.startedIso);
     await restoreReconSeed();
@@ -1040,6 +1078,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       window.__selRows = [{ id: 11, client_key: 'k11', job_id: s.jid, arrived_at: s.A.endedIso, departed_at: s.B.startedIso, minutes: 120, source: 'geofence' }];
     }, seed);
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length, 'no more coverage-check skip: the window always writes').toBe(1);
     expect(r.updates.length, 'no more extend-in-place branch at all').toBe(0);
     await restoreReconSeed();
@@ -1056,6 +1095,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
                             departed_at: new Date(t1 + 9 * 60000).toISOString(), minutes: 9, source: 'geofence' }];
     }, seed);
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.updates.length, 'the update/extend branch is gone').toBe(0);
     expect(r.recRows.length, 'its own full-window row is inserted instead').toBe(1);
     expect(r.recRows[0].arrived_at).toBe(seed.A.endedIso);
@@ -1109,7 +1149,14 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   });
 
   const runReconClient = () => page.evaluate(async () => {
-    await _geoReconcileFromMileage();
+    // Same contract, same retry: see the note on runRecon above.
+    const ran = await (async () => {
+      for (let i = 0; i < 40; i++) {
+        if (await _geoReconcileFromMileage() !== false) return true;
+        await new Promise(res => setTimeout(res, 25));
+      }
+      return false;
+    })();
     // Same settle runRecon uses, and for the same reason: _geoEnqueue writes
     // synchronously and drains asynchronously, so a fixed sleep is a bet on
     // how loaded the runner is. Under one file it wins; under five it does
@@ -1126,6 +1173,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       }
     })();
     return {
+      ran,
       recRows: window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && (u.row.source || '') === 'place-reconciled').map(u => u.row),
     };
   });
@@ -1134,6 +1182,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoReset();
     const seed = await seedReconClientPair(886101);
     const r = await runReconClient();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length, 'exactly one reconciled client row').toBe(1);
     const row = r.recRows[0];
     expect(row.client_key).toBe('rec-' + seed.A.legKey);
@@ -2886,6 +2935,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
                          minutes: 50, logged_by_uid: null, logged_by_name: 'Owner', open: false });
     }, seed);
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length).toBe(0);
     expect(r.updates.length).toBe(0);
     await restoreReconSeed();
@@ -2921,6 +2971,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       return { A: { legKey: A.legKey, endedIso: A.endedIso }, B: { startedIso: B.startedIso }, jid: String(jid) };
     }, [886005]);
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length, 'a gap crossing into a new calendar day is never claimed').toBe(0);
     expect(r.updates.length).toBe(0);
     await restoreReconSeed();
@@ -2964,6 +3015,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       return { legA2End: legA2.endedIso, legBStart: legB.startedIso, jid: String(jid) };
     }, [886010]);
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length, 'the gap after the duplicate cluster still reconciles').toBe(1);
     const row = r.recRows[0];
     expect(row.job_id).toBe(seed.jid);
@@ -2995,6 +3047,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       clients.push(undefined, null, { id: 991, name: 'Real Client', addr: '1 Real St' });
     });
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length, 'a junk client element must not stop reconciliation').toBe(1);
     expect(r.recRows[0].job_id).toBe(seed.jid);
     await page.evaluate(() => {
@@ -3059,6 +3112,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       return { legA2End: legA2.endedIso, legBStart: legB.startedIso, legAKey: legA.legKey, jid: String(jid) };
     }, [886011]);
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length, 'legA (the good member) still proves the arrival').toBe(1);
     const row = r.recRows[0];
     expect(row.job_id).toBe(seed.jid);
@@ -3104,6 +3158,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
       return { AEnd: A.endedIso, BStart: B.startedIso, jid: String(jid) };
     }, [886020]);
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length, 'yesterday\'s window repairs even though the job is not on today\'s fence list').toBe(1);
     expect(r.recRows[0].job_id).toBe(seed.jid);
     expect(r.recRows[0].arrived_at).toBe(seed.AEnd);
@@ -3188,6 +3243,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     }, [886022]);
     expect(seed.bookedStart < seed.overrunDay, 'sanity: the job\'s booked span really does end before the window\'s day').toBe(true);
     const r = await runRecon();
+    expect(r.ran, 'the reconciler must actually run, not be refused mid-flight').toBe(true);
     expect(r.recRows.length, 'the overrun day reconciles even though the job was booked for the day before').toBe(1);
     expect(r.recRows[0].job_id).toBe(seed.jid);
     await restoreReconSeed();
