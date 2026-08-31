@@ -10,23 +10,20 @@ playwright-report/
 settings.local.json
 tests/flow/.local-accounts.json
 
-# Local screenshot scratch (never repo content)
-_shot_*.png
-# Every local screenshot from tests/shot-*.spec.js, whatever it is named.
-*-mobile.png
-*-320.png
-week-rail-*.png
-week-bars-*.png
-# The drill and Team shots, added 2026-08-30. These were being COMMITTED,
-# because the patterns above were written per-filename and never extended when
-# tests/shot-week-bars.spec.js grew new outputs. A prefix rule per shot family
-# so the next one added is covered without anyone remembering this file exists.
-drill-*.png
-team-*.png
-afford-*.png
-skel-*.png
-month-one-week.png
-zz-*.png
+# EVERY local screenshot, by WHERE it lands rather than what it is called.
+#
+# This was eleven per-family patterns, and the comment on the last batch said
+# out loud that a rule per family means the next family added is not covered
+# "without anyone remembering this file exists". One commit later a throwaway
+# jack-*.png probe proved it, which is the second time the same list has been
+# extended after the fact.
+#
+# The screenshot specs all write to the repo ROOT (the path they pass is
+# relative to cwd), and every real image asset in this repo lives in a
+# subdirectory: icons/icon-180, -192, -512 are the only tracked PNGs. So the
+# root anchor is the whole rule, it needs no maintenance, and icons/ and any
+# future subdirectory asset are untouched by construction.
+/*.png
 
 # native/ is a real npm package the iOS build needs; the blanket package.json
 # ignore above predates it and silently dropped it from the first workflow PR.
