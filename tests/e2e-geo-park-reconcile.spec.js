@@ -614,13 +614,28 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await _geoReconcileFromMileage();
     const rows = () => window.__rec.upserts.filter(u =>
       u.tbl === 'job_time_entries' && (u.row.source || '') === 'geofence-reconciled');
-    let quiet = 0, last = -1;
-    for (let i = 0; i < 100; i++) {
+    // WAIT ON THE QUEUE, NOT ON STILLNESS.
+    //
+    // The first version of this watched the recorder for three consecutive
+    // unchanged polls. That cannot tell "the drain finished" from "the drain
+    // has not started": with nothing recorded yet the count sits at 0, three
+    // polls agree, and it exits after 60ms, which is precisely the fixed sleep
+    // it replaced. It failed again on the next CI run, a different test in this
+    // file, same "expected 1, received 0" (webkit, 2026-08-31).
+    //
+    // _geoEnqueue writes the work to localStorage SYNCHRONOUSLY and the flush
+    // drains it asynchronously, so the queue emptying after it was non-empty is
+    // the real completion signal. The grace window covers the one case the
+    // queue cannot answer: a reconciler that enqueues nothing at all, which is
+    // what the tests expecting zero rows are asserting.
+    const qlen = () => { try { return _geoQueueRead().length; } catch (_e) { return 0; } };
+    let sawWork = false;
+    for (let i = 0; i < 120; i++) {
       if (rows().length) break;
-      const n = window.__rec.upserts.length + window.__rec.updates.length;
-      quiet = (n === last) ? quiet + 1 : 0;
-      last = n;
-      if (quiet >= 3) break;
+      const n = qlen();
+      if (n > 0) sawWork = true;
+      if (sawWork && n === 0) break;      // enqueued, then drained: done
+      if (!sawWork && i >= 10) break;     // 200ms and nothing was ever queued
       await new Promise(res => setTimeout(res, 20));
     }
     return {
