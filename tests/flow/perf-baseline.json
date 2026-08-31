@@ -30,7 +30,7 @@
   },
   "places/full-day-drive-chain": {
     "clicks": 0,
-    "note": "ZERO on purpose (2026-08-01, chromium + webkit, self-hosted flow-local, real Supabase). An earlier capture counted simulated GPS pings as interactions; a ping is not one. The contractor never taps, clocks in, clocks out, or classifies a single minute of this, so the honest user cost is nothing at all. Zero is also the stronger gate: any tap ever added to the automatic path puts the flow over budget and fails CI. Covers the chain: home office, job, supply house, job, job, shop."
+    "note": "ZERO on purpose (2026-08-01, chromium + webkit, self-hosted flow-local, real Supabase). An earlier capture counted simulated GPS pings as interactions; a ping is not one. The contractor never taps, clocks in, clocks out, or classifies a single minute of this, so the honest user cost is nothing at all. Zero is also the stronger gate: any tap ever added to the automatic path puts the flow over budget and fails CI. Covers the chain: home office, job, supply house, job, job, shop. STILL ZERO after the 2026-08-31 additions (cold start with a folded-out stop, the tape-clocked departure, and the stale/future/rest refusals): three new steps, no new taps, because none of it is anything the contractor does. A motion transition is the phone noticing, not the person acting, so it costs nothing here for the same reason a ping does."
   },
   "fleet/vehicle-survives-resignin": {
     "clicks": 57,
