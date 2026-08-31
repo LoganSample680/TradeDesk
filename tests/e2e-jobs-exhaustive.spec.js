@@ -1389,6 +1389,181 @@ test.describe('jobs.js: exhaustive coverage', () => {
       });
       expect(r).toBe(true);
     });
+
+    // ── Delete, from inside the edit modal ────────────────────────────────
+    // Owner 2026-08-31: "add a delete button to the edit button on manual
+    // clock out things". deleteTimeEntry() has existed since July but the
+    // only way to reach it was a long-press nobody discovers.
+    // Seeded INSIDE each evaluate, never from a helper in a separate one.
+    // A cross-evaluate gap lets this file's own async tails (renderTimeLog and
+    // its repair pass) run against the seeded array in between, and the row
+    // was gone before the assertion ran. Every other test in this describe
+    // seeds inline for the same reason (7.3).
+    const SEED_SRC = `
+      timeEntries = timeEntries.filter(e => e.id !== ID);
+      timeEntries.push({ id: ID, job_id: 77701, date: todayKey(),
+        start_time: '2026-08-21T14:00:00.000Z', end_time: '2026-08-21T17:30:00.000Z',
+        minutes: 210, logged_by_uid: null, logged_by_name: 'Owner (me)', open: false });
+      document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());`;
+    const cleanup = (id) => page.evaluate((i) => {
+      timeEntries = timeEntries.filter(e => e.id !== i);
+      document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+      if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); _activeTimer = null; }
+    }, id);
+    const seedThen = (id, body) => page.evaluate(
+      new Function('ID', SEED_SRC.split('ID').join('ID') + '\nreturn (' + body.toString() + ')();'), id);
+    // This file's beforeAll replaces zConfirm with an auto-accept stub so the
+    // other destructive paths can be driven without a dialog. These tests are
+    // ABOUT the dialog, so they put the real one back for their own duration
+    // and restore the stub after; anything else would be asserting against the
+    // stub and proving nothing.
+    const seedThenReal = (id, body) => page.evaluate(
+      new Function('ID',
+        'const _stub = window.zConfirm; if (window._origZConfirm) window.zConfirm = window._origZConfirm;\n' +
+        'try {' + SEED_SRC.split('ID').join('ID') + '\nreturn (' + body.toString() + ')();' +
+        '} finally { window.zConfirm = _stub; }'), id);
+
+    test('the edit modal carries a Delete button, wired to the confirm path', async () => {
+      const r = await seedThen(9990140, () => {
+        _openEditTimeEntry(ID);
+        const box = document.querySelector('.zmodal-overlay .zmodal');
+        return { html: box ? box.innerHTML : '' };
+      });
+      await cleanup(9990140);
+      expect(r.html).toContain('_deleteTimeEntryFromModal(9990140)');
+      expect(r.html).toContain('Delete this entry');
+      // Never a bare deleteTimeEntry() on the button: that one does not ask.
+      expect(r.html).not.toContain('onclick="deleteTimeEntry(');
+    });
+
+    test('Delete is on its own row, never a third column beside Save', async () => {
+      const r = await seedThen(9990141, () => {
+        _openEditTimeEntry(ID);
+        const del = [...document.querySelectorAll('.zmodal button')].find(b => /Delete this entry/.test(b.textContent));
+        const save = [...document.querySelectorAll('.zmodal button')].find(b => b.textContent.trim() === 'Save');
+        if (!del || !save) return { found: false };
+        const d = del.getBoundingClientRect(), s = save.getBoundingClientRect();
+        return {
+          found: true,
+          sameParent: del.parentElement === save.parentElement,
+          // Below, not beside: a destroy button one thumb-width from Save is
+          // how a payroll record dies by accident.
+          below: d.top >= s.bottom - 1,
+          overlaps: !(d.right <= s.left || d.left >= s.right || d.bottom <= s.top || d.top >= s.bottom),
+        };
+      });
+      await cleanup(9990141);
+      expect(r.found).toBe(true);
+      expect(r.sameParent).toBe(false);
+      expect(r.below).toBe(true);
+      expect(r.overlaps).toBe(false);   // 15.1: no two controls overlap
+    });
+
+    test('it asks before it deletes, and names what is being destroyed', async () => {
+      const r = await seedThenReal(9990142, () => {
+        _openEditTimeEntry(ID);
+        _deleteTimeEntryFromModal(ID);
+        const overlays = [...document.querySelectorAll('.zmodal-overlay')];
+        const confirm = overlays[overlays.length - 1];
+        return {
+          stillThere: !!timeEntries.find(e => e.id === ID),   // nothing gone yet
+          title: confirm ? (confirm.querySelector('.zmodal-title')?.textContent || '') : '',
+          msg: confirm ? (confirm.querySelector('.zmodal-msg')?.textContent || '') : '',
+          yes: confirm ? (confirm.querySelector('#zmodal-yes')?.textContent || '') : '',
+        };
+      });
+      await cleanup(9990142);
+      expect(r.stillThere).toBe(true);
+      expect(r.title).toBe('Delete time entry');
+      expect(r.yes).toBe('Delete');
+      expect(r.msg).toContain('3h 30m');            // it says WHICH entry
+      expect(r.msg).toContain('cannot be undone');
+    });
+
+    test('confirming deletes the row and closes the modal', async () => {
+      const r = await seedThenReal(9990143, () => {
+        _openEditTimeEntry(ID);
+        _deleteTimeEntryFromModal(ID);
+        document.querySelector('#zmodal-yes').click();
+        return { gone: !timeEntries.find(e => e.id === ID), overlays: document.querySelectorAll('.zmodal-overlay').length };
+      });
+      await cleanup(9990143);
+      expect(r.gone).toBe(true);
+      expect(r.overlays).toBe(0);      // the edit modal closes with it
+    });
+
+    test('cancelling the confirm leaves the entry exactly alone', async () => {
+      const r = await seedThenReal(9990144, () => {
+        _openEditTimeEntry(ID);
+        _deleteTimeEntryFromModal(ID);
+        [...document.querySelectorAll('.zmodal-overlay')].pop().querySelector('.zmodal-cancel').click();
+        const e = timeEntries.find(x => x.id === ID);
+        return { survived: !!e, minutes: e && e.minutes, editStillOpen: !!document.querySelector('.zmodal-overlay') };
+      });
+      await cleanup(9990144);
+      expect(r.survived).toBe(true);
+      expect(r.minutes).toBe(210);
+      expect(r.editStillOpen).toBe(true);   // back to the edit modal, not nowhere
+    });
+
+    test('someone else\'s entry without payroll permission: no prompt, no delete', async () => {
+      const r = await page.evaluate(() => {
+        timeEntries = timeEntries.filter(e => e.id !== 9990145);
+        timeEntries.push({ id: 9990145, job_id: 77701, date: todayKey(), start_time: '2026-08-21T14:00:00.000Z', end_time: '2026-08-21T15:00:00.000Z', minutes: 60, logged_by_uid: 'somebody-else', logged_by_name: 'Someone Else', open: false });
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        const savedEmp = window._isEmployee, savedRec = window._employeeRecord, savedUser = window._supaUser;
+        window._isEmployee = true; window._employeeRecord = { permissions: { payroll: false } }; window._supaUser = { id: 'me-uid' };
+        let threw = null;
+        try { _deleteTimeEntryFromModal(9990145); } catch (e) { threw = e.message; }
+        const out = { threw, prompted: !!document.querySelector('.zmodal-overlay'), survived: !!timeEntries.find(x => x.id === 9990145) };
+        window._isEmployee = savedEmp; window._employeeRecord = savedRec; window._supaUser = savedUser;
+        timeEntries = timeEntries.filter(e => e.id !== 9990145);
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        return out;
+      });
+      expect(r.threw).toBe(null);
+      // A prompt that asks and then silently does nothing is worse than no button.
+      expect(r.prompted).toBe(false);
+      expect(r.survived).toBe(true);
+    });
+
+    test('_deleteTimeEntryFromModal on a missing or junk id does not throw or prompt', async () => {
+      const r = await page.evaluate(() => {
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        try {
+          _deleteTimeEntryFromModal(424242); _deleteTimeEntryFromModal(null);
+          _deleteTimeEntryFromModal(undefined); _deleteTimeEntryFromModal('nope');
+          return { ok: true, prompted: !!document.querySelector('.zmodal-overlay') };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.prompted).toBe(false);
+    });
+
+    test('deleting the row a live timer is holding stops the clock with it', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner, origHide = window.hideClockBanner, origRender = window.renderJobsPage;
+        let hid = 0;
+        window.showClockBanner = () => {}; window.hideClockBanner = () => { hid++; }; window.renderJobsPage = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          clockIn(77701, null, null);
+          const id = _activeTimer.entryId;
+          deleteTimeEntry(id);
+          return { ok: true, gone: !timeEntries.find(e => e.id === id), timerCleared: _activeTimer === null, bannerHidden: hid > 0 };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          window.showClockBanner = origBanner; window.hideClockBanner = origHide; window.renderJobsPage = origRender;
+          if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); _activeTimer = null; }
+        }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.gone).toBe(true);
+      // Otherwise the banner keeps ticking against a record that no longer
+      // exists, and the lock screen keeps saying CLOCKED IN.
+      expect(r.timerCleared).toBe(true);
+      expect(r.bannerHidden).toBe(true);
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════

@@ -625,6 +625,18 @@ function forceClockOutEntry(entryId){
 function deleteTimeEntry(entryId){
   const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
   if(!_isMyTimeEntry(e)&&!(typeof _canViewComp==='function'&&_canViewComp()))return;
+  // Deleting the row a live timer is holding leaves _activeTimer pointing at
+  // nothing: the banner keeps ticking, the lock-screen card keeps saying
+  // CLOCKED IN, and the next clock-out writes its minutes into a defensive
+  // fallback row nobody asked for. The edit modal refuses open rows so its
+  // new Delete button cannot reach this, but the long-press path
+  // (js/cloud.js _lpStart) always could. Stop the clock with the record.
+  if(_activeTimer&&_activeTimer.entryId===entryId){
+    clearInterval(_activeTimer.timerInterval);
+    _activeTimer=null;
+    if(typeof hideClockBanner==='function')hideClockBanner();
+    if(typeof _liveActClockOut==='function')_liveActClockOut();
+  }
   timeEntries=timeEntries.filter(x=>x.id!==entryId);
   saveAll();
   typeof renderTimeLog==='function'&&renderTimeLog();
@@ -647,9 +659,46 @@ function _openEditTimeEntry(entryId){
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
       '<button onclick="_saveEditedTimeEntry('+entryId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
+    '</div>'+
+    // Owner 2026-08-31: "add a delete button to the edit button on manual
+    // clock out things". deleteTimeEntry() has existed since the 2026-07-11
+    // bulletproof work but the only way to reach it was a long-press
+    // (js/cloud.js _lpStart), which nobody discovers. Editing an entry is
+    // exactly where somebody realises it should not exist at all.
+    //
+    // On its OWN row, below the pair, with a rule above it. Never a third
+    // column beside Save: the two are one thumb-width apart on a phone and
+    // one of them destroys a payroll record. Ghost styling for the same
+    // reason, so the green Save stays the only thing that reads as the
+    // primary action on this screen (15.1).
+    '<div style="border-top:1px solid var(--border2);margin-top:14px;padding-top:12px">'+
+      '<button onclick="_deleteTimeEntryFromModal('+entryId+')" style="width:100%;padding:11px;border-radius:var(--r);border:1px solid var(--c-red-edge,#E3B7B7);background:transparent;color:#A32D2D;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">'+svgIcon('🗑',{size:14})+' Delete this entry</button>'+
     '</div>';
   overlay.appendChild(box);document.body.appendChild(overlay);
   overlay.addEventListener('click',ev=>{if(ev.target===overlay)overlay.remove();});
+}
+// Delete from inside the edit modal. Confirms first, through the app's own
+// zConfirm rather than a hand-rolled sheet (7.3), and names the entry being
+// destroyed: "delete this entry" with nothing after it is how somebody deletes
+// the wrong day. The work itself is deleteTimeEntry(), unchanged, so the
+// permission gate and the sync path stay in one place.
+function _deleteTimeEntryFromModal(entryId){
+  const e=(Array.isArray(timeEntries)?timeEntries:[]).find(x=>x&&x.id===entryId);
+  if(!e)return;
+  // Same gate deleteTimeEntry applies. Checked here too so the confirm never
+  // even opens on a row this person could not delete: a prompt that asks and
+  // then silently does nothing is worse than no button.
+  if(!_isMyTimeEntry(e)&&!(typeof _canViewComp==='function'&&_canViewComp()))return;
+  const when=(typeof _tlFmtTime==='function'&&e.start_time)
+    ? _tlFmtTime(e.start_time)+(e.end_time?' to '+_tlFmtTime(e.end_time):'')
+    : '';
+  const much=(e.minutes&&typeof _fmtMin==='function')?_fmtMin(e.minutes):'';
+  const what=[when,much].filter(Boolean).join(' · ');
+  zConfirm('This removes '+(what?escHtml(what):'this entry')+' from the time log for good. It cannot be undone.',()=>{
+    deleteTimeEntry(entryId);
+    document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
+    if(typeof showToast==='function')showToast('Entry deleted','🗑');
+  },{title:'Delete time entry',yes:'Delete',danger:true});
 }
 function _saveEditedTimeEntry(entryId){
   const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
