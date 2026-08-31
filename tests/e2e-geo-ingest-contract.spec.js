@@ -468,6 +468,28 @@ test.describe('geofence ingest contract', () => {
     expect(sw, 'and so is one recovered from history').toMatch(/"hist": true, "flipId": self\.newFlipId\(\)/);
   });
 
+  test('the id is STORED on the raw row, not only used in memory', async () => {
+    // The blind spot this closes is ours, not the app's. The state machine has
+    // always held the flip id; without it on the row, the id could only be
+    // observed at the END of the chain (a written leg key), so a drive that
+    // came out wrong had to be reasoned about backwards. A stage that drops it
+    // is now the stage holding a null.
+    const srv = SERVER();
+    expect(srv, 'the raw insert carries it').toMatch(/flip_id: e\.flipId/);
+    const mig = readSrc('supabase/migrations/20260904_geo_events_flip_id.sql');
+    expect(mig, 'and the column exists to carry it').toMatch(/add column if not exists flip_id text/);
+    // Additive and nullable, because one project serves dev, UAT and
+    // production (CLAUDE.md 3.1) and an older shell must keep posting.
+    // Scoped to the column DEFINITION: a first cut of this grepped the whole
+    // file for "not null" and matched the index's own `where flip_id is not
+    // null` predicate, which is the correct way to write a partial index and
+    // nothing to do with a constraint.
+    const addCol = /alter table geo_events add column[^;]*;/i.exec(mig);
+    expect(addCol, 'the column is added').toBeTruthy();
+    expect(addCol[0], 'and it is nullable').not.toMatch(/not null/i);
+    expect(addCol[0], 'and re-runnable').toMatch(/if not exists/i);
+  });
+
   test('no console errors', async () => {
     await assertNoErrors(page);
   });

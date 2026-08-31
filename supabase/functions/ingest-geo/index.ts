@@ -181,6 +181,12 @@ Deno.serve(async (req) => {
         contractor_user_id: cid, employee_user_id: uid, device_id: deviceId,
         type: e.type, ts: new Date(e.ts).toISOString(),
         lat: e.lat, lon: e.lng, region_id: e.regionId, kind: e.kind,
+        // Stored, not just used. The state machine below has always had this
+        // in memory; putting it on the row is what lets one departure be
+        // followed from the flip to the two rows it produced, instead of
+        // being reasoned about backwards from whichever one came out wrong
+        // (owner 2026-08-31, and the 20260904 migration says the rest).
+        flip_id: e.flipId,
         arrival_ts: e.arrivalTs ? new Date(e.arrivalTs).toISOString() : null,
       })),
       { onConflict: "employee_user_id,type,ts,region_id", ignoreDuplicates: true },
