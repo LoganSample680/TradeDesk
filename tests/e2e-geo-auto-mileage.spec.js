@@ -988,6 +988,134 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.added).toBe(1);
     });
 
+    // ── A SERVER ESTIMATE MUST NOT BLOCK THE MEASUREMENT ──────────────────
+    // Owner, 2026-08-31, on his drive home: the log read 2.1 miles from "John
+    // Doe" to "2015 SW Randolph Ave" for the exact road he had driven out on
+    // at 3.2 miles an hour earlier. Giving both writers one clock made their
+    // legKeys match, which killed the duplicate rows and, in the same stroke,
+    // let the server's provisional straight-line row satisfy the idempotence
+    // guard so the phone never wrote its measured one.
+    const srvRow = (d, over) => Object.assign({
+      id: 'srv-leg-prov-1', legKey: 'leg-prov-1', gps: true, provisional: true,
+      calc_method: 'server_est', miles: 2.1, gpsMiles: 0,
+      startedIso: new Date(Date.now() - 20 * 60000).toISOString(),
+      endedIso: new Date(Date.now() - 7 * 60000).toISOString(), mins: 13,
+      from_name: 'John Doe', from: '2950 SW McClure Rd',
+      to_name: '2015 SW Randolph Ave', to: '2015 SW Randolph Ave',
+      fromCoord: { lat: d.JOB.lat, lng: d.JOB.lon },
+      toCoord: { lat: d.SHOP.lat, lng: d.SHOP.lon },
+      purpose: 'Business', loggedAt: new Date().toISOString(),
+    }, over || {});
+
+    const overServer = (page, world) => page.evaluate(async (d) => {
+      const realUser = _supaUser, realRoute = _routeDistance;
+      const before = mileage.slice();
+      _supaUser = { id: 'u-mi' };
+      window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 9 });
+      try {
+        mileage.unshift(d.srv);
+        const from = { lat: d.JOB.lat, lng: d.JOB.lon, name: 'John Doe', kind: 'client', clientId: 7701 };
+        const to = { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' };
+        const r = autoLogDriveTrip({ from, to, legKey: 'leg-prov-1',
+          startedIso: new Date(Date.now() - 18 * 60000).toISOString() });
+        await new Promise(x => setTimeout(x, 40));
+        const rows = mileage.filter(m => m && m.legKey === 'leg-prov-1');
+        return { returned: !!r, count: rows.length,
+                 id: rows[0] && rows[0].id, miles: rows[0] && rows[0].miles,
+                 calc: rows[0] && rows[0].calc_method,
+                 prov: rows[0] && rows[0].provisional,
+                 from: rows[0] && rows[0].from_name, to: rows[0] && rows[0].to_name };
+      } finally {
+        _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
+        mileage.length = 0; before.forEach(m => mileage.push(m));
+      }
+    }, world);
+
+    test('the measured leg replaces a provisional server row instead of being dropped', async () => {
+      const r = await overServer(page, { srv: srvRow({ JOB, SHOP }), JOB, SHOP });
+      expect(r.returned, 'the phone must not silently decline to log its own drive').toBe(true);
+      expect(r.count, 'one drive, still one row').toBe(1);
+      expect(r.miles, 'the routed distance, not the straight-line estimate').toBe(3.2);
+      expect(r.calc).toBe('auto_route');
+      expect(r.prov, 'and it is no longer a provisional row').toBeUndefined();
+    });
+
+    test('it keeps the server row id, so the cloud row is updated not orphaned', async () => {
+      // Delete-and-recreate would leave a window with no record of the drive
+      // at all, which is exactly what cost Jack a whole trip on 2026-08-30.
+      const r = await overServer(page, { srv: srvRow({ JOB, SHOP }), JOB, SHOP });
+      expect(r.id).toBe('srv-leg-prov-1');
+    });
+
+    test('the phone\'s own names win: "Shop", not the fence id the server saw', async () => {
+      const r = await overServer(page, { srv: srvRow({ JOB, SHOP }), JOB, SHOP });
+      expect(r.from).toBe('John Doe');
+      expect(r.to, 'the server had no idea this place was the shop').toBe('Shop');
+    });
+
+    test('a REAL client row still blocks it: that guard has not moved', async () => {
+      // The idempotence this whole key exists for. Only a provisional row may
+      // be replaced; a settled one means the leg is already properly logged.
+      const r = await overServer(page, {
+        srv: srvRow({ JOB, SHOP }, { provisional: undefined, calc_method: 'auto_route', miles: 3.2 }),
+        JOB, SHOP });
+      expect(r.returned, 'a settled row is still the end of the matter').toBe(false);
+      expect(r.count).toBe(1);
+      expect(r.id).toBe('srv-leg-prov-1');
+    });
+
+    test('a provisional row alongside a settled one does not open the door', async () => {
+      // Mixed set: every row for the key must be provisional before the guard
+      // stands down, or a stray server duplicate would let a settled leg be
+      // rewritten.
+      const r = await page.evaluate(async (d) => {
+        const realUser = _supaUser, realRoute = _routeDistance;
+        const before = mileage.slice();
+        _supaUser = { id: 'u-mi' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 9 });
+        try {
+          mileage.unshift({ id: 'real-1', legKey: 'leg-mix-1', gps: true, miles: 3.2,
+            calc_method: 'auto_route', from_name: 'John Doe', to_name: 'Shop',
+            fromCoord: { lat: d.JOB.lat, lng: d.JOB.lon }, toCoord: { lat: d.SHOP.lat, lng: d.SHOP.lon } });
+          mileage.unshift({ id: 'srv-1', legKey: 'leg-mix-1', gps: true, provisional: true,
+            miles: 2.1, calc_method: 'server_est',
+            fromCoord: { lat: d.JOB.lat, lng: d.JOB.lon }, toCoord: { lat: d.SHOP.lat, lng: d.SHOP.lon } });
+          const from = { lat: d.JOB.lat, lng: d.JOB.lon, name: 'John Doe', kind: 'client' };
+          const to = { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' };
+          const r2 = autoLogDriveTrip({ from, to, legKey: 'leg-mix-1', startedIso: new Date().toISOString() });
+          return { returned: !!r2, count: mileage.filter(m => m && m.legKey === 'leg-mix-1').length };
+        } finally {
+          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
+          mileage.length = 0; before.forEach(m => mileage.push(m));
+        }
+      }, { JOB, SHOP });
+      expect(r.returned).toBe(false);
+      expect(r.count, 'nothing added, nothing rewritten').toBe(2);
+    });
+
+    test('no prior row at all is unchanged: a fresh leg still just writes', async () => {
+      const r = await page.evaluate(async (d) => {
+        const realUser = _supaUser, realRoute = _routeDistance;
+        const before = mileage.slice();
+        _supaUser = { id: 'u-mi' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 9 });
+        try {
+          const from = { lat: d.JOB.lat, lng: d.JOB.lon, name: 'John Doe', kind: 'client' };
+          const to = { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' };
+          const r2 = autoLogDriveTrip({ from, to, legKey: 'leg-fresh-1', startedIso: new Date().toISOString() });
+          await new Promise(x => setTimeout(x, 40));
+          const rows = mileage.filter(m => m && m.legKey === 'leg-fresh-1');
+          return { returned: !!r2, count: rows.length, miles: rows[0] && rows[0].miles };
+        } finally {
+          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
+          mileage.length = 0; before.forEach(m => mileage.push(m));
+        }
+      }, { JOB, SHOP });
+      expect(r.returned).toBe(true);
+      expect(r.count).toBe(1);
+      expect(r.miles).toBe(3.2);
+    });
+
     test('the leg key on the trip matches the one on the time entry', async () => {
       // This is what makes the pair auditable: the mileage row and the drive it
       // came from name the same leg.

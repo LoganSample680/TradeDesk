@@ -1734,7 +1734,27 @@ function autoLogDriveTrip(opts){
   if(from.lat==null||from.lng==null||to.lat==null||to.lng==null)return null;
   // Idempotent on the leg key: the drive leg and this trip carry the same one,
   // so a retried or replayed leg can never bill the same miles twice.
-  if(mileage.some(m=>m.legKey===legKey))return null;
+  //
+  // ── A SERVER ESTIMATE IS NOT A REASON TO SKIP THE REAL MEASUREMENT ────────
+  // Regression introduced the same day it was caught (2026-08-31). Giving both
+  // writers one clock made their legKeys finally match, which is what stopped
+  // the duplicate rows. It also meant the server's row now satisfies THIS
+  // guard, so the phone stopped writing its own: the owner's drive home landed
+  // as the server's 2.1-mile straight-line estimate from "John Doe" to "2015
+  // SW Randolph Ave" instead of the phone's 3.2-mile routed leg from "John
+  // Doe" to "Shop". Same 3.2-mile road he had driven out on an hour earlier,
+  // logged at two thirds of the distance.
+  //
+  // The server row is explicitly PROVISIONAL: ingest-geo has no router, no
+  // motion tape and no home knowledge, and its own header says the client's
+  // next real run refines or replaces it. Upgraded in place rather than
+  // deleted and re-added: the row is already in the cloud under that id, and
+  // replacing it keeps one row for one drive with no window where the drive
+  // has no record at all, which is the failure mode that cost Jack a whole
+  // trip on 2026-08-30.
+  const _prior=mileage.filter(m=>m&&m.legKey===legKey);
+  const _prov=_prior.length&&_prior.every(m=>m.provisional)?_prior[0]:null;
+  if(_prior.length&&!_prov)return null;
   // ONE DRIVE, ONE ROW, and the AUTOMATIC one is the row worth keeping. It runs
   // geocode to geocode over the whole journey and Apple measures it; a manual
   // entry is a number typed from memory over however much of the drive they
@@ -1751,7 +1771,7 @@ function autoLogDriveTrip(opts){
   // supply run in Central time slices to TOMORROW and lands the deduction in the
   // wrong day, and at New Year the wrong TAX YEAR.
   const date=startedIso?dateKey(new Date(startedIso)):todayKey();
-  const rec={
+  let rec={
     id:_newId(),date,loggedAt:new Date().toISOString(),
     vehicle:veh?(veh.name||''):'',vehicleId:veh?veh.id:undefined,
     from:from.addr||from.name||'',from_name:from.name||'',
@@ -1810,7 +1830,19 @@ function autoLogDriveTrip(opts){
     rec.pendingReceipt=true;
     rec.supplyRunKey=date+'|'+String(_supplyStop.name||_supplyStop.addr||'store');
   }
-  mileage.unshift(rec);
+  if(_prov){
+    // Same row, the real answer. The id survives so the cloud row is updated
+    // rather than orphaned; provisional and the server's straight-line
+    // estimate both go, and calc_method returns to pending_auto so the router
+    // below settles the true distance exactly as it would for a fresh leg.
+    const _keepId=_prov.id;
+    Object.keys(_prov).forEach(k=>{delete _prov[k];});
+    Object.assign(_prov,rec,{id:_keepId});
+    rec=_prov;
+    try{if(typeof _geoParkNote==='function')_geoParkNote('srv-upgrade',String(_keepId).slice(0,20)+' -> measured');}catch(_e){}
+  }else{
+    mileage.unshift(rec);
+  }
   saveAll();
   // The endpoints THIS measurement is for, captured before the await. The row can
   // be re-origined while the route call is in flight (_autoNameStopTrip restores
