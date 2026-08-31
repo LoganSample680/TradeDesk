@@ -13,6 +13,12 @@
 // file in this directory following the same shape.
 import XCTest
 import Capacitor
+// The region-wake tests below construct real CLCircularRegion /
+// CLLocationManager values to drive the delegate the way iOS does.
+// `@testable import TdGeo` does NOT re-export the plugin's own imports, so
+// without this the whole test target fails to compile with "Cannot find
+// 'CLLocationManager' in scope" (native-tests, 2026-08-31).
+import CoreLocation
 @testable import TdGeo
 
 final class TdGeoPluginTests: XCTestCase {
