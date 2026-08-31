@@ -653,7 +653,17 @@ test.describe('timelog.js: exhaustive coverage', () => {
           ? [{ employee_user_id: 'me', source: 'drive-unassigned',
                arrived_at: ago(st.driveFromMin), departed_at: ago(st.driveToMin) }]
           : [];
-        const key = (typeof _bizDateStr === 'function') ? _bizDateStr(new Date()) : null;
+        // Keyed by the ARRIVAL's Central day, never by today's. The window is
+        // per person per day, and a fixture written as "90 minutes ago" sits
+        // on YESTERDAY whenever the clock is near midnight, which is precisely
+        // what the midnight-clock job runs at (TD_CLOCK_AT=00:20). Reading
+        // today's key then finds only the anchor's `now` edge and the test
+        // fails for the calendar rather than for the code. An open visit that
+        // straddles midnight legitimately widens both days; the arrival's day
+        // is the one these assertions are about.
+        const anchorAt = jobAt || placeAt || (Date.parse(clientAt || '') > 0 ? clientAt : null);
+        const key = (typeof _bizDateStr === 'function')
+          ? _bizDateStr(new Date(anchorAt || Date.now())) : null;
         const w = _geoShopCutoffs(rows);
         const mine = (w.me || {})[key] || null;
         const open = (typeof _geoOpenVisitAnchor === 'function') ? _geoOpenVisitAnchor() : undefined;
