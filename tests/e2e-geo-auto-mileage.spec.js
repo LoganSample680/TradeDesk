@@ -1078,6 +1078,107 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.rows).toEqual([{ id: 2, miles: 3.2 }]);   // the longest, and the FIRST close
     });
 
+    // ── The sweep that deleted a real drive (Jack, 2026-08-30) ──────────────
+    // 8.4 miles home, recorded by the server while the app was closed. He
+    // opened the app for three seconds. This sweep picked a winner that had
+    // never been uploaded, deleted the loser that HAD been, and the drive was
+    // gone: the delete goes straight to the cloud via _tdSoftDelete, so it
+    // lands whether or not the save that would justify it ever runs.
+    test('a saved row is never deleted for a winner that is not in the cloud', async () => {
+      const out = await page.evaluate(() => {
+        const A = { lat: 39.0475, lng: -95.6815 }, HOME = { lat: 39.0226, lng: -95.798 };
+        const keep = mileage.splice(0);
+        const hadHash = _syncedHash.td_mileage;
+        try {
+          // 501 is the server's row and it IS in the cloud. 502 is the phone's,
+          // newer so it wins the pair, and has never been uploaded.
+          mileage.push(
+            // The PHONE row (502) is logged first, because it closes the leg
+            // locally the moment the drive ends, and the server's copy lands
+            // afterwards. So the winner rule (earliest loggedAt) hands the
+            // journey to the row that has never been uploaded, which is
+            // precisely the shape that lost the drive.
+            { id: 501, gps: true, legKey: 'leg-srv', calc_method: 'auto_route', miles: 8.4,
+              fromCoord: A, toCoord: HOME, startedIso: '2026-08-30T22:45:18Z',
+              endedIso: '2026-08-30T23:25:13Z', loggedAt: '2026-08-30T23:25:20Z', date: '2026-08-30' },
+            { id: 502, gps: true, legKey: 'leg-phone', calc_method: 'auto_route', miles: 8.4,
+              fromCoord: A, toCoord: HOME, startedIso: '2026-08-30T22:45:21Z',
+              endedIso: '2026-08-30T23:25:16Z', loggedAt: '2026-08-30T23:25:14Z', date: '2026-08-30' });
+          _syncedHash.td_mileage = new Map([['501', 'h']]);
+          // BOOT HEAL, which is the pass that actually ran on his phone: the
+          // live sweep only pairs legs whose starts match to the millisecond,
+          // and two writers never agree that closely.
+          const removed = _mileDedupTrips(true);
+          return { removed, ids: mileage.map(m => String(m.id)).sort() };
+        } finally {
+          mileage.length = 0; keep.forEach(m => mileage.push(m));
+          if (hadHash) _syncedHash.td_mileage = hadHash; else delete _syncedHash.td_mileage;
+        }
+      });
+      // Both survive. A duplicate for one session beats the trip, permanently.
+      expect(out.removed, 'nothing may be dropped this pass').toBe(0);
+      expect(out.ids).toEqual(['501', '502']);
+    });
+
+    test('once the winner IS in the cloud, the duplicate collapses as before', async () => {
+      const out = await page.evaluate(() => {
+        const A = { lat: 39.0475, lng: -95.6815 }, HOME = { lat: 39.0226, lng: -95.798 };
+        const keep = mileage.splice(0);
+        const hadHash = _syncedHash.td_mileage;
+        try {
+          mileage.push(
+            // The PHONE row (502) is logged first, because it closes the leg
+            // locally the moment the drive ends, and the server's copy lands
+            // afterwards. So the winner rule (earliest loggedAt) hands the
+            // journey to the row that has never been uploaded, which is
+            // precisely the shape that lost the drive.
+            { id: 501, gps: true, legKey: 'leg-srv', calc_method: 'auto_route', miles: 8.4,
+              fromCoord: A, toCoord: HOME, startedIso: '2026-08-30T22:45:18Z',
+              endedIso: '2026-08-30T23:25:13Z', loggedAt: '2026-08-30T23:25:20Z', date: '2026-08-30' },
+            { id: 502, gps: true, legKey: 'leg-phone', calc_method: 'auto_route', miles: 8.4,
+              fromCoord: A, toCoord: HOME, startedIso: '2026-08-30T22:45:21Z',
+              endedIso: '2026-08-30T23:25:16Z', loggedAt: '2026-08-30T23:25:14Z', date: '2026-08-30' });
+          // Both persisted now: the deferral was only ever about protecting the
+          // ONLY saved copy, so the dedupe must resume doing its job.
+          _syncedHash.td_mileage = new Map([['501', 'h'], ['502', 'h']]);
+          const removed = _mileDedupTrips(true);
+          return { removed, ids: mileage.map(m => String(m.id)) };
+        } finally {
+          mileage.length = 0; keep.forEach(m => mileage.push(m));
+          if (hadHash) _syncedHash.td_mileage = hadHash; else delete _syncedHash.td_mileage;
+        }
+      });
+      expect(out.removed).toBe(1);
+      expect(out.ids).toEqual(['502']);
+    });
+
+    test('two rows neither of which is saved still collapse, there is nothing to protect', async () => {
+      const out = await page.evaluate(() => {
+        const A = { lat: 39.0475, lng: -95.6815 }, HOME = { lat: 39.0226, lng: -95.798 };
+        const keep = mileage.splice(0);
+        const hadHash = _syncedHash.td_mileage;
+        try {
+          mileage.push(
+            { id: 601, gps: true, legKey: 'leg-x', calc_method: 'auto_route', miles: 8.4,
+              fromCoord: A, toCoord: HOME, startedIso: '2026-08-30T22:45:18Z',
+              endedIso: '2026-08-30T23:25:13Z', loggedAt: '2026-08-30T23:25:14Z', date: '2026-08-30' },
+            { id: 602, gps: true, legKey: 'leg-y', calc_method: 'auto_route', miles: 8.4,
+              fromCoord: A, toCoord: HOME, startedIso: '2026-08-30T22:45:21Z',
+              endedIso: '2026-08-30T23:25:16Z', loggedAt: '2026-08-30T23:25:18Z', date: '2026-08-30' });
+          _syncedHash.td_mileage = new Map();
+          const removed = _mileDedupTrips(true);
+          return { removed, n: mileage.length };
+        } finally {
+          mileage.length = 0; keep.forEach(m => mileage.push(m));
+          if (hadHash) _syncedHash.td_mileage = hadHash; else delete _syncedHash.td_mileage;
+        }
+      });
+      // The guard protects PERSISTED evidence. It is not a licence to hoard
+      // duplicates that exist only in memory.
+      expect(out.removed).toBe(1);
+      expect(out.n).toBe(1);
+    });
+
     // ── Two writers, one drive, two origins (owner's real 8/27) ──────────────
     // His day logged 22.1 miles across 8 legs against roughly 15.1 actually
     // driven, a 46% overstatement on a tax record, because three drives each

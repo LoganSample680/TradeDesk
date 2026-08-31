@@ -1627,7 +1627,9 @@ function _mileTripWinner(a,b){
 }
 function _mileDedupTrips(heal){
   if(typeof mileage==='undefined'||!Array.isArray(mileage))return 0;
-  const drop=new Set();
+  // loser -> the winner it lost to. It was a Set of losers, and the winner had
+  // to be carried along once the delete started depending on it (see below).
+  const drop=new Map();
   for(let i=0;i<mileage.length;i++){
     const a=mileage[i];if(!a||drop.has(a))continue;
     for(let j=i+1;j<mileage.length;j++){
@@ -1652,13 +1654,39 @@ function _mileDedupTrips(heal){
         const autoMeasured=(a.legKey&&a.miles>0&&!b.legKey)||(b.legKey&&b.miles>0&&!a.legKey);
         if(!autoMeasured)continue;
       }
-      const loser=_mileTripWinner(a,b)===a?b:a;
-      drop.add(loser);
+      const win=_mileTripWinner(a,b);
+      const loser=win===a?b:a;
+      drop.set(loser,win);
       if(loser===a)break;   // a is gone, stop comparing against it
     }
   }
   if(!drop.size)return 0;
-  for(const m of drop){
+  let dropped=0;
+  for(const [m,win] of drop){
+    // ── A SAVED ROW IS NEVER DESTROYED FOR AN UNSAVED ONE ──────────────────
+    //
+    // This is the sweep that deleted Jack's 8.4-mile drive home on 2026-08-30.
+    // Unlike _mileServerRefine, which records an intent and lets the next save
+    // carry it out, this one calls _tdSoftDelete IMMEDIATELY, so the delete
+    // reaches the cloud whether or not anything else does. He was in the app
+    // for three seconds: long enough for a direct delete, nowhere near long
+    // enough for a full account save. The winner it kept was never uploaded,
+    // the loser it deleted was the only record in the cloud, and the drive is
+    // gone. That is how we know it was this sweep and not the other one: the
+    // delete landed while the upsert that would have justified it did not.
+    //
+    // Losing a duplicate is fine. Losing the ONLY saved copy to a row that may
+    // never be saved is not, so that one case waits for the next session, by
+    // which time the winner has either landed or does not exist. When neither
+    // row is in the cloud there is nothing to lose and the drop proceeds: this
+    // is about protecting persisted evidence, not about hoarding duplicates.
+    const has=id=>typeof _cloudHasRow==='function'&&_cloudHasRow('td_mileage',id);
+    if(m&&m.id!=null&&has(m.id)&&!(win&&win.id!=null&&has(win.id))){
+      try{if(typeof _geoParkNote==='function')_geoParkNote('mile-dedup',
+        String(m.id)+' kept: winner '+String(win&&win.id)+' not in cloud yet');}catch(_e){}
+      continue;
+    }
+    dropped++;
     const i=mileage.indexOf(m);if(i>=0)mileage.splice(i,1);
     // The splice alone never outlives the next cloud reload: the twin comes
     // back from the server before any save sweeps it away, so on a device
@@ -1675,10 +1703,11 @@ function _mileDedupTrips(heal){
       }catch(_e){}
     }
   }
+  if(!dropped)return 0;
   if(typeof saveAll==='function')saveAll();
   if(document.getElementById('mil-table'))renderAllMileage();
   if(typeof renderDash==='function')renderDash();
-  return drop.size;
+  return dropped;
 }
 
 // ── Automatic trip, written by the geofence when a drive leg closes ──────────
