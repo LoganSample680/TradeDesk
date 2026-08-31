@@ -1110,7 +1110,21 @@ test.describe('Geo park detection + mileage reconciliation', () => {
 
   const runReconClient = () => page.evaluate(async () => {
     await _geoReconcileFromMileage();
-    await new Promise(res => setTimeout(res, 60));
+    // Same settle runRecon uses, and for the same reason: _geoEnqueue writes
+    // synchronously and drains asynchronously, so a fixed sleep is a bet on
+    // how loaded the runner is. Under one file it wins; under five it does
+    // not (shard of 568, 2026-08-31, "expected 1, received 0").
+    await (async () => {
+      const qlen = () => { try { return _geoQueueRead().length; } catch (_e) { return 0; } };
+      let sawWork = false;
+      for (let i = 0; i < 120; i++) {
+        const n = qlen();
+        if (n > 0) sawWork = true;
+        if (sawWork && n === 0) break;
+        if (!sawWork && i >= 10) break;
+        await new Promise(res => setTimeout(res, 20));
+      }
+    })();
     return {
       recRows: window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && (u.row.source || '') === 'place-reconciled').map(u => u.row),
     };
@@ -1143,7 +1157,21 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     }, seed.cid);
     const r = await page.evaluate(async () => {
       await _geoReconcileFromMileage();
-      await new Promise(res => setTimeout(res, 60));
+      // Same settle runRecon uses, and for the same reason: _geoEnqueue writes
+      // synchronously and drains asynchronously, so a fixed sleep is a bet on
+      // how loaded the runner is. Under one file it wins; under five it does
+      // not (shard of 568, 2026-08-31, "expected 1, received 0").
+      await (async () => {
+        const qlen = () => { try { return _geoQueueRead().length; } catch (_e) { return 0; } };
+        let sawWork = false;
+        for (let i = 0; i < 120; i++) {
+          const n = qlen();
+          if (n > 0) sawWork = true;
+          if (sawWork && n === 0) break;
+          if (!sawWork && i >= 10) break;
+          await new Promise(res => setTimeout(res, 20));
+        }
+      })();
       return {
         jobRows: window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && (u.row.source || '') === 'geofence-reconciled'),
         placeRows: window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && (u.row.source || '') === 'place-reconciled'),

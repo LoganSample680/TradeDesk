@@ -351,9 +351,19 @@ test.describe('Wake region set for the dead app', () => {
     expect(src.slice(w, w + 1500).includes('_geoHeartbeatSync(null)'),
       'the watcher-on path must arm the heartbeat').toBe(true);
     // 2. Drive open.
-    const d = src.indexOf('_geoDriveStartedAt=nowIso;_geoLegOrigin=_geoLastFenceLoc;');
+    // The anchor used to be `_geoDriveStartedAt=nowIso;...`. The leg no longer
+    // always opens at now: a pending foot->automotive edge from the motion
+    // tape opens it at the moment the truck actually pulled out (2026-08-31),
+    // so the assignment is a ternary. Still the one line in the file that
+    // opens a drive, which is what this guarantee is about, and deliberately
+    // NOT anchored on `_geoLegOrigin=_geoLastFenceLoc;`: that string appears
+    // at two sites and indexOf would silently grade the wrong one.
+    const d = src.indexOf('_geoDriveStartedAt=_useTape?');
     expect(d).toBeGreaterThan(-1);
-    expect(src.slice(d, d + 400).includes('_geoHeartbeatSync(null)'),
+    // 700, not 400: the tape-clock comment block now sits between the
+    // assignment and the sync. The heartbeat is still armed at the same site,
+    // it is just further down the page than it was.
+    expect(src.slice(d, d + 700).includes('_geoHeartbeatSync(null)'),
       'a drive opening must arm the heartbeat').toBe(true);
     // 3. Park arm, with the park spot so home can turn it off.
     expect(src.includes('_geoHeartbeatSync(_at)'),

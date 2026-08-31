@@ -75,6 +75,22 @@ function _geoConfirmShopDepart(nowMs){
   return true;
 }
 let _geoDriveStartedAt=null;// ISO timestamp when a drive leg began (leaving any fence)
+// THE MOTION EDGE OWNS THE MOMENT, THE FENCE STILL OWNS THE EVENT.
+// Set when CoreMotion reports foot -> automotive: the instant the truck
+// actually pulled out. Held PENDING, never written on its own, because a
+// phone in a pocket reads automotive from a ride in someone else's truck and
+// a leg opened off that alone is a guess wearing a timestamp. The fence exit
+// is what confirms a departure happened; this only supplies a better clock
+// for it than "the first ping that noticed they were gone", which is several
+// hundred feet and a minute or two late by construction. Exactly the bargain
+// the shop dwell already strikes (see _geoShopPendingClose).
+let _geoDrivePendingAt=null;
+// How stale a pending edge may be and still be believed. The fence normally
+// fires within a minute or two of pulling out, so a quarter hour is generous;
+// past it the phone has been driving, stopping and starting and the edge no
+// longer describes THIS departure. Also what makes a bulk motion replay safe:
+// a transition delivered days late is simply ignored here.
+const _GEO_DRIVE_PENDING_MAX_MS=15*60*1000;
 let _geoDrivebyRun=0;      // consecutive driving-speed fixes inside a fence (eviction debounce)
 let _geoPersistPingMs=0;   // last time the open state was snapshotted to disk mid-drive
 let _geoStopAnchor=null;   // {lat,lng,at,lastAt} while parked OUTSIDE every fence
@@ -555,6 +571,7 @@ function _geoPersistOpen(hiddenAt){
         // that the common case rather than the rare one, because it is
         // designed to let iOS kill the app while parked.
         legOrigin:_geoLegOrigin,lastFenceLoc:_geoLastFenceLoc,lastFenceAt:_geoLastFenceAt,
+        drivePendingAt:_geoDrivePendingAt,
         stopAnchor:_geoStopAnchor,
         // Live banner display state (owner report: a UAT reload "kills" the
         // in-progress drive card and the Live Activity/Dynamic Island). None
@@ -646,6 +663,7 @@ function _geoRestoreOpen(){
     if(typeof s.driveMph==='number')_geoDriveMph=s.driveMph;
     if(s.driveLastFix)_geoDriveLastFix=s.driveLastFix;
     if(!_geoLegOrigin&&s.legOrigin)_geoLegOrigin=s.legOrigin;
+    if(!_geoDrivePendingAt&&s.drivePendingAt)_geoDrivePendingAt=s.drivePendingAt;
     if(!_geoLastFenceLoc&&s.lastFenceLoc)_geoLastFenceLoc=s.lastFenceLoc;
     if(!_geoLastFenceAt&&s.lastFenceAt)_geoLastFenceAt=s.lastFenceAt;
     // The stop they were parked at comes back too, so its own time entry and
@@ -1390,7 +1408,26 @@ async function _geoOnPing(pos){
       // SEE they are gone, so the first moment we know they had left is the
       // conservative start.
       if(!_geoDriveStartedAt){
-        _geoDriveStartedAt=nowIso;_geoLegOrigin=_geoLastFenceLoc;
+        // ── THE TAPE SETS THE CLOCK, THE FENCE CONFIRMS THE EVENT ───────────
+        // This used to open at nowIso on the reasoning that the first moment
+        // we can SEE they are gone is the conservative start. It is also, by
+        // construction, several hundred feet and a minute or two late: a
+        // geofence cannot fire until a line that far away has been crossed,
+        // and driving starts at the parking space. Measured on the owner's
+        // own account, the fix taken at the fence sat a MILE from where the
+        // drive began on five of ten real departures.
+        //
+        // The motion coprocessor knew at the parking space. So when a pending
+        // foot -> automotive edge is sitting there, is EARLIER than now, and
+        // is recent enough to still describe this departure, it is the start.
+        // Never later than now, never older than the cap: a clock may only be
+        // corrected backwards toward the truth, never forwards past it.
+        const _pend=Date.parse(_geoDrivePendingAt||'')||0;
+        const _useTape=_pend>0&&_pend<nowMs&&(nowMs-_pend)<=_GEO_DRIVE_PENDING_MAX_MS;
+        if(_useTape)_geoParkNote('drive-open-tape',Math.round((nowMs-_pend)/1000)+'s earlier');
+        _geoDriveStartedAt=_useTape?new Date(_pend).toISOString():nowIso;
+        _geoDrivePendingAt=null;
+        _geoLegOrigin=_geoLastFenceLoc;
         _geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs,acc};
         _geoDriveHadPause=false;
         // A drive opening IS a shift running: the beat must survive whatever
@@ -2769,7 +2806,21 @@ function _geoSettleStopLeg(a,nowIso){
   _geoCollapseDetours();
   const ms=Math.max(0,Date.parse(a.lastAt||nowIso)-Date.parse(a.at));
   const stopLoc=_geoStopLoc(a,ms);
-  stopLoc.prevOrigin=_geoLegOrigin||null;
+  // ── A STOP IS NEVER AN ORIGIN WHILE A REAL FENCE IS KNOWN ────────────────
+  // Root cause of every `from=Stop` row on the owner's account (2026-08-31):
+  // this recorded `_geoLegOrigin||null`, and _geoLegOrigin is null whenever a
+  // drive begins with no live fence state (a cold boot, a restored snapshot,
+  // the first leg after _geoReset). The stop then became the leg origin with
+  // prevOrigin null, and _geoCollapseDetours below can only walk back through
+  // a stop that HAS a prevOrigin, so the anonymous pin was the origin forever
+  // after and every subsequent row read "Stop -> somewhere".
+  //
+  // _geoLastFenceLoc is the real answer and it was sitting right here: the
+  // last fence the truck was actually inside, persisted across boots with the
+  // rest of the geo snapshot. Falling back to it means the collapse chain
+  // always has a real endpoint to measure the direct miles from, which is the
+  // whole CPA rule this block exists to serve.
+  stopLoc.prevOrigin=_geoLegOrigin||_geoLastFenceLoc||null;
   _geoDriveEntry(null,_geoDriveStartedAt,(stopLoc.placeId||stopLoc.clientId)?stopLoc.name:null,a.at,false,stopLoc);
   a.legClosed=true;
   _geoDriveStartedAt=a.lastAt||nowIso;   // the leg out starts when they pull away
@@ -2815,7 +2866,10 @@ function _geoCloseStop(a){
   // the direct miles between the two business points are deductible (owner's
   // CPA, 2026-08-02). Recorded before the reassignment below, which is the only
   // moment it is still known.
-  stopLoc.prevOrigin=_geoLegOrigin||null;
+  // Same fallback as _geoSettleStopLeg above, and for the same reason: without
+  // it a drive that began with no live fence state strands an anonymous pin as
+  // the leg origin and every later row reads "Stop -> somewhere".
+  stopLoc.prevOrigin=_geoLegOrigin||_geoLastFenceLoc||null;
   if(_geoDriveStartedAt)_geoDriveEntry(null,_geoDriveStartedAt,known?stopLoc.name:null,a.at,false,stopLoc);
   _geoDriveStartedAt=a.lastAt;
   _geoDriveReset();   // the banner's "this trip" restarts with the leg out of the stop
@@ -4596,7 +4650,13 @@ async function _geoTdEvent(ev,replay){
     //
     // Deciding WHICH edges are worth a burst is JS's job, not the plugin's
     // (CLAUDE.md 3.2): the native layer reports the edge, this picks.
-    if(!replay&&ev.kind){
+    // The edge itself is computed OUTSIDE the !replay guard, deliberately, and
+    // for the same reason the shop-dwell close above is: a force-closed app
+    // replaying its buffer is exactly the case where the fence was missed and
+    // the tape is the only witness to when the truck pulled out. Only the
+    // BURST stays live-only below, because a burst is a request for a fresh
+    // fix and there is nothing fresh about a transition from two days ago.
+    if(ev.kind){
       const cur=String(ev.kind);
       // prevKind ships from the plugin only on builds newer than 42. On the
       // build actually in the owner's pocket the field is undefined, and
@@ -4612,9 +4672,28 @@ async function _geoTdEvent(ev,replay){
       const _foot=k=>k==='walking'||k==='running'||k==='onFoot';
       const boundary=(_auto(cur)&&_foot(prev))||(_foot(cur)&&_auto(prev));
       const now=Date.now();
+      // ── PULLING OUT: hold the moment, claim nothing ─────────────────────
+      // foot -> automotive is the truck leaving the parking space, which is
+      // where the drive actually begins. It is NOT evidence a drive happened:
+      // a phone in a pocket reads automotive from a ride in someone else's
+      // truck, and the same edge fires pulling forward ten feet in a yard.
+      // So it is held, and the fence exit that opens the leg decides whether
+      // to spend it (see _GEO_DRIVE_PENDING_MAX_MS). Same bargain the shop
+      // dwell strikes: the tape sets the moment, the fence confirms the event.
+      if(_auto(cur)&&!_auto(prev)){
+        const _at=Number(ev.ts)||now;
+        // Never forward. A tape event stamped in the future (clock skew on a
+        // replayed buffer) must not backdate a leg into next week.
+        if(_at<=now){_geoDrivePendingAt=new Date(_at).toISOString();
+          if(!replay)_geoParkNote('drive-pending',(prev||'?')+'->'+cur);}
+      }
+      // Coming to rest ends the claim: whatever this pending edge was about,
+      // it is not the departure that a fence exit ten minutes from now would
+      // be describing.
+      if(_foot(cur)||cur==='still')_geoDrivePendingAt=null;
       // Park mode keeps its own looser rule (any non-still motion may mean
       // they are leaving), so a parked truck still wakes on a walk past it.
-      if((boundary||(_geoParkModeOn&&cur!=='still'))&&now-_geoMotionBurstAt>_GEO_MOTION_BURST_GAP_MS){
+      if(!replay&&(boundary||(_geoParkModeOn&&cur!=='still'))&&now-_geoMotionBurstAt>_GEO_MOTION_BURST_GAP_MS){
         _geoMotionBurstAt=now;
         _geoParkNote('motion-burst',prev?prev+'->'+cur:cur);
         try{const Td=_geoTdPlugin();if(Td&&typeof Td.burstFix==='function')Td.burstFix({seconds:boundary?15:12});}catch(_e){}
@@ -4920,7 +4999,7 @@ function stopGeoTracking(){
   _geoDriveReset();_geoDriveShown=false;
   _geoCurrentClient=null;_geoClientArrivedAt=null;_geoClientCacheMemo=null;
   _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;_geoLegAtShop=false;_geoHomeDwell=null;_geoWasAtHome=false;
-  _geoLastFenceLoc=null;_geoLegOrigin=null;_geoLastMotionKind='';
+  _geoLastFenceLoc=null;_geoLegOrigin=null;_geoLastMotionKind='';_geoDrivePendingAt=null;
   // A real stop-then-restart (sign-out/in, account switch) must get a REAL
   // restore/drain on the next _geoTrackInit(), unlike the twin-write case this
   // guard exists to block: that is two firings racing on the SAME boot, not a

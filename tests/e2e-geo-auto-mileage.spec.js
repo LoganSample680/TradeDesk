@@ -7049,3 +7049,275 @@ test.describe('Automatic mileage from drive legs', () => {
   });
 
 });
+
+// ── A STOP IS NEVER THE ORIGIN WHILE A REAL FENCE IS KNOWN ──────────────────
+//
+// Owner, 2026-08-31, reading three weeks of his own rows: every recent mileage
+// row said `from=Stop`. Not the shop, not a client, not a place.
+//
+// Root cause: _geoSettleStopLeg recorded `stopLoc.prevOrigin=_geoLegOrigin||null`,
+// and _geoLegOrigin is null whenever a drive begins with no live fence state (a
+// cold boot, a restored snapshot, the first leg after a reset). The stop then
+// became the leg origin carrying prevOrigin null, and _geoCollapseDetours can
+// only walk back through a stop that HAS a prevOrigin, so the anonymous pin was
+// the origin forever after and every later row read "Stop -> somewhere".
+//
+// _geoLastFenceLoc held the real answer the whole time: the last fence the
+// truck was actually inside, persisted across boots with the rest of the geo
+// snapshot. These tests pin the fallback, in both directions, because the
+// deduction turns on it: IRS Pub. 463 wants the PLACE of each trip, and "Stop"
+// is not a place.
+test.describe('A settled stop never strands the leg origin', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => { S.bizTz = 'America/Chicago'; });
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  // One helper, one state shape, so every case below differs only in what it
+  // is testing. Returns the resolved origin AFTER the stop settles.
+  const settle = (opts) => page.evaluate((o) => {
+    _geoLegOrigin = o.legOrigin || null;
+    _geoLastFenceLoc = o.lastFence || null;
+    _geoDriveStartedAt = new Date(Date.now() - 30 * 60000).toISOString();
+    const anchor = {
+      lat: 39.05, lng: -95.68,
+      at: new Date(Date.now() - 20 * 60000).toISOString(),
+      lastAt: new Date(Date.now() - 5 * 60000).toISOString(),
+      legClosed: false,
+    };
+    _geoSettleStopLeg(anchor, new Date().toISOString());
+    const o2 = _geoLegOrigin;
+    return {
+      originKind: o2 && o2.kind,
+      originName: o2 && o2.name,
+      prev: o2 && o2.prevOrigin ? { name: o2.prevOrigin.name, kind: o2.prevOrigin.kind } : null,
+    };
+  }, opts);
+
+  const SHOPFENCE = { lat: 39.03, lng: -95.71, name: 'TradeDesk shop', kind: 'shop' };
+  const SUPPLY = { lat: 39.04, lng: -95.75, name: 'The Home Depot', kind: 'supply' };
+
+  test('a live leg origin still wins: the fence fallback never overrides it', async () => {
+    // The ordinary case, and it must not change. When the drive genuinely began
+    // at a known endpoint, that endpoint is the origin. The fallback exists for
+    // the case below and must not reach past a real answer to grab a stale one.
+    const r = await settle({ legOrigin: SUPPLY, lastFence: SHOPFENCE });
+    expect(r.originKind).toBe('stop');
+    expect(r.prev).toEqual({ name: 'The Home Depot', kind: 'supply' });
+  });
+
+  test('no live leg origin: the last fence we were inside becomes the anchor', async () => {
+    // The bug, exactly. Cold boot, drive starts, phone parks somewhere unnamed.
+    // Before the fix prevOrigin was null and the pin was origin forever after.
+    const r = await settle({ legOrigin: null, lastFence: SHOPFENCE });
+    expect(r.originKind).toBe('stop');
+    expect(r.prev, 'the stop must carry a real endpoint to measure back to').not.toBeNull();
+    expect(r.prev).toEqual({ name: 'TradeDesk shop', kind: 'shop' });
+  });
+
+  test('neither known: prevOrigin is null and nothing is invented', async () => {
+    // The honest limit. With no live origin AND no remembered fence there is
+    // genuinely nothing to anchor to, and guessing one would be worse than the
+    // bug: a fabricated endpoint is a fabricated deduction.
+    const r = await settle({ legOrigin: null, lastFence: null });
+    expect(r.originKind).toBe('stop');
+    expect(r.prev).toBeNull();
+  });
+
+  test('the collapse chain can now walk back to the fence', async () => {
+    // The whole point of the fallback. Once the stop carries a real endpoint,
+    // _geoCollapseDetours folds the anonymous pin out and the leg is measured
+    // from the shop, which is the CPA's direct-miles rule and the "place"
+    // element of Pub. 463 in one move.
+    const r = await page.evaluate((fence) => {
+      if (typeof mileage !== 'undefined') mileage.length = 0;
+      _geoLegOrigin = null;
+      _geoLastFenceLoc = fence;
+      _geoDriveStartedAt = new Date(Date.now() - 30 * 60000).toISOString();
+      _geoSettleStopLeg({
+        lat: 39.05, lng: -95.68,
+        at: new Date(Date.now() - 20 * 60000).toISOString(),
+        lastAt: new Date(Date.now() - 5 * 60000).toISOString(),
+        legClosed: false,
+      }, new Date().toISOString());
+      const beforeKind = _geoLegOrigin && _geoLegOrigin.kind;
+      _geoCollapseDetours();
+      return {
+        beforeKind,
+        afterName: _geoLegOrigin && _geoLegOrigin.name,
+        afterKind: _geoLegOrigin && _geoLegOrigin.kind,
+      };
+    }, SHOPFENCE);
+    expect(r.beforeKind, 'the stop is the origin until the collapse runs').toBe('stop');
+    expect(r.afterKind, 'and afterwards it is the fence, not the pin').toBe('shop');
+    expect(r.afterName).toBe('TradeDesk shop');
+  });
+
+  test('a null anchor and a closed leg are both no-ops, not throws', async () => {
+    // §11.1 input classes on the function this change touches.
+    const r = await page.evaluate(() => {
+      const out = [];
+      _geoLastFenceLoc = { lat: 39.03, lng: -95.71, name: 'TradeDesk shop', kind: 'shop' };
+      _geoDriveStartedAt = new Date().toISOString();
+      try { out.push(_geoSettleStopLeg(null, new Date().toISOString())); } catch (e) { out.push('threw:' + e.message); }
+      try { out.push(_geoSettleStopLeg(undefined)); } catch (e) { out.push('threw:' + e.message); }
+      try { out.push(_geoSettleStopLeg({ legClosed: true }, new Date().toISOString())); } catch (e) { out.push('threw:' + e.message); }
+      _geoDriveStartedAt = null;
+      try { out.push(_geoSettleStopLeg({ lat: 1, lng: 1, at: new Date().toISOString() }, new Date().toISOString())); }
+      catch (e) { out.push('threw:' + e.message); }
+      return out;
+    });
+    expect(r).toEqual([false, false, false, false]);
+  });
+
+  assertNoErrors(() => page);
+});
+
+// ── THE TAPE SETS THE CLOCK, THE FENCE CONFIRMS THE EVENT ───────────────────
+//
+// A geofence cannot fire until a line several hundred feet away has been
+// crossed, and driving starts at the parking space. Measured on the owner's
+// own account over ten real departures, the fix taken at the fence sat a MILE
+// from where the drive began on half of them, and within ten metres on one.
+//
+// The motion coprocessor knew at the parking space: foot -> automotive is the
+// truck pulling out, stamped to the millisecond, and on the live path it
+// lands within seconds. So the tape supplies the moment and the fence still
+// supplies the event, which is the same bargain the shop dwell already
+// strikes with _geoShopPendingClose. The edge alone is never enough: a phone
+// in a pocket reads automotive from a ride in somebody else's truck.
+test.describe('A drive opens at the moment the tape saw, not the moment the fence noticed', () => {
+  let page;
+  const SHOPC = { lat: 38.0, lon: -94.0 };
+  const AWAY  = { lat: 38.4, lon: -94.4 };
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => { S.bizTz = 'America/Chicago'; window.supaLoadFromCloud = async () => {}; });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // Park at the shop, optionally plant a pending motion edge, then drive off.
+  // Returns how many seconds before the departing ping the leg was opened.
+  const depart = (o) => page.evaluate(async (a) => {
+    S.officeLat = a.SHOPC.lat; S.officeLon = a.SHOPC.lon; S.teamTracking = true;
+    _geoPingBusy = false;
+    _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+    _geoShopArrivedAt = null; _geoDriveStartedAt = null; _geoStopAnchor = null;
+    _geoLastFenceAt = null; _geoLegAtShop = false; _geoLastFenceLoc = null;
+    _geoLegOrigin = null; _geoDrivePendingAt = null; _geoLastMotionKind = '';
+    const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+    await ping(a.SHOPC);                       // inside the shop fence
+    if (a.pendingAgeS != null) {
+      // The transition as the plugin delivers it: kind, prevKind, and the
+      // instant it happened. Fed through the real handler, not poked in.
+      await _geoTdEvent({ type: 'motion', kind: 'automotive', prevKind: 'walking',
+                          ts: Date.now() - a.pendingAgeS * 1000 }, !!a.replay);
+    }
+    if (a.thenRest) await _geoTdEvent({ type: 'motion', kind: 'still', prevKind: 'automotive', ts: Date.now() });
+    const departedAtMs = Date.now();
+    await ping(a.AWAY);                        // out on the road
+    const started = Date.parse(_geoDriveStartedAt || '') || 0;
+    return {
+      opened: !!_geoDriveStartedAt,
+      backdatedS: started ? Math.round((departedAtMs - started) / 1000) : null,
+      pendingCleared: _geoDrivePendingAt === null,
+    };
+  }, o);
+
+  test('no tape edge: the drive still opens at the departing ping, unchanged', async () => {
+    // The behaviour that has always been here, and the fallback whenever the
+    // coprocessor has nothing. Must not move.
+    const r = await depart({ SHOPC, AWAY });
+    expect(r.opened).toBe(true);
+    expect(r.backdatedS, 'no edge, no correction').toBeLessThanOrEqual(1);
+  });
+
+  test('a fresh edge three minutes back opens the leg three minutes back', async () => {
+    const r = await depart({ SHOPC, AWAY, pendingAgeS: 180 });
+    expect(r.opened).toBe(true);
+    expect(r.backdatedS).toBeGreaterThanOrEqual(178);
+    expect(r.backdatedS).toBeLessThanOrEqual(182);
+    expect(r.pendingCleared, 'spent, not left to backdate the next leg too').toBe(true);
+  });
+
+  test('a stale edge is ignored: past the cap it no longer describes this departure', async () => {
+    // 40 minutes of driving, stopping and starting since. The fence is the
+    // better witness now, and a leg backdated that far invents wheel time.
+    const r = await depart({ SHOPC, AWAY, pendingAgeS: 40 * 60 });
+    expect(r.opened).toBe(true);
+    expect(r.backdatedS).toBeLessThanOrEqual(1);
+  });
+
+  test('right on the cap boundary, both sides', async () => {
+    const inside = await depart({ SHOPC, AWAY, pendingAgeS: 14 * 60 });
+    expect(inside.backdatedS).toBeGreaterThan(800);
+    const outside = await depart({ SHOPC, AWAY, pendingAgeS: 16 * 60 });
+    expect(outside.backdatedS).toBeLessThanOrEqual(1);
+  });
+
+  test('coming to rest cancels the claim', async () => {
+    // automotive then still, then the fence exit. Whatever that edge was, it
+    // is not the departure this exit describes: he pulled forward and parked.
+    const r = await depart({ SHOPC, AWAY, pendingAgeS: 120, thenRest: true });
+    expect(r.opened).toBe(true);
+    expect(r.backdatedS, 'the rest cancelled it').toBeLessThanOrEqual(1);
+  });
+
+  test('a REPLAYED edge still sets the clock: that is the force-closed case', async () => {
+    // The whole reason the edge is computed outside the !replay guard. A phone
+    // that was killed at the kerb has no live fence exit and the buffered tape
+    // is the only witness to when it pulled out.
+    const r = await depart({ SHOPC, AWAY, pendingAgeS: 240, replay: true });
+    expect(r.opened).toBe(true);
+    expect(r.backdatedS).toBeGreaterThanOrEqual(238);
+  });
+
+  test('an edge stamped in the future is refused', async () => {
+    // Clock skew on a replayed buffer must never backdate a leg forwards.
+    const r = await page.evaluate(async () => {
+      _geoDrivePendingAt = null; _geoLastMotionKind = '';
+      await _geoTdEvent({ type: 'motion', kind: 'automotive', prevKind: 'walking',
+                          ts: Date.now() + 10 * 60000 }, true);
+      return _geoDrivePendingAt;
+    });
+    expect(r).toBeNull();
+  });
+
+  test('junk motion events do not throw or plant a claim', async () => {
+    const r = await page.evaluate(async () => {
+      const out = [];
+      for (const ev of [
+        { type: 'motion' },
+        { type: 'motion', kind: '' },
+        { type: 'motion', kind: 'automotive', ts: 'not-a-number' },
+        { type: 'motion', kind: 'still', prevKind: 'automotive' },
+      ]) {
+        try { _geoDrivePendingAt = null; _geoLastMotionKind = ''; await _geoTdEvent(ev, true); out.push(_geoDrivePendingAt); }
+        catch (e) { out.push('threw:' + e.message); }
+      }
+      return out;
+    });
+    // A kind-less event plants nothing; 'automotive' with a junk ts falls back
+    // to now, which is legal and self-cancelling (it can never be < now later).
+    expect(r[0]).toBeNull();
+    expect(r[1]).toBeNull();
+    expect(typeof r[2]).toBe('string');
+    expect(r[3]).toBeNull();
+  });
+
+  assertNoErrors(() => page);
+});
