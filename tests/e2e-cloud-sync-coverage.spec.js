@@ -2024,4 +2024,157 @@ test.describe('100-writer op channel + rebase', () => {
     expect(r.threw).toBe(null);
     expect(r.activeRightAfterCall).toBe('pg-dash');
   });
+
+  // ── EVERY OPEN IS A REFRESH ────────────────────────────────────────────────
+  // Owner report 2026-08-31: "data is cached and looks old ... every time you
+  // open, it needs to refresh all metrics." Two causes, both covered here:
+  // nothing repainted on foreground at all, and the only freshness check on
+  // resume was the zj_data cursor, which the server-written geo rows never
+  // touch.
+  test.describe('_refreshActivePage: repaint the visible page, navigate nothing', () => {
+    const withPg = (pgId, body) => page.evaluate(({ pgId, body }) => {
+      const prev = document.querySelector('.pg.active')?.id || null;
+      const el = document.getElementById(pgId);
+      document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+      if (el) el.classList.add('active');
+      const calls = [];
+      const NAMES = ['renderDash', 'renderTimeLog', 'renderMoneyPage', 'renderJobsPage',
+        'renderTrackerTab', 'renderCalendar', 'renderClientList', 'renderLeadsPage',
+        'renderProposalsPage', 'renderDispatch', 'renderTeam', 'renderFleetVehicles',
+        'calcTax', 'renderContracts', 'renderLicensing', 'renderChecklist', 'renderClientHubPage'];
+      const saved = {};
+      NAMES.forEach(n => { saved[n] = window[n]; window[n] = () => { calls.push(n); }; });
+      const savedScroll = window.scrollTo;
+      let scrolled = false;
+      window.scrollTo = () => { scrolled = true; };
+      let out, threw = null;
+      try { out = eval('(' + body + ')')(); } catch (e) { threw = e.message; }
+      NAMES.forEach(n => { window[n] = saved[n]; });
+      window.scrollTo = savedScroll;
+      document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+      if (prev) document.getElementById(prev)?.classList.add('active');
+      return { calls, scrolled, out, threw };
+    }, { pgId, body: body.toString() });
+
+    test('the dashboard repaints, and nothing scrolls', async () => {
+      const r = await withPg('pg-dash', () => _refreshActivePage());
+      expect(r.threw).toBe(null);
+      expect(r.out).toBe('pg-dash');
+      expect(r.calls).toEqual(['renderDash']);
+      // goPg() scrolls to top. This must not: the contractor was reading
+      // something halfway down when the phone went in his pocket.
+      expect(r.scrolled).toBe(false);
+    });
+
+    test('the time log repaints, which is what pulls the server rows again', async () => {
+      const r = await withPg('pg-timelog', () => _refreshActivePage());
+      expect(r.calls).toEqual(['renderTimeLog']);
+    });
+
+    test('a page with two renders runs both', async () => {
+      const r = await withPg('pg-team', () => _refreshActivePage());
+      expect(r.calls).toEqual(['renderTeam', 'renderFleetVehicles']);
+    });
+
+    test('a page with no stale metrics is a no-op, not a throw', async () => {
+      const r = await withPg('pg-settings', () => _refreshActivePage());
+      expect(r.threw).toBe(null);
+      expect(r.out).toBe('pg-settings');
+      expect(r.calls).toEqual([]);
+    });
+
+    test('the estimate builder is NEVER repainted: it holds unsaved typing', async () => {
+      const r = await withPg('pg-est-generic', () => _refreshActivePage());
+      expect(r.threw).toBe(null);
+      expect(r.calls).toEqual([]);
+    });
+
+    test('no active page at all: returns null, does not throw', async () => {
+      const r = await page.evaluate(() => {
+        const prev = document.querySelector('.pg.active')?.id || null;
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        let out, threw = null;
+        try { out = _refreshActivePage(); } catch (e) { threw = e.message; }
+        if (prev) document.getElementById(prev)?.classList.add('active');
+        return { out, threw };
+      });
+      expect(r.threw).toBe(null);
+      expect(r.out).toBe(null);
+    });
+
+    test('a render that throws does not take the refresh down with it', async () => {
+      const r = await page.evaluate(() => {
+        const prev = document.querySelector('.pg.active')?.id || null;
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        document.getElementById('pg-dash')?.classList.add('active');
+        const saved = window.renderDash;
+        window.renderDash = () => { throw new Error('boom'); };
+        let out, threw = null;
+        try { out = _refreshActivePage(); } catch (e) { threw = e.message; }
+        window.renderDash = saved;
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        if (prev) document.getElementById(prev)?.classList.add('active');
+        return { out, threw };
+      });
+      expect(r.threw).toBe(null);       // swallowed: this runs on a lifecycle event
+      expect(r.out).toBe('pg-dash');
+    });
+
+    test('calling it ten times in a row is safe (11.2)', async () => {
+      const r = await withPg('pg-dash', () => {
+        for (let i = 0; i < 10; i++) _refreshActivePage();
+        return 'ok';
+      });
+      expect(r.threw).toBe(null);
+      expect(r.calls.length).toBe(10);
+    });
+  });
+
+  test.describe('the foreground pull is not gated on the zj_data cursor', () => {
+    const CLOUD = () => readJs('cloud.js');
+
+    test('foregrounding repaints AND pulls, not just the cursor check', () => {
+      const src = CLOUD();
+      expect(src.includes('window._cursorCheckReconcile&&window._cursorCheckReconcile();\n        _refreshOnForeground();'),
+        'the cursor check is kept and the unconditional refresh is added after it').toBe(true);
+    });
+
+    test('the repaint happens BEFORE the network, so the clock is right offline', () => {
+      const src = CLOUD();
+      const fn = src.slice(src.indexOf('const _refreshOnForeground=()=>{'));
+      const paint = fn.indexOf('_refreshActivePage()');
+      const pull = fn.indexOf('supaLoadFromCloud({silent:true})');
+      expect(paint).toBeGreaterThan(-1);
+      expect(pull).toBeGreaterThan(-1);
+      // Everything derived from the clock is already correct from memory. It
+      // must not wait on a round trip that may never come back on bad signal.
+      expect(paint).toBeLessThan(pull);
+    });
+
+    test('the pull is throttled but the repaint never is', () => {
+      const src = CLOUD();
+      const fn = src.slice(src.indexOf('const _refreshOnForeground=()=>{'));
+      const paint = fn.indexOf('_refreshActivePage()');
+      const guard = fn.indexOf('_lastFgPullAt<_FG_PULL_MIN_GAP_MS');
+      expect(guard).toBeGreaterThan(-1);
+      // App-switching to the camera and back three times in ten seconds should
+      // not fire three loads, but it must repaint all three times: the repaint
+      // is free and the number on screen is what he is looking at.
+      expect(paint).toBeLessThan(guard);
+    });
+
+    test('a save this device just made is not pulled on top of', () => {
+      const src = CLOUD();
+      const fn = src.slice(src.indexOf('const _refreshOnForeground=()=>{'));
+      expect(fn.slice(0, 1600).includes('_lastLocalSaveAt<3000'),
+        'same read-skew floor _cursorCheckReconcile uses').toBe(true);
+    });
+
+    test('and it repaints again once the pull lands', () => {
+      const src = CLOUD();
+      const fn = src.slice(src.indexOf('const _refreshOnForeground=()=>{'), src.indexOf('window._cursorCheckReconcile=async()=>{'));
+      const pull = fn.indexOf('supaLoadFromCloud({silent:true})');
+      expect(fn.indexOf('_refreshActivePage()', pull)).toBeGreaterThan(pull);
+    });
+  });
 });

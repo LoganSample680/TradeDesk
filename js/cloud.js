@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.31.26.25';
+const APP_VERSION='08.31.26.26';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -5438,6 +5438,13 @@ async function _ingestPipeInbox(force){
       if(typeof supaSaveToCloud==='function')supaSaveToCloud();
       try{
         const pg=document.querySelector('.pg.active')?.id;
+        // DELIBERATELY narrower than _refreshActivePage() (js/navigation.js),
+        // which is the shared repaint used on foreground (§7.3, so this is the
+        // divergence being stated rather than a shortcut). This runs 1.8s after
+        // boot, on the boot path, and the wide version would fire the time
+        // log's three Supabase queries into the middle of the boot render. The
+        // three pages below are the ones a piped-in job or payment can actually
+        // change.
         // pg-dash is the common case: it's the FIRST page shown at boot, and
         // this ingest runs 1.8s after boot on purpose (never compete with the
         // boot render), so Today already painted before a job/payment landed.
@@ -8613,6 +8620,45 @@ async function supaLoadFromCloud({silent=false}={}){
       // One tiny cursor read; reload ONLY when it's ahead of what we've applied, the
       // free no-op on the caught-up path. Shared by the heartbeat tick and the
       // return-to-foreground pull so both converge by the same rule.
+      // ── EVERY OPEN IS A REFRESH (owner 2026-08-31) ────────────────────────
+      // "data is cached and looks old ... every time you open, it needs to
+      // refresh all metrics."
+      //
+      // The cursor check above is necessary and not sufficient, because it can
+      // only see zj_data. The geo pipeline's rows are written server-side by
+      // ingest-geo directly into job_time_entries, shop_time_entries and
+      // td_mileage, and none of those touch zj_data. So a drive could complete
+      // in full while the phone was in a pocket, the cursor would sit exactly
+      // where it was, and the app would conclude nothing had happened. That is
+      // the "chain was made automatic but the screen still looks old" report:
+      // the chain ran, the screen was simply never told.
+      //
+      // Two things happen here, in this order, on purpose:
+      //   1. Repaint IMMEDIATELY, before any network. Everything derived from
+      //      the clock (today's total, a running visit, the week bars) is
+      //      correct from data already in memory, so it must not wait on a
+      //      round trip that may not come back on a bad signal.
+      //   2. Pull, then repaint again once it lands. Unconditional, not
+      //      cursor-gated, for the reason above.
+      //
+      // Throttled on the PULL only. App-switching to the camera and back three
+      // times in ten seconds should not fire three full loads, but it should
+      // still repaint every single time, which costs nothing.
+      const _FG_PULL_MIN_GAP_MS=8000;
+      let _lastFgPullAt=0;
+      const _refreshOnForeground=()=>{
+        try{if(typeof _refreshActivePage==='function')_refreshActivePage();}catch(_e){}
+        if(!_supaUser||_loadInProgress)return;
+        if(Date.now()-_lastFgPullAt<_FG_PULL_MIN_GAP_MS)return;
+        // A save this device just made is already on screen; pulling on top of
+        // it is the read-skew window supaLoadFromCloud's cursor discipline
+        // exists to avoid. Same 3s floor _cursorCheckReconcile uses (§7.3).
+        if(Date.now()-_lastLocalSaveAt<3000)return;
+        _lastFgPullAt=Date.now();
+        Promise.resolve(supaLoadFromCloud({silent:true}))
+          .then(()=>{try{if(typeof _refreshActivePage==='function')_refreshActivePage();}catch(_e){}})
+          .catch(()=>{});
+      };
       window._cursorCheckReconcile=async()=>{
         if(!_supaUser||_loadInProgress||_reconcileTimer)return;
         if(Date.now()-_lastLocalSaveAt<3000)return;
@@ -8671,6 +8717,7 @@ async function supaLoadFromCloud({silent=false}={}){
         // (the old 60s-gated full reload missed anything a teammate did in the last
         // minute: exactly the crew scenario). Delta-sized when it does fire.
         window._cursorCheckReconcile&&window._cursorCheckReconcile();
+        _refreshOnForeground();
       }});
       // Cross-tab signal: sign.html writes zp3_sig_notify after a successful cash/check save.
       // This fires immediately in the contractor's open TradeDesk tab, no polling delay.
