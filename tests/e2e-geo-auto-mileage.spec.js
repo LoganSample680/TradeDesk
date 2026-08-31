@@ -7472,6 +7472,205 @@ test.describe('A settled stop never strands the leg origin', () => {
 // supplies the event, which is the same bargain the shop dwell already
 // strikes with _geoShopPendingClose. The edge alone is never enough: a phone
 // in a pocket reads automotive from a ride in somebody else's truck.
+// ── SANDBOX: one flip, driven through the whole client pipeline ─────────────
+// Owner, 2026-08-31, before taking a real drive: "anyway you can mock an id to
+// go through the process on a drive that starts at john doe in my data base
+// and goes to the shop before I drive so we know it works in a sandbox?"
+//
+// His actual geography, read out of his account: John Doe at 2950 SW McClure
+// Rd (39.0123292, -95.7464936) and the shop at 2015 SW Randolph Ave
+// (39.0307066, -95.7112082), the same 3.2-mile road he drove twice today.
+// Nothing here touches his data: the coordinates are his, the account is the
+// harness's own.
+//
+// This is the CLIENT half end to end, which is the half that can be rehearsed
+// without writing to a live database. The server half is pinned to the same
+// rule at source by e2e-geo-ingest-contract; exercising it for real would mean
+// posting synthetic events to the live function and leaving junk rows in his
+// IRS log, which is not a thing to do to somebody's tax record for a rehearsal.
+test.describe('Sandbox: a minted flip id survives the whole journey', () => {
+  let page;
+  const JOHN = { lat: 39.0123292, lon: -95.7464936 };
+  const SHOP = { lat: 39.0307066, lon: -95.7112082 };
+  const MID  = { lat: 39.0220000, lon: -95.7300000 };   // on the road between them
+  const FLIP = 'fSANDBOX00000001';
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => { S.bizTz = 'America/Chicago'; window.supaLoadFromCloud = async () => {}; });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('the drive John Doe -> shop is logged once, under the flip id', async () => {
+    const r = await page.evaluate(async (d) => {
+      const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue;
+      const enq = [];
+      const before = mileage.slice();
+      try {
+        _supaUser = { id: 'sandbox0-0000-0000-0000-000000000000' };
+        // The router answers the way MapKit does for that road.
+        window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 8 });
+        window._geoEnqueue = (tbl, row) => enq.push({ tbl, ...row });
+        mileage.length = 0;
+
+        // His two ends, as the app knows them.
+        S.officeLat = d.SHOP.lat; S.officeLon = d.SHOP.lon; S.teamTracking = true;
+        clients.length = 0;
+        clients.push({ id: 1787003875684, name: 'John Doe', addr: '2950 SW McClure Rd, Topeka, KS 66614' });
+        jobs.length = 0;
+        // A client fence resolves out of the GEOCODE CACHE keyed by client id,
+        // not from a lat/lng on the record (_geoClientAt), and the cached
+        // address has to match the client's current one or the entry is
+        // ignored as stale. A first cut of this put the coordinates on the
+        // client and the fence never resolved at all, so the leg never opened.
+        localStorage.setItem('zp3_nearby_geo', JSON.stringify({
+          '1787003875684': { addr: '2950 SW McClure Rd, Topeka, KS 66614',
+                             lat: d.JOHN.lat, lon: d.JOHN.lon },
+        }));
+        _geoClientCacheMemo = null;
+
+        // Standing at John Doe's, nothing open but the visit. Cleared field by
+        // field the way every other test in this file does: there is no
+        // _geoReset global, the reset lives inside the tracking teardown.
+        _geoPingBusy = false;
+        _geoCurrentJob = null; _geoArrivedAt = null;
+        _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+        _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+        _geoCurrentClient = null; _geoClientArrivedAt = null;
+        _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null;
+        _geoLastFenceAt = null; _geoStopAnchor = null;
+        _geoDrivePendingAt = null; _geoDrivePendingId = null; _geoLegFlipId = null;
+        _geoLastMotionKind = 'still';
+        // speed rides along because a real drive has one, and leaving a CLIENT
+        // fence is gated on confirmation: either a driving-speed reading (real
+        // evidence of motion) or a second agreeing ping. A fixture with no
+        // speed only ever arms the pending exit and the leg never opens, which
+        // is what the first cut of this did.
+        const ping = (c, mps) => _geoOnPing({ coords: {
+          latitude: c.lat, longitude: c.lon, accuracy: 8,
+          ...(mps != null ? { speed: mps } : {}) } });
+        await ping(d.JOHN);
+
+        // 1. He walks to the truck. Rest, so no departure is claimed.
+        await _geoTdEvent({ type: 'motion', kind: 'walking', prevKind: 'still',
+                            ts: Date.now() - 9 * 60000, flipId: 'fWALK000000000001' });
+        const afterWalk = { pending: _geoDrivePendingAt, id: _geoDrivePendingId };
+
+        // 2. THE FLIP. CoreMotion says automotive, the plugin mints the id.
+        await _geoTdEvent({ type: 'motion', kind: 'automotive', prevKind: 'walking',
+                            ts: Date.now() - 8 * 60000, flipId: d.FLIP });
+        const afterFlip = { pending: _geoDrivePendingAt, id: _geoDrivePendingId };
+
+        // 3. He clears John Doe's fence at road speed. This is what spends the
+        // flip.
+        await ping(d.MID, 20);
+        const afterExit = { started: _geoDriveStartedAt, leg: _geoLegFlipId };
+
+        // 4. He arrives at the shop. The leg closes and both rows are written.
+        // The accumulator is deliberately NOT preset: a first cut seeded it at
+        // 3.1 and the pings then added the MID -> SHOP hop on top, so the
+        // observed tally beat the route and the forced-detour floor correctly
+        // took 4.3. The engine was right and the fixture was lying; a real
+        // drive's tally comes from its own pings.
+        await ping(d.SHOP);
+        await new Promise(res => setTimeout(res, 80));
+
+        const rows = mileage.slice();
+        return {
+          afterWalk, afterFlip, afterExit,
+          mileage: rows.map(m => ({ legKey: m.legKey, from: m.from_name, to: m.to_name,
+                                    miles: m.miles, calc: m.calc_method })),
+          drives: enq.filter(e => e.tbl === 'job_time_entries' && /^drive/.test(e.source || ''))
+                     .map(e => ({ key: e.client_key, dest: e.dest_place, source: e.source })),
+        };
+      } finally {
+        _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
+        window._geoEnqueue = realEnq;
+        mileage.length = 0; before.forEach(m => mileage.push(m));
+        _geoDrivePendingAt = null; _geoDrivePendingId = null; _geoLegFlipId = null;
+      }
+    }, { JOHN, SHOP, MID, FLIP });
+
+    // Stage 1: walking is rest. Nothing claimed, nothing named.
+    expect(r.afterWalk.pending, 'a walk to the truck is not a departure').toBeNull();
+    expect(r.afterWalk.id).toBeNull();
+
+    // Stage 2: the flip is HELD with its id, not written.
+    expect(r.afterFlip.pending, 'the flip marks the moment').not.toBeNull();
+    expect(r.afterFlip.id, 'and carries its own id').toBe(FLIP);
+
+    // Stage 3: the fence spends it, and the leg takes the id AND the clock.
+    expect(r.afterExit.started, 'the leg opens at the flip, not at the fence').not.toBeNull();
+    expect(r.afterExit.leg, 'and is named by the flip that opened it').toBe(FLIP);
+
+    // Stage 4: exactly one drive, one mileage row, both under that id.
+    expect(r.drives.length, 'one drive, one time entry').toBe(1);
+    expect(r.drives[0].key, 'keyed by the flip, not by a timestamp').toBe(FLIP);
+    expect(r.mileage.length, 'one drive, one mileage row').toBe(1);
+    expect(r.mileage[0].legKey, 'the same id on both halves').toBe(FLIP);
+    expect(r.mileage[0].from).toBe('John Doe');
+    expect(r.mileage[0].to).toBe('Shop');
+    expect(r.mileage[0].miles, 'the routed distance, not a straight line').toBe(3.2);
+    expect(r.mileage[0].calc).toBe('auto_route');
+  });
+
+  test('a second delivery of the same flip cannot make a second row', async () => {
+    // The property the id exists for, stated directly: replay the whole
+    // journey twice and there is still one row, because the key is the flip
+    // rather than a clock two writers can read differently.
+    const r = await page.evaluate(async (d) => {
+      const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue;
+      const before = mileage.slice();
+      try {
+        _supaUser = { id: 'sandbox0-0000-0000-0000-000000000000' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 8 });
+        window._geoEnqueue = () => {};
+        mileage.length = 0;
+        S.officeLat = d.SHOP.lat; S.officeLon = d.SHOP.lon; S.teamTracking = true;
+        clients.length = 0;
+        clients.push({ id: 1787003875684, name: 'John Doe', addr: '2950 SW McClure Rd, Topeka, KS 66614' });
+        jobs.length = 0;
+        localStorage.setItem('zp3_nearby_geo', JSON.stringify({
+          '1787003875684': { addr: '2950 SW McClure Rd, Topeka, KS 66614',
+                             lat: d.JOHN.lat, lon: d.JOHN.lon },
+        }));
+        _geoClientCacheMemo = null;
+        const ping = (c, mps) => _geoOnPing({ coords: {
+          latitude: c.lat, longitude: c.lon, accuracy: 8,
+          ...(mps != null ? { speed: mps } : {}) } });
+        for (let pass = 0; pass < 2; pass++) {
+          _geoPingBusy = false;
+          _geoCurrentJob = null; _geoArrivedAt = null;
+          _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null;
+          _geoLastFenceAt = null; _geoStopAnchor = null;
+          _geoDrivePendingAt = null; _geoDrivePendingId = null; _geoLegFlipId = null;
+          _geoLastMotionKind = 'walking';
+          await ping(d.JOHN);
+          await _geoTdEvent({ type: 'motion', kind: 'automotive', prevKind: 'walking',
+                              ts: Date.now() - 8 * 60000, flipId: d.FLIP });
+          await ping(d.MID, 20);
+          await ping(d.SHOP);
+          await new Promise(res => setTimeout(res, 80));
+        }
+        return { rows: mileage.filter(m => m && m.legKey === d.FLIP).length };
+      } finally {
+        _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
+        window._geoEnqueue = realEnq;
+        mileage.length = 0; before.forEach(m => mileage.push(m));
+        _geoDrivePendingAt = null; _geoDrivePendingId = null; _geoLegFlipId = null;
+      }
+    }, { JOHN, SHOP, MID, FLIP });
+    expect(r.rows, 'the same flip can only ever own one row').toBe(1);
+  });
+});
+
 test.describe('A drive opens at the moment the tape saw, not the moment the fence noticed', () => {
   let page;
   const SHOPC = { lat: 38.0, lon: -94.0 };
