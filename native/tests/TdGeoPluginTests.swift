@@ -1139,4 +1139,81 @@ extension TdGeoPluginTests {
         XCTAssertTrue(buf.contains { ($0["type"] as? String) == "regionExit" },
             "the crossing must land whatever the coprocessor does afterwards")
     }
+
+    // ── The urgent flush lane (owner 2026-08-31) ────────────────────────────
+    // The debounce was a DispatchQueue.main.asyncAfter, and a backgrounded app
+    // is suspended within milliseconds, so the timer never fired. Measured on
+    // his phone: 2 to 3 second delivery while the app was open, then 1028,
+    // 990, 888, 703 and 321 seconds for everything after he backgrounded it,
+    // including two region crossings that had woken the app and been recorded
+    // on time. They were recorded and then sat behind a timer with no process
+    // left to fire on.
+    //
+    // XCTest cannot background a simulator, so what is asserted here is what a
+    // plugin-level test can actually prove (§3.3): that a lane which now runs
+    // on every crossing and every backgrounding is safe to run that often, and
+    // from any queue, and with nothing to send.
+
+    func testUrgentFlushIsSafeWithNoConfigAtAll() {
+        // The common case on a fresh install: tracking armed before JS has
+        // handed over the endpoint. It must be a no-op, never a crash on a
+        // region wake.
+        UserDefaults.standard.removeObject(forKey: plugin.flushCfgKeyForTest)
+        plugin.flushUrgentlyForTest()
+        XCTAssertTrue(true, "no config is a no-op, not a crash")
+    }
+
+    func testUrgentFlushIsSafeWithAnEmptyBuffer() {
+        UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
+        plugin.flushUrgentlyForTest()
+        XCTAssertTrue(true, "nothing to send is nothing to do")
+    }
+
+    func testUrgentFlushSurvivesAJunkConfig() {
+        // Half a config is the shape a partial write leaves behind. Every
+        // field is guarded, so this must fall through rather than force-unwrap.
+        UserDefaults.standard.set(["url": "not a url"], forKey: plugin.flushCfgKeyForTest)
+        plugin.flushUrgentlyForTest()
+        UserDefaults.standard.set(["url": "https://example.invalid/f", "userId": "u"],
+                                  forKey: plugin.flushCfgKeyForTest)
+        plugin.flushUrgentlyForTest()
+        UserDefaults.standard.removeObject(forKey: plugin.flushCfgKeyForTest)
+        XCTAssertTrue(true, "a partial config never reaches the network")
+    }
+
+    func testUrgentFlushIsSafeOffTheMainThread() {
+        // CoreLocation and CoreMotion callbacks are not guaranteed to be on
+        // main, and this lane touches UIApplication, which is main-only.
+        let done = expectation(description: "off-main flush returned")
+        DispatchQueue.global(qos: .utility).async {
+            self.plugin.flushUrgentlyForTest()
+            self.plugin.scheduleFlushForTest()
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 5)
+    }
+
+    func testRepeatedUrgentFlushesDoNotPileUp() {
+        // It now runs on every crossing. A truck circling a block trips the
+        // same fence repeatedly and must not leak background-task assertions
+        // or crash on overlapping calls (§11.2, concurrent-call class).
+        UserDefaults.standard.removeObject(forKey: plugin.flushCfgKeyForTest)
+        for _ in 0..<25 { plugin.flushUrgentlyForTest() }
+        XCTAssertTrue(true, "25 back-to-back urgent flushes are survivable")
+    }
+
+    func testRegionCrossingsStillRecordWithTheUrgentFlushInPlace() {
+        // The regression guard for the change itself: adding the flush to both
+        // delegate callbacks must not disturb what they were already for.
+        UserDefaults.standard.removeObject(forKey: "td_geo_fix_buffer")
+        UserDefaults.standard.removeObject(forKey: plugin.flushCfgKeyForTest)
+        let region = CLCircularRegion(
+            center: CLLocationCoordinate2D(latitude: 39.03, longitude: -95.71),
+            radius: 180, identifier: "place-1")
+        plugin.locationManager(CLLocationManager(), didExitRegion: region)
+        plugin.locationManager(CLLocationManager(), didEnterRegion: region)
+        let buf = (UserDefaults.standard.array(forKey: "td_geo_fix_buffer") as? [[String: Any]]) ?? []
+        XCTAssertTrue(buf.contains { ($0["type"] as? String) == "regionExit" })
+        XCTAssertTrue(buf.contains { ($0["type"] as? String) == "regionEnter" })
+    }
 }

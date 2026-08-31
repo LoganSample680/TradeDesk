@@ -615,6 +615,16 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     func backfillMotionHistoryForTest() { backfillMotionHistory() }
     var motionMarkKeyForTest: String { motionMarkKey }
     static var backfillFreshMsForTest: Double { backfillFreshMs }
+    // The urgent lane, reachable without backgrounding a simulator. What the
+    // tests can assert is that it survives being called from any queue, with
+    // no config, with an empty buffer, and repeatedly, since it now runs on
+    // every region crossing and every backgrounding rather than once in a
+    // while behind a debounce.
+    func flushUrgentlyForTest() { flushUrgently() }
+    func scheduleFlushForTest() { scheduleFlush() }
+    var flushCfgKeyForTest: String { flushCfgKey }
+    var flushMarkKeyForTest: String { flushMarkKey }
+    var bufferKeyForTest: String { bufferKey }
     #endif
 
     private func record(_ ev: [String: Any]) {
@@ -662,8 +672,9 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     @objc private func appBackground() {
         lifecycleEvent("app-background")
         // Backgrounding is the last reliable moment to get the buffer out
-        // before iOS decides this process's fate.
-        scheduleFlush()
+        // before iOS decides this process's fate, so it is spent NOW rather
+        // than 1.5 seconds from now on a queue that is about to stop running.
+        flushUrgently()
     }
     @objc private func appTerminate() { lifecycleEvent("app-terminate") }
 
@@ -852,12 +863,60 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     }()
 
     // Debounced so one wake's burst of events becomes one POST.
+    //
+    // FOREGROUND ONLY, and that qualifier is the whole fix. A backgrounded app
+    // is suspended within milliseconds, and a suspended process does not run
+    // its main queue, so this timer simply never fires. Measured on the
+    // owner's phone 2026-08-31: every event delivered in 2 to 3 seconds while
+    // the app was open, then he backgrounded it at 12:21:35 and delivery
+    // stopped dead. The backgrounding event itself took 1028 seconds to
+    // arrive, the drive home's motion edges 888 and 703, the fence exit 703,
+    // the arrival at the shop 321, and not one of them moved until he brought
+    // the app back to the foreground. His words: "these updates aren't coming
+    // through live anymore, had to force close reopen, can't have that."
+    //
+    // Region crossings DO wake the app, and iOS gives that wake real runtime,
+    // so the events were recorded on time. They were recorded and then sat in
+    // UserDefaults behind a timer that had no process left to fire on.
     private func scheduleFlush() {
+        // UIApplication is main-thread only, and record() is called from
+        // CoreLocation and CoreMotion callbacks that are not guaranteed to be
+        // on it. Bounce rather than read the state off whatever queue we
+        // happen to be on.
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { self.scheduleFlush() }
+            return
+        }
+        if UIApplication.shared.applicationState != .active { flushUrgently(); return }
         if flushPending { return }
         flushPending = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             self.flushPending = false
             self.flushNow()
+        }
+    }
+
+    // No timer, and an expiring background-task assertion held across the
+    // handover so iOS cannot suspend the process between building the payload
+    // and nsurlsessiond taking ownership of it. Everything that happens while
+    // backgrounded comes through here: the moment of backgrounding, every
+    // region crossing, every wake.
+    private func flushUrgently() {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { self.flushUrgently() }
+            return
+        }
+        flushPending = false
+        var bg = UIBackgroundTaskIdentifier.invalid
+        bg = UIApplication.shared.beginBackgroundTask(withName: "td.geo.flush") {
+            if bg != .invalid { UIApplication.shared.endBackgroundTask(bg); bg = .invalid }
+        }
+        flushNow()
+        // Deliberately not immediate: the upload task is handed to the system
+        // asynchronously, and ending the assertion in the same run loop turn
+        // can suspend the process before that handover completes.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            if bg != .invalid { UIApplication.shared.endBackgroundTask(bg); bg = .invalid }
         }
     }
 
@@ -973,16 +1032,21 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
 
     // MARK: - CLLocationManagerDelegate
 
+    // A crossing is the event the whole engine is built on, and the wake it
+    // arrives on is the only runtime this process is going to get. Both the
+    // crossing and whatever the backfill just recovered go out on it.
     public func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
         countWake("regionExit")
         record(event(type: "regionExit", loc: manager.location, regionId: region.identifier))
         backfillMotionHistory()
+        flushUrgently()
     }
 
     public func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
         countWake("regionEnter")
         record(event(type: "regionEnter", loc: manager.location, regionId: region.identifier))
         backfillMotionHistory()
+        flushUrgently()
     }
 
     public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
