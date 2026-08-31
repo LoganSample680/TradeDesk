@@ -559,10 +559,25 @@ function _geoWakeRelease(){try{if(_geoWakeLockObj)_geoWakeLockObj.release();}cat
 const _GEO_OPEN_KEY='zp3_geo_open';
 function _geoPersistOpen(hiddenAt){
   try{
-    if((_geoCurrentJob&&_geoArrivedAt)||(_geoWasInShop&&_geoShopArrivedAt)||_geoDriveStartedAt){
+    // ── A CLIENT VISIT IS OPEN STATE TOO ──────────────────────────────────
+    // It was in neither the guard nor the payload, so standing at a customer's
+    // address with nothing else open did not just fail to save: it took the
+    // `else` below and DELETED the snapshot. Come back after any relaunch and
+    // the visit is gone from memory with no row ever written, so the on-site
+    // hours are not late, they are lost.
+    //
+    // Owner, 2026-08-31: arrived at John Doe 07:58, force-quit and reopened at
+    // 11:43, and the app had no idea he was standing on a job. That is also
+    // why the open-visit anchor added the same day found nothing to anchor on:
+    // it was reading a variable a relaunch had already cleared.
+    if((_geoCurrentJob&&_geoArrivedAt)||(_geoWasInShop&&_geoShopArrivedAt)||
+       (_geoCurrentClient&&_geoClientArrivedAt)||(_geoCurrentPlace&&_geoPlaceArrivedAt)||
+       _geoDriveStartedAt){
       localStorage.setItem(_GEO_OPEN_KEY,JSON.stringify({
         job:_geoCurrentJob,arrivedAt:_geoArrivedAt,wasInShop:_geoWasInShop,
         shopArrivedAt:_geoShopArrivedAt,driveStartedAt:_geoDriveStartedAt,
+        client:_geoCurrentClient,clientArrivedAt:_geoClientArrivedAt,
+        place:_geoCurrentPlace,placeArrivedAt:_geoPlaceArrivedAt,
         // WHERE THE DRIVE STARTED, not just that one is open (owner report
         // 2026-08-09: "FBC to home didn't log", with every endpoint saved).
         // These were memory-only, so an app kill left a restored drive with
@@ -620,6 +635,12 @@ function _geoRestoreOpen(){
       // (the last verified on-site moment) so the hours aren't silently lost.
       if(s.job&&s.arrivedAt){_geoCurrentJob=s.job;_geoArrivedAt=s.arrivedAt;_geoCloseEntry(s.job,s.hiddenAt,true);_geoCurrentJob=null;}
       if(s.wasInShop&&s.shopArrivedAt)_geoCloseShopEntry(s.shopArrivedAt,s.hiddenAt);
+      // Same salvage a job and the shop already got. A visit that ran past
+      // midnight is closed at the last verified on-site moment rather than
+      // thrown away, or the hours vanish exactly as they did before this
+      // state was persisted at all.
+      if(s.client&&s.clientArrivedAt)_geoCloseClientEntry(s.client,s.clientArrivedAt,s.hiddenAt);
+      if(s.place&&s.placeArrivedAt)_geoClosePlaceEntry(s.place,s.placeArrivedAt,s.hiddenAt);
       // Same salvage for a drive that was still IN PROGRESS (not at a job or the
       // shop) when the app died across midnight: previously this branch just
       // called _geoClearOpen() and the whole leg vanished, no time entry, no
@@ -642,6 +663,14 @@ function _geoRestoreOpen(){
     }
     if(_geoCurrentJob||_geoArrivedAt)return; // live state wins, never clobber a running session
     _geoCurrentJob=s.job;_geoArrivedAt=s.arrivedAt;
+    // Same "live state wins" rule, per fence kind: a session that has already
+    // resolved where it is must never have a restored answer written over it.
+    if(!_geoCurrentClient&&!_geoClientArrivedAt&&s.client&&s.clientArrivedAt){
+      _geoCurrentClient=s.client;_geoClientArrivedAt=s.clientArrivedAt;
+    }
+    if(!_geoCurrentPlace&&!_geoPlaceArrivedAt&&s.place&&s.placeArrivedAt){
+      _geoCurrentPlace=s.place;_geoPlaceArrivedAt=s.placeArrivedAt;
+    }
     _geoWasInShop=!!s.wasInShop;_geoShopArrivedAt=s.shopArrivedAt;
     // The drive comes back WITH its origin, which is what makes it billable.
     // (A freshness cap lived here for one commit and was wrong: a 45-minute
@@ -7021,7 +7050,24 @@ async function _geoRetimeToTapeSweep(){
       const A=startIsReal?best.a:s0, B=endIsReal?best.b:e0;
       if(!(B>A))return 0;
       const dS=Math.abs(A-s0),dE=Math.abs(B-e0);
-      if(dS<_GEO_RETIME_MIN_MS&&dE<_GEO_RETIME_MIN_MS)return 0;   // already agree
+      if(dS<_GEO_RETIME_MIN_MS&&dE<_GEO_RETIME_MIN_MS){
+        // ALREADY ON THE TAPE, AND ITS LEG STILL MIGHT NOT BE. Every drive
+        // this sweep corrected before the pairing existed left a mileage row
+        // behind on the old clock, and those rows can never be reached by the
+        // forward fix: the time entry now matches the tape, so this returns
+        // here and the leg is never looked at. Owner, 2026-08-31, on a build
+        // carrying the pairing: "mileage start time still says 7:52 am rather
+        // than 7:50." His time entry had been correct since the morning.
+        //
+        // So the alignment is checked on EVERY pass, not only on the passes
+        // that move something. Aligned to the row's own times rather than to
+        // the tape's, because the row is what the money views read and the two
+        // are identical here by definition. A leg already in step is a no-op.
+        if(tbl==='job_time_entries'&&_geoIsDriveSource(r.source)){
+          _geoRetimeMileageLeg(r.client_key,s0,e0,Math.round((e0-s0)/60000));
+        }
+        return 0;
+      }
       // The same-event cap protects the OVERLAP-MATCHED path, where a big
       // delta means the row grabbed a neighbouring segment. A DERIVED window
       // (the load re-derivation) is anchored on the drive transition and

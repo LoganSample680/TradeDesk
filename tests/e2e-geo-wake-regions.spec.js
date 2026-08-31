@@ -1517,6 +1517,58 @@ test.describe('Wake region set for the dead app', () => {
       expect(r.saves).toBe(0);
     });
 
+    test('a leg is realigned even when the time row already matches the tape', async () => {
+      // The backlog case, and the one the owner hit on a build that already
+      // carried the pairing: "mileage start time still says 7:52 am rather
+      // than 7:50." Every drive corrected before the pairing existed left its
+      // leg behind on the old clock, and those legs are unreachable by the
+      // forward fix, because the time entry now agrees with the tape and the
+      // sweep returns before it ever looks at the mileage row.
+      const key = legKeyAt(T(7, 49, 43));
+      const r = await withMileage(page, {
+        tape: MORNING,
+        // Already on the tape's boundaries: nothing here needs re-timing.
+        rows: [{ id: 'd16', source: 'drive', dest_place: null, job_id: null, client_key: key,
+                 arrived_at: iso(7, 49, 43), departed_at: iso(7, 59, 6), minutes: 9 }],
+        // The leg it left behind, still on the fence's late clock.
+        mileage: [Object.assign(MILE(T(7, 49, 43), T(7, 59, 6)),
+                   { startedIso: iso(7, 56, 28), endedIso: iso(7, 59, 25), mins: 3 })],
+      });
+      const m = r.rows.find(x => x.legKey === key);
+      expect(m.startedIso, 'the leg is brought onto the row it belongs to').toBe(iso(7, 49, 43));
+      expect(m.endedIso).toBe(iso(7, 59, 6));
+      expect(m.mins).toBe(9);
+      expect(m.miles, 'and the deduction is still not restated').toBe(3.2);
+    });
+
+    test('an aligned pair on an already-correct row writes nothing at all', async () => {
+      // Idempotence on the heal path. This runs on every pass now, including
+      // every pass where nothing is wrong, so it must not churn the sync queue.
+      const key = legKeyAt(T(7, 49, 43));
+      const r = await withMileage(page, {
+        tape: MORNING,
+        rows: [{ id: 'd17', source: 'drive', dest_place: null, job_id: null, client_key: key,
+                 arrived_at: iso(7, 49, 43), departed_at: iso(7, 59, 6), minutes: 9 }],
+        mileage: [MILE(T(7, 49, 43), T(7, 59, 6))],
+      });
+      expect(r.saves).toBe(0);
+    });
+
+    test('the heal is drives only: a matching visit row never reaches a leg', async () => {
+      // client_key on a visit is a visit key, not a legKey, so nothing could
+      // match anyway. Asserted so a future change to either key shape cannot
+      // quietly let a visit start rewriting mileage.
+      const key = legKeyAt(T(7, 49, 43));
+      const r = await withMileage(page, {
+        tape: MORNING,
+        rows: [{ id: 'v9', source: 'client', dest_place: 'John Doe', job_id: null, client_key: key,
+                 arrived_at: iso(7, 59, 6), departed_at: iso(11, 30, 0), minutes: 211 }],
+        mileage: [MILE(T(7, 49, 43), T(7, 59, 6))],
+      });
+      expect(r.rows[0].startedIso, 'the leg is untouched by a visit row').toBe(iso(7, 49, 43));
+      expect(r.saves).toBe(0);
+    });
+
     test('the helper refuses junk directly: no key, no order, no array', async () => {
       const r = await page.evaluate(() => {
         const before = mileage.slice();

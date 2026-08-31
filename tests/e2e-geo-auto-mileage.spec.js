@@ -5536,6 +5536,155 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.rows[0].miles).toBe(7.7);
     });
 
+    // ── STANDING AT A CUSTOMER IS OPEN STATE ──────────────────────────────
+    // _geoPersistOpen covered job, shop and drive. A client or place visit was
+    // in neither the guard nor the payload, so a session whose ONLY open state
+    // was a customer's address did not merely fail to save: it took the else
+    // branch and deleted the snapshot. After any relaunch the visit was gone
+    // from memory with no row ever written, so the on-site hours were not
+    // late, they were lost.
+    //
+    // Owner, 2026-08-31: arrived at John Doe 07:58, force-quit and reopened at
+    // 11:43, and the app no longer knew he was standing on a job.
+    const roundTrip = (page, state) => page.evaluate((st) => {
+      const realUser = _supaUser, realEnq = window._geoEnqueue;
+      const wrote = [];
+      try {
+        _supaUser = { id: 'u-open' };
+        window._geoEnqueue = (tbl, row) => wrote.push({ tbl, ...row });
+        _geoCurrentJob = null; _geoArrivedAt = null;
+        _geoWasInShop = false; _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+        _geoCurrentClient = st.client || null; _geoClientArrivedAt = st.clientAt || null;
+        _geoCurrentPlace = st.place || null; _geoPlaceArrivedAt = st.placeAt || null;
+        _geoPersistOpen(st.hiddenAt || new Date().toISOString());
+        const saved = localStorage.getItem('zp3_geo_open');
+        // ── app dies here ──
+        _geoCurrentClient = null; _geoClientArrivedAt = null;
+        _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+        window._geoOpenRestored = false;
+        _geoRestoreOpen();
+        return { saved: !!saved,
+                 client: _geoCurrentClient, clientAt: _geoClientArrivedAt,
+                 place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, wrote };
+      } finally {
+        _supaUser = realUser; window._geoEnqueue = realEnq;
+        _geoCurrentClient = null; _geoClientArrivedAt = null;
+        _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+        _geoClearOpen();
+      }
+    }, state);
+
+    test('an open client visit survives the app dying', async () => {
+      const r = await roundTrip(page, { client: '1787003875684',
+        clientAt: new Date(Date.now() - 40 * 60000).toISOString() });
+      expect(r.saved, 'standing at a customer is open state worth saving').toBe(true);
+      expect(r.client, 'and it is still known after the relaunch').toBe('1787003875684');
+      expect(r.clientAt).not.toBeNull();
+    });
+
+    test('an open place visit survives it too', async () => {
+      const r = await roundTrip(page, { place: 'p-99',
+        placeAt: new Date(Date.now() - 25 * 60000).toISOString() });
+      expect(r.saved).toBe(true);
+      expect(r.place).toBe('p-99');
+      expect(r.placeAt).not.toBeNull();
+    });
+
+    test('a client visit alone no longer DELETES the snapshot', async () => {
+      // The precise old failure. The guard did not name client or place, so
+      // this state fell through to localStorage.removeItem and took any other
+      // open state with it.
+      const r = await page.evaluate(() => {
+        const realUser = _supaUser;
+        try {
+          _supaUser = { id: 'u-open' };
+          localStorage.setItem('zp3_geo_open', JSON.stringify({ marker: 'previous' }));
+          _geoCurrentJob = null; _geoArrivedAt = null;
+          _geoWasInShop = false; _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+          _geoCurrentClient = 'c-1'; _geoClientArrivedAt = new Date().toISOString();
+          _geoPersistOpen(new Date().toISOString());
+          const raw = localStorage.getItem('zp3_geo_open') || '';
+          return { kept: raw.indexOf('c-1') >= 0, wiped: raw === '' || raw === 'null' };
+        } finally {
+          _supaUser = realUser; _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoClearOpen();
+        }
+      });
+      expect(r.wiped).toBe(false);
+      expect(r.kept, 'the visit is written into the snapshot, not erased by it').toBe(true);
+    });
+
+    test('live state wins: a restored visit never overwrites one already resolved', async () => {
+      // Same rule the job branch already holds. A session that has worked out
+      // where it is must not have a stale answer written over it.
+      const live = new Date(Date.now() - 5 * 60000).toISOString();
+      const r = await page.evaluate((liveAt) => {
+        const realUser = _supaUser;
+        try {
+          _supaUser = { id: 'u-open' };
+          _geoCurrentJob = null; _geoArrivedAt = null;
+          _geoWasInShop = false; _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+          _geoCurrentClient = 'stale'; _geoClientArrivedAt = new Date(Date.now() - 60 * 60000).toISOString();
+          _geoPersistOpen(new Date().toISOString());
+          _geoCurrentClient = 'live'; _geoClientArrivedAt = liveAt;
+          window._geoOpenRestored = false;
+          _geoRestoreOpen();
+          return { client: _geoCurrentClient, at: _geoClientArrivedAt };
+        } finally {
+          _supaUser = realUser; _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoClearOpen();
+        }
+      }, live);
+      expect(r.client).toBe('live');
+      expect(r.at).toBe(live);
+    });
+
+    test('nothing open at all still clears the snapshot', async () => {
+      // The else branch has to keep working: an empty state must not leave a
+      // stale visit on disk to be restored tomorrow.
+      const r = await page.evaluate(() => {
+        const realUser = _supaUser;
+        try {
+          _supaUser = { id: 'u-open' };
+          localStorage.setItem('zp3_geo_open', JSON.stringify({ marker: 'stale' }));
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+          _geoPersistOpen(new Date().toISOString());
+          return { raw: localStorage.getItem('zp3_geo_open') };
+        } finally { _supaUser = realUser; _geoClearOpen(); }
+      });
+      expect(r.raw).toBeNull();
+    });
+
+    test('an id with no arrival, or an arrival with no id, is not open state', async () => {
+      const half = await page.evaluate(() => {
+        const realUser = _supaUser;
+        try {
+          _supaUser = { id: 'u-open' };
+          localStorage.removeItem('zp3_geo_open');
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+          _geoCurrentClient = 'c-2'; _geoClientArrivedAt = null;      // id, no clock
+          _geoPersistOpen(new Date().toISOString());
+          const a = localStorage.getItem('zp3_geo_open');
+          _geoCurrentClient = null; _geoClientArrivedAt = new Date().toISOString();  // clock, no id
+          _geoPersistOpen(new Date().toISOString());
+          const b = localStorage.getItem('zp3_geo_open');
+          return { a, b };
+        } finally {
+          _supaUser = realUser; _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoClearOpen();
+        }
+      });
+      expect(half.a, 'an id with nothing to measure from is not a visit').toBeNull();
+      expect(half.b, 'and a clock with nothing to attribute it to is not either').toBeNull();
+    });
+
     // A drive still in progress (not at a job, not at the shop) when the app died
     // AND the calendar rolled to a new day before it ever restarted: previously
     // _geoRestoreOpen's day-mismatch branch salvaged an open job/shop dwell but
