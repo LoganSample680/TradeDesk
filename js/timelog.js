@@ -316,6 +316,91 @@ function _tlAbsorbGaps(rows,cid){
   });
   return rows;
 }
+// ── A MANUAL CLOCK AND THE GPS UNDER IT ARE THE SAME HOURS ────────────────
+//
+// Owner, 2026-09-01: "when a manual clock is riding on the auto stuff they
+// need to blend together, so anything that completes two fences gets logged
+// over it and the total is correct, thats important."
+//
+// They did not blend. A manual clock row and every auto row underneath it went
+// into one list and were summed, so Jack's real day (clock 07:42 to 17:00, over
+// a drive to Oakley, 93 minutes at the shop, a 62-minute drive and 44 minutes
+// back) came to 12h57m for nine hours and twenty minutes of work. Nothing
+// anywhere checked whether a GPS row sat inside a clock window.
+//
+// The rule, and it is his: the clock is the OUTER BRACKET and the fences are
+// the DETAIL. A row with a confirmed arrival and a confirmed departure is
+// something the phone watched happen, so it is logged over the clock and keeps
+// its own label (Driving, Shop, on site); the clock keeps only the minutes
+// nothing else explains. The total is then exactly what the clock said, which
+// is the part that matters, and the day still reads complete rather than with
+// a chunk silently missing (his Aug 23 rule).
+//
+// Deliberately NOT blended:
+//   - unpaid rows (a geofenced lunch). Deducting a break from a clock is a
+//     payroll decision, and he has been explicit that the office decides what
+//     to pay: the app logs, it does not dock.
+//   - auto rows OUTSIDE the window. A drive before he clocked in is still a
+//     drive, and the clock never claimed it.
+//   - the open row. It is not in `rows` at all until it closes, so a running
+//     clock cannot be blended against a day that has not finished.
+//
+// Each auto row is spent at most ONCE, so two clocks covering the same drive
+// cannot each deduct it and drive the day negative. An auto row that only
+// PARTLY overlaps is charged in proportion: Jack's 07:23 drive lands two of
+// its twenty-one minutes inside the clock, so two is what comes off.
+function _tlBlendManual(rows){
+  if(!Array.isArray(rows))return rows;
+  const fm=(typeof _fmtMin==='function')?_fmtMin:(m=>m+'m');
+  const byPerson={};
+  rows.forEach(r=>{
+    if(!r||!r.startTime||!r.endTime)return;
+    const a=Date.parse(r.startTime),b=Date.parse(r.endTime);
+    if(!(a>0&&b>a))return;
+    const k=String(r.personUid||'owner')+'|'+(r.date||'');
+    (byPerson[k]=byPerson[k]||[]).push({r,a,b});
+  });
+  Object.keys(byPerson).forEach(k=>{
+    const list=byPerson[k];
+    // Oldest clock first, so when two clocks overlap the same drive the
+    // earlier one takes it. Any fixed order works as long as it is stable;
+    // this one at least matches how a person reads down a day.
+    const manual=list.filter(x=>x.r.source==='manual'&&!x.r.unpaid).sort((x,y)=>x.a-y.a);
+    if(!manual.length)return;
+    const autos=list.filter(x=>x.r.source!=='manual'&&!x.r.unpaid&&(x.r.minutes||0)>0);
+    if(!autos.length)return;
+    const spent=[];
+    manual.forEach(m=>{
+      const base=m.r.minutes||0;
+      if(base<=0)return;
+      let covered=0;
+      autos.forEach(x=>{
+        if(spent.indexOf(x)>=0)return;
+        const ov=Math.min(m.b,x.b)-Math.max(m.a,x.a);
+        if(ov<=0)return;
+        spent.push(x);
+        // Its own minutes, not its span: a drive leg's row brackets the leg
+        // but carries the minutes actually driven, and those are not the same
+        // number. Prorated by how much of the row falls inside the clock.
+        const rowSpan=Math.max(1,x.b-x.a);
+        covered+=(x.r.minutes||0)*Math.min(1,ov/rowSpan);
+      });
+      covered=Math.round(covered);
+      if(covered<=0)return;
+      // FLOORED AT ZERO, never negative. If the fences saw more than the clock
+      // claimed, the fences are what happened and the clock adds nothing; the
+      // day then reads higher than the clock, which is the honest direction.
+      // Inventing time back is the one thing this must never do.
+      m.r.minutes=Math.max(0,base-covered);
+      m.r.blendedMin=covered;
+      // Said out loud on the row. A clock that ran nine hours showing five
+      // with no explanation is the "silently missing chunk" he objected to;
+      // this names where the rest of it went.
+      m.r.detail=fm(covered)+' of this is tracked below';
+    });
+  });
+  return rows;
+}
 async function _timeLogRows(sinceISO){
   const rows=[];
   timeEntries.forEach(e=>{
@@ -529,7 +614,12 @@ async function _timeLogRows(sinceISO){
     });
   });
   const _cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
-  return _tlFillUnaccounted(_tlAbsorbGaps(rows,_cid),_cid).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  // BLEND FIRST. _tlAbsorbGaps rewrites start/end times to close small holes
+  // and _tlFillUnaccounted invents rows for what is left, and the blend
+  // measures overlap off exactly those times: running it later would have it
+  // judging windows that had already been stretched, and would let a clock's
+  // own hours be counted as a hole somebody has to answer for.
+  return _tlFillUnaccounted(_tlAbsorbGaps(_tlBlendManual(rows),_cid),_cid).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 }
 function _tlYears(rows){
   const years=[...new Set(rows.map(r=>(r.date||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort((a,b)=>b.localeCompare(a));
@@ -2021,6 +2111,42 @@ function _tlTickOpenElapsed(){
     if(t>0&&typeof _clockElapsedStr==='function')n.textContent=_clockElapsedStr(now-t);
   });
 }
+// ── THE WEEK TRACKS THE DAY AS IT HAPPENS (owner 2026-09-01) ──────────────
+//
+// "for the week rows, as data feeds, that needs to track in real time."
+//
+// It did not. renderTimeLog ran on opening the page, on a drill tap, and on a
+// manual clock action, and nothing else: a GPS row landing from the truck, or
+// a clock closed on another device, moved nothing on a page already open. The
+// chart was a snapshot of whenever you happened to arrive.
+//
+// Two triggers, one door. The realtime job_time_entries subscription in
+// js/cloud.js already fires the instant a row lands and was only running dedup
+// sweeps with it, so it calls this now for immediacy; and the 30-second open
+// refresh below calls it too, which covers every other way rows change (this
+// device's own engine writing locally, a sweep repairing a row, a peer's
+// td_time_entries arriving over the sync channel) without a hook in each of
+// them, and is the backstop for a realtime channel that has dropped.
+//
+// Cheap by construction: it is a no-op unless the Time Log is the page on
+// screen, coalesced so a flush burst of a dozen rows costs one render, and
+// _tlRevalidateRows still compares a fingerprint and repaints only when the
+// answer actually moved. A drive that changes nothing costs one query.
+let _tlLiveTimer=null;
+const _TL_LIVE_DEBOUNCE_MS=2500;
+function _tlLiveRefresh(){
+  try{
+    if(!document.getElementById('pg-timelog')?.classList.contains('active'))return;
+    clearTimeout(_tlLiveTimer);
+    _tlLiveTimer=setTimeout(()=>{
+      // Re-checked on the way out, not just on the way in: the page can be
+      // navigated away from during the debounce, and repainting a hidden page
+      // is three Supabase queries for nothing.
+      if(!document.getElementById('pg-timelog')?.classList.contains('active'))return;
+      try{_tlRevalidateRows(_tlLastRows,undefined,true);}catch(_e){}
+    },_TL_LIVE_DEBOUNCE_MS);
+  }catch(_e){}
+}
 function _tlStopOpenRefresh(){
   if(_tlOpenRefreshTimer){clearInterval(_tlOpenRefreshTimer);_tlOpenRefreshTimer=null;}
   if(_tlOpenTickTimer){clearInterval(_tlOpenTickTimer);_tlOpenTickTimer=null;}
@@ -2044,6 +2170,11 @@ function _tlStartOpenRefresh(){
   _tlOpenRefreshTimer=setInterval(()=>{
     if(!document.getElementById('pg-timelog')?.classList.contains('active')){_tlStopOpenRefresh();return;}
     _tlRenderOpenBanner();
+    // ...and the CHART, not just the banner. The banner has always ticked
+    // while the page sat open, which made the staleness worse rather than
+    // better: a running clock counting up beside a week chart that had not
+    // moved since you opened it reads as though the chart is the broken one.
+    _tlLiveRefresh();
   },30000);
 }
 // Sunday–Saturday label for a week key ('YYYY-MM-DD' Sunday date), e.g.
@@ -2546,9 +2677,15 @@ let _tlRevalidating=false;
 // generation guards are the ones _tlRepairAfterPaint already uses, for the
 // same two reasons: an unchanged answer must not close what the viewer opened,
 // and a newer paint always owns the screen.
-async function _tlRevalidateRows(paintedRows,gen){
+async function _tlRevalidateRows(paintedRows,gen,force){
   if(_tlRevalidating)return false;
-  if(_tlRowsAt&&Date.now()-_tlRowsAt<_TL_ROWS_REVALIDATE_MIN_GAP_MS)return false;
+  // The min-gap exists to stop a contractor holding the drill arrow down from
+  // firing three queries per tap. A LIVE nudge is the opposite case: the row
+  // genuinely changed on the server and the screen is currently wrong, so the
+  // throttle would be protecting nothing and hiding the change for half a
+  // minute. The fingerprint below is the real guard against a pointless
+  // repaint, and it still runs on both paths.
+  if(!force&&_tlRowsAt&&Date.now()-_tlRowsAt<_TL_ROWS_REVALIDATE_MIN_GAP_MS)return false;
   _tlRevalidating=true;
   try{
     const fresh=await _timeLogRows(null);

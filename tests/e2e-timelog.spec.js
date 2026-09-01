@@ -4615,6 +4615,255 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
   });
 
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // A manual clock and the GPS under it are the SAME hours (owner 2026-09-01)
+  // ═════════════════════════════════════════════════════════════════════════
+  //
+  // "when a manual clock is riding on the auto stuff they need to blend
+  // together, so anything that completes two fences gets logged over it and
+  // the total is correct, thats important."
+  //
+  // Before this they were summed. Jack's real day, measured through this exact
+  // code before the fix: clock 07:42 to 17:00 plus a drive to Oakley, 93
+  // minutes at the shop, a 62-minute drive and 44 minutes back came to
+  // 12h57m for nine hours and twenty minutes of work.
+  test.describe('manual clocks blend with the fences under them', () => {
+    const D = '2026-09-01';
+    const at = (h, m) => new Date(D + 'T' + String(h).padStart(2, '0') + ':' +
+                                  String(m).padStart(2, '0') + ':00').toISOString();
+    // Every row here names its instant outright rather than deriving one from
+    // Date.now(), so the wall clock can never decide the outcome (§5.2.2).
+    const rowsFor = (entries, manual) => page.evaluate(async ([es, ms]) => {
+      const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+      window.timeEntries = ms;
+      const orig = window._fetchCrewLabor;
+      window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
+      try {
+        const rows = await _timeLogRows(null);
+        const day = rows.filter(r => r.date === '2026-09-01');
+        return { paid: _tlPaidMin(day),
+                 rows: day.map(r => ({ src: r.source, raw: r.rawSource || '', m: r.minutes,
+                                       unpaid: !!r.unpaid, blended: r.blendedMin || 0,
+                                       detail: r.detail || '' })) };
+      } finally {
+        window._fetchCrewLabor = orig;
+        window.timeEntries = keepT;
+      }
+    }, [entries, manual]);
+
+    const CLOCK = (s, e, mins) => [{ id: 1, date: D, open: false, job_id: null, minutes: mins,
+                                     start_time: at(s[0], s[1]), end_time: at(e[0], e[1]),
+                                     logged_by_uid: 'jack', logged_by_name: 'Jack', scope_label: null }];
+    const A = (src, s, e, mins) => ({ employee_user_id: 'jack', minutes: mins, source: src,
+                                      dest_place: '1200 SW Oakley Ave',
+                                      arrived_at: at(s[0], s[1]), departed_at: at(e[0], e[1]) });
+
+    test("Jack's real day totals the clock, not the clock plus the fences", async () => {
+      const r = await rowsFor([
+        A('drive-unassigned', [7, 23], [7, 44], 20),
+        A('place',            [7, 44], [9, 17], 93),
+        A('drive',            [9, 17], [11, 17], 62),
+        A('place',            [11, 20], [12, 4], 44),
+      ], CLOCK([7, 42], [17, 0], 558));
+      // 558 of clock, of which 201 minutes are explained by fences inside it,
+      // plus the 18 minutes of the 07:23 drive that ran BEFORE he clocked in
+      // and which the clock never claimed. 576, not 777.
+      expect(r.paid).toBe(576);
+      const man = r.rows.find(x => x.src === 'manual');
+      expect(man.m, 'the clock keeps only what nothing else explains').toBe(357);
+      expect(man.blended).toBe(201);
+      expect(man.detail, 'a clock that shrinks has to say why').toContain('tracked below');
+    });
+
+    test('the fences keep their own labels: the clock is the bracket, not the record', async () => {
+      const r = await rowsFor([
+        A('drive', [8, 0], [8, 30], 30),
+        A('place', [8, 30], [10, 0], 90),
+      ], CLOCK([8, 0], [10, 0], 120));
+      // Nothing is hidden and nothing is merged away: three rows, and the two
+      // the phone watched still say what they were.
+      expect(r.rows.length).toBe(3);
+      expect(r.rows.some(x => x.raw === 'drive')).toBe(true);
+      expect(r.rows.some(x => x.raw === 'place')).toBe(true);
+      expect(r.paid, 'exactly the clock').toBe(120);
+    });
+
+    test('a fence outside the clock is never deducted from it', async () => {
+      // He clocked out and then drove. That drive is real, it is inside the
+      // working day, and the clock never claimed it, so both stand in full.
+      //
+      // FIXTURE NOTE, and it is the rule and not a workaround: the drive is
+      // placed AFTER the anchoring place row rather than before it. A lone
+      // drive at 06:00 with the day's only other row at 08:00 is dropped by
+      // _geoRowInWorkday, which is deliberate and predates this change (a
+      // drive outside the day's work window is not the day's work). Writing
+      // the fixture the other way round proved nothing about blending and
+      // everything about a gate this test is not for.
+      const r = await rowsFor([A('place', [8, 0], [10, 0], 120),
+                               A('drive', [10, 0], [10, 30], 30)],
+                              CLOCK([8, 0], [10, 0], 120));
+      const man = r.rows.find(x => x.src === 'manual');
+      // The place fully covers the clock, so the clock keeps nothing.
+      expect(man.blended, 'only what is inside the window').toBe(120);
+      expect(man.m).toBe(0);
+      expect(r.rows.some(x => x.raw === 'drive' && x.m === 30),
+        'the drive after the clock stands in full').toBe(true);
+      expect(r.paid).toBe(150);
+    });
+
+    test('a partial overlap is charged in proportion, not in full', async () => {
+      // The 07:23 drive lands two of its twenty-one minutes inside the clock.
+      // Deducting all twenty would push the day BELOW what the clock said.
+      const r = await rowsFor([A('drive-unassigned', [7, 23], [7, 44], 20)],
+                              CLOCK([7, 42], [17, 0], 558));
+      const man = r.rows.find(x => x.src === 'manual');
+      expect(man.blended).toBe(2);
+      expect(man.m).toBe(556);
+      expect(r.paid, 'the clock, plus the 18 minutes that ran before it').toBe(576);
+    });
+
+    test('an unpaid stop inside the clock is never deducted', async () => {
+      // Docking a break off a clock is a payroll decision, and the owner has
+      // been explicit that the office decides what to pay: the app logs, it
+      // does not dock (2026-09-01, "its up to the office if they want to pay,
+      // still log it").
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        { employee_user_id: 'jack', minutes: 30, source: 'stop',
+          arrived_at: at(12, 0), departed_at: at(12, 30) },
+      ], CLOCK([8, 0], [17, 0], 540));
+      const man = r.rows.find(x => x.src === 'manual');
+      expect(man.blended, 'only the place, never the lunch').toBe(60);
+      expect(man.m).toBe(480);
+    });
+
+    test('fences that exceed the clock never drive the day negative', async () => {
+      // The phone saw more than he claimed. The fences are what happened; the
+      // clock adds nothing. Inventing time back is the one thing this must
+      // never do.
+      const r = await rowsFor([A('place', [8, 0], [14, 0], 360)],
+                              CLOCK([8, 0], [10, 0], 120));
+      const man = r.rows.find(x => x.src === 'manual');
+      expect(man.m).toBe(0);
+      expect(r.paid).toBe(360);
+    });
+
+    test('two clocks over one drive deduct it once, never twice', async () => {
+      const r = await page.evaluate(async ([es, ms]) => {
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
+        try {
+          const rows = (await _timeLogRows(null)).filter(r => r.date === '2026-09-01');
+          return { paid: _tlPaidMin(rows),
+                   manual: rows.filter(r => r.source === 'manual')
+                               .map(r => ({ m: r.minutes, b: r.blendedMin || 0 })) };
+        } finally { window._fetchCrewLabor = orig; window.timeEntries = keepT; }
+      }, [
+        [{ employee_user_id: 'jack', minutes: 60, source: 'place', dest_place: 'X',
+           arrived_at: at(9, 0), departed_at: at(10, 0) }],
+        [{ id: 1, date: D, open: false, job_id: null, minutes: 240,
+           start_time: at(8, 0), end_time: at(12, 0),
+           logged_by_uid: 'jack', logged_by_name: 'Jack' },
+         { id: 2, date: D, open: false, job_id: null, minutes: 120,
+           start_time: at(9, 30), end_time: at(11, 30),
+           logged_by_uid: 'jack', logged_by_name: 'Jack' }],
+      ]);
+      // 60 comes off the earlier clock and nothing off the later one.
+      const blended = r.manual.reduce((s, x) => s + x.b, 0);
+      expect(blended, 'spent once, never twice').toBe(60);
+      expect(r.paid).toBe(360);
+    });
+
+    test('a day with no manual clock at all is completely untouched', async () => {
+      const r = await rowsFor([
+        A('drive', [8, 0], [8, 30], 30),
+        A('place', [8, 30], [10, 0], 90),
+      ], []);
+      expect(r.paid).toBe(120);
+      expect(r.rows.every(x => (x.blended || 0) === 0)).toBe(true);
+    });
+
+    test('a manual clock with no fences under it is completely untouched', async () => {
+      const r = await rowsFor([], CLOCK([8, 0], [17, 0], 540));
+      const man = r.rows.find(x => x.src === 'manual');
+      expect(man.m).toBe(540);
+      expect(man.blended).toBe(0);
+      expect(man.detail, 'nothing was tracked, so nothing is claimed').not.toContain('tracked below');
+    });
+
+    test('junk times never throw and never silently zero a clock', async () => {
+      for (const bad of [
+        [{ id: 1, date: D, open: false, minutes: 120, start_time: null, end_time: at(10, 0), logged_by_uid: 'jack' }],
+        [{ id: 1, date: D, open: false, minutes: 120, start_time: 'nope', end_time: 'also nope', logged_by_uid: 'jack' }],
+        [{ id: 1, date: D, open: false, minutes: 120, start_time: at(10, 0), end_time: at(8, 0), logged_by_uid: 'jack' }],
+      ]) {
+        const r = await rowsFor([{ employee_user_id: 'jack', minutes: 60, source: 'place',
+                                   dest_place: 'X', arrived_at: at(8, 30), departed_at: at(9, 30) }], bad);
+        const man = r.rows.find(x => x.src === 'manual');
+        expect(man, JSON.stringify(bad[0].start_time)).toBeTruthy();
+        expect(man.m, 'an unreadable window blends nothing rather than zeroing').toBe(120);
+      }
+    });
+  });
+
+  // The week has to move while you are looking at it (owner 2026-09-01: "for
+  // the week rows, as data feeds, that needs to track in real time").
+  test.describe('the chart tracks the day as it happens', () => {
+    test('a live nudge repaints, and is a no-op when the page is not on screen', async () => {
+      const r = await page.evaluate(async () => {
+        const hadFn = typeof _tlLiveRefresh === 'function';
+        const pg = document.getElementById('pg-timelog');
+        const wasActive = pg?.classList.contains('active');
+        pg?.classList.remove('active');
+        let ranHidden = false;
+        const origRe = window._tlRevalidateRows;
+        window._tlRevalidateRows = async () => { ranHidden = true; return false; };
+        _tlLiveRefresh();
+        await new Promise(r2 => setTimeout(r2, 3200));
+        window._tlRevalidateRows = origRe;
+        if (wasActive) pg?.classList.add('active');
+        return { hadFn, ranHidden };
+      });
+      expect(r.hadFn).toBe(true);
+      // Three Supabase queries to repaint a page nobody is looking at.
+      expect(r.ranHidden, 'a hidden page must never be repainted').toBe(false);
+    });
+
+    test('a burst of rows costs one repaint, not one per row', async () => {
+      const r = await page.evaluate(async () => {
+        const pg = document.getElementById('pg-timelog');
+        const wasActive = pg?.classList.contains('active');
+        pg?.classList.add('active');
+        let calls = 0;
+        const origRe = window._tlRevalidateRows;
+        window._tlRevalidateRows = async () => { calls++; return false; };
+        for (let i = 0; i < 12; i++) _tlLiveRefresh();
+        await new Promise(r2 => setTimeout(r2, 3200));
+        window._tlRevalidateRows = origRe;
+        if (!wasActive) pg?.classList.remove('active');
+        return { calls };
+      });
+      // A drive's flush lands a dozen rows in one second. Twelve renders would
+      // be thirty-six Supabase queries and a chart flashing on a phone.
+      expect(r.calls).toBe(1);
+    });
+
+    test('the live path bypasses the drill throttle, because the screen is actually wrong', async () => {
+      const r = await page.evaluate(async () => {
+        // The min-gap exists to stop a held-down drill arrow firing three
+        // queries per tap. A row that genuinely changed is the opposite case.
+        const src = String(_tlRevalidateRows);
+        return { forced: /force&&_tlRowsAt/.test(src.replace(/\s/g, '')),
+                 takesForce: /force/.test(src.slice(0, 120)) };
+      });
+      expect(r.takesForce).toBe(true);
+      expect(r.forced).toBe(true);
+    });
+  });
+
   test('no console errors during time log tests', async () => {
     await assertNoErrors(page);
   });
