@@ -5143,6 +5143,71 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.filter(x => x === 'place').length, 'the duplicate place row is gone').toBe(0);
     });
 
+    // The other half of the same rule, and the half that actually shipped
+    // broken (owner 2026-09-01, on his own 12:31pm): a shop session can credit
+    // ZERO minutes and draw nothing, and dropping its twin then deletes the
+    // visit outright. Where the shop is the house, the motion tape trims the
+    // session to the part somebody was walking, which on an afternoon at a
+    // desk is nothing at all.
+    test('a shop session that credits nothing does not take the place row with it',
+    async () => {
+      const r = await page.evaluate(([es, sh]) => {
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        const keepP = window.getPlaces, keepM = window._geoMotionTape;
+        const keepLat = S.officeLat, keepLon = S.officeLon;
+        window.timeEntries = [];
+        // The shop IS the house: same coordinate under two records, which is
+        // what turns the motion trim on.
+        S.officeLat = 39.0307066; S.officeLon = -95.7112082;
+        window.getPlaces = () => [{ id: 1, kind: 'home_office', name: 'Home office',
+          lat: 39.0307378, lon: -95.7112674 }];
+        // He walked in and sat down: one 20-second stretch of movement inside a
+        // 93-minute session, so the trim keeps 20 seconds and the session
+        // rounds to zero.
+        const t0 = Date.parse(sh[0].arrived_at);
+        window._geoMotionTape = async () => ([
+          { ts: t0 + 10000, kind: 'onFoot' },
+          { ts: t0 + 30000, kind: 'stationary' },
+        ]);
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { [ME]: 'J' },
+          entries: es.map(e => ({ ...e, employee_user_id: ME })),
+          shopEntries: sh.map(e => ({ ...e, employee_user_id: ME })) });
+        return _timeLogRows(null)
+          .then(rows => {
+            const day = rows.filter(x => x.date === '2026-09-01');
+            const covers = day.some(x => Date.parse(x.startTime) <= t0 + 60000 &&
+              Date.parse(x.endTime) >= Date.parse(sh[0].departed_at) - 60000);
+            const drive = day.find(x => x.rawSource === 'drive');
+            return { shop: day.filter(x => x.source === 'shop').length, covers,
+              driveKind: drive ? _tlRailKind(drive) : null,
+              driveUnpaid: drive ? !!drive.unpaid : null };
+          })
+          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT;
+            window.getPlaces = keepP; window._geoMotionTape = keepM;
+            S.officeLat = keepLat; S.officeLon = keepLon; });
+      }, [
+        [{ minutes: 60, source: 'client', dest_place: 'John Doe',
+           arrived_at: at(6, 0), departed_at: at(7, 44) },
+         { minutes: 93, source: 'place', dest_place: null,
+           arrived_at: at(7, 44), departed_at: at(9, 17) },
+         // The leg out of the yard. With the yard stop gone it had the MORNING
+         // John Doe visit as the last place he was seen leaving, so the
+         // round-trip rule greyed a real drive out as unpaid.
+         { minutes: 10, source: 'drive', dest_place: 'John Doe',
+           arrived_at: at(9, 17), departed_at: at(9, 27) },
+         { minutes: 60, source: 'geofence', job_id: 1,
+           arrived_at: at(10, 0), departed_at: at(11, 0) }],
+        [{ minutes: 93, arrived_at: at(7, 44), departed_at: at(9, 17) }],
+      ]);
+      expect(r.shop, 'the trimmed session drew nothing, which is the premise').toBe(0);
+      expect(r.covers, 'so the 93 minutes must still be on the log, not a hole').toBe(true);
+      expect(r.driveKind, 'and the drive out is still a drive').toBe('drive');
+      expect(r.driveUnpaid, 'and it is still paid').toBe(false);
+    });
+
     test('a place row with no shop session is untouched', async () => {
       // A supply house is a place and nothing else watches it.
       const r = await page.evaluate(([es]) => {

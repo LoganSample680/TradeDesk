@@ -618,6 +618,9 @@ async function _timeLogRows(sinceISO){
     if(!e||!e.arrived_at||!e.departed_at)return;
     (_shopByUid[e.employee_user_id]=_shopByUid[e.employee_user_id]||[]).push(e);
   });
+  // The sessions that actually SURVIVED onto the log, keyed by their raw
+  // window. A dropped duplicate must never leave a hole (see _shopCovers).
+  const _shopKept={};
   // The motion tape for the whole rendered range, fetched ONCE and handed
   // down: at a shop that is also the house it trims each session to the part
   // where somebody was actually walking (js/geo-track.js _geoActiveTrim).
@@ -644,6 +647,10 @@ async function _timeLogRows(sinceISO){
       // earlier session that already carries this stretch. Either way there is
       // no second row to draw.
       if((sp.minutes||0)<1)return;
+      // It earned minutes and is about to be drawn, so it is now allowed to
+      // stand in for its place-row twin. Recorded against the RAW window,
+      // because that is the window the twin carries; sp may be clipped.
+      (_shopKept[uid]=_shopKept[uid]||[]).push({a:arr,b:dep});
       // Trimmed by the clock-out rather than by the person leaving: show when
       // the clock actually stopped and say why, so the rule is visible instead
       // of quietly eating minutes. Exact edges (the common case) read plain.
@@ -695,16 +702,35 @@ async function _timeLogRows(sinceISO){
   // place row when a shop session already covers the same window for the same
   // person. Shop wins because that is the record the owner recognises: it is
   // the yard, and it is what the split bar has always called it.
+  //
+  // A DROP IS ONLY SAFE IF THE SURVIVOR SURVIVED (owner 2026-09-01, his own
+  // 12:31pm reading "UNACCOUNTED · What was this time?" for the 46 minutes
+  // that had read "Shop time · JS Solutions" the render before).
+  //
+  // The first cut matched against every raw shop session, on the assumption
+  // that a session always draws a row. It does not: _geoShopPaidSpans can
+  // credit it zero (outside the workday window, folded into an earlier
+  // session, or, where the shop IS the house, trimmed by the motion tape down
+  // to the part somebody was actually walking, which is exactly nothing on an
+  // afternoon spent sitting at a desk). Both halves of the duplicate then
+  // disappeared, the reader saw a 46-minute hole where two records had been,
+  // and _tlFillUnaccounted did its job and asked him what the time was.
+  //
+  // It cascaded, which is why this is worth the care: with the 12:31 stop
+  // gone, the 1:17 drive to John Doe had the MORNING John Doe visit as the
+  // last place he was seen leaving, so _tlDemoteRoundTrips read it as a leg
+  // that ended where it started and greyed it out as unpaid. One dropped row
+  // took a second row's colour, its label and its pay with it.
+  //
+  // Matching _shopKept instead of _shopByUid means the place row is only ever
+  // yielded to a shop row that is really there.
   const _shopCovers=(uid,arrIso,depIso)=>{
-    const list=_shopByUid[uid];
+    const list=_shopKept[uid];
     if(!list||!list.length)return false;
     const a=Date.parse(arrIso),b=Date.parse(depIso||'');
     if(!(a>0&&b>a))return false;
     const SLACK=3*60000;   // kerb-edge rounding between two writers of one event
-    return list.some(x=>{
-      const xa=Date.parse(x.arrived_at),xb=Date.parse(x.departed_at||'');
-      return xa>0&&xb>xa&&Math.abs(xa-a)<=SLACK&&Math.abs(xb-b)<=SLACK;
-    });
+    return list.some(x=>Math.abs(x.a-a)<=SLACK&&Math.abs(x.b-b)<=SLACK);
   };
   (crew.entries||[]).forEach(e=>{
     if(!e.arrived_at)return;
