@@ -564,6 +564,126 @@ test.describe('Share inbox', () => {
     expect(r.attachHdr).toBe(true);
   });
 
+  test('a contact-only share never shows the sheet, it goes straight to the import', async () => {
+    // Owner, 2026-09-01: make it smart about what was shared. A .vcf can only
+    // ever be a contact, and the import preview it opens is itself the confirm
+    // step, so asking "what is it?" in between was a tap that bought nothing.
+    const r = await page.evaluate(async (vcf) => {
+      const realCap = window.Capacitor, savedClients = clients.slice();
+      const savedPreview = window._showImportPreview;
+      window.__cleared = []; window.__preview = 0;
+      try {
+        window._showImportPreview = (list) => { window.__preview = list.length; };
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: () => ({
+            inbox: () => Promise.resolve({ items: [{ path: '/x/td_share_c1.vcf' }] }),
+            read: () => Promise.resolve({ b64: btoa(vcf), size: vcf.length }),
+            clear: (o) => { window.__cleared = window.__cleared.concat(o.paths || []); return Promise.resolve(); },
+          }),
+        };
+        _shareInAsking = false;
+        const n = await checkSharedInbox({ force: true });
+        return {
+          n, preview: window.__preview,
+          sheet: !!document.getElementById('_sharein-ov'),
+          cleared: window.__cleared.slice(),
+          asking: _shareInAsking,
+        };
+      } finally {
+        window.Capacitor = realCap; window._showImportPreview = savedPreview;
+        clients.length = 0; savedClients.forEach(x => clients.push(x));
+        document.getElementById('_sharein-ov')?.remove();
+        _shareInAsking = false;
+      }
+    }, VCF);
+    expect(r.sheet, 'no "what is it?" for something that can only be one thing').toBe(false);
+    expect(r.preview, 'the import list opens directly').toBe(1);
+    expect(r.cleared, 'and the card leaves the inbox once it is safely in the list')
+      .toEqual(['/x/td_share_c1.vcf']);
+    expect(r.asking, 'the guard must not stay latched or the next share is swallowed').toBe(false);
+  });
+
+  test('an UNREADABLE contact card still falls through to the sheet', async () => {
+    // The only place with a Discard button is the sheet. Skipping straight to
+    // the import for a card nothing can be parsed out of would toast the same
+    // failure on every launch with no way to get rid of the file.
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      try {
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: () => ({
+            inbox: () => Promise.resolve({ items: [{ path: '/x/td_share_bad.vcf' }] }),
+            read: () => Promise.resolve({ b64: btoa('this is not a vcard at all'), size: 26 }),
+            clear: () => Promise.resolve(),
+          }),
+        };
+        _shareInAsking = false;
+        await checkSharedInbox({ force: true });
+        return {
+          sheet: !!document.getElementById('_sharein-ov'),
+          discard: !!document.getElementById('_si-discard'),
+        };
+      } finally {
+        window.Capacitor = realCap;
+        document.getElementById('_sharein-ov')?.remove();
+        _shareInAsking = false;
+      }
+    });
+    expect(r.sheet, 'an unparseable card must still reach a screen').toBe(true);
+    expect(r.discard, 'and that screen must offer the way out').toBe(true);
+  });
+
+  test('the client list is searchable, and still works after a search redraws it', async () => {
+    // Twelve rows and no way to reach the rest is unusable at the 141 clients
+    // the owner actually has. The redraw half matters just as much: handlers
+    // bound to the buttons themselves would be destroyed by the first
+    // keystroke, so the rows are wired by delegation and this proves it.
+    const r = await page.evaluate(async () => {
+      const savedClients = clients.slice(), realCap = window.Capacitor;
+      try {
+        clients.length = 0;
+        for (let i = 0; i < 40; i++) clients.push({ id: 1750000000000 + i, name: 'Client ' + i, addr: i + ' Elm St' });
+        clients.push({ id: 1760000000999, name: 'Zelda Nakamura', addr: '77 Kettle Ln' });
+        window.__picked = null;
+        window._shareInFileToClient = (items, id) => { window.__picked = String(id); return Promise.resolve({ done: 1, name: 'x' }); };
+        document.getElementById('_sharein-ov')?.remove();
+        _shareInAsking = false;
+        _shareInPrompt([{ path: '/x/a.jpg' }]);
+        const before = document.querySelectorAll('#_si-clist ._si-client').length;
+        const box = document.getElementById('_si-csearch');
+        box.value = 'Zelda';
+        box.dispatchEvent(new Event('input'));
+        const after = Array.from(document.querySelectorAll('#_si-clist ._si-client'));
+        const names = after.map(b => b.querySelector('.si-t').textContent);
+        after[0].click();
+        for (let w = 0; w < 60 && !window.__picked; w++) await new Promise(res => setTimeout(res, 20));
+        // And a search that matches an address, not a name.
+        document.getElementById('_sharein-ov')?.remove();
+        _shareInAsking = false;
+        _shareInPrompt([{ path: '/x/a.jpg' }]);
+        const b2 = document.getElementById('_si-csearch');
+        b2.value = 'Kettle';
+        b2.dispatchEvent(new Event('input'));
+        const byAddr = Array.from(document.querySelectorAll('#_si-clist ._si-client'))
+          .map(b => b.querySelector('.si-t').textContent);
+        return { before, count: after.length, names, picked: window.__picked, byAddr };
+      } finally {
+        window.Capacitor = realCap;
+        delete window._shareInFileToClient;
+        clients.length = 0; savedClients.forEach(x => clients.push(x));
+        document.getElementById('_sharein-ov')?.remove();
+        _shareInAsking = false;
+      }
+    });
+    expect(r.before, 'the list still draws a capped page, not all 41 rows').toBe(12);
+    expect(r.count, 'search narrows it').toBe(1);
+    expect(r.names[0]).toBe('Zelda Nakamura');
+    expect(r.picked, 'a row drawn BY the search must still be clickable').toBe('1760000000999');
+    expect(r.byAddr, 'searching an address finds them too').toEqual(['Zelda Nakamura']);
+  });
+
   test('no console errors during share inbox tests', async () => {
     assertNoErrors(page, 'share inbox');
   });

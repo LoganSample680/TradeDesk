@@ -113,6 +113,18 @@ async function checkSharedInbox(opts){
     if(document.querySelector('.zmodal-overlay'))return 0;   // never stack on another popup
   }
   _shareInAsking=true;
+  // A share that is NOTHING BUT contact cards is not a question, so do not ask
+  // one. A .vcf can only ever be a contact, and the import preview it opens is
+  // itself the confirm step, so the sheet in between was a tap that bought
+  // nothing. Straight through.
+  if(items.every(i=>/\.vcf$/i.test((i&&i.path)||''))){
+    let found=0;
+    try{found=await _shareInAsContacts(items);}catch(_e){}
+    if(found){_shareInAsking=false;return items.length;}
+    // Nothing parsed out of it. Fall through to the sheet rather than toasting
+    // the same failure on every launch: the sheet is the only place with a
+    // Discard button, so it is the only way out of an unreadable card.
+  }
   try{_shareInPrompt(items);}catch(_e){_shareInAsking=false;}
   return items.length;
 }
@@ -220,7 +232,21 @@ function _shareInPrompt(items){
   // depending on a created stamp every record is not guaranteed to carry.
   const byNew=allC.slice().sort((a,b)=>(Number(b.id)||0)-(Number(a.id)||0));
   const onToday=byNew.filter(c=>hot.has(String(c.id)));
-  const pick=onToday.concat(byNew.filter(c=>!hot.has(String(c.id)))).slice(0,12);
+  // The FULL ordered set, not a slice. Twelve rows with no way to reach the
+  // rest is unusable at the 141 clients the owner actually has: the cap now
+  // applies only to what is DRAWN, and search reaches everything behind it.
+  const ranked=onToday.concat(byNew.filter(c=>!hot.has(String(c.id))));
+  const SHOWN=12;
+  const pick=ranked.slice(0,SHOWN);
+  // Matched against the same two strings the row displays, name then address,
+  // so typing a street still finds them and no result can look like it came
+  // from nowhere.
+  const matches=q=>{
+    const t=String(q||'').trim().toLowerCase();
+    if(!t)return ranked.slice(0,SHOWN);
+    return ranked.filter(c=>(String(c.name||'')+' '+String(c.addr||c.street||''))
+      .toLowerCase().indexOf(t)>-1).slice(0,SHOWN);
+  };
   const ic=(e,tone)=>'<span class="si-ic'+(tone?' si-ic-'+tone:'')+'">'+
     (typeof svgIcon==='function'?svgIcon(e,{size:17}):e)+'</span>';
   const opt=(id,tone,emoji,title,sub)=>
@@ -259,7 +285,12 @@ function _shareInPrompt(items){
     (forks?'<div class="si-list">'+forks+'</div>':'')+
     (allVcf?'':
       '<div class="si-lbl">Or add to a client\'s photos</div>'+
-      (pick.length?'<div class="si-list si-scroll">'+pick.map(row).join('')+'</div>'
+      // Only once the list is long enough to hunt through. A search box over
+      // four clients is a control that buys nothing (15.1).
+      (ranked.length>SHOWN?'<input id="_si-csearch" class="si-search" type="search" '+
+        'placeholder="Search '+ranked.length+' clients" autocomplete="off" '+
+        'autocapitalize="off" autocorrect="off" spellcheck="false">':'')+
+      (pick.length?'<div id="_si-clist" class="si-list si-scroll">'+pick.map(row).join('')+'</div>'
                   :'<div class="si-empty">No clients yet. Add the client first, then share again.</div>'))+
     '<div class="si-foot">'+
       '<button id="_si-later" class="si-fbtn">Not now</button>'+
@@ -296,8 +327,20 @@ function _shareInPrompt(items){
     close();
     if(typeof showToast==='function')showToast('Shared files discarded','🗑');
   };
-  m.querySelectorAll('._si-client').forEach(btn=>{
-    btn.onclick=async()=>{
+  const clist=document.getElementById('_si-clist');
+  const csearch=document.getElementById('_si-csearch');
+  if(csearch&&clist)csearch.oninput=()=>{
+    const found=matches(csearch.value);
+    clist.innerHTML=found.length?found.map(row).join('')
+      :'<div class="si-empty" style="padding:13px">No client matches that.</div>';
+  };
+  // DELEGATED, not bound per button. Search redraws these rows on every
+  // keystroke, so handlers living on the buttons themselves would be thrown
+  // away the first time the owner types a letter and the list would go dead.
+  if(clist)clist.addEventListener('click',async e=>{
+    const btn=e.target&&e.target.closest?e.target.closest('._si-client'):null;
+    if(!btn||btn.disabled)return;
+    {
       const clientId=btn.getAttribute('data-client');
       btn.disabled=true;btn.style.opacity='.5';
       const r=await _shareInFileToClient(items,clientId);
@@ -310,7 +353,7 @@ function _shareInPrompt(items){
         else if(r.offline)showToast('No connection. They stay shared and land next time you open the app','\ud83d\udcf6');
         else showToast('Could not read the shared files','\u26a0\ufe0f');
       }
-    };
+    }
   });
 }
 
