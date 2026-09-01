@@ -3252,11 +3252,16 @@ async function _crewCostRender(range){
     if(typeof _geoIsBaseRow==='function'&&_geoIsBaseRow(en,_ccBases)&&en.arrived_at){
       const _ba=Date.parse(en.arrived_at)||0,_bd=Date.parse(en.departed_at||'')||0;
       if(!(_ba>0&&_bd>_ba))return;
-      if(_bizDateStr(new Date(_ba))!==_bizDateStr(new Date(_bd)))return;   // overnight
+      // Overnight at his own place: on the record, never on the payroll.
+      if(_bizDateStr(new Date(_ba))!==_bizDateStr(new Date(_bd))){_emp(uid).offMin+=(en.minutes||0);return;}
       const _bpm=(typeof _geoShopPaidMin==='function')
         ? _geoShopPaidMin(en.arrived_at,en.departed_at,((shopCut[uid]||{})[_bizDateStr(new Date(_ba))])||null)
         : (en.minutes||0);
-      if(_bpm<1)return;
+      // Logged, never costed. Mirrors the off-job branch just below rather
+      // than dropping the row, so Crew Cost shows the same day the Time Log
+      // does and the two can never disagree about a minute (owner: still log
+      // it, the office decides what to pay).
+      if(_bpm<1){_emp(uid).offMin+=(en.minutes||0);return;}
       en=Object.assign({},en,{minutes:_bpm});
     }
     const e=_emp(uid);let m=en.minutes||0;

@@ -4518,15 +4518,20 @@ test.describe('timelog.js: exhaustive coverage', () => {
     const DRIVE = (a, d, m) => ({ employee_user_id: 'me', minutes: m, source: 'drive',
                                   arrived_at: a, departed_at: d });
 
-    test('the overnight row at his own house never renders', async () => {
+    test('the overnight row at his own house is logged and counts for nothing', async () => {
       // Jack's real one: 5:24pm to 5:25am, 720 minutes, on a day he worked.
       const rows = await rowsFor([
         JOB('2026-08-31T13:00:00Z', '2026-08-31T21:00:00Z', 480),
         P('2026-08-31T22:24:58Z', '2026-09-01T10:25:13Z', 720, HOME),
       ]);
-      const home = rows.filter(r => r.clientName === HOME || /22nd Ct/.test(String(r.clientName || '')));
-      expect(home.length, 'twelve hours of sleep is not a visit').toBe(0);
-      expect(rows.some(r => r.minutes === 720), 'and nothing carries its minutes').toBe(false);
+      // LOGGED, NOT DELETED (owner, 2026-09-01: "still log it"). A first cut
+      // dropped the row, which broke his own Aug 23 rule that the day should
+      // read complete. Twelve hours of sleep is not a shift, but it IS what
+      // happened, and he decides what to do with it.
+      const home = rows.filter(r => /22nd Ct/.test(String(r.clientName || '')));
+      expect(home.length, 'the night is still on the record').toBe(1);
+      expect(home[0].unpaid, 'and it counts for nothing until he classifies it').toBe(true);
+      expect(home[0].detail, 'the row says why it does not count').toContain('Overnight');
       expect(rows.filter(r => r.minutes === 480).length, 'the real work still stands').toBe(1);
     });
 
@@ -4543,6 +4548,23 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(home[0].minutes).toBe(30);
     });
 
+    test('home-office app time counts, even on a day with no drives at all', async () => {
+      // Owner, 2026-09-01: "if it's a home office app time still counts."
+      // The first cut of the base rule zeroed this: 45 minutes of real
+      // paperwork rendered nothing at all, because 'place-office' matched the
+      // same /^place/ predicate the raw dwell does. It is not the same thing.
+      // place-office and place-load are the home-office rule's OWN output,
+      // minutes the app or the motion chip already proved were work.
+      const rows = await rowsFor([
+        { employee_user_id: 'me', minutes: 45, source: 'place-office', dest_place: HOME,
+          arrived_at: '2026-08-28T14:00:00Z', departed_at: '2026-08-28T14:45:00Z' },
+      ]);
+      const mine = rows.filter(r => r.date === '2026-08-28');
+      expect(mine.length, 'the paperwork is on the log').toBe(1);
+      expect(mine[0].minutes).toBe(45);
+      expect(mine[0].unpaid, 'and it COUNTS, no drive required').toBe(false);
+    });
+
     test('a home office cannot OPEN a day on its own', async () => {
       // No job, no supply run, no drive: nothing happened. Being at home all
       // day is not a shift, however long the app was running.
@@ -4551,8 +4573,11 @@ test.describe('timelog.js: exhaustive coverage', () => {
       ]);
       // Scoped to this fixture's own day: _timeLogRows renders the whole log,
       // and earlier tests in this file leave rows on other dates behind.
+      // Scoped to this fixture's own day: _timeLogRows renders the whole log,
+      // and earlier tests in this file leave rows on other dates behind.
       const mine = rows.filter(r => r.date === '2026-08-30');
-      expect(mine.length, 'a day with no work in it credits nothing').toBe(0);
+      expect(mine.length, 'the day is still shown, not erased').toBe(1);
+      expect(mine[0].unpaid, 'a day with no work in it credits nothing').toBe(true);
     });
 
     test('a supply house is NOT a base: it still ends the day', async () => {
@@ -4580,8 +4605,11 @@ test.describe('timelog.js: exhaustive coverage', () => {
       ]);
       const mine = rows.filter(r => r.date === '2026-08-29');
       const paid = mine.filter(r => !r.unpaid).reduce((s, r) => s + (r.minutes || 0), 0);
-      expect(mine.some(r => r.minutes === 460), 'the evening at home is not the shift').toBe(false);
-      expect(mine.some(r => r.minutes === 120), 'nor is the morning').toBe(false);
+      // Both stretches at home are ON the log and neither is in the total.
+      const evening = mine.find(r => r.minutes === 460);
+      const morning = mine.find(r => r.minutes === 120);
+      expect(evening && evening.unpaid, 'the evening at home is logged, not counted').toBe(true);
+      expect(morning && morning.unpaid, 'nor is the morning').toBe(true);
       expect(paid, 'twenty out, forty there, twenty back').toBeLessThanOrEqual(80);
       expect(paid, 'and the errand itself absolutely does pay').toBeGreaterThanOrEqual(40);
     });

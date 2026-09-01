@@ -2100,7 +2100,14 @@ function _geoBaseNames(){
 // a base, and an unprovable row keeps the old behaviour rather than losing
 // somebody minutes on a guess.
 function _geoIsBaseRow(r,bases){
-  if(!r||!_geoIsPlaceSource(r.source))return false;
+  if(!r)return false;
+  // ONLY the raw dwell row, never the home-office rule's own output.
+  // 'place-load' and 'place-office' are minutes the motion chip or the app
+  // itself already PROVED were work: loading the truck, writing a quote at
+  // nine at night. Those are accounted for by construction and re-grading them
+  // as floating time is exactly the regression this guard exists to stop
+  // (owner, 2026-09-01: "if it's a home office app time still counts").
+  if(String(r.source||'')!=='place')return false;
   const n=String(r.dest_place||'');
   return !!n&&(bases||_geoBaseNames()).has(n);
 }

@@ -95,7 +95,12 @@ function _tlSourceLabel(source){
   if(s==='place-office')return 'Office';
   if(s==='place')return '';
   if(s==='manual')return 'GPS clock';
-  if(s==='stop')return 'Unpaid';
+  // "Unaccounted", not "Unpaid" (owner, 2026-09-01: "skip the paid versus
+  // unpaid stuff out"). The app does not know whether this gets paid and is
+  // not the thing that decides. It knows the time is not accounted for yet;
+  // lunch, a break and a business trip all start here and leave once somebody
+  // classifies them.
+  if(s==='stop')return 'Unaccounted';
   return s;
 }
 // Still-running entries, clocked in, never closed. Separate from the history
@@ -464,19 +469,37 @@ async function _timeLogRows(sinceISO){
     // owner and Jack both, four nights running, up to 1557 minutes. See
     // _geoIsBaseRow (js/geo-track.js) for why a supply house is deliberately
     // NOT a base and still ends the day.
+    // NOT PAID VERSUS UNPAID. ACCOUNTED VERSUS UNACCOUNTED (owner, 2026-09-01):
+    // "skip the paid versus unpaid stuff out, just log it as unaccounted if
+    // they are floating between fences ... doesn't get included in time unless
+    // classified (i.e. lunch, breaks, business trips)."
+    //
+    // A first cut DROPPED the row when base dwell fell outside the workday.
+    // Wrong twice: it broke the rule above, and it broke the owner's own Aug 23
+    // rule that a day "should read complete, not like a chunk is silently
+    // missing". It also zeroed 45 minutes of real home-office paperwork on a
+    // day with no drives.
+    //
+    // Nothing is hidden now. This lands in the SAME shape _tlFillUnaccounted
+    // already writes for a hole between fences (7.3): the row keeps its true
+    // span, says why it does not count, and the unpaid flag holds it out of
+    // hours and overtime exactly as a lunch already is. The owner decides what
+    // to pay; the app does not decide for them.
+    let _unacctWhy='';
     if(typeof _geoIsBaseRow==='function'&&_geoIsBaseRow(e,_baseNames)){
       const _ba=Date.parse(e.arrived_at)||0,_bd=Date.parse(e.departed_at||'')||0;
       const _bds=d=>(typeof _bizDateStr==='function')?_bizDateStr(d):dateKey(d);
-      // Crossing Central midnight IS the truck home for the night. Same
-      // physical-impossibility bound the shop honors (owner rule 2026-08-24:
-      // "it's not humanely possible for any day to have more than 24 hours").
-      if(!(_ba>0&&_bd>_ba)||_bds(new Date(_ba))!==_bds(new Date(_bd)))return;
+      if(!(_ba>0&&_bd>_ba))return;      // unparseable: nothing to draw either way
       const _bpm=(typeof _geoShopPaidMin==='function')
         ? _geoShopPaidMin(e.arrived_at,e.departed_at,
             ((_shopCut[e.employee_user_id]||{})[_bds(new Date(_ba))])||null)
         : (e.minutes||0);
-      if(_bpm<1)return;                 // outside the workday: no row to draw
-      e=Object.assign({},e,{minutes:_bpm});   // clamped COPY, the stored row is untouched
+      // Crossing Central midnight is the truck home for the night, never a
+      // shift (owner rule 2026-08-24: "it's not humanely possible for any day
+      // to have more than 24 hours"). Unaccounted, not deleted.
+      if(_bds(new Date(_ba))!==_bds(new Date(_bd)))_unacctWhy='Overnight at your own place';
+      else if(_bpm<1)_unacctWhy='Outside the day\u2019s work';
+      else e=Object.assign({},e,{minutes:_bpm});   // clamped COPY, stored row untouched
     }
     // The anchor rule (owner 2026-08-24, see _tlStopAnchored above): an
     // unpaid stop with no real location event on both sides of it that same
@@ -493,8 +516,11 @@ async function _timeLogRows(sinceISO){
       id:'a'+e.job_id+'_'+e.employee_user_id+'_'+e.arrived_at,
       source:'auto',date:(typeof _bizDateStr==='function')?_bizDateStr(new Date(e.arrived_at)):e.arrived_at.slice(0,10),
       minutes:e.minutes||0,personName:crew.name[e.employee_user_id]||'Crew',personUid:e.employee_user_id,
-      clientName,addr:info.addr,jobName:info.jobName,clientKey:e.client_key||null,unpaid:isUnpaid,
-      detail:(typeof _tlSourceLabel==='function')?_tlSourceLabel(e.source):(e.source||''),
+      clientName,addr:info.addr,jobName:info.jobName,clientKey:e.client_key||null,unpaid:isUnpaid||!!_unacctWhy,
+      // The reason wins when there is one. "Overnight at your own place" tells
+      // the owner why twelve hours are sitting there not counting, which a
+      // bare source label never could.
+      detail:_unacctWhy||((typeof _tlSourceLabel==='function')?_tlSourceLabel(e.source):(e.source||'')),
       startTime:e.arrived_at||null,endTime:e.departed_at||null,
       // The server row id and its raw source, so a wrong GPS clock can be
       // corrected in place (owner rule 2026-08-24). rawSource is the raw
