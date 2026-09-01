@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.01.26.13';
+const APP_VERSION='09.01.26.14';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -9829,30 +9829,49 @@ async function _stageUpdate(ver){
   }catch(_e){return false;}
   finally{_updateStaging=false;}
 }
-// stageOnly: the periodic poll may WARM a build but must never yank the page
-// out from under someone mid-sentence. Only a foreground transition (where a
-// reload was already the old behavior) still falls back to reloading on the
-// spot when warming failed.
-async function _checkVersionOnResume(opts){
+// ── A NEW BUILD LANDS THE MOMENT IT EXISTS (owner decision 2026-09-01) ─────
+//
+// "had to background and reopen to get the update, thats a problem."
+//
+// This used to warm and wait: while the app was open the poll only pulled the
+// new build into cache, and the actual swap was wired to the app going out of
+// sight. That was itself a fix, for the opposite complaint (2026-08-27, three
+// quick visual fixes in a row meaning three forced reloads on the device he
+// was holding mid-review), and it worked exactly as designed. It also meant a
+// roll could not reach a phone somebody was actively looking at, which is the
+// phone that most needs it while he is testing.
+//
+// He was given the choice and picked immediate, with the mid-tap risk stated
+// and accepted. So: stage FIRST, then reload, always. Staging is still what
+// makes this cheap, the reload comes off warm cache in milliseconds instead of
+// pulling fifty files down behind an overlay, and _autoSaveAndReload already
+// snapshots open forms and flushes pending saves before it goes, so a reload
+// landing mid-form costs the typing nothing.
+async function _checkVersionOnResume(){
   try{
     const r=await fetch('version.json?_='+Date.now(),{cache:'no-store'});
     if(!r.ok)return;
     const d=await r.json();
     if(!d||!d.version||d.version===APP_VERSION)return;
-    const staged=await _stageUpdate(d.version);
-    if(!staged&&!(opts&&opts.stageOnly))await _autoSaveAndReload();
+    // Not awaited for its ANSWER, only for its timing: a failed warm still
+    // reloads, it just costs the old slow path. Never skipping the reload on
+    // a warm failure is the whole point of the change.
+    await _stageUpdate(d.version);
+    await _autoSaveAndReload();
   }catch(e){}
 }
-// Poll while the app is up so a roll landing mid-session is warm long before
-// the user next puts the phone down. Warming only; nothing visible happens.
-setInterval(()=>{if(!document.hidden)_checkVersionOnResume({stageOnly:true});},60000);
+// 15 seconds, not 60. At a minute a roll could sit unseen for most of a minute
+// on the phone doing the testing, which is indistinguishable from it not
+// working. version.json is a static file on Pages, not a Function, so this
+// never touches the /api budget (14.2).
+setInterval(()=>{if(!document.hidden)_checkVersionOnResume();},15000);
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){
-    // THE SWAP, and the whole point: the app just went out of sight, the new
-    // build is already on disk, so reload now and it completes off cache in
-    // milliseconds. The overlay still paints (free while hidden) so a reload
-    // iOS suspends before it finishes is covered by a boot screen rather than
-    // a blank page on return.
+    // KEPT, as the backstop it now is rather than the main event. The poll
+    // above reloads the moment it sees a new version, so a build is normally
+    // long gone by the time the app is put down. This still covers the one
+    // case the poll cannot: a version staged by a warm that landed just as
+    // the app went out of sight, with the reload not yet fired.
     if(_updateStagedVer&&!_reloadPending)_autoSaveAndReload();
     return;
   }

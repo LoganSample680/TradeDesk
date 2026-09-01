@@ -737,12 +737,77 @@ test.describe('Cloud sync core, uncovered function coverage', () => {
     expect(before.includes('!_updateStagedVer'), 'the purge must be skipped for a staged build').toBe(true);
   });
 
-  test('the background poll warms only, it never yanks the page mid-session', async () => {
+  // ASSERTION CHANGED 2026-09-01 (CLAUDE.md 10.4).
+  //
+  // OLD BEHAVIOUR, and why it was right at the time: the interval passed
+  // stageOnly, so a poll could WARM a new build but never reload. That was
+  // itself a fix, for the owner's 2026-08-27 complaint that three quick visual
+  // fixes in a row meant three forced reloads on the device he was holding
+  // mid-review, and it worked exactly as intended.
+  //
+  // NEW BEHAVIOUR, and why it is now the intended one: it also meant a roll
+  // could not reach a phone somebody was actively looking at. Owner,
+  // 2026-09-01, on UAT 09.01.26.14 landing while he had the app open: "had to
+  // background and reopen to get the update, thats a problem." Offered the
+  // three options with the mid-tap risk stated, he chose immediate.
+  //
+  // The staging is KEPT, and that is what makes immediate affordable: the
+  // reload comes off warm cache in milliseconds rather than pulling fifty
+  // files down behind an overlay, and _autoSaveAndReload snapshots open forms
+  // and flushes pending saves first, so a reload landing mid-form costs the
+  // typing nothing.
+  test('the poll reloads on the spot, and warms first so it is cheap', async () => {
     const src = readJs('cloud.js');
-    expect(src.includes("_checkVersionOnResume({stageOnly:true})"),
-      'the interval must pass stageOnly or a failed warm reloads someone mid-sentence').toBe(true);
-    expect(src.includes("if(!staged&&!(opts&&opts.stageOnly))await _autoSaveAndReload();"),
-      'stageOnly must suppress the immediate-reload fallback').toBe(true);
+    expect(src.includes('stageOnly'),
+      'the old warm-and-wait switch must be gone, not left dangling (7)').toBe(false);
+    const i = src.indexOf('async function _checkVersionOnResume(');
+    expect(i).toBeGreaterThan(-1);
+    const body = src.slice(i, src.indexOf('setInterval', i));
+    // Order matters: warm, THEN reload. Reversed, every update is the slow
+    // path this whole feature exists to avoid.
+    const stageAt = body.indexOf('await _stageUpdate(d.version)');
+    const reloadAt = body.indexOf('await _autoSaveAndReload()');
+    expect(stageAt).toBeGreaterThan(-1);
+    expect(reloadAt).toBeGreaterThan(stageAt);
+    // Unconditional: a warm that FAILED must still reload, just slowly. Never
+    // skipping the reload on a warm failure is the point of the change.
+    expect(/if\s*\([^)]*staged[^)]*\)\s*await _autoSaveAndReload/.test(body),
+      'the reload must not be gated on the warm succeeding').toBe(false);
+  });
+
+  test('the poll runs often enough to feel automatic', () => {
+    const src = readJs('cloud.js');
+    const m = src.match(/setInterval\(\(\)=>\{if\(!document\.hidden\)_checkVersionOnResume\(\);\},(\d+)\)/);
+    expect(m, 'the version poll interval must be findable').toBeTruthy();
+    const ms = Number(m[1]);
+    // At a minute a roll sits unseen for most of a minute on the very phone
+    // doing the testing, which is indistinguishable from it not working.
+    expect(ms).toBeLessThanOrEqual(15000);
+    // ...and not so tight that it is polling for its own sake.
+    expect(ms).toBeGreaterThanOrEqual(10000);
+  });
+
+  test('the reload still refuses to fire mid cold-load', () => {
+    // The one guard that must survive the change: a reload during an in-flight
+    // supaLoadFromCloud strands the app on a hidden blank page (the "loading
+    // then crashed" report). Reloading sooner makes hitting that window MORE
+    // likely, not less, so this is exactly the wrong moment to lose it.
+    const src = readJs('cloud.js');
+    const i = src.indexOf('async function _autoSaveAndReload()');
+    const body = src.slice(i, i + 900);
+    expect(body.includes('if(_loadInProgress){_deferredReload=true;return;}')).toBe(true);
+  });
+
+  test('open forms are still snapshotted before the reload', () => {
+    // The accepted cost of immediate is that a reload can land mid-tap. What
+    // makes that survivable is that the typing is saved first, so this is
+    // load-bearing now in a way it was not when reloads only happened while
+    // the app was out of sight.
+    const src = readJs('cloud.js');
+    const i = src.indexOf('async function _autoSaveAndReload()');
+    const body = src.slice(i, src.indexOf('caches.keys()', i));
+    expect(body.includes('_snapshotForms()')).toBe(true);
+    expect(body.includes('_flushSaveNow()')).toBe(true);
   });
 
   // ── sendPaymentLink → embedded HUB link, not a hosted-checkout redirect ─────
