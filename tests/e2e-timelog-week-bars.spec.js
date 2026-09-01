@@ -481,3 +481,115 @@ test.describe('week bars: layout integrity (§15.3)', () => {
     });
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// A week that straddles a month boundary (owner 2026-09-01)
+// ═══════════════════════════════════════════════════════════════════════════
+// "the weekly bar graph isn't rendering my daily time today in real time,
+// nothing shows but the day rail is perfect."
+//
+// The week on screen is seven days, and twelve times a year those seven days
+// sit in two different months. The chart used to be built from the SELECTED
+// MONTH's rows, so a straddling week could only draw the half on the selected
+// side, and _tlWeekMonth picks that side by whichever half has more hours: on
+// Sunday the new month's days read blank, and by Thursday the old month's do.
+// His live case was Sun Aug 30 through Sat Sep 5 with eight hours on each of
+// Aug 30 and 31 and four and a half hours today, so the week resolved to
+// August and Tuesday showed nothing at all.
+//
+// The rail was right the whole time, which is what makes this the worst shape
+// of bug: two surfaces reading one week and disagreeing, with neither of them
+// saying so.
+test.describe('a week is not a slice of a month', () => {
+  // Sun 2026-08-30 .. Sat 2026-09-05. Two days on the August side, one on the
+  // September side, deliberately lopsided so _tlWeekMonth has a winner and the
+  // old behaviour has something to hide.
+  const STRADDLE = [
+    { id: 's1', date: '2026-08-30', minutes: 480, source: 'auto', rawSource: 'client',
+      clientName: 'John Doe', startTime: '2026-08-30T13:00:00.000Z' },
+    { id: 's2', date: '2026-08-31', minutes: 480, source: 'auto', rawSource: 'client',
+      clientName: 'John Doe', startTime: '2026-08-31T13:00:00.000Z' },
+    { id: 's3', date: '2026-09-01', minutes: 276, source: 'auto', rawSource: 'client',
+      clientName: 'John Doe', startTime: '2026-09-01T13:00:00.000Z' },
+  ];
+  const mount = async (page, mo) => {
+    await page.evaluate((rs) => {
+      try { S.bizTz = 'America/Chicago'; } catch (_e) {}
+      window._timeLogRows = async () => rs.map(r => ({ ...r, personUid: null }));
+      if (typeof goPg === 'function') goPg('pg-timelog');
+    }, STRADDLE);
+    await page.waitForTimeout(200);
+    await page.evaluate(() => { setTimeLogYear(2026); });
+    await page.waitForTimeout(500);
+    await page.evaluate((m) => { _tlDrillTo('month', m); }, mo);
+    await page.waitForTimeout(200);
+    await page.evaluate(() => _tlDrillTo('week', '2026-08-30'));
+    await page.waitForTimeout(250);
+    await settleBars(page);
+  };
+  const amounts = (page) => page.$$eval('.tl-wbar-amt', els => els.map(e => e.textContent.trim()));
+
+  test.beforeEach(async ({ page }) => {
+    await mockAllExternal(page);
+    await page.goto('/index.html');
+    await waitForAppBoot(page);
+  });
+
+  test('every day of the week is drawn, whichever month the picker is on', async ({ page }) => {
+    // THE REGRESSION. Both views must draw the same week, because it is the
+    // same week.
+    await mount(page, '2026-08');
+    expect(await amounts(page)).toEqual(['8h', '8h', '4h', '—', '—', '—', '—']);
+    await mount(page, '2026-09');
+    expect(await amounts(page)).toEqual(['8h', '8h', '4h', '—', '—', '—', '—']);
+  });
+
+  test('the week header totals the whole week, not the month-side of it', async ({ page }) => {
+    // 480 + 480 + 276 = 1236 = 20h36m. Clipped to August it read 16h, which is
+    // the same lie in a second place on the same screen.
+    await mount(page, '2026-08');
+    const tot = await page.$eval('.tl-monav-tot', el => el.textContent.trim());
+    expect(tot).toContain('20h');
+    expect(tot).toContain('36m');
+  });
+
+  test('the day rail and the bars agree about the day on the far side', async ({ page }) => {
+    // The pair that disagreed. The rail was always right; now the chart it
+    // sits under says the same thing.
+    await mount(page, '2026-08');
+    await page.evaluate(() => _tlDrillTo('day', '2026-09-01'));
+    await page.waitForTimeout(250);
+    const rows = await page.$$eval('.tl-rail li', els => els.length);
+    expect(rows).toBeGreaterThan(0);
+    const tot = await page.$eval('.tl-monav-tot', el => el.textContent.trim());
+    expect(tot).toContain('4h');
+  });
+
+  test('stepping to the far-side day is possible at all', async ({ page }) => {
+    // _tlDrillSiblings has always read the unclipped row set, so the arrow was
+    // live and pointed at a day the chart had already thrown away. Landing on
+    // it drew an empty screen.
+    await mount(page, '2026-08');
+    await page.evaluate(() => _tlDrillTo('day', '2026-08-31'));
+    await page.waitForTimeout(200);
+    await page.evaluate(() => _tlDrillStep(1, _tlLastRows));
+    await page.waitForTimeout(250);
+    const st = await page.evaluate(() => ({ day: _tlDrill.day, level: _tlDrill.level }));
+    expect(st.level).toBe('day');
+    expect(st.day).toBe('2026-09-01');
+    expect(await page.$$eval('.tl-rail li', els => els.length)).toBeGreaterThan(0);
+  });
+
+  test('a week wholly inside one month is unchanged', async ({ page }) => {
+    // The fix widens the source; it must not change the ordinary case.
+    await mountWeekBars(page);
+    const amts = await amounts(page);
+    expect(amts.length).toBe(7);
+    expect(amts.some(a => a !== '—')).toBe(true);
+  });
+
+  test('no console errors across the straddling week', async ({ page }) => {
+    await mount(page, '2026-09');
+    await assertNoErrors(page, 'straddling week');
+  });
+});

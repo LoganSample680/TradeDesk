@@ -1735,7 +1735,27 @@ function _tlLevelsHtml(moRows,selMo,opts){
     _tlDrill.wk=weekKeys[weekKeys.length-1]||null;
   if(!_tlDrill.wk&&_tlDrill.level!=='month')_tlDrill.level='month';
   if(_tlDrill.level==='month')return null;
-  const wkRows=byWeek[_tlDrill.wk]||[];
+  // A WEEK IS NOT A SLICE OF A MONTH (owner 2026-09-01: "the weekly bar graph
+  // isn't rendering my daily time today, nothing shows but the day rail is
+  // perfect"). moRows is the SELECTED MONTH, and the week on screen is
+  // whatever seven days _tlWeekDayDates names, which twelve times a year
+  // crosses a month boundary. Sourcing the chart from the month meant the
+  // straddling week could only ever draw the half that lived on the selected
+  // side, and _tlWeekMonth resolves that side by whichever half has more
+  // hours: so on Sunday the new month's days are blank, and by Thursday the
+  // old month's are. Reproduced 2026-09-01 with 8h/8h on Aug 30-31 and 4h36m
+  // today: the August view drew "8h 8h — — — — —" and hid Tuesday entirely,
+  // while the day rail, reached through a drill whose month followed the day,
+  // was right. Two surfaces, one week, two answers.
+  //
+  // _tlLastRows is the whole scope-filtered year and is already assigned
+  // before this runs, which is the same set _tlDrillSiblings has always read
+  // for exactly this reason (the arrows have always stepped across months).
+  // Only the WEEK LIST above stays month-scoped: that is the fallback for a
+  // week that vanished under us, and it should still land inside the month
+  // the picker is pointing at.
+  const wkRows=(_tlLastRows||[]).filter(r=>r&&_tlWeekKey(r.date)===_tlDrill.wk&&
+    (!_tlDrill.uid||_tlRowUid(r)===_tlDrill.uid));
   const days=_tlWeekDayDates(_tlDrill.wk);
   if(_tlDrill.level==='week')
     return {head:_tlDrillHeadHtml(_tlWeekLabel(_tlDrill.wk),fm(_tlPaidMin(wkRows)),
