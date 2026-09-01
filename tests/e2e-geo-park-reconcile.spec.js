@@ -626,6 +626,36 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   // So: retry the call the way production does, and hand the outcome back so
   // a never-ran fails as a never-ran instead of as a wrong assertion.
   const runRecon = () => page.evaluate(async () => {
+    // RE-ASSERT THE HARNESS MOCK FIRST.
+    //
+    // Sixth failure in this file with the same "expected 1, received 0"
+    // signature (webkit shard 2, 2026-09-01), and the fifth different theory.
+    // The first three hardened the WAIT; the fourth counted the ENQUEUES; all
+    // four were downstream of the actual problem, which geoReset's own comment
+    // has described the whole time and which only the merge helper ever acted
+    // on:
+    //
+    //   this page lives for the whole ~150-test file and the app can rebuild
+    //   its own Supabase client at any moment (supaInit runs on a realtime
+    //   reconnect, among other paths), which silently swaps _supa out from
+    //   under a test between its seeding step and its call.
+    //
+    // Every step between geoReset and here is an await point, so there is a
+    // real window for that swap. When it happens the reconciler runs
+    // correctly and writes through the APP's client instead of this harness:
+    // window.__rec never sees the upsert, the enqueue counter (which watches
+    // _geoEnqueue, not the client) still counts the work, the settle loop
+    // waits out its full 4s, and the helper reports zero rows for a row that
+    // was written. `ran` is true because nothing refused, which is why the
+    // failure always lands on the row assertion and never on the ran one.
+    //
+    // That is the whole shape: intermittent, engine- and shard-dependent,
+    // never reproducible under one file, and invisible to any amount of extra
+    // waiting. One assignment removes it, the same one _geoMergeSweep's helper
+    // already makes for the same reason (7.3). mockSwapped is returned rather
+    // than silently corrected so a future failure can say which class it is.
+    const mockSwapped = !!window.__harnessSupa && window._supa !== window.__harnessSupa;
+    if (window.__harnessSupa) window._supa = window.__harnessSupa;
     // COUNT THE ENQUEUES. DO NOT SAMPLE THE QUEUE.
     //
     // Fourth failure in this file with the same "expected 1, received 0"
@@ -675,7 +705,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
         await new Promise(res => setTimeout(res, 20));
       }
       return {
-        ran,
+        ran, mockSwapped, queued,
         recRows: window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && (u.row.source || '') === 'geofence-reconciled').map(u => u.row),
         updates: window.__rec.updates.slice(),
       };
@@ -843,6 +873,53 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   // at 16:17 as the truck drove off 10,499ft away. Park mode powers the GPS
   // down when the truck stops, so silence is the signature of being parked,
   // not of being absent, and the trailing fixes are the departure itself.
+  // ── THE SWAP ITSELF, ASSERTED (2026-09-01) ────────────────────────────────
+  //
+  // Six failures in this file carried one signature, "expected 1, received 0",
+  // and five different theories were tried on it. The real one is that the app
+  // can rebuild window._supa at any moment, so the reconciler writes through a
+  // client the recorder is not watching. Four rounds of fixes went into wait
+  // hardening because the failure LOOKED like a race, and it never said what it
+  // actually was.
+  //
+  // So it says it now. runRecon re-asserts the harness client and reports
+  // whether it had to, and this test proves both halves: that a swapped client
+  // is detected, and that the sweep still lands in the recorder afterwards.
+  // A future occurrence of this signature can be told apart from a real
+  // reconciler bug by one field instead of by another guess.
+  test('a swapped Supabase client is caught and corrected, not silently absorbed', async () => {
+    await geoReset();
+    const seed = await seedReconPair(886111);
+    await seedPings([]);
+    // Exactly what supaInit does from the recorder's point of view: a
+    // different object in window._supa than the one geoReset installed.
+    await page.evaluate(() => { window._supa = Object.assign({}, window.__harnessSupa, { __notTheHarness: true }); });
+    const r = await runRecon();
+    expect(r.mockSwapped, 'the helper must notice the client moved').toBe(true);
+    expect(r.ran).toBe(true);
+    // And the row still lands, because the helper put the recorder back.
+    expect(r.recRows.length, 'the write must reach the recorder after the fix').toBe(1);
+    const after = await page.evaluate(() => window._supa.__notTheHarness === true);
+    expect(after, 'the harness client owns the page for the rest of the test').toBe(false);
+    await seedPings([]);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
+  test('an untouched client is not reported as swapped', async () => {
+    // The other half: mockSwapped has to mean something, so it must be false
+    // on the ordinary path or it is just noise on every future failure.
+    await geoReset();
+    await seedReconPair(886112);
+    await seedPings([]);
+    const r = await runRecon();
+    expect(r.mockSwapped).toBe(false);
+    expect(r.recRows.length).toBe(1);
+    await seedPings([]);
+    await restoreReconSeed();
+    await geoRestore();
+  });
+
   test('breadcrumbs: a sparse tape whose only off-site fixes are the departure leaves the day whole', async () => {
     await geoReset();
     const seed = await seedReconPair(886110);
@@ -1168,7 +1245,12 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     // Same contract, same defect, same fix: see the note on runRecon above.
     // This one still sampled the queue and so carried the identical blind spot,
     // which is why 10.4 says fix every place that asserts the same behaviour and
-    // not just the one that happened to go red.
+    // not just the one that happened to go red. The client-swap class is that
+    // same story a second time: this helper drives the same sweep across the
+    // same await points, so it needs the same re-assertion, and it needs it
+    // BEFORE the enqueue wrapper so a swap can never sit between the two.
+    const mockSwapped = !!window.__harnessSupa && window._supa !== window.__harnessSupa;
+    if (window.__harnessSupa) window._supa = window.__harnessSupa;
     const origEnq = window._geoEnqueue;
     let queued = 0;
     window._geoEnqueue = function () { queued++; return origEnq.apply(this, arguments); };
@@ -1187,7 +1269,7 @@ test.describe('Geo park detection + mileage reconciliation', () => {
         if (!queued && i >= 10) break;
         await new Promise(res => setTimeout(res, 20));
       }
-      return { ran, recRows: rows().map(u => u.row) };
+      return { ran, mockSwapped, queued, recRows: rows().map(u => u.row) };
     } finally { window._geoEnqueue = origEnq; }
   });
 
@@ -1219,6 +1301,10 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     }, seed.cid);
     const r = await page.evaluate(async () => {
       await _geoReconcileFromMileage();
+      // The harness client, re-asserted for the same reason runRecon does it:
+      // an app-side supaInit between the seed and this call writes the row
+      // through a client window.__rec never sees.
+      if (window.__harnessSupa) window._supa = window.__harnessSupa;
       // Same settle runRecon uses, and for the same reason: _geoEnqueue writes
       // synchronously and drains asynchronously, so a fixed sleep is a bet on
       // how loaded the runner is. Under one file it wins; under five it does
