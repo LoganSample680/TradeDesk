@@ -3014,7 +3014,15 @@ test.describe('timelog.js: exhaustive coverage', () => {
         { personUid: 'u1', personName: 'Mike Sample', minutes: 10, source: 'auto', rawSource: 'drive', detail: 'Driving' },
       ], 'cid1'));
       expect(r.u1.min).toBe(70);
-      expect(r.u1.onsiteMin).toBe(60);
+      // ASSERTION CHANGED 2026-09-01 (10.4). A manual entry used to count as
+      // on-site labour, on the old assumption that clocking in meant clocking
+      // in AT something. Since the blend a clock carries only the minutes no
+      // fence explained, which is by definition time the app cannot place, so
+      // it lands in the grey bucket with the rest of it. Left as on-site it
+      // produced Jack's Sept 1 legend: "On site 4h 59m" on a day whose rail
+      // holds no on-site row at all.
+      expect(r.u1.onsiteMin).toBe(0);
+      expect(r.u1.placeMin).toBe(60);
       expect(r.u1.driveMin).toBe(10);
       expect(r.u1.name).toBe('Mike Sample');
     });
@@ -4666,13 +4674,21 @@ test.describe('timelog.js: exhaustive coverage', () => {
         A('drive',            [9, 17], [11, 17], 62),
         A('place',            [11, 20], [12, 4], 44),
       ], CLOCK([7, 42], [17, 0], 558));
-      // 558 of clock, of which 201 minutes are explained by fences inside it,
-      // plus the 18 minutes of the 07:23 drive that ran BEFORE he clocked in
-      // and which the clock never claimed. 576, not 777.
+      // 576, not 777. Unchanged by everything since, and that is the point of
+      // keeping this assertion first: the DAY still totals the clock plus the
+      // 18 minutes of the 07:23 drive that ran before he clocked in.
       expect(r.paid).toBe(576);
       const man = r.rows.find(x => x.src === 'manual');
-      expect(man.m, 'the clock keeps only what nothing else explains').toBe(357);
-      expect(man.blended).toBe(201);
+      // NUMBERS CHANGED 2026-09-01 (CLAUDE.md 10.4), the rule did not. The
+      // 09:17 to 11:17 leg ends at the place it left (_tlDemoteRoundTrips), so
+      // it is withdrawn as a drive and its 62 minutes are no longer a fence
+      // explaining part of the clock: 139 explained instead of 201, and the
+      // clock keeps 419 instead of 357. The two still sum to the same 558, and
+      // the day still totals the same 576, which is what says the withdrawal
+      // moved a minute between rows rather than inventing or losing one.
+      expect(man.m, 'the clock keeps only what nothing else explains').toBe(419);
+      expect(man.blended).toBe(139);
+      expect(man.m + man.blended, 'nothing was created or destroyed').toBe(558);
       expect(man.detail, 'a clock that shrinks has to say why').toContain('tracked below');
     });
 
@@ -4700,8 +4716,15 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // drive outside the day's work window is not the day's work). Writing
       // the fixture the other way round proved nothing about blending and
       // everything about a gate this test is not for.
+      // FIXTURE CHANGED 2026-09-01 (10.4): the drive used to end at the same
+      // place the visit before it did, which _tlDemoteRoundTrips now withdraws
+      // as an out-and-back (its own tests below). That shape proved nothing
+      // about blending, so the drive goes somewhere else, which is what a
+      // drive after clocking out normally does.
       const r = await rowsFor([A('place', [8, 0], [10, 0], 120),
-                               A('drive', [10, 0], [10, 30], 30)],
+                               { employee_user_id: 'jack', minutes: 30, source: 'drive',
+                                 dest_place: 'John Doe',
+                                 arrived_at: at(10, 0), departed_at: at(10, 30) }],
                               CLOCK([8, 0], [10, 0], 120));
       const man = r.rows.find(x => x.src === 'manual');
       // The place fully covers the clock, so the clock keeps nothing.
@@ -4820,8 +4843,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
            start_time: at(7, 42), end_time: at(15, 0),
            logged_by_uid: null, logged_by_name: 'Owner' }],
       ]);
-      expect(r.b, 'a null personUid is the owner, not a different person').toBe(155);
-      expect(r.m).toBe(283);
+      // 93, not 155: the 09:17 drive returns to the place it left and is
+      // withdrawn (10.4, same rule as Jack's day above). What this test is FOR,
+      // that a null logged_by_uid folds under the owner and the blend fires at
+      // all, is unchanged, and a zero here would still be the bug it guards.
+      expect(r.b, 'a null personUid is the owner, not a different person').toBe(93);
+      expect(r.m).toBe(345);
       expect(r.paid, 'the clock, not the clock plus the fences').toBe(438);
     });
 
@@ -5081,6 +5108,176 @@ test.describe('timelog.js: exhaustive coverage', () => {
       const labels = await page.evaluate(() => _TL_BUCKETS.map(b => b.label));
       expect(labels, 'the row and its bucket say the same thing')
         .toContain(meta.word);
+    });
+
+    // ── ONE VISIT, ONE ROW ────────────────────────────────────────────────
+    // "the two onsites for sw oakley are actually shop times which we already
+    // have." His dad's shop is two records at once, the configured shop
+    // coordinate and a saved place, watched by two independent state machines
+    // that each write a row on departure.
+    test('a place row a shop session already covers is dropped', async () => {
+      const r = await page.evaluate(([es, sh]) => {
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = [];
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { [ME]: 'J' },
+          entries: es.map(e => ({ ...e, employee_user_id: ME })),
+          shopEntries: sh.map(e => ({ ...e, employee_user_id: ME })) });
+        return _timeLogRows(null)
+          .then(rows => rows.filter(x => x.date === '2026-09-01')
+            .map(x => x.source === 'shop' ? 'shop' : (x.rawSource || x.source)))
+          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT; });
+      }, [
+        [{ minutes: 93, source: 'place', dest_place: '1200 SW Oakley Ave',
+           arrived_at: at(7, 44), departed_at: at(9, 17) },
+         // A shop session on its own credits zero minutes and does not render
+         // ("a Saturday at the yard is not a shift"); it needs a work anchor in
+         // the day, which on a real day is exactly what it has.
+         { minutes: 60, source: 'geofence', job_id: 1,
+           arrived_at: at(10, 0), departed_at: at(11, 0) }],
+        [{ minutes: 93, arrived_at: at(7, 44), departed_at: at(9, 17) }],
+      ]);
+      expect(r.filter(x => x === 'shop').length, 'the shop session is the one that stands').toBe(1);
+      expect(r.filter(x => x === 'place').length, 'the duplicate place row is gone').toBe(0);
+    });
+
+    test('a place row with no shop session is untouched', async () => {
+      // A supply house is a place and nothing else watches it.
+      const r = await page.evaluate(([es]) => {
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = [];
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { [ME]: 'J' },
+          entries: es.map(e => ({ ...e, employee_user_id: ME })), shopEntries: [] });
+        return _timeLogRows(null)
+          .then(rows => rows.filter(x => x.date === '2026-09-01' && x.rawSource === 'place').length)
+          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT; });
+      }, [[{ minutes: 30, source: 'place', dest_place: 'The Home Depot',
+             arrived_at: at(10, 0), departed_at: at(10, 30) }]]);
+      expect(r).toBe(1);
+    });
+
+    // ── A LEG THAT ENDS WHERE IT STARTED ──────────────────────────────────
+    // "drive time at 9:17 am to 11:17 am is still wrong, that was manual time
+    // that shouldve covered his off the books addresses we dont have."
+    test('a drive back to the place it left is withdrawn, not relabelled', async () => {
+      const r = await page.evaluate(([es, sh, clockIn, clockOut]) => {
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepP = places.slice();
+        places.length = 0;
+        places.push({ id: 'p1', name: '1200 SW Oakley Ave', kind: 'shop', lat: 39.045, lon: -95.715 });
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        // His real shape: a clock opens the day, which is what puts the 09:17
+        // drive inside the workday window at all (_geoRowInWorkday drops a
+        // drive outside it, and a lone job anchor would leave the morning shut).
+        window.timeEntries = [{ id: 9, date: '2026-09-01', open: false, job_id: null,
+          minutes: 438, start_time: clockIn, end_time: clockOut,
+          logged_by_uid: null, logged_by_name: 'J' }];
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { [ME]: 'J' },
+          entries: es.map(e => ({ ...e, employee_user_id: ME })),
+          shopEntries: sh.map(e => ({ ...e, employee_user_id: ME })) });
+        return _timeLogRows(null)
+          .then(rows => rows.filter(x => x.date === '2026-09-01')
+            .map(x => ({ raw: x.rawSource || x.source, m: x.minutes, rt: !!x.roundTrip,
+                         name: x.clientName, unpaid: !!x.unpaid })))
+          .finally(() => {
+            window._fetchCrewLabor = orig; window.timeEntries = keepT;
+            places.length = 0; keepP.forEach(p => places.push(p));
+          });
+      }, [
+        [{ minutes: 93, source: 'place', dest_place: '1200 SW Oakley Ave',
+           arrived_at: at(7, 44), departed_at: at(9, 17) },
+         { minutes: 62, source: 'drive', dest_place: '1200 SW Oakley Ave',
+           arrived_at: at(9, 17), departed_at: at(11, 17) },
+         { minutes: 60, source: 'geofence', job_id: 1,
+           arrived_at: at(12, 0), departed_at: at(13, 0) }],
+        [{ minutes: 93, arrived_at: at(7, 44), departed_at: at(9, 17) }],
+        at(7, 42), at(15, 0),
+      ]);
+      const rt = r.find(x => x.rt);
+      expect(rt, 'the out-and-back is recognised').toBeTruthy();
+      expect(rt.raw, 'it reads as unplaceable time, not as driving').toBe('stop');
+      expect(rt.unpaid).toBe(true);
+      // The name goes with the claim, or a grey row still insists he was there.
+      expect(rt.name).toBe('-');
+      expect(r.some(x => x.raw === 'drive'), 'nothing is left calling itself a drive').toBe(false);
+    });
+
+    test('a drive to somewhere else is never withdrawn', async () => {
+      const r = await page.evaluate(([es]) => {
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = [];
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { [ME]: 'J' },
+          entries: es.map(e => ({ ...e, employee_user_id: ME })), shopEntries: [] });
+        return _timeLogRows(null)
+          .then(rows => rows.filter(x => x.date === '2026-09-01' && x.roundTrip).length)
+          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT; });
+      }, [[
+        { minutes: 30, source: 'place', dest_place: 'The Home Depot',
+          arrived_at: at(8, 0), departed_at: at(8, 30) },
+        { minutes: 20, source: 'drive', dest_place: 'John Doe',
+          arrived_at: at(8, 30), departed_at: at(8, 50) },
+      ]]);
+      expect(r, 'a real leg to a different place keeps its miles and its label').toBe(0);
+    });
+
+    test('the clock does not call its own hours unpaid', async () => {
+      // "unpaid is wrong, it was paid." The day totals the clock, the clock
+      // covers those hours, and the row said nobody paid for them.
+      const r = await page.evaluate(([es, ms]) => {
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { [ME]: 'J' },
+          entries: es.map(e => ({ ...e, employee_user_id: ME })), shopEntries: [] });
+        return _timeLogRows(null)
+          .then(rows => {
+            const day = rows.filter(x => x.date === '2026-09-01');
+            return { html: _tlDayRailHtml(day),
+                     inside: day.filter(x => x.clockPaid).length,
+                     paid: _tlPaidMin(day) };
+          })
+          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT; });
+      }, [
+        [{ minutes: 93, source: 'place', dest_place: 'X', arrived_at: at(8, 0), departed_at: at(9, 33) },
+         { minutes: 45, source: 'stop', arrived_at: at(12, 14), departed_at: at(13, 0) }],
+        [{ id: 1, date: D, open: false, job_id: null, minutes: 438,
+           start_time: at(7, 42), end_time: at(15, 0),
+           logged_by_uid: null, logged_by_name: 'J' }],
+      ]);
+      expect(r.inside, 'the stop inside the clock is marked as covered').toBeGreaterThan(0);
+      expect(r.html, 'and the row stops claiming otherwise').not.toContain('· unpaid');
+      // It still does not ADD minutes: the clock is already counting them.
+      expect(r.paid).toBe(438);
+    });
+
+    test('a stop outside any clock is still marked unpaid', async () => {
+      const html = await page.evaluate(([s1, e1]) => _tlDayRailHtml([
+        { id: 'x', source: 'auto', rawSource: 'stop', date: '2026-09-01', minutes: 45,
+          unpaid: true, clientName: '-', personUid: 'me', startTime: s1, endTime: e1 },
+      ]), [at(18, 0), at(18, 45)]);
+      expect(html).toContain('· unpaid');
+    });
+
+    test('the clock remainder is manual time, not on-site labour', async () => {
+      // Jack's Sept 1 legend read "On site 4h 59m" on a day whose rail holds no
+      // on-site row at all, because every fence he crossed was the shop.
+      const e = await page.evaluate(() => _tlBucketFold([
+        { source: 'manual', minutes: 300, personUid: null },
+      ]));
+      expect(e.placeMin).toBe(300);
+      expect(e.onsiteMin).toBe(0);
     });
 
     test('the grey bucket is named for what it holds', async () => {

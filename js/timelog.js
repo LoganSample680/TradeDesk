@@ -376,6 +376,92 @@ function _tlAbsorbGaps(rows,cid){
 // cannot each deduct it and drive the day negative. An auto row that only
 // PARTLY overlaps is charged in proportion: Jack's 07:23 drive lands two of
 // its twenty-one minutes inside the clock, so two is what comes off.
+// ── A LEG THAT ENDS WHERE IT STARTED HAS NO DESTINATION ───────────────────
+//
+// Owner, 2026-09-01: "drive time at 9:17 am to 11:17 am is still wrong, that
+// was manual time that shouldve covered his off the books addresses we dont
+// have."
+//
+// The row said "Drive time, 1200 SW Oakley Ave, 9:17 to 11:17". He was AT
+// Oakley at 9:17. He left, saw a client at an address the app has never been
+// told about, and came back, and the engine kept the two endpoints and threw
+// the middle away: two hours framed as a drive to a place he had not left.
+// The same defect produces the 0.5 mile Oakley-to-Oakley mileage row.
+//
+// A leg whose destination is the place it departed from is not a leg. The app
+// does not know where he went, and the honest row says so: it becomes manual
+// time, which is the bucket for exactly this, and stays there until somebody
+// classifies it. Nothing is deleted and no minutes are invented; the claim is
+// just withdrawn.
+//
+// DELIBERATELY NARROW. It fires only when the drive's own destination matches
+// the place immediately before it. A shop-to-supply-house-to-shop run reads as
+// two legs with a real place in the middle and is untouched, which is what
+// keeps genuine round-trip mileage counting.
+function _tlDemoteRoundTrips(rows){
+  if(!Array.isArray(rows))return rows;
+  const isDrive=r=>r&&r.source==='auto'&&typeof _geoIsDriveSource==='function'&&
+    _geoIsDriveSource(r.rawSource||'');
+  // '-' is _tlJobClientInfo's placeholder for "nothing to name", so two rows
+  // carrying it are two UNKNOWNS, not the same place. Treating them as a match
+  // demoted the ordinary ride home from a job whose lookup happened to miss,
+  // which is a real leg with real miles on it (caught by the workday fixtures
+  // the moment this rule landed). Only a real name can close a round trip.
+  const named=r=>{
+    const n=String((r&&(r.dest_place||r.clientName))||'').trim().toLowerCase();
+    return (n==='-'||n==='')?'':n;
+  };
+  // A shop session and a drive that ends at the shop are the same location
+  // under two names: the session is built from shop_time_entries and carries
+  // the business name, the drive carries the saved PLACE name. Comparing the
+  // strings would never match. The places list is the fact that joins them.
+  const _shopNames=new Set();
+  try{
+    ((typeof getPlaces==='function'?getPlaces():[])||[]).forEach(p=>{
+      if(p&&p.name&&String(p.kind||'')==='shop')_shopNames.add(String(p.name).trim().toLowerCase());
+    });
+  }catch(_e){}
+  const sameSpot=(from,drive)=>{
+    const to=named(drive);
+    if(!to)return false;
+    if(from.source==='shop')return _shopNames.has(to);
+    const f=named(from);
+    return !!f&&f===to;
+  };
+  const byDay={};
+  rows.forEach(r=>{
+    if(!r||!r.startTime||!r.endTime||!r.date)return;
+    const k=String(r.personUid||'owner')+'|'+r.date;
+    (byDay[k]=byDay[k]||[]).push(r);
+  });
+  Object.keys(byDay).forEach(k=>{
+    const day=byDay[k].sort((a,b)=>Date.parse(a.startTime)-Date.parse(b.startTime));
+    for(let i=0;i<day.length;i++){
+      const d=day[i];
+      if(!isDrive(d))continue;
+      const to=named(d);
+      if(!to)continue;   // an unnamed destination can never match anything
+      // The last thing that was somewhere, before this drive began. Stops and
+      // other drives are skipped: neither is a place he can be said to have
+      // left from.
+      let from=null;
+      for(let j=i-1;j>=0;j--){
+        const p=day[j];
+        if(isDrive(p)||p.unpaid||p.source==='manual')continue;
+        from=p;break;
+      }
+      if(!from||!sameSpot(from,d))continue;
+      d.unpaid=true;
+      d.roundTrip=true;
+      d.rawSource='stop';
+      d.detail=(typeof _tlSourceLabel==='function')?_tlSourceLabel('stop'):'Unaccounted';
+      // The name goes with the claim. Keeping it would leave a grey row still
+      // insisting he was at Oakley for two hours.
+      d.clientName='-';d.addr='';d.dest_place=null;
+    }
+  });
+  return rows;
+}
 function _tlBlendManual(rows){
   if(!Array.isArray(rows))return rows;
   const fm=(typeof _fmtMin==='function')?_fmtMin:(m=>m+'m');
@@ -414,6 +500,18 @@ function _tlBlendManual(rows){
     // this one at least matches how a person reads down a day.
     const manual=list.filter(x=>x.r.source==='manual'&&!x.r.unpaid).sort((x,y)=>x.a-y.a);
     if(!manual.length)return;
+    // WHAT THE CLOCK ALREADY PAID FOR (owner 2026-09-01: "unpaid is wrong, it
+    // was paid"). He is right and the row was arguing with itself: the day
+    // totals the clock, the clock's minutes cover every hour it brackets, and
+    // the rail then tagged the untracked stops inside it "unpaid". The tag is
+    // only meaningful OUTSIDE a clock, where nothing has paid for the time.
+    // These minutes still stay out of the total, because the clock is already
+    // counting them and adding them twice is the bug this whole blend exists
+    // to stop; what changes is that the row stops claiming nobody was paid.
+    list.forEach(x=>{
+      if(!x.r.unpaid)return;
+      if(manual.some(m=>m.a<=x.a&&m.b>=x.b))x.r.clockPaid=true;
+    });
     const autos=list.filter(x=>x.r.source!=='manual'&&!x.r.unpaid&&(x.r.minutes||0)>0);
     if(!autos.length)return;
     const spent=[];
@@ -578,8 +676,43 @@ async function _timeLogRows(sinceISO){
     // anchor is a fence that does.
     if(uid)_anchorPush(uid,e.start_time,e.end_time,false,true);
   });
+  // ── ONE VISIT, ONE ROW (owner 2026-09-01) ─────────────────────────────────
+  //
+  // "the two onsites for sw oakley are actually shop times which we already
+  // have."
+  //
+  // He is right, and the cause is that his dad's shop is TWO records in his
+  // account at once: the configured shop coordinate AND a saved place. Those
+  // are watched by two independent state machines in js/geo-track.js (inShop
+  // at :1148 and atPlaceId), and on departure each writes its own row, one
+  // into shop_time_entries and one into job_time_entries as a 'place'. The
+  // engine already half-knows (":1355, SHOP outranks PLACE because the shop is
+  // often saved as a place too") but that precedence only decides where you
+  // currently ARE, and the shop dwell block is deliberately independent of it.
+  //
+  // Fixing the engine is the real answer and is its own piece of work. What
+  // must not wait is the log showing one visit twice, so the reader drops the
+  // place row when a shop session already covers the same window for the same
+  // person. Shop wins because that is the record the owner recognises: it is
+  // the yard, and it is what the split bar has always called it.
+  const _shopCovers=(uid,arrIso,depIso)=>{
+    const list=_shopByUid[uid];
+    if(!list||!list.length)return false;
+    const a=Date.parse(arrIso),b=Date.parse(depIso||'');
+    if(!(a>0&&b>a))return false;
+    const SLACK=3*60000;   // kerb-edge rounding between two writers of one event
+    return list.some(x=>{
+      const xa=Date.parse(x.arrived_at),xb=Date.parse(x.departed_at||'');
+      return xa>0&&xb>xa&&Math.abs(xa-a)<=SLACK&&Math.abs(xb-b)<=SLACK;
+    });
+  };
   (crew.entries||[]).forEach(e=>{
     if(!e.arrived_at)return;
+    // The duplicate, dropped before anything else looks at it. Raw 'place'
+    // only: place-office and place-load are minutes something PROVED were
+    // work, and a shop session never produces those.
+    if(String(e.source||'')==='place'&&e.departed_at&&
+       _shopCovers(e.employee_user_id,e.arrived_at,e.departed_at))return;
     // Off-job stops (lunch, an errand) still get a row (owner request
     // 2026-08-23: "needs logged as lunches or unaccounted for time", the day
     // should read complete, not like a chunk is silently missing), but the
@@ -670,7 +803,10 @@ async function _timeLogRows(sinceISO){
   // measures overlap off exactly those times: running it later would have it
   // judging windows that had already been stretched, and would let a clock's
   // own hours be counted as a hole somebody has to answer for.
-  return _tlFillUnaccounted(_tlAbsorbGaps(_tlBlendManual(rows),_cid),_cid).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  // Round trips are withdrawn BEFORE the blend, or a claim the app is about to
+  // retract would still be deducted from the clock as though it were real work.
+  return _tlFillUnaccounted(_tlAbsorbGaps(_tlBlendManual(_tlDemoteRoundTrips(rows)),_cid),_cid)
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 }
 function _tlYears(rows){
   const years=[...new Set(rows.map(r=>(r.date||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort((a,b)=>b.localeCompare(a));
@@ -1242,8 +1378,11 @@ function _tlRailRow(r){
   }
   // The word rides with the icon in every case, so the colour is never doing
   // the work on its own (1.4.1).
+  // The 'unpaid' qualifier is dropped for anything a manual clock brackets:
+  // that time IS paid, by the clock, and saying otherwise on the row while the
+  // day totals the clock is the screen contradicting itself (owner 2026-09-01).
   const tag='<span class="tl-rail-tag">'+svgIcon(m.icon,{size:10})+' '+escHtml(m.word)+
-    (r.unpaid&&!isGap?' · unpaid':'')+'</span>';
+    (r.unpaid&&!isGap&&!r.clockPaid?' · unpaid':'')+'</span>';
   // EDIT LIVES HERE NOW. The entries table was the only place a manual clock
   // could be fixed, and the owner cut it off the week view as clutter
   // (2026-08-30). Losing the ability to correct an entry was not part of that
@@ -2411,7 +2550,14 @@ function _tlEmpWeekAgg(rows,cid){
     // the raw column and is already on the row for exactly this reason.
     const _src=r.rawSource||'';
     if(r.source==='shop')e.shopMin+=r.minutes||0;
-    else if(r.source==='manual')e.onsiteMin+=r.minutes||0;
+    // A CLOCK IS NOT A JOB SITE (owner 2026-09-01). A manual entry used to
+    // count as on-site labour, on the reasonable old assumption that clocking
+    // in meant clocking in AT something. Since the blend, a clock carries only
+    // the minutes no fence explained, which is by definition time the app
+    // cannot place, and that is what the grey bucket is for. Left as on-site it
+    // produced Jack's Sept 1 legend: "On site 4h 59m" on a day whose rail holds
+    // no on-site row at all, because every fence he crossed was the shop.
+    else if(r.source==='manual')e.placeMin+=r.minutes||0;
     else if(typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(_src))e.driveMin+=r.minutes||0;
     // Loading the truck is carved OUT of the supply/other bucket (owner
     // 2026-08-30, who wants it named on the day's legend). One aggregator
