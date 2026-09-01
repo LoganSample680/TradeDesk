@@ -1253,31 +1253,49 @@ function _vcardAdrParts(raw){
     state:_vcardUnesc(p[4]),zip:_vcardUnesc(p[5])
   };
 }
-function _vcardAdrLabel(paramStr,used){
-  // TYPE=HOME / TYPE=WORK, in any case, quoted or not. A label is worth having
-  // because "Additional property" on three rows tells the contractor nothing
-  // about which house is which.
-  const m=String(paramStr||'').match(/TYPE="?([A-Za-z]+)/i);
-  const t=m?m[1].toLowerCase():'';
-  if(t==='home')return 'Home';
-  if(t==='work')return 'Work';
+// Apple writes the human label as a SEPARATE line tied to the property by a
+// group prefix:
+//     item1.ADR;type=HOME;type=pref:;;2015 SW Randolph Ave;Topeka;KS;66604;
+//     item1.X-ABLabel:Home
+// so the contractor's own word for the place ("Lake house", "Mom's") is in
+// X-ABLabel, not in TYPE. Prefer it, fall back to TYPE, then to a number.
+function _vcardAdrLabel(card,group,paramStr,used){
+  if(group){
+    const m=String(card||'').match(new RegExp('^'+group.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\.X-ABLabel:(.+)$','mi'));
+    if(m){
+      // Apple wraps its own built-ins in _$!<...>!$_ ; a custom label is bare.
+      const raw=_vcardUnesc(m[1]).replace(/^_\$!<(.*)>!\$_$/,'$1').trim();
+      if(raw)return raw;
+    }
+  }
+  const t=(String(paramStr||'').match(/TYPE="?([A-Za-z]+)/i)||[])[1];
+  const k=t?t.toLowerCase():'';
+  if(k==='home')return 'Home';
+  if(k==='work')return 'Work';
   return 'Property '+(used+1);
 }
 function _parseVCard(text){
   const contacts=[];
   const cards=_vcardUnfold(text).split(/BEGIN:VCARD/i).slice(1);
   cards.forEach(card=>{
+    // (?:[A-Za-z0-9-]+\.)? is the whole reason this file changed twice.
+    // Apple Contacts writes any property carrying a custom label as part of a
+    // GROUP: "item1.ADR;type=HOME:..." with "item1.X-ABLabel:Home" beside it.
+    // Anchoring on ^ADR therefore matched nothing on a real Apple export, and
+    // an import of 141 contacts landed 3 addresses (owner's own data,
+    // 2026-08-31). TEL and EMAIL are usually ungrouped, which is exactly why
+    // phone numbers came over fine and hid the problem.
     const get=re=>{const m=card.match(re);return m?(m[1]||'').trim():'';};
-    let name=get(/^FN[^:\r\n]*:(.+)$/m);
+    let name=get(/^(?:[A-Za-z0-9-]+\.)?FN[^:\r\n]*:(.+)$/m);
     if(!name){
-      const n=get(/^N[^:\r\n]*:(.+)$/m);
+      const n=get(/^(?:[A-Za-z0-9-]+\.)?N[^:\r\n]*:(.+)$/m);
       // N is Family;Given;Middle;Prefix;Suffix, so given goes first to read
       // as a person's name rather than a filing-cabinet entry.
       if(n){const p=n.split(';');name=[_vcardUnesc(p[1]),_vcardUnesc(p[0])].filter(Boolean).join(' ');}
     }
     name=_vcardUnesc(name);
-    const phone=get(/^TEL[^:\r\n]*:(.+)$/m);
-    const email=get(/^EMAIL[^:\r\n]*:(.+)$/m);
+    const phone=get(/^(?:[A-Za-z0-9-]+\.)?TEL[^:\r\n]*:(.+)$/m);
+    const email=get(/^(?:[A-Za-z0-9-]+\.)?EMAIL[^:\r\n]*:(.+)$/m);
     // EVERY address, not just the first (owner 2026-09-01: "addresses
     // especially multiple properties"). card.match with a non-global regex
     // returns only the first hit, so a client with a home and a rental
@@ -1288,17 +1306,18 @@ function _parseVCard(text){
     // property" button already writes.
     const extras=[];
     let addr='',city='',state='',zip='',primaryTaken=false;
-    const adrRe=/^ADR([^:\r\n]*):(.+)$/gm;
+    const adrRe=/^([A-Za-z0-9-]+\.)?ADR([^:\r\n]*):(.+)$/gm;
     let m;
     while((m=adrRe.exec(card))!==null){
-      const parts=_vcardAdrParts(m[2]);
+      const group=m[1]?m[1].slice(0,-1):'';     // "item1." -> "item1"
+      const parts=_vcardAdrParts(m[3]);
       const oneLine=[parts.addr,parts.city,[parts.state,parts.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
       if(!oneLine)continue;                     // an empty ADR line is noise, not a property
       if(!primaryTaken){
         addr=parts.addr;city=parts.city;state=parts.state;zip=parts.zip;
         primaryTaken=true;
       }else{
-        extras.push({label:_vcardAdrLabel(m[1],extras.length),addr:oneLine});
+        extras.push({label:_vcardAdrLabel(card,group,m[2],extras.length),addr:oneLine});
       }
     }
     if(name&&phone)contacts.push({name,phone,email,addr,city,state,zip,extras});
@@ -1344,9 +1363,17 @@ function _showImportPreview(parsed){
 
 function _doImport(){
   if(!_importContacts.length)return;
+  // Take the list FIRST. The renderClients crash proved the tail is not
+  // guaranteed to run: it threw before `_importContacts=[]` at the bottom, so
+  // the list stayed loaded, the modal stayed open with no toast, and the
+  // owner tapped Import again. 141 contacts became 281 (his own data,
+  // 2026-08-31 19:04:42 and 19:04:54). Clearing up front means a second tap
+  // has nothing to import no matter what happens below.
+  const batch=_importContacts;
+  _importContacts=[];
   const today=todayKey();
   let added=0;
-  _importContacts.forEach((c,i)=>{
+  batch.forEach((c,i)=>{
     const id=Date.now()+i;
     const addr=[c.addr,c.city,[c.state,c.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
     const nc={id,name:c.name,phone:c.phone,email:c.email||'',
@@ -1374,7 +1401,6 @@ function _doImport(){
   renderClientList();
   closeImportModal();
   showToast(added+' contact'+(added!==1?'s':'')+' imported','✅');
-  _importContacts=[];
 }
 
 function setCDTab(tab,btn){

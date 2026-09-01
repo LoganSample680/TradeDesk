@@ -3618,7 +3618,7 @@ test.describe('Client form and import functions', () => {
   // preview test saw its own contact already imported by an earlier test and
   // counted zero. Scoped to these exact fixture names so it cannot touch
   // anything else in this file.
-  const TEST_NAMES = /^(Jonas Vcardsen|Three Props|Sweep One|Sweep Two|Jack Schonfeldt|Long Street|Escaped|Empty Adr)$/;
+  const TEST_NAMES = /^(Jonas Vcardsen|Three Props|Sweep One|Sweep Two|Jack Schonfeldt|Long Street|Escaped|Empty Adr|Baby|Wrapped)$/;
   test.afterEach(async () => {
     await page.evaluate((src) => {
       const re = new RegExp(src);
@@ -3715,6 +3715,64 @@ test.describe('Client form and import functions', () => {
       expect(r.threeExtras[1].label).toBe('Property 2');   // no TYPE, so numbered
       expect(r.johnExtras).toHaveLength(1);
       expect(r.johnAddr).toBe('2950 SW McClure Rd, Topeka, KS 66614');
+    });
+
+    // THE REAL SHAPE. An Apple Contacts export writes any labelled property as
+    // part of a group, "item1.ADR", with the human label on its own
+    // "item1.X-ABLabel" line. Anchoring on ^ADR matched none of it, which is
+    // why the owner's 141-contact import landed 3 addresses. This is his
+    // actual "Baby" contact's shape.
+    const APPLE_CARD = [
+      'BEGIN:VCARD', 'VERSION:3.0',
+      'N:;Baby;;;', 'FN:Baby',
+      'TEL;type=CELL;type=VOICE;type=pref:+17852155250',
+      'item1.ADR;type=HOME;type=pref:;;2015 SW Randolph Ave;Topeka;KS;66604;USA',
+      'item1.X-ABADR:us',
+      'item2.ADR;type=HOME:;;1565 SW Lakeside Dr;Topeka;KS;66604;USA',
+      'item2.X-ABADR:us',
+      'item2.X-ABLabel:Lake house',
+      'END:VCARD',
+    ].join('\r\n');
+
+    test('Apple grouped properties: item1.ADR is an address, not invisible', async () => {
+      const r = await page.evaluate((t) => _parseVCard(t)[0], APPLE_CARD);
+      expect(r.name).toBe('Baby');
+      expect(r.phone).toBe('+17852155250');
+      // Every one of these was empty on the owner's real import.
+      expect(r.addr).toBe('2015 SW Randolph Ave');
+      expect(r.city).toBe('Topeka');
+      expect(r.zip).toBe('66604');
+      expect(r.extras).toHaveLength(1);
+      expect(r.extras[0].addr).toBe('1565 SW Lakeside Dr, Topeka, KS 66604');
+      // His own word for the place, off X-ABLabel, not the generic TYPE=HOME.
+      expect(r.extras[0].label).toBe('Lake house');
+    });
+
+    test("Apple's built-in labels are unwrapped from their _$!<...>!$_ casing", async () => {
+      const r = await page.evaluate(() => _parseVCard([
+        'BEGIN:VCARD', 'VERSION:3.0', 'FN:Wrapped', 'TEL:7855550004',
+        'item1.ADR:;;1 A St;Topeka;KS;66604;',
+        'item2.ADR:;;2 B St;Topeka;KS;66604;',
+        'item2.X-ABLabel:_$!<Work>!$_',
+        'END:VCARD',
+      ].join('\r\n'))[0]);
+      expect(r.extras[0].label).toBe('Work');
+    });
+
+    test('a second tap on Import cannot double-import the same list', async () => {
+      const r = await page.evaluate((t) => {
+        _importContacts = _parseVCard(t);
+        const before = clients.length;
+        _doImport();
+        const afterFirst = clients.length - before;
+        _doImport();                      // the owner's second tap
+        return { afterFirst, afterSecond: clients.length - before, left: _importContacts.length };
+      }, APPLE_CARD);
+      expect(r.afterFirst).toBe(1);
+      // 141 became 281 because the crash skipped the line that clears the
+      // list. Now it is taken before anything can throw.
+      expect(r.afterSecond).toBe(1);
+      expect(r.left).toBe(0);
     });
 
     test('CSV first + last columns still join into one name', async () => {
