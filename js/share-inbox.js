@@ -202,19 +202,29 @@ function _shareInPrompt(items){
   // that can actually happen (15.1, a control whose value is not wired must
   // not ship).
   const allVcf=n>0&&items.every(i=>/\.vcf$/i.test((i&&i.path)||''));
-  // Today's and recent jobs first: a shared photo is almost always about work
-  // happening right now, and a 400-job list is not a picker.
+  // A shared photo belongs to a CLIENT, not to a job. That is where the owner
+  // goes looking for it: the client hub renders every photo carrying a
+  // client_id, job-linked or not (client.html "Other photos"), so this is the
+  // one question that always has an answer. Under the old job picker a photo
+  // taken before the job existed had nowhere to go at all.
+  //
+  // Clients with work on today float to the top for the same reason the job
+  // list used to: a photo shared at 2pm is almost always about the truck that
+  // is parked somewhere right now.
   const tk=(typeof todayKey==='function')?todayKey():'';
-  const all=(typeof jobs!=='undefined'&&Array.isArray(jobs))?jobs:[];
-  const live=all.filter(j=>j&&j.status!=='canceled');
-  const today=live.filter(j=>String(j.start||'').slice(0,10)===tk);
-  const rest=live.filter(j=>today.indexOf(j)<0).slice(-8).reverse();
-  const pick=today.concat(rest).slice(0,12);
-  const row=j=>{
-    const c=(j.client_id!=null&&typeof getClientById==='function')?getClientById(j.client_id):null;
-    const sub=[c&&c.name,j.addr].filter(Boolean).join(' · ');
-    return '<button data-job="'+j.id+'" class="_si-job" style="display:block;width:100%;text-align:left;padding:11px 14px;border:none;border-bottom:1px solid var(--border);background:none;font-family:inherit;cursor:pointer">'+
-      '<span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+escHtml(j.name||(c&&c.name)||'Job')+'</span>'+
+  const allJobs=(typeof jobs!=='undefined'&&Array.isArray(jobs))?jobs:[];
+  const hot=new Set(allJobs.filter(j=>j&&j.status!=='canceled'&&String(j.start||'').slice(0,10)===tk)
+                           .map(j=>String(j.client_id)));
+  const allC=(typeof clients!=='undefined'&&Array.isArray(clients))?clients.filter(Boolean):[];
+  // Ids are minted from Date.now(), so descending id IS newest-first without
+  // depending on a created stamp every record is not guaranteed to carry.
+  const byNew=allC.slice().sort((a,b)=>(Number(b.id)||0)-(Number(a.id)||0));
+  const onToday=byNew.filter(c=>hot.has(String(c.id)));
+  const pick=onToday.concat(byNew.filter(c=>!hot.has(String(c.id)))).slice(0,12);
+  const row=c=>{
+    const sub=[hot.has(String(c.id))?'On the schedule today':'',c.addr||c.street||''].filter(Boolean).join(' · ');
+    return '<button data-client="'+c.id+'" class="_si-client" style="display:block;width:100%;text-align:left;padding:11px 14px;border:none;border-bottom:1px solid var(--border);background:none;font-family:inherit;cursor:pointer">'+
+      '<span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+escHtml(c.name||'Unnamed client')+'</span>'+
       (sub?'<span style="display:block;font-size:11.5px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(sub)+'</span>':'')+
     '</button>';
   };
@@ -243,12 +253,12 @@ function _shareInPrompt(items){
     // control whose value is not wired must not ship.
     (hasVcf?'<button id="_si-contact" class="btn btn-p" style="display:block;box-sizing:border-box;width:100%;height:auto;padding:13px;margin-bottom:8px;text-align:left;white-space:normal">'+
       '<span style="display:block;font-size:14px;font-weight:800">'+(n===1?'A contact':'Contacts')+'</span>'+
-      '<span style="display:block;font-size:11.5px;font-weight:500;opacity:.85;margin-top:2px">Adds them as a client, with the address off the contact card</span>'+
+      '<span style="display:block;font-size:11.5px;font-weight:500;opacity:.85;margin-top:2px">Opens the import list, with the address off the contact card. Lands in Leads.</span>'+
     '</button>':'')+
     (allVcf?'':
-      '<div style="font-size:12px;color:var(--text3);margin:12px 0 6px;font-weight:700">Or attach to a job</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin:12px 0 6px;font-weight:700">Or add to a client\'s photos</div>'+
       (pick.length?'<div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r)">'+pick.map(row).join('')+'</div>'
-                  :'<div class="tip tip-w" style="font-size:13px">No open jobs to attach to. Create the job first, then share again.</div>'))+
+                  :'<div class="tip tip-w" style="font-size:13px">No clients yet. Add the client first, then share again.</div>'))+
     '<button id="_si-later" class="btn" style="width:100%;margin-top:10px;padding:12px">Not now</button>'+
     '<button id="_si-discard" class="btn" style="width:100%;margin-top:8px;padding:11px;font-size:13px;color:var(--text3)">Discard '+(n===1?'it':'them')+'</button>';
   ov.appendChild(m);document.body.appendChild(ov);
@@ -282,47 +292,82 @@ function _shareInPrompt(items){
     close();
     if(typeof showToast==='function')showToast('Shared files discarded','🗑');
   };
-  m.querySelectorAll('._si-job').forEach(btn=>{
+  m.querySelectorAll('._si-client').forEach(btn=>{
     btn.onclick=async()=>{
-      const jobId=btn.getAttribute('data-job');
+      const clientId=btn.getAttribute('data-client');
       btn.disabled=true;btn.style.opacity='.5';
-      const done=await _shareInFileTo(items,jobId);
+      const r=await _shareInFileToClient(items,clientId);
       close();
       if(typeof showToast==='function'){
-        if(done)showToast(done+' file'+(done===1?'':'s')+' added to the job','✓');
-        else showToast('Could not read the shared files','⚠️');
+        if(r.done)showToast(r.done+' photo'+(r.done===1?'':'s')+' added to '+(r.name||'the client'),'\u2713');
+        // Offline is NOT a failure here and must not read like one: the files
+        // are still sitting in the share inbox and the app re-offers them the
+        // next time it opens, so say what actually happens next.
+        else if(r.offline)showToast('No connection. They stay shared and land next time you open the app','\ud83d\udcf6');
+        else showToast('Could not read the shared files','\u26a0\ufe0f');
       }
     };
   });
 }
 
-// Attach to the job through the SAME path the in-app camera uses (§7.3), so
-// shared photos compress, thumbnail, sync, and appear exactly like any other
-// job photo instead of through a second parallel pipeline.
-async function _shareInFileTo(items,jobId){
-  const j=(typeof jobs!=='undefined'&&jobs.find)?jobs.find(x=>String(x.id)===String(jobId)):null;
-  if(!j)return 0;
-  let done=0;
-  const filed=[];
+// A shared photo lands on a CLIENT, through the SAME pipeline the in-app
+// camera uses (addJobPhoto, js/jobs.js): compress, upload to the gallery
+// bucket, thumbnail, push one record onto the global photos[] array, refresh
+// the client hub. Not a parallel path (7.3): photos[] is what td_photos syncs
+// and what client.html reads, so a shared photo behaves like every other photo
+// everywhere downstream. job_id stays null, and the hub renders exactly those
+// under "Other photos".
+//
+// This replaced an attach-to-a-JOB fork whose upload branch called
+// _jobAttachBlob, a function that has never existed in this codebase, so every
+// shared photo silently took the offline fallback and sat as base64 inside the
+// job record until some later drain happened to run.
+async function _shareInFileToClient(items,clientId){
+  const c=(typeof clients!=='undefined'&&clients.find)?clients.find(x=>String(x.id)===String(clientId)):null;
+  if(!c)return{done:0};
+  // No backend, no upload, and the bytes are NOT lost: they stay in the share
+  // inbox on the device, which is already a durable queue. Re-offering them on
+  // the next launch beats parking multi-megabyte base64 inside a synced table
+  // the way the job path does.
+  const online=typeof supaEnabled==='function'&&supaEnabled()&&
+               typeof _supaUser!=='undefined'&&_supaUser&&typeof _supa!=='undefined'&&_supa;
+  if(!online)return{done:0,offline:true,name:c.name||''};
+  let done=0;const filed=[];
   for(const it of items){
     const blob=await _shareInRead(it.path);
     if(!blob)continue;
     try{
-      if(typeof _jobAttachBlob==='function'){await _jobAttachBlob(j,blob,'shared');}
-      else{
-        // Fallback: the queue the offline camera path already drains.
-        const b64=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=rej;fr.readAsDataURL(blob);});
-        j.photos=j.photos||[];
-        j.photos.push({type:'shared',data:b64,pendingUpload:true,_uploadMime:blob.type,addedAt:new Date().toISOString()});
-      }
+      // Guarded by name, every one of them. jobs.js is a separate file and a
+      // missing global here throws mid-loop and strands the rest of the batch,
+      // which is precisely how _jobAttachBlob went unnoticed for so long.
+      const _cp=(typeof _compressPhoto==='function')?await _compressPhoto(blob):null;
+      const ext=_cp?_cp.ext:((String(it.path||'').split('.').pop()||'jpg').toLowerCase());
+      // Foldered by client, mirroring the job path's user/job/ layout so the
+      // bucket stays browsable by hand.
+      const path=_supaUser.id+'/client-'+c.id+'/shared-'+Date.now()+'-'+Math.floor(Math.random()*1e4)+'.'+ext;
+      const opts={contentType:_cp?_cp.mime:(blob.type||'image/jpeg'),upsert:false};
+      if(typeof _PHOTO_CACHE!=='undefined')opts.cacheControl=_PHOTO_CACHE;
+      const{error}=await _supa.storage.from('gallery').upload(path,_cp?_cp.blob:blob,opts);
+      if(error)continue;
+      const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
+      const publicUrl=(urlData&&urlData.publicUrl)||'';
+      if(!publicUrl)continue;
+      const th=(typeof _uploadPhotoThumb==='function')
+        ?await _uploadPhotoThumb(_cp?_cp.thumb:null,path):{thumbUrl:'',thumbPath:''};
+      if(typeof photos==='undefined')continue;
+      photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,
+        thumbUrl:th.thumbUrl,thumbPath:th.thumbPath,type:'shared',caption:'',
+        client_id:c.id,client_name:c.name||'',job_id:null,job_name:'',
+        uploadedAt:new Date().toISOString()});
       done++;filed.push(it.path);
     }catch(_e){}
   }
   if(done){
     if(typeof saveAll==='function')saveAll();
-    if(typeof _drainPhotoQueue==='function')try{_drainPhotoQueue();}catch(_e){}
-    // ONLY now: the bytes are on the job and saved.
+    if(typeof _uploadClientHub==='function')_uploadClientHub(c.id).catch(()=>{});
+    // ONLY now: the bytes are in the bucket and the record is saved. A file
+    // that did not upload keeps its place in the inbox for another try.
     await _shareInClear(filed);
   }
-  return done;
+  return{done,name:c.name||''};
 }

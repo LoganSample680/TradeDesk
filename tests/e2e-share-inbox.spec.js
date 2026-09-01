@@ -46,9 +46,14 @@ test.describe('Share inbox', () => {
     expect(r.ov).toBe(false);
   });
 
-  test('picks the job, files every file, and clears ONLY what landed', async () => {
+  test('picks the client, files every file, and clears ONLY what landed', async () => {
+    // The destination changed from a job to a client (owner, 2026-09-01:
+    // "images go to the client hub where images land where they are supposed
+    // to"). A photo now lands in the global photos[] array carrying a
+    // client_id and a null job_id, which is exactly what client.html renders
+    // under "Other photos".
     const r = await page.evaluate(async (items) => {
-      const realCap = window.Capacitor, savedJobs = jobs.slice();
+      const realCap = window.Capacitor, savedClients = clients.slice(), savedPhotos = photos.slice();
       window.__reads = []; window.__cleared = [];
       try {
         window.Capacitor = {
@@ -59,41 +64,51 @@ test.describe('Share inbox', () => {
             clear: (o) => { window.__cleared = window.__cleared.concat(o && o.paths ? o.paths : ['*ALL*']); return Promise.resolve(); },
           } : null,
         };
-        jobs.length = 0;
-        jobs.push({ id: 6001, name: 'Shared Job', client_id: null, status: 'upcoming', start: todayKey(), days: 1 });
+        clients.length = 0;
+        clients.push({ id: 7001, name: 'Shared Client', addr: '1 Main St' });
+        photos.length = 0;
         const n = await checkSharedInbox({ force: true });
         const shown = !!document.getElementById('_sharein-ov');
-        const rows = document.querySelectorAll('#_sharein-ov ._si-job').length;
-        document.querySelector('#_sharein-ov ._si-job').click();
-        // The filing pipeline is genuinely async per file (read, attach,
-        // compress). The overlay CLOSING is its completion signal; a fixed
-        // sleep raced it and lost on a loaded webkit runner (2026-08-11).
+        const rows = document.querySelectorAll('#_sharein-ov ._si-client').length;
+        document.querySelector('#_sharein-ov ._si-client').click();
+        // The filing pipeline is genuinely async per file (read, compress,
+        // upload, thumbnail). The overlay CLOSING is its completion signal; a
+        // fixed sleep raced it and lost on a loaded webkit runner (2026-08-11).
         for (let w = 0; w < 80 && document.getElementById('_sharein-ov'); w++) await new Promise(res => setTimeout(res, 50));
-        const j = jobs.find(x => x.id === 6001);
+        const landed = photos.filter(p => String(p.client_id) === '7001');
         return {
           n, shown, rows,
-          photos: (j.photos || []).length,
+          landed: landed.length,
+          jobIds: landed.map(p => p.job_id),
+          named: landed.every(p => p.client_name === 'Shared Client'),
+          urls: landed.every(p => !!p.url && !!p.storagePath),
           reads: window.__reads.length,
           cleared: window.__cleared.slice(),
           gone: !document.getElementById('_sharein-ov'),
         };
       } finally {
-        window.Capacitor = realCap; jobs.length = 0; savedJobs.forEach(x => jobs.push(x));
+        window.Capacitor = realCap;
+        clients.length = 0; savedClients.forEach(x => clients.push(x));
+        photos.length = 0; savedPhotos.forEach(x => photos.push(x));
         document.getElementById('_sharein-ov')?.remove();
       }
     }, ITEMS);
     expect(r.n, 'both shared files are offered').toBe(2);
     expect(r.shown).toBe(true);
-    expect(r.rows, "today's job is pickable").toBeGreaterThanOrEqual(1);
+    expect(r.rows, 'the client is pickable').toBeGreaterThanOrEqual(1);
     expect(r.reads, 'each file is read back through the bridge').toBe(2);
-    expect(r.photos, 'and lands on the job').toBe(2);
+    expect(r.landed, 'and lands in the gallery the client hub reads').toBe(2);
+    expect(r.jobIds, 'a client photo carries no job, that is what puts it in the hub')
+      .toEqual([null, null]);
+    expect(r.named, 'the client name rides along so the hub can label it').toBe(true);
+    expect(r.urls, 'a record with no url is a broken thumbnail forever').toBe(true);
     expect(r.cleared.sort(), 'ONLY the files that landed are removed').toEqual(['/g/td_share_1.jpg', '/g/td_share_2.jpg']);
     expect(r.gone).toBe(true);
   });
 
   test('a file that will not read is never deleted', async () => {
     const r = await page.evaluate(async (items) => {
-      const realCap = window.Capacitor, savedJobs = jobs.slice();
+      const realCap = window.Capacitor, savedClients = clients.slice(), savedPhotos = photos.slice();
       window.__cleared = [];
       try {
         window.Capacitor = {
@@ -107,20 +122,60 @@ test.describe('Share inbox', () => {
             clear: (o) => { window.__cleared = window.__cleared.concat(o.paths || []); return Promise.resolve(); },
           }),
         };
-        jobs.length = 0;
-        jobs.push({ id: 6002, name: 'Partial Job', status: 'upcoming', start: todayKey(), days: 1 });
+        clients.length = 0;
+        clients.push({ id: 7002, name: 'Partial Client' });
+        photos.length = 0;
         await checkSharedInbox({ force: true });
-        document.querySelector('#_sharein-ov ._si-job').click();
+        document.querySelector('#_sharein-ov ._si-client').click();
         for (let w = 0; w < 80 && document.getElementById('_sharein-ov'); w++) await new Promise(res => setTimeout(res, 50));
-        const j = jobs.find(x => x.id === 6002);
-        return { photos: (j.photos || []).length, cleared: window.__cleared.slice() };
+        return { landed: photos.filter(p => String(p.client_id) === '7002').length, cleared: window.__cleared.slice() };
       } finally {
-        window.Capacitor = realCap; jobs.length = 0; savedJobs.forEach(x => jobs.push(x));
+        window.Capacitor = realCap;
+        clients.length = 0; savedClients.forEach(x => clients.push(x));
+        photos.length = 0; savedPhotos.forEach(x => photos.push(x));
         document.getElementById('_sharein-ov')?.remove();
       }
     }, ITEMS);
-    expect(r.photos, 'the readable one still lands').toBe(1);
+    expect(r.landed, 'the readable one still lands').toBe(1);
     expect(r.cleared, 'the unreadable one stays for another try').toEqual(['/g/td_share_1.jpg']);
+  });
+
+  test('offline, a shared photo is never lost and never falsely confirmed', async () => {
+    // There is no client-side pending-photo queue on purpose: the file is
+    // already sitting in the App Group container, which IS a durable queue, so
+    // a failed upload must leave it there rather than park megabytes of base64
+    // in a synced table. The failure mode this guards is the ugly one: telling
+    // the contractor the photo landed, clearing the inbox, and losing it.
+    const r = await page.evaluate(async (items) => {
+      const realCap = window.Capacitor, realSupa = window._supa;
+      const savedClients = clients.slice(), savedPhotos = photos.slice();
+      window.__cleared = [];
+      try {
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: () => ({
+            inbox: () => Promise.resolve({ items }),
+            read: () => Promise.resolve({ b64: btoa('hi'), size: 2 }),
+            clear: (o) => { window.__cleared = window.__cleared.concat(o.paths || []); return Promise.resolve(); },
+          }),
+        };
+        clients.length = 0;
+        clients.push({ id: 7003, name: 'Offline Client' });
+        photos.length = 0;
+        window._supa = null;                       // the backend is simply gone
+        await checkSharedInbox({ force: true });
+        document.querySelector('#_sharein-ov ._si-client').click();
+        for (let w = 0; w < 80 && document.getElementById('_sharein-ov'); w++) await new Promise(res => setTimeout(res, 50));
+        return { landed: photos.length, cleared: window.__cleared.slice() };
+      } finally {
+        window.Capacitor = realCap; window._supa = realSupa;
+        clients.length = 0; savedClients.forEach(x => clients.push(x));
+        photos.length = 0; savedPhotos.forEach(x => photos.push(x));
+        document.getElementById('_sharein-ov')?.remove();
+      }
+    }, ITEMS);
+    expect(r.cleared, 'nothing may be deleted when nothing was uploaded').toEqual([]);
+    expect(r.landed, 'and no phantom record is written').toBe(0);
   });
 
   test('discard clears everything, Not now keeps it all', async () => {
@@ -188,7 +243,7 @@ test.describe('Share inbox', () => {
   // job. Forcing a receipt to become a job photo buries the money in a gallery,
   // which is the manual re-entry this whole feature exists to kill.
 
-  test('the prompt offers the receipt path before the job list', async () => {
+  test('the prompt offers the receipt path before the client list', async () => {
     const r = await page.evaluate(() => {
       // Jobs must exist or there IS no job list to be ahead of: the empty
       // state renders a tip instead of rows, indexOf returns -1, and the
@@ -202,7 +257,7 @@ test.describe('Share inbox', () => {
         const ov = document.getElementById('_sharein-ov');
         const html = ov ? ov.innerHTML : '';
         const btn = document.getElementById('_si-receipt');
-        const jobIdx = html.indexOf('_si-job');
+        const jobIdx = html.indexOf('_si-client');
         const rcIdx = html.indexOf('_si-receipt');
         return { has: !!btn, rcIdx, jobIdx,
                  text: btn ? btn.textContent : '' };
@@ -465,8 +520,8 @@ test.describe('Share inbox', () => {
       const out = {
         contact: !!document.getElementById('_si-contact'),
         receipt: !!document.getElementById('_si-receipt'),
-        jobs: ov ? ov.querySelectorAll('._si-job').length : -1,
-        attachHdr: ov ? /Or attach to a job/.test(ov.innerHTML) : true,
+        jobs: ov ? ov.querySelectorAll('._si-client').length : -1,
+        attachHdr: ov ? /Or add to a client/.test(ov.innerHTML) : true,
         title: ov ? (ov.querySelector('.zmodal-title') || {}).textContent : '',
         // Nothing may bleed off the edge of a phone (15.1).
         wide: document.documentElement.scrollWidth > window.innerWidth + 1,
@@ -494,7 +549,7 @@ test.describe('Share inbox', () => {
       const out = {
         contact: !!document.getElementById('_si-contact'),
         receipt: !!document.getElementById('_si-receipt'),
-        attachHdr: ov ? /Or attach to a job/.test(ov.innerHTML) : false,
+        attachHdr: ov ? /Or add to a client/.test(ov.innerHTML) : false,
       };
       document.getElementById('_sharein-ov')?.remove();
       _shareInAsking = false;
