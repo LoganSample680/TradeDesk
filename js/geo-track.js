@@ -6572,8 +6572,25 @@ async function _geoMergeAdjacentVisits(){
         // that would cross Central midnight is left as-is.
         if(dstr(new Date(start))!==dstr(new Date(end))){cluster=[];return;}
         const tpl=cluster.slice().sort((a,b)=>rank(b)-rank(a))[0];
+        // THE NAME SURVIVES THE MERGE (owner 2026-09-01: "why is my on site log
+        // today from john doe from 1:25 pm to 3:42 pm showing the address
+        // rather than john doe like my 803 to 1221 thing says").
+        //
+        // Because the merge kept only the TEMPLATE's dest_place. The template
+        // is ranked to prefer a row carrying a job_id, which is right, but the
+        // row that carries the job_id is often the one with a null dest_place
+        // (a reconciled or gap row), so merging a named visit into it threw the
+        // name away. The 08:03 row kept "John Doe" purely because nothing ever
+        // merged into it. Two rows for the same client reading differently is
+        // not a rendering quirk, it is a field this sweep deleted.
+        //
+        // job_id and dest_place answer different questions and neither has to
+        // lose: take the structured reference from the ranked template, and the
+        // name from whichever member actually has one.
+        const named=cluster.find(x=>x&&x.dest_place)||null;
         updates.push({id:tpl.id,arrived_at:new Date(start).toISOString(),departed_at:new Date(end).toISOString(),
-          minutes:Math.max(0,Math.round((end-start)/60000)),job_id:tpl.job_id||null,dest_place:tpl.dest_place||null,
+          minutes:Math.max(0,Math.round((end-start)/60000)),job_id:tpl.job_id||null,
+          dest_place:tpl.dest_place||(named&&named.dest_place)||null,
           source:tpl.source,client_key:'merge-'+tpl.id});
         cluster.forEach(x=>{if(x.id!==tpl.id)drop.add(x.id);});
         cluster=[];
@@ -8050,11 +8067,54 @@ async function _geoSyncDriveTimeEntries(){
     if(error||!Array.isArray(data)||!data.length)return 0;
     const driveRows=data.filter(r=>r&&r.id!=null&&/^drive/.test(String(r.source||'')));
     if(!driveRows.length)return 0;
-    // Real GPS legs only, a hand-typed manual mileage row never had a
-    // matching time entry to begin with and carries no legKey to compare.
-    const surviving=new Set(mileage.filter(m=>m&&m.gps&&m.legKey).map(m=>m.legKey));
-    const drop=driveRows.filter(r=>!r.client_key||!surviving.has(r.client_key));
+    // ── THE SURVIVORS COME FROM THE CLOUD, NOT FROM MEMORY ─────────────────
+    //
+    // Owner, 2026-09-01: "why in time log am I missing my drives from this
+    // morning and my shop time?"
+    //
+    // Because this sweep asked the wrong question. It built `surviving` from
+    // the device's in-memory `mileage` array, so "no leg in MY memory" was
+    // treated as "no leg exists" and the drive row was deleted from the cloud.
+    // Any moment that array is incomplete, and it is incomplete on every cold
+    // boot until the load finishes and on any boot whose cache came back
+    // wrong, this sweep deletes rows that are perfectly alive.
+    //
+    // It did exactly that on his account at 14:58:13, one and a half seconds
+    // after a new leg landed and the realtime handler fired the cleanup: the
+    // 07:52 drive to the client and the 12:21 drive to the shop were both
+    // soft-deleted for having "no surviving mileage leg", while BOTH of their
+    // legs (f9EAC1CB2140042F4 and f6FB5F98BD536471B) were sitting in
+    // td_mileage with deleted_at null and are still there. Same shape as the
+    // mileage the owner and Jack have each lost days of.
+    //
+    // td_mileage is a synced table, so the honest answer is one query away.
+    // Ask it. A device with half a cache can then delete nothing, because what
+    // it happens to be holding stopped being the authority.
+    const {data:legRows,error:legErr}=await _supa.from('td_mileage')
+      .select('data').is('deleted_at',null).eq('user_id',_geoCid());
+    // FAIL CLOSED, and this is the other half. A failed query, an offline
+    // phone or an empty answer used to be indistinguishable from "every leg is
+    // gone", which is the single most destructive reading available. Deleting
+    // nothing is always recoverable; deleting a day of drives is not.
+    if(legErr||!Array.isArray(legRows))return 0;
+    const surviving=new Set();
+    legRows.forEach(row=>{
+      const m=row&&row.data;
+      // Real GPS legs only, a hand-typed manual mileage row never had a
+      // matching time entry to begin with and carries no legKey to compare.
+      if(m&&m.gps&&m.legKey)surviving.add(String(m.legKey));
+    });
+    if(!surviving.size)return 0;
+    const drop=driveRows.filter(r=>!r.client_key||!surviving.has(String(r.client_key)));
     if(!drop.length)return 0;
+    // A sweep that decides to delete EVERY drive row it can see is not doing
+    // hygiene, it is reporting that its own inputs are wrong. Refuse and say
+    // so, rather than clearing the board and leaving somebody to notice.
+    if(drop.length===driveRows.length&&driveRows.length>1){
+      _geoParkNote('drive-sync','refused: every drive row looked orphaned ('+
+        driveRows.length+'), which is an input problem, not a cleanup');
+      return 0;
+    }
     for(const r of drop){
       try{await _tdSoftDelete('job_time_entries',r.id);}catch(_e){}
     }

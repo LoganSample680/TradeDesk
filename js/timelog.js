@@ -352,12 +352,32 @@ function _tlAbsorbGaps(rows,cid){
 function _tlBlendManual(rows){
   if(!Array.isArray(rows))return rows;
   const fm=(typeof _fmtMin==='function')?_fmtMin:(m=>m+'m');
+  // ONE IDENTITY RULE, AND IT IS THE ONE THE REST OF THE FILE ALREADY USES.
+  //
+  // The owner's own manual clock carries personUid NULL (logged_by_uid is only
+  // stamped on employee rows) while the GPS rows for that same person carry
+  // their real employee_user_id. Keying on `personUid||'owner'` therefore put
+  // the owner's clock and the owner's own fences in two different buckets and
+  // the blend never fired on the one day it matters most, his. Caught on the
+  // very first render of Jack's real day, 2026-09-01: 13h14m, with the clock
+  // sitting at its full 7h18m beside the fences it was supposed to absorb.
+  //
+  // Every blend test written alongside the feature had passed, because each
+  // one stamped a matching logged_by_uid on the clock. A fixture that agrees
+  // with the code instead of testing it is worse than no fixture, so the
+  // regression below seeds the null exactly as _timeLogRows produces it.
+  //
+  // _tlRowUid folds a null personUid under the contractor id for exactly this
+  // reason (_tlEmpWeekAgg and _tlEmpAccHtml follow the same rule); it reads
+  // _tlLastCid, which is only set at render time, so this resolves the same
+  // fact from the session instead. Same rule, one place earlier (7.3).
+  const _me=(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)?String(_supaUser.id):'owner';
   const byPerson={};
   rows.forEach(r=>{
     if(!r||!r.startTime||!r.endTime)return;
     const a=Date.parse(r.startTime),b=Date.parse(r.endTime);
     if(!(a>0&&b>a))return;
-    const k=String(r.personUid||'owner')+'|'+(r.date||'');
+    const k=String(r.personUid||_me)+'|'+(r.date||'');
     (byPerson[k]=byPerson[k]||[]).push({r,a,b});
   });
   Object.keys(byPerson).forEach(k=>{

@@ -4777,6 +4777,54 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.paid).toBe(360);
     });
 
+    test("the OWNER's own clock blends, and that is the day that matters most", async () => {
+      // THE ONE EVERY OTHER TEST HERE MISSED. _timeLogRows stamps
+      // personUid=logged_by_uid||null on a manual row, and logged_by_uid is
+      // only set on EMPLOYEE rows, so an owner's own clock arrives with null
+      // while his GPS rows carry his real employee_user_id. The blend keyed on
+      // personUid, so those went into two different buckets and it never fired.
+      //
+      // Every fixture above stamped a matching id on the clock, which is a
+      // fixture agreeing with the code rather than testing it. This one seeds
+      // the null exactly as _timeLogRows produces it. Caught on the first
+      // render of Jack's real day: 13h14m, clock untouched at its full 7h18m.
+      const r = await page.evaluate(async ([es, ms]) => {
+        // _timeLogRows only ever runs signed in, so a fixture that leaves
+        // _supaUser undefined is testing a state the code never sees: the
+        // blend resolves "who is the owner" from the session, and with no
+        // session there is nothing to resolve it to. Guarantee one rather
+        // than assert against a shape production cannot produce.
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        // The auto rows are the signed-in user's; the clock's logged_by_uid is
+        // null, which is what an owner-logged entry actually looks like.
+        const entries = es.map(e => ({ ...e, employee_user_id: ME }));
+        window._fetchCrewLabor = async () => ({ name: { [ME]: 'Owner' }, entries, shopEntries: [] });
+        try {
+          const day = (await _timeLogRows(null)).filter(x => x.date === '2026-09-01');
+          const man = day.find(x => x.source === 'manual');
+          return { paid: _tlPaidMin(day), m: man && man.minutes, b: (man && man.blendedMin) || 0 };
+        } finally { window._fetchCrewLabor = orig; window.timeEntries = keepT; }
+      }, [
+        // The same shapes the fixtures above use, deliberately: the ONLY thing
+        // under test here is the null logged_by_uid, so nothing else may differ
+        // from a case that is already known to blend.
+        [{ minutes: 93, source: 'place', dest_place: '1200 SW Oakley Ave',
+           arrived_at: at(7, 44), departed_at: at(9, 17) },
+         { minutes: 62, source: 'drive', dest_place: '1200 SW Oakley Ave',
+           arrived_at: at(9, 17), departed_at: at(11, 17) }],
+        [{ id: 1, date: D, open: false, job_id: null, minutes: 438,
+           start_time: at(7, 42), end_time: at(15, 0),
+           logged_by_uid: null, logged_by_name: 'Owner' }],
+      ]);
+      expect(r.b, 'a null personUid is the owner, not a different person').toBe(155);
+      expect(r.m).toBe(283);
+      expect(r.paid, 'the clock, not the clock plus the fences').toBe(438);
+    });
+
     test('a day with no manual clock at all is completely untouched', async () => {
       const r = await rowsFor([
         A('drive', [8, 0], [8, 30], 30),

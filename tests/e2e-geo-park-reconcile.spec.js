@@ -179,16 +179,28 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     window.__rec = { upserts: [], inserts: [], deletes: [], updates: [] };
     // Table-aware seeding: shop_time_entries selects resolve __selShopRows,
     // location_pings resolve __selPings (the reconciler now checks its claim
-    // against the recorded breadcrumbs, owner 2026-08-25), everything else
-    // resolves __selRows. One shared array would feed job rows in as shop
-    // rows, or worse, as GPS fixes with no lat/lon at all.
-    window.__selRows = []; window.__selShopRows = []; window.__selPings = []; window.__selErr = null;
+    // against the recorded breadcrumbs, owner 2026-08-25), td_mileage resolves
+    // __selMileage (the drive sweep asks the CLOUD which legs survive rather
+    // than this device's memory, owner 2026-09-01), everything else resolves
+    // __selRows. One shared array would feed job rows in as shop rows, or
+    // worse, as GPS fixes with no lat/lon at all.
+    window.__selRows = []; window.__selShopRows = []; window.__selPings = [];
+    window.__selMileage = null;   // null = "not seeded", see rowsFor below
+    window.__selErr = null;
     window.__origSupa = window.__origSupa || window._supa;
     window._supa = {
       from: (tbl) => ({
         select: () => {
           const rowsFor = () => (tbl === 'shop_time_entries' ? (window.__selShopRows || [])
                               : tbl === 'location_pings' ? (window.__selPings || [])
+                              // Unseeded td_mileage mirrors the local array, so
+                              // every test written before the sweep read the
+                              // cloud keeps meaning what it meant. A test that
+                              // wants them to DISAGREE (which is the whole bug)
+                              // sets __selMileage explicitly.
+                              : tbl === 'td_mileage'
+                                ? (window.__selMileage
+                                   || (Array.isArray(mileage) ? mileage.map(m => ({ data: m })) : []))
                               : (window.__selRows || []));
           const q = {
             eq: () => q, neq: () => q, lt: () => q, gt: () => q, gte: () => q, lte: () => q,
@@ -2183,7 +2195,20 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     expect(r.updates.length, 'the job_id-tagged and dest_place-tagged rows resolve to the same client and merge').toBe(1);
     expect(r.updates[0].filters.id, 'the job_id-tagged row wins the structured reference').toBe(2061);
     expect(r.updates[0].patch.job_id).toBe(jid);
-    expect(r.updates[0].patch.dest_place).toBe(null);
+    // ASSERTION CHANGED 2026-09-01 (CLAUDE.md 10.4). This used to expect null.
+    //
+    // OLD: the merge kept only the TEMPLATE's dest_place, and the template is
+    // ranked to prefer a row carrying a job_id, which is right. The row with
+    // the job_id is usually a reconciled or gap row whose dest_place is null,
+    // so merging a NAMED visit into it silently dropped the name.
+    //
+    // NEW: owner, 2026-09-01, "why is my on site log today from john doe from
+    // 1:25 pm to 3:42 pm showing the address rather than john doe like my 803
+    // to 1221 thing says". The 08:03 row read "John Doe" only because nothing
+    // ever merged into it. job_id and dest_place answer different questions and
+    // neither has to lose: the structured reference comes from the ranked
+    // template, the name from whichever member actually has one.
+    expect(r.updates[0].patch.dest_place, 'the name survives the merge').toBe('John Doe');
     expect(r.deletes[0].val).toBe(2062);
     await page.evaluate(() => {
       if (window.__origJobs) { jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null; }
@@ -2472,20 +2497,156 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   // "Driving" rows with zero matching mileage leg in one day, because
   // mileage's own personal-stop collapse or dedup sweep deleted the leg
   // AFTER the payroll row already wrote.
+  // FIXTURE CHANGED 2026-09-01 (CLAUDE.md 10.4). It used to seed an EMPTY
+  // mileage array, which is now the one case the sweep refuses to act on (see
+  // the fail-closed tests below): an empty leg set is indistinguishable from a
+  // failed load, and reading it as "every leg is gone" is what deleted a day of
+  // the owner's real drives. The rule under test is unchanged, so the fixture
+  // now seeds a DIFFERENT surviving leg: the leg set is real, this row's leg is
+  // genuinely not in it, and the orphan still drops.
   test('drive-sync: a drive row whose leg no longer exists in mileage (collapsed/deduped away) is dropped', async () => {
     await geoReset();
-    await page.evaluate(() => {
+    const now = Date.now();
+    await page.evaluate((now) => {
       window.__origMileage = mileage.slice(); mileage.length = 0;
-      // mileage is empty: this leg was collapsed away (Home Depot -> Sam's
-      // Club example) or merged into a survivor under a different legKey.
+      // A real, healthy log that simply does not contain this row's leg: it was
+      // collapsed away (Home Depot -> Sam's Club) or merged into a survivor
+      // under a different legKey.
+      mileage.push({ id: 'ml-other', gps: true, legKey: 'lg-other',
+        startedIso: new Date(now - 3600000).toISOString(),
+        endedIso: new Date(now - 3300000).toISOString(),
+        fromCoord: { lat: 1, lng: 1 }, toCoord: { lat: 2, lng: 2 }, miles: 3,
+        date: new Date().toISOString().slice(0, 10) });
       window.__selRows = [
         { id: 2002, source: 'drive-unassigned', client_key: 'lg-collapsed-away' },
+        { id: 2003, source: 'drive-unassigned', client_key: 'lg-other' },
       ];
-    });
+    }, now);
     const r = await syncCall();
     expect(r.dropped, 'no surviving mileage leg means no paid drive time either').toBe(1);
     expect(r.deletes[0].val).toBe(2002);
     await page.evaluate(() => { if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; } });
+    await geoRestore();
+  });
+
+  // ── THE DAY IT DELETED REAL DRIVES (owner 2026-09-01) ─────────────────────
+  //
+  // "why in time log am I missing my drives from this morning and my shop
+  // time?" ... "mileage drives didnt delete from mileage and neither should
+  // they delete from time log, whats causing this?"
+  //
+  // Exactly right. The sweep built its surviving set from the device's
+  // IN-MEMORY mileage array, so "no leg in MY memory" was acted on as "no leg
+  // exists". On his account at 14:58:13, one and a half seconds after a new leg
+  // landed and the realtime handler fired the cleanup, it soft-deleted the
+  // 07:52 drive to the client and the 12:21 drive to the shop. Both of their
+  // legs (f9EAC1CB2140042F4 and f6FB5F98BD536471B) were in td_mileage with
+  // deleted_at null at the time and are still there now.
+  test('drive-sync: a half-loaded device deletes nothing, because memory is not the authority', async () => {
+    await geoReset();
+    await page.evaluate(() => {
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      // THE EXACT SHAPE. This device holds only the leg it just wrote; the
+      // cloud holds all three. Before the fix the other two drive rows were
+      // deleted here, and their mileage was never touched, which is precisely
+      // the asymmetry the owner spotted.
+      mileage.push({ id: 'ml-new', gps: true, legKey: 'lg-new' });
+      window.__selMileage = [
+        { data: { gps: true, legKey: 'lg-new' } },
+        { data: { gps: true, legKey: 'lg-morning' } },
+        { data: { gps: true, legKey: 'lg-shop' } },
+      ];
+      window.__selRows = [
+        { id: 3001, source: 'drive-unassigned', client_key: 'lg-morning' },
+        { id: 3002, source: 'drive-unassigned', client_key: 'lg-shop' },
+        { id: 3003, source: 'drive', client_key: 'lg-new' },
+      ];
+    });
+    const r = await syncCall();
+    expect(r.dropped, 'the cloud still has every leg, so nothing is orphaned').toBe(0);
+    expect(r.deletes.length).toBe(0);
+    await page.evaluate(() => {
+      window.__selMileage = null;
+      if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; }
+    });
+    await geoRestore();
+  });
+
+  test('drive-sync: an empty leg set is a failed load, not an empty log', async () => {
+    // Deleting nothing is always recoverable. Deleting a day of drives is not.
+    await geoReset();
+    await page.evaluate(() => {
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      window.__selMileage = [];
+      window.__selRows = [{ id: 3010, source: 'drive-unassigned', client_key: 'lg-x' }];
+    });
+    const r = await syncCall();
+    expect(r.dropped).toBe(0);
+    await page.evaluate(() => {
+      window.__selMileage = null;
+      if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; }
+    });
+    await geoRestore();
+  });
+
+  test('drive-sync: wiping out EVERY drive row at once is refused as an input problem', async () => {
+    // The last line of defence. Whatever else is wrong, a cleanup pass that
+    // concludes the entire day was fictional is reporting on itself, not on the
+    // data, and it must say so instead of clearing the board.
+    await geoReset();
+    await page.evaluate(() => {
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      window.__selMileage = [{ data: { gps: true, legKey: 'lg-unrelated' } }];
+      window.__selRows = [
+        { id: 3020, source: 'drive-unassigned', client_key: 'lg-a' },
+        { id: 3021, source: 'drive-unassigned', client_key: 'lg-b' },
+        { id: 3022, source: 'drive', client_key: 'lg-c' },
+      ];
+    });
+    const r = await syncCall();
+    expect(r.dropped, 'all three orphaned at once is not hygiene').toBe(0);
+    await page.evaluate(() => {
+      window.__selMileage = null;
+      if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; }
+    });
+    await geoRestore();
+  });
+
+  test('drive-sync: a single orphan is still dropped, the refusal is not a blanket amnesty', async () => {
+    // The guard above must not become "never delete anything": one bad row
+    // among good ones is the case the sweep exists for.
+    await geoReset();
+    await page.evaluate(() => {
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      window.__selMileage = [{ data: { gps: true, legKey: 'lg-good' } }];
+      window.__selRows = [
+        { id: 3030, source: 'drive-unassigned', client_key: 'lg-gone' },
+        { id: 3031, source: 'drive', client_key: 'lg-good' },
+      ];
+    });
+    const r = await syncCall();
+    expect(r.dropped).toBe(1);
+    expect(r.deletes[0].val).toBe(3030);
+    await page.evaluate(() => {
+      window.__selMileage = null;
+      if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; }
+    });
+    await geoRestore();
+  });
+
+  test('drive-sync: a failed leg query deletes nothing at all', async () => {
+    await geoReset();
+    await page.evaluate(() => {
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      window.__selErr = { message: 'network down' };
+      window.__selRows = [{ id: 3040, source: 'drive-unassigned', client_key: 'lg-x' }];
+    });
+    const r = await syncCall();
+    expect(r.dropped).toBe(0);
+    await page.evaluate(() => {
+      window.__selErr = null; window.__selMileage = null;
+      if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; }
+    });
     await geoRestore();
   });
 
@@ -3999,19 +4160,27 @@ test.describe('Geo park detection + mileage reconciliation', () => {
 
     test('a leg-less drive row is dropped, a live visit row with no leg is never touched', async () => {
       await geoReset();
+      // FIXTURE CHANGED 2026-09-01 (CLAUDE.md 10.4). It used to seed an EMPTY
+      // mileage array, and an empty leg set is now refused outright: it cannot
+      // be told apart from a failed load, and reading it as "every leg is
+      // gone" is what deleted a day of the owner's real drives. The rule this
+      // test is actually for, drives are swept and on-site rows never are, is
+      // unchanged, so it now seeds a real log that simply lacks these legs,
+      // plus one drive row that DOES match so the all-orphaned refusal (its
+      // own tests above) is not what is being measured here.
       const r = await page.evaluate(async () => {
         window.__origMileage = mileage.slice(); mileage.length = 0;
-        // Nothing survives in mileage at all: every drive row is an orphan,
-        // and every on-site row must still be left alone (they never carried
-        // a legKey to compare in the first place).
+        window.__selMileage = [{ data: { gps: true, legKey: 'u1-leg-keep' } }];
         window.__selRows = [
           { id: 'd1', source: 'drive',            client_key: 'u1-leg-a' },
           { id: 'd2', source: 'drive-unassigned', client_key: null },
+          { id: 'd3', source: 'drive',            client_key: 'u1-leg-keep' },
           { id: 'v1', source: 'geofence',         client_key: 'u1-vis-a' },
           { id: 'v2', source: 'stop',             client_key: 'u1-vis-stop-b' },
           { id: 'v3', source: 'geofence-reconciled', client_key: 'rec-u1-leg-a' },
         ];
         const n = await _geoSyncDriveTimeEntries();
+        window.__selMileage = null;
         return { n, deletes: window.__rec.deletes.filter(d => d.tbl === 'job_time_entries').map(d => d.val) };
       });
       expect(r.n).toBe(2);
