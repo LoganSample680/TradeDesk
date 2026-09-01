@@ -375,6 +375,9 @@ async function _timeLogRows(sinceISO){
   // Grouped per person because the paid spans are computed in ORDER for one
   // person at a time: overlapping sessions clip against each other so no
   // minute is ever paid twice (js/geo-track.js _geoShopPaidSpans).
+  // Resolved once for the whole render: getPlaces() on every row would be a
+  // lookup per entry for a set that cannot change mid-render.
+  const _baseNames=(typeof _geoBaseNames==='function')?_geoBaseNames():new Set();
   const _shopByUid={};
   (crew.shopEntries||[]).forEach(e=>{
     if(!e||!e.arrived_at||!e.departed_at)return;
@@ -452,6 +455,28 @@ async function _timeLogRows(sinceISO){
        typeof _geoRowInWorkday==='function'){
       const _dday=(typeof _bizDateStr==='function')?_bizDateStr(new Date(e.arrived_at)):dateKey(new Date(e.arrived_at));
       if(!_geoRowInWorkday(e.arrived_at,e.departed_at,((_shopCut[e.employee_user_id]||{})[_dday])||null))return;
+    }
+    // BASE DWELL ANSWERS TO THE DAY, exactly like the yard already does.
+    //
+    // The shop loop above bounds a session by Central midnight and clamps it
+    // to the day's clock-out. A home office is the same kind of place and got
+    // neither, so sitting at his own house overnight wrote a 12-hour visit:
+    // owner and Jack both, four nights running, up to 1557 minutes. See
+    // _geoIsBaseRow (js/geo-track.js) for why a supply house is deliberately
+    // NOT a base and still ends the day.
+    if(typeof _geoIsBaseRow==='function'&&_geoIsBaseRow(e,_baseNames)){
+      const _ba=Date.parse(e.arrived_at)||0,_bd=Date.parse(e.departed_at||'')||0;
+      const _bds=d=>(typeof _bizDateStr==='function')?_bizDateStr(d):dateKey(d);
+      // Crossing Central midnight IS the truck home for the night. Same
+      // physical-impossibility bound the shop honors (owner rule 2026-08-24:
+      // "it's not humanely possible for any day to have more than 24 hours").
+      if(!(_ba>0&&_bd>_ba)||_bds(new Date(_ba))!==_bds(new Date(_bd)))return;
+      const _bpm=(typeof _geoShopPaidMin==='function')
+        ? _geoShopPaidMin(e.arrived_at,e.departed_at,
+            ((_shopCut[e.employee_user_id]||{})[_bds(new Date(_ba))])||null)
+        : (e.minutes||0);
+      if(_bpm<1)return;                 // outside the workday: no row to draw
+      e=Object.assign({},e,{minutes:_bpm});   // clamped COPY, the stored row is untouched
     }
     // The anchor rule (owner 2026-08-24, see _tlStopAnchored above): an
     // unpaid stop with no real location event on both sides of it that same

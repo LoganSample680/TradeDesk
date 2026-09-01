@@ -2065,6 +2065,45 @@ const _GEO_SHOP_CHAIN_MS=5*60000;
 // a departure lands on the end of it, which is a fact about the day rather
 // than a threshold on somebody's tap.
 const _GEO_LEAVE_SLACK_MS=5*60000;
+// ── A BASE is somewhere the truck SLEEPS, not somewhere you go to work ──────
+//
+// Owner, 2026-09-01, describing the rule he wants: "no automotive drives
+// overnight, no fence exits ... if there was no automotive legs at all the
+// rule is simple ... gets closed out by the second fence crossing when you
+// get back home."
+//
+// The app already believed this about the SHOP: a Saturday at the yard is not
+// a shift, and _geoShopPaidRange credits yard dwell only inside the day's
+// workday window. A home office is the same kind of place and got none of it.
+// Worse, it was treated as a work ANCHOR, so an overnight sit did not get
+// judged against the workday, it DEFINED it, widening the window with both its
+// own ends. That is how a 12-hour visit at his own house landed on the log,
+// four nights running, up to 1557 minutes.
+//
+// So: a place whose kind is home_office or shop is a base. It can no longer
+// open or close a day, and its dwell is clamped like the yard's. A supply
+// house is NOT a base and still anchors the day, which is the whole point of
+// "the second fence crossing": the last business fence you touch is what ends
+// the day, and coming home is not touching one.
+function _geoBaseNames(){
+  const out=new Set();
+  try{
+    (typeof getPlaces==='function'?(getPlaces()||[]):[]).forEach(p=>{
+      if(p&&(p.kind==='home_office'||p.kind==='shop')&&p.name)out.add(String(p.name));
+    });
+  }catch(_e){}
+  out.add('Shop');   // the settings shop writes this literal name, not a place row
+  return out;
+}
+// Matched on dest_place because that is the only handle a stored row carries:
+// job_time_entries has no place id. A row with no name cannot be proven to be
+// a base, and an unprovable row keeps the old behaviour rather than losing
+// somebody minutes on a guess.
+function _geoIsBaseRow(r,bases){
+  if(!r||!_geoIsPlaceSource(r.source))return false;
+  const n=String(r.dest_place||'');
+  return !!n&&(bases||_geoBaseNames()).has(n);
+}
 function _geoIsWorkAnchorSource(s){
   const t=String(s||'');
   if(/^drive/.test(t))return false;      // a leg, judged by what it chains to
@@ -2108,8 +2147,16 @@ function _geoOpenVisitAnchor(){
     // a place outranks a client. The shop is NOT here on purpose, it is the
     // one presence that has never been allowed to open a workday (owner rule
     // 2026-08-24: a Saturday at the yard is not a shift).
+    // The open PLACE visit carries its name now. Without it _geoIsBaseRow
+    // could not tell "standing in my own kitchen right now" from "standing in
+    // a supply house right now", and the first one would hold the day open
+    // for as long as the app was running.
+    const _pl=(_geoCurrentPlace!=null&&typeof getPlaces==='function')
+      ? (getPlaces()||[]).find(p=>p&&String(p.id)===String(_geoCurrentPlace)) : null;
+    const placeRow=row(_geoPlaceArrivedAt,'place');
+    if(placeRow&&_pl&&_pl.name)placeRow.dest_place=_pl.name;
     return row(_geoArrivedAt,'geofence')
-        || row(_geoPlaceArrivedAt,'place')
+        || placeRow
         || row(_geoClientArrivedAt,'client')
         || null;
   }catch(_e){return null;}
@@ -2122,7 +2169,11 @@ function _geoShopCutoffs(entries){
     if(!e||!e.employee_user_id)return false;
     return (Date.parse(e.departed_at||'')||0)>0&&(Date.parse(e.arrived_at||'')||0)>0;
   });
-  const anchors=rows.filter(e=>_geoIsWorkAnchorSource(e.source));
+  // Base dwell is excluded from the anchors on purpose: see _geoIsBaseRow.
+  // Being home is not a work event, so it can neither open a day nor hold one
+  // open, which is exactly what let an overnight row stretch the window.
+  const _bases=_geoBaseNames();
+  const anchors=rows.filter(e=>_geoIsWorkAnchorSource(e.source)&&!_geoIsBaseRow(e,_bases));
   const widen=(uid,ms)=>{
     const day=dstr(new Date(ms));
     const m=out[uid]=out[uid]||{};

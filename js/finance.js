@@ -3234,6 +3234,7 @@ async function _crewCostRender(range){
   // Computed before anything is aggregated: both the drive filter just below
   // and the shop spans further down need the day's workday window.
   const shopCut=(typeof _geoShopCutoffs==='function')?_geoShopCutoffs(ents):{};
+  const _ccBases=(typeof _geoBaseNames==='function')?_geoBaseNames():new Set();
   ents.forEach(en=>{
     const uid=en.employee_user_id;if(!uid)return;
     // Same workday bound the Time Log applies: a drive leg outside the day's
@@ -3243,6 +3244,20 @@ async function _crewCostRender(range){
     if(_geoIsDriveSource(en.source)&&typeof _geoRowInWorkday==='function'&&en.arrived_at){
       const dd=_bizDateStr(new Date(en.arrived_at));
       if(!_geoRowInWorkday(en.arrived_at,en.departed_at,((shopCut[uid]||{})[dd])||null))return;
+    }
+    // Base dwell answers to the workday too, or Crew Cost pays for a night at
+    // home that the Time Log correctly refuses to show. The comment above is
+    // explicit that these two must never disagree about a paid minute; see
+    // _geoIsBaseRow (js/geo-track.js).
+    if(typeof _geoIsBaseRow==='function'&&_geoIsBaseRow(en,_ccBases)&&en.arrived_at){
+      const _ba=Date.parse(en.arrived_at)||0,_bd=Date.parse(en.departed_at||'')||0;
+      if(!(_ba>0&&_bd>_ba))return;
+      if(_bizDateStr(new Date(_ba))!==_bizDateStr(new Date(_bd)))return;   // overnight
+      const _bpm=(typeof _geoShopPaidMin==='function')
+        ? _geoShopPaidMin(en.arrived_at,en.departed_at,((shopCut[uid]||{})[_bizDateStr(new Date(_ba))])||null)
+        : (en.minutes||0);
+      if(_bpm<1)return;
+      en=Object.assign({},en,{minutes:_bpm});
     }
     const e=_emp(uid);let m=en.minutes||0;
     // Off-job time (lunch, an errand) is shown but never PAID: it stays out of

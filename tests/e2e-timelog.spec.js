@@ -4487,6 +4487,106 @@ test.describe('timelog.js: exhaustive coverage', () => {
     });
   });
 
+
+  // ── A base is somewhere the truck sleeps (owner + Jack, 2026-09-01) ────────
+  //
+  // Owner: "in my time log I see things adding up overnight when it shouldn't."
+  // It was doing it to Jack too, four nights running: 1557, 1236, 764 and 720
+  // minutes at 7402 SW 22nd Ct, his own house. The shop already answered to
+  // the day's clock-out and to Central midnight. A home office is the same
+  // kind of place and answered to neither, AND it counted as a work anchor,
+  // so an overnight sit did not get judged against the workday, it defined it.
+  //
+  // Fixtures are his real rows, in Central (UTC-5 on these dates).
+  test.describe('base dwell', () => {
+    const HOME = '7402 SW 22nd Ct';
+    const rowsFor = (entries) => page.evaluate(async (entries) => {
+      if (typeof timeEntries === 'undefined') window.timeEntries = [];
+      const orig = window._fetchCrewLabor, keep = places.slice();
+      places.length = 0;
+      places.push({ id: 'p-home', name: '7402 SW 22nd Ct', kind: 'home_office', lat: 39.0257, lon: -95.7939 });
+      places.push({ id: 'p-hd', name: 'The Home Depot', kind: 'supply_house', lat: 39.03, lon: -95.70 });
+      window._fetchCrewLabor = async () => ({ name: { me: 'Jack Schonfeldt' }, entries, shopEntries: [] });
+      try { return await _timeLogRows(null); }
+      finally { window._fetchCrewLabor = orig; places.length = 0; keep.forEach(p => places.push(p)); }
+    }, entries);
+
+    const P = (a, d, m, place) => ({ employee_user_id: 'me', minutes: m, source: 'place',
+                                     dest_place: place, arrived_at: a, departed_at: d });
+    const JOB = (a, d, m) => ({ employee_user_id: 'me', minutes: m, source: 'geofence',
+                                job_id: 1, arrived_at: a, departed_at: d });
+    const DRIVE = (a, d, m) => ({ employee_user_id: 'me', minutes: m, source: 'drive',
+                                  arrived_at: a, departed_at: d });
+
+    test('the overnight row at his own house never renders', async () => {
+      // Jack's real one: 5:24pm to 5:25am, 720 minutes, on a day he worked.
+      const rows = await rowsFor([
+        JOB('2026-08-31T13:00:00Z', '2026-08-31T21:00:00Z', 480),
+        P('2026-08-31T22:24:58Z', '2026-09-01T10:25:13Z', 720, HOME),
+      ]);
+      const home = rows.filter(r => r.clientName === HOME || /22nd Ct/.test(String(r.clientName || '')));
+      expect(home.length, 'twelve hours of sleep is not a visit').toBe(0);
+      expect(rows.some(r => r.minutes === 720), 'and nothing carries its minutes').toBe(false);
+      expect(rows.filter(r => r.minutes === 480).length, 'the real work still stands').toBe(1);
+    });
+
+    test('a home office INSIDE the workday still pays', async () => {
+      // The rule bounds base dwell, it does not delete it. Paperwork between
+      // two jobs is work and has to survive.
+      const rows = await rowsFor([
+        JOB('2026-08-31T13:00:00Z', '2026-08-31T15:00:00Z', 120),
+        P('2026-08-31T15:30:00Z', '2026-08-31T16:00:00Z', 30, HOME),
+        JOB('2026-08-31T16:30:00Z', '2026-08-31T21:00:00Z', 270),
+      ]);
+      const home = rows.filter(r => /22nd Ct/.test(String(r.clientName || '')));
+      expect(home.length, 'half an hour between two jobs is real').toBe(1);
+      expect(home[0].minutes).toBe(30);
+    });
+
+    test('a home office cannot OPEN a day on its own', async () => {
+      // No job, no supply run, no drive: nothing happened. Being at home all
+      // day is not a shift, however long the app was running.
+      const rows = await rowsFor([
+        P('2026-08-30T13:00:00Z', '2026-08-30T23:00:00Z', 600, HOME),
+      ]);
+      // Scoped to this fixture's own day: _timeLogRows renders the whole log,
+      // and earlier tests in this file leave rows on other dates behind.
+      const mine = rows.filter(r => r.date === '2026-08-30');
+      expect(mine.length, 'a day with no work in it credits nothing').toBe(0);
+    });
+
+    test('a supply house is NOT a base: it still ends the day', async () => {
+      // The whole point of "the second fence crossing". Coming home is not
+      // touching a business fence; a Home Depot run is.
+      const rows = await rowsFor([
+        P('2026-08-29T15:00:00Z', '2026-08-29T15:40:00Z', 40, 'The Home Depot'),
+      ]);
+      const hd = rows.filter(r => /Home Depot/.test(String(r.clientName || '')));
+      expect(hd.length, 'a supply run on its own is still a workday').toBe(1);
+      expect(hd[0].minutes).toBe(40);
+    });
+
+    test('the Saturday supply run pays the errand and nothing else', async () => {
+      // Owner's own words: "if there's a drive that's business related it
+      // counts but only adds that drive and the time at the business place
+      // like a home depot run ... gets closed out by the second fence crossing
+      // when you get back home." The evening at home either side stays off.
+      const rows = await rowsFor([
+        P('2026-08-29T12:00:00Z', '2026-08-29T14:00:00Z', 120, HOME),   // morning at home
+        DRIVE('2026-08-29T14:00:00Z', '2026-08-29T14:20:00Z', 20),      // out
+        P('2026-08-29T14:20:00Z', '2026-08-29T15:00:00Z', 40, 'The Home Depot'),
+        DRIVE('2026-08-29T15:00:00Z', '2026-08-29T15:20:00Z', 20),      // back
+        P('2026-08-29T15:20:00Z', '2026-08-29T23:00:00Z', 460, HOME),   // evening at home
+      ]);
+      const mine = rows.filter(r => r.date === '2026-08-29');
+      const paid = mine.filter(r => !r.unpaid).reduce((s, r) => s + (r.minutes || 0), 0);
+      expect(mine.some(r => r.minutes === 460), 'the evening at home is not the shift').toBe(false);
+      expect(mine.some(r => r.minutes === 120), 'nor is the morning').toBe(false);
+      expect(paid, 'twenty out, forty there, twenty back').toBeLessThanOrEqual(80);
+      expect(paid, 'and the errand itself absolutely does pay').toBeGreaterThanOrEqual(40);
+    });
+  });
+
   test('no console errors during time log tests', async () => {
     await assertNoErrors(page);
   });
