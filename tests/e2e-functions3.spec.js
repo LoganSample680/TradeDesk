@@ -3613,6 +3613,127 @@ test.describe('Client form and import functions', () => {
     expect(r.scanSrc, '_scanToEstimate lands the user on the client').toContain('openClientDetail(');
   });
 
+  // Every import test below pushes real rows into the shared `clients` array,
+  // and _showImportPreview DEDUPES against it by name. So without this, the
+  // preview test saw its own contact already imported by an earlier test and
+  // counted zero. Scoped to these exact fixture names so it cannot touch
+  // anything else in this file.
+  const TEST_NAMES = /^(Jonas Vcardsen|Three Props|Sweep One|Sweep Two|Jack Schonfeldt|Long Street|Escaped|Empty Adr)$/;
+  test.afterEach(async () => {
+    await page.evaluate((src) => {
+      const re = new RegExp(src);
+      clients = clients.filter(c => !re.test((c && c.name) || ''));
+      if (typeof _importContacts !== 'undefined') _importContacts = [];
+    }, TEST_NAMES.source);
+  });
+
+  // Owner 2026-09-01: "the test here is that first name last name comes over
+  // along with addresses especially multiple properties."
+  test.describe('vCard: names and multiple properties', () => {
+    const CARD = [
+      'BEGIN:VCARD', 'VERSION:3.0',
+      'N:Vcardsen;Jonas;;;', 'FN:Jonas Vcardsen',
+      'TEL;TYPE=CELL:+17855551234',
+      'EMAIL;TYPE=INTERNET:john@example.com',
+      'ADR;TYPE=HOME:;;2950 SW McClure Rd;Topeka;KS;66614;USA',
+      'ADR;TYPE=WORK:;;2015 SW Randolph Ave;Topeka;KS;66604;USA',
+      'END:VCARD',
+    ].join('\r\n');
+
+    test('every ADR comes over: the first is the address, the rest are properties', async () => {
+      const r = await page.evaluate((t) => _parseVCard(t)[0], CARD);
+      expect(r.name).toBe('Jonas Vcardsen');
+      expect(r.addr).toBe('2950 SW McClure Rd');
+      expect(r.city).toBe('Topeka');
+      expect(r.state).toBe('KS');
+      expect(r.zip).toBe('66614');
+      // The half that was silently dropped before: match() without /g returns
+      // one hit, so the second property never existed.
+      expect(r.extras).toHaveLength(1);
+      expect(r.extras[0].label).toBe('Work');
+      expect(r.extras[0].addr).toBe('2015 SW Randolph Ave, Topeka, KS 66604');
+    });
+
+    test('no FN: the structured N gives first name then last name', async () => {
+      const r = await page.evaluate(() => _parseVCard(
+        'BEGIN:VCARD\r\nVERSION:3.0\r\nN:Schonfeldt;Jack;;;\r\nTEL:7855550000\r\nEND:VCARD')[0]);
+      expect(r.name).toBe('Jack Schonfeldt');   // given then family, not "Schonfeldt Jack"
+    });
+
+    test('a folded long address is not truncated at the fold', async () => {
+      // Apple Contacts wraps every line past 75 octets and marks the
+      // continuation with one leading space. The old regex stopped at the
+      // newline and cut the street in half.
+      const r = await page.evaluate(() => _parseVCard(
+        'BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Long Street\r\nTEL:7855550001\r\n' +
+        'ADR;TYPE=HOME:;;12345 Northwest Countryside Estates Boulevard Suite\r\n  1400;Topeka;KS;66610;\r\nEND:VCARD')[0]);
+      expect(r.addr).toBe('12345 Northwest Countryside Estates Boulevard Suite 1400');
+    });
+
+    test('vCard escaping is undone, so a comma in a street survives', async () => {
+      const r = await page.evaluate(() => _parseVCard(
+        'BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Escaped\r\nTEL:7855550002\r\n' +
+        'ADR:;;Unit 3\\, Bldg C;Topeka;KS;66604;\r\nEND:VCARD')[0]);
+      expect(r.addr).toBe('Unit 3, Bldg C');
+    });
+
+    test('an empty ADR line is not counted as a property', async () => {
+      const r = await page.evaluate(() => _parseVCard(
+        'BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Empty Adr\r\nTEL:7855550003\r\n' +
+        'ADR;TYPE=HOME:;;;;;;\r\nADR;TYPE=WORK:;;1 Real St;Topeka;KS;66604;\r\nEND:VCARD')[0]);
+      expect(r.addr).toBe('1 Real St');     // the real one is promoted to primary
+      expect(r.extras).toHaveLength(0);
+    });
+
+    test('three properties: two land in extraAddresses through the real import', async () => {
+      const r = await page.evaluate((t) => {
+        const parsed = _parseVCard(t + '\r\n' + [
+          'BEGIN:VCARD', 'VERSION:3.0', 'FN:Three Props', 'TEL:7855559999',
+          'ADR;TYPE=HOME:;;1 First St;Topeka;KS;66604;',
+          'ADR;TYPE=WORK:;;2 Second St;Topeka;KS;66605;',
+          'ADR:;;3 Third St;Topeka;KS;66606;',
+          'END:VCARD',
+        ].join('\r\n'));
+        _importContacts = parsed.filter(c => /Three Props|Jonas Vcardsen/.test(c.name));
+        const before = clients.length;
+        _doImport();
+        const three = clients.find(c => c.name === 'Three Props');
+        const john = clients.find(c => c.name === 'Jonas Vcardsen');
+        return {
+          grew: clients.length - before,
+          threeExtras: (three && three.extraAddresses) || null,
+          johnExtras: (john && john.extraAddresses) || null,
+          johnAddr: john && john.addr,
+        };
+      }, CARD);
+      expect(r.grew).toBe(2);
+      // Carried all the way to the stored client, which is where it was being
+      // dropped even after the parser found them (extraAddresses was []).
+      expect(r.threeExtras).toHaveLength(2);
+      expect(r.threeExtras[0].addr).toBe('2 Second St, Topeka, KS 66605');
+      expect(r.threeExtras[1].addr).toBe('3 Third St, Topeka, KS 66606');
+      expect(r.threeExtras[1].label).toBe('Property 2');   // no TYPE, so numbered
+      expect(r.johnExtras).toHaveLength(1);
+      expect(r.johnAddr).toBe('2950 SW McClure Rd, Topeka, KS 66614');
+    });
+
+    test('CSV first + last columns still join into one name', async () => {
+      const r = await page.evaluate(() => _parseCSV(
+        'First Name,Last Name,Phone,Address,City,State,Zip\nJack,Schonfeldt,7855551111,9 Elm St,Topeka,KS,66604'));
+      expect(r).toHaveLength(1);
+      expect(r[0].name).toBe('Jack Schonfeldt');
+      expect(r[0].addr).toBe('9 Elm St');
+    });
+
+    test('the preview counts the extra properties before you tap Import', async () => {
+      const r = await page.evaluate((t) => {
+        _showImportPreview(_parseVCard(t));
+        return document.getElementById('import-preview-summary').textContent;
+      }, CARD);
+      expect(r).toContain('1 extra property');
+    });
+  });
+
   test('no console errors during client form/import tests', async () => {
     assertNoErrors(page, 'client form/import');
   });

@@ -1233,22 +1233,75 @@ function _csvRow(line){
   return cols;
 }
 
+// A vCard line longer than 75 octets is CONTINUED on the next line, marked by
+// a single leading space or tab (RFC 6350 folding). Apple Contacts folds every
+// export, so a street address long enough to wrap was being cut off at the
+// fold by a regex that stops at the newline. Unfold before parsing anything.
+function _vcardUnfold(text){
+  return String(text||'').replace(/\r\n/g,'\n').replace(/\n[ \t]/g,'');
+}
+// vCard escapes the characters that would otherwise be structure. A street
+// like "Unit 3, Bldg C" arrives as "Unit 3\, Bldg C".
+function _vcardUnesc(v){
+  return String(v||'').replace(/\\n/gi,' ').replace(/\\([,;\\])/g,'$1').trim();
+}
+// ADR is positional: PO box; extended; street; city; region; postcode; country.
+function _vcardAdrParts(raw){
+  const p=String(raw||'').split(';');
+  return{
+    addr:_vcardUnesc(p[2]),city:_vcardUnesc(p[3]),
+    state:_vcardUnesc(p[4]),zip:_vcardUnesc(p[5])
+  };
+}
+function _vcardAdrLabel(paramStr,used){
+  // TYPE=HOME / TYPE=WORK, in any case, quoted or not. A label is worth having
+  // because "Additional property" on three rows tells the contractor nothing
+  // about which house is which.
+  const m=String(paramStr||'').match(/TYPE="?([A-Za-z]+)/i);
+  const t=m?m[1].toLowerCase():'';
+  if(t==='home')return 'Home';
+  if(t==='work')return 'Work';
+  return 'Property '+(used+1);
+}
 function _parseVCard(text){
   const contacts=[];
-  const cards=text.split(/BEGIN:VCARD/i).slice(1);
+  const cards=_vcardUnfold(text).split(/BEGIN:VCARD/i).slice(1);
   cards.forEach(card=>{
     const get=re=>{const m=card.match(re);return m?(m[1]||'').trim():'';};
     let name=get(/^FN[^:\r\n]*:(.+)$/m);
     if(!name){
       const n=get(/^N[^:\r\n]*:(.+)$/m);
-      if(n){const p=n.split(';');name=[p[1],p[0]].filter(Boolean).join(' ');}
+      // N is Family;Given;Middle;Prefix;Suffix, so given goes first to read
+      // as a person's name rather than a filing-cabinet entry.
+      if(n){const p=n.split(';');name=[_vcardUnesc(p[1]),_vcardUnesc(p[0])].filter(Boolean).join(' ');}
     }
+    name=_vcardUnesc(name);
     const phone=get(/^TEL[^:\r\n]*:(.+)$/m);
     const email=get(/^EMAIL[^:\r\n]*:(.+)$/m);
-    const adr=get(/^ADR[^:\r\n]*:(.+)$/m);
-    let addr='',city='',state='',zip='';
-    if(adr){const p=adr.split(';');addr=(p[2]||'').trim();city=(p[3]||'').trim();state=(p[4]||'').trim();zip=(p[5]||'').trim();}
-    if(name&&phone)contacts.push({name,phone,email,addr,city,state,zip});
+    // EVERY address, not just the first (owner 2026-09-01: "addresses
+    // especially multiple properties"). card.match with a non-global regex
+    // returns only the first hit, so a client with a home and a rental
+    // silently arrived with one address and the other was dropped on the
+    // floor. The first ADR that carries a street becomes the primary; the
+    // rest become extraAddresses, which is the shape the client detail page
+    // already renders (_renderClientAddresses) and the manual "Additional
+    // property" button already writes.
+    const extras=[];
+    let addr='',city='',state='',zip='',primaryTaken=false;
+    const adrRe=/^ADR([^:\r\n]*):(.+)$/gm;
+    let m;
+    while((m=adrRe.exec(card))!==null){
+      const parts=_vcardAdrParts(m[2]);
+      const oneLine=[parts.addr,parts.city,[parts.state,parts.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+      if(!oneLine)continue;                     // an empty ADR line is noise, not a property
+      if(!primaryTaken){
+        addr=parts.addr;city=parts.city;state=parts.state;zip=parts.zip;
+        primaryTaken=true;
+      }else{
+        extras.push({label:_vcardAdrLabel(m[1],extras.length),addr:oneLine});
+      }
+    }
+    if(name&&phone)contacts.push({name,phone,email,addr,city,state,zip,extras});
   });
   return contacts;
 }
@@ -1269,9 +1322,14 @@ function _showImportPreview(parsed){
   if(!preview)return;
   const hasEmail=toImport.some(c=>c.email);
   const hasAddr=toImport.some(c=>c.addr||c.city);
+  const extraCount=toImport.reduce((n,c)=>n+((c.extras||[]).length),0);
   summary.innerHTML='<strong>'+toImport.length+' contacts ready to import</strong>'+
     (hasEmail?' <span style="color:var(--green-mid)">· Email '+svgIcon('✓')+'</span>':'')+
     (hasAddr?' <span style="color:var(--green-mid)">· Address '+svgIcon('✓')+'</span>':'')+
+    // Named on the preview because a silently-dropped second property is
+    // exactly the failure this fix is about: if the count is wrong, it is
+    // wrong BEFORE the import rather than discovered weeks later.
+    (extraCount?' <span style="color:var(--green-mid)">· '+extraCount+' extra propert'+(extraCount===1?'y':'ies')+' '+svgIcon('✓')+'</span>':'')+
     (skipped?' <span style="color:var(--text3)">· '+skipped+' skipped (already in list)</span>':'');
   list.innerHTML=toImport.slice(0,25).map(c=>
     '<div style="padding:7px 10px;border-bottom:1px solid var(--border2)">'+
@@ -1294,7 +1352,10 @@ function _doImport(){
     const nc={id,name:c.name,phone:c.phone,email:c.email||'',
       addr,street:c.addr||'',city:c.city||'',state:c.state||'',zip:c.zip||'',
       source:'Existing Contact',ref:'',notes:'',created:today,ptype:'',
-      extraAddresses:[],clientToken:'',clientHubKey:''};
+      // Carried, not discarded. This was hardcoded to [], so even once the
+      // parser found a second property the import threw it away.
+      extraAddresses:Array.isArray(c.extras)?c.extras.slice():[],
+      clientToken:'',clientHubKey:''};
     clients.push(nc);
     _ensureClientToken(nc.id);
     added++;
