@@ -626,61 +626,60 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   // So: retry the call the way production does, and hand the outcome back so
   // a never-ran fails as a never-ran instead of as a wrong assertion.
   const runRecon = () => page.evaluate(async () => {
-    const ran = await (async () => {
-      for (let i = 0; i < 40; i++) {
-        if (await _geoReconcileFromMileage() !== false) return true;
-        await new Promise(res => setTimeout(res, 25));
+    // COUNT THE ENQUEUES. DO NOT SAMPLE THE QUEUE.
+    //
+    // Fourth failure in this file with the same "expected 1, received 0"
+    // signature (chromium shard 5, 2026-09-01), and the first three all
+    // hardened the WAIT: a longer sleep, then stillness polling, then a settle
+    // window after the queue drained. Every one of them was the wrong end.
+    //
+    // The actual defect is that the helper decided "the reconciler queued
+    // nothing" by sampling _geoQueueRead().length every 20ms. _geoEnqueue
+    // writes the queue synchronously and then kicks off _geoDrainQueue, which
+    // shifts the item off and THEN awaits the upsert. If the drain wins that
+    // microtask race, the very first poll already reads an empty queue: sawWork
+    // never goes true, the 200ms "nothing was ever queued" grace expires, and
+    // the helper reports zero rows for a write that was in flight and about to
+    // land. Whether it happens is pure scheduling luck, which is why it moves
+    // between engines and shards and never reproduces under one file.
+    //
+    // A count cannot be raced. _geoEnqueue is a top-level function declaration,
+    // so it is a property of window and wrapping it is enough to observe every
+    // call the reconciler makes. queued > 0 means work exists and the only
+    // honest answer is the ROW; queued === 0 means the reconciler genuinely
+    // decided to write nothing, which is what the tests expecting zero rows are
+    // actually asserting.
+    const origEnq = window._geoEnqueue;
+    let queued = 0;
+    window._geoEnqueue = function () { queued++; return origEnq.apply(this, arguments); };
+    try {
+      // _geoReconcileFromMileage returns FALSE when it declines to run at all
+      // (another pass or a GPS ping in flight), and its own doc comment says so:
+      // renderTimeLog retries a couple of times on false for exactly this
+      // reason. This used to throw that answer away, so a refused call looked
+      // identical to a call that ran and found nothing. Retry the way
+      // production does, and hand the outcome back so a never-ran fails as a
+      // never-ran instead of as a wrong assertion.
+      const ran = await (async () => {
+        for (let i = 0; i < 40; i++) {
+          if (await _geoReconcileFromMileage() !== false) return true;
+          await new Promise(res => setTimeout(res, 25));
+        }
+        return false;
+      })();
+      const rows = () => window.__rec.upserts.filter(u =>
+        u.tbl === 'job_time_entries' && (u.row.source || '') === 'geofence-reconciled');
+      for (let i = 0; i < 200; i++) {          // 4s cap: a broken reconciler still fails fast
+        if (rows().length) break;              // the write landed, the only real success
+        if (!queued && i >= 10) break;         // 200ms and the reconciler queued nothing at all
+        await new Promise(res => setTimeout(res, 20));
       }
-      return false;
-    })();
-    const rows = () => window.__rec.upserts.filter(u =>
-      u.tbl === 'job_time_entries' && (u.row.source || '') === 'geofence-reconciled');
-    // WAIT ON THE QUEUE, NOT ON STILLNESS.
-    //
-    // The first version of this watched the recorder for three consecutive
-    // unchanged polls. That cannot tell "the drain finished" from "the drain
-    // has not started": with nothing recorded yet the count sits at 0, three
-    // polls agree, and it exits after 60ms, which is precisely the fixed sleep
-    // it replaced. It failed again on the next CI run, a different test in this
-    // file, same "expected 1, received 0" (webkit, 2026-08-31).
-    //
-    // _geoEnqueue writes the work to localStorage SYNCHRONOUSLY and the flush
-    // drains it asynchronously, so the queue emptying after it was non-empty is
-    // the real completion signal. The grace window covers the one case the
-    // queue cannot answer: a reconciler that enqueues nothing at all, which is
-    // what the tests expecting zero rows are asserting.
-    // AN EMPTY QUEUE MEANS THE DRAIN TOOK THE WORK, NOT THAT IT LANDED.
-    //
-    // Third occurrence of "expected 1, received 0" in this file, and the first
-    // two fixes both hardened the wrong end. The loop broke the instant the
-    // queue went from non-empty to empty and returned immediately, but the
-    // drain dequeues the item and THEN awaits the upsert. Between those two
-    // moments the queue reads 0 and window.__rec has recorded nothing, so the
-    // helper reported zero rows for work that was in flight and about to
-    // succeed. Nothing engine-specific about it; webkit just loses that race
-    // more often (shard 2, 2026-08-31, "fixes hugging both anchors").
-    //
-    // So the queue emptying starts a settle window instead of ending the wait:
-    // keep polling for the ROW, which is the only thing that actually answers
-    // the question. If more work gets queued in the meantime the window is
-    // cancelled, because the drain is evidently still going.
-    const qlen = () => { try { return _geoQueueRead().length; } catch (_e) { return 0; } };
-    const SETTLE_POLLS = 15;              // 300ms after the drain empties
-    let sawWork = false, drainedAt = -1;
-    for (let i = 0; i < 200; i++) {
-      if (rows().length) break;           // the write landed: done, and this is the only real success
-      const n = qlen();
-      if (n > 0) { sawWork = true; drainedAt = -1; }
-      else if (sawWork && drainedAt < 0) drainedAt = i;
-      if (drainedAt >= 0 && i - drainedAt >= SETTLE_POLLS) break;
-      if (!sawWork && i >= 10) break;     // 200ms and nothing was ever queued
-      await new Promise(res => setTimeout(res, 20));
-    }
-    return {
-      ran,
-      recRows: window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && (u.row.source || '') === 'geofence-reconciled').map(u => u.row),
-      updates: window.__rec.updates.slice(),
-    };
+      return {
+        ran,
+        recRows: window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && (u.row.source || '') === 'geofence-reconciled').map(u => u.row),
+        updates: window.__rec.updates.slice(),
+      };
+    } finally { window._geoEnqueue = origEnq; }
   });
 
   // ── The claim is checked against the breadcrumbs we already keep ──────────
@@ -1166,33 +1165,30 @@ test.describe('Geo park detection + mileage reconciliation', () => {
   });
 
   const runReconClient = () => page.evaluate(async () => {
-    // Same contract, same retry: see the note on runRecon above.
-    const ran = await (async () => {
-      for (let i = 0; i < 40; i++) {
-        if (await _geoReconcileFromMileage() !== false) return true;
-        await new Promise(res => setTimeout(res, 25));
-      }
-      return false;
-    })();
-    // Same settle runRecon uses, and for the same reason: _geoEnqueue writes
-    // synchronously and drains asynchronously, so a fixed sleep is a bet on
-    // how loaded the runner is. Under one file it wins; under five it does
-    // not (shard of 568, 2026-08-31, "expected 1, received 0").
-    await (async () => {
-      const qlen = () => { try { return _geoQueueRead().length; } catch (_e) { return 0; } };
-      let sawWork = false;
-      for (let i = 0; i < 120; i++) {
-        const n = qlen();
-        if (n > 0) sawWork = true;
-        if (sawWork && n === 0) break;
-        if (!sawWork && i >= 10) break;
+    // Same contract, same defect, same fix: see the note on runRecon above.
+    // This one still sampled the queue and so carried the identical blind spot,
+    // which is why 10.4 says fix every place that asserts the same behaviour and
+    // not just the one that happened to go red.
+    const origEnq = window._geoEnqueue;
+    let queued = 0;
+    window._geoEnqueue = function () { queued++; return origEnq.apply(this, arguments); };
+    try {
+      const ran = await (async () => {
+        for (let i = 0; i < 40; i++) {
+          if (await _geoReconcileFromMileage() !== false) return true;
+          await new Promise(res => setTimeout(res, 25));
+        }
+        return false;
+      })();
+      const rows = () => window.__rec.upserts.filter(u =>
+        u.tbl === 'job_time_entries' && (u.row.source || '') === 'place-reconciled');
+      for (let i = 0; i < 200; i++) {
+        if (rows().length) break;
+        if (!queued && i >= 10) break;
         await new Promise(res => setTimeout(res, 20));
       }
-    })();
-    return {
-      ran,
-      recRows: window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && (u.row.source || '') === 'place-reconciled').map(u => u.row),
-    };
+      return { ran, recRows: rows().map(u => u.row) };
+    } finally { window._geoEnqueue = origEnq; }
   });
 
   test('reconciliation: a client-anchored window with NO job scheduled anywhere still repairs (the reload-reset case)', async () => {
