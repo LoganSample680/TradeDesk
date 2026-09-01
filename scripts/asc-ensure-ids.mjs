@@ -133,9 +133,23 @@ for (const want of WANT) {
       ? (gq.json.data || []).find((g) => g.attributes?.identifier === APP_GROUP)
       : null;
     if (!grp) {
-      console.error(`::error::asc: the App Group ${APP_GROUP} does not exist on this team (appGroups lookup ${gq.status}).`);
-      console.error(`::error::Create it: developer.apple.com -> Identifiers -> App Groups -> "+" -> ${APP_GROUP}`);
-      hardFail = true;
+      // NOT proof of anything, and this must never fail the build.
+      //
+      // Build 46 did exactly that: it read a 404 from /v1/appGroups and
+      // reported "the App Group does not exist on this team", and the owner
+      // had the group on screen in the portal while it said so. App Groups are
+      // not exposed through the App Store Connect API the way bundleIds and
+      // bundleIdCapabilities are, so the 404 is the ENDPOINT answering, not the
+      // resource. A check that cannot see the thing it is checking has no
+      // business blocking a build over it.
+      //
+      // So: say what we could not determine, and let SIGNING be the arbiter,
+      // which is the one test that actually knows. If the group is genuinely
+      // missing or unattached, the export fails with "No profiles for
+      // app.tradedesk.beta.share" and the verdict step already routes that to
+      // the share extension.
+      console.log(`::notice::asc: cannot verify ${APP_GROUP} through the API (appGroups lookup ${gq.status}); App Groups are not exposed there. Signing will be the test.`);
+      console.log(`::notice::asc: if the export later fails on profiles, check by hand: Identifiers -> App Groups -> ${APP_GROUP} exists, and ${want.id} -> App Groups -> Edit has it ticked.`);
     } else {
       // Which capability record is the APP_GROUPS one for THIS bundle id, and
       // what groups hang off it.
@@ -167,10 +181,11 @@ for (const want of WANT) {
         if (ok) {
           console.log(`::notice::asc: ${want.id} APP_GROUPS -> ${APP_GROUP} attached now (${patch.status})`);
         } else {
-          console.error(`::error::asc: ${want.id} has the APP_GROUPS capability but ${APP_GROUP} is NOT attached to it, and attaching it over the API returned ${patch.status}: ${String(patch.text).slice(0, 200)}`);
-          console.error(`::error::THIS IS THE THING THAT FAILS THE EXPORT. Two clicks: developer.apple.com -> Identifiers -> ${want.id} -> App Groups -> Edit -> tick ${APP_GROUP} -> Save.`);
-          console.error(`::error::Ticking the App Groups checkbox alone is NOT enough; the group has to be assigned to it.`);
-          hardFail = true;
+          // Warning, not an error, for the same reason as above: this write
+          // shape is thinly documented and a rejection here does not prove the
+          // portal is wrong. Signing decides.
+          console.warn(`::warning::asc: could not attach ${APP_GROUP} to ${want.id} over the API (${patch.status}): ${String(patch.text).slice(0, 200)}`);
+          console.warn(`::warning::If the export fails on profiles, do it by hand: Identifiers -> ${want.id} -> App Groups -> Edit -> tick ${APP_GROUP} -> Save. Ticking the capability alone is not enough.`);
         }
       }
     }
