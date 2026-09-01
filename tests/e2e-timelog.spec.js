@@ -4825,50 +4825,118 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.paid, 'the clock, not the clock plus the fences').toBe(438);
     });
 
-    test('a blended clock row never contradicts itself on screen', async () => {
-      // Owner, 2026-09-01: "manual is calcuaintg 742 am to 3:00 pm as 1 hour
-      // 40 minutes when thats not true at all." He was right and the row was
-      // indefensible: a seven-hour span on the sub-line with 1h 40m beside it
-      // and nothing reconciling the two. The AMOUNT was correct, it is what
-      // the row still adds after the fences took their share, but a number is
-      // not an explanation. All three facts, in the order a person asks them.
-      const html = await page.evaluate(([es, ms]) => {
-        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
-        const ME = window._supaUser.id;
-        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
-        window.timeEntries = ms;
-        const rows = [
-          { id: 'm1', source: 'manual', date: '2026-09-01', minutes: 100, blendedMin: 338,
-            clientName: '-', personUid: null,
-            startTime: es[0], endTime: es[1] },
-        ];
-        try { return _tlDayRailHtml(rows); } finally { window.timeEntries = keepT; }
-      }, [[at(7, 42), at(15, 0)], []]);
-      // 100 + 338 = 438 = the clock. The row says so.
-      expect(html).toContain('7h 18m clocked');
-      expect(html).toContain('5h 38m tracked below');
-      // ...and still shows the span and the amount it actually adds. The span
-      // is asserted by SHAPE, not by a wall-clock string: what time 7:42 renders
-      // as depends on the business timezone, which this test does not set and
-      // is not testing (5.2.2, never let the clock decide an outcome).
-      expect(html).toMatch(/tl-rail-sub">[^<]*\d:\d\d [AP]M to \d+:\d\d [AP]M · 7h 18m clocked/);
-      expect(html).toContain('>1h 40m<');
-      // A hyphen is not a name. The one row on the day somebody made by hand
-      // has to say what it is.
+    // ── THE CLOCK BRACKETS THE DAY (owner 2026-09-01) ─────────────────────
+    //
+    // "on manual clock in it should grab the start time then the end at the
+    // very end, not show the whole day, all the other shit while its duplicates
+    // should overlay themselves on the manual bar so manual clock out extends."
+    //
+    // The previous cut drew the clock as a line item in the middle of the day
+    // holding the leftover minutes. The arithmetic was right and the picture
+    // was wrong: a seven-hour clock competing in a list with the very rows it
+    // contains. It is the two ends of the day now, and nothing about the
+    // numbers moved.
+    test('a clock opens and closes the rail instead of sitting inside it', async () => {
+      const html = await page.evaluate(([s1, e1, s2, e2]) => _tlDayRailHtml([
+        { id: 'm1', source: 'manual', date: '2026-09-01', minutes: 100, blendedMin: 338,
+          clientName: '-', personUid: null, startTime: s1, endTime: e1 },
+        { id: 'a1', source: 'auto', rawSource: 'place', date: '2026-09-01', minutes: 93,
+          clientName: 'Shop', personUid: 'me', startTime: s2, endTime: e2 },
+      ]), [at(7, 42), at(15, 0), at(7, 44), at(9, 17)]);
+      expect(html).toContain('data-kind="clock-in"');
+      expect(html).toContain('data-kind="clock-out"');
       expect(html).toContain('Clocked in');
-      expect(html).not.toMatch(/tl-rail-ttl">-</);
+      expect(html).toContain('Clocked out');
+      // The clock's own total rides the closing cap, where a person looks for
+      // it: 100 left + 338 explained = the 7h 18m actually clocked.
+      expect(html).toContain('>7h 18m<');
+      // ...and the leftover is NOT drawn as a competing row any more.
+      expect(html).not.toContain('>1h 40m<');
+      expect(html).not.toContain('tracked below');
+      // The work sits BETWEEN the caps, which is the whole shape.
+      const i = html.indexOf('clock-in'), j = html.indexOf('Shop'), k = html.indexOf('clock-out');
+      expect(i).toBeGreaterThan(-1);
+      expect(j).toBeGreaterThan(i);
+      expect(k).toBeGreaterThan(j);
     });
 
-    test('an unblended clock row is left exactly as it reads today', async () => {
-      const html = await page.evaluate(([s, e]) => _tlDayRailHtml([
-        { id: 'm2', source: 'manual', date: '2026-09-01', minutes: 438,
-          clientName: 'Timelog Test Client', personUid: null, startTime: s, endTime: e },
+    test('the clock is drawn once, never as a bracket AND a row', async () => {
+      const html = await page.evaluate(([s1, e1]) => _tlDayRailHtml([
+        { id: 'm1', source: 'manual', date: '2026-09-01', minutes: 438,
+          clientName: '-', personUid: null, startTime: s1, endTime: e1 },
       ]), [at(7, 42), at(15, 0)]);
-      expect(html).toMatch(/tl-rail-sub">\d+:\d\d [AP]M to \d+:\d\d [AP]M<\/div>/);
-      expect(html).toContain('>7h 18m<');
-      expect(html, 'nothing to reconcile means nothing to explain').not.toContain('tracked below');
-      expect(html, 'a real name is never replaced').toContain('Timelog Test Client');
+      expect((html.match(/data-kind="manual"/g) || []).length,
+        'the bracket replaces the row, it does not accompany it').toBe(0);
+      expect((html.match(/data-kind="clock-in"/g) || []).length).toBe(1);
+      expect((html.match(/data-kind="clock-out"/g) || []).length).toBe(1);
     });
+
+    test('a still-running clock stays an ordinary row: half a bracket is worse than none', async () => {
+      const html = await page.evaluate(([s1]) => _tlDayRailHtml([
+        { id: 'm1', source: 'manual', date: '2026-09-01', minutes: 0,
+          clientName: '-', personUid: null, startTime: s1, endTime: null },
+      ]), [at(7, 42)]);
+      expect(html).not.toContain('clock-in');
+      expect(html).toContain('data-kind="manual"');
+    });
+
+    test('a clock with a backwards or unreadable span never brackets anything', async () => {
+      for (const [s1, e1] of [[at(15, 0), at(7, 42)], ['nope', 'also nope'], [at(7, 42), at(7, 42)]]) {
+        const html = await page.evaluate(([a, b]) => _tlDayRailHtml([
+          { id: 'm1', source: 'manual', date: '2026-09-01', minutes: 60,
+            clientName: '-', personUid: null, startTime: a, endTime: b },
+        ]), [s1, e1]);
+        expect(html, String(s1) + '/' + String(e1)).not.toContain('clock-in');
+      }
+    });
+
+    test('work outside the clock is drawn outside the brackets', async () => {
+      // His 7:23 drive ran before he clocked in. It is real, the clock never
+      // claimed it, and it must not appear to have happened during the shift.
+      const html = await page.evaluate(([ds, de, cs, ce]) => _tlDayRailHtml([
+        { id: 'd1', source: 'auto', rawSource: 'drive', date: '2026-09-01', minutes: 20,
+          clientName: 'Oakley', personUid: 'me', startTime: ds, endTime: de },
+        { id: 'm1', source: 'manual', date: '2026-09-01', minutes: 100, blendedMin: 338,
+          clientName: '-', personUid: null, startTime: cs, endTime: ce },
+      ]), [at(7, 23), at(7, 44), at(7, 42), at(15, 0)]);
+      expect(html.indexOf('Oakley'), 'the early drive comes first')
+        .toBeLessThan(html.indexOf('clock-in'));
+    });
+
+    test('two clocks in one day each get their own pair of caps', async () => {
+      const html = await page.evaluate(([a, b, c, d]) => _tlDayRailHtml([
+        { id: 'm1', source: 'manual', date: '2026-09-01', minutes: 120,
+          clientName: '-', personUid: null, startTime: a, endTime: b },
+        { id: 'm2', source: 'manual', date: '2026-09-01', minutes: 120,
+          clientName: '-', personUid: null, startTime: c, endTime: d },
+      ]), [at(7, 0), at(9, 0), at(13, 0), at(15, 0)]);
+      expect((html.match(/data-kind="clock-in"/g) || []).length).toBe(2);
+      expect((html.match(/data-kind="clock-out"/g) || []).length).toBe(2);
+      // ...and they close in order, never both swept to the bottom.
+      const outs = [...html.matchAll(/data-kind="clock-(in|out)"/g)].map(m => m[1]);
+      expect(outs).toEqual(['in', 'out', 'in', 'out']);
+    });
+
+    test('a day with no clock at all is drawn exactly as before', async () => {
+      const html = await page.evaluate(([s1, e1]) => _tlDayRailHtml([
+        { id: 'a1', source: 'auto', rawSource: 'place', date: '2026-09-01', minutes: 93,
+          clientName: 'Shop', personUid: 'me', startTime: s1, endTime: e1 },
+      ]), [at(7, 44), at(9, 17)]);
+      expect(html).not.toContain('clock-in');
+      expect(html).toContain('Shop');
+    });
+
+    // DELETED 2026-09-01 (CLAUDE.md 7 and 10.4). Two tests lived here asserting
+    // the clock row's sub-line read "7h 18m clocked, 5h 38m tracked below" beside
+    // its leftover amount. That presentation lasted about an hour: the owner's
+    // answer to it was that the clock should not be a row in the list at all,
+    // and the bracket tests above cover the shape that replaced it. Keeping them
+    // as skipped or rewritten would be keeping two answers to one question.
+    //
+    // The rule they were guarding, that a clock row must never show a span and
+    // an amount that contradict each other, is now structural: the caps show
+    // the two ends and the clocked total, and there is no leftover figure on
+    // screen to disagree with anything.
 
     test('a day with no manual clock at all is completely untouched', async () => {
       const r = await rowsFor([

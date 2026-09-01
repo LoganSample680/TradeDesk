@@ -1276,13 +1276,98 @@ function _tlRailHeadHtml(rows,label,noTotal){
 // runs down the page is a picture of time passing, and time does not run
 // backwards, so the newest-first ordering the table uses would make the line
 // lie about the day it is drawing.
+// ── THE CLOCK IS THE DAY'S BRACKET, NOT A ROW INSIDE IT ───────────────────
+//
+// Owner, 2026-09-01: "on manual clock in it should grab the start time then
+// the end at the very end, not show the whole day, all the other shit while
+// its duplicates should overlay themselves on the manual bar so manual clock
+// out extends."
+//
+// The first cut drew the clock as one more line item in the middle of the
+// day, holding whatever minutes the fences had not already claimed. The
+// arithmetic was right and the picture was wrong: a seven-hour clock sat in
+// the list competing with the very rows it contains, so the day read as a pile
+// of separate things instead of one shift with detail inside it.
+//
+// A clock in and a clock out are the two ends of the day. They open and close
+// the rail, everything the phone recorded in between rides between them, and
+// the clock's own total sits on the closing cap where a person looks for it.
+// Nothing about the numbers changes: _tlBlendManual still makes the row carry
+// only what the fences did not explain, so the day still totals the clock.
+// This is only where the clock is drawn.
+function _tlClockCapHtml(r,which,clockedMin){
+  const fm=typeof _fmtMin==='function'?_fmtMin:(mm=>mm+'m');
+  const isIn=which==='in';
+  const t=_tlFmtTime(isIn?r.startTime:r.endTime)||'—';
+  // The same edit control the clock row carried, kept on the OPENING cap: a
+  // wrong clock-in is the thing people actually need to fix, and losing the
+  // way to fix it was never part of moving where it is drawn (§7.2).
+  const edit=(isIn&&typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
+    ?'<button type="button" class="tl-rail-edit" onclick="_openEditTimeEntry('+r.rawId+')">Edit</button>'
+    :'';
+  const dur=isIn?''
+    :'<div class="tl-rail-dur">'+escHtml(fm(clockedMin))+'</div>';
+  // AND SO DOES THE LONG-PRESS DELETE (§7.2). It lived on the manual row this
+  // cap replaces, and moving where a clock is drawn was never a decision to
+  // remove the only way to delete one. Same attributes, same handler, on the
+  // opening cap beside Edit so both controls stay on the end people reach for.
+  const lp=(isIn&&typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
+    ?' data-lp-id="'+escHtml(String(r.rawId))+'" data-lp-type="timelog"'+
+     ' data-lp-label="'+escHtml(String(r.personName||'')+' · Clocked in')+'"'
+    :'';
+  return '<li class="tl-rail-row tl-rail-cap" data-kind="clock-'+which+'"'+lp+' '+
+      'style="--rail:var(--text3)">'+
+    '<div class="tl-rail-time"><span>'+escHtml(t)+'</span></div>'+
+    '<div class="tl-rail-spine" aria-hidden="true"><i></i><b></b></div>'+
+    '<div class="tl-rail-body">'+
+      // The same glyph the manual row has always carried. svgIcon falls back to
+      // the raw character for anything not in the set, so inventing a second
+      // one here would put a bare unicode square next to real icons; the WORD
+      // is what distinguishes the two ends anyway (1.4.1).
+      '<span class="tl-rail-tag">'+svgIcon('▶',{size:10})+' '+
+        escHtml(isIn?'Clocked in':'Clocked out')+'</span>'+
+      (edit?'<div class="tl-rail-sub">'+edit+'</div>':'')+
+    '</div>'+
+    (isIn?'<div class="tl-rail-dur"></div>':dur)+
+  '</li>';
+}
 function _tlDayRailHtml(rows){
   // A null row is not a segment, and drawing a blank one would hang a phantom
   // node off the spine at a time nothing happened. Dropped, not rendered.
   const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object')
     .sort((a,b)=>String(a.startTime||'').localeCompare(String(b.startTime||'')));
   if(!list.length)return '';
-  return '<ol class="tl-rail">'+list.map(_tlRailRow).join('')+'</ol>';
+  // Only a clock with both ends can bracket anything. An entry still running,
+  // or one saved without a time, stays an ordinary row: there is no closing
+  // cap to draw and a half-open bracket is worse than no bracket.
+  const clocks=list.filter(r=>r&&r.source==='manual'&&r.startTime&&r.endTime&&
+    Date.parse(r.startTime)>0&&Date.parse(r.endTime)>Date.parse(r.startTime));
+  if(!clocks.length)return '<ol class="tl-rail">'+list.map(_tlRailRow).join('')+'</ol>';
+  const out=[];
+  const open=[];   // clocks whose closing cap is still owed, newest first
+  const closeDue=(beforeMs)=>{
+    // A clock closes as soon as the rail reaches a row that starts after it
+    // ended, so the cap lands in true chronological order rather than being
+    // swept to the bottom of the day.
+    for(let i=open.length-1;i>=0;i--){
+      const c=open[i];
+      if(beforeMs!=null&&Date.parse(c.endTime)>beforeMs)continue;
+      out.push(_tlClockCapHtml(c,'out',(c.minutes||0)+(Number(c.blendedMin)||0)));
+      open.splice(i,1);
+    }
+  };
+  list.forEach(r=>{
+    const st=Date.parse(r.startTime||'')||null;
+    closeDue(st);
+    if(clocks.indexOf(r)>=0){
+      out.push(_tlClockCapHtml(r,'in',0));
+      open.push(r);
+      return;   // the clock itself is the bracket; it is never a row too
+    }
+    out.push(_tlRailRow(r));
+  });
+  closeDue(null);
+  return '<ol class="tl-rail">'+out.join('')+'</ol>';
 }
 // ── The week bars: how much, and does anything look wrong ──────────────────
 // Owner, 2026-08-30, on the timeline version that came first: "that's gotta be
