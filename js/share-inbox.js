@@ -247,6 +247,10 @@ function _shareInPrompt(items){
     return ranked.filter(c=>(String(c.name||'')+' '+String(c.addr||c.street||''))
       .toLowerCase().indexOf(t)>-1).slice(0,SHOWN);
   };
+  // Named once. The header and the discard confirmation both say it, and a
+  // confirmation that calls them "files" when the sheet called them "contacts"
+  // is a confirmation people stop reading.
+  const noun=allVcf?'contact':'file';
   const ic=(e,tone)=>'<span class="si-ic'+(tone?' si-ic-'+tone:'')+'">'+
     (typeof svgIcon==='function'?svgIcon(e,{size:17}):e)+'</span>';
   const opt=(id,tone,emoji,title,sub)=>
@@ -279,7 +283,7 @@ function _shareInPrompt(items){
     (hasVcf?opt('_si-contact',(allVcf?'d':''),'\ud83d\udc64',(n===1?'Add as a lead':'Add as leads'),
       'Name, phone and address off the card'):'');
   m.innerHTML=
-    '<div class="zmodal-title">'+n+' '+(allVcf?'contact':'file')+(n===1?'':'s')+' shared to TradeDesk</div>'+
+    '<div class="zmodal-title">'+n+' '+noun+(n===1?'':'s')+' shared to TradeDesk</div>'+
     '<div style="font-size:13px;color:var(--text2);margin:6px 0 13px">'+
       (allVcf?'Where should '+(n===1?'it':'they')+' go?':('What '+(n===1?'is it':'are they')+'?'))+'</div>'+
     (forks?'<div class="si-list">'+forks+'</div>':'')+
@@ -294,7 +298,7 @@ function _shareInPrompt(items){
                   :'<div class="si-empty">No clients yet. Add the client first, then share again.</div>'))+
     '<div class="si-foot">'+
       '<button id="_si-later" class="si-fbtn">Not now</button>'+
-      '<button id="_si-discard" class="si-fbtn si-fbtn-q">Discard</button>'+
+      '<button id="_si-discard" class="si-fbtn si-fbtn-x">Discard</button>'+
     '</div>';
   ov.appendChild(m);document.body.appendChild(ov);
   const close=()=>{ov.remove();_shareInAsking=false;};
@@ -322,10 +326,28 @@ function _shareInPrompt(items){
     const found=await _shareInAsContacts(items.filter(i=>/\.vcf$/i.test(i.path||'')));
     if(typeof showToast==='function'&&!found)showToast('No contact details in that file','⚠️');
   };
-  document.getElementById('_si-discard').onclick=async()=>{
-    await _shareInClear(items.map(i=>i.path));
-    close();
-    if(typeof showToast==='function')showToast('Shared files discarded','🗑');
+  // Discarding is the one IRREVERSIBLE thing on this sheet, and it sat behind a
+  // button styled identically to the harmless one beside it. iOS never offers a
+  // shared file a second time, which is the hazard this file's own header opens
+  // with: a mis-tap loses a receipt, or a jobsite photo the crew has already
+  // driven away from. So it now reads as destructive AND it asks first.
+  document.getElementById('_si-discard').onclick=()=>{
+    const go=async()=>{
+      await _shareInClear(items.map(i=>i.path));
+      close();
+      if(typeof showToast==='function')showToast('Shared '+noun+(n===1?'':'s')+' discarded','🗑');
+    };
+    if(typeof zConfirm!=='function'){go();return;}
+    // Stacked deliberately OVER the sheet rather than replacing it: this is a
+    // sub-decision, so backing out has to land the owner exactly where they
+    // were. The forks that open their own modal close the sheet first; this
+    // one must not.
+    zConfirm(
+      'iOS will not offer '+(n===1?'it':'them')+' again, so '+(n===1?'it is':'they are')+' gone for good.',
+      go,
+      {title:'Discard '+n+' shared '+noun+(n===1?'':'s')+'?',
+       yes:'Discard', no:'Keep '+(n===1?'it':'them')}
+    );
   };
   const clist=document.getElementById('_si-clist');
   const csearch=document.getElementById('_si-csearch');

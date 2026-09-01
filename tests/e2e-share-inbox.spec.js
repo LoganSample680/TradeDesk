@@ -178,7 +178,12 @@ test.describe('Share inbox', () => {
     expect(r.landed, 'and no phantom record is written').toBe(0);
   });
 
-  test('discard clears everything, Not now keeps it all', async () => {
+  test('discard asks first, and only then clears; Not now keeps it all', async () => {
+    // Discard is the one irreversible control on this sheet: iOS never offers a
+    // shared file a second time (this file's opening comment), so a mis-tap
+    // loses a receipt or a jobsite photo the crew has already driven away from.
+    // It used to fire on the first tap, styled identically to the harmless
+    // button beside it (owner, 2026-09-01).
     const r = await page.evaluate(async (items) => {
       const realCap = window.Capacitor;
       window.__cleared = [];
@@ -191,17 +196,64 @@ test.describe('Share inbox', () => {
             clear: (o) => { window.__cleared = window.__cleared.concat(o.paths || ['*ALL*']); return Promise.resolve(); },
           }),
         };
+        const seen = {};
+
         await checkSharedInbox({ force: true });
         document.getElementById('_si-later').click();
-        const afterLater = window.__cleared.length;
+        seen.afterLater = window.__cleared.length;
+
+        // Discard, then BACK OUT. Nothing may be deleted.
+        _shareInAsking = false;
         await checkSharedInbox({ force: true });
         document.getElementById('_si-discard').click();
+        const confirm1 = Array.from(document.querySelectorAll('.zmodal-overlay')).pop();
+        seen.asked = !!(confirm1 && confirm1.querySelector('#zmodal-yes'));
+        seen.sheetStillUp = !!document.getElementById('_sharein-ov');
+        seen.title = confirm1 ? confirm1.querySelector('.zmodal-title').textContent : '';
+        confirm1.querySelector('.zmodal-cancel').click();
+        await new Promise(res => setTimeout(res, 60));
+        seen.afterCancel = window.__cleared.length;
+        seen.sheetSurvivedCancel = !!document.getElementById('_sharein-ov');
+
+        // Discard, and confirm it this time.
+        document.getElementById('_si-discard').click();
+        const confirm2 = Array.from(document.querySelectorAll('.zmodal-overlay')).pop();
+        confirm2.querySelector('#zmodal-yes').click();
         for (let w = 0; w < 40 && document.getElementById('_sharein-ov'); w++) await new Promise(res => setTimeout(res, 50));
-        return { afterLater, afterDiscard: window.__cleared.length };
-      } finally { window.Capacitor = realCap; document.getElementById('_sharein-ov')?.remove(); }
+        seen.afterConfirm = window.__cleared.length;
+        return seen;
+      } finally {
+        window.Capacitor = realCap;
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        document.getElementById('_sharein-ov')?.remove();
+        _shareInAsking = false;
+      }
     }, ITEMS);
     expect(r.afterLater, 'Not now must never delete anything').toBe(0);
-    expect(r.afterDiscard, 'discard removes them on purpose').toBe(2);
+    expect(r.asked, 'discard must ask before it deletes').toBe(true);
+    expect(r.title, 'the question must name what is about to go').toContain('Discard 2 shared files');
+    expect(r.sheetStillUp, 'the sheet stays behind the question, it is a sub-decision').toBe(true);
+    expect(r.afterCancel, 'backing out of the question must delete NOTHING').toBe(0);
+    expect(r.sheetSurvivedCancel, 'and must land you back where you were').toBe(true);
+    expect(r.afterConfirm, 'confirming removes them on purpose').toBe(2);
+  });
+
+  test('the discard button does not look like the harmless one next to it', async () => {
+    // Two identical outline buttons where one is destructive is the defect the
+    // owner reported. They must not resolve to the same colour.
+    const r = await page.evaluate(() => {
+      document.getElementById('_sharein-ov')?.remove();
+      _shareInAsking = false;
+      _shareInPrompt([{ path: '/x/a.jpg' }]);
+      const later = getComputedStyle(document.getElementById('_si-later'));
+      const disc = getComputedStyle(document.getElementById('_si-discard'));
+      const out = { sameColor: later.color === disc.color, sameBorder: later.borderTopColor === disc.borderTopColor };
+      document.getElementById('_sharein-ov')?.remove();
+      _shareInAsking = false;
+      return out;
+    });
+    expect(r.sameColor, 'the destructive button needs its own text colour').toBe(false);
+    expect(r.sameBorder, 'and its own border').toBe(false);
   });
 
   test('never interrupts mid-task: only on the dashboard, never over another popup', async () => {

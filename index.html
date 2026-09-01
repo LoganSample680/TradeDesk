@@ -935,7 +935,9 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 .si-search::placeholder{color:var(--text3)}
 .si-foot{display:flex;gap:8px;margin-top:16px}
 .si-fbtn{flex:1;padding:11px;border:1px solid var(--border);border-radius:var(--r);background:none;font-family:inherit;font-size:13px;font-weight:700;color:var(--text2);cursor:pointer}
-.si-fbtn-q{color:var(--text3);font-weight:600}
+/* The destructive one must never look like the safe one sitting next to it.
+   Same red edge the delete-time-entry row uses, not a new colour. */
+.si-fbtn-x{color:var(--c-red);border-color:var(--c-red-edge);font-weight:700}
 
 .zmodal-msg{font-size:14px;color:var(--text-2);line-height:1.5;margin-bottom:18px}
 .zmodal-btns{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
