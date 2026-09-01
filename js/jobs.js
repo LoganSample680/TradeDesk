@@ -1949,7 +1949,12 @@ function _doExtendJob(jobId,addDays,btn){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   j.days=(parseInt(j.days)||1)+addDays;
   saveAll();
-  if(typeof renderCal==='function')renderCal();
+  // renderCalendar, not renderCal. renderCal has never existed, so the typeof
+  // guard was always false and extending a job saved the new duration while
+  // the calendar block kept its old width until the page was re-entered.
+  // js/jobs.js's own sibling call site (renderClientDetail();renderCalendar();)
+  // is the convention this should have followed.
+  if(typeof renderCalendar==='function')renderCalendar();
   btn.closest('.zmodal-overlay').remove();
   if(typeof showToast==='function')showToast('Job extended by '+addDays+' day'+(addDays!==1?'s':''),'📅');
 }

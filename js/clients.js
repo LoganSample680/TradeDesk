@@ -1300,7 +1300,17 @@ function _doImport(){
     added++;
   });
   saveAll();
-  renderClients();
+  // renderClientList, not renderClients: the latter has never existed anywhere
+  // in this codebase, so importing a vCard saved every contact and then threw
+  // a ReferenceError on this line, killing the whole tail. The modal stayed
+  // open and no toast fired, so the contractor saw a red error and no
+  // confirmation for an import that had actually worked (owner report,
+  // 2026-09-01, 141 contacts).
+  //
+  // No test caught it because everything after the first line of _doImport is
+  // unreachable with an empty _importContacts, and the only coverage called it
+  // empty, inside a try/catch that would have swallowed the throw anyway.
+  renderClientList();
   closeImportModal();
   showToast(added+' contact'+(added!==1?'s':'')+' imported','✅');
   _importContacts=[];

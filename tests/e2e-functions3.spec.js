@@ -3499,6 +3499,120 @@ test.describe('Client form and import functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // The test above calls _doImport with an EMPTY list, so it returns on its
+  // first line and never runs a single statement of the body, and its own
+  // try/catch would have swallowed the throw regardless. That is exactly how a
+  // ReferenceError on line 1303 survived to a real user (owner, 2026-09-01:
+  // imported 141 contacts from a vCard, got "Can't find variable:
+  // renderClients", modal stuck open, no toast, contacts actually saved).
+  // These run the body for real and do NOT catch.
+  test('_doImport with real contacts: adds them AND finishes its whole tail', async () => {
+    const r = await page.evaluate(() => {
+      const before = clients.length;
+      const openBefore = document.getElementById('import-modal');
+      if (openBefore) openBefore.style.display = 'block';
+      _importContacts = [
+        { name: 'Sweep One', phone: '5551110001', email: 'one@x.com', addr: '1 Main St', city: 'Austin', state: 'TX', zip: '78701' },
+        { name: 'Sweep Two', phone: '5551110002', email: '', addr: '', city: '', state: '', zip: '' },
+      ];
+      // Deliberately NOT wrapped in try/catch: an unresolved reference must
+      // fail this test, which is the whole point of it existing.
+      _doImport();
+      const mine = clients.filter(c => /^Sweep (One|Two)$/.test(c.name || ''));
+      const modal = document.getElementById('import-modal');
+      return {
+        grew: clients.length - before,
+        found: mine.length,
+        source: mine[0] && mine[0].source,
+        addr: (mine.find(c => c.name === 'Sweep One') || {}).addr,
+        tokens: mine.every(c => typeof c.clientToken === 'string'),
+        modalHidden: !modal || modal.style.display === 'none',
+        cleared: _importContacts.length,
+      };
+    });
+    expect(r.grew).toBe(2);
+    expect(r.found).toBe(2);
+    expect(r.source).toBe('Existing Contact');
+    expect(r.addr).toBe('1 Main St, Austin, TX 78701');
+    expect(r.tokens).toBe(true);
+    // Everything below the crash line. These are what actually regressed.
+    expect(r.modalHidden).toBe(true);
+    expect(r.cleared).toBe(0);
+  });
+
+  // The class guard, not just this one bug. Pulls every bare identifier
+  // _doImport calls out of its own source and asserts each one resolves, so
+  // the NEXT typo of this shape fails here instead of on somebody's phone.
+  // Resolved with `new Function('return typeof '+n)` rather than window[n],
+  // because a top-level const like todayKey is a real global binding but never
+  // a window property.
+  test('every function _doImport calls actually exists', async () => {
+    const r = await page.evaluate(() => {
+      const src = _doImport.toString()
+        .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+        .replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""').replace(/`[^`]*`/g, '``');
+      const names = [...new Set([...src.matchAll(/(?:^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/g)].map(m => m[1]))]
+        .filter(n => !['if', 'for', 'while', 'switch', 'catch', 'return', 'function', 'typeof', 'new'].includes(n));
+      const unresolved = names.filter(n => {
+        try { return new Function('return typeof ' + n)() === 'undefined'; } catch (_e) { return true; }
+      });
+      return { names, unresolved };
+    });
+    expect(r.names.length).toBeGreaterThan(3);
+    expect(r.unresolved, 'these are called by _doImport and do not exist').toEqual([]);
+  });
+
+  // The toast is the contractor's ONLY confirmation that the import worked, and
+  // it is the last statement of the tail, so it is the first thing lost to any
+  // throw above it. The owner's actual complaint was not the red error, it was
+  // that 141 contacts went in and nothing said so.
+  test('_doImport: the success toast fires, with the right count', async () => {
+    const r = await page.evaluate(() => {
+      document.querySelectorAll('.toast').forEach(t => t.remove());
+      _importContacts = [
+        { name: 'Sweep Toast', phone: '5551110003', email: '', addr: '', city: '', state: '', zip: '' },
+      ];
+      _doImport();
+      const toasts = [...document.querySelectorAll('.toast')].map(t => t.textContent);
+      return { toasts, cleared: _importContacts.length };
+    });
+    expect(r.toasts.length, 'exactly one toast per import').toBe(1);
+    expect(r.toasts[0], 'singular when one contact came in').toContain('1 contact imported');
+    expect(r.cleared).toBe(0);
+  });
+
+  // The class guard above proves every name _doImport calls RESOLVES. This one
+  // names the specific bad reference, so re-introducing a renderClients stub to
+  // satisfy the guard cannot pass, and covers the two sibling typos the same
+  // sweep turned up: both sat behind a typeof guard, so instead of throwing they
+  // silently did nothing. An extended job kept its old width on the calendar,
+  // and a finished room scan never landed the user on the client.
+  test('sweep: every repaired call site names a function that exists', async () => {
+    const r = await page.evaluate(() => ({
+      renderClients: typeof renderClients,
+      renderClientList: typeof renderClientList,
+      renderCal: typeof renderCal,
+      renderCalendar: typeof renderCalendar,
+      openClient: typeof openClient,
+      openClientDetail: typeof openClientDetail,
+      importSrc: String(_doImport),
+      extendSrc: typeof _doExtendJob === 'function' ? String(_doExtendJob) : '',
+      scanSrc: typeof _scanToEstimate === 'function' ? String(_scanToEstimate) : '',
+    }));
+    expect(r.renderClients, 'renderClients has never existed; nothing may call it again').toBe('undefined');
+    expect(r.renderClientList, 'renderClientList is the real client-list repaint').toBe('function');
+    expect(r.renderCal, 'renderCal has never existed').toBe('undefined');
+    expect(r.renderCalendar).toBe('function');
+    expect(r.openClient, 'openClient has never existed').toBe('undefined');
+    expect(r.openClientDetail).toBe('function');
+    // Source-level, so a guarded call to the dead name cannot creep back in
+    // without the typeof check quietly hiding it again.
+    expect(r.importSrc).toContain('renderClientList()');
+    expect(r.extendSrc, '_doExtendJob repaints via renderCalendar').toContain('renderCalendar');
+    expect(r.extendSrc.includes('renderCal(')).toBe(false);
+    expect(r.scanSrc, '_scanToEstimate lands the user on the client').toContain('openClientDetail(');
+  });
+
   test('no console errors during client form/import tests', async () => {
     assertNoErrors(page, 'client form/import');
   });

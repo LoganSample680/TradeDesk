@@ -1605,7 +1605,12 @@ function _scanToEstimate(id){
   // The seed is consumed by openGenericEstimate for this client (one row per
   // room, wall footage as the quantity), so the path is: land on the client,
   // tap New estimate, rooms are already lined.
-  if(sc.clientId!=null&&typeof openClient==='function'){openClient(sc.clientId);}
+  // openClientDetail, not openClient. openClient has never existed, so this
+  // guard was always false and the comment above described a landing that
+  // never happened: the scan overlay closed and the contractor was left
+  // wherever they already were, with a toast telling them to go start an
+  // estimate they had not been taken to.
+  if(sc.clientId!=null&&typeof openClientDetail==='function'){openClientDetail(sc.clientId);}
   if(typeof showToast==='function')showToast('Rooms measured. Start an estimate for this client and they load in automatically.','📐');
 }
 // Standalone sale completion: collect the money through the normal payment
