@@ -152,12 +152,24 @@ function _tlStopAnchored(arrMs,depMs,anchors){
   const day=dstr(new Date(arrMs));
   if(day!==dstr(new Date(depMs)))return false;   // spans midnight: never shown
   const SLACK=2*60000;   // kerb-edge timestamp rounding, same floor the merge gap used
-  // Overlap veto first, against EVERY anchor: one covering more than the
-  // edge slack of the stop means the person was provably on site (or at the
-  // shop) during it, so the "unpaid" row is a stretched artifact, not time
-  // between fences, whatever its edges look like.
+  // Overlap veto first: an anchor covering more than the edge slack of the
+  // stop means the person was provably on site (or at the shop) during it, so
+  // the "unpaid" row is a stretched artifact, not time between fences.
+  //
+  // EVERY ANCHOR EXCEPT A MANUAL CLOCK (owner 2026-09-01: "9:17 to 11:17
+  // wasnt all time spect at oakley remember, that was a untracked address
+  // that should have shown grey"). The veto's whole argument is that the
+  // anchor PROVES where somebody was, and a fence does. A clock does not: it
+  // brackets a shift, so it overlaps every minute of the day by design.
+  // Jack's Sept 1 clock ran 07:42 to 15:00 and vetoed all six of his stops at
+  // once, which is why his untracked client visits, the part of the day where
+  // he did the work, never appeared on the rail at all.
+  //
+  // A clock is still evidence that the day WAS a work day, so it keeps its
+  // vote in the before/after/workSide test below. It just stops being
+  // evidence of a location it never had.
   for(const a of anchors){
-    if(a&&Math.min(a.dep,depMs)-Math.max(a.arr,arrMs)>SLACK)return false;
+    if(a&&!a.clock&&Math.min(a.dep,depMs)-Math.max(a.arr,arrMs)>SLACK)return false;
   }
   let before=false,after=false,workSide=false;
   for(const a of anchors){
@@ -447,10 +459,10 @@ async function _timeLogRows(sinceISO){
   // that isn't itself a stop or wheel time, plus shop sessions (their own
   // table) and the person's manual clock entries.
   const anchorsByUid={};
-  const _anchorPush=(uid,arrIso,depIso,isShop)=>{
+  const _anchorPush=(uid,arrIso,depIso,isShop,isClock)=>{
     const arr=Date.parse(arrIso),dep=Date.parse(depIso);
     if(!(arr>0&&dep>0))return;
-    (anchorsByUid[uid]=anchorsByUid[uid]||[]).push({arr,dep,shop:!!isShop});
+    (anchorsByUid[uid]=anchorsByUid[uid]||[]).push({arr,dep,shop:!!isShop,clock:!!isClock});
   };
   const _anchorSrc=s=>{const t=String(s||'');return /^(geofence|manual|place)$/.test(t)||/^(geofence|place)-/.test(t);};
   (crew.entries||[]).forEach(e=>{
@@ -545,7 +557,11 @@ async function _timeLogRows(sinceISO){
     // null logged_by_uid means the owner, the same convention the geo/dedup
     // code uses; the owner's crew rows carry the contractor uid.
     const uid=e.logged_by_uid||(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
-    if(uid)_anchorPush(uid,e.start_time,e.end_time);
+    // TAGGED AS A CLOCK, and the tag is load-bearing (see the overlap veto in
+    // _tlStopAnchored). A clock brackets a whole shift by design and says
+    // nothing about where the person stood minute to minute; every other
+    // anchor is a fence that does.
+    if(uid)_anchorPush(uid,e.start_time,e.end_time,false,true);
   });
   (crew.entries||[]).forEach(e=>{
     if(!e.arrived_at)return;
@@ -2537,7 +2553,11 @@ const _TL_BUCKETS=[
   {k:'shopMin',   label:'Shop',         c:'var(--c-teal,#0E6B6B)'},
   {k:'driveMin',  label:'Driving',      c:'#9F5B00'},
   {k:'loadMin',   label:'Loading',      c:'#6D28D9'},
-  {k:'placeMin',  label:'Supply/other', c:'var(--text3)'}
+  // Grey is what the clock covered and no fence explained (owner 2026-09-01:
+  // "grey time should say Manual Time rather than supply/other"). It was named
+  // for the supply-house visits it used to hold; on a real day it is mostly
+  // the untracked stops between fences, and "Supply/other" describes neither.
+  {k:'placeMin',  label:'Manual time', c:'var(--text3)'}
 ];
 function _tlBucketTotal(e){
   return _TL_BUCKETS.reduce((s,b)=>s+((e&&e[b.k])||0),0);

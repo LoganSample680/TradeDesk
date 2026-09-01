@@ -4938,6 +4938,87 @@ test.describe('timelog.js: exhaustive coverage', () => {
     // the two ends and the clocked total, and there is no leftover figure on
     // screen to disagree with anything.
 
+    // ── A CLOCK IS NOT A LOCATION (owner 2026-09-01) ──────────────────────
+    //
+    // "9:17 to 11:17 wasnt all time spect at oakley remember, that was a
+    // untracked address that should have shown grey as manual time."
+    //
+    // Those stops were in the data the whole time and the rail never drew one.
+    // _tlStopAnchored vetoes a stop that any anchor OVERLAPS, on the argument
+    // that the anchor proves the person was somewhere else. A fence proves
+    // that. A manual clock does not: it brackets a shift, so it overlaps every
+    // minute of the day by construction. Jack's clock ran 07:42 to 15:00 and
+    // suppressed all six of his stops at once, including the untracked client
+    // visit that was the actual work.
+    test('a clock does not veto the stops inside it', async () => {
+      const r = await page.evaluate(([es, ms]) => {
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        const entries = es.map(e => ({ ...e, employee_user_id: ME }));
+        window._fetchCrewLabor = async () => ({ name: { [ME]: 'Jack' }, entries, shopEntries: [] });
+        return _timeLogRows(null)
+          .then(rows => rows.filter(x => x.date === '2026-09-01')
+            .map(x => ({ raw: x.rawSource || '', m: x.minutes, unpaid: !!x.unpaid })))
+          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT; });
+      }, [
+        // His real shape: shop, the untracked stop between two fences, shop.
+        [{ minutes: 93, source: 'place', dest_place: '1200 SW Oakley Ave',
+           arrived_at: at(7, 44), departed_at: at(9, 17) },
+         { minutes: 63, source: 'stop', arrived_at: at(9, 48), departed_at: at(10, 51) },
+         { minutes: 44, source: 'place', dest_place: '1200 SW Oakley Ave',
+           arrived_at: at(11, 20), departed_at: at(12, 4) }],
+        [{ id: 1, date: D, open: false, job_id: null, minutes: 438,
+           start_time: at(7, 42), end_time: at(15, 0),
+           logged_by_uid: null, logged_by_name: 'Jack' }],
+      ]);
+      const stop = r.find(x => x.raw === 'stop');
+      expect(stop, 'the untracked client visit has to reach the rail').toBeTruthy();
+      // Its own 63 minutes plus whatever _tlAbsorbGaps hands it: the drive to
+      // and from an unpaid stop belongs to the stop, so the row is expected to
+      // be LONGER than the raw fence, never shorter, and the day reads as one
+      // continuous span rather than a list of islands.
+      expect(stop.m).toBeGreaterThanOrEqual(63);
+      expect(stop.m, 'it cannot swallow more than the window it sits in')
+        .toBeLessThanOrEqual(123);
+      // Still unpaid: showing it is not the same as counting it. The office
+      // decides what to pay; the app's job is to stop hiding the hour.
+      expect(stop.unpaid).toBe(true);
+    });
+
+    test('a real fence still vetoes a stop that overlaps it', async () => {
+      // The rule the veto exists for is unchanged. Only the clock is exempt.
+      const r = await page.evaluate(([es, ms]) => {
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        const entries = es.map(e => ({ ...e, employee_user_id: ME }));
+        window._fetchCrewLabor = async () => ({ name: { [ME]: 'Jack' }, entries, shopEntries: [] });
+        return _timeLogRows(null)
+          .then(rows => rows.filter(x => x.date === '2026-09-01' && x.rawSource === 'stop').length)
+          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT; });
+      }, [
+        // The stop sits INSIDE a place fence: he was provably there, so the
+        // row is a stretched artifact and still must not draw.
+        [{ minutes: 93, source: 'place', dest_place: 'X', arrived_at: at(7, 0), departed_at: at(12, 0) },
+         { minutes: 63, source: 'stop', arrived_at: at(9, 48), departed_at: at(10, 51) },
+         { minutes: 44, source: 'place', dest_place: 'X', arrived_at: at(13, 0), departed_at: at(14, 0) }],
+        [],
+      ]);
+      expect(r).toBe(0);
+    });
+
+    test('the grey bucket is named for what it holds', async () => {
+      // "grey time should say Manual Time rather than supply/other."
+      const labels = await page.evaluate(() => _TL_BUCKETS.map(b => b.label));
+      expect(labels).toContain('Manual time');
+      expect(labels).not.toContain('Supply/other');
+    });
+
     test('a day with no manual clock at all is completely untouched', async () => {
       const r = await rowsFor([
         A('drive', [8, 0], [8, 30], 30),
