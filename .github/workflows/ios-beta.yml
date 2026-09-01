@@ -266,7 +266,8 @@ jobs:
           sed -i '' 's|PRODUCT_BUNDLE_IDENTIFIER = app.tradedesk.beta;|PRODUCT_BUNDLE_IDENTIFIER = app.tradedesk.beta;\n\t\t\t\tCODE_SIGN_ENTITLEMENTS = App/App.entitlements;|g' ios/App/App.xcodeproj/project.pbxproj
           grep -n "CODE_SIGN_ENTITLEMENTS" ios/App/App.xcodeproj/project.pbxproj
 
-      - name: Share extension target
+      - name: 'COMPONENT share-extension: build the target'
+        id: share-target
         # An app EXTENSION cannot ride a CocoaPod: it needs its own target,
         # bundle id, entitlements, and an embed phase in the app. The project
         # is regenerated every build, so the target is rebuilt every build too
@@ -324,7 +325,14 @@ jobs:
         # Back to skipped so the rest of the build ships.
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          SKIP_SHARE_EXT: '1'
+          # ATTEMPT 4, 2026-09-01. What changed since attempt 3 is not another
+          # manual portal click: scripts/asc-ensure-ids.mjs now VERIFIES that
+          # group.app.tradedesk.beta is actually ATTACHED to the App Groups
+          # capability, not merely that the capability is on. That gap is the
+          # best explanation for all three failures, and it is checked in the
+          # preflight step, BEFORE the archive, so a fourth failure costs
+          # seconds instead of a build.
+          SKIP_SHARE_EXT: '0'
         run: |
           if [ "$SKIP_SHARE_EXT" = "1" ]; then
             echo "::notice::share extension SKIPPED for signing isolation (see step comment)"
@@ -410,7 +418,8 @@ jobs:
           fi
           xcodebuild -version
 
-      - name: Portal identifiers exist with the capabilities the entitlements need
+      - name: 'COMPONENT share-extension: portal preflight (ids, capabilities, and the GROUP)'
+        id: portal-preflight
         # Cloud signing can DOWNLOAD profiles but has twice proven unable to
         # CREATE portal records here (the share extension's bundle id, then
         # builds 25/26: the Live extension id + the new push capability on the
@@ -427,6 +436,7 @@ jobs:
         run: node ../scripts/asc-ensure-ids.mjs
 
       - name: Archive (ad-hoc signed; real signing happens at export)
+        id: archive
         # Automatic signing at ARCHIVE time demands a DEVELOPMENT profile,
         # which requires a registered device on the team, and this account
         # has none (build #2: "Your team has no devices"). App Store
@@ -452,6 +462,7 @@ jobs:
             AD_HOC_CODE_SIGNING_ALLOWED=YES
 
       - name: Export the signed IPA
+        id: export-ipa
         run: |
           cat > build/export.plist <<'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -583,6 +594,51 @@ jobs:
           fi
 
           exit $MISSING
+
+      # ── WHICH HALF BROKE (owner 2026-09-01) ─────────────────────────────────
+      # "I want them looped together but analytics to show what failed."
+      # Build 46 carries two unverified native changes: the share extension
+      # (three prior export failures) and the drive-window GPS plugin. Without
+      # this, a red run says only "the build failed" and you cannot tell which
+      # one to go and fix.
+      #
+      # Runs on failure ONLY, reads the step outcomes GitHub already tracks, and
+      # writes a verdict to the run summary. It never masks the failure: the job
+      # is already red by the time this runs and it does not change that.
+      #
+      # The drive window is deliberately NOT guesswork here: its Swift is
+      # compiled and unit-tested by ios-native-tests.yml on every PR touching
+      # native/, so if that gate was green the plugin's code is already proven
+      # and a failure at THIS stage is almost certainly signing, which is the
+      # share extension's problem, not the plugin's.
+      - name: 'ANALYTICS: which component failed'
+        if: failure()
+        run: |
+          {
+            echo "## Build failed, and here is which half"
+            echo ""
+            echo "| Component | Step | Outcome |"
+            echo "|---|---|---|"
+            echo "| share extension | build the target | ${{ steps.share-target.outcome || 'see log' }} |"
+            echo "| share extension | portal preflight | ${{ steps.portal-preflight.outcome || 'see log' }} |"
+            echo "| both | archive | ${{ steps.archive.outcome || 'see log' }} |"
+            echo "| both | export / signing | ${{ steps.export-ipa.outcome || 'see log' }} |"
+            echo ""
+            if [ "${{ steps.portal-preflight.outcome }}" = "failure" ]; then
+              echo "**Verdict: the SHARE EXTENSION's portal setup.** Nothing was archived, so this cost seconds."
+              echo "The preflight prints the exact two clicks. The drive-window plugin is untouched by this and is fine."
+            elif [ "${{ steps.export-ipa.outcome }}" = "failure" ]; then
+              echo "**Verdict: signing, which means the SHARE EXTENSION.** The archive built, so both plugins compiled."
+              echo "Look for \"No profiles for 'app.tradedesk.beta.share'\" in the export log."
+              echo "To ship the drive window alone: set SKIP_SHARE_EXT back to '1' and re-run."
+            elif [ "${{ steps.archive.outcome }}" = "failure" ]; then
+              echo "**Verdict: a COMPILE error, so it is native code, not signing.**"
+              echo "Check ios-native-tests.yml on this commit: if that was green, the TdGeo plugin compiles and the"
+              echo "failure is in the share extension's own Swift or in how the target was injected."
+            else
+              echo "**Verdict: not in the native components.** The failure is before or after them; read the red step above."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload to TestFlight
         env:
