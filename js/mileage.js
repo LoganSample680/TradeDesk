@@ -1791,6 +1791,17 @@ function autoLogDriveTrip(opts){
     // sees. Absent on stale legs and collapsed-detour legs (geo-track.js owns
     // that judgment).
     gpsMiles:(opts.observedMiles>0?opts.observedMiles:undefined),
+    // ── THE ROUTE (owner ask 2026-09-01) ──────────────────────────────────
+    // The dense breadcrumb this leg actually drove, [lat,lng,ms] triples,
+    // captured by js/geo-track.js while a drive window is open. It rides on
+    // the trip row rather than in a table because it belongs to the trip: it
+    // is drawn on the row (openMileageRoute), it syncs with td_mileage like
+    // every other field, and it survives offline with the record it describes.
+    //
+    // DRAWN, NOT COUNTED. Nothing reads it as distance today, deliberately:
+    // rewriting the number on an existing IRS row off a new measurement is not
+    // a change to make quietly. See the precedence note in geo-track.js.
+    path:(Array.isArray(opts.path)&&opts.path.length>=2?opts.path:undefined),
     // The trip's real clock: startedIso already exists below (End Drive needs
     // it), endedIso is the verified arrival. Both absent on stale legs.
     endedIso:opts.endedIso||undefined,
@@ -2108,8 +2119,11 @@ function _reoriginTrip(m,from){
   m.from_name=from.name||'';
   // A re-pointed leg spans a journey the GPS tally never watched as one piece
   // (and may include a personal stop's driving): the observed-miles floor no
-  // longer applies, only the direct route does.
+  // longer applies, only the direct route does. The drawn ROUTE goes with it,
+  // for the same reason and more visibly: a map showing a track that starts
+  // somewhere other than the row's own From is worse than no map.
   delete m.gpsMiles;
+  delete m.path;
   const fc=m.fromCoord={lat:from.lat,lng:from.lng};
   const tc=m.toCoord;
   m.miles=0;m.calc_method='pending_auto';
@@ -3713,6 +3727,12 @@ function _milRenderTripList(shown,yr){
           '<div class="mil-trip-stats">'+
             (r.miles?'<div class="mil-trip-mi">'+(+r.miles).toFixed(1)+' mi</div>':'')+
             (metaTxt?'<div class="mil-trip-meta">'+metaTxt+'</div>':'')+
+            // Only on a leg that actually has a track. A "Route" affordance on
+            // a row with nothing to draw is the dead button js/observability.js
+            // exists to catch (§13.1).
+            (Array.isArray(r.path)&&r.path.length>=2
+              ?'<button class="mil-trip-route" onclick="openMileageRoute('+r.id+')">'+svgIcon('🗺️',{size:10})+' Route</button>'
+              :'')+
             stateBadge+
           '</div>'+
         '</div>'+
@@ -3817,6 +3837,60 @@ function _togMileTrip(id){
 function toggleMileAddr(id){_togMileTrip(id);}// legacy alias
 function delMileage(id){_userDelete(()=>{mileage=mileage.filter(x=>x.id!==id);saveAll();_flushSaveNow();});if(currentClientId){const el=document.getElementById('cd-mile-list');if(el)renderCDMileage();}renderAllMileage();}
 function editMilePurpose(id,val){const m=mileage.find(x=>x.id===id);if(!m)return;m.purpose=val;saveAll();_flushSaveNow();}
+// ── THE ROUTE, ON A MAP (owner ask 2026-09-01) ──────────────────────────────
+// "then overlay that on a map and you get you're true mileage down to the
+// exact route." Built on the app's ONE map renderer (tdMapRender, js/places.js,
+// the same one the day map and the Places territory map go through, §7.3) in
+// the app's ONE modal shell (.zmodal-overlay / .zmodal), so this screen
+// inherits the MapKit instance, the licence gate, and the no-tiles fallback
+// plot for free rather than growing a second mapping approach.
+//
+// Fleet-shaped, so allowKit rides tdAppleHardware(): Apple's licence forbids
+// MapKit JS for asset tracking on non-Apple hardware, and a drawn crew route
+// is squarely that. On an Android phone or a Windows desktop the fallback plot
+// draws instead, which uses none of Apple's data.
+function openMileageRoute(id){
+  const r=(typeof mileage!=='undefined'?mileage:[]).find(x=>String(x.id)===String(id));
+  if(!r||!Array.isArray(r.path)||r.path.length<2)return;
+  document.getElementById('_mil-route-ov')?.remove();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_mil-route-ov';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='520px';
+  const pts=[];
+  if(r.fromCoord&&r.fromCoord.lat!=null)pts.push({lat:+r.fromCoord.lat,lon:+r.fromCoord.lng,type:'start',label:r.from_name||r.from||'Start'});
+  if(r.toCoord&&r.toCoord.lat!=null)pts.push({lat:+r.toCoord.lat,lon:+r.toCoord.lng,type:'end',label:r.to_name||r.to||'End'});
+  // A row whose endpoints were never geocoded still has its track, and the
+  // track's own ends are the honest stand-in.
+  if(!pts.length){
+    pts.push({lat:+r.path[0][0],lon:+r.path[0][1],type:'start',label:'Start'});
+    pts.push({lat:+r.path[r.path.length-1][0],lon:+r.path[r.path.length-1][1],type:'end',label:'End'});
+  }
+  const _mi=(+r.miles||0).toFixed(1);
+  // Said plainly, because it is the difference between a picture and a claim:
+  // the drawn line is what the phone watched, the logged number is what the
+  // row carries, and where they differ the row's number is the one on the
+  // books. Nothing here rewrites it.
+  const gps=(r.gpsMiles>0)?('Watched '+(+r.gpsMiles).toFixed(1)+' mi · '):'';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;line-height:1.25;margin-bottom:2px">Route driven</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:12px">'+
+      escHtml((r.from_name||r.from||'Start'))+' → '+escHtml((r.to_name||r.to||'End'))+'</div>'+
+    '<div id="_mil-route-body" style="margin-bottom:10px"></div>'+
+    '<div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:12px">'+
+      gps+'Logged '+_mi+' mi · '+r.path.length+' points</div>'+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="width:100%">Close</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  try{
+    tdMapRender({
+      body:document.getElementById('_mil-route-body'),
+      pts,
+      path:r.path,
+      style:{start:{c:'#0E6B39',label:'Start',glyph:'A'},end:{c:'#dc2626',label:'End',glyph:'B'}},
+      st:tdMapState(),hostId:'_mil-route-canvas',height:300,
+      allowKit:(typeof tdAppleHardware==='function')?tdAppleHardware():false,
+    });
+  }catch(_e){}
+}
 function openMileageEdit(id){
   const r=mileage.find(x=>x.id===id);if(!r)return;
   openLogTripModal({editId:id,fromAddress:r.from||'',toAddress:r.to||'',purpose:r.purpose||'',clientId:r.client_id,clientName:r.client_name||'',vehicle:r.vehicle||'',date:r.date||'',notes:r.notes||'',miles:r.miles||0});

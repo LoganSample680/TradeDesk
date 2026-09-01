@@ -297,6 +297,32 @@ let _geoMphHeldZero=false;// this ping's zero was held as a GPS hiccup, not moti
 let _geoDriveShown=false; // was the banner on screen after the last ping
 // Accumulation floor: below this the fix is parking-lot jitter, not travel.
 const _GEO_DRIVE_ACCUM_FT=100;
+// ── THE ROUTE (owner ask 2026-09-01) ────────────────────────────────────────
+// "so we can draw the route, then overlay that on a map and you get you're
+// true mileage down to the exact route." The breadcrumb is kept per LEG and
+// travels with the mileage row (rec.path), so the drawing is a property of the
+// trip rather than a query against a ping table that is throttled to one row a
+// minute and could never trace a road anyway.
+//
+// [lat, lng, ms] triples, 5 decimal places (about 1.1m, well under any GPS
+// fix's own error) so the row stays small enough to sync like every other
+// td_mileage record. A 45-minute leg at one point per 100ft of travel is
+// roughly 1,600 points before the cap; the cap decimates rather than truncates
+// so a long drive keeps its whole SHAPE instead of its first half.
+let _geoDrivePath=[];
+const _GEO_PATH_MAX=400;
+function _geoPathPush(lat,lng,ms){
+  const r5=v=>Math.round(v*1e5)/1e5;
+  _geoDrivePath.push([r5(lat),r5(lng),ms]);
+  if(_geoDrivePath.length<=_GEO_PATH_MAX)return;
+  // Halve by dropping every other INTERIOR point. Endpoints always survive, so
+  // the leg still starts and ends where it really did, and the effective
+  // spacing doubles instead of the tail being thrown away.
+  const keep=[_geoDrivePath[0]];
+  for(let i=1;i<_geoDrivePath.length-1;i+=2)keep.push(_geoDrivePath[i]);
+  keep.push(_geoDrivePath[_geoDrivePath.length-1]);
+  _geoDrivePath=keep;
+}
 // The banner survives a red light but clears a couple minutes after parking
 // somewhere the fence machine doesn't recognize.
 const _GEO_DRIVE_SHOW_MS=150000;
@@ -306,7 +332,7 @@ function _geoDriving(){
   const _tracking=_geoWatchId!=null||(typeof _geoNativeWatcherId!=='undefined'&&_geoNativeWatcherId!=null);
   return !!(_tracking&&_geoDriveStartedAt&&(Date.now()-_geoDriveMovingAt)<_GEO_DRIVE_SHOW_MS);
 }
-function _geoDriveReset(){_geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix=null;_geoDriveMph=0;_geoDriveMovingAt=0;_geoMphZeroRun=0;_geoMphHeldZero=false;_geoDriveHadPause=false;}
+function _geoDriveReset(){_geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix=null;_geoDriveMph=0;_geoDriveMovingAt=0;_geoMphZeroRun=0;_geoMphHeldZero=false;_geoDriveHadPause=false;_geoDrivePath=[];}
 // A PAUSE is a sub-stop sit: too long for any red light, too short for the
 // five-minute stop machinery (owner's Domino's run, 2026-08-13: a 3-4 minute
 // pizza pickup mid-route). Judged on POSITION DWELL (the stop anchor), never
@@ -626,6 +652,11 @@ function _geoPersistOpen(hiddenAt){
         // these across the reload closes that gap.
         driveMovingAt:_geoDriveMovingAt,driveMiles:_geoDriveMiles,driveSteps:_geoDriveSteps,
         driveMph:_geoDriveMph,driveLastFix:_geoDriveLastFix,
+        // The route so far. A WebView reload mid-drive (this app's own
+        // version watchdog reloads on any mismatch) would otherwise throw away
+        // everything driven before it and draw the second half of the trip as
+        // the whole trip, which is worse than drawing nothing.
+        drivePath:_geoDrivePath,
         hiddenAt:hiddenAt||new Date().toISOString(),uid:(_supaUser&&_supaUser.id)||null,day:todayKey()
       }));
     }else localStorage.removeItem(_GEO_OPEN_KEY);
@@ -715,6 +746,12 @@ function _geoRestoreOpen(){
     if(typeof s.driveSteps==='number')_geoDriveSteps=s.driveSteps;
     if(typeof s.driveMph==='number')_geoDriveMph=s.driveMph;
     if(s.driveLastFix)_geoDriveLastFix=s.driveLastFix;
+    // Re-capped on restore, not trusted raw: this is localStorage, which any
+    // other tab, a corrupt write, or an older build could have left in any
+    // shape at all.
+    if(Array.isArray(s.drivePath)){
+      _geoDrivePath=s.drivePath.filter(p=>Array.isArray(p)&&p.length>=2&&isFinite(p[0])&&isFinite(p[1])).slice(-_GEO_PATH_MAX);
+    }
     if(!_geoLegOrigin&&s.legOrigin)_geoLegOrigin=s.legOrigin;
     if(!_geoDrivePendingAt&&s.drivePendingAt)_geoDrivePendingAt=s.drivePendingAt;
     if(!_geoDrivePendingId&&s.drivePendingId)_geoDrivePendingId=s.drivePendingId;
@@ -931,6 +968,27 @@ async function _geoOnPing(pos){
   // locate (js/crew-locate.js) is the caller: it cannot use the shimmed
   // getCurrentPosition, which answers from a two-minute cache on purpose.
   _geoEmitFix({lat:here.lat,lng:here.lng,acc:Math.round(acc||0),ts:nowMs});
+  // ── THE OTHER HALF OF THE DRIVE CORRELATION (owner 2026-09-01) ────────────
+  // "a automotive event and a gps ping or vice versa." This is the one funnel
+  // every real fix passes through, whichever engine produced it, so it is the
+  // only place the ping half can be registered once and only once.
+  //
+  // Two exclusions, both load-bearing. A visit report and a region wake carry
+  // coordinates that are not a current position (see __tdNoTrack below), so
+  // they are not a ping. And a fix this handler would refuse to measure with
+  // is not good enough to spend the radio on either: _driveAccOk is computed
+  // just below and reused rather than a second accuracy bar being invented.
+  //
+  // Cheap by construction: this only ever writes a timestamp unless a fresh
+  // automotive flip is already sitting there waiting for it.
+  // Third exclusion: a REPLAYED fix carries the moment it was taken (__tdTs),
+  // and a buffer drained on next boot is full of them. Two stale halves inside
+  // three minutes of each other would otherwise pair perfectly and turn the
+  // radio up now for a drive that finished on Tuesday.
+  if(!(pos&&pos.__tdNoTrack)&&acc>0&&acc<=_GEO_GAP_EXIT_MAX_ACC_M&&
+     _geoEvFresh({ts:nowMs})){
+    try{_geoDriveCorrelate('fix',nowMs,'ping');}catch(_e){}
+  }
   // ── Live drive banner: rolling miles + speed ──────────────────────────────
   // Runs BEFORE the fence machine so the fix that closes the leg still counts
   // its last stretch of road. Straight-line ping to ping: display only, the
@@ -948,7 +1006,15 @@ async function _geoOnPing(pos){
   // act on" threshold (already used for gap-exit resolution below), rather
   // than inventing a second accuracy bar.
   const _driveAccOk=acc>0&&acc<=_GEO_GAP_EXIT_MAX_ACC_M;
-  if(_geoDriveStartedAt){
+  // A VISIT REPORT IS NOT A POSITION, and neither is a region wake's stale
+  // last-known fix. See the long note at the _noTrack flag in _geoTdEvent:
+  // these three event types carry coordinates that describe somewhere the
+  // truck WAS, delivered late, and letting them extend the tally is what
+  // yanked the owner's drive home back to its origin and re-counted the way
+  // forward. They still run the fence machine below; they just stop moving the
+  // odometer and the route.
+  const _tracks=!(pos&&pos.__tdNoTrack);
+  if(_geoDriveStartedAt&&_tracks){
     if(_geoDriveLastFix){
       const stepFt=_geoDistFt(here,_geoDriveLastFix);
       const dtMs=nowMs-_geoDriveLastFix.atMs;
@@ -961,6 +1027,7 @@ async function _geoOnPing(pos){
         // no-op: fall through with mph/miles/lastFix all untouched
       }else if(stepFt>_GEO_DRIVE_ACCUM_FT){
         _geoDriveMiles+=stepFt/5280;_geoDriveSteps++;
+        _geoPathPush(here.lat,here.lng,nowMs);
         // Derived speed as the fallback: plenty of devices ping without a
         // speed reading, and distance over time is honest for a 20-30s gap.
         if(dtMs>3000)_geoDriveMph=(stepFt/5280)/(dtMs/3600000);
@@ -974,6 +1041,9 @@ async function _geoOnPing(pos){
       }
     }else if(_driveAccOk){
       _geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs,acc};
+      // The origin of the route, so a drawn leg starts where it started
+      // instead of 100ft along.
+      if(!_geoDrivePath.length)_geoPathPush(here.lat,here.lng,nowMs);
     }
   }
   // The device's own reading wins when present, it is current rather than a
@@ -1458,6 +1528,10 @@ async function _geoOnPing(pos){
       _geoDriveReset();
       _geoStopAnchor=null;
       _geoLegOrigin=null;
+      // The wheels stopped and the fence agreed: nothing left is worth Best
+      // accuracy. (The at-rest motion edge normally beats this by minutes;
+      // this is the backstop for a phone whose coprocessor said nothing.)
+      _geoDriveWindowClose('leg-closed');
     }else{
       // Out on the road. Open at NOW rather than at the last on-site fix: we can
       // SEE they are gone, so the first moment we know they had left is the
@@ -1489,6 +1563,9 @@ async function _geoOnPing(pos){
         _geoLegOrigin=_geoLastFenceLoc;
         _geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs,acc};
         _geoDriveHadPause=false;
+        // The route starts at the fence we just left, not at the first fix
+        // 100ft down the road that happens to clear the accumulation floor.
+        _geoDrivePath=[];_geoPathPush(here.lat,here.lng,nowMs);
         // A drive opening IS a shift running: the beat must survive whatever
         // the day does next, including the app dying at the destination.
         _geoHeartbeatSync(null);
@@ -3208,6 +3285,12 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // errand; the direct route is the deductible answer, so the floor stands
   // down. A genuinely forced detour never sits still for 2.5 minutes.
   const obsMiles=(!stale&&!hadDetourLegs&&!_geoDriveHadPause&&_geoDriveSteps>=8&&_geoDriveMiles>0.3)?Math.round(_geoDriveMiles*10)/10:null;
+  // THE ROUTE THIS LEG ACTUALLY TOOK. Captured here, before the next leg
+  // resets the tally, and on the same terms as obsMiles: a stale leg's
+  // breadcrumb is fiction (nobody was watching), and two points are a straight
+  // line, not a route. Nothing downstream reads it as distance yet, see the
+  // precedence note in _geoAutoMileage: it is drawn, not counted.
+  const obsPath=(!stale&&_geoDrivePath.length>=2)?_geoDrivePath.slice():null;
   if(!stale&&_geoLegOrigin&&_geoLegOrigin.extraDriveMins){driveMins+=_geoLegOrigin.extraDriveMins;delete _geoLegOrigin.extraDriveMins;}
   // ── OUT AND BACK WITH NOTHING BUSINESS IN IT ─────────────────────────────
   // Owner rule (2026-08-10): "a drive from home office shop and back shouldn't
@@ -3251,7 +3334,7 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   }
   // The arrival stamp rides along so the row can show WHEN the trip ran, not
   // just how long: a stale leg passes nothing, its clock times are fiction.
-  _geoAutoMileage(_geoLegOrigin,destLoc,legKey,stale?arrived:driveStartedAt,companyVeh,driveMins,stale?null:arrived,obsMiles);
+  _geoAutoMileage(_geoLegOrigin,destLoc,legKey,stale?arrived:driveStartedAt,companyVeh,driveMins,stale?null:arrived,obsMiles,obsPath);
   // A leg just closed, which is exactly the evidence reconciliation reads:
   // schedule a debounced pass (no-op unless a live watcher is running).
   _geoReconcileSoon();
@@ -3287,7 +3370,7 @@ function _geoLegIsImpossible(from,to,driveMins){
     return (mi/(mins/60))>_GEO_MAX_DRIVE_MPH;
   }catch(_e){return false;}
 }
-function _geoAutoMileage(from,to,legKey,startedIso,companyVeh,driveMins,endedIso,obsMiles){
+function _geoAutoMileage(from,to,legKey,startedIso,companyVeh,driveMins,endedIso,obsMiles,obsPath){
   try{
     if(typeof autoLogDriveTrip!=='function')return;
     if(!from||!to||from.lat==null||to.lat==null)return;
@@ -3353,7 +3436,7 @@ function _geoAutoMileage(from,to,legKey,startedIso,companyVeh,driveMins,endedIso
     // morning commute into a company deduction on the strength of a checkbox
     // the owner ticked about their own spare room.
     if(from.likelyHome&&!(S.homeOffice&&!_isEmployee))return;
-    autoLogDriveTrip({from,to,legKey,startedIso,endedIso:endedIso||undefined,reimbursable:unknown?undefined:reimbursable,vehicleUnknown:unknown,mins:driveMins,observedMiles:obsMiles||undefined});
+    autoLogDriveTrip({from,to,legKey,startedIso,endedIso:endedIso||undefined,reimbursable:unknown?undefined:reimbursable,vehicleUnknown:unknown,mins:driveMins,observedMiles:obsMiles||undefined,path:(obsPath&&obsPath.length>=2)?obsPath:undefined});
   }catch(_e){}
 }
 
@@ -4168,6 +4251,180 @@ function _geoTdPlugin(){
     return (cap.Plugins&&cap.Plugins.TdGeo)||null;
   }catch(_e){return null;}
 }
+// ── THE DRIVE WINDOW: dense GPS only while a drive is actually happening ────
+//
+// Owner, 2026-09-01, and this is the architecture, not a paraphrase of it:
+// "when core motion fires a automotive event and a gps ping or vice versa that
+// should fire the continuous drive tracking, then the 30 minute cron job keeps
+// confirming and checking the location, when automotive goes back to cycling or
+// walking that fire another ping which shuts off the continuous gps."
+//
+// THREE PARTS, AND THE FIRST ONE IS THE STRICT ONE.
+//
+// 1. OPENING IS A CORRELATION OF TWO SIGNALS, IN EITHER ORDER. A CoreMotion
+//    automotive transition on its own is NOT enough, and that is deliberate:
+//    the coprocessor reads automotive from a ride in somebody else's truck,
+//    from a bus, and from a phone jostling on a bench, and a bare flip with no
+//    position to go with it is exactly the case that must not burn the radio.
+//    A GPS ping on its own is not enough either, since the app takes fixes all
+//    day for weather and fences. One of each, within _GEO_DRIVE_PAIR_MS of the
+//    other, is a drive.
+//
+//    Order genuinely does not matter, and both orders are the common case.
+//    Motion first: the coprocessor needs roughly a minute of sustained
+//    movement before it will call automotive at anything but low confidence,
+//    but it still beats a geofence, which cannot fire until a line several
+//    hundred feet away has been crossed. Ping first: a significant-change or
+//    fence wake often lands while the flip is still being decided.
+//
+// 2. THE 30-MINUTE CRON IS THE CONFIRMER, and it already exists: the
+//    geo-ping-cron workflow -> push-geo-ping -> a silent APNs push -> TdGeo
+//    records a push-ping carrying the current fix. No second timer is built
+//    here (§7.3). While a window is open, each push-ping asks one question:
+//    has this phone actually moved since the last confirmation? Moved means
+//    the drive is real, so the window is re-asserted and the plugin's safety
+//    cap is pushed out. Not moved means the drive ended without anybody
+//    saying so, and the confirmer is what notices.
+//
+// 3. CLOSING IS A MOTION EVENT, AND CYCLING COUNTS AS ONE. Walking, running,
+//    cycling or stationary all shut the continuous GPS off. Cycling is called
+//    out because the two other places in this codebase that classify motion do
+//    NOT agree about it and cannot both be right here:
+//      - ingest-geo (supabase/functions/ingest-geo/index.ts:99) puts cycling in
+//        AUTO_KINDS, i.e. vehicular, alongside automotive and driving.
+//      - _mileTapeHadPause (js/mileage.js) treats cycling as MOVING ON FOOT,
+//        on the observation that CoreMotion reads walking around a truck with a
+//        phone in your pocket as cycling.
+//    The owner named cycling as a stop condition, and for the radio that is
+//    the safe direction to be wrong in either way: if it really is a bicycle
+//    there are no business miles to trace, and if it is really a walk around
+//    the yard the window had to close anyway. The server's disagreement is
+//    NOT changed from here; it decides which legs open, which is a far wider
+//    blast radius than the radio, and it is flagged rather than quietly
+//    rewritten.
+//
+// EVERY DECISION IN THIS BLOCK IS JS (CLAUDE.md 3.2). The plugin knows how to
+// turn the receiver up and how to give up on its own after maxMs; the pairing
+// window, the confirmation interval, the movement threshold and the whole
+// classification live here and stay tunable through a UAT roll.
+//
+// WHY ANY OF IT MATTERS. On the owner's 5:07pm drive home the app got SEVEN
+// fixes in fourteen minutes: gaps of 15s, 146s, 282s, 119s, 15s and 167s.
+// Straight lines between points that far apart cut every curve, so two legs on
+// a 3.2 mile route measured 2.3 and 3.1; and one bad point in a sparse set has
+// nothing to average it out, so the same drive logged 4.8.
+let _geoDriveWinAt=0;        // ms the window was opened (0 = closed)
+let _geoDriveWinWhy='';      // what opened it, for the journal
+let _geoDriveWinAskedAt=0;   // last bridge call, so a stream of events is one ask
+let _geoDriveCorrMotionAt=0; // ms of an unpaired fresh automotive transition
+let _geoDriveCorrFixAt=0;    // ms of an unpaired fresh GPS ping
+let _geoDriveConfirmFix=null;// {lat,lng} position at the last 30-minute confirmation
+// How far apart the two halves of the correlation may be. Three minutes covers
+// both orders with room: the coprocessor's own declaration lag is under a
+// minute, and a fence exit lands one to two minutes behind the parking space.
+// Short enough that a walk past a parked truck at 10:00 and a passenger ride
+// at 10:30 can never pair with each other.
+const _GEO_DRIVE_PAIR_MS=3*60000;
+// The NATIVE cap. Deliberately generous against a real drive and still far
+// short of a night: an open window re-asserts itself off its own fixes and off
+// the 30-minute confirmation long before this, so this only ever fires when
+// nothing is confirming anything, and then it costs 45 minutes of radio
+// instead of eight hours.
+const _GEO_DRIVE_WIN_CAP_MS=45*60000;
+// How often JS re-asserts, which is what refreshes that cap. Comfortably
+// inside both the cap and the 30-minute confirmation.
+const _GEO_DRIVE_WIN_REASSERT_MS=5*60000;
+// Movement the 30-minute confirmer requires to call the drive still real.
+// 1,000ft in half an hour is 0.4mph; no drive is that slow and no parked truck
+// is that fast, so there is no honest reading of this that is ambiguous.
+const _GEO_DRIVE_CONFIRM_FT=1000;
+// 30m: see the same constant's justification in TdGeoPlugin.swift. GPS is 1Hz,
+// so below ~27m at highway speed the filter stops being the limiter.
+const _GEO_DRIVE_SAMPLE_M=30;
+// Is this event describing something that is happening NOW? The buffer replays
+// history, the coprocessor backfills days of it, and neither is a reason to
+// turn the receiver up. One number, one meaning, used by every opener.
+const _GEO_EV_FRESH_MS=5*60000;
+function _geoEvFresh(ev){
+  const t=Number(ev&&ev.ts);
+  if(!isFinite(t)||t<=0)return false;
+  const d=Date.now()-t;
+  return d>=-60000&&d<=_GEO_EV_FRESH_MS;   // a minute of clock skew forgiven
+}
+// ONE vocabulary for the radio's purposes. See the cycling note above: this
+// deliberately differs from the server's AUTO_KINDS, and the difference is
+// documented rather than accidental.
+function _geoKindDrives(k){const s=String(k||'');return s==='automotive'||s==='driving';}
+function _geoKindRests(k){
+  const s=String(k||'');
+  return s==='walking'||s==='running'||s==='onFoot'||s==='still'||s==='stationary'||s==='cycling';
+}
+function _geoDriveWindowOn(){return _geoDriveWinAt>0;}
+// The correlation, from either side. `half` is 'motion' or 'fix'; whichever
+// arrives second finds the first still waiting and opens the window.
+function _geoDriveCorrelate(half,atMs,why){
+  const now=Number(atMs)||Date.now();
+  if(half==='motion')_geoDriveCorrMotionAt=now; else _geoDriveCorrFixAt=now;
+  if(_geoDriveWinAt){_geoDriveWindowOpen(why||half);return true;}   // already open: re-assert
+  const m=_geoDriveCorrMotionAt,f=_geoDriveCorrFixAt;
+  if(!m||!f)return false;
+  if(Math.abs(m-f)>_GEO_DRIVE_PAIR_MS)return false;
+  // Neither half is spendable twice: without this a single automotive flip
+  // would pair with every fix for the rest of the shift and the window could
+  // never be genuinely closed by anything.
+  _geoDriveCorrMotionAt=0;_geoDriveCorrFixAt=0;
+  return _geoDriveWindowOpen('motion+fix'+(why?' '+why:''));
+}
+function _geoDriveWindowOpen(why){
+  const Td=_geoTdPlugin();
+  if(!Td||typeof Td.setSampling!=='function')return false;   // shell predates build 44
+  const now=Date.now();
+  // Idempotent, and throttled: every re-assert is a bridge call plus a
+  // UserDefaults write, and a dense window delivers a fix every second or two.
+  if(_geoDriveWinAt&&now-_geoDriveWinAskedAt<_GEO_DRIVE_WIN_REASSERT_MS)return true;
+  const first=!_geoDriveWinAt;
+  _geoDriveWinAskedAt=now;
+  if(first){_geoDriveWinAt=now;_geoDriveWinWhy=String(why||'');_geoDriveConfirmFix=null;}
+  try{Promise.resolve(Td.setSampling({mode:'drive',maxMs:_GEO_DRIVE_WIN_CAP_MS,distanceFilter:_GEO_DRIVE_SAMPLE_M})).catch(()=>{});}catch(_e){}
+  _geoParkNote(first?'drive-window-on':'drive-window-hold',String(why||''));
+  return true;
+}
+function _geoDriveWindowClose(why){
+  // The correlation state goes with the window. A stale unpaired half left
+  // sitting here would re-open the window against the next unrelated fix.
+  _geoDriveCorrMotionAt=0;_geoDriveCorrFixAt=0;_geoDriveConfirmFix=null;
+  if(!_geoDriveWinAt)return false;
+  _geoDriveWinAt=0;_geoDriveWinWhy='';_geoDriveWinAskedAt=0;
+  const Td=_geoTdPlugin();
+  try{if(Td&&typeof Td.setSampling==='function')Promise.resolve(Td.setSampling({mode:'coarse',reason:String(why||'js')})).catch(()=>{});}catch(_e){}
+  _geoParkNote('drive-window-off',String(why||''));
+  return true;
+}
+// ── The 30-minute confirmation (owner 2026-09-01) ───────────────────────────
+// Driven by the push-ping the EXISTING geo-ping cron already delivers, never a
+// timer of its own. Two jobs, and the second is the one nobody else does: keep
+// a real drive's window alive past the plugin's safety cap, and notice a window
+// that should have closed and nothing closed.
+function _geoDriveConfirm(ev){
+  if(!_geoDriveWinAt)return null;
+  const has=typeof ev.lat==='number'&&typeof ev.lng==='number';
+  if(!has){
+    // No position to judge by. Re-assert rather than close: the phone answered
+    // the push, so the process is alive and a drive may well still be running.
+    // The plugin's cap is what bounds this, exactly as designed.
+    _geoDriveWindowOpen('confirm-nofix');
+    return 'nofix';
+  }
+  const here={lat:ev.lat,lng:ev.lng};
+  const prev=_geoDriveConfirmFix;
+  _geoDriveConfirmFix=here;
+  if(!prev){_geoDriveWindowOpen('confirm-first');return 'first';}
+  const ft=_geoDistFt(here,prev);
+  if(ft>=_GEO_DRIVE_CONFIRM_FT){_geoDriveWindowOpen('confirm-moved');return 'moved';}
+  // Half an hour, under a thousand feet. Whatever this is, it is not a drive.
+  _geoDriveWindowClose('confirm-idle');
+  return 'idle';
+}
 let _geoParkSpot=null;   // where to center the region when the countdown fires
 // ── The shift heartbeat, armed at every chance JS gets ──────────────────────
 // Owner report 2026-08-27 (live device, morning at a job): zero heartbeat
@@ -4197,7 +4454,28 @@ function _geoHeartbeatSync(spot){
     }
     if(Date.now()-_geoHbArmedAtMs<60000)return;
     _geoHbArmedAtMs=Date.now();
-    Promise.resolve(Td.startHeartbeat({intervalMs:30*60000,ttlMs:12*3600000})).catch(()=>{});
+    // keepalive:false is the whole answer to "why is the blue arrow up when
+    // TradeDesk backgrounds" (owner 2026-09-01). The beat used to hold a
+    // standing 3km background location session purely to keep this process
+    // resident, and iOS pins the status-bar indicator for ANY background
+    // location session however coarse, so the arrow was on for every waking
+    // minute of a shift.
+    //
+    // Whether that session bought any residency is not established: on
+    // 2026-08-31 he backgrounded a phone mid-shift and delivery stopped dead
+    // (the backgrounding row itself took 1028 seconds to arrive), but nothing
+    // proves the beat was armed at that minute. What IS settled is that the
+    // liveness has a cheaper owner: the 30-minute silent push already wakes a
+    // backgrounded app and records a fix, and it is the same push that
+    // confirms the drive window above.
+    //
+    // Passed EXPLICITLY rather than relying on the plugin's default, because
+    // this is the decision and it belongs in JS (§3.2): flipping it to true is
+    // one word and a UAT roll if drives start being missed, never a rebuild.
+    // What still wakes a dead app is unchanged and is not this: region
+    // monitoring, significant-location-change and visit monitoring, all armed
+    // by startEvents, all of which relaunch a force-quit app.
+    Promise.resolve(Td.startHeartbeat({intervalMs:30*60000,ttlMs:12*3600000,keepalive:false})).catch(()=>{});
     _geoParkNote('hb-on','30m tick armed');
   }catch(_e){}
 }
@@ -4239,6 +4517,10 @@ function _geoEnterParkMode(spot){
   // into this stop is settled here or it is lost (owner report 2026-08-09:
   // the drive home never logged).
   if(_geoStopAnchor&&_geoDriveStartedAt)_geoSettleStopLeg(_geoStopAnchor,new Date().toISOString());
+  // Parking is the definition of not driving. Whatever the motion tape did or
+  // did not say, the window closes here or the radio stays up through the
+  // whole park, which is the standing-arrow state this change exists to end.
+  _geoDriveWindowClose('park');
   // Parking is the moment we know the app may not be alive for the next fix,
   // so the open leg and its ORIGIN go to disk here rather than relying on a
   // screen-lock event that may already have passed.
@@ -4706,12 +4988,31 @@ async function _geoTdEvent(ev,replay){
   // departure pin lands at the kerb instead of half a mile out at the
   // significant-change wake (owner 2026-08-27: pin at the first footstep).
   if(ev.type==='heartbeat'){if(!replay)_geoParkNote('heartbeat',ev.acc!=null?Math.round(ev.acc)+'m':'no fix');return;}
+  // The plugin's own record of the drive window opening and closing (its
+  // safety cap fires without asking us, which is the entire point of it). It
+  // carries no position and must never touch the fence machine; it exists so
+  // the journal and the server tape can both show when the radio was up, and
+  // so JS learns about a cap it did not ask for.
+  if(ev.type==='sampling'){
+    if(ev.mode!=='drive'&&_geoDriveWinAt){_geoDriveWinAt=0;_geoDriveWinWhy='';_geoDriveWinAskedAt=0;}
+    if(!replay)_geoParkNote('sampling',String(ev.mode||'')+(ev.reason?' ('+ev.reason+')':''));
+    return;
+  }
   // Lifecycle rows (app-active/background/terminate/relaunch) and the cron's
   // push-ping are liveness bookkeeping, exactly like the heartbeat above:
   // they exist for the server record and must never reach the fence machine,
   // where a fixless or 3km-cached event could false-exit a fence.
   if(ev.type==='push-ping'||/^app-/.test(String(ev.type||''))){
     if(!replay)_geoParkNote(String(ev.type),ev.acc!=null?Math.round(ev.acc)+'m':'');
+    // ── THE 30-MINUTE CONFIRMER (owner 2026-09-01) ────────────────────────
+    // "then the 30 minute cron job keeps confirming and checking the
+    // location." This push IS that cron (geo-ping-cron.yml -> push-geo-ping),
+    // already arriving every half hour, so the confirmation rides it rather
+    // than growing a second timer (§7.3). It only ever asks whether the phone
+    // has moved; the coordinates never reach the fence machine or the
+    // odometer, because a push-ping's fix is whatever cached position
+    // CLLocationManager happened to be holding.
+    if(!replay&&ev.type==='push-ping'){const _v=_geoDriveConfirm(ev);if(_v)_geoParkNote('drive-confirm',_v);}
     // THE UPDATE RIDES THE WAKE (owner 2026-08-28). Until now new web code
     // reached a phone only when somebody opened the app: the version check
     // fires on foreground resume (js/cloud.js _checkVersionOnResume), so a
@@ -4833,6 +5134,24 @@ async function _geoTdEvent(ev,replay){
         // Never forward. A tape event stamped in the future (clock skew on a
         // replayed buffer) must not backdate a leg into next week.
         if(_at<=now){_geoDrivePendingAt=new Date(_at).toISOString();
+          // ── HALF OF THE CORRELATION (owner 2026-09-01) ────────────────────
+          // Hung off the flip that ALREADY exists rather than a parallel
+          // signal (§7.3): this edge is the app's one definition of "the truck
+          // pulled out", it already mints the flipId the leg is keyed by, and
+          // it is already plumbed live, replayed and backfilled.
+          //
+          // It ARMS the correlation, it does not open the window. A GPS ping
+          // within _GEO_DRIVE_PAIR_MS, before or after, is what opens it, and
+          // a flip that never gets one never costs a second of radio: that is
+          // the passenger-in-someone-else's-truck case, and the phone jostling
+          // on a bench case, and both of them used to be indistinguishable
+          // from a departure.
+          //
+          // Freshness, not replay, is the gate: a relaunch replaying a
+          // transition from ten seconds ago IS the drive that is happening,
+          // and a buffered edge from two days ago is not a reason to spend
+          // radio now.
+          if(_geoEvFresh(ev))_geoDriveCorrelate('motion',Number(ev.ts)||Date.now(),'automotive');
           // The flip's own id rides along, and is what the leg will be keyed
           // by. Null on an older build that sends no flipId, which falls back
           // to the derived key exactly as before.
@@ -4843,6 +5162,21 @@ async function _geoTdEvent(ev,replay){
       // it is not the departure that a fence exit ten minutes from now would
       // be describing.
       if(_foot(cur)||cur==='still'){_geoDrivePendingAt=null;_geoDrivePendingId=null;}
+      // ── AND THIS IS WHAT SHUTS THE CONTINUOUS GPS OFF ────────────────────
+      // Owner: "when automotive goes back to cycling or walking that fire
+      // another ping which shuts off the continuous gps." Any non-automotive
+      // kind closes it, CYCLING INCLUDED, which is why this asks
+      // _geoKindRests rather than the narrower _foot() used above for the
+      // pending-departure claim: _foot deliberately excludes cycling (the
+      // server counts cycling as vehicular, see the block comment on
+      // _geoKindRests), and the radio must not inherit that argument.
+      //
+      // It is the cheapest and earliest close there is: the leg itself does
+      // not close until a fence agrees, minutes later, and holding Best
+      // accuracy through that wait is exactly the standing-radio cost this
+      // change exists to remove. If they pull out again, the next automotive
+      // flip plus its ping re-open it.
+      if(_geoKindRests(cur)&&_geoEvFresh(ev))_geoDriveWindowClose('rest-'+cur);
       // Park mode keeps its own looser rule (any non-still motion may mean
       // they are leaving), so a parked truck still wakes on a walk past it.
       if(!replay&&(boundary||(_geoParkModeOn&&cur!=='still'))&&now-_geoMotionBurstAt>_GEO_MOTION_BURST_GAP_MS){
@@ -4857,6 +5191,25 @@ async function _geoTdEvent(ev,replay){
     const out=ev.type==='regionExit'||
       (hasFix&&_geoLastFenceLoc&&_geoDistFt({lat:ev.lat,lng:ev.lng},_geoLastFenceLoc)>_geoFenceFt());
     if(out)_geoExitParkMode();
+  }
+  // ── THE OTHER OPENER: a force-closed app seeing a fence exit ──────────────
+  // The owner's original wording is an OR: "when core motion goes automotive
+  // ... or a force closed app sees a geo fence exit." Region monitoring is the
+  // one location service iOS will relaunch a force-quit app for, and in that
+  // relaunched process there is no live motion stream to correlate with: the
+  // coprocessor's history only reaches us on the backfill a moment later. So a
+  // REPLAYED fence exit opens the window on its own, because requiring a
+  // correlation there would mean a drive that began with the app dead never
+  // gets a route, which is precisely the case the owner named.
+  //
+  // A LIVE fence exit is the strict case instead: the app is running, the
+  // motion stream is running, so the exit counts as the ping half and waits
+  // for the flip. Leaving a fence is not by itself a drive (walking off site,
+  // GPS wander at the fence line), and the correlation is what tells them
+  // apart.
+  if(ev.type==='regionExit'&&_geoEvFresh(ev)){
+    if(replay)_geoDriveWindowOpen('fence-exit-replay');
+    else _geoDriveCorrelate('fix',Number(ev.ts)||Date.now(),'fence-exit');
   }
   if(!hasFix)return;
   // ── THE VISIT REPORT ALREADY KNOWS WHEN THEY GOT THERE ───────────────────
@@ -4895,11 +5248,35 @@ async function _geoTdEvent(ev,replay){
       _geoParkNote('visit-backdate',(typeof _bizHM==='function'?_bizHM(new Date(a)):_backdated.slice(11,16))+' ('+Math.round((nowMs-a)/60000)+'m late)');
     }
   }
+  // ── NOT EVERY EVENT WITH COORDINATES IS A POSITION ───────────────────────
+  // Owner's 5:07pm drive home, 2026-08-31: a `visit` arrived 18 seconds after
+  // a fix a quarter mile away, yanked the drive accumulator back to the
+  // origin, and then counted the way forward all over again. That single event
+  // is most of why the leg logged 4.8 miles on a 3.2 mile route.
+  //
+  // Root cause: every native event type was funneled through ONE call into
+  // _geoOnPing as `{coords:{latitude:ev.lat, longitude:ev.lng}}`, and for three
+  // of them that is a lie:
+  //   visit       : the CENTROID of a place iOS decided you had been at,
+  //                 delivered minutes after the fact (median 4, worst 45).
+  //   regionEnter : manager.location at wake time, a stale last-known fix.
+  //   regionExit  : the same, and by definition from before you left.
+  // The block immediately above already knew a visit's TIME arrives late
+  // (_geoParkBackdate) and never questioned its COORDINATES in the same
+  // message.
+  //
+  // They still do their real jobs, which is why this is a flag and not a
+  // `return`: a visit still backdates and resolves the arrival, a region event
+  // still drives the fence machine and closes the leg. They just stop
+  // EXTENDING the distance tally and the route, because none of them describes
+  // where the truck is right now.
+  const _noTrack=(ev.type==='visit'||ev.type==='regionEnter'||ev.type==='regionExit');
   try{
     return await _geoOnPing({
       coords:{latitude:ev.lat,longitude:ev.lng,accuracy:ev.acc||0,
               speed:(typeof ev.speed==='number'&&ev.speed>=0)?ev.speed:null},
-      __tdTs:typeof ev.ts==='number'?ev.ts:undefined
+      __tdTs:typeof ev.ts==='number'?ev.ts:undefined,
+      __tdNoTrack:_noTrack||undefined
     });
   }finally{
     // One-shot means one-shot. The transition consumes it (see arriveIso
@@ -5127,6 +5504,10 @@ function stopGeoTracking(){
   _geoParkModeOn=false;
   _geoFenceEnteredAtMs=null;
   _geoQuietSinceMs=null;_geoParkPrevFix=null;
+  // Before stopAll, so the window's own state machine unwinds through the one
+  // door it has instead of being cleared out from under it: stopAll ends the
+  // native side, this ends the JS side's memory of it.
+  _geoDriveWindowClose('tracking-off');
   {const Td=_geoTdPlugin();try{if(Td&&typeof Td.stopAll==='function')Td.stopAll();}catch(_e){}}
   if(_geoNativeWatcherId!=null){
     const BG=_geoNativePlugin();
@@ -7753,6 +8134,36 @@ function _geoTrackInit(){
       if(document.hidden){
         _geoGapHiddenAt=new Date().toISOString();
         _geoPersistOpen(_geoGapHiddenAt);
+        // ── THE OTHER ARROW (owner 2026-09-01) ──────────────────────────────
+        // "when tradedesk backgrounds I see the blue navigation arrow." The
+        // drive window and the heartbeat are two of the three things that can
+        // light iOS's location indicator; the third is the continuous
+        // BackgroundGeolocation watcher startGeoTracking arms, and it used to
+        // run until the park countdown removed it, which needs FOUR MINUTES of
+        // quiet after the app is off screen. So backgrounding the app at a job
+        // meant four more minutes of standing GPS every single time, and any
+        // stop with no park spot to arm meant it never came down at all.
+        //
+        // Backgrounding with nothing driving is the definition of not needing
+        // continuous GPS, so park NOW rather than in four minutes. Deliberately
+        // routed through _geoEnterParkMode rather than removing the watcher
+        // here (§7.3): that function already owns settling the open leg,
+        // persisting state, arming the region set, the heartbeat, and the
+        // watcher teardown, and a second hand-rolled teardown would drift from
+        // it. It re-defers on its own if the app is really still on screen.
+        //
+        // The three guards are the whole safety story: an open drive window,
+        // an open drive leg, or movement at driving speed in the last couple
+        // of minutes all mean a drive may be under way, and a drive keeps its
+        // GPS. Recent movement is judged with _GEO_DRIVE_SHOW_MS, the same
+        // "was this truck moving lately" clock the drive banner uses.
+        try{
+          if(!_geoDriveWindowOn()&&!_geoDriveStartedAt&&
+             (Date.now()-_geoDriveMovingAt)>_GEO_DRIVE_SHOW_MS&&!_geoParkModeOn){
+            _geoParkNote('bg-park-now','idle at background');
+            _geoEnterParkMode(_geoStopAnchor||_geoLastFenceLoc);
+          }
+        }catch(_e){}
       }else{
         _geoDrainQueue();                      // back online-ish, flush queued entries
         if(_geoCurrentJob)_geoWakeAcquire();   // wake locks auto-release on hide

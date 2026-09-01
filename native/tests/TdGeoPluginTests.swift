@@ -1257,4 +1257,372 @@ extension TdGeoPluginTests {
         XCTAssertNil(id.rangeOfCharacter(from: CharacterSet.alphanumerics.inverted),
             "no dashes, no punctuation, nothing to escape")
     }
+
+    // ── THE DRIVE WINDOW (owner 2026-09-01) ─────────────────────────────────
+    // "gps continuous should only fire when core motion goes automotive [and]
+    // a gps ping ... then the 30 minute cron job keeps confirming."
+    //
+    // JS owns every decision. What Swift owns, and what these stress, is the
+    // capability and the ONE thing JS cannot be trusted with: giving the radio
+    // back when nobody remembers to ask. A phone left at
+    // kCLLocationAccuracyBest overnight is the worst outcome this whole
+    // feature can produce, so the cap gets adversarial coverage in every shape
+    // it can be reached: malformed arguments, no arguments, double starts, an
+    // app relaunched into an expired window, and a stopAll on top of it.
+
+    func testSetSampling_driveArmsTheWindowAndReportsItsOwnTerms() {
+        let done = expectation(description: "setSampling drive")
+        plugin.setSampling(makeCall(options: ["mode": "drive"], onSuccess: { data in
+            XCTAssertEqual(data?["mode"] as? String, "drive")
+            XCTAssertEqual(data?["distanceFilter"] as? Double,
+                           TdGeoPlugin.driveFilterDefaultMForTest,
+                           "the default filter is the plugin's, not the caller's guess")
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+        XCTAssertTrue(plugin.driveSamplingOnForTest(), "the window must be armed and persisted")
+    }
+
+    func testSetSampling_clampsAnAbsurdCapRatherThanTrustingIt() {
+        // JS owns the number and the plugin still refuses garbage: a week-long
+        // window is the exact failure the cap exists to prevent, so a caller
+        // cannot ask for one.
+        let done = expectation(description: "clamped")
+        plugin.setSampling(makeCall(
+            options: ["mode": "drive", "maxMs": 999_999_999_999.0],
+            onSuccess: { data in
+                XCTAssertEqual(data?["maxMs"] as? Double, TdGeoPlugin.samplingCapCeilingMsForTest,
+                               "four hours is the ceiling, whatever was asked for")
+                done.fulfill()
+            }))
+        wait(for: [done], timeout: 30)
+    }
+
+    func testSetSampling_clampsAFloorSoAOneMillisecondWindowIsImpossible() {
+        let done = expectation(description: "floor")
+        plugin.setSampling(makeCall(
+            options: ["mode": "drive", "maxMs": 1.0],
+            onSuccess: { data in
+                XCTAssertEqual(data?["maxMs"] as? Double, TdGeoPlugin.samplingCapFloorMsForTest)
+                done.fulfill()
+            }))
+        wait(for: [done], timeout: 30)
+    }
+
+    func testSetSampling_clampsTheDistanceFilterBothWays() {
+        let cases: [(Double, Double)] = [(0.5, 5), (5000, 200)]
+        for (asked, want) in cases {
+            let done = expectation(description: "filter \(asked)")
+            plugin.setSampling(makeCall(
+                options: ["mode": "drive", "distanceFilter": asked],
+                onSuccess: { data in
+                    XCTAssertEqual(data?["distanceFilter"] as? Double, want)
+                    done.fulfill()
+                }))
+            wait(for: [done], timeout: 30)
+        }
+    }
+
+    func testSetSampling_noModeAtAllMeansCoarse_neverAccidentalDrive() {
+        // A bridge call with no options must never turn the radio UP. Silence
+        // reads as "go dark", the safe direction.
+        let done = expectation(description: "no options")
+        plugin.setSampling(makeCall(options: [:], onSuccess: { data in
+            XCTAssertEqual(data?["mode"] as? String, "coarse")
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+        XCTAssertFalse(plugin.driveSamplingOnForTest())
+    }
+
+    func testSetSampling_junkModeIsCoarse_notARejection() {
+        // Same contract locationPermStatus carries: always answer, never
+        // reject, because a rejected promise on this path leaves JS unable to
+        // tell "the radio is down" from "the bridge is broken".
+        for junk in ["DRIVE ", "banana", "", "0"] {
+            let done = expectation(description: "junk \(junk)")
+            plugin.setSampling(makeCall(options: ["mode": junk], onSuccess: { data in
+                XCTAssertEqual(data?["mode"] as? String, "coarse")
+                done.fulfill()
+            }))
+            wait(for: [done], timeout: 30)
+        }
+    }
+
+    func testSetSampling_modeIsCaseInsensitive() {
+        let done = expectation(description: "DRIVE")
+        plugin.setSampling(makeCall(options: ["mode": "DRIVE"], onSuccess: { data in
+            XCTAssertEqual(data?["mode"] as? String, "drive")
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+        XCTAssertTrue(plugin.driveSamplingOnForTest())
+    }
+
+    func testSetSampling_wrongTypesDoNotCrashAndDoNotArmADrive() {
+        let done = expectation(description: "wrong types")
+        plugin.setSampling(makeCall(
+            options: ["mode": 42, "maxMs": "later", "distanceFilter": [1, 2]],
+            onSuccess: { _ in done.fulfill() }))
+        wait(for: [done], timeout: 30)
+        XCTAssertFalse(plugin.driveSamplingOnForTest(), "a non-string mode is not \"drive\"")
+    }
+
+    func testSetSampling_repeatedDriveCallsAreOneWindow_notAStack() {
+        // Same guard-race shape as 11.2. JS re-asserts every few minutes and on
+        // every confirmation; N asserts must leave ONE window and ONE cap.
+        for i in 1...8 {
+            let done = expectation(description: "assert #\(i)")
+            plugin.setSampling(makeCall(options: ["mode": "drive"], onSuccess: { _ in done.fulfill() }))
+            wait(for: [done], timeout: 30)
+        }
+        XCTAssertTrue(plugin.driveSamplingOnForTest())
+        let off = expectation(description: "one close ends it")
+        plugin.setSampling(makeCall(options: ["mode": "coarse"], onSuccess: { _ in off.fulfill() }))
+        wait(for: [off], timeout: 30)
+        XCTAssertFalse(plugin.driveSamplingOnForTest(),
+                       "one close must end it however many times it was asserted")
+    }
+
+    func testSamplingState_reportsCoarseWhenNothingIsArmed() {
+        let done = expectation(description: "state coarse")
+        plugin.samplingState(makeCall(onSuccess: { data in
+            XCTAssertEqual(data?["mode"] as? String, "coarse")
+            XCTAssertEqual(data?["remainingMs"] as? Double, 0)
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+    }
+
+    func testSamplingState_remainingNeverExceedsTheCapAndNeverGoesNegative() {
+        let armed = expectation(description: "arm")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "maxMs": 120000.0],
+                                    onSuccess: { _ in armed.fulfill() }))
+        wait(for: [armed], timeout: 30)
+        let done = expectation(description: "state")
+        plugin.samplingState(makeCall(onSuccess: { data in
+            let left = data?["remainingMs"] as? Double ?? -1
+            XCTAssertGreaterThan(left, 0)
+            XCTAssertLessThanOrEqual(left, 120000.0)
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+    }
+
+    func testSamplingCapFiring_putsTheRadioBackWithoutAnybodyAsking() {
+        // THE POINT OF THE WHOLE SAFETY CAP. JS is assumed absent here: this is
+        // the app-killed-mid-drive case, and nothing but this timer is left.
+        let armed = expectation(description: "arm")
+        plugin.setSampling(makeCall(options: ["mode": "drive"], onSuccess: { _ in armed.fulfill() }))
+        wait(for: [armed], timeout: 30)
+        XCTAssertTrue(plugin.driveSamplingOnForTest())
+        plugin.expireSamplingCapForTest()
+        XCTAssertFalse(plugin.driveSamplingOnForTest(), "the cap must revert on its own")
+        // ...and it says so on the tape, so the server and JS both learn about
+        // a close neither of them asked for.
+        let buf = (UserDefaults.standard.array(forKey: "td_geo_fix_buffer") as? [[String: Any]]) ?? []
+        XCTAssertTrue(buf.contains { ($0["type"] as? String) == "sampling"
+                                     && ($0["mode"] as? String) == "coarse" },
+                      "a cap that fires silently is a cap nobody can debug")
+    }
+
+    func testSamplingCap_firingTwiceIsANoOpNotADoubleRefund() {
+        let armed = expectation(description: "arm")
+        plugin.setSampling(makeCall(options: ["mode": "drive"], onSuccess: { _ in armed.fulfill() }))
+        wait(for: [armed], timeout: 30)
+        plugin.expireSamplingCapForTest()
+        plugin.expireSamplingCapForTest()   // must not crash, must not re-record
+        XCTAssertFalse(plugin.driveSamplingOnForTest())
+    }
+
+    func testSamplingRestore_anExpiredWindowIsClearedRatherThanResumed() {
+        // A relaunch mid-drive resumes; a relaunch into a window that ran out
+        // hours ago must NOT hand itself a fresh 45 minutes of Best accuracy.
+        UserDefaults.standard.set([
+            "mode": "drive",
+            "startedAtMs": Date().timeIntervalSince1970 * 1000 - 10 * 3600_000,
+            "maxMs": 60000.0,
+            "filter": 30.0,
+        ], forKey: plugin.samplingKeyForTest)
+        plugin.restoreSamplingWindowForTest()
+        let done = expectation(description: "settle")
+        DispatchQueue.main.async { done.fulfill() }
+        wait(for: [done], timeout: 30)
+        XCTAssertFalse(plugin.driveSamplingOnForTest(),
+                       "the cap is judged from the ORIGINAL start, so this one is spent")
+    }
+
+    func testSamplingRestore_aLiveWindowComesBackAcrossARelaunch() {
+        UserDefaults.standard.set([
+            "mode": "drive",
+            "startedAtMs": Date().timeIntervalSince1970 * 1000 - 1000,
+            "maxMs": 600000.0,
+            "filter": 30.0,
+        ], forKey: plugin.samplingKeyForTest)
+        plugin.restoreSamplingWindowForTest()
+        let done = expectation(description: "settle")
+        DispatchQueue.main.async { done.fulfill() }
+        wait(for: [done], timeout: 30)
+        XCTAssertTrue(plugin.driveSamplingOnForTest(),
+                      "a drive that outlived the process keeps its route")
+    }
+
+    func testSamplingRestore_withNothingStoredIsACompleteNoOp() {
+        UserDefaults.standard.removeObject(forKey: plugin.samplingKeyForTest)
+        plugin.restoreSamplingWindowForTest()
+        XCTAssertFalse(plugin.driveSamplingOnForTest())
+    }
+
+    func testSamplingRestore_corruptStoredStateNeverArmsADrive() {
+        // UserDefaults is ours, but a half-written dictionary or an older
+        // build's shape must fail closed, never into Best accuracy.
+        let junkStates: [[String: Any]] = [
+            ["mode": "drive"],                       // no start, no cap
+            ["mode": 7, "startedAtMs": "x"],         // wrong types throughout
+            [:],                                     // nothing at all
+        ]
+        for junk in junkStates {
+            UserDefaults.standard.set(junk, forKey: plugin.samplingKeyForTest)
+            plugin.restoreSamplingWindowForTest()
+            let done = expectation(description: "settle")
+            DispatchQueue.main.async { done.fulfill() }
+            wait(for: [done], timeout: 30)
+            XCTAssertFalse(plugin.driveSamplingOnForTest(),
+                           "corrupt state must fail closed")
+        }
+    }
+
+    func testStopAll_endsAnOpenDriveWindow() {
+        let armed = expectation(description: "arm")
+        plugin.setSampling(makeCall(options: ["mode": "drive"], onSuccess: { _ in armed.fulfill() }))
+        wait(for: [armed], timeout: 30)
+        let stopped = expectation(description: "stopAll")
+        plugin.stopAll(makeCall(onSuccess: { _ in stopped.fulfill() }))
+        wait(for: [stopped], timeout: 30)
+        XCTAssertFalse(plugin.driveSamplingOnForTest(),
+                       "signing out must not leave the receiver up")
+    }
+
+    func testDriveWindow_countsItsOwnRadioTime() {
+        // Battery is the named uninstall driver in this category, so the window
+        // has to be measurable in the same currency every other engine is.
+        UserDefaults.standard.set(0.0, forKey: "td_geo_gps_on_ms")
+        let armed = expectation(description: "arm")
+        plugin.setSampling(makeCall(options: ["mode": "drive"], onSuccess: { _ in armed.fulfill() }))
+        wait(for: [armed], timeout: 30)
+        let wait1 = expectation(description: "a beat of radio")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { wait1.fulfill() }
+        wait(for: [wait1], timeout: 30)
+        plugin.expireSamplingCapForTest()
+        XCTAssertGreaterThan(UserDefaults.standard.double(forKey: "td_geo_gps_on_ms"), 0,
+                             "a window that costs radio must bill for it")
+    }
+
+    // ── The keepalive, which is the blue arrow (owner 2026-09-01) ───────────
+
+    func testHeartbeatKeepalive_defaultsToOff() {
+        // The owner's visible test: no standing background location session
+        // means no status-bar indicator between drives. JS must ASK for the
+        // keepalive; the plugin never assumes it.
+        let done = expectation(description: "default")
+        plugin.startHeartbeat(makeCall(options: ["intervalMs": 60000], onSuccess: { data in
+            XCTAssertEqual(data?["keepalive"] as? Bool, false)
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+        XCTAssertFalse(plugin.heartbeatKeepaliveForTest)
+        let off = expectation(description: "teardown")
+        plugin.stopHeartbeat(makeCall(onSuccess: { _ in off.fulfill() }))
+        wait(for: [off], timeout: 30)
+    }
+
+    func testHeartbeatKeepalive_isHonouredWhenExplicitlyAskedFor() {
+        // The escape hatch: if drives start being missed, one JS argument and a
+        // UAT roll puts the old behaviour back with no rebuild (3.2).
+        let done = expectation(description: "on")
+        plugin.startHeartbeat(makeCall(
+            options: ["intervalMs": 60000, "keepalive": true],
+            onSuccess: { data in
+                XCTAssertEqual(data?["keepalive"] as? Bool, true)
+                done.fulfill()
+            }))
+        wait(for: [done], timeout: 30)
+        XCTAssertTrue(plugin.heartbeatKeepaliveForTest)
+        let off = expectation(description: "teardown")
+        plugin.stopHeartbeat(makeCall(onSuccess: { _ in off.fulfill() }))
+        wait(for: [off], timeout: 30)
+        XCTAssertFalse(plugin.heartbeatKeepaliveForTest, "stopping clears it")
+    }
+
+    func testHeartbeatKeepalive_isPersistedSoARelaunchDoesNotInventOne() {
+        let done = expectation(description: "start")
+        plugin.startHeartbeat(makeCall(options: ["intervalMs": 60000], onSuccess: { _ in done.fulfill() }))
+        wait(for: [done], timeout: 30)
+        let hb = UserDefaults.standard.dictionary(forKey: "td_geo_hb")
+        XCTAssertEqual(hb?["keepalive"] as? Bool, false,
+                       "a relaunch reads this; absent must never be read as on")
+        let off = expectation(description: "teardown")
+        plugin.stopHeartbeat(makeCall(onSuccess: { _ in off.fulfill() }))
+        wait(for: [off], timeout: 30)
+    }
+
+    func testHeartbeatAndDriveWindow_doNotFightOverTheReceiver() {
+        // The heartbeat tick used to stamp 3km/99999 over whatever the radio
+        // was doing every 30 minutes, which would have flattened the middle of
+        // a long route. Ending a shift mid-leg must not cut the route either.
+        let armed = expectation(description: "drive")
+        plugin.setSampling(makeCall(options: ["mode": "drive"], onSuccess: { _ in armed.fulfill() }))
+        wait(for: [armed], timeout: 30)
+        let hb = expectation(description: "heartbeat on top")
+        plugin.startHeartbeat(makeCall(options: ["intervalMs": 60000, "keepalive": true],
+                                       onSuccess: { _ in hb.fulfill() }))
+        wait(for: [hb], timeout: 30)
+        XCTAssertTrue(plugin.driveSamplingOnForTest(), "the window survives a heartbeat arming")
+        let off = expectation(description: "shift ends")
+        plugin.stopHeartbeat(makeCall(onSuccess: { _ in off.fulfill() }))
+        wait(for: [off], timeout: 30)
+        XCTAssertTrue(plugin.driveSamplingOnForTest(),
+                      "ending the shift must not end the drive that is still happening")
+    }
+
+    // ── Permission-denied and capability gaps (3.3's input-class table) ─────
+
+    func testSetSampling_answersEvenWithLocationUnauthorized() {
+        // The simulator runs these unauthorized. The contract is that the call
+        // still RESOLVES with a complete answer: a JS layer waiting on a
+        // promise that never settles is worse than a radio that never came up.
+        let done = expectation(description: "unauthorized")
+        plugin.setSampling(makeCall(options: ["mode": "drive"], onSuccess: { data in
+            XCTAssertNotNil(data?["mode"])
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+    }
+
+    func testSetSampling_concurrentCallsAllResolveExactlyOnce() {
+        var n = 0
+        let lock = NSLock()
+        let all = expectation(description: "all resolve")
+        all.expectedFulfillmentCount = 10
+        for i in 0..<10 {
+            let mode = i % 2 == 0 ? "drive" : "coarse"
+            DispatchQueue.global().async {
+                self.plugin.setSampling(self.makeCall(options: ["mode": mode], onSuccess: { _ in
+                    lock.lock(); n += 1; lock.unlock()
+                    all.fulfill()
+                }))
+            }
+        }
+        wait(for: [all], timeout: 30)
+        XCTAssertEqual(n, 10, "every caller gets exactly one answer")
+    }
+
+    func testSetSampling_stillAnswersAfterStopAll() {
+        let stopped = expectation(description: "stopAll")
+        plugin.stopAll(makeCall(onSuccess: { _ in stopped.fulfill() }))
+        wait(for: [stopped], timeout: 30)
+        let done = expectation(description: "after")
+        plugin.setSampling(makeCall(options: ["mode": "coarse"], onSuccess: { _ in done.fulfill() }))
+        wait(for: [done], timeout: 30)
+    }
 }

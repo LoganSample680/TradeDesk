@@ -6,12 +6,24 @@ import UIKit
 
 // TradeDesk battery-aware geofence engine.
 //
-// Two modes, mirroring MileIQ-style trackers:
+// Three states, mirroring MileIQ-style trackers:
 //   PARKED  : GPS fully off. CoreLocation region monitoring (geofence hardware)
 //             plus significant-location-change watch for departure. Near-zero
 //             battery, no blue arrow pinned in the Dynamic Island.
-//   (moving): the JS layer runs its normal continuous watcher; this plugin is
-//             idle until the app parks again.
+//   BURST   : a few seconds of kCLLocationAccuracyBest on demand, then dark
+//             again. What stamps a boundary at the kerb instead of half a mile
+//             down the road (burstFix).
+//   DRIVE   : the window (setSampling, owner 2026-09-01). Best accuracy at a
+//             30m filter, opened by JS when the motion coprocessor flips to
+//             automotive or a relaunched app sees a fence exit, closed when
+//             the leg closes, and capped in Swift so it can never outlive the
+//             drive it was opened for. This is the only state that produces a
+//             breadcrumb dense enough to draw a route from.
+//
+// Between all three the radio is OFF by default. Nothing here holds a standing
+// location session any more: the heartbeat's keepalive is opt-in and JS leaves
+// it off (see heartbeatKeepalive), which is what takes the blue arrow down
+// between drives.
 //
 // Every native event is appended to a UserDefaults buffer BEFORE being emitted
 // as a listener event, so fixes that arrive while the WebView is suspended or
@@ -35,7 +47,11 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         CAPPluginMethod(name: "requestPreciseTemp", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "configureFlush", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startHeartbeat", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "stopHeartbeat", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "stopHeartbeat", returnType: CAPPluginReturnPromise),
+        // Build #44: the drive window. Dense sampling on demand, capped in
+        // Swift so JS can never leave the radio on all night.
+        CAPPluginMethod(name: "setSampling", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "samplingState", returnType: CAPPluginReturnPromise)
     ]
 
     private var locationManager: CLLocationManager?
@@ -80,6 +96,62 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     private var heartbeatOn = false
     private var heartbeatStartedAt: Date?
     private var heartbeatTtlMs: Double = 0
+    // ── THE KEEPALIVE IS NOW OPT-IN, AND OFF BY DEFAULT (owner 2026-09-01) ───
+    // "right now when tradedesk backgrounds I see the blue navigation arrow,
+    // that's old continuous engine." That arrow is not the drive engine and
+    // never was: iOS pins the status-bar location indicator for ANY background
+    // location session, however coarse, and the heartbeat held one every
+    // waking minute of a shift purely to keep this process resident.
+    //
+    // What the session was supposed to buy is residency, and the evidence that
+    // it delivered any is thin. On 2026-08-31 the owner backgrounded a phone
+    // mid-shift and delivery stopped dead: the backgrounding event itself took
+    // 1028 seconds to arrive, the drive home's motion edges 888 and 703 (see
+    // scheduleFlush below). Whether the beat was armed at that exact minute is
+    // NOT established, so this is not proof the keepalive does nothing. What it
+    // does establish is that the app was suspended in the field with this
+    // design in place, which is the thing a keepalive exists to prevent.
+    //
+    // And the liveness it was reaching for has a cheaper owner now: the
+    // 30-minute silent push (supabase/functions/push-geo-ping) already wakes a
+    // backgrounded app and records a fix, which is both the confirmer for the
+    // drive window and the shift-liveness signal. Apple will not deliver those
+    // to a FORCE-QUIT app, so that case still rests on the region and
+    // significant-change wake net, exactly as it did before.
+    //
+    // So JS decides, per the dumb-native rule, and it decides `false` today.
+    // Flipping it back on is one JS argument and a UAT roll (§3.2), never a
+    // rebuild, which is exactly the property that makes it safe to default off.
+    private var heartbeatKeepalive = false
+    // ── The drive window (owner 2026-09-01) ─────────────────────────────────
+    // Dense sampling is a WINDOW, not a mode of life. JS opens it when the
+    // motion coprocessor flips to automotive or a relaunched app sees a fence
+    // exit, and closes it when the leg closes. Persisted, so a relaunch
+    // mid-drive resumes the window instead of losing the route, and so the cap
+    // below can be judged from the ORIGINAL start however many times iOS
+    // restarts this process.
+    //
+    // {mode:"drive", startedAtMs, maxMs, filter}. Absent means coarse.
+    private let samplingKey = "td_geo_sampling"
+    private var samplingCapTimer: Timer?
+    // When the CURRENT process started paying for the drive window. Separate
+    // from startedAtMs above: that one anchors the cap across relaunches, this
+    // one only ever measures radio seconds this process is responsible for, so
+    // a relaunch cannot bill the same minutes twice.
+    private var driveRadioStartedAt: Date?
+    // THE SAFETY CAP. JS closes the window; if JS never gets to (app killed
+    // mid-drive, a bug, a close that never arrives), this is what puts the
+    // radio back on its own. A phone stuck at kCLLocationAccuracyBest all
+    // night is the worst outcome this whole feature can produce, so the
+    // fallback lives here, in the layer that cannot be reasoned out of running.
+    private static let samplingCapFloorMs: Double = 60_000        // 1 minute
+    private static let samplingCapCeilingMs: Double = 4 * 3600_000 // 4 hours
+    private static let samplingCapDefaultMs: Double = 90 * 60_000  // 90 minutes
+    // 30 m. GPS delivers at most 1 Hz, so at 60 mph (27 m/s) a filter below
+    // ~27 m stops being the limiter and only adds stationary jitter; at 25 mph
+    // in town 30 m is a fix every 2.7 s, which traces a corner honestly. 50 m
+    // undersamples a cloverleaf. Clamped, never trusted raw from the bridge.
+    private static let driveFilterDefaultM: Double = 30
     // ── ONE FLIP, ONE ID, ONE ROW (owner rule 2026-08-31) ────────────────────
     // In memory this was wiped every time the stream was re-armed, and it is
     // re-armed from three places (boot, relaunch, resume). Each re-arm made
@@ -181,19 +253,72 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                     d.removeObject(forKey: self.hbKey)
                 } else {
                     self.heartbeatOn = true
+                    // Missing on a dict written by an older build, and false is
+                    // the right reading of that: the arrow stays down until JS
+                    // asks for it again.
+                    self.heartbeatKeepalive = (hb["keepalive"] as? Bool) ?? false
                     self.heartbeatStartedAt = Date(timeIntervalSince1970: t0 / 1000)
                     self.heartbeatTtlMs = ttl
-                    if self.burstStartedAt == nil {
+                    if self.heartbeatKeepalive && self.burstStartedAt == nil {
                         m.desiredAccuracy = kCLLocationAccuracyThreeKilometers
                         m.distanceFilter = 99999
+                        m.startUpdatingLocation()
                     }
-                    m.startUpdatingLocation()
                     self.heartbeatTimer = Timer.scheduledTimer(withTimeInterval: iv / 1000, repeats: true) { [weak self] _ in
                         self?.heartbeatTick()
                     }
                 }
             }
+            // ── A DRIVE THAT OUTLIVED THE PROCESS ────────────────────────────
+            // A region wake mid-leg relaunches this app with no memory, and the
+            // route is exactly the thing that would be lost. The window comes
+            // back, but the CAP is judged from the ORIGINAL start, so a phone
+            // that keeps being relaunched can never keep re-buying itself a
+            // fresh 90 minutes of Best accuracy. Expired means expired, and
+            // this restore is also the thing that cleans it up.
+            self.restoreSamplingWindow()
         }
+    }
+
+    // Split out of load() so a relaunch and a JS-driven re-check reach the same
+    // code, and so the tests can drive it without a real app launch.
+    private func restoreSamplingWindow() {
+        // Timer.scheduledTimer needs a run loop, and this is reachable from a
+        // test seam and (through load()) from whatever thread iOS relaunched
+        // us on. Bounce rather than assume.
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { self.restoreSamplingWindow() }
+            return
+        }
+        let d = UserDefaults.standard
+        guard let st = d.dictionary(forKey: samplingKey),
+              (st["mode"] as? String) == "drive" else { return }
+        let started = num(st["startedAtMs"]) ?? 0
+        let maxMs = min(max(num(st["maxMs"]) ?? TdGeoPlugin.samplingCapDefaultMs,
+                            TdGeoPlugin.samplingCapFloorMs), TdGeoPlugin.samplingCapCeilingMs)
+        let filter = min(max(num(st["filter"]) ?? TdGeoPlugin.driveFilterDefaultM, 5), 200)
+        let left = started + maxMs - Date().timeIntervalSince1970 * 1000
+        if left <= 0 {
+            // endDriveSampling would bill radio time this process never spent;
+            // clear it and put the receiver where the baseline wants it.
+            d.removeObject(forKey: samplingKey)
+            samplingCapTimer?.invalidate()
+            samplingCapTimer = nil
+            countWake("drive-off-expired")
+            record(["type": "sampling", "mode": "coarse", "reason": "expired",
+                    "ts": Double(Date().timeIntervalSince1970 * 1000)])
+            restoreBaselineRadio()
+            return
+        }
+        driveRadioStartedAt = Date()
+        countWake("drive-resume")
+        if burstStartedAt == nil {
+            let m = mgr()
+            m.desiredAccuracy = kCLLocationAccuracyBest
+            m.distanceFilter = filter
+            m.startUpdatingLocation()
+        }
+        armSamplingCap(left)
     }
     // ── Radio-time accounting ────────────────────────────────────────────────
     // Battery cost from location is almost entirely "how many seconds was the
@@ -331,16 +456,158 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         burstStartedAt = nil
         burstTimer?.invalidate()
         burstTimer = nil
+        // A DRIVE WINDOW OUTRANKS THE BASELINE. The burst borrowed a receiver
+        // the window already owns, so handing it back to coarse (or worse,
+        // stopping it) would silently end the dense sampling in the middle of
+        // a leg: the motion boundary that opens a drive fires a burst at the
+        // same instant, so this is the common path, not an edge case.
+        if driveSamplingOn() {
+            let m = mgr()
+            let filter = driveFilterM()
+            m.desiredAccuracy = kCLLocationAccuracyBest
+            m.distanceFilter = filter
+            m.startUpdatingLocation()
+            return
+        }
+        restoreBaselineRadio()
+    }
+
+    // MARK: - The drive window (owner 2026-09-01)
+
+    // setSampling({mode, maxMs, distanceFilter}) : raw capability, nothing more.
+    //
+    //   mode "drive"  : kCLLocationAccuracyBest at a tight distance filter, the
+    //                   dense breadcrumb a route can actually be drawn from.
+    //   mode anything : back to the coarse keepalive, or dark when nothing
+    //                   else wants the radio.
+    //
+    // WHAT THIS DELIBERATELY DOES NOT DECIDE (CLAUDE.md 3.2): when a drive
+    // begins, what counts as the end of one, how long to wait after the wheels
+    // stop, or whether a particular motion transition is worth the radio. All
+    // of that is js/geo-track.js and stays tunable through a UAT roll. This
+    // layer knows two things: how to turn the receiver up, and how to turn it
+    // back down by itself if nobody tells it to.
+    //
+    // Idempotent on purpose. JS re-asserts the window whenever it sees more
+    // driving, which is what refreshes the cap; a re-assert must never restart
+    // the radio clock (that would under-bill) or stack a second timer.
+    @objc func setSampling(_ call: CAPPluginCall) {
+        let mode = (call.getString("mode") ?? "coarse").lowercased()
+        guard mode == "drive" else {
+            DispatchQueue.main.async {
+                self.endDriveSampling(reason: call.getString("reason") ?? "js")
+                call.resolve(["mode": "coarse", "remainingMs": 0])
+            }
+            return
+        }
+        let maxMs = min(max(self.num(call.getValue("maxMs")) ?? TdGeoPlugin.samplingCapDefaultMs,
+                            TdGeoPlugin.samplingCapFloorMs), TdGeoPlugin.samplingCapCeilingMs)
+        let filter = min(max(self.num(call.getValue("distanceFilter")) ?? TdGeoPlugin.driveFilterDefaultM, 5), 200)
+        DispatchQueue.main.async {
+            let d = UserDefaults.standard
+            let already = self.driveSamplingOn()
+            // The cap is refreshed from NOW on every re-assert, which is the
+            // whole point of JS re-asserting: a drive that is still happening
+            // keeps buying itself more window, a drive that stopped does not.
+            d.set(["mode": "drive",
+                   "startedAtMs": Date().timeIntervalSince1970 * 1000,
+                   "maxMs": maxMs,
+                   "filter": filter], forKey: self.samplingKey)
+            if !already {
+                self.driveRadioStartedAt = Date()
+                self.countWake("drive-on")
+                // On the tape like everything else, so the server can see the
+                // window open and close and nobody has to trust a comment.
+                self.record(["type": "sampling", "mode": "drive",
+                             "ts": Double(Date().timeIntervalSince1970 * 1000)])
+            }
+            let m = self.mgr()
+            // A burst already owns the receiver at Best accuracy; leave it, and
+            // endBurst will hand over to the window rather than going dark.
+            if self.burstStartedAt == nil {
+                m.desiredAccuracy = kCLLocationAccuracyBest
+                m.distanceFilter = filter
+                m.startUpdatingLocation()
+            }
+            self.armSamplingCap(maxMs)
+            call.resolve(["mode": "drive", "maxMs": maxMs, "remainingMs": maxMs, "distanceFilter": filter])
+        }
+    }
+
+    // samplingState() : what the radio is actually doing, for a JS layer that
+    // has just been relaunched and has no memory of what it asked for.
+    @objc func samplingState(_ call: CAPPluginCall) {
+        let d = UserDefaults.standard
+        let st = d.dictionary(forKey: samplingKey)
+        guard let st = st, (st["mode"] as? String) == "drive" else {
+            call.resolve(["mode": "coarse", "remainingMs": 0])
+            return
+        }
+        let started = num(st["startedAtMs"]) ?? 0
+        let maxMs = num(st["maxMs"]) ?? TdGeoPlugin.samplingCapDefaultMs
+        let left = max(0, started + maxMs - Date().timeIntervalSince1970 * 1000)
+        call.resolve(["mode": "drive", "maxMs": maxMs, "remainingMs": left,
+                      "distanceFilter": num(st["filter"]) ?? TdGeoPlugin.driveFilterDefaultM])
+    }
+
+    private func armSamplingCap(_ ms: Double) {
+        samplingCapTimer?.invalidate()
+        samplingCapTimer = Timer.scheduledTimer(withTimeInterval: max(ms, 1000) / 1000, repeats: false) { [weak self] _ in
+            self?.endDriveSampling(reason: "cap")
+        }
+    }
+
+    // The one way out of the drive window, whoever asks: JS, the cap, stopAll,
+    // or a relaunch that finds an expired window waiting for it.
+    private func endDriveSampling(reason: String) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { self.endDriveSampling(reason: reason) }
+            return
+        }
+        samplingCapTimer?.invalidate()
+        samplingCapTimer = nil
+        let d = UserDefaults.standard
+        let was = driveSamplingOn()
+        d.removeObject(forKey: samplingKey)
+        if let started = driveRadioStartedAt {
+            addGpsMs(Date().timeIntervalSince(started) * 1000)
+            driveRadioStartedAt = nil
+        }
+        guard was else { return }
+        countWake("drive-off-" + reason)
+        record(["type": "sampling", "mode": "coarse", "reason": reason,
+                "ts": Double(Date().timeIntervalSince1970 * 1000)])
+        restoreBaselineRadio()
+    }
+
+    // Whatever the radio should be doing when no drive window and no burst is
+    // holding it. ONE place, because three call sites used to each decide it
+    // for themselves and the burst's answer disagreed with the heartbeat's.
+    private func restoreBaselineRadio() {
+        guard burstStartedAt == nil else { return }
         let m = mgr()
-        if heartbeatOn {
-            // The burst borrowed the manager; hand it back to the heartbeat's
-            // low-power keepalive instead of going dark and suspending us.
+        if heartbeatOn && heartbeatKeepalive {
             m.desiredAccuracy = kCLLocationAccuracyThreeKilometers
             m.distanceFilter = 99999
             m.startUpdatingLocation()
         } else {
             m.stopUpdatingLocation()
         }
+    }
+
+    // Written out rather than chained: `dict?["k"] as? String` on an
+    // Optional dictionary is a DOUBLE optional, and the same shape passed to
+    // num() below silently returned nil and fell through to a default. One
+    // explicit unwrap, four call sites, no surprises.
+    private func driveSamplingOn() -> Bool {
+        guard let st = UserDefaults.standard.dictionary(forKey: samplingKey) else { return false }
+        return (st["mode"] as? String) == "drive"
+    }
+
+    private func driveFilterM() -> Double {
+        guard let st = UserDefaults.standard.dictionary(forKey: samplingKey),
+              let f = num(st["filter"]) else { return TdGeoPlugin.driveFilterDefaultM }
+        return min(max(f, 5), 200)
     }
 
     // motionSince({sinceMs}) : the motion coprocessor's own history. It has
@@ -610,6 +877,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         DispatchQueue.main.async {
             let m = self.mgr()
             self.endBurst()
+            self.endDriveSampling(reason: "stopAll")
             self.hbStop()
             self.motionMgr.stopActivityUpdates()
             m.stopMonitoringSignificantLocationChanges()
@@ -650,6 +918,17 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     func flushUrgentlyForTest() { flushUrgently() }
     func scheduleFlushForTest() { scheduleFlush() }
     func newFlipIdForTest() -> String { newFlipId() }
+    // The drive window's cap fires on a Timer measured in minutes; the tests
+    // reach the same exit the cap does, and the same relaunch restore load()
+    // runs, without waiting for either.
+    var samplingKeyForTest: String { samplingKey }
+    func driveSamplingOnForTest() -> Bool { driveSamplingOn() }
+    func expireSamplingCapForTest() { endDriveSampling(reason: "cap") }
+    func restoreSamplingWindowForTest() { restoreSamplingWindow() }
+    var heartbeatKeepaliveForTest: Bool { heartbeatKeepalive }
+    static var samplingCapCeilingMsForTest: Double { samplingCapCeilingMs }
+    static var samplingCapFloorMsForTest: Double { samplingCapFloorMs }
+    static var driveFilterDefaultMForTest: Double { driveFilterDefaultM }
     var lastMotionKindKeyForTest: String { lastMotionKindKey }
     var flushCfgKeyForTest: String { flushCfgKey }
     var flushMarkKeyForTest: String { flushMarkKey }
@@ -742,25 +1021,34 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     @objc func startHeartbeat(_ call: CAPPluginCall) {
         let intervalMs = min(max(self.num(call.getValue("intervalMs")) ?? 1800000, 60000), 3600000)
         let ttlMs = min(max(self.num(call.getValue("ttlMs")) ?? 43200000, intervalMs), 86400000)
+        // Default FALSE. See heartbeatKeepalive above: holding a background
+        // location session purely to stay resident is what pins the blue arrow
+        // between drives, and the app's own logs say it was not buying the
+        // residency it cost. JS asks for it explicitly or it does not happen.
+        let keepalive = call.getBool("keepalive") ?? false
         DispatchQueue.main.async {
             self.heartbeatTimer?.invalidate()
             self.heartbeatOn = true
+            self.heartbeatKeepalive = keepalive
             self.heartbeatStartedAt = Date()
             self.heartbeatTtlMs = ttlMs
             UserDefaults.standard.set([
-                "intervalMs": intervalMs, "ttlMs": ttlMs,
+                "intervalMs": intervalMs, "ttlMs": ttlMs, "keepalive": keepalive,
                 "startedAtMs": Date().timeIntervalSince1970 * 1000
             ], forKey: self.hbKey)
-            let m = self.mgr()
-            if self.burstStartedAt == nil {
+            // The radio is only ever touched for a keepalive that was asked
+            // for, and never over the top of a burst or an open drive window,
+            // both of which want it far more precise than 3km.
+            if keepalive && self.burstStartedAt == nil && !self.driveSamplingOn() {
+                let m = self.mgr()
                 m.desiredAccuracy = kCLLocationAccuracyThreeKilometers
                 m.distanceFilter = 99999
+                m.startUpdatingLocation()
             }
-            m.startUpdatingLocation()
             self.heartbeatTimer = Timer.scheduledTimer(withTimeInterval: intervalMs / 1000, repeats: true) { [weak self] _ in
                 self?.heartbeatTick()
             }
-            call.resolve(["on": true, "intervalMs": intervalMs, "ttlMs": ttlMs])
+            call.resolve(["on": true, "intervalMs": intervalMs, "ttlMs": ttlMs, "keepalive": keepalive])
         }
     }
 
@@ -775,10 +1063,13 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
         heartbeatOn = false
+        heartbeatKeepalive = false
         heartbeatStartedAt = nil
         UserDefaults.standard.removeObject(forKey: hbKey)
-        // Only release the radio if no burst still owns it.
-        if burstStartedAt == nil { mgr().stopUpdatingLocation() }
+        // Only release the radio if nothing else still owns it. A drive window
+        // is the case this used to get wrong: ending a shift mid-leg would
+        // have cut the route short.
+        if burstStartedAt == nil && !driveSamplingOn() { mgr().stopUpdatingLocation() }
     }
 
     private func heartbeatTick() {
@@ -788,11 +1079,15 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             return
         }
         let m = mgr()
-        if burstStartedAt == nil {
+        // Re-assert the low-power session only when a keepalive was asked for,
+        // and never on top of a burst or an open drive window: this tick used
+        // to stamp 3km/99999 over a Best-accuracy drive every 30 minutes and
+        // silently flatten the middle of a long route.
+        if heartbeatKeepalive && burstStartedAt == nil && !driveSamplingOn() {
             m.desiredAccuracy = kCLLocationAccuracyThreeKilometers
             m.distanceFilter = 99999
+            m.startUpdatingLocation()   // idempotent; re-arms a session the OS shed
         }
-        m.startUpdatingLocation()   // idempotent; re-arms a session the OS shed
         var ev: [String: Any] = [
             "type": "heartbeat",
             "ts": Double(Date().timeIntervalSince1970 * 1000)
@@ -1087,8 +1382,14 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
 
     public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
-        if burstStartedAt == nil { countWake("slc") }
-        record(event(type: "fix", loc: loc, regionId: nil))
+        let drive = driveSamplingOn()
+        if burstStartedAt == nil { countWake(drive ? "drive-fix" : "slc") }
+        var ev = event(type: "fix", loc: loc, regionId: nil)
+        // The one bit JS cannot infer: a 3km significant-change wake and a
+        // 30m drive-window breadcrumb arrive as the same "fix" and mean very
+        // different things to a route. Reported, never acted on here.
+        if drive { ev["drive"] = true }
+        record(ev)
     }
 
     // A VISIT is the whole point of the new engine: iOS hands back the arrival

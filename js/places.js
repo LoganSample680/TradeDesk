@@ -531,6 +531,22 @@ function tdMapRenderKit(o){
   }
   try{
     st.obj.removeAnnotations(st.obj.annotations||[]);
+    // ── THE ROUTE OVERLAY (owner ask 2026-09-01) ────────────────────────────
+    // `path` is [[lat,lng,ms],...] straight off a mileage row. Drawn through
+    // the SAME renderer every other map in the app uses rather than a second
+    // mapping surface (§7.3): one MapKit instance, one fallback, one licence
+    // gate. Removed and redrawn with the annotations so a re-render (a filter
+    // toggle, a locate) never stacks overlays.
+    try{st.obj.removeOverlays(st.obj.overlays||[]);}catch(_e2){}
+    const path=Array.isArray(o.path)?o.path:null;
+    if(path&&path.length>=2&&typeof mapkit.PolylineOverlay==='function'){
+      const coords=path.map(q=>new mapkit.Coordinate(q[0],q[1]));
+      const line=new mapkit.PolylineOverlay(coords,{
+        style:new mapkit.Style({lineWidth:4,lineJoin:'round',lineCap:'round',
+                                strokeColor:(o.pathColor||'#2D5DA8'),strokeOpacity:.85}),
+      });
+      st.obj.addOverlay(line);
+    }
     const anns=pts.map(p=>{
       const stl=(o.style&&o.style[p.type])||{c:'#666',glyph:''};
       const a=new mapkit.MarkerAnnotation(new mapkit.Coordinate(p.lat,p.lon),{
@@ -545,7 +561,12 @@ function tdMapRenderKit(o){
     st.obj.addAnnotations(anns);
     // Frame everything with a little breathing room rather than hard-cropping to
     // the outermost pins.
-    if(anns.length)st.obj.showItems(anns,{animate:false,padding:new mapkit.Padding(40,24,40,24)});
+    // Frame the OVERLAY as well when there is one: showItems on the pins alone
+    // crops a route that loops outside its own endpoints, which is exactly the
+    // detour a drawn route exists to show.
+    const _items=anns.slice();
+    try{if(st.obj.overlays&&st.obj.overlays.length)_items.push(...st.obj.overlays);}catch(_e3){}
+    if(_items.length)st.obj.showItems(_items,{animate:false,padding:new mapkit.Padding(40,24,40,24)});
   }catch(_e){tdMapDestroy(st);tdMapRenderFallback(o);}
 }
 
@@ -565,13 +586,34 @@ function _geoPinSvg(color){
 }
 function tdMapRenderFallback(o){
   const body=o.body,pts=o.pts,style=o.style||{};
-  const lats=pts.map(p=>p.lat),lons=pts.map(p=>p.lon);
+  // The route is part of the extent, not decoration on top of it: a plot
+  // framed on two endpoints crops the detour in the middle, which is the one
+  // thing a drawn route is for.
+  const path=(Array.isArray(o.path)&&o.path.length>=2)
+    ?o.path.filter(q=>Array.isArray(q)&&isFinite(q[0])&&isFinite(q[1])):null;
+  const lats=pts.map(p=>p.lat).concat(path?path.map(q=>q[0]):[]);
+  const lons=pts.map(p=>p.lon).concat(path?path.map(q=>q[1]):[]);
   const minLat=Math.min(...lats),maxLat=Math.max(...lats);
   const minLon=Math.min(...lons),maxLon=Math.max(...lons);
   // A single point, or a perfectly straight line of them, would divide by zero.
   const spanLat=Math.max(maxLat-minLat,1e-4),spanLon=Math.max(maxLon-minLon,1e-4);
   // Draw north-first so southern pins overlap the ones behind them, the way a
   // real map stacks. Sorting a copy leaves the caller's feed order alone.
+  // Drawn as one SVG polyline under the pins, in the same percentage space the
+  // pins use, so tiles or no tiles the line and the markers always agree.
+  let routeSvg='';
+  if(path){
+    const poly=path.map(q=>{
+      const x=((q[1]-minLon)/spanLon)*100;
+      const y=100-((q[0]-minLat)/spanLat)*100;
+      return x.toFixed(2)+','+y.toFixed(2);
+    }).join(' ');
+    routeSvg='<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" '+
+      'style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">'+
+      '<polyline points="'+poly+'" fill="none" stroke="'+(o.pathColor||'#2D5DA8')+'" '+
+      'stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" opacity=".9"/>'+
+    '</svg>';
+  }
   const dots=pts.slice().sort((a,b)=>b.lat-a.lat).map(p=>{
     const x=((p.lon-minLon)/spanLon)*100;
     const y=100-((p.lat-minLat)/spanLat)*100;   // north at the top
@@ -589,7 +631,7 @@ function tdMapRenderFallback(o){
     '<div style="position:relative;height:280px;border:1px solid var(--border);border-radius:var(--r);background:'+
       'linear-gradient(0deg,var(--bg2) 0%,var(--bg) 100%);overflow:hidden;margin-bottom:10px">'+
       '<div style="position:absolute;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:25% 25%;opacity:.4"></div>'+
-      '<div style="position:absolute;top:'+(_GEO_PIN_H+2)+'px;left:14px;right:14px;bottom:14px">'+dots+'</div>'+
+      '<div style="position:absolute;top:'+(_GEO_PIN_H+2)+'px;left:14px;right:14px;bottom:14px">'+routeSvg+dots+'</div>'+
     '</div>'+
     '<div style="font-size:10px;color:var(--text3);line-height:1.6">'+
       (widthMi>0.1?'Area shown: about '+(widthMi<10?widthMi.toFixed(1):Math.round(widthMi))+' miles across. ':'')+
