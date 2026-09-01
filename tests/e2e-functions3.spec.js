@@ -3618,7 +3618,7 @@ test.describe('Client form and import functions', () => {
   // preview test saw its own contact already imported by an earlier test and
   // counted zero. Scoped to these exact fixture names so it cannot touch
   // anything else in this file.
-  const TEST_NAMES = /^(Jonas Vcardsen|Three Props|Sweep One|Sweep Two|Jack Schonfeldt|Long Street|Escaped|Empty Adr|Baby|Wrapped)$/;
+  const TEST_NAMES = /^(Jonas Vcardsen|Three Props|Sweep One|Sweep Two|Jack Schonfeldt|Long Street|Escaped|Empty Adr|Baby|Wrapped|Leads Repaint|Clients Repaint)$/;
   test.afterEach(async () => {
     await page.evaluate((src) => {
       const re = new RegExp(src);
@@ -3773,6 +3773,49 @@ test.describe('Client form and import functions', () => {
       // list. Now it is taken before anything can throw.
       expect(r.afterSecond).toBe(1);
       expect(r.left).toBe(0);
+    });
+
+    // Owner 2026-09-01: "when I imported them they didn't hit in real time,
+    // had to click the leads button to get them to pull." He imported from the
+    // Leads page; _doImport only ever repainted the Clients list.
+    test('importing from the Leads page repaints Leads, not just Clients', async () => {
+      const r = await page.evaluate(() => {
+        const prev = document.querySelector('.pg.active')?.id || null;
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        document.getElementById('pg-leads')?.classList.add('active');
+        const calls = [];
+        const savedLeads = window.renderLeadsPage, savedList = window.renderClientList;
+        window.renderLeadsPage = () => { calls.push('leads'); };
+        window.renderClientList = () => { calls.push('clients'); };
+        _importContacts = [{ name: 'Leads Repaint', phone: '5557770001', email: '', addr: '', city: '', state: '', zip: '' }];
+        _doImport();
+        window.renderLeadsPage = savedLeads; window.renderClientList = savedList;
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        if (prev) document.getElementById(prev)?.classList.add('active');
+        return { calls };
+      });
+      // Both: the client list and its selectors still refresh app-wide, AND
+      // the page he is looking at redraws.
+      expect(r.calls).toContain('clients');
+      expect(r.calls).toContain('leads');
+    });
+
+    test('importing from the Clients page does not double-render it', async () => {
+      const r = await page.evaluate(() => {
+        const prev = document.querySelector('.pg.active')?.id || null;
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        document.getElementById('pg-clients')?.classList.add('active');
+        let n = 0;
+        const savedList = window.renderClientList;
+        window.renderClientList = () => { n++; };
+        _importContacts = [{ name: 'Clients Repaint', phone: '5557770002', email: '', addr: '', city: '', state: '', zip: '' }];
+        _doImport();
+        window.renderClientList = savedList;
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        if (prev) document.getElementById(prev)?.classList.add('active');
+        return { n };
+      });
+      expect(r.n).toBe(1);
     });
 
     test('CSV first + last columns still join into one name', async () => {

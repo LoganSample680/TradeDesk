@@ -1399,6 +1399,20 @@ function _doImport(){
   // unreachable with an empty _importContacts, and the only coverage called it
   // empty, inside a try/catch that would have swallowed the throw anyway.
   renderClientList();
+  // ...and the page the contractor is actually standing on. Import lives on
+  // BOTH pg-clients (index.html:1923) and pg-leads (index.html:3852), and an
+  // imported contact is a LEAD until it signs something (renderClientList's
+  // CLIENT_STAGES gate), so importing from the Leads page repainted the one
+  // list that by design cannot show the thing just imported. The owner had to
+  // tap the Leads nav button to see 141 contacts the toast had already told
+  // him were in.
+  //
+  // _refreshActivePage (js/navigation.js) is the shared "repaint what is on
+  // screen, navigate nothing" dispatch added for the foreground refresh, so
+  // this covers every entry point rather than hard-coding the second one
+  // (7.3). Skipped on pg-clients because renderClientList above already IS
+  // that page's repaint.
+  if(document.querySelector('.pg.active')?.id!=='pg-clients'&&typeof _refreshActivePage==='function')_refreshActivePage();
   closeImportModal();
   showToast(added+' contact'+(added!==1?'s':'')+' imported','✅');
 }
