@@ -221,12 +221,19 @@ function _shareInPrompt(items){
   const byNew=allC.slice().sort((a,b)=>(Number(b.id)||0)-(Number(a.id)||0));
   const onToday=byNew.filter(c=>hot.has(String(c.id)));
   const pick=onToday.concat(byNew.filter(c=>!hot.has(String(c.id)))).slice(0,12);
+  const ic=(e,tone)=>'<span class="si-ic'+(tone?' si-ic-'+tone:'')+'">'+
+    (typeof svgIcon==='function'?svgIcon(e,{size:17}):e)+'</span>';
+  const opt=(id,tone,emoji,title,sub)=>
+    '<button id="'+id+'" class="si-opt">'+ic(emoji,tone)+
+      '<span class="si-txt"><span class="si-t">'+title+'</span>'+
+      '<span class="si-s">'+sub+'</span></span><span class="si-chev">\u203a</span></button>';
   const row=c=>{
     const sub=[hot.has(String(c.id))?'On the schedule today':'',c.addr||c.street||''].filter(Boolean).join(' · ');
-    return '<button data-client="'+c.id+'" class="_si-client" style="display:block;width:100%;text-align:left;padding:11px 14px;border:none;border-bottom:1px solid var(--border);background:none;font-family:inherit;cursor:pointer">'+
-      '<span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+escHtml(c.name||'Unnamed client')+'</span>'+
-      (sub?'<span style="display:block;font-size:11.5px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(sub)+'</span>':'')+
-    '</button>';
+    return '<button data-client="'+c.id+'" class="si-opt _si-client">'+
+      ic('\ud83d\udc64')+
+      '<span class="si-txt"><span class="si-t si-1">'+escHtml(c.name||'Unnamed client')+'</span>'+
+      (sub?'<span class="si-s si-1">'+escHtml(sub)+'</span>':'')+
+      '</span><span class="si-chev">\u203a</span></button>';
   };
   // TWO things arrive through the share sheet and they are not the same job:
   // a jobsite photo, and a receipt. Forcing a Home Depot receipt to become a
@@ -234,33 +241,30 @@ function _shareInPrompt(items){
   // re-entry this feature exists to kill. Same fork-in-two-paths shape the
   // setup checklist already uses (7.3): name both, commit to neither.
   //
-  // Receipt is FIRST and primary. A photo shared from the Camera app is the
-  // habit; a receipt shared from the Home Depot app is the thing somebody went
-  // out of their way to do, and it is the one with money attached.
-  m.innerHTML=
-    '<div class="zmodal-title">'+n+' '+(allVcf?'contact card':'file')+(n===1?'':'s')+' shared to TradeDesk</div>'+
-    '<div style="font-size:13px;color:var(--text2);margin:6px 0 12px">'+
-      (allVcf?('Add '+(n===1?'them':'them')+' as '+(n===1?'a client':'clients')+'?'):('What '+(n===1?'is it':'are they')+'?'))+'</div>'+
-    // display:block and height:auto override .btn's inline-flex + fixed 36px
-    // height + white-space:nowrap, which force two stacked lines onto one row
-    // and push it straight off the edge (15.1: nothing bleeds).
-    (allVcf?'':'<button id="_si-receipt" class="btn btn-p" style="display:block;box-sizing:border-box;width:100%;height:auto;padding:13px;margin-bottom:8px;text-align:left;white-space:normal">'+
-      '<span style="display:block;font-size:14px;font-weight:800">'+(n===1?'A receipt':'Pages of one receipt')+'</span>'+
-      '<span style="display:block;font-size:11.5px;font-weight:500;opacity:.85;margin-top:2px">Reads the total off it and opens a filled-in expense</span>'+
-    '</button>')+
-    // Only when a contact is actually in the share. Offering "add as a client"
+  // Receipt is first. A photo shared from the Camera app is the habit; a
+  // receipt shared from the Home Depot app is the thing somebody went out of
+  // their way to do, and it is the one with money attached.
+  const forks=
+    (allVcf?'':opt('_si-receipt','d','\ud83e\uddfe',(n===1?'A receipt':'Pages of one receipt'),
+      'Reads the total and opens an expense'))+
+    // Only when a contact is actually in the share. Offering "add as a lead"
     // for a photo of a water heater is noise, and 15.1 is explicit that a
     // control whose value is not wired must not ship.
-    (hasVcf?'<button id="_si-contact" class="btn btn-p" style="display:block;box-sizing:border-box;width:100%;height:auto;padding:13px;margin-bottom:8px;text-align:left;white-space:normal">'+
-      '<span style="display:block;font-size:14px;font-weight:800">'+(n===1?'A contact':'Contacts')+'</span>'+
-      '<span style="display:block;font-size:11.5px;font-weight:500;opacity:.85;margin-top:2px">Opens the import list, with the address off the contact card. Lands in Leads.</span>'+
-    '</button>':'')+
+    (hasVcf?opt('_si-contact',(allVcf?'d':''),'\ud83d\udc64',(n===1?'Add as a lead':'Add as leads'),
+      'Name, phone and address off the card'):'');
+  m.innerHTML=
+    '<div class="zmodal-title">'+n+' '+(allVcf?'contact':'file')+(n===1?'':'s')+' shared to TradeDesk</div>'+
+    '<div style="font-size:13px;color:var(--text2);margin:6px 0 13px">'+
+      (allVcf?'Where should '+(n===1?'it':'they')+' go?':('What '+(n===1?'is it':'are they')+'?'))+'</div>'+
+    (forks?'<div class="si-list">'+forks+'</div>':'')+
     (allVcf?'':
-      '<div style="font-size:12px;color:var(--text3);margin:12px 0 6px;font-weight:700">Or add to a client\'s photos</div>'+
-      (pick.length?'<div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r)">'+pick.map(row).join('')+'</div>'
-                  :'<div class="tip tip-w" style="font-size:13px">No clients yet. Add the client first, then share again.</div>'))+
-    '<button id="_si-later" class="btn" style="width:100%;margin-top:10px;padding:12px">Not now</button>'+
-    '<button id="_si-discard" class="btn" style="width:100%;margin-top:8px;padding:11px;font-size:13px;color:var(--text3)">Discard '+(n===1?'it':'them')+'</button>';
+      '<div class="si-lbl">Or add to a client\'s photos</div>'+
+      (pick.length?'<div class="si-list si-scroll">'+pick.map(row).join('')+'</div>'
+                  :'<div class="si-empty">No clients yet. Add the client first, then share again.</div>'))+
+    '<div class="si-foot">'+
+      '<button id="_si-later" class="si-fbtn">Not now</button>'+
+      '<button id="_si-discard" class="si-fbtn si-fbtn-q">Discard</button>'+
+    '</div>';
   ov.appendChild(m);document.body.appendChild(ov);
   const close=()=>{ov.remove();_shareInAsking=false;};
   ov.addEventListener('click',e=>{if(e.target===ov)close();});

@@ -534,7 +534,11 @@ test.describe('Share inbox', () => {
     expect(r.receipt, 'a vCard has no total to read off it').toBe(false);
     expect(r.jobs, 'a contact card must not be offered as a job photo').toBe(0);
     expect(r.attachHdr, 'the attach-to-a-job header must go with its list').toBe(false);
-    expect(r.title).toContain('contact card');
+    // The point is that the title names what was actually shared. Copy was
+    // "1 contact card shared" and is now "1 contact shared" (it wrapped tight
+    // against the modal edge at 390px); what must never come back is "1 file".
+    expect(r.title).toContain('contact');
+    expect(r.title, 'a contact is not a "file" to the person sharing it').not.toContain('file');
     expect(r.wide, 'the contact sheet must not bleed off a phone').toBe(false);
   });
 

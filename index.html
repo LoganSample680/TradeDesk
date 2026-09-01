@@ -910,6 +910,30 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 .zmodal{background:var(--bg-card);border-radius:var(--r-xl);padding:24px 22px;width:100%;max-width:360px;margin:auto;box-shadow:var(--shadow-modal);animation:td-modal-in .24s cubic-bezier(.22,1,.36,1) both}
 @media (prefers-reduced-motion:reduce){.zmodal{animation:none}}
 .zmodal-title{font-size:16px;font-weight:800;margin-bottom:8px}
+/* Shared-to-TradeDesk sheet. One list, one visual language: the two big solid
+   slabs it used to stack read as two competing primary buttons and pushed the
+   real content (the client list) below the fold on a phone. Rows in a bordered
+   list are the same shape the client picker below them already uses, so the
+   whole sheet scans as one question instead of three. */
+.si-list{border:1px solid var(--border);border-radius:var(--r);overflow:hidden;background:var(--bg-card)}
+.si-scroll{max-height:186px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.si-opt{display:grid;grid-template-columns:34px minmax(0,1fr) 10px;align-items:center;gap:11px;width:100%;box-sizing:border-box;padding:12px 13px;background:none;border:none;border-bottom:1px solid var(--border);text-align:left;font-family:inherit;cursor:pointer;transition:background .12s ease}
+.si-opt:last-child{border-bottom:none}
+.si-opt:active{background:var(--bg2)}
+.si-opt[disabled]{opacity:.5}
+.si-ic{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--bg2);color:var(--text2);flex-shrink:0}
+.si-ic-d{background:var(--denim-soft);color:var(--denim-deep)}
+.si-txt{min-width:0}
+.si-t{display:block;font-size:14px;font-weight:800;color:var(--text);line-height:1.25}
+.si-s{display:block;font-size:11.5px;font-weight:500;color:var(--text3);margin-top:2px;line-height:1.32}
+.si-1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.si-chev{color:var(--text3);font-size:15px;line-height:1;font-weight:700}
+.si-lbl{font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--text3);margin:15px 0 7px}
+.si-empty{font-size:12.5px;color:var(--text3);line-height:1.4;margin:2px 0 0}
+.si-foot{display:flex;gap:8px;margin-top:16px}
+.si-fbtn{flex:1;padding:11px;border:1px solid var(--border);border-radius:var(--r);background:none;font-family:inherit;font-size:13px;font-weight:700;color:var(--text2);cursor:pointer}
+.si-fbtn-q{color:var(--text3);font-weight:600}
+
 .zmodal-msg{font-size:14px;color:var(--text-2);line-height:1.5;margin-bottom:18px}
 .zmodal-btns{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 .overdue-banner{background:var(--c-red-soft);border:1px solid var(--c-red-edge);border-radius:var(--r);padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
