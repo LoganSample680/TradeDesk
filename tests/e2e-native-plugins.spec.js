@@ -149,3 +149,83 @@ test.describe('Share extension script targets the real Xcode paths', () => {
     expect(wf).toContain('cat > ' + scriptPath);
   });
 });
+
+test.describe('Share extension accepts a contact card', () => {
+  const PLIST = path.join(ROOT, 'native/td-share/ios/Extension/Info.plist');
+  const SWIFT = path.join(ROOT, 'native/td-share/ios/Extension/ShareViewController.swift');
+  const plist = fs.existsSync(PLIST) ? fs.readFileSync(PLIST, 'utf8') : '';
+  const swift = fs.existsSync(SWIFT) ? fs.readFileSync(SWIFT, 'utf8') : '';
+
+  // Pull the activation rule out of the plist without a plist parser: the value
+  // is whatever follows the NSExtensionActivationRule key.
+  const ruleM = plist.match(/<key>NSExtensionActivationRule<\/key>\s*([\s\S]*?)(?=\n\s*<key>|\n\s*<\/dict>)/);
+
+  test('the rule is a predicate, not the convenience dictionary', () => {
+    // Build 47 shipped the dictionary form, and Contacts never offered
+    // TradeDesk. NSExtensionActivationSupportsFileWithMaxCount means "anything
+    // that is NOT an image, movie, URL, or text"; a vCard conforms to
+    // public.text, so it matched no supported class at all. Only a predicate
+    // can name public.vcard.
+    expect(ruleM, 'no NSExtensionActivationRule in the extension Info.plist').toBeTruthy();
+    expect(ruleM[1].trim().startsWith('<string>'),
+      'the rule must be a <string> predicate, a <dict> cannot express public.vcard').toBe(true);
+    // Scoped to the rule VALUE on purpose: the comment above the key names the
+    // old dictionary keys to explain why they are gone, and a whole-file scan
+    // would fail on that comment.
+    expect(ruleM[1]).not.toContain('NSExtensionActivationSupports');
+  });
+
+  test('the predicate names public.vcard', () => {
+    expect(ruleM[1]).toContain('public.vcard');
+  });
+
+  test('the predicate still accepts the paths that already worked', () => {
+    // Photos and file shares activated the extension before this change and
+    // must keep doing so: narrowing the rule to fix Contacts would be a
+    // regression that only shows up on a device.
+    for (const uti of ['public.image', 'com.adobe.pdf', 'public.file-url', 'public.url']) {
+      expect(ruleM[1], uti + ' dropped out of the activation rule').toContain(uti);
+    }
+  });
+
+  test('the predicate does not blanket-accept text or data', () => {
+    // Both public.text and public.data are ancestors of public.vcard, so either
+    // one would fix Contacts by accident AND put TradeDesk in the share sheet
+    // for every text selection in Notes and Safari. Accepting the contact is
+    // the goal; becoming share-sheet noise is not.
+    expect(ruleM[1]).not.toContain('"public.text"');
+    expect(ruleM[1]).not.toContain('"public.data"');
+  });
+
+  test('the rule escapes its comparisons so the plist still parses', () => {
+    // A raw >= in XML text is a parse error, and a plist that will not parse is
+    // an extension iOS refuses to load, discovered on the runner at minute nine.
+    expect(ruleM[1]).not.toMatch(/>=(?!;)/);
+    expect(ruleM[1]).toContain('&gt;=');
+  });
+
+  test('the handler asks for the vCard type before the generic ones', () => {
+    // A vCard conforms to public.data, so whichever type is requested FIRST
+    // decides what the bytes get called. Ask for .data first and a contact
+    // lands as td_share_*.dat, which share-inbox.js cannot recognise.
+    const m = swift.match(/let types:\s*\[UTType\]\s*=\s*\[([^\]]+)\]/);
+    expect(m, 'could not find the UTType preference list').toBeTruthy();
+    const order = m[1].split(',').map(s => s.trim());
+    expect(order[0]).toBe('.vCard');
+    expect(order.indexOf('.vCard')).toBeLessThan(order.indexOf('.data'));
+  });
+
+  test('a vCard arriving as raw bytes is still named .vcf', () => {
+    // The app types a shared file by its extension, so an unnamed item has to
+    // be given the right one rather than the catch-all .dat the old code used.
+    expect(swift).toMatch(/case \.vCard:\s*return "vcf"/);
+    expect(swift, 'the raw-bytes branch must use the per-type fallback, not a literal .dat')
+      .not.toMatch(/as\? Data \{[\s\S]{0,200}\)\.dat"/);
+  });
+
+  test('share-inbox types a .vcf as a contact card', () => {
+    // The native half is pointless if the JS half files it as an unknown blob.
+    const si = fs.readFileSync(path.join(ROOT, 'js/share-inbox.js'), 'utf8');
+    expect(si).toMatch(/vcf[\s\S]{0,80}vcard/i);
+  });
+});

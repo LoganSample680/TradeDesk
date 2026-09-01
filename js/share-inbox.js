@@ -195,6 +195,13 @@ function _shareInPrompt(items){
   // Does this share actually contain a contact card? Decides whether the
   // contact fork is offered at all.
   const hasVcf=items.some(i=>/\.vcf$/i.test((i&&i.path)||''));
+  // A share that is NOTHING BUT contact cards is a different question, not the
+  // same question with an extra button. "Reads the total off it" is nonsense
+  // for a vCard, and filing a .vcf into a job's photo gallery buries it where
+  // nobody will look, so neither fork is offered: the sheet asks the one thing
+  // that can actually happen (15.1, a control whose value is not wired must
+  // not ship).
+  const allVcf=n>0&&items.every(i=>/\.vcf$/i.test((i&&i.path)||''));
   // Today's and recent jobs first: a shared photo is almost always about work
   // happening right now, and a 400-job list is not a picker.
   const tk=(typeof todayKey==='function')?todayKey():'';
@@ -221,15 +228,16 @@ function _shareInPrompt(items){
   // habit; a receipt shared from the Home Depot app is the thing somebody went
   // out of their way to do, and it is the one with money attached.
   m.innerHTML=
-    '<div class="zmodal-title">'+n+' file'+(n===1?'':'s')+' shared to TradeDesk</div>'+
-    '<div style="font-size:13px;color:var(--text2);margin:6px 0 12px">What '+(n===1?'is it':'are they')+'?</div>'+
+    '<div class="zmodal-title">'+n+' '+(allVcf?'contact card':'file')+(n===1?'':'s')+' shared to TradeDesk</div>'+
+    '<div style="font-size:13px;color:var(--text2);margin:6px 0 12px">'+
+      (allVcf?('Add '+(n===1?'them':'them')+' as '+(n===1?'a client':'clients')+'?'):('What '+(n===1?'is it':'are they')+'?'))+'</div>'+
     // display:block and height:auto override .btn's inline-flex + fixed 36px
     // height + white-space:nowrap, which force two stacked lines onto one row
     // and push it straight off the edge (15.1: nothing bleeds).
-    '<button id="_si-receipt" class="btn btn-p" style="display:block;box-sizing:border-box;width:100%;height:auto;padding:13px;margin-bottom:8px;text-align:left;white-space:normal">'+
+    (allVcf?'':'<button id="_si-receipt" class="btn btn-p" style="display:block;box-sizing:border-box;width:100%;height:auto;padding:13px;margin-bottom:8px;text-align:left;white-space:normal">'+
       '<span style="display:block;font-size:14px;font-weight:800">'+(n===1?'A receipt':'Pages of one receipt')+'</span>'+
       '<span style="display:block;font-size:11.5px;font-weight:500;opacity:.85;margin-top:2px">Reads the total off it and opens a filled-in expense</span>'+
-    '</button>'+
+    '</button>')+
     // Only when a contact is actually in the share. Offering "add as a client"
     // for a photo of a water heater is noise, and 15.1 is explicit that a
     // control whose value is not wired must not ship.
@@ -237,9 +245,10 @@ function _shareInPrompt(items){
       '<span style="display:block;font-size:14px;font-weight:800">'+(n===1?'A contact':'Contacts')+'</span>'+
       '<span style="display:block;font-size:11.5px;font-weight:500;opacity:.85;margin-top:2px">Adds them as a client, with the address off the contact card</span>'+
     '</button>':'')+
-    '<div style="font-size:12px;color:var(--text3);margin:12px 0 6px;font-weight:700">Or attach to a job</div>'+
-    (pick.length?'<div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r)">'+pick.map(row).join('')+'</div>'
-                :'<div class="tip tip-w" style="font-size:13px">No open jobs to attach to. Create the job first, then share again.</div>')+
+    (allVcf?'':
+      '<div style="font-size:12px;color:var(--text3);margin:12px 0 6px;font-weight:700">Or attach to a job</div>'+
+      (pick.length?'<div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r)">'+pick.map(row).join('')+'</div>'
+                  :'<div class="tip tip-w" style="font-size:13px">No open jobs to attach to. Create the job first, then share again.</div>'))+
     '<button id="_si-later" class="btn" style="width:100%;margin-top:10px;padding:12px">Not now</button>'+
     '<button id="_si-discard" class="btn" style="width:100%;margin-top:8px;padding:11px;font-size:13px;color:var(--text3)">Discard '+(n===1?'it':'them')+'</button>';
   ov.appendChild(m);document.body.appendChild(ov);

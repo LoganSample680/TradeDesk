@@ -21,12 +21,28 @@
     <key>NSExtensionPrincipalClass</key><string>$(PRODUCT_MODULE_NAME).ShareViewController</string>
     <key>NSExtensionAttributes</key>
     <dict>
+      <!-- A predicate, not the convenience dictionary, and that is the whole
+           point. Apple's NSExtensionActivationSupportsFileWithMaxCount means
+           "anything that is NOT an image, movie, URL, or text", and a vCard
+           conforms to public.text, so Contacts' share item matched no
+           supported class and iOS never offered this extension. Naming the
+           types outright is the only way to accept a contact without also
+           turning on every text selection in Notes and Safari.
+           Keep this list explicit: adding public.data or public.text here
+           re-opens that floodgate, because both vCards and plain text
+           conform to them. -->
       <key>NSExtensionActivationRule</key>
-      <dict>
-        <key>NSExtensionActivationSupportsImageWithMaxCount</key><integer>20</integer>
-        <key>NSExtensionActivationSupportsFileWithMaxCount</key><integer>20</integer>
-        <key>NSExtensionActivationSupportsAttachmentsWithMaxCount</key><integer>20</integer>
-      </dict>
+      <string>SUBQUERY (
+    extensionItems, $item,
+    SUBQUERY (
+        $item.attachments, $att,
+        ANY $att.registeredTypeIdentifiers UTI-CONFORMS-TO "public.vcard"
+        OR ANY $att.registeredTypeIdentifiers UTI-CONFORMS-TO "public.image"
+        OR ANY $att.registeredTypeIdentifiers UTI-CONFORMS-TO "com.adobe.pdf"
+        OR ANY $att.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url"
+        OR ANY $att.registeredTypeIdentifiers UTI-CONFORMS-TO "public.url"
+    ).@count &gt;= 1
+).@count &gt;= 1</string>
     </dict>
   </dict>
 </dict>

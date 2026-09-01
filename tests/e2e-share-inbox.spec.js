@@ -452,6 +452,59 @@ test.describe('Share inbox', () => {
     expect(r.photo, 'a photo must not offer "add as a client"').toBe(false);
   });
 
+  test('a contact-only share asks the contact question and nothing else', async () => {
+    // Leading with "A receipt / Reads the total off it" for a vCard is a
+    // control whose value is not wired (15.1), and filing a .vcf into a job's
+    // photo gallery buries the card where nobody looks. When every shared item
+    // is a contact, the sheet asks the one thing that can actually happen.
+    const r = await page.evaluate(() => {
+      document.getElementById('_sharein-ov')?.remove();
+      _shareInAsking = false;
+      _shareInPrompt([{ path: '/x/a.vcf' }]);
+      const ov = document.getElementById('_sharein-ov');
+      const out = {
+        contact: !!document.getElementById('_si-contact'),
+        receipt: !!document.getElementById('_si-receipt'),
+        jobs: ov ? ov.querySelectorAll('._si-job').length : -1,
+        attachHdr: ov ? /Or attach to a job/.test(ov.innerHTML) : true,
+        title: ov ? (ov.querySelector('.zmodal-title') || {}).textContent : '',
+        // Nothing may bleed off the edge of a phone (15.1).
+        wide: document.documentElement.scrollWidth > window.innerWidth + 1,
+      };
+      document.getElementById('_sharein-ov')?.remove();
+      _shareInAsking = false;
+      return out;
+    });
+    expect(r.contact, 'the only real action must still be offered').toBe(true);
+    expect(r.receipt, 'a vCard has no total to read off it').toBe(false);
+    expect(r.jobs, 'a contact card must not be offered as a job photo').toBe(0);
+    expect(r.attachHdr, 'the attach-to-a-job header must go with its list').toBe(false);
+    expect(r.title).toContain('contact card');
+    expect(r.wide, 'the contact sheet must not bleed off a phone').toBe(false);
+  });
+
+  test('a mixed share still offers both forks', async () => {
+    // The narrowing above keys off EVERY item being a contact. A receipt shared
+    // alongside a contact is still a receipt, and must not lose its fork.
+    const r = await page.evaluate(() => {
+      document.getElementById('_sharein-ov')?.remove();
+      _shareInAsking = false;
+      _shareInPrompt([{ path: '/x/a.vcf' }, { path: '/x/b.jpg' }]);
+      const ov = document.getElementById('_sharein-ov');
+      const out = {
+        contact: !!document.getElementById('_si-contact'),
+        receipt: !!document.getElementById('_si-receipt'),
+        attachHdr: ov ? /Or attach to a job/.test(ov.innerHTML) : false,
+      };
+      document.getElementById('_sharein-ov')?.remove();
+      _shareInAsking = false;
+      return out;
+    });
+    expect(r.contact).toBe(true);
+    expect(r.receipt, 'a photo in the same share still needs the receipt fork').toBe(true);
+    expect(r.attachHdr).toBe(true);
+  });
+
   test('no console errors during share inbox tests', async () => {
     assertNoErrors(page, 'share inbox');
   });
