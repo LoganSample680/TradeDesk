@@ -174,8 +174,23 @@ function _tlStopAnchored(arrMs,depMs,anchors){
   let before=false,after=false,workSide=false;
   for(const a of anchors){
     if(!a)continue;
-    const bOk=a.dep<=arrMs+SLACK&&dstr(new Date(a.dep))===day;
-    const aOk=a.arr>=depMs-SLACK&&dstr(new Date(a.arr))===day;
+    // A CLOCK BOUNDS A STOP BY CONTAINING IT, NOT BY ABUTTING IT.
+    //
+    // Every other anchor is a fence, and a fence bounds a stop by ENDING just
+    // before it or STARTING just after it. A clock is the two ends of the
+    // shift, so the question it answers is "was this inside the day", and the
+    // answer comes from its start and its end respectively.
+    //
+    // Without this, only stops with a fence on BOTH sides survived. Jack's
+    // afternoon (12:14 onward) has no fence after it at all: he left the shop,
+    // saw an untracked client and drove home, so four of his six stops, the
+    // whole back half of his working day, were dropped for want of a trailing
+    // fence that was never going to exist. His clock-out at 3:00pm is a real
+    // timestamped event and is exactly the boundary those stops needed.
+    const bOk=a.clock?(a.arr<=arrMs+SLACK&&dstr(new Date(a.arr))===day)
+                     :(a.dep<=arrMs+SLACK&&dstr(new Date(a.dep))===day);
+    const aOk=a.clock?(a.dep>=depMs-SLACK&&dstr(new Date(a.dep))===day)
+                     :(a.arr>=depMs-SLACK&&dstr(new Date(a.arr))===day);
     if(bOk)before=true;
     if(aOk)after=true;
     // a.shop marks a shop session; anything else (job fence, place, manual
@@ -1117,7 +1132,15 @@ const _TL_RAIL_META={
   shop:  {c:'#0E6B6B',           icon:'🔧', word:'Shop time'},
   load:  {c:'#6D28D9',           icon:'📦', word:'Loading time'},
   office:{c:'#0E6B6B',           icon:'📋', word:'Office'},
-  off:   {c:'var(--text3)',      icon:'🍽', word:'Break'},
+  // NOT 'Break', and not a knife and fork (owner 2026-09-01, on his afternoon:
+  // "that was a untracked address that should have shown grey as manual time").
+  // An anonymous stop between fences is time the app cannot place. Calling it a
+  // break asserts a reason nobody supplied, and on Jack's day it labelled four
+  // untracked client visits as lunch. It reads the same as the grey bucket it
+  // feeds, because it is the same time, and stays whatever it is until somebody
+  // classifies it (his own rule: "doesnt get included in time unless
+  // classified, i.e. lunch, breaks, business trips").
+  off:   {c:'var(--text3)',      icon:'🕐', word:'Manual time'},
   manual:{c:'var(--text3)',      icon:'▶',  word:'Manual'},
   gap:   {c:'var(--border2)',    icon:'❓', word:'Unaccounted'}
 };

@@ -5012,6 +5012,77 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r).toBe(0);
     });
 
+    test('a clock bounds the stops inside it, so the afternoon is not dropped', async () => {
+      // Every other anchor is a fence and bounds a stop by ABUTTING it. A clock
+      // is the two ends of the shift, so it bounds by CONTAINING. Without that,
+      // only stops with a fence on both sides survived, and Jack's afternoon
+      // has no fence after it at all: he left the shop, saw an untracked client
+      // and drove home. Four of his six stops, the whole back half of the
+      // working day, were dropped for want of a trailing fence that was never
+      // going to exist.
+      const r = await page.evaluate(([es, ms]) => {
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        const entries = es.map(e => ({ ...e, employee_user_id: ME }));
+        window._fetchCrewLabor = async () => ({ name: { [ME]: 'Jack' }, entries, shopEntries: [] });
+        return _timeLogRows(null)
+          .then(rows => rows.filter(x => x.date === '2026-09-01' && x.rawSource === 'stop').length)
+          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT; });
+      }, [
+        // One fence in the morning and nothing after it, then three stops that
+        // only the clock-out can close.
+        [{ minutes: 44, source: 'place', dest_place: '1200 SW Oakley Ave',
+           arrived_at: at(11, 20), departed_at: at(12, 4) },
+         { minutes: 45, source: 'stop', arrived_at: at(12, 14), departed_at: at(13, 0) },
+         { minutes: 23, source: 'stop', arrived_at: at(13, 8), departed_at: at(13, 31) },
+         { minutes: 33, source: 'stop', arrived_at: at(14, 27), departed_at: at(14, 59) }],
+        [{ id: 1, date: D, open: false, job_id: null, minutes: 438,
+           start_time: at(7, 42), end_time: at(15, 0),
+           logged_by_uid: null, logged_by_name: 'Jack' }],
+      ]);
+      expect(r, 'all three afternoon stops reach the rail').toBe(3);
+    });
+
+    test('a stop outside the clock is still not bounded by it', async () => {
+      // Containment is the test, so something the clock never covered stays
+      // unanchored. The exemption is not a licence to draw everything.
+      const r = await page.evaluate(([es, ms]) => {
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        const entries = es.map(e => ({ ...e, employee_user_id: ME }));
+        window._fetchCrewLabor = async () => ({ name: { [ME]: 'Jack' }, entries, shopEntries: [] });
+        return _timeLogRows(null)
+          .then(rows => rows.filter(x => x.date === '2026-09-01' && x.rawSource === 'stop').length)
+          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT; });
+      }, [
+        // 5:33am, two hours before he clocked in.
+        [{ minutes: 49, source: 'stop', arrived_at: at(5, 33), departed_at: at(6, 21) }],
+        [{ id: 1, date: D, open: false, job_id: null, minutes: 438,
+           start_time: at(7, 42), end_time: at(15, 0),
+           logged_by_uid: null, logged_by_name: 'Jack' }],
+      ]);
+      expect(r).toBe(0);
+    });
+
+    test('an unplaceable stop is not called a break', async () => {
+      // "that was a untracked address that should have shown grey as manual
+      // time." A knife-and-fork icon and the word Break assert a reason nobody
+      // supplied; on Jack's day they labelled four untracked client visits as
+      // lunch. The row reads the same as the grey bucket it feeds.
+      const meta = await page.evaluate(() => _TL_RAIL_META.off);
+      expect(meta.word).toBe('Manual time');
+      expect(meta.icon, 'a fork is a claim about what happened').not.toBe('🍽');
+      const labels = await page.evaluate(() => _TL_BUCKETS.map(b => b.label));
+      expect(labels, 'the row and its bucket say the same thing')
+        .toContain(meta.word);
+    });
+
     test('the grey bucket is named for what it holds', async () => {
       // "grey time should say Manual Time rather than supply/other."
       const labels = await page.evaluate(() => _TL_BUCKETS.map(b => b.label));
