@@ -8105,6 +8105,53 @@ async function _geoSyncDriveTimeEntries(){
       if(m&&m.gps&&m.legKey)surviving.add(String(m.legKey));
     });
     if(!surviving.size)return 0;
+    // ── THE JOINT IS CHECKED BOTH WAYS (owner 2026-09-01) ──────────────────
+    //
+    // "mileage and time log should never be out of sync on their drives, two
+    // purposes one engine."
+    //
+    // They are one engine at WRITE time: _geoDriveEntry mints one legKey and
+    // stamps it on both halves. They were never one engine afterwards. This
+    // sweep only ever ran in one direction, deleting a drive row whose leg had
+    // gone, and nothing anywhere noticed the opposite. So "mileage has it, the
+    // time log does not" is a state the system could reach and never repair,
+    // which is exactly where the owner's own two drives ended up: both legs
+    // sitting in td_mileage with deleted_at null the whole time while their
+    // time entries had been deleted hours earlier.
+    //
+    // A leg with no drive row is now repaired rather than ignored. The row is
+    // rebuilt from the leg itself, which is the record that survived, so this
+    // invents nothing: same legKey, same clock, same destination.
+    const haveKey=new Set(driveRows.map(r=>String(r.client_key||'')).filter(Boolean));
+    const _cutMs=Date.parse(cutoff)||0;
+    const _missing=[];
+    legRows.forEach(row=>{
+      const m=row&&row.data;
+      if(!m||!m.gps||!m.legKey||haveKey.has(String(m.legKey)))return;
+      // Only a leg with a real clock can become a row: no start and end means
+      // no window, and a window is the whole content of a time entry.
+      const a=Date.parse(m.startedIso||''),b=Date.parse(m.endedIso||'');
+      if(!(a>0&&b>a)||a<_cutMs)return;
+      // Same 2-minute floor every other writer answers to: below it this is a
+      // fence bounce, not windshield time.
+      const mins=Math.round((b-a)/60000);
+      if(mins<2)return;
+      _missing.push({m,a,b,mins});
+    });
+    // BOUNDED, and low. This heals a hole; a flood of them means something
+    // upstream is wrong and writing hundreds of rows would bury it.
+    for(const x of _missing.slice(0,20)){
+      try{
+        _geoEnqueue('job_time_entries',{
+          contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+          job_id:null,arrived_at:x.m.startedIso,departed_at:x.m.endedIso,
+          minutes:x.mins,dest_place:x.m.to||null,
+          client_key:String(x.m.legKey),source:'drive-unassigned'
+        });
+      }catch(_e){}
+    }
+    if(_missing.length)_geoParkNote('drive-sync','rebuilt '+
+      Math.min(_missing.length,20)+' drive row(s) whose mileage leg outlived them');
     const drop=driveRows.filter(r=>!r.client_key||!surviving.has(String(r.client_key)));
     if(!drop.length)return 0;
     // A sweep that decides to delete EVERY drive row it can see is not doing

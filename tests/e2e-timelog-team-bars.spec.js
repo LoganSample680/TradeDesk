@@ -275,3 +275,46 @@ test.describe('team: deleting an entry survived the table', () => {
     expect(r.auto.id).toBe(null);
   });
 });
+
+// The row says WHO, not WHERE (owner 2026-09-01: "a 2950 sw mcculure rd from
+// 1:25 pm to 3:42 but that last one should say John Doe"). Two visits to the
+// same client on the same day disagreed on screen: the one with no job
+// attached said "John Doe", the one that had resolved a job said the street.
+test.describe('rail row title: the client name wins', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockAllExternal(page);
+    await page.goto('/index.html');
+    await waitForAppBoot(page);
+    await mountWeekBars(page);
+  });
+  test.afterEach(async ({ page }) => { assertNoErrors(page, 'rail title'); });
+
+  test('name beats address, address still fills in when there is no name',
+  async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const base = { source: 'auto', rawSource: 'client', personUid: 'crew-jose',
+        personName: 'Jose Ramirez', minutes: 137,
+        startTime: '2026-08-27T18:25:00Z', endTime: '2026-08-27T20:42:00Z' };
+      const ttl = row => { const d = document.createElement('div');
+        d.innerHTML = _tlRailRow(row);
+        const el = d.querySelector('.tl-rail-ttl'); return el ? el.textContent : null; };
+      return {
+        both: ttl({ ...base, clientName: 'John Doe', addr: '2950 SW McClure Rd' }),
+        // The same client, no address resolved: unchanged behaviour.
+        nameOnly: ttl({ ...base, clientName: 'John Doe', addr: '' }),
+        // A supply run has nowhere to look a name up: the address is the only
+        // thing that identifies it, so it must still show.
+        addrOnly: ttl({ ...base, clientName: '-', addr: '1201 SW Gage Blvd' }),
+        // Neither: the kind's own word, never a bare hyphen.
+        neither: ttl({ ...base, clientName: '-', addr: '' }),
+        manual: ttl({ ...base, source: 'manual', clientName: '-', addr: '' }),
+      };
+    });
+    expect(r.both).toBe('John Doe');
+    expect(r.nameOnly).toBe('John Doe');
+    expect(r.addrOnly).toBe('1201 SW Gage Blvd');
+    expect(r.neither).not.toBe('-');
+    expect(r.neither).toBeTruthy();
+    expect(r.manual).toBe('Clocked in');
+  });
+});

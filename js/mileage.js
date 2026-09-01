@@ -755,6 +755,46 @@ async function _milePersonalStopSweep(){
     return 0;
   }
 }
+// ── THE TRACE IS THE MEASUREMENT (owner 2026-09-01) ────────────────────────
+//
+// "my mileage is correct but my time log is not" ... and on Jack's: "his
+// mileage should have his trip from home office to 1200 sw oakley shop in the
+// morning and thats really it."
+//
+// It had that trip. It said 1.8 miles. The row carries a 229-point GPS trace
+// that sums to 5.65, and the app threw that away: _mileServerRefine below routes
+// fromCoord to toCoord and overwrites `miles` with the answer, stamping
+// 'auto_route'. Nothing compared the guess against the evidence already in the
+// same record, so a leg whose endpoints resolved badly (his read "Stop" and
+// "KS") got a distance for a journey he never took.
+//
+// A routed guess is for a leg with NOTHING else: a hand-typed row, or one
+// whose breadcrumbs never landed. Where there is a trace, the trace is what
+// happened. This returns the miles the recorded path actually covers.
+//
+// The same haversine the fence machine measures everything else with, so the
+// number here and the line drawn on the map can never disagree (7.3).
+function _milePathMiles(m){
+  const p=m&&m.path;
+  if(!Array.isArray(p)||p.length<2)return 0;
+  let ft=0;
+  for(let i=1;i<p.length;i++){
+    const a=p[i-1],b=p[i];
+    if(!Array.isArray(a)||!Array.isArray(b))continue;
+    const alat=+a[0],alon=+a[1],blat=+b[0],blon=+b[1];
+    if(!isFinite(alat)||!isFinite(alon)||!isFinite(blat)||!isFinite(blon))continue;
+    ft+=_geoDistFt({lat:alat,lng:alon},{lat:blat,lng:blon});
+  }
+  return ft>0?ft/5280:0;
+}
+// What this leg is OBSERVED to have covered, from whichever record of the
+// drive it has. gpsMiles is the live odometer's own tally; the path is the
+// same drive written down. Either is evidence; a routed guess is not.
+function _mileObservedMiles(m){
+  const g=+(m&&m.gpsMiles);
+  const p=_milePathMiles(m);
+  return Math.max(isFinite(g)&&g>0?g:0,p);
+}
 async function _mileMotionHealSweep(){
   try{
     if(window._mileMotionHealRan)return 0;
@@ -898,7 +938,26 @@ async function _mileServerRefine(){
       // 3. Route the real distance and promote the row.
       try{
         const{miles}=await _routeDistance(m.fromCoord,m.toCoord);
-        if(miles>0){m.miles=Math.round(miles*10)/10;m.calc_method='auto_route';}
+        if(miles>0){
+          // THE TRACE WINS (see _milePathMiles above). Jack's morning leg was
+          // overwritten from a 5.65-mile recorded path down to a 1.8-mile
+          // routed guess between two endpoints that had not resolved. Same
+          // rule _retryPendingTrips already applies when it settles a pending
+          // row (7.3): an observed distance LONGER than the route is the
+          // detour that actually happened, up to 4x, past which it is jitter
+          // rather than a journey. Shorter is never taken: a route is the
+          // minimum a leg between two points can be.
+          let best=miles;
+          const obs=_mileObservedMiles(m);
+          if(obs>miles&&obs<=miles*4){
+            const walked=await _mileTapeHadPause(m.startedIso,m.endedIso);
+            if(walked===true)m.pausedLeg=true;else best=obs;
+          }
+          m.miles=Math.round(best*10)/10;m.calc_method='auto_route';
+          // Kept on the row so the trace's own figure stays visible next to
+          // the number, which is what let this be diagnosed at all.
+          if(!(+m.gpsMiles>0)&&obs>0)m.gpsMiles=Math.round(obs*100)/100;
+        }
       }catch(_e){}
       try{
         const walked=await _mileTapeHadPause(m.startedIso,m.endedIso);
@@ -971,10 +1030,14 @@ async function _retryPendingTrips(){
       // walk check disqualifies it (an errand is an errand however late the
       // measurement lands).
       let best=miles;
-      if(auto&&rec.gpsMiles>0&&rec.gpsMiles>miles&&rec.gpsMiles<=miles*4){
+      // _mileObservedMiles, not rec.gpsMiles: a server-derived row carries the
+      // recorded PATH and no odometer tally, and reading only gpsMiles left
+      // every one of those with nothing to defend itself against the route.
+      const _obs=_mileObservedMiles(rec);
+      if(auto&&_obs>0&&_obs>miles&&_obs<=miles*4){
         const walked=await _mileTapeHadPause(rec.startedIso,rec.endedIso);
         if(walked===true)rec.pausedLeg=true;
-        else best=rec.gpsMiles;
+        else best=_obs;
       }
       rec.miles=Math.round(best*10)/10;rec.calc_method=auto?'auto_route':'address';
       if(auto)_mileFixLegClock(rec,routeMins);

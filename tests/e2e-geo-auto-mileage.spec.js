@@ -8004,3 +8004,104 @@ test.describe('A drive opens at the moment the tape saw, not the moment the fenc
 
   assertNoErrors(() => page);
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// The trace is the measurement (owner 2026-09-01)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// "his mileage should have his trip from home office to 1200 sw oakley shop in
+// the morning and thats really it."
+//
+// It had that trip. It said 1.8 miles. The row carries a 229-point GPS trace
+// summing to 5.65, and _mileServerRefine threw it away: it routes fromCoord to
+// toCoord and overwrites `miles` with the answer. His endpoints had not
+// resolved (the row reads "Stop" to "KS"), so it produced a distance for a
+// journey nobody took, and nothing compared it against the evidence sitting in
+// the same record.
+test.describe('a recorded path outranks a routed guess', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockAllExternal(page);
+    await page.goto('/index.html');
+    await waitForAppBoot(page);
+  });
+
+  // Roughly Jack's morning: 7402 SW 22nd Ct to 1200 SW Oakley Ave, walked in
+  // straight hops so the sum is arithmetic rather than a guess.
+  const LEG = (n) => {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      pts.push([39.0257 + (0.02 * i) / (n - 1), -95.7939 + (0.0788 * i) / (n - 1), 1000 + i * 2000]);
+    }
+    return pts;
+  };
+
+  test('_milePathMiles measures the line that was actually driven', async ({ page }) => {
+    const r = await page.evaluate((path) => ({
+      real: _milePathMiles({ path }),
+      none: _milePathMiles({}),
+      one: _milePathMiles({ path: [[39.0, -95.7, 1]] }),
+      junk: _milePathMiles({ path: [['x', 'y', 1], [39.0, -95.7, 2]] }),
+      notArray: _milePathMiles({ path: 'nope' }),
+      nul: _milePathMiles(null),
+    }), LEG(229));
+    // Home to shop is about four and a half miles as the crow flies.
+    expect(r.real).toBeGreaterThan(4);
+    expect(r.real).toBeLessThan(6);
+    // Nothing to measure is zero, never NaN: a NaN here would poison a money
+    // record all the way to a tax return.
+    expect(r.none).toBe(0);
+    expect(r.one).toBe(0);
+    expect(r.junk).toBe(0);
+    expect(r.notArray).toBe(0);
+    expect(r.nul).toBe(0);
+  });
+
+  test('_mileObservedMiles takes whichever record of the drive exists', async ({ page }) => {
+    const r = await page.evaluate((path) => ({
+      // A server-derived row has the path and no odometer tally, which is
+      // exactly the shape that had nothing to defend itself with.
+      pathOnly: _mileObservedMiles({ path }),
+      tallyOnly: _mileObservedMiles({ gpsMiles: 5.6 }),
+      // Both: the longer of the two, since each is a record of the same drive
+      // and the shorter one lost hops.
+      both: _mileObservedMiles({ path, gpsMiles: 1.2 }),
+      neither: _mileObservedMiles({}),
+      junkTally: _mileObservedMiles({ gpsMiles: 'lots' }),
+      negative: _mileObservedMiles({ gpsMiles: -4 }),
+    }), LEG(229));
+    expect(r.pathOnly).toBeGreaterThan(4);
+    expect(r.tallyOnly).toBeCloseTo(5.6, 3);
+    expect(r.both).toBeGreaterThan(4);
+    expect(r.neither).toBe(0);
+    expect(r.junkTally).toBe(0);
+    expect(r.negative, 'a negative distance is not a shorter drive').toBe(0);
+  });
+
+  test('the refine keeps the traced distance instead of the routed one', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const src = String(_mileServerRefine);
+      return {
+        usesObserved: src.includes('_mileObservedMiles(m)'),
+        // Shorter is never taken: a route is the minimum a leg between two
+        // points can be, so an observed figure BELOW it is a lost-hop tally,
+        // not a shortcut.
+        onlyLonger: /obs>miles&&obs<=miles\*4/.test(src.replace(/\s/g, '')),
+        // A walked errand still wins over both, unchanged.
+        walkCheck: src.includes('_mileTapeHadPause'),
+      };
+    });
+    expect(r.usesObserved, 'the evidence in the row has to be consulted').toBe(true);
+    expect(r.onlyLonger).toBe(true);
+    expect(r.walkCheck).toBe(true);
+  });
+
+  test('the pending-retry path reads the path too, not only the odometer', async ({ page }) => {
+    // It already preferred a longer observed distance, but only via gpsMiles,
+    // so every server-derived row (the ones that carry a path and no tally)
+    // fell straight through to the route.
+    const r = await page.evaluate(() => String(_retryPendingTrips).includes('_mileObservedMiles(rec)'));
+    expect(r).toBe(true);
+  });
+
+  assertNoErrors(() => page);
+});

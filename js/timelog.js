@@ -1347,8 +1347,21 @@ function _tlRailRow(r){
     // tells the reader nothing about the one row on the day they created by
     // hand, so it says what it is instead.
     const _bareName=(!r.clientName||r.clientName==='-')?'':r.clientName;
+    // THE NAME COMES FIRST (owner 2026-09-01: "a 2950 sw mcculure rd from 1:25
+    // pm to 3:42 but that last one should say John Doe").
+    //
+    // This read `r.addr || clientName`, so the moment a row resolved a job it
+    // stopped saying who it was for. His 08:03 visit to the same client showed
+    // "John Doe" only because it had no job attached and no address to
+    // resolve; the merged 13:25 row had one, and turned into a street address.
+    // Two rows, one client, two different answers on the same screen.
+    //
+    // A person is who the work is for; an address is where it happened, and it
+    // is already on the row underneath. Falling back to the address is still
+    // right when there is no name at all, which is what a supply run looks
+    // like.
     const ttl=leg?((leg.from_name||'—')+' → '+(leg.to_name||r.clientName||'—'))
-                 :(r.addr||_bareName||(r.source==='manual'?'Clocked in':m.word));
+                 :(_bareName||r.addr||(r.source==='manual'?'Clocked in':m.word));
     // THE SUB-LINE IS THE CLOCK, AND ONLY THE CLOCK (owner 2026-08-30: "why
     // put tradedesk shop under the sub title that already says it ... can
     // just do the start and end time under there").

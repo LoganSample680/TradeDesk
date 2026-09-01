@@ -2572,6 +2572,82 @@ test.describe('Geo park detection + mileage reconciliation', () => {
     await geoRestore();
   });
 
+  // ── THE JOINT IS CHECKED BOTH WAYS (owner 2026-09-01) ────────────────────
+  //
+  // "mileage and time log should never be out of sync on their drives, two
+  // purposes one engine."
+  //
+  // They are one engine at write time and were never one engine afterwards:
+  // the sweep only ran in the delete direction, so "mileage has it, the time
+  // log does not" was a state the system could reach and never repair. It is
+  // where his own two drives ended up, with both legs alive in td_mileage the
+  // whole time their time entries were gone.
+  test('drive-sync: a mileage leg whose drive row is missing gets it back', async () => {
+    await geoReset();
+    const now = Date.now();
+    const r = await page.evaluate(async (now) => {
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      const a = new Date(now - 3600000).toISOString();
+      const b = new Date(now - 3000000).toISOString();   // ten minutes
+      window.__selMileage = [
+        { data: { gps: true, legKey: 'lg-orphan', startedIso: a, endedIso: b, to: 'TradeDesk shop' } },
+        { data: { gps: true, legKey: 'lg-kept',   startedIso: a, endedIso: b, to: 'X' } },
+      ];
+      window.__selRows = [{ id: 4001, source: 'drive', client_key: 'lg-kept' }];
+      window.__rec.upserts.length = 0;
+      const n = await _geoSyncDriveTimeEntries();
+      // The rebuild goes through the durable queue like every other write, so
+      // let the drain land it in the recorder.
+      for (let i = 0; i < 100; i++) {
+        if (window.__rec.upserts.some(u => u.tbl === 'job_time_entries')) break;
+        await new Promise(res => setTimeout(res, 20));
+      }
+      window.__selMileage = null;
+      return { n, wrote: window.__rec.upserts.filter(u => u.tbl === 'job_time_entries').map(u => u.row) };
+    }, now);
+    expect(r.n, 'nothing is deleted: both legs are alive').toBe(0);
+    const row = r.wrote.find(x => x && x.client_key === 'lg-orphan');
+    expect(row, 'the leg that outlived its row rebuilds it').toBeTruthy();
+    expect(row.minutes).toBe(10);
+    expect(row.dest_place, 'rebuilt from the leg, so it keeps the destination').toBe('TradeDesk shop');
+    expect(/^drive/.test(row.source)).toBe(true);
+    expect(r.wrote.some(x => x && x.client_key === 'lg-kept'),
+      'a leg that already has its row is left alone').toBe(false);
+    await page.evaluate(() => {
+      if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; }
+    });
+    await geoRestore();
+  });
+
+  test('drive-sync: a leg too short or with no clock is never rebuilt', async () => {
+    await geoReset();
+    const now = Date.now();
+    const r = await page.evaluate(async (now) => {
+      window.__origMileage = mileage.slice(); mileage.length = 0;
+      const a = new Date(now - 3600000).toISOString();
+      window.__selMileage = [
+        // A fence bounce, below the two-minute floor every writer answers to.
+        { data: { gps: true, legKey: 'lg-blip', startedIso: a, endedIso: new Date(now - 3599000).toISOString() } },
+        // No clock at all: a window is the whole content of a time entry.
+        { data: { gps: true, legKey: 'lg-noclock' } },
+        // Not a GPS leg: a hand-typed row never had a time entry to begin with.
+        { data: { gps: false, legKey: 'lg-manual', startedIso: a, endedIso: new Date(now - 3000000).toISOString() } },
+        { data: { gps: true, legKey: 'lg-kept', startedIso: a, endedIso: new Date(now - 3000000).toISOString() } },
+      ];
+      window.__selRows = [{ id: 4010, source: 'drive', client_key: 'lg-kept' }];
+      window.__rec.upserts.length = 0;
+      await _geoSyncDriveTimeEntries();
+      await new Promise(res => setTimeout(res, 400));
+      window.__selMileage = null;
+      return window.__rec.upserts.filter(u => u.tbl === 'job_time_entries').map(u => u.row.client_key);
+    }, now);
+    expect(r).toEqual([]);
+    await page.evaluate(() => {
+      if (window.__origMileage) { mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null; }
+    });
+    await geoRestore();
+  });
+
   test('drive-sync: an empty leg set is a failed load, not an empty log', async () => {
     // Deleting nothing is always recoverable. Deleting a day of drives is not.
     await geoReset();
