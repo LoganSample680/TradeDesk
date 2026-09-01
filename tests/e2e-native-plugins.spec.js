@@ -150,6 +150,56 @@ test.describe('Share extension script targets the real Xcode paths', () => {
   });
 });
 
+test.describe('A build can never quietly ship without a component', () => {
+  const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/ios-beta.yml'), 'utf8');
+
+  test('the skip flag is job-level, so something other than the step can read it', () => {
+    // It used to live on the share-extension step alone. Nothing else in the
+    // build could see it, so nothing could check it, and build 49 (the monthly
+    // keep-alive, run from main while main still had it at '1') shipped a
+    // TestFlight build with no share extension and no output saying so.
+    const job = wf.indexOf('build-upload:');
+    const firstStep = wf.indexOf('steps:', job);
+    expect(job).toBeGreaterThan(-1);
+    expect(wf.slice(job, firstStep), 'the flag must be declared on the job, above steps:')
+      .toContain("SKIP_SHARE_EXT: '0'");
+    // And exactly one place sets it, or the guard grades a different value
+    // than the build uses.
+    expect((wf.match(/^\s*SKIP_SHARE_EXT:/gm) || []).length,
+      'one source of truth for the flag').toBe(1);
+  });
+
+  test('a component in the tree cannot be skipped', () => {
+    // The rule: source in the tree means the component is in the build. A skip
+    // flag may only cover a component that does not exist yet, never one that
+    // already shipped.
+    const g = wf.indexOf('Every native component in the tree must be in the build');
+    expect(g, 'the guard step must exist').toBeGreaterThan(-1);
+    const step = wf.slice(g, g + 1200);
+    expect(step, 'it has to test the source directory, not just the flag').toContain('-d td-share');
+    expect(step).toContain('SKIP_SHARE_EXT');
+    expect(step, 'and it must FAIL the run, not warn').toContain('::error::');
+    expect(step).toContain('exit $MISSING');
+  });
+
+  test('the guard runs long before the archive', () => {
+    // The whole point is that a stripped build costs seconds, not a
+    // fifteen-minute macOS run and a bad install on somebody's phone.
+    const g = wf.indexOf('Every native component in the tree must be in the build');
+    const share = wf.indexOf('COMPONENT share-extension: build the target');
+    const archive = wf.indexOf('name: Archive (ad-hoc signed');
+    expect(g).toBeLessThan(share);
+    expect(g).toBeLessThan(archive);
+  });
+
+  test('nothing still advises setting the flag back to 1', () => {
+    // The failure-analytics step used to say "set SKIP_SHARE_EXT back to '1'
+    // and re-run", which the guard now refuses. Advice that contradicts a hard
+    // gate sends the next person in a circle.
+    expect(wf).not.toContain("set SKIP_SHARE_EXT back to '1'");
+  });
+});
+
 test.describe('Share extension accepts a contact card', () => {
   const PLIST = path.join(ROOT, 'native/td-share/ios/Extension/Info.plist');
   const SWIFT = path.join(ROOT, 'native/td-share/ios/Extension/ShareViewController.swift');

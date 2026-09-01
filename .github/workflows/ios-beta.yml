@@ -28,6 +28,14 @@ on:
 jobs:
   build-upload:
     runs-on: macos-latest
+    env:
+      # HOISTED FROM THE SHARE-EXTENSION STEP (2026-09-01). It used to live on
+      # that step alone, which meant nothing else in the build could see it and
+      # nothing could check it. Build 49, the monthly keep-alive, ran from main
+      # while main still had this at '1' and shipped a TestFlight build with no
+      # share extension at all: no vCard import, no receipt share, and not one
+      # line of output saying so. One value, readable by the guard below.
+      SKIP_SHARE_EXT: '0'
     defaults:
       run:
         working-directory: native
@@ -137,6 +145,28 @@ jobs:
             fi
             echo "ok: $d"
           done
+          exit $MISSING
+
+      # Build 19 shipped without six plugins and said nothing. Build 49 shipped
+      # without the SHARE EXTENSION and said nothing, for a different reason:
+      # the monthly keep-alive cron builds `main`, main still carried
+      # SKIP_SHARE_EXT='1' from the signing-isolation era, and a scheduled build
+      # is the one nobody is watching. The owner found it by noticing a build
+      # number he did not recognise.
+      #
+      # THE RULE: source in the tree means the component is in the build. A skip
+      # flag may only ever cover a component that does not exist yet, never one
+      # that already shipped. Cheap, and it runs long before the archive, so a
+      # stripped build costs seconds instead of fifteen minutes and a bad
+      # install on somebody's phone.
+      - name: Every native component in the tree must be in the build
+        run: |
+          MISSING=0
+          if [ -d td-share ] && [ "$SKIP_SHARE_EXT" = "1" ]; then
+            echo "::error::native/td-share is in the tree but SKIP_SHARE_EXT=1, so this build would ship WITHOUT the share extension. A skip flag may only cover a component that does not exist yet."
+            MISSING=1
+          fi
+          [ "$MISSING" = "0" ] && echo "ok: every component in the tree is in this build"
           exit $MISSING
 
       - name: Configure Info.plist (background location + consent copy)
@@ -332,7 +362,8 @@ jobs:
           # best explanation for all three failures, and it is checked in the
           # preflight step, BEFORE the archive, so a fourth failure costs
           # seconds instead of a build.
-          SKIP_SHARE_EXT: '0'
+          # SKIP_SHARE_EXT is set at JOB level now (see the top of this file):
+          # the guard step cannot check a value only this step can see.
         run: |
           if [ "$SKIP_SHARE_EXT" = "1" ]; then
             echo "::notice::share extension SKIPPED for signing isolation (see step comment)"
@@ -630,7 +661,9 @@ jobs:
             elif [ "${{ steps.export-ipa.outcome }}" = "failure" ]; then
               echo "**Verdict: signing, which means the SHARE EXTENSION.** The archive built, so both plugins compiled."
               echo "Look for \"No profiles for 'app.tradedesk.beta.share'\" in the export log."
-              echo "To ship the drive window alone: set SKIP_SHARE_EXT back to '1' and re-run."
+              echo "The component guard now BLOCKS shipping without it while native/td-share is in the tree,"
+              echo "which is deliberate: build 49 shipped stripped and silent. Fix the portal, or delete the"
+              echo "component, but do not ship a build missing something that already shipped."
             elif [ "${{ steps.archive.outcome }}" = "failure" ]; then
               echo "**Verdict: a COMPILE error, so it is native code, not signing.**"
               echo "Check ios-native-tests.yml on this commit: if that was green, the TdGeo plugin compiles and the"
