@@ -122,6 +122,44 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
     expect(r.why).toContain('motion+fix');
   });
 
+  test('the window carries the batch interval that keeps the phone cool', async () => {
+    // Owner 2026-09-01, after a six-minute drive cost 3% and left the phone
+    // hot: 127 fixes went out as 127 separate uploads, because a fix every
+    // ~2s never coalesced inside the plugin's 1.5s debounce. JS owns the
+    // number (3.2), so it has to actually be on the call.
+    const r = await run(`
+      await _geoTdEvent({ type: 'motion', ts: Date.now(), kind: 'automotive', prevKind: 'walking' });
+      await _geoOnPing({ coords: { latitude: 39.1, longitude: -94.1, accuracy: 10 } });
+      return { flushMs: (calls[0] || {}).flushMs, konst: _GEO_DRIVE_FLUSH_MS };
+    `);
+    expect(r.konst).toBe(20000);
+    expect(r.flushMs).toBe(20000);
+  });
+
+  test('every re-assert carries it too, so a resumed window never reverts to per-fix uploads', async () => {
+    const r = await run(`
+      await _geoTdEvent({ type: 'motion', ts: Date.now(), kind: 'automotive', prevKind: 'walking' });
+      await _geoOnPing({ coords: { latitude: 39.1, longitude: -94.1, accuracy: 10 } });
+      _geoDriveWinAskedAt = 0;                       // let the throttle through
+      _geoDriveWindowOpen('confirm-moved');
+      return { n: calls.length, all: calls.every(c => c.flushMs === 20000) };
+    `);
+    expect(r.n).toBeGreaterThan(1);
+    expect(r.all).toBe(true);
+  });
+
+  test('closing the window sends no batch interval at all: coarse is coarse', async () => {
+    const r = await run(`
+      await _geoTdEvent({ type: 'motion', ts: Date.now(), kind: 'automotive', prevKind: 'walking' });
+      await _geoOnPing({ coords: { latitude: 39.1, longitude: -94.1, accuracy: 10 } });
+      _geoDriveWindowClose('rest-still');
+      const last = calls[calls.length - 1];
+      return { mode: last.mode, flushMs: last.flushMs === undefined ? 'absent' : last.flushMs };
+    `);
+    expect(r.mode).toBe('coarse');
+    expect(r.flushMs).toBe('absent');
+  });
+
   test('ping then motion opens it too: order does not matter', async () => {
     // "or vice versa", verbatim. This is the common order on a fence wake,
     // which lands while the coprocessor is still deciding.
@@ -763,6 +801,42 @@ test.describe('The native half of the drive window', () => {
     const s = swiftSrc();
     expect(s.includes('CAPPluginMethod(name: "setSampling"')).toBe(true);
     expect(s.includes('CAPPluginMethod(name: "samplingState"')).toBe(true);
+  });
+
+  test('only a drive breadcrumb may wait; everything a person watches stays live', () => {
+    // The battery fix must not silently become the live-updates bug it was
+    // built alongside (owner 2026-08-31, "these updates aren't coming through
+    // live anymore"). Two halves, both asserted: the delay applies to `fix`
+    // and only while a window is open, and an EARLIER deadline supersedes a
+    // later one so a fence crossing mid-drive still goes out on the short lane.
+    const s = swiftSrc();
+    const i = s.indexOf('private func flushDelaySec(for type: String)');
+    expect(i).toBeGreaterThan(-1);
+    const body = s.slice(i, s.indexOf('private func driveFlushDelaySec()'));
+    expect(body.includes('type == "fix", driveSamplingOn()'),
+      'anything but a breadcrumb, or any event outside a drive, takes the live lane').toBe(true);
+    expect(s.includes('if flushPending, let cur = flushDeadline, cur <= due { return }'),
+      'a sooner deadline must win, and a later one must not push the window out').toBe(true);
+  });
+
+  test('the batch interval comes from JS and is clamped at both ends', () => {
+    const s = swiftSrc();
+    expect(s.includes('call.getValue("flushMs")'), 'JS owns the number (3.2)').toBe(true);
+    expect(s.includes('flushDebounceFloorMs: Double = 1500')).toBe(true);
+    expect(s.includes('flushDebounceCeilingMs: Double = 60_000')).toBe(true);
+    // Absent means unchanged: a shell whose JS predates the key keeps 1.5s.
+    expect(s.includes('flushDebounceMs: Double = 1500')).toBe(true);
+    expect(s.includes('let ms = num(st["flushMs"]) else {'),
+      'absent or unreadable falls back rather than throwing').toBe(true);
+  });
+
+  test('the urgent lane cancels a pending batch instead of letting it re-POST', () => {
+    const s = swiftSrc();
+    const i = s.indexOf('private func flushUrgently()');
+    const body = s.slice(i, i + 900);
+    expect(body.includes('flushGen += 1'),
+      'a debounced flush already armed must not fire behind the urgent one').toBe(true);
+    expect(body.includes('flushDeadline = nil')).toBe(true);
   });
 
   test('the safety cap exists, is bounded, and reverts without being asked', () => {

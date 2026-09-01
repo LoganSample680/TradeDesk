@@ -84,6 +84,16 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // arriving after a relaunch can still advance the watermark.
     private let flushInflightKey = "td_geo_flush_inflight"
     private var flushPending = false
+    // When the pending flush is due, and a generation counter so an EARLIER
+    // deadline can supersede a later one without leaving the old timer to
+    // fire a second time. Both only ever touched on the main thread.
+    private var flushDeadline: Date?
+    private var flushGen = 0
+    // Fallback only. JS supplies the real number through setSampling's
+    // flushMs; a shell whose JS predates that keeps the 1.5s it always had.
+    private static let flushDebounceMs: Double = 1500
+    private static let flushDebounceFloorMs: Double = 1500
+    private static let flushDebounceCeilingMs: Double = 60_000
     // ── Shift heartbeat + motion stream (owner 2026-08-27) ──────────────────
     // The heartbeat holds a LOW-POWER location session (3km accuracy, huge
     // distance filter, so effectively no fixes and no meaningful radio) whose
@@ -508,6 +518,11 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         let maxMs = min(max(self.num(call.getValue("maxMs")) ?? TdGeoPlugin.samplingCapDefaultMs,
                             TdGeoPlugin.samplingCapFloorMs), TdGeoPlugin.samplingCapCeilingMs)
         let filter = min(max(self.num(call.getValue("distanceFilter")) ?? TdGeoPlugin.driveFilterDefaultM, 5), 200)
+        // How long a drive's breadcrumbs may ride together in one POST. See
+        // scheduleFlush: absent means the 1.5s this always had, so a shell
+        // running JS that predates the key behaves exactly as before.
+        let flushMs = min(max(self.num(call.getValue("flushMs")) ?? TdGeoPlugin.flushDebounceMs,
+                              TdGeoPlugin.flushDebounceFloorMs), TdGeoPlugin.flushDebounceCeilingMs)
         DispatchQueue.main.async {
             let d = UserDefaults.standard
             let already = self.driveSamplingOn()
@@ -517,7 +532,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             d.set(["mode": "drive",
                    "startedAtMs": Date().timeIntervalSince1970 * 1000,
                    "maxMs": maxMs,
-                   "filter": filter], forKey: self.samplingKey)
+                   "filter": filter,
+                   "flushMs": flushMs], forKey: self.samplingKey)
             if !already {
                 self.driveRadioStartedAt = Date()
                 self.countWake("drive-on")
@@ -535,7 +551,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 m.startUpdatingLocation()
             }
             self.armSamplingCap(maxMs)
-            call.resolve(["mode": "drive", "maxMs": maxMs, "remainingMs": maxMs, "distanceFilter": filter])
+            call.resolve(["mode": "drive", "maxMs": maxMs, "remainingMs": maxMs,
+                          "distanceFilter": filter, "flushMs": flushMs])
         }
     }
 
@@ -553,7 +570,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         let maxMs = num(st["maxMs"]) ?? TdGeoPlugin.samplingCapDefaultMs
         let left = max(0, started + maxMs - Date().timeIntervalSince1970 * 1000)
         call.resolve(["mode": "drive", "maxMs": maxMs, "remainingMs": left,
-                      "distanceFilter": num(st["filter"]) ?? TdGeoPlugin.driveFilterDefaultM])
+                      "distanceFilter": num(st["filter"]) ?? TdGeoPlugin.driveFilterDefaultM,
+                      "flushMs": num(st["flushMs"]) ?? TdGeoPlugin.flushDebounceMs])
     }
 
     private func armSamplingCap(_ ms: Double) {
@@ -923,6 +941,17 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // while behind a debounce.
     func flushUrgentlyForTest() { flushUrgently() }
     func scheduleFlushForTest() { scheduleFlush() }
+    // The typed lane, so a test can prove a drive breadcrumb waits and a fence
+    // crossing does not. The deadline itself is what gets asserted: waiting on
+    // a real 20-second timer would put a 20-second floor under the suite.
+    func scheduleFlushForTest(type: String) { scheduleFlush(for: type) }
+    var flushDeadlineForTest: Date? { flushDeadline }
+    var flushPendingForTest: Bool { flushPending }
+    func driveFlushDelaySecForTest() -> Double { driveFlushDelaySec() }
+    func flushDelaySecForTest(for type: String) -> Double { flushDelaySec(for: type) }
+    static var flushDebounceMsForTest: Double { flushDebounceMs }
+    static var flushDebounceFloorMsForTest: Double { flushDebounceFloorMs }
+    static var flushDebounceCeilingMsForTest: Double { flushDebounceCeilingMs }
     func newFlipIdForTest() -> String { newFlipId() }
     // The drive window's cap fires on a Timer measured in minutes; the tests
     // reach the same exit the cap does, and the same relaunch restore load()
@@ -948,7 +977,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         if buf.count > bufferCap { buf.removeFirst(buf.count - bufferCap) }
         d.set(buf, forKey: bufferKey)
         notifyListeners("geoEvent", data: ev)
-        scheduleFlush()
+        scheduleFlush(for: (ev["type"] as? String) ?? "")
     }
 
     private func event(type: String, loc: CLLocation?, regionId: String?) -> [String: Any] {
@@ -1211,22 +1240,71 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // Region crossings DO wake the app, and iOS gives that wake real runtime,
     // so the events were recorded on time. They were recorded and then sat in
     // UserDefaults behind a timer that had no process left to fire on.
-    private func scheduleFlush() {
+    //
+    // A DRIVE'S OWN BREADCRUMBS ARE THE ONE THING ALLOWED TO WAIT, and that
+    // exception is the battery fix. Measured on the owner's phone 2026-09-01,
+    // a six-minute drive with the app open: 127 `fix` events, every one of
+    // them delivered live (created_at within 5s of ts, zero buffered). At a
+    // 30m distance filter a moving truck produces a fix every ~2 seconds,
+    // which is JUST SLOWER than a 1.5s debounce, so the coalescing never
+    // coalesced anything, it just added 1.5s of latency to a POST per fix.
+    // 127 uploads in six minutes on cellular, with the GPS already at Best,
+    // is what got the phone hot and cost 3%. His words: "can't have that."
+    //
+    // Everything that is NOT a drive breadcrumb keeps the 1.5s it always had,
+    // and an earlier deadline SUPERSEDES a later one: a fence crossing landing
+    // mid-drive cancels the long window and takes the whole buffer with it in
+    // 1.5s, so nothing a person watches for gets slower. Only the breadcrumbs
+    // between two crossings ride along in one POST instead of a hundred.
+    private func scheduleFlush(for type: String = "") {
         // UIApplication is main-thread only, and record() is called from
         // CoreLocation and CoreMotion callbacks that are not guaranteed to be
         // on it. Bounce rather than read the state off whatever queue we
         // happen to be on.
         if !Thread.isMainThread {
-            DispatchQueue.main.async { self.scheduleFlush() }
+            DispatchQueue.main.async { self.scheduleFlush(for: type) }
             return
         }
         if UIApplication.shared.applicationState != .active { flushUrgently(); return }
-        if flushPending { return }
+        let delay = flushDelaySec(for: type)
+        let due = Date().addingTimeInterval(delay)
+        // An already-pending flush that lands at or before this one covers it.
+        // Returning here rather than re-arming is what BOUNDS the drive window:
+        // a fix every two seconds must not push the deadline out forever.
+        if flushPending, let cur = flushDeadline, cur <= due { return }
+        flushGen += 1
+        let gen = flushGen
         flushPending = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        flushDeadline = due
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            guard gen == self.flushGen else { return }   // superseded by a sooner one
             self.flushPending = false
+            self.flushDeadline = nil
             self.flushNow()
         }
+    }
+
+    // How long THIS event may wait, in seconds. The only thing that waits is a
+    // drive's own breadcrumb while a drive window is open; every other event,
+    // and any event at all outside a drive, keeps the interval it always had.
+    // Split out of scheduleFlush so the decision can be asserted without a
+    // simulator's app state or a real timer in the way.
+    private func flushDelaySec(for type: String) -> Double {
+        guard type == "fix", driveSamplingOn() else { return TdGeoPlugin.flushDebounceMs / 1000 }
+        return driveFlushDelaySec()
+    }
+
+    // The drive-window batch interval, in seconds. JS owns the number
+    // (CLAUDE.md 3.2): it rides in on setSampling and is clamped here so a
+    // bad value can neither spin the radio's uploads back up nor park the
+    // buffer for an hour.
+    private func driveFlushDelaySec() -> Double {
+        guard let st = UserDefaults.standard.dictionary(forKey: samplingKey),
+              let ms = num(st["flushMs"]) else {
+            return TdGeoPlugin.flushDebounceMs / 1000
+        }
+        return min(max(ms, TdGeoPlugin.flushDebounceFloorMs),
+                   TdGeoPlugin.flushDebounceCeilingMs) / 1000
     }
 
     // No timer, and an expiring background-task assertion held across the
@@ -1239,7 +1317,11 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             DispatchQueue.main.async { self.flushUrgently() }
             return
         }
+        // Bump the generation too: a debounced flush already in flight must not
+        // fire again behind this one and re-POST a batch that just went out.
+        flushGen += 1
         flushPending = false
+        flushDeadline = nil
         var bg = UIBackgroundTaskIdentifier.invalid
         bg = UIApplication.shared.beginBackgroundTask(withName: "td.geo.flush") {
             if bg != .invalid { UIApplication.shared.endBackgroundTask(bg); bg = .invalid }

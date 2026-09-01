@@ -4434,6 +4434,16 @@ const _GEO_DRIVE_CONFIRM_FT=1000;
 // 30m: see the same constant's justification in TdGeoPlugin.swift. GPS is 1Hz,
 // so below ~27m at highway speed the filter stops being the limiter.
 const _GEO_DRIVE_SAMPLE_M=30;
+// How long a drive's breadcrumbs may ride together in ONE upload. The radio is
+// already on for the whole window; what got the owner's phone hot on 2026-09-01
+// was the UPLOADS, one POST per fix because a fix every ~2s never coalesced
+// inside a 1.5s debounce (127 fixes, 127 live uploads, six minutes, 3% of the
+// battery). 20s turns that into about six. Nothing a person watches gets
+// slower: a fence crossing, a motion edge or an app-state change still flushes
+// on the old 1.5s and takes the waiting breadcrumbs with it (TdGeoPlugin
+// scheduleFlush, where an earlier deadline supersedes a later one). The number
+// lives here, not in Swift, so it stays tunable through a UAT roll (3.2).
+const _GEO_DRIVE_FLUSH_MS=20000;
 // Is this event describing something that is happening NOW? The buffer replays
 // history, the coprocessor backfills days of it, and neither is a reason to
 // turn the receiver up. One number, one meaning, used by every opener.
@@ -4478,7 +4488,7 @@ function _geoDriveWindowOpen(why){
   const first=!_geoDriveWinAt;
   _geoDriveWinAskedAt=now;
   if(first){_geoDriveWinAt=now;_geoDriveWinWhy=String(why||'');_geoDriveConfirmFix=null;}
-  try{Promise.resolve(Td.setSampling({mode:'drive',maxMs:_GEO_DRIVE_WIN_CAP_MS,distanceFilter:_GEO_DRIVE_SAMPLE_M})).catch(()=>{});}catch(_e){}
+  try{Promise.resolve(Td.setSampling({mode:'drive',maxMs:_GEO_DRIVE_WIN_CAP_MS,distanceFilter:_GEO_DRIVE_SAMPLE_M,flushMs:_GEO_DRIVE_FLUSH_MS})).catch(()=>{});}catch(_e){}
   _geoParkNote(first?'drive-window-on':'drive-window-hold',String(why||''));
   return true;
 }

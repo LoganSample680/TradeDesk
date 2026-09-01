@@ -19,6 +19,9 @@ import Capacitor
 // without this the whole test target fails to compile with "Cannot find
 // 'CLLocationManager' in scope" (native-tests, 2026-08-31).
 import CoreLocation
+// UIApplication.applicationState, for the two flush tests that skip rather
+// than assert vacuously when the host app is not foregrounded.
+import UIKit
 @testable import TdGeo
 
 final class TdGeoPluginTests: XCTestCase {
@@ -1624,5 +1627,241 @@ extension TdGeoPluginTests {
         let done = expectation(description: "after")
         plugin.setSampling(makeCall(options: ["mode": "coarse"], onSuccess: { _ in done.fulfill() }))
         wait(for: [done], timeout: 30)
+    }
+
+    // MARK: - the drive-window flush batch (owner 2026-09-01, "can't have that")
+    //
+    // The defect these guard: a 30m distance filter delivers a fix roughly
+    // every two seconds, a 1.5s debounce coalesces nothing at that rate, and
+    // the result was one upload per fix, 127 of them in a six-minute drive.
+    // What must stay true is BOTH halves: breadcrumbs batch, and anything a
+    // person actually watches still goes out on the old 1.5s.
+
+    /// Arms a drive window and returns once the plugin has answered.
+    private func armDrive(flushMs: Double? = nil, file: StaticString = #filePath, line: UInt = #line) {
+        var opts: [String: Any] = ["mode": "drive"]
+        if let f = flushMs { opts["flushMs"] = f }
+        let armed = expectation(description: "arm drive")
+        plugin.setSampling(makeCall(options: opts, onSuccess: { _ in armed.fulfill() }))
+        wait(for: [armed], timeout: 30)
+        XCTAssertTrue(plugin.driveSamplingOnForTest(), file: file, line: line)
+    }
+
+    func testSetSampling_carriesTheJsSuppliedFlushInterval() {
+        armDrive(flushMs: 20000)
+        XCTAssertEqual(plugin.driveFlushDelaySecForTest(), 20, accuracy: 0.001)
+    }
+
+    func testSetSampling_withNoFlushMsKeepsTheOneAndAHalfSecondsItAlwaysHad() {
+        // A shell running JS that predates flushMs must behave exactly as
+        // before. This is the whole reason the default is not 20 seconds.
+        armDrive()
+        XCTAssertEqual(plugin.driveFlushDelaySecForTest(),
+                       TdGeoPlugin.flushDebounceMsForTest / 1000, accuracy: 0.001)
+    }
+
+    func testSetSampling_clampsAnAbsurdFlushIntervalAtBothEnds() {
+        armDrive(flushMs: 1)
+        XCTAssertEqual(plugin.driveFlushDelaySecForTest(),
+                       TdGeoPlugin.flushDebounceFloorMsForTest / 1000, accuracy: 0.001,
+                       "a tiny value must not spin the uploads back up")
+        armDrive(flushMs: 9_999_999)
+        XCTAssertEqual(plugin.driveFlushDelaySecForTest(),
+                       TdGeoPlugin.flushDebounceCeilingMsForTest / 1000, accuracy: 0.001,
+                       "a huge value must not park the buffer for an hour")
+    }
+
+    func testSetSampling_flushMsOfWrongTypeFallsBackRatherThanCrashing() {
+        let armed = expectation(description: "arm")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "flushMs": "twenty seconds"],
+                                    onSuccess: { _ in armed.fulfill() }))
+        wait(for: [armed], timeout: 30)
+        XCTAssertEqual(plugin.driveFlushDelaySecForTest(),
+                       TdGeoPlugin.flushDebounceMsForTest / 1000, accuracy: 0.001)
+    }
+
+    func testSamplingState_reportsTheFlushIntervalBackToJs() {
+        armDrive(flushMs: 20000)
+        let done = expectation(description: "state")
+        plugin.samplingState(makeCall(onSuccess: { data in
+            XCTAssertEqual(data?["flushMs"] as? Double, 20000)
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+    }
+
+    func testDriveFlushDelay_isTheDefaultWhenNoWindowIsArmedAtAll() {
+        UserDefaults.standard.removeObject(forKey: plugin.samplingKeyForTest)
+        XCTAssertEqual(plugin.driveFlushDelaySecForTest(),
+                       TdGeoPlugin.flushDebounceMsForTest / 1000, accuracy: 0.001)
+    }
+
+    func testDriveFlushDelay_survivesARelaunchMidDrive() {
+        // restoreSamplingWindow rewrites nothing, so the interval JS chose has
+        // to still be there after the process comes back.
+        armDrive(flushMs: 20000)
+        plugin.restoreSamplingWindowForTest()
+        XCTAssertEqual(plugin.driveFlushDelaySecForTest(), 20, accuracy: 0.001)
+    }
+
+    // The decision, asserted directly. scheduleFlush's own timer is gated on
+    // UIApplication being .active, which is true of the test host in practice
+    // but is not something a test may DEPEND on: a suite that quietly asserts
+    // nothing whenever the simulator backgrounds the host is worse than no
+    // suite. flushDelaySec is the whole rule, so that is what gets stressed,
+    // and the two tests below that genuinely need the timer say so.
+
+    func testFlushDelay_aDriveBreadcrumbWaitsForTheBatchWindow() {
+        armDrive(flushMs: 20000)
+        XCTAssertEqual(plugin.flushDelaySecForTest(for: "fix"), 20, accuracy: 0.001)
+    }
+
+    func testFlushDelay_everyEventAPersonWatchesStaysOnTheLiveLaneMidDrive() {
+        // The battery fix must not become the live-updates bug (2026-08-31)
+        // wearing a different hat. Every one of these is something the owner
+        // or a dispatcher is looking at a screen for.
+        armDrive(flushMs: 20000)
+        let live = TdGeoPlugin.flushDebounceMsForTest / 1000
+        for t in ["regionEnter", "regionExit", "visit", "motion", "push-ping",
+                  "heartbeat", "app-active", "app-background", "app-relaunch",
+                  "app-terminate", "sampling"] {
+            XCTAssertEqual(plugin.flushDelaySecForTest(for: t), live, accuracy: 0.001,
+                           "\(t) must not be delayed by a drive")
+        }
+    }
+
+    func testFlushDelay_breadcrumbsOutsideADriveAreNotBatched() {
+        // No window armed: a `fix` is just an event and takes the normal lane.
+        UserDefaults.standard.removeObject(forKey: plugin.samplingKeyForTest)
+        XCTAssertEqual(plugin.flushDelaySecForTest(for: "fix"),
+                       TdGeoPlugin.flushDebounceMsForTest / 1000, accuracy: 0.001)
+    }
+
+    func testFlushDelay_anEmptyOrUnknownTypeIsTreatedAsLiveNotBatched() {
+        armDrive(flushMs: 20000)
+        let live = TdGeoPlugin.flushDebounceMsForTest / 1000
+        XCTAssertEqual(plugin.flushDelaySecForTest(for: ""), live, accuracy: 0.001)
+        XCTAssertEqual(plugin.flushDelaySecForTest(for: "Fix"), live, accuracy: 0.001,
+                       "the match is exact; a near miss must fail live, never silent")
+        XCTAssertEqual(plugin.flushDelaySecForTest(for: "something-new"), live, accuracy: 0.001)
+    }
+
+    func testFlushDelay_revertsTheInstantTheWindowCloses() {
+        armDrive(flushMs: 20000)
+        XCTAssertEqual(plugin.flushDelaySecForTest(for: "fix"), 20, accuracy: 0.001)
+        plugin.expireSamplingCapForTest()
+        XCTAssertEqual(plugin.flushDelaySecForTest(for: "fix"),
+                       TdGeoPlugin.flushDebounceMsForTest / 1000, accuracy: 0.001)
+    }
+
+    func testFlushDelay_neverThrowsOnAGarbageSamplingDict() {
+        // UserDefaults is writable by anything in the process, and a half
+        // written dict from an older build must degrade to the safe interval.
+        UserDefaults.standard.set(["mode": "drive", "flushMs": ["nope"]],
+                                  forKey: plugin.samplingKeyForTest)
+        XCTAssertEqual(plugin.flushDelaySecForTest(for: "fix"),
+                       TdGeoPlugin.flushDebounceMsForTest / 1000, accuracy: 0.001)
+    }
+
+    // The two that need the real timer. Both assert nothing unless the host is
+    // foregrounded, so they are written to SKIP rather than to pass vacuously.
+
+    func testScheduleFlush_aFenceCrossingSupersedesAPendingBreadcrumbBatch() throws {
+        // THE ONE THAT MATTERS. Without the earlier-deadline-wins rule the
+        // pending 20s window would swallow the crossing and delay it.
+        armDrive(flushMs: 20000)
+        let done = expectation(description: "superseded")
+        var skipped = false
+        DispatchQueue.main.async {
+            guard UIApplication.shared.applicationState == .active else {
+                skipped = true; done.fulfill(); return
+            }
+            self.plugin.scheduleFlushForTest(type: "fix")
+            let batched = self.plugin.flushDeadlineForTest?.timeIntervalSinceNow ?? -1
+            XCTAssertGreaterThan(batched, 10)
+            self.plugin.scheduleFlushForTest(type: "regionEnter")
+            let live = self.plugin.flushDeadlineForTest?.timeIntervalSinceNow ?? -1
+            XCTAssertLessThanOrEqual(live, 2.0, "an earlier deadline must win")
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 30)
+        try XCTSkipIf(skipped, "host app was not foregrounded")
+    }
+
+    func testScheduleFlush_aSecondBreadcrumbNeverPushesTheDeadlineOut() throws {
+        // The bound. A fix every two seconds re-arming a 20s window would park
+        // the buffer for the length of the drive and land nothing until it
+        // ended, which is a worse bug than the one being fixed.
+        armDrive(flushMs: 20000)
+        let done = expectation(description: "bounded")
+        var skipped = false
+        DispatchQueue.main.async {
+            guard UIApplication.shared.applicationState == .active else {
+                skipped = true; done.fulfill(); return
+            }
+            self.plugin.scheduleFlushForTest(type: "fix")
+            let first = self.plugin.flushDeadlineForTest
+            XCTAssertNotNil(first)
+            self.plugin.scheduleFlushForTest(type: "fix")
+            self.plugin.scheduleFlushForTest(type: "fix")
+            XCTAssertEqual(self.plugin.flushDeadlineForTest, first,
+                           "later breadcrumbs ride the window already open")
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 30)
+        try XCTSkipIf(skipped, "host app was not foregrounded")
+    }
+
+    func testScheduleFlush_offTheMainThreadNeverCrashes() {
+        // record() is called from CoreLocation and CoreMotion callbacks that
+        // are on neither the main thread nor each other's. No state assertion
+        // here on purpose: surviving the bounce is the claim.
+        armDrive(flushMs: 20000)
+        let done = expectation(description: "bounced")
+        DispatchQueue.global().async {
+            self.plugin.scheduleFlushForTest(type: "fix")
+            self.plugin.scheduleFlushForTest(type: "regionExit")
+            DispatchQueue.main.async { done.fulfill() }
+        }
+        wait(for: [done], timeout: 30)
+    }
+
+    func testFlushUrgently_clearsAPendingBreadcrumbBatch() {
+        // Backgrounding mid-drive: the urgent lane sends now, and the debounced
+        // timer behind it must not fire again and re-POST the same batch.
+        armDrive(flushMs: 20000)
+        let done = expectation(description: "cleared")
+        DispatchQueue.main.async {
+            self.plugin.scheduleFlushForTest(type: "fix")
+            self.plugin.flushUrgentlyForTest()
+            XCTAssertFalse(self.plugin.flushPendingForTest)
+            XCTAssertNil(self.plugin.flushDeadlineForTest)
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 30)
+    }
+
+    func testRecord_aBreadcrumbStormNeverCrashes() {
+        // 127 fixes was the real six-minute drive. Drive the same shape through
+        // the real record() path: it must survive, and the buffer must hold
+        // them, whatever the host's app state does to the flush lane.
+        UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
+        armDrive(flushMs: 20000)
+        let base = Double(Date().timeIntervalSince1970 * 1000)
+        for i in 0..<127 {
+            plugin.recordForTest(["type": "fix", "ts": base + Double(i)])
+        }
+        let buf = (UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+        XCTAssertGreaterThanOrEqual(buf.filter { ($0["type"] as? String) == "fix" }.count, 100,
+                                    "batching must never cost an event")
+    }
+
+    func testEndDriveSampling_putsBreadcrumbsBackOnTheLiveLane() {
+        armDrive(flushMs: 20000)
+        let off = expectation(description: "coarse")
+        plugin.setSampling(makeCall(options: ["mode": "coarse"], onSuccess: { _ in off.fulfill() }))
+        wait(for: [off], timeout: 30)
+        XCTAssertEqual(plugin.driveFlushDelaySecForTest(),
+                       TdGeoPlugin.flushDebounceMsForTest / 1000, accuracy: 0.001)
     }
 }
