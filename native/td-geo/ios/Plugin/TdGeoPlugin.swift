@@ -496,7 +496,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         guard mode == "drive" else {
             DispatchQueue.main.async {
                 self.endDriveSampling(reason: call.getString("reason") ?? "js")
-                call.resolve(["mode": "coarse", "remainingMs": 0])
+                // 0.0, never a bare 0. In a [String: Any] a bare integer literal infers
+                // as Int, so the bridge and any reader asking for a Double gets nil
+                // instead of zero. The drive branch below passes a real Double, which
+                // is exactly why only this path failed (native-tests, 2026-09-01,
+                // testSamplingState_reportsCoarseWhenNothingIsArmed).
+                call.resolve(["mode": "coarse", "remainingMs": 0.0])
             }
             return
         }
@@ -540,7 +545,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         let d = UserDefaults.standard
         let st = d.dictionary(forKey: samplingKey)
         guard let st = st, (st["mode"] as? String) == "drive" else {
-            call.resolve(["mode": "coarse", "remainingMs": 0])
+            // 0.0, never a bare 0: see the note above.
+            call.resolve(["mode": "coarse", "remainingMs": 0.0])
             return
         }
         let started = num(st["startedAtMs"]) ?? 0
