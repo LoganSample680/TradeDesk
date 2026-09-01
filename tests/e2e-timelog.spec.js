@@ -4825,6 +4825,51 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.paid, 'the clock, not the clock plus the fences').toBe(438);
     });
 
+    test('a blended clock row never contradicts itself on screen', async () => {
+      // Owner, 2026-09-01: "manual is calcuaintg 742 am to 3:00 pm as 1 hour
+      // 40 minutes when thats not true at all." He was right and the row was
+      // indefensible: a seven-hour span on the sub-line with 1h 40m beside it
+      // and nothing reconciling the two. The AMOUNT was correct, it is what
+      // the row still adds after the fences took their share, but a number is
+      // not an explanation. All three facts, in the order a person asks them.
+      const html = await page.evaluate(([es, ms]) => {
+        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
+        const ME = window._supaUser.id;
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const rows = [
+          { id: 'm1', source: 'manual', date: '2026-09-01', minutes: 100, blendedMin: 338,
+            clientName: '-', personUid: null,
+            startTime: es[0], endTime: es[1] },
+        ];
+        try { return _tlDayRailHtml(rows); } finally { window.timeEntries = keepT; }
+      }, [[at(7, 42), at(15, 0)], []]);
+      // 100 + 338 = 438 = the clock. The row says so.
+      expect(html).toContain('7h 18m clocked');
+      expect(html).toContain('5h 38m tracked below');
+      // ...and still shows the span and the amount it actually adds. The span
+      // is asserted by SHAPE, not by a wall-clock string: what time 7:42 renders
+      // as depends on the business timezone, which this test does not set and
+      // is not testing (5.2.2, never let the clock decide an outcome).
+      expect(html).toMatch(/tl-rail-sub">[^<]*\d:\d\d [AP]M to \d+:\d\d [AP]M · 7h 18m clocked/);
+      expect(html).toContain('>1h 40m<');
+      // A hyphen is not a name. The one row on the day somebody made by hand
+      // has to say what it is.
+      expect(html).toContain('Clocked in');
+      expect(html).not.toMatch(/tl-rail-ttl">-</);
+    });
+
+    test('an unblended clock row is left exactly as it reads today', async () => {
+      const html = await page.evaluate(([s, e]) => _tlDayRailHtml([
+        { id: 'm2', source: 'manual', date: '2026-09-01', minutes: 438,
+          clientName: 'Timelog Test Client', personUid: null, startTime: s, endTime: e },
+      ]), [at(7, 42), at(15, 0)]);
+      expect(html).toMatch(/tl-rail-sub">\d+:\d\d [AP]M to \d+:\d\d [AP]M<\/div>/);
+      expect(html).toContain('>7h 18m<');
+      expect(html, 'nothing to reconcile means nothing to explain').not.toContain('tracked below');
+      expect(html, 'a real name is never replaced').toContain('Timelog Test Client');
+    });
+
     test('a day with no manual clock at all is completely untouched', async () => {
       const r = await rowsFor([
         A('drive', [8, 0], [8, 30], 30),

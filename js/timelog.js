@@ -1167,8 +1167,13 @@ function _tlRailRow(r){
     const isDrive=kind==='drive';
     const leg=isDrive&&r.clientKey&&typeof mileage!=='undefined'&&Array.isArray(mileage)
       ?mileage.find(x=>x&&x.legKey===r.clientKey):null;
+    // A manual clock against no job has nothing to name, and _tlJobClientInfo
+    // returns the bare '-' placeholder for that. A row whose title is a hyphen
+    // tells the reader nothing about the one row on the day they created by
+    // hand, so it says what it is instead.
+    const _bareName=(!r.clientName||r.clientName==='-')?'':r.clientName;
     const ttl=leg?((leg.from_name||'—')+' → '+(leg.to_name||r.clientName||'—'))
-                 :(r.addr||r.clientName||m.word);
+                 :(r.addr||_bareName||(r.source==='manual'?'Clocked in':m.word));
     // THE SUB-LINE IS THE CLOCK, AND ONLY THE CLOCK (owner 2026-08-30: "why
     // put tradedesk shop under the sub title that already says it ... can
     // just do the start and end time under there").
@@ -1178,7 +1183,21 @@ function _tlRailRow(r){
     // The tag names the kind, the title names the place, the sub gives the
     // clock. Nothing repeats.
     const span=[_tlFmtTime(r.startTime),_tlFmtTime(r.endTime)].filter(Boolean);
-    const sub=span.length===2?(span[0]+' to '+span[1]):'';
+    let sub=span.length===2?(span[0]+' to '+span[1]):'';
+    // A BLENDED CLOCK MUST NOT CONTRADICT ITSELF (owner 2026-09-01: "manual is
+    // calcuaintg 742 am to 3:00 pm as 1 hour 40 minutes when thats not true at
+    // all"). He was right and the row was indefensible: the sub-line said a
+    // seven-hour span while the amount beside it said 1h 40m, with nothing
+    // reconciling the two. The AMOUNT is correct, it is what this row still
+    // adds after the fences underneath took their share, but a number is not
+    // an explanation. The row now states all three facts in the order a person
+    // asks them: how long the clock ran, how much of it is itemised below, and
+    // therefore what is left here.
+    const _bl=Number(r.blendedMin)||0;
+    if(_bl>0){
+      const clocked=(r.minutes||0)+_bl;
+      sub=(sub?sub+' · ':'')+fm(clocked)+' clocked, '+fm(_bl)+' tracked below';
+    }
     body='<div class="tl-rail-ttl">'+escHtml(ttl)+'</div>'+
          (sub?'<div class="tl-rail-sub">'+escHtml(sub)+'</div>':'');
   }
