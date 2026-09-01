@@ -7634,6 +7634,83 @@ test.describe('Sandbox: a minted flip id survives the whole journey', () => {
     expect(r.mileage[0].calc).toBe('auto_route');
   });
 
+
+  test('the drawn route starts at the DOOR, not where the exit confirmed', async () => {
+    // Owner, 2026-09-01, looking at a rendered route: "it wasn't starting at
+    // the door though". Measured on the real leg behind that screenshot
+    // (Shop -> John Doe, 12:52 CDT): the automotive flip landed 1,336 ft down
+    // the road, the regionExit fix 1,524 ft, and the drawn line began at the
+    // regionExit. The row's START TIME had already been backdated to the motion
+    // flip, so it claimed a start 69 seconds before its own first point. Time
+    // was corrected and geometry was not; that quarter mile plus a 360 ft tail
+    // at the far end IS the 0.3 mi he was missing.
+    //
+    // Same sandbox geometry, run the other way: he leaves John Doe and the leg
+    // opens at MID, over a mile out. The first point must still be John Doe.
+    const r = await page.evaluate(async (d) => {
+      const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue;
+      const before = mileage.slice();
+      try {
+        _supaUser = { id: 'sandbox0-0000-0000-0000-000000000000' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 8 });
+        window._geoEnqueue = () => {};
+        mileage.length = 0;
+        S.officeLat = d.SHOP.lat; S.officeLon = d.SHOP.lon; S.teamTracking = true;
+        clients.length = 0;
+        clients.push({ id: 1787003875684, name: 'John Doe', addr: '2950 SW McClure Rd, Topeka, KS 66614' });
+        jobs.length = 0;
+        localStorage.setItem('zp3_nearby_geo', JSON.stringify({
+          '1787003875684': { addr: '2950 SW McClure Rd, Topeka, KS 66614',
+                             lat: d.JOHN.lat, lon: d.JOHN.lon },
+        }));
+        _geoClientCacheMemo = null;
+        _geoPingBusy = false;
+        _geoCurrentJob = null; _geoArrivedAt = null;
+        _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+        _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+        _geoCurrentClient = null; _geoClientArrivedAt = null;
+        _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null;
+        _geoLastFenceAt = null; _geoStopAnchor = null;
+        _geoDrivePendingAt = null; _geoDrivePendingId = null; _geoLegFlipId = null;
+        _geoLastMotionKind = 'still'; _geoDrivePath = []; _geoDriveMiles = 0;
+        const ping = (c, mps) => _geoOnPing({ coords: {
+          latitude: c.lat, longitude: c.lon, accuracy: 8,
+          ...(mps != null ? { speed: mps } : {}) } });
+
+        await ping(d.JOHN);
+        await _geoTdEvent({ type: 'motion', kind: 'automotive', prevKind: 'still',
+                            ts: Date.now() - 8 * 60000, flipId: d.FLIP });
+        await ping(d.MID, 20);          // the leg opens HERE, over a mile out
+        return {
+          started: !!_geoDriveStartedAt,
+          pts: _geoDrivePath.length,
+          first: _geoDrivePath.length ? [_geoDrivePath[0][0], _geoDrivePath[0][1]] : null,
+          second: _geoDrivePath.length > 1 ? [_geoDrivePath[1][0], _geoDrivePath[1][1]] : null,
+          miles: _geoDriveMiles,
+        };
+      } finally {
+        _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
+        window._geoEnqueue = realEnq;
+        mileage.length = 0; before.forEach(m => mileage.push(m));
+      }
+    }, { JOHN, SHOP, MID, FLIP });
+
+    const ft = (a, b) => {
+      const la = (a[0] + b[0]) / 2 * Math.PI / 180;
+      return Math.hypot((b[0] - a[0]) * 364000, (b[1] - a[1]) * 364000 * Math.cos(la));
+    };
+    expect(r.started, 'the leg has to open at all or there is nothing to assert').toBe(true);
+    expect(r.pts, 'the origin AND the fix that opened it').toBeGreaterThanOrEqual(2);
+    expect(ft(r.first, [JOHN.lat, JOHN.lon]),
+      'the line must start at the door it left, not a mile down the road').toBeLessThan(200);
+    expect(ft(r.second, [MID.lat, MID.lon]),
+      'and the second point is still where the exit actually confirmed').toBeLessThan(200);
+    // The odometer has to agree with the drawing, or the map shows a longer
+    // line than the number printed underneath it.
+    expect(r.miles, 'the seeded segment counts toward the tally too')
+      .toBeGreaterThan(ft([JOHN.lat, JOHN.lon], [MID.lat, MID.lon]) / 5280 * 0.9);
+  });
+
   test('a second delivery of the same flip cannot make a second row', async () => {
     // The property the id exists for, stated directly: replay the whole
     // journey twice and there is still one row, because the key is the flip

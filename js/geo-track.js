@@ -311,6 +311,11 @@ const _GEO_DRIVE_ACCUM_FT=100;
 // so a long drive keeps its whole SHAPE instead of its first half.
 let _geoDrivePath=[];
 const _GEO_PATH_MAX=400;
+// How far the origin fence may sit from the first fix of a drive and still be
+// used to seed the route. A real exit confirms within a few hundred feet; a
+// mile and a half is generous cover for a slow classifier or a missed ping,
+// and anything past it is a stale origin that would draw a line across town.
+const _GEO_PATH_SEED_MAX_FT=8000;
 function _geoPathPush(lat,lng,ms){
   const r5=v=>Math.round(v*1e5)/1e5;
   _geoDrivePath.push([r5(lat),r5(lng),ms]);
@@ -1561,11 +1566,41 @@ async function _geoOnPing(pos){
         _geoLegFlipId=_useTape?_geoDrivePendingId:null;
         _geoDrivePendingAt=null;_geoDrivePendingId=null;
         _geoLegOrigin=_geoLastFenceLoc;
-        _geoDriveMiles=0;_geoDriveSteps=0;_geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs,acc};
+        _geoDriveMiles=0;_geoDriveSteps=0;
         _geoDriveHadPause=false;
-        // The route starts at the fence we just left, not at the first fix
-        // 100ft down the road that happens to clear the accumulation floor.
-        _geoDrivePath=[];_geoPathPush(here.lat,here.lng,nowMs);
+        // THE ROUTE STARTS AT THE DOOR, NOT WHERE THE EXIT HAPPENED TO CONFIRM.
+        //
+        // The comment here used to claim exactly that and the code did not do
+        // it: it pushed `here`, which is wherever the truck was when the fence
+        // exit was CONFIRMED. Owner, 2026-09-01, looking at a drawn route:
+        // "it wasn't starting at the door though". Measured on that leg
+        // (Shop -> John Doe, 12:52 CDT): the automotive flip landed 1,336 ft
+        // out, the regionExit fix 1,524 ft out, and the drawn line began
+        // there. The whole 0.3 mi the owner was missing is that first quarter
+        // mile plus a 360 ft tail at the far end.
+        //
+        // The start TIME was already backdated to the motion flip a few lines
+        // up (_useTape), so the row claimed a start 69 seconds before its own
+        // first point. Time was corrected; geometry was not. This corrects the
+        // geometry to match, from _geoLegOrigin, which is the fence we just
+        // left and is assigned on the line above.
+        //
+        // Guarded by distance: a stale origin from a fence we left hours ago
+        // must never draw a line across town, so beyond the cap we fall back
+        // to the old behaviour of simply starting where we are.
+        const _seedOK=_geoLegOrigin&&_geoLegOrigin.lat!=null&&_geoLegOrigin.lng!=null&&
+                      _geoDistFt(here,_geoLegOrigin)<=_GEO_PATH_SEED_MAX_FT;
+        _geoDrivePath=[];
+        if(_seedOK){
+          _geoPathPush(_geoLegOrigin.lat,_geoLegOrigin.lng,_useTape?_pend:nowMs);
+          // The odometer gets the same segment, or the drawn line would be
+          // longer than the number printed under it. Same 100ft floor every
+          // other hop answers to.
+          const _seedFt=_geoDistFt(here,_geoLegOrigin);
+          if(_seedFt>_GEO_DRIVE_ACCUM_FT){_geoDriveMiles+=_seedFt/5280;_geoDriveSteps++;}
+        }
+        _geoPathPush(here.lat,here.lng,nowMs);
+        _geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs,acc};
         // A drive opening IS a shift running: the beat must survive whatever
         // the day does next, including the app dying at the destination.
         _geoHeartbeatSync(null);

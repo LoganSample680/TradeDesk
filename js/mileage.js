@@ -3870,14 +3870,20 @@ function openMileageRoute(id){
   // the drawn line is what the phone watched, the logged number is what the
   // row carries, and where they differ the row's number is the one on the
   // books. Nothing here rewrites it.
-  const gps=(r.gpsMiles>0)?('Watched '+(+r.gpsMiles).toFixed(1)+' mi · '):'';
+  // "Traced", not "Watched" (owner 2026-09-01), and no point count: the number
+  // of GPS samples is how the line was built, not a fact about the drive, and
+  // it invited the wrong question. What matters is that the traced figure is a
+  // chain of straight lines between fixes and so always reads at or under the
+  // routed distance; the ONE thing worth acting on is when it reads OVER,
+  // which is the case _mileBestMiles already promotes.
+  const gps=(r.gpsMiles>0)?('Traced '+(+r.gpsMiles).toFixed(1)+' mi · '):'';
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;line-height:1.25;margin-bottom:2px">Route driven</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:12px">'+
       escHtml((r.from_name||r.from||'Start'))+' → '+escHtml((r.to_name||r.to||'End'))+'</div>'+
     '<div id="_mil-route-body" style="margin-bottom:10px"></div>'+
     '<div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:12px">'+
-      gps+'Logged '+_mi+' mi · '+r.path.length+' points</div>'+
+      gps+'Logged '+_mi+' mi</div>'+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="width:100%">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   try{

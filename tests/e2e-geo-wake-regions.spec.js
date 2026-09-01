@@ -410,14 +410,17 @@ test.describe('Wake region set for the dead app', () => {
     // at two sites and indexOf would silently grade the wrong one.
     const d = src.indexOf('_geoDriveStartedAt=_useTape?');
     expect(d).toBeGreaterThan(-1);
-    // 1100, and the number keeps growing because this site keeps earning
-    // comments: the tape clock (2026-08-31), then the flip id that names the
-    // leg (same day). Measured at 737 characters when this was last widened.
-    // The guarantee is that the heartbeat is armed AT the drive-open site, not
-    // that it is the next line, so the window only has to stay inside the
-    // block; a slice big enough to reach the following site would grade the
-    // wrong one and pass for the wrong reason.
-    expect(src.slice(d, d + 1100).includes('_geoHeartbeatSync(null)'),
+    // ANCHORED ON THE BLOCK, NOT ON A CHARACTER COUNT (2026-09-01).
+    // This was `d + 1100`, and the note above it admitted the number "keeps
+    // growing because this site keeps earning comments": 737, then 1100, then
+    // it broke again the moment the route-seed fix documented itself there.
+    // A magic width fails on a comment and passes on a real regression of the
+    // same size, which is the worst of both. The guarantee was only ever that
+    // the heartbeat is armed INSIDE the drive-open block, so the window now
+    // ends where the block does. Nothing to bump next time.
+    const dEnd = src.indexOf('This exit was JUST confirmed', d);
+    expect(dEnd, 'the drive-open block must still end where it says it does').toBeGreaterThan(d);
+    expect(src.slice(d, dEnd).includes('_geoHeartbeatSync(null)'),
       'a drive opening must arm the heartbeat').toBe(true);
     // 3. Park arm, with the park spot so home can turn it off.
     expect(src.includes('_geoHeartbeatSync(_at)'),

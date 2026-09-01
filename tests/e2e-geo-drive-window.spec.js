@@ -670,7 +670,12 @@ test.describe('The route a leg actually drove', () => {
           isZmodal: !!(ov && ov.classList.contains('zmodal-overlay')),
           hasBox: !!(ov && ov.querySelector('.zmodal')),
           drew: !!(body && body.innerHTML.includes('<svg')),
-          says: !!(ov && ov.textContent.includes('3 points')),
+          // Owner 2026-09-01: "traced over watched and don't need the points".
+          // The sample count described how the line was built, not the drive.
+          says: !!(ov && ov.textContent.includes('Traced 3.4 mi')
+                      && ov.textContent.includes('Logged 3.2 mi')),
+          noPts: !!(ov && !/\bpoints\b/.test(ov.textContent)),
+          noWatched: !!(ov && !/Watched/.test(ov.textContent)),
         };
         // Idempotent: a second open must replace, never stack.
         openMileageRoute(93);
@@ -685,6 +690,8 @@ test.describe('The route a leg actually drove', () => {
     expect(r.hasBox).toBe(true);
     expect(r.drew).toBe(true);
     expect(r.says).toBe(true);
+    expect(r.noPts, 'the sample count is gone').toBe(true);
+    expect(r.noWatched, '"Watched" is gone with it').toBe(true);
     expect(r.afterSecond).toBe(1);
     expect(r.closed).toBe(0);
   });
