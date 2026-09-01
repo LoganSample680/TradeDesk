@@ -30,8 +30,22 @@ test.describe('QR lead tracking: js/qr-leads.js', () => {
     window.__qrSourcesData = [];
     window.__qrEventsData = [];
     window.__origSupa = window.__origSupa || window._supa;
-    window._supa = {
-      from: (tbl) => ({
+    // The SAME guard as the .eq() chain below, one level up (CI, webkit, shard
+    // 3, 2026-09-01: `_supa.from('zj_data').upsert is not a function`).
+    //
+    // supaSaveToCloud can fire on a debounce at any point in this file, and
+    // its LAST write is the zj_data cursor via .upsert(). This mock knew
+    // select/insert/delete because those are what QR leads uses; an unrelated
+    // background save reached for a fourth method, got undefined, and threw a
+    // real TypeError that tripped this file's own assertNoErrors test. The
+    // inner comment below describes exactly this class and fixes it for the
+    // filter chain; from() itself was left bare.
+    //
+    // Anything this mock does not name resolves to a harmless empty result.
+    // select/insert/delete keep their real, asserted-on behaviour, because
+    // `prop in target` wins before the fallback.
+    const _tbl = (tbl) => {
+      const base = {
         select: () => ({
           eq: (col, val) => {
             const data = tbl === 'qr_sources' ? window.__qrSourcesData : [];
@@ -69,8 +83,32 @@ test.describe('QR lead tracking: js/qr-leads.js', () => {
           return Promise.resolve({ error: null });
         },
         delete: () => ({ eq: (col, val) => { window.__rec.deletes.push({ tbl, val }); window.__qrSourcesData = window.__qrSourcesData.filter(s => s.id !== val); return Promise.resolve({ error: null }); } }),
-      }),
+      };
+      // The fallback must be BOTH chainable and awaitable. cloud.js writes
+      // `const {error} = await _supa.from('zj_data').upsert(...)`, so a
+      // fallback that returned only a chainable object would resolve to that
+      // object and `.error` would read as a function, i.e. truthy, and the
+      // save would report a failure that never happened. It resolves to the
+      // shape PostgREST actually returns instead.
+      const ok = { data: [], error: null };
+      const anyChain = new Proxy({}, {
+        get(_t, prop) {
+          if (prop === 'then') return (res) => Promise.resolve(ok).then(res);
+          if (prop === 'catch' || prop === 'finally') return () => anyChain;
+          return () => anyChain;
+        },
+      });
+      const proxy = new Proxy(base, {
+        get(target, prop) {
+          if (prop in target) return target[prop];
+          // A call the QR feature never makes (upsert, rpc, a filter on an
+          // unrelated table): satisfy it, record nothing, assert nothing.
+          return () => anyChain;
+        },
+      });
+      return proxy;
     };
+    window._supa = { from: _tbl };
     _qrSources = []; _qrEventCounts = {};
   });
   const qrRestore = () => page.evaluate(() => { if (window.__origSupa) window._supa = window.__origSupa; });
