@@ -1864,4 +1864,139 @@ extension TdGeoPluginTests {
         XCTAssertEqual(plugin.driveFlushDelaySecForTest(),
                        TdGeoPlugin.flushDebounceMsForTest / 1000, accuracy: 0.001)
     }
+
+    // MARK: - thermal state (owner 2026-09-01, "do we surface iOS device temp?")
+    //
+    // iOS has no temperature API. thermalState is what Apple exposes and it is
+    // the number that matters, because it is the one the OS acts on. These
+    // guard the two things that can actually break: the word mapping (a raw
+    // enum crossing the bridge is an integer nobody can read) and the fact
+    // that stats() answers at all on a device in any thermal state.
+
+    func testThermalWord_mapsEveryAppleStateToItsOwnWord() {
+        XCTAssertEqual(TdGeoPlugin.thermalWord(.nominal), "nominal")
+        XCTAssertEqual(TdGeoPlugin.thermalWord(.fair), "fair")
+        XCTAssertEqual(TdGeoPlugin.thermalWord(.serious), "serious")
+        XCTAssertEqual(TdGeoPlugin.thermalWord(.critical), "critical")
+        // Four distinct words: a mapping that collapsed two states would report
+        // a throttling phone as a healthy one and nobody would ever know.
+        let all = Set([ProcessInfo.ThermalState.nominal, .fair, .serious, .critical]
+                        .map(TdGeoPlugin.thermalWord))
+        XCTAssertEqual(all.count, 4)
+    }
+
+    func testStats_carriesThermalStateAsAWordJsCanRender() {
+        let done = expectation(description: "stats")
+        plugin.stats(makeCall(onSuccess: { data in
+            let t = data?["thermalState"] as? String
+            XCTAssertNotNil(t, "a bare enum across the bridge is an integer nobody can read")
+            XCTAssertTrue(["nominal", "fair", "serious", "critical", "unknown"].contains(t ?? ""),
+                          "got \(t ?? "nil")")
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+    }
+
+    func testStats_thermalDoesNotDisplaceTheBatteryFields() {
+        // Both ride the same call, and a phone that can answer one but not the
+        // other has to keep reporting the one it has.
+        let done = expectation(description: "stats")
+        plugin.stats(makeCall(onSuccess: { data in
+            XCTAssertNotNil(data?["thermalState"])
+            XCTAssertNotNil(data?["batteryLevel"])
+            XCTAssertNotNil(data?["charging"])
+            XCTAssertNotNil(data?["gpsOnMs"])
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+    }
+
+    func testStats_repeatedCallsAgreeAndNeverCrash() {
+        // Read on every permission report, so it runs far more often than any
+        // other stats consumer.
+        var seen: [String] = []
+        for _ in 0..<5 {
+            let done = expectation(description: "stats")
+            plugin.stats(makeCall(onSuccess: { data in
+                seen.append((data?["thermalState"] as? String) ?? "nil")
+                done.fulfill()
+            }))
+            wait(for: [done], timeout: 30)
+        }
+        XCTAssertEqual(seen.count, 5)
+        XCTAssertFalse(seen.contains("nil"))
+    }
+
+    // MARK: - the drive-window accuracy tier (the other half of the battery fix)
+
+    func testSetSampling_carriesTheJsSuppliedAccuracyTier() {
+        let armed = expectation(description: "arm")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "accuracy": "ten"],
+                                    onSuccess: { data in
+            XCTAssertEqual(data?["accuracy"] as? String, "ten")
+            armed.fulfill()
+        }))
+        wait(for: [armed], timeout: 30)
+        XCTAssertEqual(plugin.driveAccuracyNameForTest(), "ten")
+    }
+
+    func testAccuracyConstant_mapsTheThreeTiersAndNothingElse() {
+        XCTAssertEqual(TdGeoPlugin.accuracyConstant("ten"), kCLLocationAccuracyNearestTenMeters)
+        XCTAssertEqual(TdGeoPlugin.accuracyConstant("hundred"), kCLLocationAccuracyHundredMeters)
+        XCTAssertEqual(TdGeoPlugin.accuracyConstant("best"), kCLLocationAccuracyBest)
+        // A TYPO MUST COST BATTERY, NEVER ROUTE QUALITY. Anything unrecognised
+        // falls back to Best, so the worst a bad string can do is spend power.
+        XCTAssertEqual(TdGeoPlugin.accuracyConstant("tne"), kCLLocationAccuracyBest)
+        XCTAssertEqual(TdGeoPlugin.accuracyConstant(""), kCLLocationAccuracyBest)
+        XCTAssertEqual(TdGeoPlugin.accuracyConstant("kCLLocationAccuracyNearestTenMeters"),
+                       kCLLocationAccuracyBest)
+    }
+
+    func testSetSampling_withNoAccuracyKeepsBest() {
+        // A shell running JS that predates the key must behave as it does today.
+        armDrive()
+        XCTAssertEqual(plugin.driveAccuracyNameForTest(), "best")
+    }
+
+    func testSetSampling_accuracyOfWrongTypeFallsBackRatherThanCrashing() {
+        let armed = expectation(description: "arm")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "accuracy": 10],
+                                    onSuccess: { _ in armed.fulfill() }))
+        wait(for: [armed], timeout: 30)
+        XCTAssertEqual(plugin.driveAccuracyNameForTest(), "best")
+    }
+
+    func testSamplingState_reportsTheAccuracyTierBackToJs() {
+        let armed = expectation(description: "arm")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "accuracy": "ten"],
+                                    onSuccess: { _ in armed.fulfill() }))
+        wait(for: [armed], timeout: 30)
+        let done = expectation(description: "state")
+        plugin.samplingState(makeCall(onSuccess: { data in
+            XCTAssertEqual(data?["accuracy"] as? String, "ten")
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+    }
+
+    func testDriveAccuracy_survivesARelaunchMidDrive() {
+        // restoreSamplingWindow used to hardcode Best, which would have handed
+        // every resumed drive the high-power receiver the window did not ask
+        // for, for the rest of the trip.
+        let armed = expectation(description: "arm")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "accuracy": "ten"],
+                                    onSuccess: { _ in armed.fulfill() }))
+        wait(for: [armed], timeout: 30)
+        plugin.restoreSamplingWindowForTest()
+        XCTAssertEqual(plugin.driveAccuracyNameForTest(), "ten")
+    }
+
+    func testDriveAccuracy_isBestOnceTheWindowCloses() {
+        let armed = expectation(description: "arm")
+        plugin.setSampling(makeCall(options: ["mode": "drive", "accuracy": "ten"],
+                                    onSuccess: { _ in armed.fulfill() }))
+        wait(for: [armed], timeout: 30)
+        plugin.expireSamplingCapForTest()
+        XCTAssertEqual(plugin.driveAccuracyNameForTest(), "best")
+    }
 }

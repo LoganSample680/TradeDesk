@@ -591,6 +591,76 @@ test.describe('Crew location permission', () => {
     expect(out.battBar).not.toContain('onerror');
   });
 
+  // ── How hot the phone is (owner ask 2026-09-01) ───────────────────────────
+  //
+  // "I just had a big spike where my phone got hot after a drive and killed 3
+  // percent, can't have that ... do we surface iOS device temp?"
+  //
+  // Same principle as the battery bar, and for the same reason: a phone iOS is
+  // throttling reports a perfectly healthy percentage right up until the fixes
+  // start going missing. Serious and critical are the two states where that is
+  // happening; nominal and fair are a phone doing its job, and a roster that
+  // labels nine cool phones is a roster nobody reads.
+  test('a phone iOS is throttling says so, in words a person can act on', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, device_label: 'iPhone', thermal_state: 'serious',
+      checked_at: NOW() });
+    expect(out.battBar).toContain('Phone running hot');
+    expect(out.battBar, 'serious is a warning, not an emergency').toContain('#D97706');
+  });
+
+  test('critical reads harder than serious, because iOS is shutting things off', async () => {
+    const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, thermal_state: 'critical', checked_at: NOW() });
+    expect(out.battBar).toContain('Phone too hot');
+    expect(out.battBar).toContain('#DC2626');
+  });
+
+  test('a cool phone says nothing at all', async () => {
+    for (const t of ['nominal', 'fair']) {
+      const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+        location_services_enabled: true, thermal_state: t, checked_at: NOW() });
+      expect(out.battBar, t + ': a phone doing its job is not news').toBe('');
+    }
+  });
+
+  test('a shell that cannot answer draws nothing, never a guess at nominal', async () => {
+    // Not knowing and being cool are different answers, the same rule the
+    // battery bar and location_services_enabled already follow.
+    for (const t of [null, undefined, '', 'unknown', 'Serious', 42, {}]) {
+      const out = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+        location_services_enabled: true, thermal_state: t, checked_at: NOW() });
+      expect(out.battBar, JSON.stringify(t) + ': never a guess').toBe('');
+    }
+  });
+
+  test('a hot phone on a healthy battery still shows the heat, and vice versa', async () => {
+    // THE WHOLE POINT. These two signals are independent: the phone that got
+    // hot on the owner's drive was at 60%, so a roster that only ever draws one
+    // chip would have shown nothing at all on the one row that mattered.
+    const hotOnly = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, battery_level: 0.60, thermal_state: 'serious',
+      checked_at: NOW() });
+    expect(hotOnly.battBar).toContain('Phone running hot');
+    expect(hotOnly.battBar, 'a healthy battery draws no bar').not.toContain('60%');
+    const both = await rosterIos({ location_status: 'always', location_accuracy: 'full',
+      location_services_enabled: true, battery_level: 0.09, thermal_state: 'critical',
+      checked_at: NOW() });
+    expect(both.battBar).toContain('9%');
+    expect(both.battBar).toContain('Phone too hot');
+  });
+
+  test('the heat chip rides every permission state, not just the healthy one', async () => {
+    // Eight branches build this row and each one used to carry battBar by
+    // hand. A signal added to one and missed on the others makes the roster
+    // tell a different story depending on which permission state a phone is in.
+    for (const st of ['always', 'wheninuse', 'denied', 'restricted', 'notdetermined']) {
+      const out = await rosterIos({ location_status: st, location_accuracy: 'full',
+        location_services_enabled: st !== 'denied', thermal_state: 'critical', checked_at: NOW() });
+      expect(out.battBar, st + ': a hot phone is hot in every state').toContain('Phone too hot');
+    }
+  });
+
   test('last ping shows on a BROKEN row, which is where it matters most', async () => {
     const out = await rosterIos({ location_status: 'wheninuse', checked_at: NOW() },
       { lastPing: new Date(Date.now() - 50 * 3600 * 1000).toISOString() });

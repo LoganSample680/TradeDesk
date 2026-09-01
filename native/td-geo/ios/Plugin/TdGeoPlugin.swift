@@ -324,7 +324,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         countWake("drive-resume")
         if burstStartedAt == nil {
             let m = mgr()
-            m.desiredAccuracy = kCLLocationAccuracyBest
+            m.desiredAccuracy = TdGeoPlugin.accuracyConstant(driveAccuracyName())
             m.distanceFilter = filter
             m.startUpdatingLocation()
         }
@@ -474,7 +474,11 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         if driveSamplingOn() {
             let m = mgr()
             let filter = driveFilterM()
-            m.desiredAccuracy = kCLLocationAccuracyBest
+            // The window's OWN tier, not Best: this is the common path (the
+            // motion boundary that opens a drive fires a burst at the same
+            // instant), so hardcoding Best here would hand every real drive
+            // the high-power receiver the window deliberately did not ask for.
+            m.desiredAccuracy = TdGeoPlugin.accuracyConstant(driveAccuracyName())
             m.distanceFilter = filter
             m.startUpdatingLocation()
             return
@@ -486,7 +490,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
 
     // setSampling({mode, maxMs, distanceFilter}) : raw capability, nothing more.
     //
-    //   mode "drive"  : kCLLocationAccuracyBest at a tight distance filter, the
+    //   mode "drive"  : the tier JS names, at the distance filter JS names, the
     //                   dense breadcrumb a route can actually be drawn from.
     //   mode anything : back to the coarse keepalive, or dark when nothing
     //                   else wants the radio.
@@ -523,6 +527,15 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         // running JS that predates the key behaves exactly as before.
         let flushMs = min(max(self.num(call.getValue("flushMs")) ?? TdGeoPlugin.flushDebounceMs,
                               TdGeoPlugin.flushDebounceFloorMs), TdGeoPlugin.flushDebounceCeilingMs)
+        // WHICH RECEIVER MODE, and this is the second half of the battery fix.
+        // kCLLocationAccuracyBest asks iOS for the best fix it can physically
+        // produce and holds the GPS chip in continuous high-power mode for the
+        // whole window; the owner's drive logged fixes claiming 2 metres of
+        // accuracy, which is a number no road route can use. Ten metres is
+        // narrower than a lane and iOS can duty-cycle the receiver to hit it.
+        // JS names the tier (3.2), unknown falls back to best so a bad string
+        // can never quietly downgrade a route to something unusable.
+        let accuracy = (call.getString("accuracy") ?? "best").lowercased()
         DispatchQueue.main.async {
             let d = UserDefaults.standard
             let already = self.driveSamplingOn()
@@ -533,7 +546,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                    "startedAtMs": Date().timeIntervalSince1970 * 1000,
                    "maxMs": maxMs,
                    "filter": filter,
-                   "flushMs": flushMs], forKey: self.samplingKey)
+                   "flushMs": flushMs,
+                   "accuracy": accuracy], forKey: self.samplingKey)
             if !already {
                 self.driveRadioStartedAt = Date()
                 self.countWake("drive-on")
@@ -546,13 +560,14 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             // A burst already owns the receiver at Best accuracy; leave it, and
             // endBurst will hand over to the window rather than going dark.
             if self.burstStartedAt == nil {
-                m.desiredAccuracy = kCLLocationAccuracyBest
+                m.desiredAccuracy = TdGeoPlugin.accuracyConstant(accuracy)
                 m.distanceFilter = filter
                 m.startUpdatingLocation()
             }
             self.armSamplingCap(maxMs)
             call.resolve(["mode": "drive", "maxMs": maxMs, "remainingMs": maxMs,
-                          "distanceFilter": filter, "flushMs": flushMs])
+                          "distanceFilter": filter, "flushMs": flushMs,
+                          "accuracy": accuracy])
         }
     }
 
@@ -571,7 +586,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         let left = max(0, started + maxMs - Date().timeIntervalSince1970 * 1000)
         call.resolve(["mode": "drive", "maxMs": maxMs, "remainingMs": left,
                       "distanceFilter": num(st["filter"]) ?? TdGeoPlugin.driveFilterDefaultM,
-                      "flushMs": num(st["flushMs"]) ?? TdGeoPlugin.flushDebounceMs])
+                      "flushMs": num(st["flushMs"]) ?? TdGeoPlugin.flushDebounceMs,
+                      "accuracy": (st["accuracy"] as? String) ?? "best"])
     }
 
     private func armSamplingCap(_ ms: Double) {
@@ -665,6 +681,21 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // stats() : radio seconds, wake counts, and the battery reading, so the
     // comparison screen can show both engines side by side. Passing reset
     // clears the counters for the next measurement window.
+    // Apple's own four states, as words rather than the raw enum: the bridge
+    // would hand JS a bare integer whose meaning lives only in a header, and a
+    // roster that has to explain "2" to a contractor is a roster nobody reads.
+    // Kept exhaustive with no default so a future OS state fails to compile
+    // here rather than silently reporting "nominal" for something that is not.
+    static func thermalWord(_ s: ProcessInfo.ThermalState) -> String {
+        switch s {
+        case .nominal:  return "nominal"
+        case .fair:     return "fair"
+        case .serious:  return "serious"
+        case .critical: return "critical"
+        @unknown default: return "unknown"
+        }
+    }
+
     @objc func stats(_ call: CAPPluginCall) {
         let d = UserDefaults.standard
         DispatchQueue.main.async {
@@ -678,6 +709,17 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
                 "wakes": (d.dictionary(forKey: self.wakesKey) as? [String: Int]) ?? [:],
                 "batteryLevel": lvl >= 0 ? Double(lvl) : -1,
                 "charging": (st == .charging || st == .full),
+                // HOW HOT THE PHONE IS, in iOS's own words (owner 2026-09-01,
+                // after a drive left his phone hot and 3% down: "do we surface
+                // iOS device temp?"). There is no temperature API on iOS and
+                // there never has been; thermalState is what Apple exposes and
+                // it is the number that matters anyway, because it is the one
+                // the OS acts on. At .serious it is already throttling the CPU
+                // and dimming the screen, and at .critical it starts shutting
+                // features down, so a phone reading serious during a drive is
+                // reporting a problem a battery percentage cannot show.
+                // Free to read, no permission, no polling cost.
+                "thermalState": TdGeoPlugin.thermalWord(ProcessInfo.processInfo.thermalState),
                 "monitoredRegions": self.mgr().monitoredRegions.count,
                 "motionAvailable": CMMotionActivityManager.isActivityAvailable()
             ]
@@ -948,6 +990,7 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     var flushDeadlineForTest: Date? { flushDeadline }
     var flushPendingForTest: Bool { flushPending }
     func driveFlushDelaySecForTest() -> Double { driveFlushDelaySec() }
+    func driveAccuracyNameForTest() -> String { driveAccuracyName() }
     func flushDelaySecForTest(for type: String) -> Double { flushDelaySec(for: type) }
     static var flushDebounceMsForTest: Double { flushDebounceMs }
     static var flushDebounceFloorMsForTest: Double { flushDebounceFloorMs }
@@ -1298,6 +1341,23 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // (CLAUDE.md 3.2): it rides in on setSampling and is clamped here so a
     // bad value can neither spin the radio's uploads back up nor park the
     // buffer for an hour.
+    // The tier names JS may use, and the only ones. Anything else is best,
+    // deliberately: a typo must cost battery, never route quality.
+    static func accuracyConstant(_ name: String) -> CLLocationAccuracy {
+        switch name {
+        case "ten":     return kCLLocationAccuracyNearestTenMeters
+        case "hundred": return kCLLocationAccuracyHundredMeters
+        default:        return kCLLocationAccuracyBest
+        }
+    }
+    // What the armed window asked for, so a relaunch mid-drive resumes on the
+    // same tier instead of quietly going back to Best for the rest of the trip.
+    private func driveAccuracyName() -> String {
+        guard let st = UserDefaults.standard.dictionary(forKey: samplingKey),
+              let n = st["accuracy"] as? String else { return "best" }
+        return n
+    }
+
     private func driveFlushDelaySec() -> Double {
         guard let st = UserDefaults.standard.dictionary(forKey: samplingKey),
               let ms = num(st["flushMs"]) else {

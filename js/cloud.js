@@ -634,7 +634,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='09.01.26.11';
+const APP_VERSION='09.01.26.12';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -4236,7 +4236,7 @@ async function _loadTeamGeo(){
       const uids=Object.keys(byUid);
       if(uids.length){
         const{data:devs}=await _supa.from('device_status')
-          .select('user_id,device_id,device_label,hw_id,os_version,location_status,location_accuracy,location_services_enabled,derived,checked_at,battery_level,battery_charging')
+          .select('user_id,device_id,device_label,hw_id,os_version,location_status,location_accuracy,location_services_enabled,derived,checked_at,battery_level,battery_charging,thermal_state')
           .eq('contractor_user_id',cid).in('user_id',uids);
         // A FLEET handset: one device_id that more than one person has signed
         // into (owner ask 2026-08-26: "if using fleet iPads"). A personal
@@ -4326,6 +4326,28 @@ function _geoBattBar(io_){
       '<span style="color:'+tone+';font-weight:700">'+pct+'%'+(io_.battery_charging?' charging':'')+'</span>'+
     '</span>';
 }
+// How hot the phone is, and shown on exactly the same principle as the battery
+// bar: only when it MATTERS. Apple's four states are nominal, fair, serious and
+// critical, and the first two are a phone doing its job. Serious is where iOS
+// has already started throttling the CPU and dimming the screen, and critical
+// is where it begins shutting features down, which is the point at which a
+// missing afternoon has a physical explanation the battery percentage cannot
+// give: the phone reads 80% and is still dropping fixes.
+//
+// A word, not a number, because iOS has no temperature API and inventing a
+// degrees figure from a four-state enum would be a made-up number on a screen
+// people make payroll decisions from.
+function _geoThermChip(io_){
+  const t=String((io_&&io_.thermal_state)||'');
+  if(t!=='serious'&&t!=='critical')return '';
+  const crit=t==='critical';
+  const tone=crit?'#DC2626':'#D97706';
+  return '<span style="display:inline-flex;align-items:center;gap:4px;vertical-align:middle;'+
+      'margin-left:6px;color:'+tone+';font-weight:700">'+
+      (typeof svgIcon==='function'?svgIcon('🌡',{size:11}):'')+
+      escHtml(crit?'Phone too hot':'Phone running hot')+
+    '</span>';
+}
 // Returns {dot,label,device,ping,fix,tone} or null when crew tracking is off.
 function _geoRosterStatus(email){
   if(!S.teamTracking)return null;
@@ -4384,7 +4406,10 @@ function _geoRosterStatus(email){
           ? _base+' (shared) · they last used it '+_timeAgo(io_.checked_at)
           : _base+(io_.os_version?' · iOS '+io_.os_version:''))
       : null;
-    const battBar=_geoBattBar(io_);
+    // Both chips ride ONE field, so a new signal never means editing the eight
+    // branches below and missing one (which is how the roster ends up telling
+    // a different story depending on which permission state a phone is in).
+    const battBar=_geoBattBar(io_)+_geoThermChip(io_);
     if(io_.location_services_enabled===false)
       return{dot:'🔴',label:'Location is off for their whole phone',fix:'Settings › Privacy › Location Services',device:dev,ping:_ping,tone:'#DC2626',battBar};
     if(st==='denied')

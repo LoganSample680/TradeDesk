@@ -148,6 +148,31 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
     expect(r.all).toBe(true);
   });
 
+  test('the window asks for ten metres, not the best fix the chip can make', async () => {
+    // The other half of the same battery answer. Best pins the GPS chip in
+    // continuous high-power mode; the owner's hot drive logged fixes claiming
+    // TWO METRES, a precision no road route can use and nothing here reads.
+    const r = await run(`
+      await _geoTdEvent({ type: 'motion', ts: Date.now(), kind: 'automotive', prevKind: 'walking' });
+      await _geoOnPing({ coords: { latitude: 39.1, longitude: -94.1, accuracy: 10 } });
+      return { acc: (calls[0] || {}).accuracy, konst: _GEO_DRIVE_ACCURACY };
+    `);
+    expect(r.konst).toBe('ten');
+    expect(r.acc).toBe('ten');
+  });
+
+  test('every re-assert carries the tier too, so a held window never creeps back to Best', async () => {
+    const r = await run(`
+      await _geoTdEvent({ type: 'motion', ts: Date.now(), kind: 'automotive', prevKind: 'walking' });
+      await _geoOnPing({ coords: { latitude: 39.1, longitude: -94.1, accuracy: 10 } });
+      _geoDriveWinAskedAt = 0;
+      _geoDriveWindowOpen('confirm-moved');
+      return { n: calls.length, all: calls.every(c => c.accuracy === 'ten') };
+    `);
+    expect(r.n).toBeGreaterThan(1);
+    expect(r.all).toBe(true);
+  });
+
   test('closing the window sends no batch interval at all: coarse is coarse', async () => {
     const r = await run(`
       await _geoTdEvent({ type: 'motion', ts: Date.now(), kind: 'automotive', prevKind: 'walking' });
@@ -837,6 +862,32 @@ test.describe('The native half of the drive window', () => {
     expect(body.includes('flushGen += 1'),
       'a debounced flush already armed must not fire behind the urgent one').toBe(true);
     expect(body.includes('flushDeadline = nil')).toBe(true);
+  });
+
+  test('the receiver tier is JS-owned and every drive path honours it', () => {
+    // Three places set the drive window's accuracy: arming it, resuming it
+    // after a relaunch, and handing back from a burst. The burst handover is
+    // the COMMON path, not an edge case (the motion boundary that opens a
+    // drive fires a burst at the same instant), so a hardcoded Best left there
+    // would give every real drive the high-power receiver the window did not
+    // ask for, and the fix would look like it worked everywhere it was tested.
+    const s = swiftSrc();
+    expect(s.includes('call.getString("accuracy")'), 'JS owns the tier (3.2)').toBe(true);
+    expect(s.includes('static func accuracyConstant')).toBe(true);
+    expect(s.includes('case "ten":     return kCLLocationAccuracyNearestTenMeters')).toBe(true);
+    // Best survives ONLY as the fallback and in the deliberate few-second burst.
+    const setsAccuracy = (s.match(/desiredAccuracy = kCLLocationAccuracyBest/g) || []).length;
+    expect(setsAccuracy, 'only burstFix may hardcode Best').toBe(1);
+    const viaTier = (s.match(/desiredAccuracy = TdGeoPlugin\.accuracyConstant/g) || []).length;
+    expect(viaTier, 'arm, relaunch-resume and burst-handover all read the tier').toBe(3);
+  });
+
+  test('a typo in the tier costs battery, never route quality', () => {
+    const s = swiftSrc();
+    const i = s.indexOf('static func accuracyConstant');
+    const body = s.slice(i, i + 400);
+    expect(body.includes('default:        return kCLLocationAccuracyBest'),
+      'an unrecognised tier must never silently downgrade a route').toBe(true);
   });
 
   test('the safety cap exists, is bounded, and reverts without being asked', () => {

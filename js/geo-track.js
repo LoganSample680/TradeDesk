@@ -3963,18 +3963,33 @@ async function _geoReadPermissionInferred(){
 // slow or missing plugin can never delay or block the permission row, which is
 // the row that actually explains payroll.
 let _geoBatt=null;
+// Apple's four, in the order they escalate, which is also the order the roster
+// ranks them in. 'unknown' is deliberately NOT here: the plugin passes it
+// through for a state a future iOS invents, and a word nothing can interpret
+// is the same as no answer.
+const _GEO_THERMAL_WORDS=['nominal','fair','serious','critical'];
+let _geoTherm=null;
 function _geoBattPeek(){return _geoBatt;}
+function _geoThermPeek(){return _geoTherm;}
 async function _geoRefreshBattery(){
   try{
     const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
-    if(!Td||typeof Td.stats!=='function'){_geoBatt=null;return null;}
+    if(!Td||typeof Td.stats!=='function'){_geoBatt=null;_geoTherm=null;return null;}
     const st=await Td.stats();
     // -1 is the plugin's own "could not read", and must stay distinguishable
     // from a genuinely flat phone.
     const lvl=(st&&+st.batteryLevel>=0)?+st.batteryLevel:null;
+    // Thermal rides the SAME stats() call, and is kept independent of the
+    // battery read on purpose: a shell can answer one and not the other, and a
+    // phone that is hot with an unreadable battery is still worth reporting.
+    // Only Apple's four words are accepted; anything else is treated as not
+    // reported rather than written through, so the column can never fill up
+    // with a string nothing knows how to render.
+    const _th=String((st&&st.thermalState)||'');
+    _geoTherm=(_GEO_THERMAL_WORDS.indexOf(_th)>=0)?_th:null;
     _geoBatt=(lvl==null)?null:{level:lvl,charging:!!(st&&st.charging)};
     return _geoBatt;
-  }catch(_e){_geoBatt=null;return null;}
+  }catch(_e){_geoBatt=null;_geoTherm=null;return null;}
 }
 function _geoReportPermission(state){
   if(!_supa||!_supaUser)return;
@@ -4036,6 +4051,11 @@ function _geoReportPermission(state){
         // roster otherwise, and one of them is fixed with a charger.
         battery_level:_geoBatt?_geoBatt.level:null,
         battery_charging:_geoBatt?_geoBatt.charging:null,
+        // A phone iOS is throttling reports a healthy battery percentage right
+        // up until the fixes start going missing, which is exactly the shape of
+        // failure the roster exists to name. null when the shell cannot answer:
+        // not knowing and being cool are different answers.
+        thermal_state:_geoTherm||null,
         // TRUE when this row is a guess rather than iOS's own word (owner
         // 2026-08-25: "don't keep inferring, build explicitly off what iOS
         // reports"). It was hardcoded false, which quietly presented the
@@ -4444,6 +4464,23 @@ const _GEO_DRIVE_SAMPLE_M=30;
 // scheduleFlush, where an earlier deadline supersedes a later one). The number
 // lives here, not in Swift, so it stays tunable through a UAT roll (3.2).
 const _GEO_DRIVE_FLUSH_MS=20000;
+// WHICH RECEIVER MODE the drive window runs, and the second half of the same
+// battery answer (owner 2026-09-01: "how do we prevent the spike on continuous
+// gps, life 360 doesnt kill a phone with heat").
+//
+// It does not, and this is most of why: nothing that tracks a phone all day
+// asks iOS for kCLLocationAccuracyBest for the length of a drive. Best means
+// "the best fix this hardware can physically produce" and holds the GPS chip
+// in continuous high-power mode; the owner's 12:22 drive logged fixes claiming
+// TWO METRES of accuracy, which is a precision no road route can use and
+// nothing in this app reads. Ten metres is narrower than a traffic lane, so
+// every turn, every stop and every mile still lands exactly where it did, and
+// iOS is free to duty-cycle the receiver instead of pinning it on.
+//
+// 'hundred' exists for a future low-power mode and is deliberately NOT the
+// default: at 100m the route starts cutting corners on city blocks, which is
+// the thing 12.2's mileage accuracy work exists to prevent.
+const _GEO_DRIVE_ACCURACY='ten';
 // Is this event describing something that is happening NOW? The buffer replays
 // history, the coprocessor backfills days of it, and neither is a reason to
 // turn the receiver up. One number, one meaning, used by every opener.
@@ -4488,7 +4525,7 @@ function _geoDriveWindowOpen(why){
   const first=!_geoDriveWinAt;
   _geoDriveWinAskedAt=now;
   if(first){_geoDriveWinAt=now;_geoDriveWinWhy=String(why||'');_geoDriveConfirmFix=null;}
-  try{Promise.resolve(Td.setSampling({mode:'drive',maxMs:_GEO_DRIVE_WIN_CAP_MS,distanceFilter:_GEO_DRIVE_SAMPLE_M,flushMs:_GEO_DRIVE_FLUSH_MS})).catch(()=>{});}catch(_e){}
+  try{Promise.resolve(Td.setSampling({mode:'drive',maxMs:_GEO_DRIVE_WIN_CAP_MS,distanceFilter:_GEO_DRIVE_SAMPLE_M,flushMs:_GEO_DRIVE_FLUSH_MS,accuracy:_GEO_DRIVE_ACCURACY})).catch(()=>{});}catch(_e){}
   _geoParkNote(first?'drive-window-on':'drive-window-hold',String(why||''));
   return true;
 }
