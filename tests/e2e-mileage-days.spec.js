@@ -327,14 +327,23 @@ test.describe('Mileage day simulator: whole days against the real tracker', () =
     for (const p of DOG) { await ping(p, 13); await ff(1.5); }
     await ping(GEO.SHOP, 0); await ff(0.5);
     await dwell(GEO.SHOP, 8);
-    // Harness-side expected tally: the same hops the accumulator saw (the
-    // drive opens on the first out-of-fence fix, so it starts at DOG[0]).
+    // Harness-side expected tally: the same hops the accumulator saw.
+    //
+    // THIS USED TO START AT DOG[0], and the comment here said so: "the drive
+    // opens on the first out-of-fence fix". That WAS the behaviour and it was
+    // the defect, reported by the owner off a drawn route on 2026-09-01: "it
+    // wasn't starting at the door though". The truck really did drive JOB1 to
+    // DOG[0]; the accumulator simply never counted it, because it started
+    // measuring from wherever the fence exit happened to confirm. On his real
+    // leg that was 1,524 ft of unlogged road and the whole 0.3 mi he was
+    // missing. The drive now seeds from _geoLegOrigin, so the first hop is
+    // the door to the first fix, and the expected tally says so too.
     const mi = (a, b) => {
       const R = (x) => x * Math.PI / 180;
       return 3958.8 * Math.acos(Math.min(1, Math.sin(R(a.lat)) * Math.sin(R(b.lat)) +
         Math.cos(R(a.lat)) * Math.cos(R(b.lat)) * Math.cos(R(b.lon - a.lon))));
     };
-    let tally = 0;
+    let tally = mi(GEO.JOB1, DOG[0]);
     for (let i = 1; i < DOG.length; i++) tally += mi(DOG[i - 1], DOG[i]);
     tally += mi(DOG[DOG.length - 1], GEO.SHOP);
     // Leg B: SHOP -> SUP2 with a garbage trace (teleporting fixes): the tally
