@@ -148,7 +148,12 @@ test.describe('manual clock over a derived day', () => {
       const keepT = timeEntries.slice(); const keepF = window._fetchCrewLabor;
       window.timeEntries = [];
       window._fetchCrewLabor = async () => ({ name: {}, entries: [], shopEntries: [] });
-      const since = Date.now() - 47 * 60000;
+      // Anchored to today's start: at the midnight clock pin "47 minutes
+      // ago" is yesterday (CLAUDE.md 5.2.2). The minutes are read back from
+      // the same clock the row is built on.
+      const dayStart = _geoDayBounds(_geoDayKeyOf(Date.now(), 'America/Chicago')).start;
+      const since = Math.max(dayStart + 60000, Date.now() - 47 * 60000);
+      const expectMin = Math.max(0, Math.round((Date.now() - since) / 60000));
       window._geoOpenDwell = { id: 'd-j-x', name: 'John Doe', kind: 'client', sinceTs: since, sinceIso: new Date(since).toISOString(), journeyId: 'x', fence: { addr: '2950 SW McClure Rd' } };
       try {
         const rows = await _timeLogRows(null);
@@ -164,10 +169,11 @@ test.describe('manual clock over a derived day', () => {
         window._geoOpenDwell = null;
         _tlRenderOpenBanner();
         const cleared = host.style.display;
-        return { live: live.map(x => [x.clientName, x.minutes, x.rawSource, x.personUid === me, x.detail, _tlRailKind(x)]), stale, banner: { onsite: /ON SITE/.test(banner), name: /John Doe/.test(banner), clockOut: /Clock out/.test(banner), tick: /data-tl-open-start="/.test(banner) }, cleared };
+        return { expectMin, live: live.map(x => [x.clientName, x.minutes, x.rawSource, x.personUid === me, x.detail, _tlRailKind(x)]), stale, banner: { onsite: /ON SITE/.test(banner), name: /John Doe/.test(banner), clockOut: /Clock out/.test(banner), tick: /data-tl-open-start="/.test(banner) }, cleared };
       } finally { window.timeEntries = keepT; window._fetchCrewLabor = keepF; window._geoOpenDwell = null; }
     });
-    expect(r.live).toEqual([['John Doe', 47, 'client', true, 'On site now', 'job']]);
+    expect(r.live).toEqual([['John Doe', r.expectMin, 'client', true, 'On site now', 'job']]);
+    expect(r.expectMin).toBeGreaterThanOrEqual(1);
     expect(r.stale).toBe(0);
     expect(r.banner).toEqual({ onsite: true, name: true, clockOut: false, tick: true });
     expect(r.cleared).toBe('none');

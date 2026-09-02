@@ -582,8 +582,11 @@ test.describe('geo-derive wiring', () => {
         window.clients = [{ id: 1788214075432, name: 'John Doe', addr: '2950 SW McClure Rd' }];
         localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 1788214075432: { addr: '2950 SW McClure Rd', lat: DOE.lat, lon: DOE.lng } }));
         localStorage.removeItem('zp3_geo_fixlog'); localStorage.removeItem('zp3_geo_queue');
-        const now = Date.now(), t0 = now - 120 * 60000, t1 = now - 110 * 60000;
+        // Anchored to today's start, not to "two hours ago": at the midnight
+        // clock pin (00:20) two hours ago is yesterday (CLAUDE.md 5.2.2).
+        const now = Date.now();
         const today = _geoDayKeyOf(now, 'America/Chicago');
+        const t0 = Math.max(_geoDayBounds(today).start + 60000, now - 120 * 60000), t1 = t0 + 10 * 60000;
         window._geoDeriveTape = async () => [{ ts: t0 - 3600000, kind: 'onFoot' }, { ts: t0, kind: 'driving' }, { ts: t1, kind: 'onFoot' }];
         _geoFixLogPush(t0 + 5000, SHOP.lat, SHOP.lng, 5); _geoFixLogPush(t1 + 5000, DOE.lat, DOE.lng, 5); _geoFixLogPush(now - 60000, DOE.lat, DOE.lng, 5);
         for (let i = 0; i < 25; i++) _geoFixLogPush(t0 + 6000 + i * 20000, SHOP.lat + (DOE.lat - SHOP.lat) * i / 25, SHOP.lng + (DOE.lng - SHOP.lng) * i / 25, 5);
@@ -594,7 +597,8 @@ test.describe('geo-derive wiring', () => {
         await _geoDeriveDayNow('2026-08-20', null);
         const still = window._geoOpenDwell;
         // Today with nobody on site clears it.
-        window._geoDeriveTape = async () => [{ ts: t0 - 3600000, kind: 'onFoot' }, { ts: t0, kind: 'driving' }, { ts: t1, kind: 'onFoot' }, { ts: now - 30 * 60000, kind: 'driving' }];
+        const tDep = Math.max(t1 + 60000, now - 30 * 60000);   // after the arrival, whatever the hour
+        window._geoDeriveTape = async () => [{ ts: t0 - 3600000, kind: 'onFoot' }, { ts: t0, kind: 'driving' }, { ts: t1, kind: 'onFoot' }, { ts: tDep, kind: 'driving' }];
         await _geoDeriveDayNow(today, null);
         return { open: !!(res && res.open), od: od && { name: od.name, kind: od.kind, since: od.sinceTs, cid: od.fence && od.fence.clientId }, t1, still: still && still.name, after: window._geoOpenDwell };
       }, [SHOP, DOE]);
