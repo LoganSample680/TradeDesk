@@ -546,7 +546,7 @@ async function _devLoadUserAccount(key){
     const{t,set}=_TD_TABLES[i];
     const rows=(tableResults[i].data||[]).map(r=>r.data);
     set(rows);
-    _lastKnownIds[t]=new Set((tableResults[i].data||[]).map(r=>String(r.id)));
+    _lastKnownIds[t]=new Set((tableResults[i].data||[]).filter(r=>!_sweepGuarded(t,r)).map(r=>String(r.id)));
     // DELTA: rebuild the synced-hash from the TARGET account's rows so the dev's own
     // row hashes can't linger and suppress a target-account upload (cross-account bleed).
     _syncedHash[t]=new Map((tableResults[i].data||[]).map(r=>[String(r.id),_hashPayload(r.data)]));
@@ -1429,6 +1429,17 @@ _locallyDeletedIds=Object.fromEntries(_TD_TABLES.map(({t})=>[t,new Set()]));
 // replacement: existing Sets keep their identity for anything holding a ref, and
 // specs that reset _lastKnownIds={} still work via the defensive ||new Set() sites.
 _TD_TABLES.forEach(({t})=>{if(!_lastKnownIds[t])_lastKnownIds[t]=new Set();});
+// A GPS mileage leg is written by the day deriver through geo_replace_day
+// (owner 2026-09-02, js/geo-derive.js) and is owned by the server. The
+// account-wide sweep in supaSaveToCloud retires any known id missing from
+// THIS device's array (9.8), which on a device that has not reloaded since
+// another phone's rebuild would retire legs that are perfectly real. Such
+// rows are never sweep-eligible: not known here means not deletable here.
+function _sweepGuarded(t,r){
+  if(t!=='td_mileage'||!r)return false;
+  const d=(r.data&&typeof r.data==='object')?r.data:r;
+  return !!(d&&d.gps===true);
+}
 // Dev-time guard: reports if _TD_TABLES ever gains a table this object
 // doesn't cover (the exact defect above), a silent multi-week data-loss bug
 // turned into an immediate, loud console error instead. Self-checking since
@@ -8114,7 +8125,7 @@ async function supaLoadFromCloud({silent=false}={}){
           // Restore known-cloud hashes so an unsaved local edit still re-uploads, and
           // seed _lastKnownIds from the painted cache so the delete-sweep stays correct.
           _syncedHash={};for(const[k,v]of Object.entries(_deltaMeta.syncedHash||{}))_syncedHash[k]=new Map(v);
-          for(const{t,get}of _TD_TABLES)_lastKnownIds[t]=new Set((get()||[]).map(r=>String(r.id)));
+          for(const{t,get}of _TD_TABLES)_lastKnownIds[t]=new Set((get()||[]).filter(r=>!_sweepGuarded(t,r)).map(r=>String(r.id)));
         }
       }
     }else if(silent&&!_devSupportMode&&_supaCloudLoaded&&_deltaCursor&&_deltaCursor<new Date(Date.now()+60000).toISOString()&&_loadedDataOwner===uid){
@@ -8226,7 +8237,7 @@ async function supaLoadFromCloud({silent=false}={}){
             if(_mg!==r.data)_keptLocalInLoad=true; // union kept, schedule the upload after the merge
             byId.set(id,_mg);
             (_syncedHash[t]||(_syncedHash[t]=new Map())).set(id,_hashPayload(r.data));
-            (_lastKnownIds[t]||(_lastKnownIds[t]=new Set())).add(id);
+            if(!_sweepGuarded(t,r))(_lastKnownIds[t]||(_lastKnownIds[t]=new Set())).add(id);
             (_rowSyncedAt[t]||(_rowSyncedAt[t]=new Map())).set(id,_ldTs);
             if(r.updated_at){try{(_rowServerTs[t]||(_rowServerTs[t]=new Map())).set(id,new Date(r.updated_at).getTime());}catch(_e){}}
           }
@@ -8256,7 +8267,7 @@ async function supaLoadFromCloud({silent=false}={}){
           if(!_cloudIds.has(_lid)&&_pendC.has(_lid)&&!(_locallyDeletedIds[t]&&_locallyDeletedIds[t].has(_lid))){_merged.push(_lr);_keptLocalInLoad=true;}
         }
         set(_merged);
-        _lastKnownIds[t]=new Set(data.map(r=>String(r.id)));
+        _lastKnownIds[t]=new Set(data.filter(r=>!_sweepGuarded(t,r)).map(r=>String(r.id)));
         _syncedHash[t]=new Map(data.map(r=>[String(r.id),_hashPayload(r.data)]));
         const _ldTs=Date.now();
         _rowSyncedAt[t]=new Map(data.map(r=>[String(r.id),_ldTs])); // loaded from cloud → in sync now; edits older than this load are not "pending"

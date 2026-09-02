@@ -458,6 +458,18 @@ function _geoQueueWrite(q){try{localStorage.setItem(_GEO_QUEUE_KEY,JSON.stringif
 // data loss with nothing able to put it back. Old queue entries written before
 // this option existed have no flag, so they keep the ignore behaviour.
 function _geoEnqueue(tbl,row,opts){
+  // ONE WRITER (owner 2026-09-02). Automatic time rows come from the day
+  // deriver through geo_replace_day now. Every closer in this file that used
+  // to enqueue its own row for a fence event still runs (it drives the
+  // on-site card, the radio and the park regions) but its row goes nowhere:
+  // two writers for one event is exactly what produced a 3h 43m row on top
+  // of three others. Human rows are the exception and always land: a manual
+  // clock-out (source manual) and a hand-corrected row (fixed-*).
+  if(_GEO_DERIVER_WRITES&&(tbl==='job_time_entries'||tbl==='shop_time_entries')&&
+     !(row&&(row.source==='manual'||/^fixed-/.test(String(row.client_key||''))))){
+    try{_geoParkNote('derive-gate',tbl+'/'+((row&&row.source)||'?'));}catch(_e){}
+    return;
+  }
   try{
     row.client_key=row.client_key||_geoClientKey();
     const q=_geoQueueRead();q.push({tbl,row,overwrite:!!(opts&&opts.overwrite)});
@@ -521,6 +533,18 @@ async function _geoDrainQueue(){
         // Every other enqueued row mints its key once and must never revive
         // something a person deliberately removed.
         if(item.overwrite&&item.row&&item.row.deleted_at===undefined)item.row.deleted_at=null;
+        if(item.rpc){
+          // A derived day. One call replaces the person's automatic rows for
+          // that day in one transaction (supabase/migrations/20260906). A
+          // REFUSAL (the set itself is wrong: an overlap, a bad window) is
+          // not a transient and must not block the queue behind it: it is
+          // dropped, said out loud, and the next derive produces a better one.
+          ({error}=await _supa.rpc(item.rpc,item.args||{}));
+          if(error&&/geo_replace_day:/.test(String(error.message||''))){
+            console.error('geo derive refused: '+String(error.message));
+            error=null;
+          }
+        }else
         ({error}=await _supa.from(item.tbl).upsert(item.row,{onConflict:'contractor_user_id,client_key',ignoreDuplicates:!item.overwrite}));
         // Hosted DB predating the geo-hardening migration: no unique index → retry as
         // a plain insert; no client_key column at all → retry without the key. Either
@@ -949,6 +973,7 @@ async function _geoOnPing(pos){
   // the LAST session's card until real GPS truth arrives; this flag is that
   // truth arriving, after it the live state alone decides the card.
   window._geoFixSeen=true;
+  try{if(pos&&pos.coords)_geoFixLogPush(Number(pos.timestamp)||Date.now(),pos.coords.latitude,pos.coords.longitude,pos.coords.accuracy);}catch(_e){}
   // RE-ENTRANCY GUARD: this handler awaits network geocodes, and watchPosition can
   // fire faster than they resolve. Interleaved runs used to apply a STALE position
   // after a fresher one and flip arrive/depart backwards, overlapping pings are
@@ -3464,6 +3489,9 @@ function _geoLegIsImpossible(from,to,driveMins){
   }catch(_e){return false;}
 }
 function _geoAutoMileage(from,to,legKey,startedIso,companyVeh,driveMins,endedIso,obsMiles,obsPath){
+  // Same gate as _geoEnqueue: the deriver writes the leg, on the same id as
+  // the drive row, through geo_replace_day.
+  if(_GEO_DERIVER_WRITES)return null;
   try{
     if(typeof autoLogDriveTrip!=='function')return;
     if(!from||!to||from.lat==null||to.lat==null)return;
@@ -5171,6 +5199,12 @@ async function _geoTdEvent(ev,replay){
     // defers during an in-flight cold load, snapshots open forms, and saves
     // before it goes.
     if(!replay&&ev.type==='push-ping')_geoBgUpdateCheck();
+    // And the day is re-derived on the same push, so an open dwell that a
+    // fix has since left gets closed without waiting for a flip.
+    if(!replay&&ev.type==='push-ping'){
+      if(typeof ev.lat==='number'&&typeof ev.lng==='number')_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
+      _geoDeriveLiveSoon('push-ping');
+    }
     return;
   }
   if(ev.type==='motion'){
@@ -5302,6 +5336,11 @@ async function _geoTdEvent(ev,replay){
       // it is not the departure that a fence exit ten minutes from now would
       // be describing.
       if(_foot(cur)||cur==='still'){_geoDrivePendingAt=null;_geoDrivePendingId=null;}
+      // THE JOURNEY END (owner 2026-09-02): automotive -> foot is when the
+      // day is re-derived. Live only, and only a fresh edge: a replayed
+      // buffer from yesterday is the boot rebuild's job, not a reason to
+      // rewrite today.
+      if(_foot(cur)&&_auto(prev)&&!replay&&_geoEvFresh(ev))_geoDeriveLiveSoon('flip');
       // ── AND THIS IS WHAT SHUTS THE CONTINUOUS GPS OFF ────────────────────
       // Owner: "when automotive goes back to cycling or walking that fire
       // another ping which shuts off the continuous gps." Any non-automotive
@@ -5352,6 +5391,7 @@ async function _geoTdEvent(ev,replay){
     else _geoDriveCorrelate('fix',Number(ev.ts)||Date.now(),'fence-exit');
   }
   if(!hasFix)return;
+  _geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
   // ── THE VISIT REPORT ALREADY KNOWS WHEN THEY GOT THERE ───────────────────
   // Owner report 2026-08-25, with two weeks of his own journal behind it: a
   // stop the app has a FENCE for is stamped within a minute, because crossing
@@ -8367,6 +8407,7 @@ async function _geoDedupShopTimeEntries(){
 function _geoTrackInit(){
   if(!S.teamTracking)return;                 // tracking not enabled for the company
   if(!_supaUser)return;
+  _geoDeriveRebuildSoon();
   // Backgrounding mid-shift KEEPS the entry open (the old handler closed it, a
   // phone in a pocket all day logged only screen-on slivers, and any visit hidden
   // within 2 minutes of arrival was dropped entirely). Instead: snapshot the open
@@ -8580,3 +8621,205 @@ try{
 // so the reasoning is not lost, but do not re-add the Cloud sync copy citing it.
 // e2e-geo-auto-mileage.spec.js asserts no Location diagnostics button survives
 // anywhere under #setd-cloud, so a re-add fails CI (§7.1).
+
+// ══════════════════════════════════════════════════════════════════════════
+// THE DERIVER, WIRED (owner 2026-09-02). js/geo-derive.js decides what the
+// day was; this block feeds it and carries its answer to the database.
+//
+//   live:  automotive -> foot flip (and the 30-minute push-ping) re-derives
+//          TODAY from the CoreMotion tape and the local fix log.
+//   boot:  once per launch, the tape's whole window (iOS keeps seven days)
+//          is re-derived day by day, with the server's own fixes for those
+//          days folded in, and every automatic row for each day is replaced.
+//          That is "clean up mileage and time logs based on core motion's
+//          iOS tape on boot", and it is the same function as live.
+//
+// The write goes through the durable queue as ONE item per day (the latest
+// derive for a day replaces any older one still waiting), and the queue
+// calls geo_replace_day. Offline, it waits. Refused, it is dropped and said.
+// ══════════════════════════════════════════════════════════════════════════
+const _GEO_DERIVER_WRITES=true;
+const _GEO_FIXLOG_KEY='zp3_geo_fixlog';
+const _GEO_FIXLOG_MAX=6000;
+const _GEO_FIXLOG_KEEP_MS=8*86400000;
+const _GEO_DERIVE_DAYS=7;
+
+function _geoFixLogRead(){try{const a=JSON.parse(localStorage.getItem(_GEO_FIXLOG_KEY)||'[]');return Array.isArray(a)?a:[];}catch(_e){return [];}}
+function _geoFixLogPush(ts,lat,lng,acc){
+  try{
+    const t=Number(ts),la=Number(lat),ln=Number(lng);
+    if(!(t>0)||!isFinite(la)||!isFinite(ln))return;
+    const a=_geoFixLogRead();
+    const last=a[a.length-1];
+    if(last&&last.ts===t&&last.lat===la&&last.lng===ln)return;   // the same fix twice
+    a.push({ts:t,lat:la,lng:ln,acc:acc!=null&&isFinite(Number(acc))?Math.round(Number(acc)):null});
+    const cut=t-_GEO_FIXLOG_KEEP_MS;
+    let out=a.filter(f=>f&&f.ts>=cut);
+    if(out.length>_GEO_FIXLOG_MAX)out=out.slice(out.length-_GEO_FIXLOG_MAX);
+    localStorage.setItem(_GEO_FIXLOG_KEY,JSON.stringify(out));
+  }catch(_e){}
+}
+
+// Central day bounds without a table of offsets: walk to the first instant
+// that formats as the day, then to the first that formats as the next. DST
+// falls out of Intl; the walk is 15-minute steps over at most a day and a half.
+function _geoDayKeyOf(ms,tz){
+  try{return new Intl.DateTimeFormat('en-CA',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ms));}
+  catch(_e){return dateKey(new Date(ms));}
+}
+function _geoBizTz(){return (typeof S!=='undefined'&&S&&S.bizTz)||'America/Chicago';}
+function _geoDayBounds(dayKey){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dayKey||''));
+  if(!m)return null;
+  const tz=_geoBizTz();
+  let t=Date.UTC(+m[1],+m[2]-1,+m[3],0,0,0)-14*3600000;
+  const step=15*60000;
+  let guard=200;
+  while(guard-->0&&_geoDayKeyOf(t,tz)<dayKey)t+=step;
+  let e=t;guard=200;
+  while(guard-->0&&_geoDayKeyOf(e,tz)===dayKey)e+=step;
+  return {start:t,end:e};
+}
+
+// The saved locations, as the deriver wants them. Same sources as the park
+// regions (shop, places, clients, that day's jobs) so the fence the phone
+// armed and the fence the deriver resolves are the same set.
+function _geoDeriveFences(dayKey){
+  const out=[];
+  try{
+    if(typeof S!=='undefined'&&S&&S.officeLat!=null&&S.officeLon!=null)
+      out.push({id:'shop',kind:'shop',name:(S.bname?S.bname+' shop':'Shop'),lat:Number(S.officeLat),lng:Number(S.officeLon),addr:S.baddr||''});
+    (typeof places!=='undefined'&&Array.isArray(places)?places:[]).forEach(pl=>{
+      if(!pl||pl.lat==null||pl.lon==null)return;
+      out.push({id:'place-'+pl.id,kind:String(pl.kind||'other'),name:pl.name||'',lat:Number(pl.lat),lng:Number(pl.lon),addr:pl.addr||'',placeId:pl.id,radiusFt:pl.fenceFt||undefined});
+    });
+    const cache=(typeof _nearbyGeoCache==='function')?_nearbyGeoCache():{};
+    (typeof clients!=='undefined'&&Array.isArray(clients)?clients:[]).forEach(c=>{
+      if(!c||!c.addr)return;
+      const hit=cache[c.id];
+      if(hit&&hit.addr===c.addr&&hit.lat!=null)out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:Number(hit.lat),lng:Number(hit.lon),addr:c.addr,clientId:c.id});
+    });
+    (typeof jobs!=='undefined'&&Array.isArray(jobs)?jobs:[]).forEach(j=>{
+      if(!j||j.status==='canceled')return;
+      const active=(typeof _jobActiveOn==='function')?_jobActiveOn(j,dayKey):true;
+      if(!active)return;
+      const c=(typeof _geoJobCoords!=='undefined'&&_geoJobCoords[j.id])||((j.lat&&j.lon)?{lat:j.lat,lng:j.lon}:null);
+      if(c)out.push({id:'job-'+j.id,kind:'job',name:(typeof _tlJobClientInfo==='function'?(_tlJobClientInfo(j.id).clientName):null)||j.name||'Job',lat:Number(c.lat),lng:Number(c.lng),addr:j.addr||j.address||'',jobId:j.id});
+    });
+  }catch(_e){}
+  return out;
+}
+
+// The coprocessor's own history. Empty on any build without it, and an
+// empty tape is a reason to do NOTHING, never a reason to write an empty day.
+async function _geoDeriveTape(sinceMs){
+  try{
+    const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
+    if(!Td||typeof Td.motionSince!=='function')return [];
+    const r=await Td.motionSince({sinceMs:Number(sinceMs)||0});
+    if(!r||!r.available||!Array.isArray(r.transitions))return [];
+    return r.transitions.filter(t=>t&&typeof t.ts==='number'&&t.kind);
+  }catch(_e){return [];}
+}
+
+// The server's fixes for a window: what other wakes flushed while the app was
+// dead. Folded into the local log for the boot rebuild only.
+async function _geoDeriveServerFixes(fromMs,toMs){
+  const out=[];
+  try{
+    if(!_supa||!_supaUser)return out;
+    const me=_supaUser.id,a=new Date(fromMs).toISOString(),b=new Date(toMs).toISOString();
+    const ev=await _supa.from('geo_events').select('ts,lat,lon').eq('employee_user_id',me).gte('ts',a).lt('ts',b).not('lat','is',null).limit(5000);
+    (ev&&ev.data||[]).forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:null});});
+    const pg=await _supa.from('location_pings').select('ts,lat,lon,accuracy').eq('employee_user_id',me).gte('ts',a).lt('ts',b).limit(5000);
+    (pg&&pg.data||[]).forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:e.accuracy!=null?Number(e.accuracy):null});});
+  }catch(_e){}
+  return out;
+}
+
+function _geoEnqueueRpc(dayKey,args){
+  try{
+    const key='rpc:'+dayKey;
+    const q=_geoQueueRead().filter(x=>!(x&&x.row&&x.row.client_key===key));
+    q.push({rpc:'geo_replace_day',args,row:{client_key:key}});
+    _geoQueueWrite(q);
+  }catch(_e){}
+  _geoDrainQueue();
+}
+
+// The in-memory mileage array is what the settings-blob sweep compares the
+// server against, so the derived legs have to be in it or the next save
+// would retire them (CLAUDE.md 9.8). Hand-typed trips are untouched; what a
+// person set on a GPS leg (vehicle, purpose, notes) rides across by id.
+function _geoDeriveApplyMileage(dayKey,derived){
+  if(typeof mileage==='undefined'||!Array.isArray(mileage))return;
+  const keep=['vehicle','vehicleId','purpose','notes','receiptId','deductible'];
+  const byId={};
+  mileage.forEach(m=>{if(m&&m.id!=null)byId[String(m.id)]=m;});
+  const ids=new Set((derived||[]).map(m=>String(m.id)));
+  for(let i=mileage.length-1;i>=0;i--){
+    const m=mileage[i];
+    if(m&&m.gps===true&&m.date===dayKey&&!ids.has(String(m.id)))mileage.splice(i,1);
+  }
+  (derived||[]).forEach(m=>{
+    const old=byId[String(m.id)];
+    const row=Object.assign({},m);
+    if(old)keep.forEach(k=>{if(old[k]!=null&&old[k]!=='')row[k]=old[k];});
+    const at=mileage.findIndex(x=>x&&String(x.id)===String(m.id));
+    if(at>=0)mileage[at]=Object.assign(mileage[at],row);else mileage.push(row);
+  });
+}
+
+// One day, end to end. Returns the deriver's result, or null when there was
+// nothing to derive from.
+async function _geoDeriveDayNow(dayKey,serverFixes){
+  try{
+    if(typeof geoDeriveDay!=='function'||!_supaUser)return null;
+    const b=_geoDayBounds(dayKey);
+    if(!b)return null;
+    const tape=await _geoDeriveTape(b.start-2*3600000);
+    // Nothing positively covering this day: leave its rows alone.
+    if(!tape.some(t=>t.ts>=b.start-2*3600000&&t.ts<b.end))return null;
+    const fixes=_geoFixLogRead().concat(Array.isArray(serverFixes)?serverFixes:[]);
+    const res=geoDeriveDay({
+      day:dayKey,dayStart:b.start,dayEnd:b.end,personId:_supaUser.id,
+      tape,fixes,fences:_geoDeriveFences(dayKey),nowMs:Date.now(),
+    });
+    const rows=geoDeriveRows(res,{contractorId:_geoCid(),employeeId:_supaUser.id});
+    _geoEnqueueRpc(dayKey,{
+      p_contractor:_geoCid(),p_employee:_supaUser.id,p_day:dayKey,
+      p_day_start:new Date(b.start).toISOString(),p_day_end:new Date(b.end).toISOString(),
+      p_time:rows.job_time_entries,p_shop:rows.shop_time_entries,p_miles:rows.td_mileage,
+    });
+    _geoDeriveApplyMileage(dayKey,rows.td_mileage);
+    try{_geoParkNote('derived',dayKey+' '+res.dwells.length+'d/'+res.legs.length+'l'+(res.pending?' pending':'')+(res.open?' open':''));}catch(_e){}
+    try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
+    return res;
+  }catch(_e){return null;}
+}
+
+let _geoDeriveLiveT=null;
+function _geoDeriveLiveSoon(why){
+  if(_geoDeriveLiveT)clearTimeout(_geoDeriveLiveT);
+  _geoDeriveLiveT=setTimeout(()=>{_geoDeriveLiveT=null;_geoDeriveDayNow(_geoDayKeyOf(Date.now(),_geoBizTz()),null);},4000);
+}
+
+async function _geoDeriveRebuild(){
+  const today=_geoDayKeyOf(Date.now(),_geoBizTz());
+  const b=_geoDayBounds(today);
+  if(!b)return 0;
+  const from=b.start-(_GEO_DERIVE_DAYS-1)*86400000-2*3600000;
+  const server=await _geoDeriveServerFixes(from,b.end);
+  let n=0;
+  for(let i=_GEO_DERIVE_DAYS-1;i>=0;i--){
+    const d=_geoDayKeyOf(b.start-i*86400000+3600000,_geoBizTz());
+    const r=await _geoDeriveDayNow(d,server);
+    if(r)n++;
+  }
+  return n;
+}
+let _geoDeriveRebuildT=null;
+function _geoDeriveRebuildSoon(){
+  if(window._geoDeriveRebuilt||_geoDeriveRebuildT)return;
+  _geoDeriveRebuildT=setTimeout(()=>{_geoDeriveRebuildT=null;window._geoDeriveRebuilt=true;_geoDeriveRebuild();},8000);
+}
