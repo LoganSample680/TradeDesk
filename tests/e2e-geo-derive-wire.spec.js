@@ -34,6 +34,7 @@ test.describe('geo-derive wiring', () => {
     await waitForAppBoot(page);
     await page.evaluate(() => {
       window.__realDrain = _geoDrainQueue;
+      window.__realRoute = _routeDistance;   // the specs above stub it; the router test needs the real one
       window.supaLoadFromCloud = async () => {};
       window._supaUser = window._supaUser || { id: '30a2b589-e081-4351-9f18-b1efba238c2d', email: 'o@t.com' };
       localStorage.removeItem('zp3_geo_queue');
@@ -529,6 +530,88 @@ test.describe('geo-derive wiring', () => {
       expect(r.driven).toBeLessThan(3.9);
       expect(r.via).toEqual([r.driven, 'derived-via', 3.9]);
       expect(r.late, 'no fence-to-fence trace to cap with: the router stands').toEqual([3.9, 'derived-routed']);
+    });
+
+    // The router picks the fastest road, not the one driven: Doe to the shop
+    // came back 3.9 by the highway for a drive the owner makes in 3.2 on the
+    // surface streets, on a leg whose radio was off and whose trace was seven
+    // points (2026-09-02, "mileage route is wrong"). Seven points still say
+    // which road it was.
+    test('a thin trace steers the router through its breadcrumbs; a collapsed leg stays on the direct route', async () => {
+      const r = await page.evaluate(async () => {
+        const calls = [];
+        window._routeDistance = async (f, t, via) => { calls.push(Array.isArray(via) ? via.length : -1); return { miles: (via && via.length) ? 3.2 : 3.9, mins: 10 }; };
+        localStorage.removeItem('zp3_geo_routes');
+        const from = { lat: 39.0132, lng: -95.7462 }, to = { lat: 39.0308, lng: -95.7112 };
+        const t0 = Date.parse('2026-09-02T17:02:27Z'), t1 = Date.parse('2026-09-02T17:12:37Z');
+        const iso = t => new Date(t).toISOString();
+        // The owner's actual seven points: two at the origin fence, one just
+        // outside it, one mid-drive repeated with a stale position, one at
+        // the shop.
+        const path = [[39.01339, -95.74587, t0 + 41000], [39.01339, -95.74587, t0 + 58000], [39.01245, -95.7401, t0 + 125000],
+          [39.02946, -95.72357, t0 + 425000], [39.02946, -95.72357, t0 + 471000], [39.03078, -95.71122, t1]];
+        const thin = { id: 't', fromCoord: from, toCoord: to, startedIso: iso(t0), endedIso: iso(t1), miles: 2.5, gpsMiles: 2.5, calc_method: 'derived-path', path };
+        const collapsed = { id: 'c', fromCoord: from, toCoord: to, startedIso: iso(t0), endedIso: iso(t1), miles: 2.3, gpsMiles: 0, calc_method: 'derived-straight', collapsedStops: 1, path };
+        const bare = { id: 'b', fromCoord: from, toCoord: to, startedIso: iso(t0), endedIso: iso(t1), miles: 2.3, gpsMiles: 0, calc_method: 'derived-straight', path: [] };
+        const via = _geoRouteVia(thin);
+        await _geoDeriveRouteMiles([thin, collapsed, bare]);
+        // A dense trace hands the router at most a handful, spread down the road.
+        const many = Object.assign({}, thin, { path: Array.from({ length: 60 }, (_, i) => [from.lat + (to.lat - from.lat) * i / 59, from.lng + (to.lng - from.lng) * i / 59, t0 + (t1 - t0) * i / 59]) });
+        const spread = _geoRouteVia(many);
+        return { via, calls, thin: [thin.miles, thin.calc_method, thin.routeMiles], collapsed: [collapsed.miles, collapsed.calc_method], driven: Math.round(_milePathMiles(collapsed) * 10) / 10, bare: [bare.miles, bare.calc_method],
+          spread: spread.length, spreadOrdered: spread.every((c, i, a) => i === 0 || c.lat > a[i - 1].lat), cache: Object.keys(JSON.parse(localStorage.getItem('zp3_geo_routes') || '{}')) };
+      });
+      // Only the two points clear of both fences, the stale repeat dropped.
+      expect(r.via).toEqual([{ lat: 39.01245, lng: -95.7401 }, { lat: 39.02946, lng: -95.72357 }]);
+      // The collapsed and the bare leg ask the same direct question: one router call, then the cache.
+      expect(r.calls).toEqual([2, 0]);
+      expect(r.thin).toEqual([3.2, 'derived-routed', 3.2]);
+      // Rule 6: the direct route asked without waypoints (the stop is not on
+      // it), then capped by the road driven since this trace spans fence to fence.
+      expect(r.collapsed).toEqual([r.driven, 'derived-via']);
+      expect(r.driven).toBeLessThan(3.9);
+      expect(r.bare).toEqual([3.9, 'derived-routed']);
+      expect(r.spread).toBe(4);
+      expect(r.spreadOrdered).toBe(true);
+      // The steered and the direct answers are different routes: different cache keys.
+      expect(r.cache).toHaveLength(2);
+      expect(r.cache.some(k => k.split('>').length === 4)).toBe(true);
+    });
+
+    test('_routeDistance carries the waypoints to every router it asks', async () => {
+      const r = await page.evaluate(async () => {
+        const from = { lat: 39.0132, lng: -95.7462 }, to = { lat: 39.0308, lng: -95.7112 }, via = [{ lat: 39.01245, lng: -95.7401 }, { lat: 39.02946, lng: -95.72357 }];
+        _routeDistance = window.__realRoute;
+        const realFetch = window.fetch, realReady = _mapkitReady, realMapkit = window.mapkit;   // _mapkitReady is a script-scoped let
+        const seen = [];
+        window.fetch = async (u, o) => {
+          seen.push({ u: String(u), body: o && o.body ? JSON.parse(o.body) : null });
+          if (/valhalla/.test(String(u))) return { json: async () => ({ trip: { summary: { length: 3.2, time: 600 } } }) };
+          return { json: async () => ({ code: 'Ok', routes: [{ distance: 3.2 * 1609.344, duration: 600 }] }) };
+        };
+        try {
+          _mapkitReady = false;
+          const a = await _routeDistance(from, to, via);
+          const b = await _routeDistance(from, to);
+          // MapKit: one origin to one destination per request, so the
+          // waypoint route is the sum of its segments.
+          const legs = [];
+          window.mapkit = { Coordinate: function (lat, lng) { this.lat = lat; this.lng = lng; }, Directions: function () { this.route = (req, cb) => { legs.push([req.origin.lat, req.destination.lat]); cb(null, { routes: [{ distance: 1000, expectedTravelTime: 120 }] }); }; } };
+          window.mapkit.Directions.Transport = { Automobile: 'auto' };
+          _mapkitReady = true;
+          const c = await _routeDistance(from, to, via);
+          return { a, b, c, legs, seen };
+        } finally { window.fetch = realFetch; _mapkitReady = realReady; if (realMapkit) window.mapkit = realMapkit; else delete window.mapkit; }
+      });
+      expect(r.a).toEqual({ miles: 3.2, mins: 10 });
+      const val = r.seen.filter(s => /valhalla/.test(s.u));
+      expect(val[0].body.locations).toEqual([{ lon: -95.7462, lat: 39.0132 }, { lon: -95.7401, lat: 39.01245, type: 'through' }, { lon: -95.72357, lat: 39.02946, type: 'through' }, { lon: -95.7112, lat: 39.0308 }]);
+      expect(val[1].body.locations).toEqual([{ lon: -95.7462, lat: 39.0132 }, { lon: -95.7112, lat: 39.0308 }]);
+      const osrm = r.seen.filter(s => /osrm/.test(s.u));
+      expect(osrm[0].u).toContain('/driving/-95.7462,39.0132;-95.7401,39.01245;-95.72357,39.02946;-95.7112,39.0308?');
+      expect(osrm[1].u).toContain('/driving/-95.7462,39.0132;-95.7112,39.0308?');
+      expect(r.legs).toEqual([[39.0132, 39.01245], [39.01245, 39.02946], [39.02946, 39.0308]]);
+      expect(r.c).toEqual({ miles: 1.9, mins: 6 });
     });
 
     test('the legs paint the moment the day is derived; the road miles are a second paint', async () => {

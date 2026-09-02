@@ -1527,33 +1527,41 @@ function _poiPlaceKind(category){
   if(/Restaurant|Cafe|Food|Bakery|Brewery|Bar/i.test(c))return 'other';
   return 'supply';
 }
-async function _routeDistance(fromCoords,toCoords){
-  // MapKit Directions, primary
+// via: optional waypoints ({lat,lng}) the route must pass through, in order.
+// The deriver hands it the breadcrumbs of a thin trace so the router
+// measures the road the truck took, not the fastest one it would suggest.
+async function _routeDistance(fromCoords,toCoords,via){
+  const stops=[fromCoords].concat(Array.isArray(via)?via.filter(v=>v&&isFinite(v.lat)&&isFinite(v.lng)):[],[toCoords]);
+  // MapKit Directions, primary. MapKit JS routes one origin to one
+  // destination, so a route with waypoints is the sum of its segments.
   if(_mapkitReady){
     try{
-      return await new Promise((resolve,reject)=>{
+      const seg=(a,b)=>new Promise((resolve,reject)=>{
         const d=new mapkit.Directions();
         d.route({
-          origin:new mapkit.Coordinate(fromCoords.lat,fromCoords.lng),
-          destination:new mapkit.Coordinate(toCoords.lat,toCoords.lng),
+          origin:new mapkit.Coordinate(a.lat,a.lng),
+          destination:new mapkit.Coordinate(b.lat,b.lng),
           transportType:mapkit.Directions.Transport.Automobile,
           requestsAlternateRoutes:false
         },(err,data)=>{
           if(err||!data?.routes?.[0]){reject(new Error('mapkit'));return;}
           const r=data.routes[0];
-          resolve({miles:Math.round(r.distance/1609.344*10)/10,mins:Math.round(r.expectedTravelTime/60)});
+          resolve({m:Number(r.distance)||0,s:Number(r.expectedTravelTime)||0});
         });
       });
+      const parts=await Promise.all(stops.slice(1).map((b,i)=>seg(stops[i],b)));
+      const m=parts.reduce((t,p)=>t+p.m,0),s=parts.reduce((t,p)=>t+p.s,0);
+      return {miles:Math.round(m/1609.344*10)/10,mins:Math.round(s/60)};
     }catch(e){}
   }
   // Fallback: Valhalla + OSRM in parallel
-  const body={locations:[{lon:fromCoords.lng,lat:fromCoords.lat},{lon:toCoords.lng,lat:toCoords.lat}],costing:'auto',directions_options:{units:'miles'}};
+  const body={locations:stops.map((c,i)=>(i===0||i===stops.length-1)?{lon:c.lng,lat:c.lat}:{lon:c.lng,lat:c.lat,type:'through'}),costing:'auto',directions_options:{units:'miles'}};
   const valhallaP=fetch('https://valhalla1.openstreetmap.de/route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)})
     .then(r=>r.json()).then(d=>{
       if(d?.trip)return{miles:Math.round(d.trip.summary.length*10)/10,mins:Math.round(d.trip.summary.time/60)};
       throw new Error('valhalla');
     });
-  const osrmP=fetch(`https://router.project-osrm.org/route/v1/driving/${fromCoords.lng},${fromCoords.lat};${toCoords.lng},${toCoords.lat}?overview=false`,{signal:AbortSignal.timeout(10000)})
+  const osrmP=fetch(`https://router.project-osrm.org/route/v1/driving/${stops.map(c=>c.lng+','+c.lat).join(';')}?overview=false`,{signal:AbortSignal.timeout(10000)})
     .then(r=>r.json()).then(d=>{
       if(d?.code==='Ok'&&d.routes?.[0])return{miles:Math.round(d.routes[0].distance/1609.344*10)/10,mins:Math.round(d.routes[0].duration/60)};
       throw new Error('osrm');

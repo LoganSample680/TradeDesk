@@ -326,6 +326,30 @@ test.describe('geofence ingest contract', () => {
     expect(addCol[0], 'and re-runnable').toMatch(/if not exists/i);
   });
 
+  // ── THE PHONE CAN READ WHAT THE SERVER KEEPS ─────────────────────────────
+  // geo_events was born deny-all (20260830: RLS on, no policy, "raw events
+  // are ops data"). The day deriver then made the phone a reader of that
+  // table, and for as long as no policy said so, Postgres answered every
+  // fetch with zero rows and no error: a 3-mile drive the server held 80
+  // breadcrumbs for painted as a 3-point line (owner 2026-09-02). A read the
+  // client makes has to be a read a migration grants, in the same tree.
+  test('every table the deriver reads from the phone has a select policy in the migrations', () => {
+    const client = CLIENT();
+    const reads = new Set();
+    client.replace(/_supa\.from\('(geo_events|location_pings)'\)\.select\(/g, (_, t) => { reads.add(t); return _; });
+    expect([...reads].sort(), 'the deriver reads both').toEqual(['geo_events', 'location_pings']);
+    const dir = path.join(__dirname, '..', 'supabase', 'migrations');
+    const sql = fs.readdirSync(dir).filter(f => /\.sql$/.test(f)).map(f => readSrc('supabase/migrations/' + f)).join('\n');
+    reads.forEach(t => {
+      const re = new RegExp('create policy\\s+("[^"]+"|\\S+)\\s+on\\s+(public\\.)?' + t + '\\s+for\\s+(select|all)\\b', 'i');
+      expect(sql, t + ' needs a policy a signed-in phone can read through').toMatch(re);
+    });
+    // Reads only: the raw event row is the service role's to write.
+    const own = readSrc('supabase/migrations/20260908_geo_events_read_policy.sql');
+    expect(own).toMatch(/for select using \(auth\.uid\(\)::text = employee_user_id::text\)/);
+    expect(own).not.toMatch(/for (all|insert|update|delete)/i);
+  });
+
   test('no console errors', async () => {
     await assertNoErrors(page);
   });

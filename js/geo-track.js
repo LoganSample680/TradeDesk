@@ -6107,11 +6107,14 @@ async function _geoDeriveTape(sinceMs){
 
 // The server's fixes for a window: what other wakes flushed while the app was
 // dead. Folded into the local log for the boot rebuild only.
-// Every row, in order. The single call with limit(5000) and no ORDER BY
-// that this replaces returned whichever 5,000 rows Postgres reached first
-// across a whole week, so a ten-minute leg with 127 fixes on the server
-// came back with 16 of them (owner 2026-09-02: trips 2 and 4 at 3.9). Paged
-// by capture time until a short page says the window is exhausted.
+// Every row, in order, paged by capture time until a short page says the
+// window is exhausted (the single call with limit(5000) and no ORDER BY it
+// replaced returned whichever rows Postgres reached first).
+// Until 20260908_geo_events_read_policy these reads returned ZERO rows: the
+// table was deny-all to clients, so every rebuild ran on the phone's own
+// thin log plus the crew-map pings and read a 3-mile drive as a 3-point
+// line (owner 2026-09-02, "mileage route is wrong"). If the trace is thin
+// while the server is dense, check the policy before the query.
 // A heartbeat's position is the 3 km keepalive fix: not a breadcrumb.
 const _GEO_FRESH_FIX_TYPES=['fix','push-ping'];
 const _GEO_FETCH_PAGE=1000;
@@ -6213,7 +6216,36 @@ function _geoTraceComplete(m){
 let _GEO_ROUTE_TIMEOUT_MS=8000;
 const _GEO_ROUTE_CACHE_KEY='zp3_geo_routes';
 const _GEO_ROUTE_CACHE_MAX=400;
-function _geoRouteKey(a,b){const r=v=>Math.round(Number(v)*1e4)/1e4;return r(a.lat)+','+r(a.lng)+'>'+r(b.lat)+','+r(b.lng);}
+function _geoRouteKey(a,b,via){const r=v=>Math.round(Number(v)*1e4)/1e4;return r(a.lat)+','+r(a.lng)+'>'+(Array.isArray(via)&&via.length?via.map(v=>r(v.lat)+','+r(v.lng)).join('>')+'>':'')+r(b.lat)+','+r(b.lng);}
+// The router picks the FASTEST road, not the one the truck took: asked for
+// Doe to the shop it answered 3.9 by the highway for a drive the owner does
+// in 3.2 on the surface streets (2026-09-02). A thin trace cannot be the
+// miles, but the few breadcrumbs it has still say which road it was, so the
+// router is steered through them. Interior points only, clear of both
+// fences (a stale point next to a fence steers nothing), duplicates
+// dropped, thinned evenly to a handful so a route stays one request.
+const _GEO_ROUTE_VIA_MAX=4;
+function _geoRouteVia(m){
+  try{
+    const p=m&&m.path;
+    if(!Array.isArray(p)||p.length<3||typeof _geoDistFt!=='function')return [];
+    const ends=[m.fromCoord,m.toCoord].filter(c=>c&&isFinite(c.lat)&&isFinite(c.lng));
+    const pts=[];
+    for(let i=1;i<p.length-1;i++){
+      const pt=p[i];
+      if(!Array.isArray(pt)||!isFinite(+pt[0])||!isFinite(+pt[1]))continue;
+      const c={lat:+pt[0],lng:+pt[1]};
+      if(ends.some(e=>_geoDistFt(c,e)<=_GEO_TRACE_END_FT))continue;
+      const last=pts[pts.length-1];
+      if(last&&last.lat===c.lat&&last.lng===c.lng)continue;
+      pts.push(c);
+    }
+    if(pts.length<=_GEO_ROUTE_VIA_MAX)return pts;
+    const out=[];
+    for(let i=0;i<_GEO_ROUTE_VIA_MAX;i++)out.push(pts[Math.round((i+1)*(pts.length-1)/(_GEO_ROUTE_VIA_MAX+1))]);
+    return out.filter((c,i,a)=>i===0||c!==a[i-1]);
+  }catch(_e){return [];}
+}
 function _geoRouteCacheRead(){try{const c=JSON.parse(localStorage.getItem(_GEO_ROUTE_CACHE_KEY)||'{}');return (c&&typeof c==='object')?c:{};}catch(_e){return {};}}
 async function _geoDeriveRouteMiles(rows){
   if(!Array.isArray(rows)||typeof _routeDistance!=='function')return rows;
@@ -6222,13 +6254,17 @@ async function _geoDeriveRouteMiles(rows){
   for(const m of rows){
     try{
       if(!m||!m.fromCoord||!m.toCoord||!isFinite(m.fromCoord.lat)||!isFinite(m.toCoord.lat))continue;
-      const k=_geoRouteKey(m.fromCoord,m.toCoord);
+      // A leg collapsed through a personal stop is billed at the DIRECT
+      // route (rule 6): no breadcrumbs steer that one, they run through the
+      // stop. Every other leg's router is steered down the road it drove.
+      const steer=(Number(m.collapsedStops)>0)?[]:_geoRouteVia(m);
+      const k=_geoRouteKey(m.fromCoord,m.toCoord,steer);
       let routed=Number(cache[k]);
       if(!(routed>0)){
         // Bounded: MapKit's directions callback can simply never come
         // (offline, blocked), and an unbounded await here stalled the whole
         // boot rebuild behind one leg (owner 2026-09-02, the 11:39 reopen).
-        const r=await Promise.race([_routeDistance(m.fromCoord,m.toCoord),new Promise(res=>setTimeout(()=>res(null),_GEO_ROUTE_TIMEOUT_MS))]);
+        const r=await Promise.race([_routeDistance(m.fromCoord,m.toCoord,steer),new Promise(res=>setTimeout(()=>res(null),_GEO_ROUTE_TIMEOUT_MS))]);
         routed=(r&&Number(r.miles)>0)?Math.round(Number(r.miles)*10)/10:0;
         if(routed>0){cache[k]=routed;dirty=true;}
       }
