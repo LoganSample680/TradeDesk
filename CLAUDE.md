@@ -1892,9 +1892,12 @@ supposed to be. That design is gone. The rule now:
   Same fence both ends is a round trip. Unresolved by midnight writes nothing;
   the manual clock covers it. A dwell is a row only between an arrival and a
   departure, with one exception: app-open minutes inside a home-office fence
-  are an Office row (rule 10, owner 2026-09-02), with or without a drive, on
-  no-drive days too, carved out of any surrounding home dwell and proven by
-  fixes inside the fence.
+  are an Office row (rule 10, owner 2026-09-02) ONLY outside the working
+  day: before the first drive, after the last real work, or on a day with
+  no drive at all ("never office time unless it's outside of business hours
+  and we're home actively with the app open"). Inside the working day the
+  house is whatever the dwell says (the shop, a stop), never Office. Carved
+  out of any surrounding home dwell and proven by fixes inside the fence.
 - **`geo_replace_day` (Supabase RPC) is the only writer of automatic rows.**
   It replaces one person's automatic rows for one day in one transaction,
   refuses any set with an overlap, preserves manual clocks and hand-fixed

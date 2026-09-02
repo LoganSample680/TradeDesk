@@ -66,10 +66,15 @@
 //      drive) are not automatic rows: home is not work, and if it was, the
 //      clock says so.
 //  10. EXCEPT PAPERWORK (owner 2026-09-02: "if it's a home office, app time
-//      still counts", and "yes, count it on no-drive days"). Inside a
-//      home-office fence, minutes with the app OPEN are an Office row, with
-//      or without a drive on either side, on a Sunday of invoicing too. They
-//      are carved out of any surrounding home dwell, never laid on top of it,
+//      still counts", "yes, count it on no-drive days", and then the edge:
+//      "office throws in after the fact for true app time after hours,
+//      that's it; never office time unless it's outside of business hours
+//      and we're home actively with the app open"). Inside a home-office
+//      fence, minutes with the app OPEN are an Office row ONLY outside the
+//      working day: before the first drive, after the last real work, or
+//      on a day with no drive at all. Inside the working day the house is
+//      whatever the dwell says it is (the shop, a home stop), never Office.
+//      Carved out of any surrounding home dwell, never laid on top of it,
 //      so no minute is counted twice. Presence is proven by fixes inside the
 //      fence, never assumed from the app being open somewhere.
 //  12. THE TRUCK WAS WHERE THE PHONE SAT (owner 2026-09-02). A departure's
@@ -416,7 +421,7 @@ function geoDeriveDay(input) {
   }
 
   // Rule 10: paperwork at the home office.
-  const carved = _gdOffice(dwells, open, fixes, fences, inp.appEvents, dayStart, dayEnd, nowMs, opts);
+  const carved = _gdOffice(dwells, open, journeys, fixes, fences, inp.appEvents, dayStart, dayEnd, nowMs, opts);
   // Rule 11: the day ends with the last real work.
   const ended = _gdEndOfDay(carved, fences, opts, open, journeys.some(j => j && j.open));
 
@@ -472,10 +477,38 @@ function _gdIntersect(A, B) {
   return out.sort((x, y) => x[0] - y[0]);
 }
 
+// The working day: from the first drive to the end of the last real work.
+// Inside it the house is the shop or a stop, never Office; the office rule
+// applies before it, after it, and on a day that never had a drive. The end
+// is open (Infinity) while a work dwell is open or the truck is on the road,
+// the same "the day is not over" reading rule 11 uses.
+function _gdWorkWindow(dwells, journeys, open) {
+  const js = (journeys || []).filter(j => j && typeof j.startTs === 'number');
+  if (!js.length) return null;                            // no drive: no working day
+  const start = Math.min.apply(null, js.map(j => j.startTs));
+  const work = (dwells || []).filter(d => d && !_gdIsBaseKind(d.kind) && d.kind !== 'office');
+  const openWork = !!(open && !_gdIsBaseKind(open.kind) && open.kind !== 'office');
+  const driving = js.some(j => j.open);
+  const end = (openWork || driving) ? Infinity : (work.length ? Math.max.apply(null, work.map(d => d.endTs)) : start);
+  return [start, end];
+}
+
 // Office rows for every home-office fence, carved out of home dwells.
-function _gdOffice(dwells, open, fixes, fences, appEvents, dayStart, dayEnd, nowMs, opts) {
+function _gdOffice(dwells, open, journeys, fixes, fences, appEvents, dayStart, dayEnd, nowMs, opts) {
   const homes = (fences || []).filter(f => f && String(f.kind) === 'home_office' && f.lat != null && f.lng != null);
-  const appOpen = _gdAppOpen(appEvents, dayStart, dayEnd, nowMs);
+  let appOpen = _gdAppOpen(appEvents, dayStart, dayEnd, nowMs);
+  // Owner 2026-09-02: "never office time unless it's outside of business
+  // hours." His 12:37 at the shop (which is the house) with the app open
+  // came out as a two-minute Office row in the middle of a work day, laid
+  // over shop time, and the writer refused the overlap. Outside the working
+  // day only: before the first drive, after the last work.
+  const win = _gdWorkWindow(dwells, journeys, open);
+  if (win) {
+    const outside = [];
+    if (win[0] > dayStart) outside.push([dayStart, win[0]]);
+    if (win[1] < dayEnd) outside.push([win[1], dayEnd]);
+    appOpen = _gdIntersect(appOpen, outside);
+  }
   if (!homes.length || !appOpen.length) return dwells;
   let out = dwells.slice();
   for (const home of homes) {

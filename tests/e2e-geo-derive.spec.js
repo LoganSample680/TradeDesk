@@ -414,15 +414,19 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs), d.minutes])).toEqual([['office', '15:00', '16:00', 60], ['office', '16:30', '16:45', 15]]);
     });
 
-    test('inside a home dwell between two drives it is carved out, never laid on top', async () => {
+    // Until 2026-09-02 (afternoon) this expected the half hour with the app
+    // open to be carved out of the midday home dwell as Office. The owner
+    // then drew the line: "never office time unless it's outside of business
+    // hours." Inside the working day the house is a home stop, whole, and
+    // the app being open changes nothing.
+    test('inside a home dwell between two drives nothing is carved: the working day is not office hours', async () => {
       const tape = [mo(T(8, 0), 'onFoot'), mo(T(11, 40), 'driving'), mo(T(12, 0), 'onFoot'), mo(T(14, 0), 'driving'), mo(T(14, 20), 'onFoot')];
       const fixes = [fix(T(11, 40, 5), DOE), fix(T(12, 0, 5), HFIX), fix(T(13, 0), HFIX), fix(T(14, 0, 5), HFIX), fix(T(14, 20, 5), DOE), fix(T(15, 0), DOE)];
       const appEvents = [app(T(12, 30), 'active'), app(T(13, 0), 'background')];
       const r = await run(page, base({ tape, fixes, fences: F, appEvents }));
       const home = r.dwells.filter(d => _sameId(d.fence, HOMEONLY));
-      expect(home.map(d => [d.kind, hm(d.startTs), hm(d.endTs), d.minutes])).toEqual([
-        ['home_office', '17:00', '17:30', 30], ['office', '17:30', '18:00', 30], ['home_office', '18:00', '19:00', 60],
-      ]);
+      expect(home.map(d => [d.kind, hm(d.startTs), hm(d.endTs), d.minutes])).toEqual([['home_office', '17:00', '19:00', 120]]);
+      expect(r.dwells.filter(d => d.kind === 'office')).toEqual([]);
       expect(home.reduce((s, d) => s + d.minutes, 0)).toBe(120);
       const spans = r.dwells.map(d => [d.startTs, d.endTs]).concat(r.legs.map(l => [l.startTs, l.endTs])).sort((a, b) => a[0] - b[0]);
       for (let i = 1; i < spans.length; i++) expect(spans[i][0]).toBeGreaterThanOrEqual(spans[i - 1][1]);
@@ -712,6 +716,29 @@ test.describe('geo-derive: the day deriver', () => {
       const fixes = [fix(T(7, 30, 5), HFIX), fix(T(7, 50, 5), YFIX), fix(T(12, 0), YFIX), fix(T(16, 0, 5), YFIX), fix(T(16, 20, 5), HFIX), fix(T(17, 0), HFIX)];
       const r = await run(page, base({ tape, fixes, fences: [YARD, HOME] }));
       expect(r.dwells.map(d => [d.kind, d.minutes, !!d.wrapped])).toEqual([['shop', 490, false]]);
+    });
+
+    // Owner 2026-09-02, 4:30pm: "that was all shop time; office throws in
+    // after the fact for true app time after hours, that's it." His 12:37
+    // with the app open at the shop (the house) came out as a two-minute
+    // Office row inside the work day, over the shop time, and the writer
+    // refused the overlap: the day never landed.
+    test('inside the working day the house is the shop, never Office, app open or not', async () => {
+      const tape = [mo(T(7, 40), 'onFoot'), mo(T(7, 52), 'driving'), mo(T(8, 3), 'onFoot'), mo(T(12, 2), 'driving'), mo(T(12, 12), 'onFoot'),
+        mo(T(12, 47), 'driving'), mo(T(12, 55), 'onFoot')];
+      const fixes = [fix(T(7, 52, 5), SHOP), fix(T(8, 3, 5), DOE), fix(T(12, 2, 5), DOE), fix(T(12, 12, 5), HFIX), fix(T(12, 38), HFIX),
+        fix(T(12, 47, 5), HFIX), fix(T(12, 55, 5), DOE), fix(T(12, 58), DOE)];
+      const appEvents = [{ ts: T(12, 37, 33), kind: 'active' }, { ts: T(12, 39, 50), kind: 'background' }];
+      const r = await run(page, base({ tape, fixes, appEvents, nowMs: T(13, 0) }));
+      expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)])).toEqual([['client', '13:03', '17:02'], ['shop', '17:12', '17:47']]);
+      // The same two minutes with the app open at 6:30 that morning, before
+      // the first drive, are paperwork.
+      const early = [{ ts: T(6, 30), kind: 'active' }, { ts: T(6, 50), kind: 'background' }];
+      const r2 = await run(page, base({ tape, fixes: [fix(T(6, 35), HFIX)].concat(fixes), appEvents: early.concat(appEvents), nowMs: T(13, 0) }));
+      expect(r2.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)])).toEqual([['office', '11:35', '11:50'], ['client', '13:03', '17:02'], ['shop', '17:12', '17:47']]);
+      // Nothing in the derived set overlaps: the writer would refuse it.
+      const spans = r2.dwells.map(d => [d.startTs, d.endTs]).sort((a, b) => a[0] - b[0]);
+      for (let i = 1; i < spans.length; i++) expect(spans[i][0]).toBeGreaterThanOrEqual(spans[i - 1][1]);
     });
 
     test('paperwork at home after the last job still counts: rule 10 outranks rule 11', async () => {
