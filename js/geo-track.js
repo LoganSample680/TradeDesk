@@ -6435,7 +6435,19 @@ function _geoDeriveAppVer(){try{return (typeof APP_VERSION!=='undefined'&&APP_VE
 function _geoDeriveRebuildDays(){
   try{const seen=localStorage.getItem(_GEO_DERIVE_VER_KEY)||'';const ver=_geoDeriveAppVer();return (ver&&seen===ver)?_GEO_DERIVE_DAYS_LIVE:_GEO_DERIVE_DAYS;}catch(_e){return _GEO_DERIVE_DAYS_LIVE;}
 }
-async function _geoDeriveRebuild(){
+// One rebuild at a time. _geoDeriveRebuiltAt is stamped when a rebuild
+// FINISHES, so a stale check arriving while one is still running (an
+// app-active during the boot rebuild, or two checks a few ms apart, which
+// is how CI caught it on WebKit) used to start a second one on top of the
+// first: two rebuilds re-deriving the same days and both writing them. The
+// running one is handed back instead.
+let _geoDeriveRebuildP=null;
+function _geoDeriveRebuild(){
+  if(_geoDeriveRebuildP)return _geoDeriveRebuildP;
+  _geoDeriveRebuildP=_geoDeriveRebuildRun().finally(()=>{_geoDeriveRebuildP=null;});
+  return _geoDeriveRebuildP;
+}
+async function _geoDeriveRebuildRun(){
   const today=_geoDayKeyOf(Date.now(),_geoBizTz());
   const b=_geoDayBounds(today);
   if(!b)return 0;

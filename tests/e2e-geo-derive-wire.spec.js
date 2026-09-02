@@ -739,6 +739,38 @@ test.describe('geo-derive wiring', () => {
       expect(r.ran).toBe(2);
     });
 
+    // CI, WebKit, 2026-09-02: the test above counted four days for two
+    // rebuilds. A stale check that lands while a rebuild is still running
+    // started another on top of it, because the finished stamp is written
+    // at the END. One rebuild at a time; the second caller gets the first.
+    test('a rebuild already running is handed back, never doubled', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        const days = [];
+        const origNow = window._geoDeriveDayNow, real = window.__realServerFixes = window.__realServerFixes || _geoDeriveServerFixes;
+        window._geoDeriveDayNow = async (d) => { days.push(d); await new Promise(res => setTimeout(res, 30)); return { dwells: [], legs: [] }; };
+        window._geoDeriveServerFixes = async () => { const o = []; o.appEvents = []; return o; };
+        try {
+          localStorage.setItem('zp3_geo_derive_ver', APP_VERSION);
+          window._geoDeriveRebuilt = true; _geoDeriveRebuildT = null;
+          _geoDeriveRebuiltAt = Date.now() - 31 * 60000;
+          const p1 = _geoDeriveRebuild();
+          const stale = _geoDeriveRebuildIfStale();          // lands mid-rebuild
+          const p2 = _geoDeriveRebuild();
+          const shared = p1 === p2;
+          await Promise.all([p1, p2]);
+          const once = days.length;
+          // Finished: the next call is a fresh rebuild again.
+          await _geoDeriveRebuild();
+          return { stale, shared, once, twice: days.length };
+        } finally { window._geoDeriveDayNow = origNow; window._geoDeriveServerFixes = real; }
+      });
+      expect(r.stale).toBe(true);
+      expect(r.shared).toBe(true);
+      expect(r.once).toBe(2);
+      expect(r.twice).toBe(4);
+    });
+
     test('the dashboard card shows the open dwell with an arrival stamp and a figure that ticks', async () => {
       const r = await page.evaluate(async () => {
         const since = Date.now() - 95 * 60000;
