@@ -220,6 +220,19 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
     expect(r.again, 'an open window is left alone').toBe(false);
   });
 
+  test('a live fence exit with a quiet motion stream asks the history, and the window opens on the exit alone', async () => {
+    const r = await run(`
+      const now = Date.now();
+      window._geoDeriveTape = async () => [{ ts: now - 20 * 60000, kind: 'onFoot' }, { ts: now - 110000, kind: 'driving' }];
+      await _geoTdEvent({ type: 'regionExit', ts: now, lat: 39.1, lng: -94.1, acc: 12, regionId: 'client-1' }, false);
+      await new Promise(res => setTimeout(res, 50));
+      return { open: _geoDriveWindowOn(), mode: (calls[0] || {}).mode, why: _geoDriveWinWhy };
+    `);
+    expect(r.open).toBe(true);
+    expect(r.mode).toBe('drive');
+    expect(r.why).toMatch(/tape-now fence-exit/);
+  });
+
   test('the tape saying anything else is not: a walk after the flip, an old flip, no history, junk', async () => {
     const r = await run(`
       const now = Date.now();

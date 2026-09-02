@@ -4780,7 +4780,13 @@ async function _geoTdEvent(ev,replay){
   // apart.
   if(ev.type==='regionExit'&&_geoEvFresh(ev)){
     if(replay)_geoDriveWindowOpen('fence-exit-replay');
-    else _geoDriveCorrelate('fix',Number(ev.ts)||Date.now(),'fence-exit');
+    else{
+      _geoDriveCorrelate('fix',Number(ev.ts)||Date.now(),'fence-exit');
+      // A fence exit is a wake, and the wake may find CoreMotion with nothing
+      // new to announce (owner 2026-09-02, 12:04). The history is asked the
+      // same question the live stream did not answer: driving right now?
+      if(!_geoDriveWinAt)_geoTapeDriveCheck('fence-exit');
+    }
   }
   if(!hasFix)return;
   // Only a FRESH position goes in the fix log. A fence or motion row carries
