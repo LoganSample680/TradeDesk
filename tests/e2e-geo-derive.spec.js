@@ -348,6 +348,38 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── The matrix (replaces tests/e2e-geo-drive-matrix.spec.js) ───────────
+  // Every origin kind to every destination kind. Two saved fences make one
+  // leg, whatever their kinds; an unsaved stop at either end makes none.
+  test.describe('every origin to every destination', () => {
+    const KINDS = { job: JOB, shop: SHOP, home_office: HOME, client: DOE, supply: HD };
+    const spot = f => ({ lat: f.lat, lng: f.lng });
+    const FAR = { lat: 39.0600, lng: -95.8000 };                 // nowhere any fixture fence sits
+    const kinds = Object.keys(KINDS);
+    for (const from of kinds) for (const to of kinds) {
+      if (from === to && KINDS[from] === KINDS[to]) continue;
+      test(`${from} → ${to} is one leg`, async () => {
+        // Fences distinct enough that the same-fence round-trip rule cannot fire.
+        const A = Object.assign({}, KINDS[from], { id: 'A-' + from });
+        const B = Object.assign({}, KINDS[to], { id: 'B-' + to, lat: FAR.lat, lng: FAR.lng });
+        const t = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot'), mo(T(11, 0), 'driving'), mo(T(11, 10), 'onFoot')];
+        const f = [fix(T(9, 0, 5), spot(A)), fix(T(9, 20, 5), spot(B)), fix(T(11, 0, 5), spot(B)), fix(T(11, 10, 5), spot(A))];
+        const r = await run(page, base({ tape: t, fixes: f, fences: [A, B] }));
+        expect(r.legs.map(l => [l.from.kind, l.to.kind])).toEqual([[from, to], [to, from]]);
+        expect(r.dwells.map(d => d.kind)).toEqual([to]);
+      });
+    }
+    for (const from of kinds) {
+      test(`${from} → an unsaved stop is no leg, and back is a round trip`, async () => {
+        const A = Object.assign({}, KINDS[from], { id: 'A-' + from });
+        const t = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot'), mo(T(11, 0), 'driving'), mo(T(11, 10), 'onFoot')];
+        const f = [fix(T(9, 0, 5), spot(A)), fix(T(9, 20, 5), GAS), fix(T(11, 0, 5), GAS), fix(T(11, 10, 5), spot(A))];
+        const r = await run(page, base({ tape: t, fixes: f, fences: [A] }));
+        expect(r.legs).toEqual([]);
+      });
+    }
+  });
+
   test('no console errors across the deriver', async () => {
     assertNoErrors(page, 'geo-derive');
   });

@@ -248,6 +248,21 @@ test.describe('geo-derive wiring', () => {
       expect(r.leftAfterFail).toBe(1);
     });
 
+    test('a project without the function yet does not block the queue behind a stuck item', async () => {
+      await seed();
+      const r = await page.evaluate(async (DAY) => {
+        window.mileage = [];
+        await _geoDeriveDayNow(DAY, null);
+        const origSupa = window._supa;
+        window._supa = { rpc: async () => ({ data: null, error: { message: 'Could not find the function public.geo_replace_day(...) in the schema cache', code: 'PGRST202' } }),
+          from: origSupa.from.bind(origSupa) };
+        window._geoDrainQueue = window.__realDrain;
+        try { await _geoDrainQueue(); return JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]').length; }
+        finally { window._supa = origSupa; window._geoDrainQueue = () => {}; }
+      }, DAY);
+      expect(r).toBe(0);
+    });
+
     test('the boot rebuild walks the tape\'s window and derives each covered day once', async () => {
       await seed();
       const r = await page.evaluate(async () => {

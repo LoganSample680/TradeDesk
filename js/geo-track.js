@@ -544,6 +544,14 @@ async function _geoDrainQueue(){
             console.error('geo derive refused: '+String(error.message));
             error=null;
           }
+          // The function is not on this project yet (a phone ahead of the
+          // migration). Also not a transient: it would sit at the head of the
+          // queue and hold every manual row behind it. Dropped; the next flip
+          // or boot derives the day again, and derives it identically.
+          if(error&&/could not find the function|function .* does not exist|PGRST202/i.test(String(error.message||''))){
+            console.warn('geo derive: geo_replace_day is not deployed yet, dropping the item');
+            error=null;
+          }
         }else
         ({error}=await _supa.from(item.tbl).upsert(item.row,{onConflict:'contractor_user_id,client_key',ignoreDuplicates:!item.overwrite}));
         // Hosted DB predating the geo-hardening migration: no unique index → retry as
