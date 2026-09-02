@@ -73,7 +73,7 @@ async function _liveActReady(){
 //
 // Lives in JS on purpose (§3.2): the Swift layer takes the tint off the payload
 // rather than owning a palette, so this is a UAT roll and never an iOS build.
-const _LIVE_TINT={drive:'#0085E7',clock:'#12A85C'};
+const _LIVE_TINT={drive:'#0085E7',clock:'#12A85C',onsite:'#F2A93B'};
 
 // Track what was last sent per channel so an unchanged ping is never spent.
 // ActivityKit budgets updates, and the geo engine pings far more often than the
@@ -323,6 +323,9 @@ function _liveActClockIn(t){
   const{loggedByUid}=(typeof _tlLoggedByInfo==='function')?_tlLoggedByInfo():{loggedByUid:null};
   const contractorUserId=(typeof _effectiveUid==='function'&&_effectiveUid())||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||'';
   const nextInfo=_liveActNextScopeInfo(t.jobId,t.scopeId);
+  // One timer for one spot: the clock card carries the site clock, so the
+  // on-site card steps aside (it comes back on clock-out, see below).
+  if(_liveLast.onsite!=null)_liveActEnd('onsite');
   _liveActSet('clock',{
     kind:'CLOCKED IN',
     title:who,
@@ -344,7 +347,12 @@ function _liveActClockIn(t){
     scopeQueue:nextInfo.scopeQueue
   });
 }
-function _liveActClockOut(){_liveActEnd('clock');}
+async function _liveActClockOut(){
+  await _liveActEnd('clock');
+  // The clock card yielded the island; if they are still on a site the
+  // deriver knows about, the on-site card takes the spot back.
+  try{if(typeof window!=='undefined'&&window._geoOpenDwell)_liveActOnSite(window._geoOpenDwell);}catch(_e){}
+}
 
 // ── The drive card ───────────────────────────────────────────────────────────
 // Driven by the same state the dashboard's DRIVING banner reads, so the lock
@@ -354,6 +362,10 @@ function _liveActClockOut(){_liveActEnd('clock');}
 function _liveActDrive(){
   let driving=false;
   try{driving=(typeof _geoDriving==='function')&&_geoDriving();}catch(_e){driving=false;}
+  // The drive window IS the drive now (owner 2026-09-01): the card goes up
+  // the moment the flip and the ping pair, before the tally has moved, and
+  // comes down when the window closes, not two minutes of banner-fade later.
+  try{if(!driving&&typeof _geoDriveWindowOn==='function'&&_geoDriveWindowOn())driving=true;}catch(_e){}
   if(!driving){
     if(_liveLast.drive!=null)_liveActEnd('drive');
     return;
@@ -379,4 +391,37 @@ function _liveActDrive(){
     timer:false,
     tint:_LIVE_TINT.drive
   });
+}
+
+// ── The on-site card (owner 2026-09-02) ─────────────────────────────────────
+// "A popup on the dynamic island and lock screen when we arrive with a
+// running timer of how long we're there ... it says this is where I am."
+// Driven by the deriver's open dwell (_geoOpenDwellPublish, js/geo-track.js):
+// the same fact the dashboard card and the Time Log's live row read, so the
+// lock screen can never name a different place than the app. Started once
+// at the arrival instant and left to tick; ended when the dwell closes.
+// A person CLOCKED IN already has the green clock card with the site clock
+// on it, and the island shows two cards at most, so the on-site card yields
+// to the clock card rather than stacking a second timer for the same spot.
+function _liveActOnSite(dwell){
+  const d=dwell||null;
+  if(!d||!(Number(d.sinceTs)>0)||_liveLast.clock!=null){
+    if(_liveLast.onsite!=null)_liveActEnd('onsite');
+    return false;
+  }
+  const kind=String(d.kind||'');
+  const where=String(d.name||'')||(kind==='shop'?'The shop':'On site');
+  const addr=(d.fence&&d.fence.addr)?String(d.fence.addr):'';
+  let arrived='';
+  try{arrived=new Date(Number(d.sinceTs)).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});}catch(_e){arrived='';}
+  const detail=(addr&&addr!==where)?addr:(arrived?('Arrived '+arrived):'');
+  _liveActSet('onsite',{
+    kind:kind==='shop'?'AT THE SHOP':'ON SITE',
+    title:where,
+    detail,
+    timer:true,
+    startedAt:Math.floor(Number(d.sinceTs)/1000),
+    tint:_LIVE_TINT.onsite
+  });
+  return true;
 }

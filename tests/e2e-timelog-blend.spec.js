@@ -166,13 +166,20 @@ test.describe('manual clock over a derived day', () => {
         if (!host) { host = document.createElement('div'); host.id = 'tl-open'; document.body.appendChild(host); }
         _tlRenderOpenBanner();
         const banner = host.innerHTML;
+        // The rail row for a visit still going: arrival "to -", no amount
+        // on the right until they leave (owner 2026-09-02).
+        const railRow = live.length ? _tlRailRow(live[0]) : '';
+        const railSub = (railRow.match(/tl-rail-sub">([^<]*)</) || [])[1] || '';
+        const railDur = (railRow.match(/tl-rail-dur[^>]*>([^<]*)</) || [])[1] || '';
         window._geoOpenDwell = null;
         _tlRenderOpenBanner();
         const cleared = host.style.display;
-        return { expectMin, live: live.map(x => [x.clientName, x.minutes, x.rawSource, x.personUid === me, x.detail, _tlRailKind(x)]), stale, banner: { onsite: /ON SITE/.test(banner), name: /John Doe/.test(banner), clockOut: /Clock out/.test(banner), tick: /data-tl-open-start="/.test(banner) }, cleared };
+        return { expectMin, live: live.map(x => [x.clientName, x.minutes, x.rawSource, x.personUid === me, x.detail, _tlRailKind(x)]), stale, banner: { onsite: /ON SITE/.test(banner), name: /John Doe/.test(banner), clockOut: /Clock out/.test(banner), tick: /data-tl-open-start="/.test(banner) }, cleared, railSub, railDur };
       } finally { window.timeEntries = keepT; window._fetchCrewLabor = keepF; window._geoOpenDwell = null; }
     });
     expect(r.live).toEqual([['John Doe', r.expectMin, 'client', true, 'On site now', 'job']]);
+    expect(r.railSub).toMatch(/ to -$/);
+    expect(r.railDur.trim()).toBe('');
     expect(r.expectMin).toBeGreaterThanOrEqual(1);
     expect(r.stale).toBe(0);
     expect(r.banner).toEqual({ onsite: true, name: true, clockOut: false, tick: true });

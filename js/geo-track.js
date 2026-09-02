@@ -3940,6 +3940,9 @@ function _geoDriveWindowOpen(why){
   if(first){_geoDriveWinAt=now;_geoDriveWinWhy=String(why||'');_geoDriveConfirmFix=null;}
   try{Promise.resolve(Td.setSampling({mode:'drive',maxMs:_GEO_DRIVE_WIN_CAP_MS,distanceFilter:_GEO_DRIVE_SAMPLE_M,flushMs:_GEO_DRIVE_FLUSH_MS,accuracy:_GEO_DRIVE_ACCURACY})).catch(()=>{});}catch(_e){}
   _geoParkNote(first?'drive-window-on':'drive-window-hold',String(why||''));
+  // The island shows the drive from the first second of the window, not from
+  // the first fix that moves the tally (js/live-activity.js).
+  if(first){try{if(typeof _liveActDrive==='function')_liveActDrive();}catch(_e){}}
   return true;
 }
 function _geoDriveWindowClose(why){
@@ -3951,6 +3954,7 @@ function _geoDriveWindowClose(why){
   const Td=_geoTdPlugin();
   try{if(Td&&typeof Td.setSampling==='function')Promise.resolve(Td.setSampling({mode:'coarse',reason:String(why||'js')})).catch(()=>{});}catch(_e){}
   _geoParkNote('drive-window-off',String(why||''));
+  try{if(typeof _liveActDrive==='function')_liveActDrive();}catch(_e){}
   return true;
 }
 // ── The 30-minute confirmation (owner 2026-09-01) ───────────────────────────
@@ -6495,6 +6499,8 @@ function _geoOpenDwellPublish(dayKey,res){
     const same=(!prev&&!next)||(prev&&next&&prev.id===next.id&&prev.sinceTs===next.sinceTs);
     window._geoOpenDwell=next;
     if(same)return;
+    // The lock screen and the island show the same fact (js/live-activity.js).
+    try{if(typeof _liveActOnSite==='function')_liveActOnSite(next);}catch(_e){}
     try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}
     try{if(typeof _tlRenderOpenBanner==='function'&&document.getElementById('pg-timelog')?.classList.contains('active'))_tlRenderOpenBanner();}catch(_e){}
   }catch(_e){}

@@ -189,6 +189,88 @@ test.describe('Live Activities: what reaches the lock screen', () => {
     expect(r).toEqual([{ name: 'end', ch: 'clock' }]);
   });
 
+  // ── The on-site card (owner 2026-09-02) ────────────────────────────────
+  // "A popup on the dynamic island and lock screen when we arrive with a
+  // running timer of how long we're there." Driven by the deriver's open
+  // dwell, the same fact the dashboard card and the Time Log's live row read.
+  test('arriving somewhere saved starts a ticking ON SITE card from the arrival instant', async () => {
+    const r = await page.evaluate(async () => {
+      window.__td.calls.length = 0;
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const since = Date.now() - 12 * 60000;
+      const dwell = { id: 'd-j-x', name: 'John Doe', kind: 'client', sinceTs: since, sinceIso: new Date(since).toISOString(), journeyId: 'x', fence: { addr: '2950 SW McClure Rd' } };
+      const ok = _liveActOnSite(dwell);
+      await new Promise(r => setTimeout(r, 50));
+      const again = _liveActOnSite(dwell);                 // same dwell: nothing spent
+      await new Promise(r => setTimeout(r, 50));
+      const calls = window.__td.calls.map(c => [c.name, c.args.channel, c.args.kind, c.args.title, c.args.detail, c.args.timer, c.args.startedAt, c.args.tint]);
+      _liveActOnSite(null);                                 // left: the card ends
+      await new Promise(r => setTimeout(r, 50));
+      return { ok, again, calls, since, ended: window.__td.calls.slice(-1)[0] };
+    });
+    expect(r.ok).toBe(true);
+    expect(r.again).toBe(true);
+    expect(r.calls).toEqual([['start', 'onsite', 'ON SITE', 'John Doe', '2950 SW McClure Rd', true, Math.floor(r.since / 1000), '#F2A93B']]);
+    expect(r.ended.name).toBe('end');
+    expect(r.ended.args.channel).toBe('onsite');
+  });
+
+  test('the shop is named as the shop, and a fence with no address shows the arrival time', async () => {
+    const r = await page.evaluate(async () => {
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const since = Date.now() - 5 * 60000;
+      _liveActOnSite({ id: 'd-1', name: 'TradeDesk shop', kind: 'shop', sinceTs: since, fence: {} });
+      await new Promise(r => setTimeout(r, 50));
+      const c = window.__td.calls[0];
+      _liveActOnSite(null); await new Promise(r => setTimeout(r, 30));
+      return [c.args.kind, c.args.title, /^Arrived \d/.test(c.args.detail)];
+    });
+    expect(r).toEqual(['AT THE SHOP', 'TradeDesk shop', true]);
+  });
+
+  test('a clocked-in person keeps the clock card: the on-site card yields and returns on clock-out', async () => {
+    const r = await page.evaluate(async () => {
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const since = Date.now() - 3 * 60000;
+      const dwell = { id: 'd-2', name: 'John Doe', kind: 'client', sinceTs: since, fence: { addr: '2950 SW McClure Rd' } };
+      window._geoOpenDwell = dwell;
+      _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 50));
+      _liveActClockIn({ jobId: null, clientName: 'John Doe', scopeLabel: 'Trim', startTime: Date.now() });
+      await new Promise(r => setTimeout(r, 80));
+      const duringClock = window.__td.calls.map(c => c.name + ':' + c.args.channel);
+      const yielded = _liveActOnSite(dwell);                // clock card live: no on-site card
+      await new Promise(r => setTimeout(r, 30));
+      window.__td.calls.length = 0;
+      await _liveActClockOut();
+      await new Promise(r => setTimeout(r, 80));
+      const afterOut = window.__td.calls.map(c => c.name + ':' + c.args.channel);
+      window._geoOpenDwell = null; _liveActOnSite(null); await new Promise(r => setTimeout(r, 30));
+      return { duringClock, yielded, afterOut };
+    });
+    expect(r.duringClock).toEqual(['start:onsite', 'end:onsite', 'start:clock']);
+    expect(r.yielded).toBe(false);
+    expect(r.afterOut).toEqual(['end:clock', 'start:onsite']);
+  });
+
+  test('the drive card goes up the moment the drive window opens, tally or not', async () => {
+    const r = await page.evaluate(async () => {
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const keep = window._geoDriving;
+      window._geoDriving = () => false;
+      const keepWin = _geoDriveWinAt;
+      try {
+        _geoDriveWinAt = Date.now(); _geoDriveMiles = 0; _geoDriveSteps = 0; _geoLegOrigin = { name: 'TradeDesk shop' };
+        _liveActDrive(); await new Promise(r => setTimeout(r, 50));
+        const up = window.__td.calls.map(c => [c.name, c.args.channel, c.args.kind, c.args.detail, c.args.value]);
+        _geoDriveWinAt = 0; window.__td.calls.length = 0;
+        _liveActDrive(); await new Promise(r => setTimeout(r, 50));
+        return { up, down: window.__td.calls.map(c => c.name + ':' + c.args.channel) };
+      } finally { window._geoDriving = keep; _geoDriveWinAt = keepWin; }
+    });
+    expect(r.up).toEqual([['start', 'drive', 'DRIVING', 'From TradeDesk shop', 'logging']]);
+    expect(r.down).toEqual(['end:drive']);
+  });
+
   test('an unchanged drive ping never spends an ActivityKit update', async () => {
     const r = await page.evaluate(async () => {
       window._geoDriving = () => true;

@@ -994,7 +994,12 @@ function _tlRailRow(r){
     // the title again in smaller grey type: three lines to say a place once.
     // The tag names the kind, the title names the place, the sub gives the
     // clock. Nothing repeats.
-    const span=[_tlFmtTime(r.startTime),_tlFmtTime(r.endTime)].filter(Boolean);
+    // A visit still going has no stop time and no amount yet (owner
+    // 2026-09-02: "that 3:31 pm should just be a - since we haven't left
+    // yet, no time calculated on the right until we leave"). The banner
+    // above the rail carries the running clock; the row states the arrival
+    // and leaves the rest open.
+    const span=r.live?[_tlFmtTime(r.startTime),'-']:[_tlFmtTime(r.startTime),_tlFmtTime(r.endTime)].filter(Boolean);
     let sub=span.length===2?(span[0]+' to '+span[1]):'';
     // A BLENDED CLOCK MUST NOT CONTRADICT ITSELF (owner 2026-09-01: "manual is
     // calcuaintg 742 am to 3:00 pm as 1 hour 40 minutes when thats not true at
@@ -1032,7 +1037,7 @@ function _tlRailRow(r){
     :(typeof _tlCanFixAuto==='function'&&_tlCanFixAuto(r)&&r.rawId!=null)
     ?'<button type="button" class="tl-rail-edit" onclick="_openFixAutoEntry(\''+escHtml(String(r.rawId))+'\')">Fix</button>'
     :'';
-  const dur='<div class="tl-rail-dur'+((r.unpaid||isGap)?' mute':'')+'">'+escHtml(fm(r.minutes||0))+
+  const dur='<div class="tl-rail-dur'+((r.unpaid||isGap)?' mute':'')+'">'+(r.live?'':escHtml(fm(r.minutes||0)))+
     (edit?'<span class="tl-rail-editwrap">'+edit+'</span>':'')+'</div>';
   // AND SO DOES DELETE, for the same reason and by the same rule (§7.2). The
   // 3-second hold lived on the table row _tlRow drew; that table is gone, and
