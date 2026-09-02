@@ -418,7 +418,7 @@ function geoDeriveDay(input) {
   // Rule 10: paperwork at the home office.
   const carved = _gdOffice(dwells, open, fixes, fences, inp.appEvents, dayStart, dayEnd, nowMs, opts);
   // Rule 11: the day ends with the last real work.
-  const ended = _gdEndOfDay(carved, fences, opts);
+  const ended = _gdEndOfDay(carved, fences, opts, open, journeys.some(j => j && j.open));
 
   return {
     day: inp.day || '',
@@ -524,9 +524,21 @@ function _gdShopIsHome(fence, fences, radiusFt) {
   return (fences || []).some(f => f && String(f.kind) === 'home_office' && f.lat != null && f.lng != null &&
     _gdMiles(fence, f) * 5280 <= r);
 }
-function _gdEndOfDay(dwells, fences, opts) {
+// "After the last real work" can only be judged against everything the day
+// holds so far, and a day in progress holds more than its CLOSED dwells:
+// an open dwell at a work fence is work under way, and a truck on the road
+// right now is going somewhere nobody knows yet. Judged from closed rows
+// alone, the owner's 12:12 to 12:47 at the shop, between two client visits,
+// was "after the last work" the moment he arrived at the second client,
+// because that visit was open and did not count (2026-09-02). It is shop
+// time. The evening rule still holds: once the drive has ended, at home or
+// at a stop that never resolves, the base dwell after the last work is not
+// a row.
+function _gdEndOfDay(dwells, fences, opts, open, driving) {
   const work = dwells.filter(d => !_gdIsBaseKind(d.kind) && d.kind !== 'office');
   if (!work.length) return dwells;                       // a yard-only day is a shift
+  const openWork = !!(open && !_gdIsBaseKind(open.kind) && open.kind !== 'office');
+  if (openWork || driving) return dwells;                // the day is not over
   const lastWorkEnd = Math.max.apply(null, work.map(d => d.endTs));
   const out = [];
   for (const d of dwells) {

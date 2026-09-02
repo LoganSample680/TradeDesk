@@ -684,6 +684,29 @@ test.describe('geo-derive: the day deriver', () => {
       ]);
     });
 
+    // Owner 2026-09-02, 12:12 to 12:47 at the shop between two Doe visits,
+    // read live at 12:56 with the second visit still open: "unaccounted at
+    // 12:12 then office at 12:37 then unaccounted at 12:39". The open visit
+    // did not count as work, so the shop stop was "after the last work".
+    test('the shop between a closed visit and an OPEN one is shop time: the day is not over', async () => {
+      const tape = [mo(T(7, 40), 'onFoot'), mo(T(7, 52), 'driving'), mo(T(8, 3), 'onFoot'), mo(T(12, 2), 'driving'), mo(T(12, 12), 'onFoot'),
+        mo(T(12, 47), 'driving'), mo(T(12, 55), 'onFoot')];
+      const fixes = [fix(T(7, 52, 5), SHOP), fix(T(8, 3, 5), DOE), fix(T(12, 2, 5), DOE), fix(T(12, 12, 5), HFIX), fix(T(12, 30), HFIX),
+        fix(T(12, 47, 5), HFIX), fix(T(12, 55, 5), DOE), fix(T(12, 58), DOE)];
+      const r = await run(page, base({ tape, fixes, nowMs: T(13, 0) }));
+      expect(r.open && r.open.name).toBe('John Doe');
+      expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)])).toEqual([['client', '13:03', '17:02'], ['shop', '17:12', '17:47']]);
+      // Mid-drive, destination unknown: the shop stop stands until the drive resolves.
+      const r2 = await run(page, base({ tape: tape.slice(0, 6), fixes: fixes.slice(0, 6), nowMs: T(12, 50) }));
+      expect(r2.pending && r2.pending.origin.name).toBe('TradeDesk shop');
+      expect(r2.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)])).toEqual([['client', '13:03', '17:02'], ['shop', '17:12', '17:47']]);
+      // Resolved at home for the evening: the same stop after the last work is not a row.
+      const t3 = tape.slice(0, 6).concat([mo(T(12, 55), 'onFoot')]);
+      const f3 = fixes.slice(0, 6).concat([fix(T(12, 55, 5), GAS), fix(T(13, 30), GAS)]);
+      const r3 = await run(page, base({ tape: t3, fixes: f3, nowMs: T(14, 0) }));
+      expect(r3.dwells.map(d => d.kind)).toEqual(['client']);
+    });
+
     test('a day with no job at all keeps its base dwells: a shift at the yard is a shift', async () => {
       const tape = [mo(T(7, 0), 'onFoot'), mo(T(7, 30), 'driving'), mo(T(7, 50), 'onFoot'), mo(T(16, 0), 'driving'), mo(T(16, 20), 'onFoot')];
       const fixes = [fix(T(7, 30, 5), HFIX), fix(T(7, 50, 5), YFIX), fix(T(12, 0), YFIX), fix(T(16, 0, 5), YFIX), fix(T(16, 20, 5), HFIX), fix(T(17, 0), HFIX)];
