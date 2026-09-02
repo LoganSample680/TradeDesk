@@ -199,6 +199,43 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
     expect(r.mode).toBe('drive');
   });
 
+  test('the tape saying "driving now" is the motion half: a sleeping phone woken mid-drive still turns the radio up', async () => {
+    // Owner 2026-09-02, 12:02: the flip landed in the history while the app
+    // slept, the wake found nothing new to stream, the fence exit armed the
+    // fix half against nothing, and the truck drove with the radio off.
+    const r = await run(`
+      const now = Date.now();
+      window._geoDeriveTape = async () => [{ ts: now - 20 * 60000, kind: 'onFoot' }, { ts: now - 95000, kind: 'driving' }];
+      await _geoOnPing({ coords: { latitude: 39.1, longitude: -94.1, accuracy: 10 } });   // the fix taken on open
+      const before = _geoDriveWindowOn();
+      const armed = await _geoTapeDriveCheck('active');
+      return { before, armed, after: _geoDriveWindowOn(), mode: (calls[0] || {}).mode, pend: _geoDrivePendingAt, since: new Date(now - 95000).toISOString(),
+        again: await _geoTapeDriveCheck('active') };
+    `);
+    expect(r.before).toBe(false);
+    expect(r.armed).toBe(true);
+    expect(r.after).toBe(true);
+    expect(r.mode).toBe('drive');
+    expect(r.pend, 'the leg starts at the flip, not at the wake').toBe(r.since);
+    expect(r.again, 'an open window is left alone').toBe(false);
+  });
+
+  test('the tape saying anything else is not: a walk after the flip, an old flip, no history, junk', async () => {
+    const r = await run(`
+      const now = Date.now();
+      const out = [];
+      const tryTape = async (tape) => { window._geoDeriveTape = async () => tape; _geoDriveCorrMotionAt = 0; _geoDriveCorrFixAt = now; out.push([await _geoTapeDriveCheck('t'), _geoDriveWindowOn()]); };
+      await tryTape([{ ts: now - 300000, kind: 'driving' }, { ts: now - 60000, kind: 'onFoot' }]);
+      await tryTape([{ ts: now - 40 * 60000, kind: 'driving' }]);
+      await tryTape([]);
+      await tryTape(null);
+      await tryTape([{ ts: 'x', kind: 'driving' }, { kind: 'driving' }, { ts: now + 3600000, kind: 'driving' }]);
+      return { out, says: [_geoTapeSaysDriving([{ ts: now - 10000, kind: 'automotive' }], now) === now - 10000, _geoTapeSaysDriving(undefined, now), _geoTapeSaysDriving([{ ts: now - 10000, kind: 'still' }], now)] };
+    `);
+    expect(r.out).toEqual([[false, false], [false, false], [false, false], [false, false], [false, false]]);
+    expect(r.says).toEqual([true, null, null]);
+  });
+
   test('the two halves must land inside the pairing window, not just eventually', async () => {
     // A walk past a parked truck at 10:00 and a passenger ride at 10:30 are
     // not a departure, however neatly they pair up on a timeline.

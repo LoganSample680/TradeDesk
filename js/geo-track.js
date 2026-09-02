@@ -3889,6 +3889,45 @@ function _geoDriveCorrelate(half,atMs,why){
   _geoDriveCorrMotionAt=0;_geoDriveCorrFixAt=0;
   return _geoDriveWindowOpen('motion+fix'+(why?' '+why:''));
 }
+// ── THE TAPE SAYS DRIVING NOW (owner 2026-09-02, his 12:02 departure) ─────
+// The flip to automotive lands on a sleeping phone only when something else
+// wakes it, and by then the live motion stream has nothing new to say: the
+// state did not change after the wake, so CoreMotion never calls back, and
+// the correlation's motion half is never armed. The replay uploads the flip
+// to the server and stops there. The 12:04 fence exit then armed the fix
+// half against nothing, and the truck drove to the next fence with the
+// radio off and no card on the dashboard.
+//
+// The coprocessor's history is the same fact from the other side: if its
+// latest transition is automotive, with no foot transition after it, the
+// phone is in a moving truck RIGHT NOW, and "now" is the motion half. Runs
+// at boot and on every return to the foreground. Bounded: a drive that
+// started more than half an hour ago is the passenger-or-forgotten case the
+// window cap already closes, not a reason to spend radio.
+const _GEO_TAPE_DRIVE_MAX_MS=30*60000;
+function _geoTapeSaysDriving(tape,nowMs){
+  const now=Number(nowMs)||Date.now();
+  const t=(Array.isArray(tape)?tape:[]).filter(x=>x&&typeof x.ts==='number'&&x.kind&&x.ts<=now+60000).sort((a,b)=>a.ts-b.ts);
+  if(!t.length)return null;
+  const last=t[t.length-1];
+  const k=String(last.kind);
+  if(!(k==='automotive'||k==='driving'))return null;
+  if(now-last.ts>_GEO_TAPE_DRIVE_MAX_MS)return null;
+  return last.ts;
+}
+async function _geoTapeDriveCheck(why){
+  try{
+    if(_geoDriveWinAt)return false;
+    const tape=await _geoDeriveTape(Date.now()-_GEO_TAPE_DRIVE_MAX_MS-60000);
+    const since=_geoTapeSaysDriving(tape,Date.now());
+    if(!since)return false;
+    _geoParkNote('tape-driving',String(why||'')+' since '+new Date(since).toISOString().slice(11,19));
+    // The flip's moment is what the leg will start from (the deriver reads
+    // it from the same history); the radio's moment is now.
+    if(!_geoDrivePendingAt)_geoDrivePendingAt=new Date(since).toISOString();
+    return _geoDriveCorrelate('motion',Date.now(),'tape-now'+(why?' '+why:''));
+  }catch(_e){return false;}
+}
 function _geoDriveWindowOpen(why){
   const Td=_geoTdPlugin();
   if(!Td||typeof Td.setSampling!=='function')return false;   // shell predates build 44
@@ -4548,7 +4587,7 @@ async function _geoTdEvent(ev,replay){
     // paperwork. The lifecycle edge and, when it carries one, its fix.
     if(/^app-/.test(String(ev.type||''))){
       _geoAppLogPush(Number(ev.ts)||Date.now(),String(ev.type).slice(4));
-      if(!replay&&ev.type==='app-active')_geoDeriveRebuildIfStale();
+      if(!replay&&ev.type==='app-active'){_geoDeriveRebuildIfStale();_geoTapeDriveCheck('active');}
       if(typeof ev.lat==='number'&&typeof ev.lng==='number')_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
     }
     if(!replay&&ev.type==='push-ping')_geoBgUpdateCheck();
@@ -5695,6 +5734,7 @@ function _geoTrackInit(){
   if(!_supaUser)return;
   _geoDeriveRebuildSoon();
   _geoOnsiteTickStart();
+  setTimeout(()=>{try{_geoTapeDriveCheck('boot');}catch(_e){}},1500);
   // Backgrounding mid-shift KEEPS the entry open (the old handler closed it, a
   // phone in a pocket all day logged only screen-on slivers, and any visit hidden
   // within 2 minutes of arrival was dropped entirely). Instead: snapshot the open
