@@ -531,6 +531,44 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── The trace is cleaned before it is measured ──────────────────────────
+  // Owner 2026-09-02: "the miles for today say 6.1 lol not possible". A
+  // fence event's stale last-known position landed a mile from the fix
+  // taken the same second and the trace zigzagged.
+  test.describe('a stale point cannot be on the road', () => {
+    const tape = [mo(T(7, 40), 'onFoot'), mo(T(7, 52), 'driving'), mo(T(8, 3), 'onFoot')];
+    const mid = i => ({ lat: SHOP.lat + (DOE.lat - SHOP.lat) * i / 10, lng: SHOP.lng + (DOE.lng - SHOP.lng) * i / 10 });
+
+    test('a point a mile away in the same second is dropped, and the miles are the road again', async () => {
+      const fixes = [fix(T(7, 52, 5), SHOP)];
+      for (let i = 1; i < 10; i++) fixes.push(fix(T(7, 52, 5 + i * 60), mid(i)));
+      const stale = { lat: 39.0274, lng: -95.7250 };   // the fence row's last-known, a mile back
+      fixes.push(fix(T(8, 1, 5), stale), fix(T(8, 1, 5), DOE), fix(T(8, 3, 5), DOE), fix(T(8, 30), DOE));
+      const r = await run(page, base({ tape, fixes }));
+      expect(r.legs).toHaveLength(1);
+      // The fixture is a straight line shop -> Doe, about 2.3 miles.
+      expect(r.legs[0].miles).toBeGreaterThan(2.2);
+      expect(r.legs[0].miles).toBeLessThan(2.5);
+      expect(r.legs[0].path.some(p => Math.abs(p[0] - stale.lat) < 1e-4 && Math.abs(p[1] - stale.lng) < 1e-4)).toBe(false);
+    });
+
+    test('an exact repeat from a second table adds nothing, and a real fast road is kept', async () => {
+      const fixes = [fix(T(7, 52, 5), SHOP)];
+      for (let i = 1; i <= 10; i++) { fixes.push(fix(T(7, 52, 5 + i * 60), mid(i))); fixes.push(fix(T(7, 52, 5 + i * 60), mid(i))); }
+      fixes.push(fix(T(8, 3, 5), DOE), fix(T(8, 30), DOE));
+      const r = await run(page, base({ tape, fixes }));
+      const once = await run(page, base({ tape, fixes: fixes.filter((f, i, a) => a.findIndex(x => x.ts === f.ts) === i) }));
+      expect(r.legs[0].miles).toBe(once.legs[0].miles);
+      expect(r.legs[0].path.length).toBe(once.legs[0].path.length);
+      // 70 mph between two points a minute apart is a highway, not junk.
+      const hw = [fix(T(9, 0, 5), SHOP), fix(T(9, 1, 5), { lat: SHOP.lat - 0.0169, lng: SHOP.lng }), fix(T(9, 2, 5), { lat: SHOP.lat - 0.0338, lng: SHOP.lng })];
+      const clean = await page.evaluate((f) => _gdCleanTrace(f, 90).length, hw);
+      expect(clean).toBe(3);
+      const junk = await page.evaluate(() => [_gdCleanTrace([], 90).length, _gdCleanTrace([{ ts: 1, lat: 1, lng: 1 }], 0).length]);
+      expect(junk).toEqual([0, 1]);
+    });
+  });
+
   // ── Rule 12: the truck was where the phone sat ──────────────────────────
   // Owner 2026-09-02, his 7:51 departure: the app slept through the flip and
   // woke 0.4 miles down the road, so the nearest fix sat outside the shop

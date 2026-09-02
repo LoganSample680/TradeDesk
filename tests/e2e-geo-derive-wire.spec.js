@@ -469,6 +469,7 @@ test.describe('geo-derive wiring', () => {
         const chain = (table, sel) => {
           const c = {};
           ['eq', 'like', 'gte', 'lt', 'not', 'order'].forEach(k => { c[k] = () => c; });
+          c.in = (col, vals) => { calls.push(['in', col, vals.slice()]); return c; };
           c.range = async (a, b) => { calls.push([table, sel, a, b]); return { data: rowsFor(table, sel).slice(a, b + 1), error: null }; };
           return c;
         };
@@ -483,6 +484,11 @@ test.describe('geo-derive wiring', () => {
       expect(r.app).toEqual([{ ts: Date.parse('2026-09-01T18:00:00Z'), kind: 'active' }]);
       expect(r.calls.filter(c => c[1] === 'ts,lat,lon').map(c => [c[2], c[3]])).toEqual([[0, 999], [1000, 1999]]);
       expect(r.calls.filter(c => c[0] === 'location_pings')).toHaveLength(1);
+      // Only rows whose position is fresh feed the trace: never a fence or
+      // motion row's stale last-known.
+      const ins = r.calls.filter(c => c[0] === 'in');
+      expect(ins.length).toBeGreaterThan(0);
+      ins.forEach(c => expect(c).toEqual(['in', 'type', ['fix', 'push-ping']]));
       expect(r.sorted).toBe(true);
       expect(r.last.acc).toBe(7);
     });
@@ -503,6 +509,70 @@ test.describe('geo-derive wiring', () => {
         return [dense, thin, late, noPath].map(m => [m.miles, m.calc_method, m.routeMiles]);
       });
       expect(r).toEqual([[3.0, 'derived-path', 3.9], [3.9, 'derived-routed', 3.9], [3.9, 'derived-routed', 3.9], [3.9, 'derived-routed', 3.9]]);
+    });
+
+    test('a collapsed leg\'s direct route is capped by the road actually driven through the stop', async () => {
+      const r = await page.evaluate(async () => {
+        window._routeDistance = async () => ({ miles: 3.9, mins: 10 });
+        localStorage.removeItem('zp3_geo_routes');
+        const from = { lat: 39.0123292, lng: -95.7464936 }, to = { lat: 39.0307066, lng: -95.7112082 };
+        const t0 = Date.parse('2026-09-01T22:08:04Z'), t1 = Date.parse('2026-09-01T22:29:43Z');
+        const stop = { lat: 39.0318, lng: -95.7254 };
+        const seg = (n, a, b, s, e) => Array.from({ length: n }, (_, i) => [a.lat + (b.lat - a.lat) * i / (n - 1), a.lng + (b.lng - a.lng) * i / (n - 1), s + (e - s) * i / (n - 1)]);
+        const path = seg(8, from, stop, t0, t0 + 6 * 60000).concat(seg(8, stop, to, t1 - 5 * 60000, t1));
+        const via = { id: 'v', fromCoord: from, toCoord: to, startedIso: new Date(t0).toISOString(), endedIso: new Date(t1).toISOString(), miles: 2.3, gpsMiles: 0, calc_method: 'derived-straight', collapsedStops: 1, path };
+        const late = Object.assign({}, via, { id: 'l', path: path.slice(3) });   // woke late: the trace starts past the origin
+        await _geoDeriveRouteMiles([via, late]);
+        return { via: [via.miles, via.calc_method, via.routeMiles], late: [late.miles, late.calc_method], driven: Math.round(_milePathMiles(via) * 10) / 10 };
+      });
+      expect(r.driven).toBeGreaterThan(2.3);
+      expect(r.driven).toBeLessThan(3.9);
+      expect(r.via).toEqual([r.driven, 'derived-via', 3.9]);
+      expect(r.late, 'no fence-to-fence trace to cap with: the router stands').toEqual([3.9, 'derived-routed']);
+    });
+
+    test('the legs paint the moment the day is derived; the road miles are a second paint', async () => {
+      await seed();
+      const r = await page.evaluate(async (DAY) => {
+        window.mileage = [];
+        localStorage.removeItem('zp3_geo_routes');
+        let release; const gate = new Promise(res => { release = res; });
+        window._routeDistance = async () => { await gate; return { miles: 3.2, mins: 9 }; };
+        const p = _geoDeriveDayNow(DAY, null);
+        await new Promise(res => setTimeout(res, 300));
+        const before = mileage.filter(m => m.gps).map(m => [m.miles > 0, m.calc_method]);
+        const queuedBefore = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]').length;
+        release(); await p;
+        const after = mileage.filter(m => m.gps).map(m => m.calc_method);
+        const queuedAfter = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]').length;
+        return { before, queuedBefore, after, queuedAfter };
+      }, DAY);
+      expect(r.before).toEqual([[true, 'derived-path'], [true, 'derived-path']]);
+      expect(r.queuedBefore, 'the table is written once the miles are final').toBe(0);
+      expect(r.after).toEqual(['derived-routed', 'derived-routed']);
+      expect(r.queuedAfter).toBe(1);
+    });
+
+    test('the phone\'s own fix log takes fresh positions only', async () => {
+      const r = await page.evaluate(async () => {
+        localStorage.removeItem('zp3_geo_fixlog');
+        const ts = Date.now() - 60000;
+        const ev = (type, i) => ({ type, ts: ts + i, lat: 39.01 + i * 1e-4, lng: -95.69, acc: 5, regionId: type === 'regionExit' ? 'shop' : undefined });
+        // Live, not replayed: a replayed ping is history, and only the live
+        // push-ping path feeds the log. The two side effects of a live ping
+        // (a derive, an update check) are held for the test.
+        const keepLive = window._geoDeriveLiveSoon, keepUpd = window._geoBgUpdateCheck;
+        window._geoDeriveLiveSoon = () => {}; window._geoBgUpdateCheck = () => {};
+        try {
+          for (const e of [ev('regionExit', 1), ev('regionEnter', 2), ev('motion', 3), ev('visit', 4), ev('fix', 5), ev('push-ping', 6), ev('heartbeat', 7)]) {
+            try { await _geoTdEvent(e, false); } catch (_e) {}
+          }
+          return _geoFixLogRead().filter(f => f.ts >= ts).map(f => f.ts - ts).sort((a, b) => a - b);
+        } finally { window._geoDeriveLiveSoon = keepLive; window._geoBgUpdateCheck = keepUpd; }
+      });
+      // Fence, motion and visit rows carry a stale last-known position; a
+      // heartbeat's is the 3 km keepalive fix. Only a real fix and a ping.
+      expect(r).toEqual([5, 6]);
     });
 
     test('the boot rebuild seeds the local logs from the server before it derives', async () => {

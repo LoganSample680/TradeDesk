@@ -95,6 +95,7 @@ const GEO_DERIVE_DEFAULTS = Object.freeze({
   pathMax: 400,           // breadcrumbs kept on a mileage row (thinned, endpoints survive)
   fixWindowMs: 5 * 60000, // how far from a flip a fix may sit and still be its fix
   parkedFixMaxMs: 12 * 3600000, // how old the parked fix before a departure may be
+  maxMph: 90,             // a trace point faster than this from the last kept one is not on the road
   minLegMs: 2 * 60000,    // a journey shorter than this is a walk across a fence line
   stillEndMs: 10 * 60000, // a truck that sits this long has parked, foot flip or not
   maxFixAccM: 150,        // fixes worse than this are not part of a path
@@ -197,14 +198,38 @@ function _gdSettledFixAfter(fixes, ts, notAfterTs, maxAgeMs, maxAccM) {
   return best;
 }
 
+// A stale coordinate riding on a fence event (a regionEnter row carries the
+// last-known position, not a fresh one) landed a mile from the fix taken the
+// same second, and the trace zigzagged: the owner's 3-mile drive read 6.1
+// (2026-09-02). Two points cannot be a mile apart in the same second, so a
+// point that would need more than maxMph from the previous kept one is not
+// on the road, and an exact repeat (same place, same instant, from two
+// tables) adds nothing.
+function _gdCleanTrace(pts, maxMph) {
+  const out = [];
+  const lim = Number(maxMph) > 0 ? Number(maxMph) : GEO_DERIVE_DEFAULTS.maxMph;
+  for (const f of pts) {
+    const prev = out[out.length - 1];
+    if (prev) {
+      if (prev.ts === f.ts && prev.lat === f.lat && prev.lng === f.lng) continue;
+      const mi = _gdMiles(prev, f);
+      const dtH = (f.ts - prev.ts) / 3600000;
+      if (mi > 0.05 && (dtH <= 0 || mi / dtH > lim)) continue;
+    }
+    out.push(f);
+  }
+  return out;
+}
+
 // The path runs from the departure fix to the arrival fix, both included:
 // the arrival ping lands a few seconds after the flip, and dropping it would
 // cut the last block off every leg.
-function _gdPathMiles(fixes, a, b, maxAccM, endpoints) {
-  const pts = fixes.filter(f => f && f.lat != null && f.lng != null && typeof f.ts === 'number' &&
+function _gdPathMiles(fixes, a, b, maxAccM, endpoints, maxMph) {
+  let pts = fixes.filter(f => f && f.lat != null && f.lng != null && typeof f.ts === 'number' &&
     f.ts >= a && f.ts <= b && (f.acc == null || Number(f.acc) <= maxAccM));
   (endpoints || []).forEach(e => { if (e && pts.indexOf(e) < 0) pts.push(e); });
   pts.sort((x, y) => x.ts - y.ts);
+  pts = _gdCleanTrace(pts, maxMph);
   if (pts.length < 2) return 0;
   let mi = 0;
   for (let i = 1; i < pts.length; i++) mi += _gdMiles(pts[i - 1], pts[i]);
@@ -346,7 +371,7 @@ function geoDeriveDay(input) {
         miles = d > 0 ? d : _gdMiles(a, b);
         milesFrom = d > 0 ? 'routed' : 'straight';
       } else {
-        const p = _gdPathMiles(fixes, j.startTs, j.endTs, opts.maxFixAccM, [startFix, endFix]);
+        const p = _gdPathMiles(fixes, j.startTs, j.endTs, opts.maxFixAccM, [startFix, endFix], opts.maxMph);
         miles = p > 0 ? p : _gdMiles(a, b);
         milesFrom = p > 0 ? 'path' : 'straight';
       }
@@ -360,7 +385,7 @@ function geoDeriveDay(input) {
         // for the route button. A collapsed leg spans the personal stop too,
         // which is the honest picture of where the truck went; the MILES on
         // it are the direct route, per rule 6.
-        path: _gdPath(fixes, chain.startTs, j.endTs, opts.maxFixAccM, [startFix, endFix], opts.pathMax),
+        path: _gdPath(fixes, chain.startTs, j.endTs, opts.maxFixAccM, [startFix, endFix], opts.pathMax, opts.maxMph),
       });
     }
     chain = null;
@@ -519,12 +544,13 @@ function _gdEndOfDay(dwells, fences, opts) {
 // The breadcrumbs a leg actually recorded, endpoints included, thinned the
 // same way the live tracker thins: drop every other interior point until it
 // fits, so the trace still starts and ends where it did.
-function _gdPath(fixes, a, b, maxAccM, endpoints, max) {
+function _gdPath(fixes, a, b, maxAccM, endpoints, max, maxMph) {
   const r5 = v => Math.round(v * 1e5) / 1e5;
-  const pts = fixes.filter(f => f && f.lat != null && f.lng != null && typeof f.ts === 'number' &&
+  let pts = fixes.filter(f => f && f.lat != null && f.lng != null && typeof f.ts === 'number' &&
     f.ts >= a && f.ts <= b && (f.acc == null || Number(f.acc) <= maxAccM));
   (endpoints || []).forEach(e => { if (e && pts.indexOf(e) < 0) pts.push(e); });
   pts.sort((x, y) => x.ts - y.ts);
+  pts = _gdCleanTrace(pts, maxMph);
   let path = pts.map(f => [r5(f.lat), r5(f.lng), Math.round(f.ts)]);
   const lim = Number(max) > 2 ? Number(max) : 400;
   while (path.length > lim) {

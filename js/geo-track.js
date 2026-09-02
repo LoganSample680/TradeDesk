@@ -975,7 +975,9 @@ async function _geoOnPing(pos){
   // the LAST session's card until real GPS truth arrives; this flag is that
   // truth arriving, after it the live state alone decides the card.
   window._geoFixSeen=true;
-  try{if(pos&&pos.coords)_geoFixLogPush(Number(pos.timestamp)||Date.now(),pos.coords.latitude,pos.coords.longitude,pos.coords.accuracy);}catch(_e){}
+  // A synthetic ping from a visit, fence or stale motion row is flagged
+  // __tdNoTrack: it drives the fence machine but is not where the truck is.
+  try{if(pos&&pos.coords&&!pos.__tdNoTrack)_geoFixLogPush(Number(pos.__tdTs||pos.timestamp)||Date.now(),pos.coords.latitude,pos.coords.longitude,pos.coords.accuracy);}catch(_e){}
   // RE-ENTRANCY GUARD: this handler awaits network geocodes, and watchPosition can
   // fire faster than they resolve. Interleaved runs used to apply a STALE position
   // after a fresher one and flip arrive/depart backwards, overlapping pings are
@@ -4741,7 +4743,10 @@ async function _geoTdEvent(ev,replay){
     else _geoDriveCorrelate('fix',Number(ev.ts)||Date.now(),'fence-exit');
   }
   if(!hasFix)return;
-  _geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
+  // Only a FRESH position goes in the fix log. A fence or motion row carries
+  // the plugin's last-known location, which after a wake can be a mile and
+  // a minute stale, and one of those in a trace read 3 miles as 6.1.
+  if(_GEO_FRESH_FIX_TYPES.indexOf(String(ev.type||''))>=0)_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
   // ── THE VISIT REPORT ALREADY KNOWS WHEN THEY GOT THERE ───────────────────
   // Owner report 2026-08-25, with two weeks of his own journal behind it: a
   // stop the app has a FENCE for is stamped within a minute, because crossing
@@ -4800,7 +4805,11 @@ async function _geoTdEvent(ev,replay){
   // still drives the fence machine and closes the leg. They just stop
   // EXTENDING the distance tally and the route, because none of them describes
   // where the truck is right now.
-  const _noTrack=(ev.type==='visit'||ev.type==='regionEnter'||ev.type==='regionExit');
+  // A motion row's position is the plugin's last-known fix; after a wake it
+  // can be a minute stale (fixAgeMs says how stale), and a stale point in
+  // the trace is how a 3-mile drive read 6.1.
+  const _noTrack=(ev.type==='visit'||ev.type==='regionEnter'||ev.type==='regionExit'||
+    (ev.type==='motion'&&!(typeof ev.fixAgeMs==='number'&&ev.fixAgeMs<=30000)));
   try{
     return await _geoOnPing({
       coords:{latitude:ev.lat,longitude:ev.lng,accuracy:ev.acc||0,
@@ -6051,6 +6060,8 @@ async function _geoDeriveTape(sinceMs){
 // across a whole week, so a ten-minute leg with 127 fixes on the server
 // came back with 16 of them (owner 2026-09-02: trips 2 and 4 at 3.9). Paged
 // by capture time until a short page says the window is exhausted.
+// A heartbeat's position is the 3 km keepalive fix: not a breadcrumb.
+const _GEO_FRESH_FIX_TYPES=['fix','push-ping'];
 const _GEO_FETCH_PAGE=1000;
 const _GEO_FETCH_PAGES=40;
 async function _geoPageAll(build){
@@ -6072,7 +6083,10 @@ async function _geoDeriveServerFixes(fromMs,toMs){
     const me=_supaUser.id,a=new Date(fromMs).toISOString(),b=new Date(toMs).toISOString();
     const ap=await _geoPageAll(()=>_supa.from('geo_events').select('ts,type').eq('employee_user_id',me).like('type','app-%').gte('ts',a).lt('ts',b));
     ap.forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.appEvents.push({ts:t,kind:String(e.type).slice(4)});});
-    const ev=await _geoPageAll(()=>_supa.from('geo_events').select('ts,lat,lon').eq('employee_user_id',me).gte('ts',a).lt('ts',b).not('lat','is',null));
+    // Only rows whose position is FRESH. A fence or motion row carries the
+    // last-known position, which after a wake can be a mile stale, and one
+    // of those in the trace read a 3-mile drive as 6.1 (owner 2026-09-02).
+    const ev=await _geoPageAll(()=>_supa.from('geo_events').select('ts,lat,lon').eq('employee_user_id',me).in('type',_GEO_FRESH_FIX_TYPES).gte('ts',a).lt('ts',b).not('lat','is',null));
     ev.forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:null});});
     const pg=await _geoPageAll(()=>_supa.from('location_pings').select('ts,lat,lon,accuracy').eq('employee_user_id',me).gte('ts',a).lt('ts',b));
     pg.forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:e.accuracy!=null?Number(e.accuracy):null});});
@@ -6124,13 +6138,21 @@ function _geoDeriveApplyMileage(dayKey,derived){
 const _GEO_TRACE_END_FT=600;      // the trace must start and end inside the fences it joins
 const _GEO_TRACE_GAP_MS=45000;    // and average a breadcrumb at least this often
 const _GEO_TRACE_MIN_PTS=12;
+// Does the trace start inside the origin fence and end inside the destination?
+function _geoTraceSpans(m){
+  try{
+    const p=m&&m.path;
+    if(!Array.isArray(p)||p.length<2||typeof _geoDistFt!=='function')return false;
+    const near=(pt,c)=>!!(c&&isFinite(c.lat)&&isFinite(c.lng)&&Array.isArray(pt)&&isFinite(+pt[0])&&isFinite(+pt[1])&&
+      _geoDistFt({lat:+pt[0],lng:+pt[1]},{lat:+c.lat,lng:+c.lng})<=_GEO_TRACE_END_FT);
+    return near(p[0],m.fromCoord)&&near(p[p.length-1],m.toCoord);
+  }catch(_e){return false;}
+}
 function _geoTraceComplete(m){
   try{
     const p=m&&m.path;
-    if(!Array.isArray(p)||p.length<_GEO_TRACE_MIN_PTS||typeof _geoDistFt!=='function')return false;
-    const near=(pt,c)=>!!(c&&isFinite(c.lat)&&isFinite(c.lng)&&Array.isArray(pt)&&isFinite(+pt[0])&&isFinite(+pt[1])&&
-      _geoDistFt({lat:+pt[0],lng:+pt[1]},{lat:+c.lat,lng:+c.lng})<=_GEO_TRACE_END_FT);
-    if(!near(p[0],m.fromCoord)||!near(p[p.length-1],m.toCoord))return false;
+    if(!Array.isArray(p)||p.length<_GEO_TRACE_MIN_PTS)return false;
+    if(!_geoTraceSpans(m))return false;
     const dur=Date.parse(m.endedIso||'')-Date.parse(m.startedIso||'');
     if(!(dur>0))return false;
     return dur/p.length<=_GEO_TRACE_GAP_MS&&Number(m.miles)>0;
@@ -6161,7 +6183,14 @@ async function _geoDeriveRouteMiles(rows){
       // The router only outranks a thin one, or one that starts down the
       // road because the phone woke late.
       if(_geoTraceComplete(m))continue;
-      if(routed>(Number(m.miles)||0)){m.miles=routed;m.calc_method='derived-routed';}
+      // A leg collapsed through a personal stop is billed at the direct
+      // route (rule 6), and the direct route cannot be longer than the road
+      // actually driven through the detour. When the trace spans fence to
+      // fence, the driven path caps the router (owner 2026-09-02: 3.9 from
+      // the router for a leg the truck drove in 3.3 with the stop in it).
+      const via=(Number(m.collapsedStops)>0&&_geoTraceSpans(m)&&typeof _milePathMiles==='function')?_milePathMiles(m):0;
+      const direct=(via>0&&routed>via)?Math.round(via*10)/10:routed;
+      if(direct>(Number(m.miles)||0)){m.miles=direct;m.calc_method=direct===routed?'derived-routed':'derived-via';}
     }catch(_e){}
   }
   if(dirty){
@@ -6239,6 +6268,11 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
       return null;
     }
     const rows=_geoDeriveVehicleRows(geoDeriveRows(res,{contractorId:_geoCid(),employeeId:_supaUser.id}));
+    // The legs show the moment the day is derived (owner 2026-09-02: "the
+    // drives themselves weren't instant"); the road miles are a lookup that
+    // can take seconds per new pair, so they land as a second paint.
+    _geoDeriveApplyMileage(dayKey,rows.td_mileage);
+    try{if(typeof renderAllMileage==='function'&&document.getElementById('mil-table'))renderAllMileage();}catch(_e){}
     await _geoDeriveRouteMiles(rows.td_mileage);
     _geoEnqueueRpc(dayKey,{
       p_contractor:_geoCid(),p_employee:_supaUser.id,p_day:dayKey,
@@ -6277,7 +6311,7 @@ async function _geoDeriveRebuild(){
 let _geoDeriveRebuildT=null;
 function _geoDeriveRebuildSoon(){
   if(window._geoDeriveRebuilt||_geoDeriveRebuildT)return;
-  _geoDeriveRebuildT=setTimeout(()=>{_geoDeriveRebuildT=null;window._geoDeriveRebuilt=true;_geoDeriveRebuild();},8000);
+  _geoDeriveRebuildT=setTimeout(()=>{_geoDeriveRebuildT=null;window._geoDeriveRebuilt=true;_geoDeriveRebuild();},2500);
 }
 
 // THE VEHICLE RULE, applied to a derived day (ported from the old engine's
