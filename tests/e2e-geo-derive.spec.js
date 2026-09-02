@@ -42,6 +42,7 @@ function run(page, input) {
 }
 const base = (over) => Object.assign({ day: DAY, dayStart: DAY_START, dayEnd: DAY_END, personId: '30a2b589-e081-4351-9f18-b1efba238c2d', fences: FENCES, nowMs: T(23, 0) }, over);
 const hm = ts => new Date(ts).toISOString().slice(11, 16);
+const _sameId = (a, b) => !!a && !!b && String(a.id) === String(b.id);
 
 test.describe('geo-derive: the day deriver', () => {
   let page;
@@ -378,6 +379,76 @@ test.describe('geo-derive: the day deriver', () => {
         expect(r.legs).toEqual([]);
       });
     }
+  });
+
+  // ── Rule 10: paperwork at the home office ───────────────────────────────
+  // Owner 2026-09-02: "if it's a home office, app time still counts", and
+  // "yes, count it on no-drive days". App-open minutes inside a home-office
+  // fence are an Office row, carved out of any surrounding home dwell.
+  test.describe('paperwork at the home office', () => {
+    const HOMEONLY = { id: 'place-ho', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0100, lng: -95.6900, addr: '7402 SW 22nd Ct' };
+    const HFIX = { lat: HOMEONLY.lat, lng: HOMEONLY.lng };
+    const app = (ts, kind) => ({ ts, kind });
+    const F = [SHOP, DOE, HOMEONLY];
+
+    test('the evening after the last drive: two hours of quotes is an Office row, the rest of the evening is not', async () => {
+      const tape = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot'), mo(T(17, 0), 'driving'), mo(T(17, 16), 'onFoot')];
+      const fixes = [fix(T(9, 0, 5), SHOP), fix(T(9, 20, 5), DOE), fix(T(17, 0, 5), DOE), fix(T(17, 16, 5), HFIX), fix(T(18, 0), HFIX), fix(T(19, 30), HFIX), fix(T(21, 0), HFIX)];
+      const appEvents = [app(T(18, 0), 'active'), app(T(19, 30), 'background')];
+      const r = await run(page, base({ tape, fixes, fences: F, appEvents }));
+      const office = r.dwells.filter(d => d.kind === 'office');
+      expect(office.map(d => [hm(d.startTs), hm(d.endTs), d.minutes, d.name])).toEqual([['23:00', '00:30', 90, '7402 SW 22nd Ct']]);
+      expect(r.dwells.filter(d => d.kind === 'home_office')).toEqual([]);
+      expect(r.open && r.open.kind).toBe('home_office');
+    });
+
+    test('a Sunday of invoicing with no drive at all counts', async () => {
+      const fixes = [fix(T(9, 30), HFIX), fix(T(10, 0), HFIX), fix(T(11, 0), HFIX), fix(T(12, 0), HFIX)];
+      const appEvents = [app(T(10, 0), 'active'), app(T(11, 0), 'background'), app(T(11, 30), 'active'), app(T(11, 45), 'background')];
+      const r = await run(page, base({ tape: [], fixes, fences: F, appEvents }));
+      expect(r.legs).toEqual([]);
+      expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs), d.minutes])).toEqual([['office', '15:00', '16:00', 60], ['office', '16:30', '16:45', 15]]);
+    });
+
+    test('inside a home dwell between two drives it is carved out, never laid on top', async () => {
+      const tape = [mo(T(8, 0), 'onFoot'), mo(T(11, 40), 'driving'), mo(T(12, 0), 'onFoot'), mo(T(14, 0), 'driving'), mo(T(14, 20), 'onFoot')];
+      const fixes = [fix(T(11, 40, 5), DOE), fix(T(12, 0, 5), HFIX), fix(T(13, 0), HFIX), fix(T(14, 0, 5), HFIX), fix(T(14, 20, 5), DOE), fix(T(15, 0), DOE)];
+      const appEvents = [app(T(12, 30), 'active'), app(T(13, 0), 'background')];
+      const r = await run(page, base({ tape, fixes, fences: F, appEvents }));
+      const home = r.dwells.filter(d => _sameId(d.fence, HOMEONLY));
+      expect(home.map(d => [d.kind, hm(d.startTs), hm(d.endTs), d.minutes])).toEqual([
+        ['home_office', '17:00', '17:30', 30], ['office', '17:30', '18:00', 30], ['home_office', '18:00', '19:00', 60],
+      ]);
+      expect(home.reduce((s, d) => s + d.minutes, 0)).toBe(120);
+      const spans = r.dwells.map(d => [d.startTs, d.endTs]).concat(r.legs.map(l => [l.startTs, l.endTs])).sort((a, b) => a[0] - b[0]);
+      for (let i = 1; i < spans.length; i++) expect(spans[i][0]).toBeGreaterThanOrEqual(spans[i - 1][1]);
+    });
+
+    test('the app open somewhere else is not paperwork, and the app open with no fix at home is not proof', async () => {
+      const tape = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot'), mo(T(12, 0), 'driving'), mo(T(12, 10), 'onFoot')];
+      const fixes = [fix(T(9, 0, 5), SHOP), fix(T(9, 20, 5), DOE), fix(T(12, 0, 5), DOE), fix(T(12, 10, 5), SHOP), fix(T(13, 0), SHOP)];
+      const appEvents = [app(T(10, 0), 'active'), app(T(11, 0), 'background')];
+      const a = await run(page, base({ tape, fixes, fences: F, appEvents }));
+      expect(a.dwells.filter(d => d.kind === 'office')).toEqual([]);
+      const b = await run(page, base({ tape: [], fixes: [], fences: F, appEvents: [app(T(18, 0), 'active'), app(T(20, 0), 'background')] }));
+      expect(b.dwells).toEqual([]);
+    });
+
+    test('an app left open runs to now, and never past the day', async () => {
+      const fixes = [fix(T(20, 0), HFIX), fix(T(21, 0), HFIX), fix(T(22, 0), HFIX)];
+      const r = await run(page, base({ tape: [], fixes, fences: F, appEvents: [app(T(20, 30), 'active')], nowMs: T(21, 15) }));
+      expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)])).toEqual([['office', '01:30', '02:15']]);
+    });
+
+    test('rows: an office dwell is a place-office row, which the reader already draws as Office', async () => {
+      const fixes = [fix(T(10, 0), HFIX), fix(T(11, 0), HFIX)];
+      const r = await run(page, base({ tape: [], fixes, fences: F, appEvents: [app(T(10, 0), 'active'), app(T(11, 0), 'background')] }));
+      const rows = await page.evaluate((res) => geoDeriveRows(res, { contractorId: 'C', employeeId: 'E' }), r);
+      expect(rows.job_time_entries.map(x => [x.source, x.dest_place, x.minutes])).toEqual([['place-office', '7402 SW 22nd Ct', 60]]);
+      expect(rows.job_time_entries[0].client_key).toMatch(/^o-place-ho-/);
+      const kind = await page.evaluate(() => _tlRailKind({ source: 'auto', rawSource: 'place-office' }));
+      expect(kind).toBe('office');
+    });
   });
 
   test('no console errors across the deriver', async () => {

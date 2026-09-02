@@ -65,6 +65,13 @@
 //      stretch of the day (before any drive) and the last (after the final
 //      drive) are not automatic rows: home is not work, and if it was, the
 //      clock says so.
+//  10. EXCEPT PAPERWORK (owner 2026-09-02: "if it's a home office, app time
+//      still counts", and "yes, count it on no-drive days"). Inside a
+//      home-office fence, minutes with the app OPEN are an Office row, with
+//      or without a drive on either side, on a Sunday of invoicing too. They
+//      are carved out of any surrounding home dwell, never laid on top of it,
+//      so no minute is counted twice. Presence is proven by fixes inside the
+//      fence, never assumed from the app being open somewhere.
 // ══════════════════════════════════════════════════════════════════════════
 
 const GEO_DERIVE_DEFAULTS = Object.freeze({
@@ -200,6 +207,8 @@ function _gdJourneys(tape, personId, opts, dayStart, dayEnd, nowMs) {
  * input.nowMs     for the open tail; defaults to Date.now()
  * input.directMiles(a,b) optional sync resolver for a collapsed leg; default
  *                 straight line, and the leg says which it got.
+ * input.appEvents [{ts, kind}] app-active | app-background | app-terminate |
+ *                 app-relaunch (the plugin's own lifecycle events), for rule 10
  * input.opts      overrides for GEO_DERIVE_DEFAULTS
  */
 function geoDeriveDay(input) {
@@ -318,9 +327,12 @@ function geoDeriveDay(input) {
     }
   }
 
+  // Rule 10: paperwork at the home office.
+  const carved = _gdOffice(dwells, open, fixes, fences, inp.appEvents, dayStart, dayEnd, nowMs, opts);
+
   return {
     day: inp.day || '',
-    dwells: dwells.filter(d => d.minutes >= 1),
+    dwells: carved.filter(d => d.minutes >= 1),
     legs,
     open,
     pending: chain ? { id: chain.id, origin: chain.originFence, startTs: chain.startTs, stops: chain.stops, autoMinutes: Math.round(chain.autoMs / 60000) } : null,
@@ -328,9 +340,94 @@ function geoDeriveDay(input) {
   };
 }
 
+// Stretches of proven presence inside a fence: consecutive fixes inside it
+// are one stretch; the first fix outside ends it at the last one inside.
+function _gdPresence(fixes, fence, radiusFt, maxAccM) {
+  const pts = fixes.filter(f => f && f.lat != null && f.lng != null && typeof f.ts === 'number' &&
+    (f.acc == null || Number(f.acc) <= maxAccM)).sort((a, b) => a.ts - b.ts);
+  const out = [];
+  let cur = null;
+  for (const f of pts) {
+    const inside = _gdSameFence(geoFenceAt(f, [fence], radiusFt), fence);
+    if (inside) { if (cur) cur[1] = f.ts; else cur = [f.ts, f.ts]; }
+    else if (cur) { out.push(cur); cur = null; }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+// App-open intervals from the lifecycle tape, clipped to the day.
+function _gdAppOpen(appEvents, dayStart, dayEnd, nowMs) {
+  const ev = (Array.isArray(appEvents) ? appEvents : [])
+    .filter(e => e && typeof e.ts === 'number' && e.kind)
+    .map(e => ({ ts: e.ts, on: /active|relaunch/.test(String(e.kind)) }))
+    .sort((a, b) => a.ts - b.ts);
+  const out = [];
+  let openAt = null;
+  for (const e of ev) {
+    if (e.on) { if (openAt == null) openAt = e.ts; }
+    else if (openAt != null) { out.push([openAt, e.ts]); openAt = null; }
+  }
+  if (openAt != null) out.push([openAt, Math.min(nowMs, dayEnd)]);
+  const lim = Math.min(nowMs, dayEnd);
+  return out.map(([a, b]) => [Math.max(a, dayStart), Math.min(b, lim)]).filter(([a, b]) => b > a);
+}
+
+function _gdIntersect(A, B) {
+  const out = [];
+  for (const [a1, a2] of A) for (const [b1, b2] of B) {
+    const lo = Math.max(a1, b1), hi = Math.min(a2, b2);
+    if (hi > lo) out.push([lo, hi]);
+  }
+  return out.sort((x, y) => x[0] - y[0]);
+}
+
+// Office rows for every home-office fence, carved out of home dwells.
+function _gdOffice(dwells, open, fixes, fences, appEvents, dayStart, dayEnd, nowMs, opts) {
+  const homes = (fences || []).filter(f => f && String(f.kind) === 'home_office' && f.lat != null && f.lng != null);
+  const appOpen = _gdAppOpen(appEvents, dayStart, dayEnd, nowMs);
+  if (!homes.length || !appOpen.length) return dwells;
+  let out = dwells.slice();
+  for (const home of homes) {
+    // Presence: fixes inside the fence, plus the closed home dwells and the
+    // open tail if it is this fence (both already proved by their arrival).
+    const presence = _gdPresence(fixes, home, opts.radiusFt, opts.maxFixAccM)
+      .concat(dwells.filter(d => _gdSameFence(d.fence, home)).map(d => [d.startTs, d.endTs]))
+      .concat(open && _gdSameFence(open.fence, home) ? [[open.sinceTs, Math.min(nowMs, dayEnd)]] : []);
+    let office = _gdIntersect(appOpen, presence);
+    // Merge touching or overlapping office spans.
+    const merged = [];
+    for (const sp of office) {
+      const last = merged[merged.length - 1];
+      if (last && sp[0] <= last[1]) last[1] = Math.max(last[1], sp[1]); else merged.push(sp.slice());
+    }
+    office = merged.filter(([a, b]) => b - a >= 60000);
+    if (!office.length) continue;
+    // Carve them out of this fence's home dwells.
+    const next = [];
+    for (const d of out) {
+      if (!_gdSameFence(d.fence, home) || d.kind !== 'home_office') { next.push(d); continue; }
+      let pieces = [[d.startTs, d.endTs]];
+      for (const [oa, ob] of office) {
+        const np = [];
+        for (const [a, b] of pieces) {
+          if (ob <= a || oa >= b) { np.push([a, b]); continue; }
+          if (oa > a) np.push([a, oa]);
+          if (ob < b) np.push([ob, b]);
+        }
+        pieces = np;
+      }
+      pieces.forEach(([a, b]) => { if (b - a >= 60000) next.push(Object.assign(_gdDwell(home, a, b, d.journeyId, false), { closedBy: d.closedBy })); });
+    }
+    office.forEach(([a, b]) => next.push(Object.assign(_gdDwell(home, a, b, 'o-' + String(home.id) + '-' + Math.round(a).toString(36), false), { kind: 'office' })));
+    out = next.sort((x, y) => x.startTs - y.startTs);
+  }
+  return out;
+}
+
 function _gdDwell(fence, startTs, endTs, journeyId, open) {
   return {
-    id: 'd-' + String(journeyId),
+    id: (/^o-/.test(String(journeyId)) ? '' : 'd-') + String(journeyId),
     fence, kind: String(fence.kind || 'other'), name: fence.name || '',
     startTs, endTs, minutes: Math.round((endTs - startTs) / 60000),
     journeyId: String(journeyId), open: !!open,
@@ -358,7 +455,8 @@ function geoDeriveRows(result, ids) {
     time.push(Object.assign(base, {
       job_id: f.jobId != null ? String(f.jobId) : null,
       dest_place: f.jobId != null ? null : (d.name || null),
-      source: f.jobId != null ? 'geofence' : (f.clientId != null ? 'client' : 'place'),
+      source: d.kind === 'office' ? 'place-office'
+        : (f.jobId != null ? 'geofence' : (f.clientId != null ? 'client' : 'place')),
     }));
   }
   for (const l of (result && result.legs) || []) {

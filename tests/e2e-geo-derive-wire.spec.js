@@ -111,6 +111,43 @@ test.describe('geo-derive wiring', () => {
     });
   });
 
+  test.describe('the app log (rule 10)', () => {
+    test('lifecycle events land in it from the router, and a fix on them lands in the fix log', async () => {
+      const r = await page.evaluate(async () => {
+        localStorage.removeItem('zp3_geo_applog');
+        const t0 = Date.now() - 5000;
+        await _geoTdEvent({ type: 'app-active', ts: t0, lat: 39.01, lng: -95.69, acc: 5 }, false).catch(() => {});
+        await _geoTdEvent({ type: 'app-background', ts: t0 + 2000 }, false).catch(() => {});
+        _geoAppLogPush(t0 + 2500, 'background');
+        _geoAppLogPush('junk', 'active'); _geoAppLogPush(t0 + 3000, '');
+        return { app: _geoAppLogRead().map(e => e.kind), fix: _geoFixLogRead().some(f => f.lat === 39.01 && f.lng === -95.69) };
+      });
+      expect(r.app).toEqual(['active', 'background']);
+      expect(r.fix).toBe(true);
+    });
+
+    test('a no-drive day with app activity at home still derives', async () => {
+      const r = await page.evaluate(async () => {
+        localStorage.removeItem('zp3_geo_queue'); localStorage.removeItem('zp3_geo_applog'); localStorage.removeItem('zp3_geo_fixlog');
+        S.bizTz = 'America/Chicago'; window.mileage = [];
+        window.places = [{ id: 77, kind: 'home_office', name: 'Home office', lat: 39.0100, lon: -95.6900 }];
+        window._geoDeriveTape = async () => [];
+        window._geoDrainQueue = () => {};
+        // A PAST day: an app span still open is capped at now, so a future
+        // fixture would derive nothing (the deriver was right, the first cut of
+        // this test was not).
+        const day = '2026-08-30', t = h => Date.parse('2026-08-30T05:00:00Z') + h * 3600000;
+        _geoFixLogPush(t(9), 39.0100, -95.6900, 5); _geoFixLogPush(t(11), 39.0100, -95.6900, 5);
+        _geoAppLogPush(t(10), 'active'); _geoAppLogPush(t(11), 'background');
+        const res = await _geoDeriveDayNow(day, null);
+        const q = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]');
+        return { res: res && res.dwells.map(d => [d.kind, d.minutes]), q: q.map(x => x.args.p_time.map(r => r.source)) };
+      });
+      expect(r.res).toEqual([['office', 60]]);
+      expect(r.q).toEqual([['place-office']]);
+    });
+  });
+
   test.describe('the Central day', () => {
     test('bounds come out of Intl, in daylight and standard time', async () => {
       const r = await page.evaluate(() => {

@@ -1869,7 +1869,10 @@ supposed to be. That design is gone. The rule now:
   Both ends saved or no leg. A personal stop collapses to the direct route.
   Same fence both ends is a round trip. Unresolved by midnight writes nothing;
   the manual clock covers it. A dwell is a row only between an arrival and a
-  departure.
+  departure, with one exception: app-open minutes inside a home-office fence
+  are an Office row (rule 10, owner 2026-09-02), with or without a drive, on
+  no-drive days too, carved out of any surrounding home dwell and proven by
+  fixes inside the fence.
 - **`geo_replace_day` (Supabase RPC) is the only writer of automatic rows.**
   It replaces one person's automatic rows for one day in one transaction,
   refuses any set with an overlap, preserves manual clocks and hand-fixed

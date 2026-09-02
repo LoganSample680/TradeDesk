@@ -4609,6 +4609,12 @@ async function _geoTdEvent(ev,replay){
     // where they were. _autoSaveAndReload owns every guard either way: it
     // defers during an in-flight cold load, snapshots open forms, and saves
     // before it goes.
+    // Rule 10 (owner 2026-09-02): app-open minutes at the home office are
+    // paperwork. The lifecycle edge and, when it carries one, its fix.
+    if(/^app-/.test(String(ev.type||''))){
+      _geoAppLogPush(Number(ev.ts)||Date.now(),String(ev.type).slice(4));
+      if(typeof ev.lat==='number'&&typeof ev.lng==='number')_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
+    }
     if(!replay&&ev.type==='push-ping')_geoBgUpdateCheck();
     // And the day is re-derived on the same push, so an open dwell that a
     // fix has since left gets closed without waiting for a flip.
@@ -5756,6 +5762,7 @@ function _geoTrackInit(){
   if(!window._geoVisBound){
     window._geoVisBound=true;
     document.addEventListener('visibilitychange',()=>{
+      try{_geoAppLogPush(Date.now(),document.hidden?'background':'active');}catch(_e){}
       if(document.hidden){
         _geoGapHiddenAt=new Date().toISOString();
         _geoPersistOpen(_geoGapHiddenAt);
@@ -5981,6 +5988,22 @@ const _GEO_FIXLOG_MAX=6000;
 const _GEO_FIXLOG_KEEP_MS=8*86400000;
 const _GEO_DERIVE_DAYS=7;
 
+const _GEO_APPLOG_KEY='zp3_geo_applog';
+function _geoAppLogRead(){try{const a=JSON.parse(localStorage.getItem(_GEO_APPLOG_KEY)||'[]');return Array.isArray(a)?a:[];}catch(_e){return [];}}
+function _geoAppLogPush(ts,kind){
+  try{
+    const t=Number(ts),k=String(kind||'');
+    if(!(t>0)||!k)return;
+    const a=_geoAppLogRead();
+    const last=a[a.length-1];
+    if(last&&last.kind===k&&t-last.ts<1000)return;
+    a.push({ts:t,kind:k});
+    const cut=t-_GEO_FIXLOG_KEEP_MS;
+    let out=a.filter(e=>e&&e.ts>=cut);
+    if(out.length>2000)out=out.slice(out.length-2000);
+    localStorage.setItem(_GEO_APPLOG_KEY,JSON.stringify(out));
+  }catch(_e){}
+}
 function _geoFixLogRead(){try{const a=JSON.parse(localStorage.getItem(_GEO_FIXLOG_KEY)||'[]');return Array.isArray(a)?a:[];}catch(_e){return [];}}
 function _geoFixLogPush(ts,lat,lng,acc){
   try{
@@ -6063,9 +6086,12 @@ async function _geoDeriveTape(sinceMs){
 // dead. Folded into the local log for the boot rebuild only.
 async function _geoDeriveServerFixes(fromMs,toMs){
   const out=[];
+  out.appEvents=[];
   try{
     if(!_supa||!_supaUser)return out;
     const me=_supaUser.id,a=new Date(fromMs).toISOString(),b=new Date(toMs).toISOString();
+    const ap=await _supa.from('geo_events').select('ts,type').eq('employee_user_id',me).like('type','app-%').gte('ts',a).lt('ts',b).limit(5000);
+    (ap&&ap.data||[]).forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.appEvents.push({ts:t,kind:String(e.type).slice(4)});});
     const ev=await _supa.from('geo_events').select('ts,lat,lon').eq('employee_user_id',me).gte('ts',a).lt('ts',b).not('lat','is',null).limit(5000);
     (ev&&ev.data||[]).forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:null});});
     const pg=await _supa.from('location_pings').select('ts,lat,lon,accuracy').eq('employee_user_id',me).gte('ts',a).lt('ts',b).limit(5000);
@@ -6115,12 +6141,18 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     const b=_geoDayBounds(dayKey);
     if(!b)return null;
     const tape=await _geoDeriveTape(b.start-2*3600000);
-    // Nothing positively covering this day: leave its rows alone.
-    if(!tape.some(t=>t.ts>=b.start-2*3600000&&t.ts<b.end))return null;
+    // Nothing positively covering this day: leave its rows alone. A day the
+    // tape does not cover can still be a Sunday of invoicing at the home
+    // office (rule 10), which the app log covers instead.
+    const tapeCovers=tape.some(t=>t.ts>=b.start-2*3600000&&t.ts<b.end);
+    const appCovers=_geoAppLogRead().some(e=>e.ts>=b.start&&e.ts<b.end)||
+      (serverFixes&&Array.isArray(serverFixes.appEvents)&&serverFixes.appEvents.some(e=>e.ts>=b.start&&e.ts<b.end));
+    if(!tapeCovers&&!appCovers)return null;
     const fixes=_geoFixLogRead().concat(Array.isArray(serverFixes)?serverFixes:[]);
+    const appEvents=_geoAppLogRead().concat((serverFixes&&Array.isArray(serverFixes.appEvents))?serverFixes.appEvents:[]);
     const res=geoDeriveDay({
       day:dayKey,dayStart:b.start,dayEnd:b.end,personId:_supaUser.id,
-      tape,fixes,fences:_geoDeriveFences(dayKey),nowMs:Date.now(),
+      tape,fixes,appEvents,fences:_geoDeriveFences(dayKey),nowMs:Date.now(),
     });
     const rows=_geoDeriveVehicleRows(geoDeriveRows(res,{contractorId:_geoCid(),employeeId:_supaUser.id}));
     _geoEnqueueRpc(dayKey,{
