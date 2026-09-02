@@ -5989,6 +5989,35 @@ const _GEO_FIXLOG_KEEP_MS=8*86400000;
 const _GEO_DERIVE_DAYS=7;
 
 const _GEO_APPLOG_KEY='zp3_geo_applog';
+// Fewer local fixes than this inside a day means the log does not know the
+// day: a real drive alone is a hundred.
+const _GEO_FIXLOG_THIN=20;
+// Fold a batch of server fixes/events into the local logs, deduped on the
+// instant, so a derive that had to ask the server once does not have to again.
+function _geoFixLogSeed(list){
+  try{
+    if(!Array.isArray(list)||!list.length)return;
+    const a=_geoFixLogRead();const have=new Set(a.map(f=>f.ts));
+    list.forEach(f=>{if(f&&typeof f.ts==='number'&&!have.has(f.ts)&&isFinite(f.lat)&&isFinite(f.lng)){a.push({ts:f.ts,lat:f.lat,lng:f.lng,acc:f.acc!=null?f.acc:null});have.add(f.ts);}});
+    a.sort((x,y)=>x.ts-y.ts);
+    const cut=Date.now()-_GEO_FIXLOG_KEEP_MS;
+    let out=a.filter(f=>f.ts>=cut);
+    if(out.length>_GEO_FIXLOG_MAX)out=out.slice(out.length-_GEO_FIXLOG_MAX);
+    localStorage.setItem(_GEO_FIXLOG_KEY,JSON.stringify(out));
+  }catch(_e){}
+}
+function _geoAppLogSeed(list){
+  try{
+    if(!Array.isArray(list)||!list.length)return;
+    const a=_geoAppLogRead();const have=new Set(a.map(e=>e.ts+'|'+e.kind));
+    list.forEach(e=>{if(e&&typeof e.ts==='number'&&e.kind&&!have.has(e.ts+'|'+e.kind)){a.push({ts:e.ts,kind:String(e.kind)});have.add(e.ts+'|'+e.kind);}});
+    a.sort((x,y)=>x.ts-y.ts);
+    const cut=Date.now()-_GEO_FIXLOG_KEEP_MS;
+    let out=a.filter(e=>e.ts>=cut);
+    if(out.length>2000)out=out.slice(out.length-2000);
+    localStorage.setItem(_GEO_APPLOG_KEY,JSON.stringify(out));
+  }catch(_e){}
+}
 function _geoAppLogRead(){try{const a=JSON.parse(localStorage.getItem(_GEO_APPLOG_KEY)||'[]');return Array.isArray(a)?a:[];}catch(_e){return [];}}
 function _geoAppLogPush(ts,kind){
   try{
@@ -6148,12 +6177,37 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     const appCovers=_geoAppLogRead().some(e=>e.ts>=b.start&&e.ts<b.end)||
       (serverFixes&&Array.isArray(serverFixes.appEvents)&&serverFixes.appEvents.some(e=>e.ts>=b.start&&e.ts<b.end));
     if(!tapeCovers&&!appCovers)return null;
-    const fixes=_geoFixLogRead().concat(Array.isArray(serverFixes)?serverFixes:[]);
-    const appEvents=_geoAppLogRead().concat((serverFixes&&Array.isArray(serverFixes.appEvents))?serverFixes.appEvents:[]);
+    let server=Array.isArray(serverFixes)?serverFixes:null;
+    if(!server){
+      // Live derive with a thin local log for this day (a fresh build, a
+      // reinstall, a day the app was dead for): the server has what other
+      // wakes flushed. Fetched once, then seeded locally so the next derive
+      // does not have to ask.
+      const localToday=_geoFixLogRead().filter(f=>f.ts>=b.start&&f.ts<b.end).length;
+      if(localToday<_GEO_FIXLOG_THIN){
+        server=await _geoDeriveServerFixes(b.start-2*3600000,b.end);
+        _geoFixLogSeed(server);
+        _geoAppLogSeed(server.appEvents);
+      }
+    }
+    const fixes=_geoFixLogRead().concat(server||[]);
+    const appEvents=_geoAppLogRead().concat((server&&Array.isArray(server.appEvents))?server.appEvents:[]);
     const res=geoDeriveDay({
       day:dayKey,dayStart:b.start,dayEnd:b.end,personId:_supaUser.id,
       tape,fixes,appEvents,fences:_geoDeriveFences(dayKey),nowMs:Date.now(),
     });
+    // MISSING EVIDENCE IS NOT AN EMPTY DAY (owner 2026-09-02, 22:33: "my
+    // mileage gone for today when I should have four trips"). The tape had
+    // his four drives; the local fix log, minutes old on a fresh build, had
+    // no fix for any of them, so nothing resolved and the day was replaced
+    // with nothing. Drives on the tape that resolve to nowhere at all mean
+    // the fixes have not been fetched, not that nothing happened. Skip, and
+    // let the next derive (with the server's fixes folded in below) do it.
+    const resolvedAny=!!(res.legs.length||res.dwells.length||res.pending||res.open);
+    if(res.journeys.length&&!resolvedAny){
+      try{_geoParkNote('derive-skip',dayKey+': '+res.journeys.length+' drives on the tape, none resolved');}catch(_e){}
+      return null;
+    }
     const rows=_geoDeriveVehicleRows(geoDeriveRows(res,{contractorId:_geoCid(),employeeId:_supaUser.id}));
     _geoEnqueueRpc(dayKey,{
       p_contractor:_geoCid(),p_employee:_supaUser.id,p_day:dayKey,
@@ -6179,6 +6233,8 @@ async function _geoDeriveRebuild(){
   if(!b)return 0;
   const from=b.start-(_GEO_DERIVE_DAYS-1)*86400000-2*3600000;
   const server=await _geoDeriveServerFixes(from,b.end);
+  _geoFixLogSeed(server);
+  _geoAppLogSeed(server.appEvents);
   let n=0;
   for(let i=_GEO_DERIVE_DAYS-1;i>=0;i--){
     const d=_geoDayKeyOf(b.start-i*86400000+3600000,_geoBizTz());

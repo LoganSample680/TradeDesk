@@ -72,10 +72,20 @@
 //      are carved out of any surrounding home dwell, never laid on top of it,
 //      so no minute is counted twice. Presence is proven by fixes inside the
 //      fence, never assumed from the app being open somewhere.
+//  11. THE DAY ENDS WITH THE LAST REAL WORK (owner 2026-08-24, restated
+//      2026-09-02 on his own 5:29pm: "those aren't needed"). A dwell at a
+//      base (the shop, a home office) that begins after the day's last
+//      job, client or supply dwell is not a row, except for a wrap-up
+//      allowance at a shop that is NOT also somebody's home: unloading the
+//      truck is work, an evening at the house is not. A day with no
+//      non-base work at all keeps its base dwells (a crew member's day at
+//      the yard is a shift).
 // ══════════════════════════════════════════════════════════════════════════
 
 const GEO_DERIVE_DEFAULTS = Object.freeze({
   radiusFt: 600,          // one definition of "inside", replacing 600/797/950
+  wrapMin: 30,            // rule 11: unloading at a real shop after the last job
+  pathMax: 400,           // breadcrumbs kept on a mileage row (thinned, endpoints survive)
   fixWindowMs: 5 * 60000, // how far from a flip a fix may sit and still be its fix
   minLegMs: 2 * 60000,    // a journey shorter than this is a walk across a fence line
   stillEndMs: 10 * 60000, // a truck that sits this long has parked, foot flip or not
@@ -298,6 +308,11 @@ function geoDeriveDay(input) {
         minutes: Math.round(chain.autoMs / 60000),
         miles: Math.round(miles * 10) / 10, milesFrom,
         collapsed, stops: chain.stops,
+        // What the phone actually saw between the two flips, for the map and
+        // for the route button. A collapsed leg spans the personal stop too,
+        // which is the honest picture of where the truck went; the MILES on
+        // it are the direct route, per rule 6.
+        path: _gdPath(fixes, chain.startTs, j.endTs, opts.maxFixAccM, [startFix, endFix], opts.pathMax),
       });
     }
     chain = null;
@@ -329,10 +344,12 @@ function geoDeriveDay(input) {
 
   // Rule 10: paperwork at the home office.
   const carved = _gdOffice(dwells, open, fixes, fences, inp.appEvents, dayStart, dayEnd, nowMs, opts);
+  // Rule 11: the day ends with the last real work.
+  const ended = _gdEndOfDay(carved, fences, opts);
 
   return {
     day: inp.day || '',
-    dwells: carved.filter(d => d.minutes >= 1),
+    dwells: ended.filter(d => d.minutes >= 1),
     legs,
     open,
     pending: chain ? { id: chain.id, origin: chain.originFence, startTs: chain.startTs, stops: chain.stops, autoMinutes: Math.round(chain.autoMs / 60000) } : null,
@@ -425,6 +442,52 @@ function _gdOffice(dwells, open, fixes, fences, appEvents, dayStart, dayEnd, now
   return out;
 }
 
+const _GD_BASE = { shop: 1, home_office: 1 };
+function _gdIsBaseKind(k) { return !!_GD_BASE[String(k || '')]; }
+// A shop that shares its spot with a home office is somebody's house.
+function _gdShopIsHome(fence, fences, radiusFt) {
+  if (!fence || String(fence.kind) !== 'shop') return false;
+  const r = Number(radiusFt) > 0 ? Number(radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
+  return (fences || []).some(f => f && String(f.kind) === 'home_office' && f.lat != null && f.lng != null &&
+    _gdMiles(fence, f) * 5280 <= r);
+}
+function _gdEndOfDay(dwells, fences, opts) {
+  const work = dwells.filter(d => !_gdIsBaseKind(d.kind) && d.kind !== 'office');
+  if (!work.length) return dwells;                       // a yard-only day is a shift
+  const lastWorkEnd = Math.max.apply(null, work.map(d => d.endTs));
+  const out = [];
+  for (const d of dwells) {
+    if (!_gdIsBaseKind(d.kind) || d.startTs < lastWorkEnd) { out.push(d); continue; }
+    // After the last real work. A real shop gets the wrap-up allowance.
+    if (d.kind === 'shop' && !_gdShopIsHome(d.fence, fences, opts.radiusFt)) {
+      const cap = d.startTs + (Number(opts.wrapMin) > 0 ? Number(opts.wrapMin) : 0) * 60000;
+      if (cap > d.startTs) out.push(Object.assign(_gdDwell(d.fence, d.startTs, Math.min(d.endTs, cap), d.journeyId, false), { closedBy: d.closedBy, wrapped: d.endTs > cap }));
+    }
+    // A home office, or a shop that is the house: nothing.
+  }
+  return out;
+}
+
+// The breadcrumbs a leg actually recorded, endpoints included, thinned the
+// same way the live tracker thins: drop every other interior point until it
+// fits, so the trace still starts and ends where it did.
+function _gdPath(fixes, a, b, maxAccM, endpoints, max) {
+  const r5 = v => Math.round(v * 1e5) / 1e5;
+  const pts = fixes.filter(f => f && f.lat != null && f.lng != null && typeof f.ts === 'number' &&
+    f.ts >= a && f.ts <= b && (f.acc == null || Number(f.acc) <= maxAccM));
+  (endpoints || []).forEach(e => { if (e && pts.indexOf(e) < 0) pts.push(e); });
+  pts.sort((x, y) => x.ts - y.ts);
+  let path = pts.map(f => [r5(f.lat), r5(f.lng), Math.round(f.ts)]);
+  const lim = Number(max) > 2 ? Number(max) : 400;
+  while (path.length > lim) {
+    const keep = [path[0]];
+    for (let i = 1; i < path.length - 1; i += 2) keep.push(path[i]);
+    keep.push(path[path.length - 1]);
+    path = keep;
+  }
+  return path;
+}
+
 function _gdDwell(fence, startTs, endTs, journeyId, open) {
   return {
     id: (/^o-/.test(String(journeyId)) ? '' : 'd-') + String(journeyId),
@@ -469,7 +532,13 @@ function geoDeriveRows(result, ids) {
       to: l.to.addr || l.to.name || '', to_name: l.to.name || '',
       fromCoord: { lat: l.from.lat, lng: l.from.lng }, toCoord: { lat: l.to.lat, lng: l.to.lng },
       startedIso: iso(l.startTs), endedIso: iso(l.endTs), mins: l.minutes,
+      // The mileage list orders by when a row was logged; a derived row is
+      // logged at the moment its drive began, which is the order a person
+      // expects. (Without these the derived rows sorted arbitrarily.)
+      loggedAt: iso(l.startTs), created_at: iso(l.startTs),
       miles: l.miles, calc_method: 'derived-' + l.milesFrom,
+      gpsMiles: l.milesFrom === 'path' ? l.miles : 0,
+      path: Array.isArray(l.path) ? l.path : [],
       collapsedStops: l.stops || 0,
       // The destination fence rides along (stripped by the wiring) so the
       // purpose can be resolved through the same table the manual log uses.

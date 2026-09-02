@@ -451,6 +451,143 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── The route: what the phone actually traced ───────────────────────────
+  // Owner 2026-09-02: "the mileage logs appear to be as the crow flies and is
+  // missing the route button that shows what was traced, loved that feature,
+  // add it back". The route button reads m.path; a derived leg now carries it.
+  test.describe('the traced route rides on the leg', () => {
+    const tape = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot')];
+    const mid = i => ({ lat: SHOP.lat + (DOE.lat - SHOP.lat) * i / 10, lng: SHOP.lng + (DOE.lng - SHOP.lng) * i / 10 });
+
+    test('the path is every good fix between the flips, endpoints included, in order', async () => {
+      const fixes = [fix(T(9, 0, 5), SHOP)];
+      for (let i = 1; i < 10; i++) fixes.push(fix(T(9, 2 * i), mid(i)));
+      fixes.push(fix(T(9, 10), mid(5), 900));          // a bad fix: not on the trace
+      fixes.push(fix(T(9, 20, 5), DOE), fix(T(9, 40), DOE));
+      const r = await run(page, base({ tape, fixes }));
+      expect(r.legs).toHaveLength(1);
+      const p = r.legs[0].path;
+      expect(p).toHaveLength(11);
+      expect(p[0].slice(0, 2)).toEqual([SHOP.lat, SHOP.lng].map(v => Math.round(v * 1e5) / 1e5));
+      expect(p[10].slice(0, 2)).toEqual([DOE.lat, DOE.lng].map(v => Math.round(v * 1e5) / 1e5));
+      for (let i = 1; i < p.length; i++) expect(p[i][2]).toBeGreaterThan(p[i - 1][2]);
+      expect(r.legs[0].milesFrom).toBe('path');
+    });
+
+    test('a long trace is thinned to the cap and still starts and ends where it did', async () => {
+      const fixes = [fix(T(9, 0, 5), SHOP)];
+      // Interior breadcrumbs start ten seconds in and stop ten seconds short,
+      // so the flip's nearest fix (the endpoint) stays the one five seconds off.
+      for (let i = 10; i <= 1190; i++) fixes.push(fix(T(9, 0, i), mid(i / 120)));
+      fixes.push(fix(T(9, 20, 5), DOE), fix(T(9, 40), DOE));
+      const r = await run(page, base({ tape, fixes }));
+      const p = r.legs[0].path;
+      expect(p.length).toBeLessThanOrEqual(400);
+      expect(p.length).toBeGreaterThan(200);
+      expect(p[0][2]).toBe(T(9, 0, 5));
+      expect(p[p.length - 1][2]).toBe(T(9, 20, 5));
+    });
+
+    test('a collapsed leg traces through the personal stop, and its miles are still the direct route', async () => {
+      const t = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot'), mo(T(9, 40), 'driving'), mo(T(10, 0), 'onFoot')];
+      const f = [fix(T(9, 0, 5), SHOP), fix(T(9, 10), GAS), fix(T(9, 20, 5), GAS), fix(T(9, 40, 5), GAS), fix(T(9, 50), mid(7)), fix(T(10, 0, 5), DOE), fix(T(10, 30), DOE)];
+      const r = await run(page, base({ tape: t, fixes: f }));
+      expect(r.legs).toHaveLength(1);
+      expect(r.legs[0].collapsed).toBe(true);
+      expect(r.legs[0].path.map(x => x[2])).toEqual([T(9, 0, 5), T(9, 10), T(9, 20, 5), T(9, 40, 5), T(9, 50), T(10, 0, 5)]);
+      expect(r.legs[0].milesFrom).toBe('straight');
+    });
+
+    test('rows: the mileage row carries the path, its own miles as gpsMiles, and is logged when the drive began', async () => {
+      const fixes = [fix(T(9, 0, 5), SHOP), fix(T(9, 10), mid(5)), fix(T(9, 20, 5), DOE), fix(T(9, 40), DOE)];
+      const r = await run(page, base({ tape, fixes }));
+      const rows = await page.evaluate((res) => geoDeriveRows(res, { contractorId: 'C', employeeId: 'E' }), r);
+      const m = rows.td_mileage[0];
+      expect(m.path).toHaveLength(3);
+      expect(m.gpsMiles).toBe(m.miles);
+      expect(m.gpsMiles).toBeGreaterThan(0);
+      expect(m.loggedAt).toBe(m.startedIso);
+      expect(m.created_at).toBe(m.startedIso);
+      // The route reader in mileage.js draws from the same field and measures
+      // the same trace: what the button shows and the number agree.
+      const drawn = await page.evaluate((m) => ({ pathMiles: Math.round(_milePathMiles(m) * 10) / 10, observed: Math.round(_mileObservedMiles(m) * 10) / 10 }), m);
+      expect(drawn.pathMiles).toBe(m.miles);
+      expect(drawn.observed).toBe(m.miles);
+    });
+
+    test('rows: four legs in a day are logged in the order they were driven', async () => {
+      const t = [mo(T(7, 40), 'onFoot'), mo(T(7, 52), 'driving'), mo(T(8, 3), 'onFoot'), mo(T(12, 21), 'driving'), mo(T(12, 31), 'onFoot'),
+        mo(T(13, 17), 'driving'), mo(T(13, 25), 'onFoot'), mo(T(17, 8), 'driving'), mo(T(17, 16), 'onFoot')];
+      const f = [fix(T(7, 52, 5), SHOP), fix(T(8, 3, 5), DOE), fix(T(12, 21, 5), DOE), fix(T(12, 31, 5), SHOP), fix(T(13, 17, 5), SHOP), fix(T(13, 25, 5), DOE), fix(T(17, 8, 5), DOE), fix(T(17, 16, 5), SHOP), fix(T(18, 0), SHOP)];
+      const r = await run(page, base({ tape: t, fixes: f }));
+      const rows = await page.evaluate((res) => geoDeriveRows(res, { contractorId: 'C', employeeId: 'E' }), r);
+      expect(rows.td_mileage).toHaveLength(4);
+      const sorted = rows.td_mileage.slice().sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+      expect(sorted.map(m => m.startedIso.slice(11, 16))).toEqual(['22:08', '18:17', '17:21', '12:52']);
+    });
+  });
+
+  // ── Rule 11: the day ends with the last real work ───────────────────────
+  // Owner 2026-09-02 on his own Time Log: "except for the end at 5:29 and
+  // after, those aren't needed."
+  test.describe('the day ends with the last real work', () => {
+    const YARD = { id: 'place-yard', kind: 'shop', name: 'The yard', lat: 39.0600, lng: -95.6500, addr: '1 Yard Rd' };
+    const YFIX = { lat: YARD.lat, lng: YARD.lng };
+    const HFIX = { lat: HOME.lat, lng: HOME.lng };
+
+    test('his 5:29: the shop that is his house, entered after the last client, is not a row', async () => {
+      // Doe -> shop (which shares its spot with the home office) at 17:29,
+      // then out to the store at 18:20 and back at 18:40. Before the fix
+      // that shop dwell was a 51-minute paid row.
+      const tape = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot'), mo(T(17, 8), 'driving'), mo(T(17, 29), 'onFoot'), mo(T(18, 20), 'driving'), mo(T(18, 40), 'onFoot')];
+      const fixes = [fix(T(9, 0, 5), SHOP), fix(T(9, 20, 5), DOE), fix(T(17, 8, 5), DOE), fix(T(17, 29, 5), HFIX), fix(T(18, 0), HFIX), fix(T(18, 20, 5), HFIX), fix(T(18, 40, 5), GAS), fix(T(19, 0), GAS)];
+      const r = await run(page, base({ tape, fixes }));
+      expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)])).toEqual([['client', '14:20', '22:08']]);
+      // The legs are untouched by the rule: the drive home is still a leg.
+      expect(r.legs.map(l => [l.from.name, l.to.name])).toEqual([['TradeDesk shop', 'John Doe'], ['John Doe', 'TradeDesk shop']]);
+    });
+
+    test('a real shop after the last job keeps the unloading, capped, and nothing past it', async () => {
+      const tape = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot'), mo(T(16, 0), 'driving'), mo(T(16, 20), 'onFoot'), mo(T(18, 0), 'driving'), mo(T(18, 20), 'onFoot')];
+      const fixes = [fix(T(9, 0, 5), YFIX), fix(T(9, 20, 5), DOE), fix(T(16, 0, 5), DOE), fix(T(16, 20, 5), YFIX), fix(T(17, 0), YFIX), fix(T(18, 0, 5), YFIX), fix(T(18, 20, 5), HFIX), fix(T(19, 0), HFIX)];
+      const r = await run(page, base({ tape, fixes, fences: [YARD, HOME, DOE] }));
+      const yard = r.dwells.filter(d => d.kind === 'shop');
+      expect(yard.map(d => [hm(d.startTs), hm(d.endTs), d.minutes, d.wrapped])).toEqual([['21:20', '21:50', 30, true]]);
+      // A short unloading stays whole and is not marked wrapped.
+      const t2 = tape.slice(0, 5).concat([mo(T(16, 40), 'driving'), mo(T(17, 0), 'onFoot')]);
+      const f2 = fixes.slice(0, 5).concat([fix(T(16, 40, 5), YFIX), fix(T(17, 0, 5), HFIX), fix(T(17, 30), HFIX)]);
+      const r2 = await run(page, base({ tape: t2, fixes: f2, fences: [YARD, HOME, DOE] }));
+      expect(r2.dwells.filter(d => d.kind === 'shop').map(d => [d.minutes, !!d.wrapped])).toEqual([[20, false]]);
+    });
+
+    test('a base dwell BEFORE the last work is untouched: the shop between two jobs is the shop', async () => {
+      const tape = [mo(T(7, 40), 'onFoot'), mo(T(7, 52), 'driving'), mo(T(8, 3), 'onFoot'), mo(T(12, 21), 'driving'), mo(T(12, 31), 'onFoot'),
+        mo(T(13, 17), 'driving'), mo(T(13, 25), 'onFoot'), mo(T(17, 8), 'driving'), mo(T(17, 16), 'onFoot')];
+      const fixes = [fix(T(7, 52, 5), SHOP), fix(T(8, 3, 5), DOE), fix(T(12, 21, 5), DOE), fix(T(12, 31, 5), SHOP), fix(T(13, 17, 5), SHOP), fix(T(13, 25, 5), DOE), fix(T(17, 8, 5), DOE), fix(T(17, 16, 5), SHOP), fix(T(18, 0), SHOP)];
+      const r = await run(page, base({ tape, fixes }));
+      expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs), d.minutes])).toEqual([
+        ['client', '13:03', '17:21', 258], ['shop', '17:31', '18:17', 46], ['client', '18:25', '22:08', 223],
+      ]);
+    });
+
+    test('a day with no job at all keeps its base dwells: a shift at the yard is a shift', async () => {
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(7, 30), 'driving'), mo(T(7, 50), 'onFoot'), mo(T(16, 0), 'driving'), mo(T(16, 20), 'onFoot')];
+      const fixes = [fix(T(7, 30, 5), HFIX), fix(T(7, 50, 5), YFIX), fix(T(12, 0), YFIX), fix(T(16, 0, 5), YFIX), fix(T(16, 20, 5), HFIX), fix(T(17, 0), HFIX)];
+      const r = await run(page, base({ tape, fixes, fences: [YARD, HOME] }));
+      expect(r.dwells.map(d => [d.kind, d.minutes, !!d.wrapped])).toEqual([['shop', 490, false]]);
+    });
+
+    test('paperwork at home after the last job still counts: rule 10 outranks rule 11', async () => {
+      const HOMEONLY = { id: 'place-ho', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0100, lng: -95.6900 };
+      const HF = { lat: HOMEONLY.lat, lng: HOMEONLY.lng };
+      const tape = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot'), mo(T(17, 0), 'driving'), mo(T(17, 16), 'onFoot'), mo(T(21, 0), 'driving'), mo(T(21, 20), 'onFoot')];
+      const fixes = [fix(T(9, 0, 5), SHOP), fix(T(9, 20, 5), DOE), fix(T(17, 0, 5), DOE), fix(T(17, 16, 5), HF), fix(T(18, 0), HF), fix(T(19, 30), HF), fix(T(21, 0, 5), HF), fix(T(21, 20, 5), GAS), fix(T(22, 0), GAS)];
+      const appEvents = [{ ts: T(18, 0), kind: 'active' }, { ts: T(19, 30), kind: 'background' }];
+      const r = await run(page, base({ tape, fixes, fences: [SHOP, DOE, HOMEONLY], appEvents }));
+      expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)])).toEqual([['client', '14:20', '22:00'], ['office', '23:00', '00:30']]);
+    });
+  });
+
   test('no console errors across the deriver', async () => {
     assertNoErrors(page, 'geo-derive');
   });

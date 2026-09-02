@@ -349,7 +349,8 @@ function saveEndDriveModal(){
   // to be SURE, and every uncertainty resolves toward keeping what they typed.
   const _sameDrive=(m)=>{
     if(!m||!m.gps||!m.legKey||!m.loggedAt)return false;
-    const end=Date.parse(m.loggedAt),start=Date.parse(m.startedIso||m.loggedAt);
+    // A derived leg is logged when it began; its end is endedIso.
+    const end=Date.parse(m.endedIso||m.loggedAt),start=Date.parse(m.startedIso||m.loggedAt);
     if(!end||!start)return false;
     if(!(end>=gps.startTime&&start<=Date.now()))return false;   // windows must overlap
     // WHOSE drive. A leg attributed to another crew member is never this one.

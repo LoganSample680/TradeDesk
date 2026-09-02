@@ -300,6 +300,109 @@ test.describe('geo-derive wiring', () => {
       expect(r).toBe(0);
     });
 
+    // ── Missing evidence is not an empty day ──────────────────────────────
+    // Owner 2026-09-02, 22:33: "I also logged back in and see my mileage gone
+    // for today when I should have four trips". A live derive on a fresh
+    // build had the tape and no fixes, resolved nothing, and replaced the day
+    // with nothing.
+    test('drives on the tape that resolve to nowhere: no queue item, a note, and the day is left alone', async () => {
+      await seed();
+      const r = await page.evaluate(async (DAY) => {
+        window.mileage = [{ id: 'leg-live', gps: true, date: DAY, miles: 9 }];
+        localStorage.removeItem('zp3_geo_fixlog'); localStorage.removeItem('td_geo_park_log');
+        const real = window.__realServerFixes = window.__realServerFixes || _geoDeriveServerFixes;
+        window._geoDeriveServerFixes = async () => { const o = []; o.appEvents = []; return o; };
+        try {
+          const res = await _geoDeriveDayNow(DAY, null);
+          const notes = JSON.parse(localStorage.getItem('td_geo_park_log') || '[]').filter(n => n.ev === 'derive-skip');
+          return { res, q: JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]').length, notes: notes.map(n => n.x), miles: mileage.map(m => m.id) };
+        } finally { window._geoDeriveServerFixes = real; }
+      }, DAY);
+      expect(r.res).toBeNull();
+      expect(r.q, 'nothing is sent to geo_replace_day').toBe(0);
+      expect(r.notes).toEqual(['2026-09-01: 2 drives on the tape, none resolved']);
+      expect(r.miles, 'the in-memory legs are not touched either').toEqual(['leg-live']);
+    });
+
+    test('a thin local log asks the server once and keeps what it got', async () => {
+      await seed();
+      const r = await page.evaluate(async ([DAY, SHOP, DOE, T]) => {
+        window.mileage = [];
+        localStorage.removeItem('zp3_geo_fixlog'); localStorage.removeItem('zp3_geo_applog');
+        const real = window.__realServerFixes = window.__realServerFixes || _geoDeriveServerFixes;
+        const calls = [];
+        window._geoDeriveServerFixes = async (a, b) => {
+          calls.push([a, b]);
+          const o = [{ ts: T[0], lat: SHOP.lat, lng: SHOP.lng, acc: null }, { ts: T[1], lat: DOE.lat, lng: DOE.lng, acc: 5 },
+            { ts: T[2], lat: DOE.lat, lng: DOE.lng, acc: 5 }, { ts: T[3], lat: SHOP.lat, lng: SHOP.lng, acc: 5 }, { ts: T[4], lat: SHOP.lat, lng: SHOP.lng, acc: 5 },
+            { ts: T[1], lat: DOE.lat, lng: DOE.lng, acc: 5 }];   // the same fix twice from two tables
+          o.appEvents = [{ ts: T[2], kind: 'active' }, { ts: T[3], kind: 'background' }];
+          return o;
+        };
+        try {
+          const res = await _geoDeriveDayNow(DAY, null);
+          const log = _geoFixLogRead(), app = _geoAppLogRead();
+          return { res: { d: res.dwells.length, l: res.legs.length }, calls, log: log.map(f => f.ts), app: app.map(e => [e.ts, e.kind]),
+            q: JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]').length };
+        } finally { window._geoDeriveServerFixes = real; }
+      }, [DAY, SHOP, DOE, [T(7, 52) + 5000, T(8, 3) + 5000, T(12, 21) + 5000, T(12, 31) + 5000, T(13, 0)]]);
+      expect(r.res, 'the server\'s fixes resolve the day').toEqual({ d: 1, l: 2 });
+      expect(r.q).toBe(1);
+      expect(r.calls).toEqual([[DAY_START - 2 * 3600000, DAY_START + 86400000]]);
+      expect(r.log, 'seeded, sorted, no fix twice').toEqual([T(7, 52) + 5000, T(8, 3) + 5000, T(12, 21) + 5000, T(12, 31) + 5000, T(13, 0)]);
+      expect(r.app).toEqual([[T(12, 21) + 5000, 'active'], [T(12, 31) + 5000, 'background']]);
+    });
+
+    test('a log that already knows the day does not ask the server', async () => {
+      await seed();
+      const r = await page.evaluate(async ([DAY, SHOP, T]) => {
+        window.mileage = [];
+        for (let i = 0; i < 30; i++) _geoFixLogPush(T + i * 60000, SHOP.lat, SHOP.lng, 5);
+        const real = window.__realServerFixes = window.__realServerFixes || _geoDeriveServerFixes;
+        let calls = 0;
+        window._geoDeriveServerFixes = async () => { calls++; const o = []; o.appEvents = []; return o; };
+        try { const res = await _geoDeriveDayNow(DAY, null); return { calls, l: res.legs.length }; }
+        finally { window._geoDeriveServerFixes = real; }
+      }, [DAY, SHOP, T(13, 5)]);
+      expect(r.calls).toBe(0);
+      expect(r.l).toBe(2);
+    });
+
+    test('the seed is bounded: eight days, the newest six thousand, and junk is ignored', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.removeItem('zp3_geo_fixlog'); localStorage.removeItem('zp3_geo_applog');
+        const now = Date.now();
+        const list = [{ ts: now - 9 * 86400000, lat: 39, lng: -95 }, { ts: 'x', lat: 39, lng: -95 }, { lat: 39, lng: -95 }, { ts: now - 1000, lat: 'a', lng: -95 }, null];
+        for (let i = 0; i < 6500; i++) list.push({ ts: now - 7 * 86400000 + i * 1000, lat: 39, lng: -95 });
+        _geoFixLogSeed(list); _geoFixLogSeed(null); _geoFixLogSeed([]);
+        _geoAppLogSeed([{ ts: now - 5000, kind: 'active' }, { ts: now - 5000, kind: 'active' }, { ts: now - 4000 }, { kind: 'background' }, null]);
+        _geoAppLogSeed(undefined);
+        const log = _geoFixLogRead();
+        return { n: log.length, oldest: log[0].ts >= now - 8 * 86400000, app: _geoAppLogRead().length };
+      });
+      expect(r.n).toBe(6000);
+      expect(r.oldest).toBe(true);
+      expect(r.app).toBe(1);
+    });
+
+    test('the boot rebuild seeds the local logs from the server before it derives', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        localStorage.removeItem('zp3_geo_fixlog'); localStorage.removeItem('zp3_geo_applog');
+        const real = window.__realServerFixes = window.__realServerFixes || _geoDeriveServerFixes;
+        const origNow = window._geoDeriveDayNow;
+        const now = Date.now();
+        let logAtDerive = -1;
+        window._geoDeriveDayNow = async () => { logAtDerive = _geoFixLogRead().length; return { dwells: [], legs: [] }; };
+        window._geoDeriveServerFixes = async () => { const o = [{ ts: now - 3600000, lat: 39.01, lng: -95.69, acc: 4 }, { ts: now - 1800000, lat: 39.02, lng: -95.70, acc: 4 }]; o.appEvents = [{ ts: now - 3000000, kind: 'active' }]; return o; };
+        try { await _geoDeriveRebuild(); return { logAtDerive, log: _geoFixLogRead().length, app: _geoAppLogRead().map(e => e.kind) }; }
+        finally { window._geoDeriveDayNow = origNow; window._geoDeriveServerFixes = real; }
+      });
+      expect(r.logAtDerive, 'seeded before the first day is derived').toBe(2);
+      expect(r.log).toBe(2);
+      expect(r.app).toEqual(['active']);
+    });
+
     test('the boot rebuild walks the tape\'s window and derives each covered day once', async () => {
       await seed();
       const r = await page.evaluate(async () => {
