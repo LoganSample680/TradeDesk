@@ -1999,4 +1999,131 @@ extension TdGeoPluginTests {
         plugin.expireSamplingCapForTest()
         XCTAssertEqual(plugin.driveAccuracyNameForTest(), "best")
     }
+
+    // MARK: - setWakeOnMove: the iOS 17 wake-on-movement stream (owner 2026-09-02)
+
+    func testSetWakeOnMove_missingArgIsOffAndResolvesWithBothFields() {
+        let done = expectation(description: "resolve")
+        plugin.setWakeOnMove(makeCall(options: [:], onSuccess: { r in
+            XCTAssertEqual(r?["on"] as? Bool, false)
+            XCTAssertNotNil(r?["supported"] as? Bool)
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+        XCTAssertFalse(plugin.wakeOnMoveOnForTest)
+    }
+
+    func testSetWakeOnMove_junkArgumentsNeverReject() {
+        let done = expectation(description: "resolve")
+        plugin.setWakeOnMove(makeCall(options: ["on": "yes please", "extra": [1, 2]], onSuccess: { r in
+            XCTAssertEqual(r?["on"] as? Bool, false, "a string is not true")
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+    }
+
+    func testSetWakeOnMove_onPersistsTheFlagAndReportsSupport() {
+        let done = expectation(description: "resolve")
+        plugin.setWakeOnMove(makeCall(options: ["on": true], onSuccess: { r in
+            let supported = (r?["supported"] as? Bool) ?? false
+            XCTAssertEqual(supported, TdGeoPlugin.wakeOnMoveSupported())
+            // On a shell that supports it the stream is held; below iOS 17
+            // the honest answer is off, never a crash.
+            XCTAssertEqual(r?["on"] as? Bool, supported)
+            done.fulfill()
+        }))
+        wait(for: [done], timeout: 30)
+        XCTAssertTrue(UserDefaults.standard.bool(forKey: plugin.wakeKeyForTest), "load() re-arms from this")
+    }
+
+    func testSetWakeOnMove_rapidToggles_endInTheLastStateWithoutCrashing() {
+        let n = 12
+        let done = expectation(description: "all resolve")
+        done.expectedFulfillmentCount = n
+        for i in 0..<n {
+            plugin.setWakeOnMove(makeCall(options: ["on": i % 2 == 0], onSuccess: { _ in done.fulfill() }))
+        }
+        wait(for: [done], timeout: 30)
+        // n is even, so the last call (i = 11) was off.
+        let off = expectation(description: "state read on main")
+        DispatchQueue.main.async {
+            XCTAssertFalse(self.plugin.wakeOnMoveOnForTest)
+            XCTAssertFalse(UserDefaults.standard.bool(forKey: self.plugin.wakeKeyForTest))
+            off.fulfill()
+        }
+        wait(for: [off], timeout: 30)
+    }
+
+    func testStopAll_dropsTheWakeStreamAndItsFlag() {
+        let on = expectation(description: "on")
+        plugin.setWakeOnMove(makeCall(options: ["on": true], onSuccess: { _ in on.fulfill() }))
+        wait(for: [on], timeout: 30)
+        let stopped = expectation(description: "stopAll")
+        plugin.stopAll(makeCall(onSuccess: { _ in stopped.fulfill() }))
+        wait(for: [stopped], timeout: 30)
+        XCTAssertFalse(plugin.wakeOnMoveOnForTest)
+        XCTAssertFalse(UserDefaults.standard.bool(forKey: plugin.wakeKeyForTest))
+        XCTAssertNil(UserDefaults.standard.object(forKey: plugin.wakeStillKeyForTest))
+    }
+
+    // The stream's updates, fed straight to the one function they all reach.
+    // What is asserted is the ROW record, since that is the contract with
+    // JS: a still transition, a move transition plus a fresh fix, a throttled
+    // fix while moving, and silence while the drive window owns the radio.
+    func testWakeUpdate_transitionsAreRecordedOnceEachAndAMoveCarriesAFix() {
+        let d = UserDefaults.standard
+        d.removeObject(forKey: plugin.bufferKeyForTest)
+        d.removeObject(forKey: plugin.wakeStillKeyForTest)
+        plugin.wakeOnForTest()
+        plugin.wakeUpdateForTest(lat: 39.0308, lng: -95.7112, stationary: true)
+        plugin.wakeUpdateForTest(lat: 39.0308, lng: -95.7112, stationary: true)   // still still: no second row
+        plugin.wakeUpdateForTest(lat: 39.0296, lng: -95.7120, stationary: false)  // moved: wake-move + fix
+        plugin.wakeUpdateForTest(lat: 39.0295, lng: -95.7247, stationary: false)  // inside the throttle: nothing
+        let rows = (d.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+        let types = rows.compactMap { $0["type"] as? String }
+        XCTAssertEqual(types, ["wake-still", "wake-move", "fix"])
+        let fix = rows[2]
+        XCTAssertEqual(fix["lat"] as? Double, 39.0296)
+        XCTAssertEqual(fix["wake"] as? Bool, true, "JS can tell a wake fix from a drive breadcrumb")
+        XCTAssertNotNil(rows[1]["lat"], "the move transition carries where it happened")
+        XCTAssertEqual(d.object(forKey: plugin.wakeStillKeyForTest) as? Bool, false)
+    }
+
+    func testWakeUpdate_aStillUpdateWithNoLocationDoesNotCrash() {
+        let d = UserDefaults.standard
+        d.removeObject(forKey: plugin.bufferKeyForTest)
+        d.removeObject(forKey: plugin.wakeStillKeyForTest)
+        plugin.wakeOnForTest()
+        plugin.wakeUpdateForTest(stationary: true)
+        plugin.wakeUpdateForTest(stationary: false)   // moved with no fix: transition row, no fix row
+        let types = ((d.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []).compactMap { $0["type"] as? String }
+        XCTAssertEqual(types, ["wake-still", "wake-move"])
+    }
+
+    func testWakeUpdate_isSilentWhileTheDriveWindowOwnsTheRadio() {
+        let d = UserDefaults.standard
+        d.removeObject(forKey: plugin.bufferKeyForTest)
+        d.set(false, forKey: plugin.wakeStillKeyForTest)
+        d.set(["mode": "drive", "startedAtMs": Date().timeIntervalSince1970 * 1000, "maxMs": 600000.0, "filter": 10.0],
+              forKey: plugin.samplingKeyForTest)
+        defer { d.removeObject(forKey: plugin.samplingKeyForTest) }
+        plugin.wakeOnForTest()
+        plugin.wakeUpdateForTest(lat: 39.02, lng: -95.72, stationary: false)
+        let rows = (d.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+        XCTAssertEqual(rows.count, 0, "the window's own breadcrumbs are the trace")
+    }
+
+    func testWakeUpdate_whenTheStreamIsOffWritesNothing() {
+        let d = UserDefaults.standard
+        d.removeObject(forKey: plugin.bufferKeyForTest)
+        d.removeObject(forKey: plugin.wakeStillKeyForTest)
+        plugin.wakeUpdateForTest(lat: 39.02, lng: -95.72, stationary: true)
+        plugin.wakeUpdateForTest(lat: 39.02, lng: -95.72, stationary: false)
+        XCTAssertEqual(((d.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []).count, 0)
+    }
+
+    func testWakeFixThrottle_isTensOfSecondsNotAFirehose() {
+        XCTAssertGreaterThanOrEqual(TdGeoPlugin.wakeFixThrottleMsForTest, 10_000)
+        XCTAssertLessThanOrEqual(TdGeoPlugin.wakeFixThrottleMsForTest, 120_000)
+    }
 }

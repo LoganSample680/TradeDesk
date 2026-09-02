@@ -498,6 +498,78 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
     expect(guard.includes('_GEO_DRIVE_SHOW_MS')).toBe(true);
   });
 
+  // ── 7. Wake on movement (owner 2026-09-02) ───────────────────────────────
+  // A parked phone is asleep, and CoreMotion cannot wake it: the 12:02
+  // departure was on the tape and the phone said nothing for seven minutes.
+  // The iOS 17 stream relaunches the app when the truck moves; what JS does
+  // with that is under test here, the Swift half in TdGeoPluginTests.
+
+  test('parking arms the wake stream, and the answer is journaled', async () => {
+    const r = await page.evaluate(async () => {
+      const notes = [];
+      const savedNote = _geoParkNote;
+      _geoParkNote = (ev, x) => notes.push([ev, String(x)]);
+      try {
+        const calls = [];
+        const td = { setWakeOnMove: (o) => { calls.push(o); return Promise.resolve({ on: true, supported: true }); } };
+        const armed = _geoWakeOnMoveArm(td);
+        await new Promise(r => setTimeout(r, 10));
+        const old = _geoWakeOnMoveArm({ startEvents: () => {} });   // a shell without the method
+        const none = _geoWakeOnMoveArm(null);
+        const unsupported = _geoWakeOnMoveArm({ setWakeOnMove: () => Promise.resolve({ on: false, supported: false }) });
+        await new Promise(r => setTimeout(r, 10));
+        const failed = _geoWakeOnMoveArm({ setWakeOnMove: () => Promise.reject(new Error('nope')) });
+        await new Promise(r => setTimeout(r, 10));
+        return { armed, calls, old, none, unsupported, failed, notes, flag: _GEO_WAKE_ON_MOVE };
+      } finally { _geoParkNote = savedNote; }
+    });
+    expect(r.flag).toBe(true);
+    expect(r.armed).toBe(true);
+    expect(r.calls).toEqual([{ on: true }]);
+    expect(r.old).toBe(false);
+    expect(r.none).toBe(false);
+    expect(r.unsupported).toBe(true);
+    expect(r.failed).toBe(true);
+    expect(r.notes).toEqual([['wake-on-move', 'on'], ['wake-on-move', 'unsupported'], ['wake-on-move-fail', 'nope']]);
+  });
+
+  test('park mode itself asks for the wake stream once the regions are armed', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'js', 'geo-track.js'), 'utf8');
+    const i = js.indexOf("_geoParkNote('park-on'");
+    expect(i).toBeGreaterThan(-1);
+    expect(js.slice(i, i + 900).includes('_geoWakeOnMoveArm(Td)')).toBe(true);
+  });
+
+  test('a live wake-move with the flip only on the tape opens the window; a replayed one does not', async () => {
+    const r = await run(`
+      const savedTape = window._geoDeriveTape;
+      try {
+        window._geoDeriveTape = async () => [{ ts: Date.now() - 20000, kind: 'automotive' }];
+        await _geoTdEvent({ type: 'wake-move', ts: Date.now(), lat: 39.1, lng: -94.1, acc: 8 }, false);
+        const live = _geoDriveWindowOn();
+        _geoDriveWinAt = 0; _geoDriveCorrMotionAt = 0; _geoDriveCorrFixAt = 0; _geoDrivePendingAt = null;
+        await _geoTdEvent({ type: 'wake-move', ts: Date.now(), lat: 39.1, lng: -94.1, acc: 8 }, true);
+        const replay = _geoDriveWindowOn();
+        return { live, replay };
+      } finally { window._geoDeriveTape = savedTape; }
+    `);
+    expect(r.live).toBe(true);
+    expect(r.replay).toBe(false);
+  });
+
+  test('a wake-move is a fresh position: it is the fix half on its own, and it stays out of the trace types', async () => {
+    const r = await run(`
+      await _geoTdEvent({ type: 'wake-move', ts: Date.now(), lat: 39.1, lng: -94.1, acc: 8 }, false);
+      const fixHalf = _geoDriveCorrFixAt > 0;
+      await _geoTdEvent({ type: 'motion', ts: Date.now(), kind: 'automotive', prevKind: 'walking' });
+      return { fixHalf, open: _geoDriveWindowOn(), types: _GEO_FRESH_FIX_TYPES.slice() };
+    `);
+    expect(r.fixHalf).toBe(true);
+    expect(r.open).toBe(true);
+    // The plugin writes a plain fix beside the transition; the trace reads that one.
+    expect(r.types).toEqual(['fix', 'push-ping']);
+  });
+
   test('no console errors across the drive window', async () => { await assertNoErrors(page); });
 });
 
@@ -991,8 +1063,27 @@ test.describe('The native half of the drive window', () => {
   test('the plugin has adversarial XCTest coverage for every new method (3.3)', () => {
     const t = fs.readFileSync(
       path.join(__dirname, '..', 'native', 'tests', 'TdGeoPluginTests.swift'), 'utf8');
-    for (const name of ['SetSampling', 'SamplingState', 'SamplingCap', 'Keepalive']) {
+    for (const name of ['SetSampling', 'SamplingState', 'SamplingCap', 'Keepalive', 'SetWakeOnMove', 'WakeUpdate']) {
       expect(t.includes(name), `native tests must cover ${name}`).toBe(true);
     }
+  });
+
+  test('wake on movement is the iOS 17 stream, guarded, held only while JS asks, dropped by stopAll', () => {
+    const s = swiftSrc();
+    expect(s.includes('CAPPluginMethod(name: "setWakeOnMove"')).toBe(true);
+    expect(s.includes('CLLocationUpdate.liveUpdates(')).toBe(true);
+    expect(s.includes('CLBackgroundActivitySession()')).toBe(true);
+    // Every reach into the iOS 17 API sits behind an availability check, so
+    // the shell still builds and runs at the 15.0 deployment target.
+    const start = s.indexOf('private func startWakeOnMove()');
+    expect(start).toBeGreaterThan(-1);
+    expect(s.slice(start, s.indexOf('CLLocationUpdate.liveUpdates(')).includes('guard #available(iOS 17.0, *)')).toBe(true);
+    // Swift decides nothing: the flag is JS's, persisted so a relaunch on
+    // movement re-enters the stream before JS has loaded.
+    expect(s.includes('if d.bool(forKey: self.wakeKey) { self.startWakeOnMove() }')).toBe(true);
+    const stop = s.indexOf('@objc func stopAll(');
+    expect(s.slice(stop, stop + 900).includes('self.stopWakeOnMove()')).toBe(true);
+    // The stream is silent while the drive window owns the radio.
+    expect(s.includes('if driveSamplingOn() { return }')).toBe(true);
   });
 });

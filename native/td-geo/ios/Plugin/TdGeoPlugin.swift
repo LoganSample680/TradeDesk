@@ -51,7 +51,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         // Build #44: the drive window. Dense sampling on demand, capped in
         // Swift so JS can never leave the radio on all night.
         CAPPluginMethod(name: "setSampling", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "samplingState", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "samplingState", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setWakeOnMove", returnType: CAPPluginReturnPromise)
     ]
 
     private var locationManager: CLLocationManager?
@@ -180,6 +181,26 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     // carries that id instead of recomputing one from a timestamp, which is
     // what made two writers able to disagree at all.
     private let lastMotionKindKey = "td_geo_last_motion_kind"
+    // ── Wake on movement (owner 2026-09-02) ──────────────────────────────────
+    // CoreMotion cannot wake a suspended app, so a phone parked long enough
+    // to be put to sleep learned about its own departure only when a fence
+    // edge or a significant change woke it, one to three minutes down the
+    // road. iOS 17's live-updates stream is the one CoreLocation mechanism
+    // that pauses itself while the device is stationary and RELAUNCHES the
+    // app when movement resumes (CLLocationUpdate.isStationary, held by a
+    // CLBackgroundActivitySession). Still dumb (3.2): JS turns it on and
+    // off; Swift only holds the session and reports what it sees. The cost
+    // JS is choosing is the location indicator while the session is held.
+    private let wakeKey = "td_geo_wake_on_move"
+    private let wakeStillKey = "td_geo_wake_still"
+    private var wakeOnMoveOn = false
+    private var wakeTask: Any?          // Task<Void, Never>, iOS 17 only
+    private var wakeSession: Any?       // CLBackgroundActivitySession, iOS 17 only
+    private var wakeLastFixAt: Date?
+    // While the drive window is off and the truck is moving, the stream is
+    // the only thing describing the road; this is how often that is worth a
+    // row. The drive window's own breadcrumbs take over once JS opens it.
+    private static let wakeFixThrottleMs: Double = 30_000
     private var lastMotionKind: String {
         get { UserDefaults.standard.string(forKey: lastMotionKindKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: lastMotionKindKey) }
@@ -287,6 +308,11 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             // fresh 90 minutes of Best accuracy. Expired means expired, and
             // this restore is also the thing that cleans it up.
             self.restoreSamplingWindow()
+            // A relaunch on movement is exactly why the stream exists, and
+            // iOS hands the resumed updates only to a process that asks for
+            // them again promptly. Ask now, from the persisted flag, before
+            // JS has even loaded.
+            if d.bool(forKey: self.wakeKey) { self.startWakeOnMove() }
         }
     }
 
@@ -650,6 +676,113 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         return min(max(f, 5), 200)
     }
 
+    // setWakeOnMove({on}) : hold (or drop) the iOS 17 live-updates stream that
+    // relaunches this app when a stationary phone starts moving. Resolves
+    // {on, supported}; on a shell older than iOS 17 it is a no-op that says so.
+    @objc func setWakeOnMove(_ call: CAPPluginCall) {
+        let on = call.getBool("on") ?? false
+        DispatchQueue.main.async {
+            if on { self.startWakeOnMove() } else { self.stopWakeOnMove() }
+            UserDefaults.standard.set(on, forKey: self.wakeKey)
+            call.resolve(["on": self.wakeOnMoveOn, "supported": TdGeoPlugin.wakeOnMoveSupported()])
+        }
+    }
+
+    static func wakeOnMoveSupported() -> Bool {
+        if #available(iOS 17.0, *) { return true }
+        return false
+    }
+
+    private func startWakeOnMove() {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { self.startWakeOnMove() }
+            return
+        }
+        guard #available(iOS 17.0, *) else { return }
+        if wakeOnMoveOn { return }
+        wakeOnMoveOn = true
+        countWake("wake-on")
+        if wakeSession == nil { wakeSession = CLBackgroundActivitySession() }
+        (wakeTask as? Task<Void, Never>)?.cancel()
+        // The stream is the whole mechanism: while it is being iterated the
+        // system owns the pause (isStationary) and the resume, and a resume
+        // that finds the process gone relaunches it, at which point load()
+        // re-enters here and iterates again. Nothing is decided in the loop.
+        wakeTask = Task { [weak self] in
+            do {
+                for try await u in CLLocationUpdate.liveUpdates(.otherNavigation) {
+                    guard let self = self else { break }
+                    if Task.isCancelled { break }
+                    let loc = u.location
+                    let still = u.isStationary
+                    await MainActor.run { self.onWakeUpdate(loc, stationary: still) }
+                }
+            } catch {
+                // Authorization pulled, or the session ended under us: the
+                // record says so and the fences keep watch as before.
+                await MainActor.run {
+                    self?.record(["type": "wake-error", "ts": Double(Date().timeIntervalSince1970 * 1000)])
+                }
+            }
+        }
+    }
+
+    private func stopWakeOnMove() {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { self.stopWakeOnMove() }
+            return
+        }
+        (wakeTask as? Task<Void, Never>)?.cancel()
+        wakeTask = nil
+        if #available(iOS 17.0, *) {
+            (wakeSession as? CLBackgroundActivitySession)?.invalidate()
+        }
+        wakeSession = nil
+        if wakeOnMoveOn { countWake("wake-off") }
+        wakeOnMoveOn = false
+        wakeLastFixAt = nil
+        UserDefaults.standard.removeObject(forKey: wakeStillKey)
+    }
+
+    // One update from the stream. Two transitions are the record: the phone
+    // came to rest (wake-still) and the phone started moving (wake-move). A
+    // move carries a FRESH position and is also written as a plain fix, so
+    // JS's drive pairing sees the ping half the same way it sees any other
+    // fix. While moving with the drive window still off, a fix every 30 s
+    // keeps the road described until JS turns the window up; once it is up,
+    // the window's own breadcrumbs are the trace and the stream adds nothing.
+    private func onWakeUpdate(_ loc: CLLocation?, stationary: Bool) {
+        guard wakeOnMoveOn else { return }
+        let d = UserDefaults.standard
+        let wasStill = d.object(forKey: wakeStillKey) as? Bool
+        let now = Date()
+        if stationary {
+            if wasStill != true {
+                countWake("wake-still")
+                var ev = event(type: "wake-still", loc: loc, regionId: nil)
+                ev["ts"] = Double(now.timeIntervalSince1970 * 1000)
+                record(ev)
+            }
+            d.set(true, forKey: wakeStillKey)
+            wakeLastFixAt = nil
+            return
+        }
+        let resumed = (wasStill == true)
+        d.set(false, forKey: wakeStillKey)
+        if resumed {
+            countWake("wake-move")
+            record(event(type: "wake-move", loc: loc, regionId: nil))
+        }
+        guard let l = loc else { return }
+        if driveSamplingOn() { return }
+        if !resumed, let last = wakeLastFixAt,
+           now.timeIntervalSince(last) * 1000 < TdGeoPlugin.wakeFixThrottleMs { return }
+        wakeLastFixAt = now
+        var ev = event(type: "fix", loc: l, regionId: nil)
+        ev["wake"] = true
+        record(ev)
+    }
+
     // motionSince({sinceMs}) : the motion coprocessor's own history. It has
     // been logging automotive/walking/stationary all along at no cost to us,
     // so a geofence exit that fires late can still be stamped with the moment
@@ -945,6 +1078,8 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
             self.endBurst()
             self.endDriveSampling(reason: "stopAll")
             self.hbStop()
+            self.stopWakeOnMove()
+            UserDefaults.standard.removeObject(forKey: self.wakeKey)
             self.motionMgr.stopActivityUpdates()
             m.stopMonitoringSignificantLocationChanges()
             m.stopMonitoringVisits()
@@ -1011,6 +1146,20 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     var flushCfgKeyForTest: String { flushCfgKey }
     var flushMarkKeyForTest: String { flushMarkKey }
     var bufferKeyForTest: String { bufferKey }
+    // The wake stream is a CoreLocation async sequence the simulator will
+    // not drive on demand; the tests feed the one function every update
+    // reaches, and read the state the stream flips.
+    var wakeOnMoveOnForTest: Bool { wakeOnMoveOn }
+    var wakeKeyForTest: String { wakeKey }
+    var wakeStillKeyForTest: String { wakeStillKey }
+    static var wakeFixThrottleMsForTest: Double { wakeFixThrottleMs }
+    func wakeUpdateForTest(lat: Double, lng: Double, stationary: Bool) {
+        let loc = CLLocation(coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng),
+                             altitude: 0, horizontalAccuracy: 8, verticalAccuracy: 8, timestamp: Date())
+        onWakeUpdate(loc, stationary: stationary)
+    }
+    func wakeUpdateForTest(stationary: Bool) { onWakeUpdate(nil, stationary: stationary) }
+    func wakeOnForTest() { wakeOnMoveOn = true }
     #endif
 
     private func record(_ ev: [String: Any]) {

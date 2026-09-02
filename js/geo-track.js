@@ -4102,6 +4102,14 @@ function _geoEnterParkMode(spot){
     .then((r)=>{
       _geoParkModeOn=true;
       _geoParkNote('park-on','armed='+((r&&r.armed)!=null?r.armed:'?'));
+      // Parked is when the phone goes to sleep, and asleep is when CoreMotion
+      // cannot reach it (owner 2026-09-02: the 12:02 departure, flip on the
+      // tape, nothing on the phone for seven minutes). The iOS 17 stream
+      // pauses itself while still and relaunches the app the moment the
+      // truck moves; the first fix it hands back is the ping half of the
+      // drive pair. Held only while parked: stopAll on the park exit drops
+      // it. Older shells resolve supported:false and change nothing.
+      _geoWakeOnMoveArm(Td);
       // The shift heartbeat (owner 2026-08-27: catch the phone left in the
       // truck or set down all day). A park at a WORK spot keeps a 30-minute
       // liveness tick alive; a park at the likely-home pin is the end of the
@@ -4122,6 +4130,19 @@ function _geoEnterParkMode(spot){
       _geoParkNote('park-fail',(err&&(err.message||err.code))||err);
       _geoArmParkTimer();
     });
+}
+// The decision lives here, not in Swift (3.2): one flag, flipped by a UAT
+// roll, turns the wake-on-movement stream off again if the indicator it
+// holds while parked is not worth the instant departure.
+const _GEO_WAKE_ON_MOVE=true;
+function _geoWakeOnMoveArm(Td){
+  try{
+    if(!_GEO_WAKE_ON_MOVE||!Td||typeof Td.setWakeOnMove!=='function')return false;
+    Promise.resolve(Td.setWakeOnMove({on:true})).then((r)=>{
+      _geoParkNote('wake-on-move',(r&&r.supported===false)?'unsupported':((r&&r.on)?'on':'off'));
+    },(err)=>{_geoParkNote('wake-on-move-fail',(err&&(err.message||err.code))||err);});
+    return true;
+  }catch(_e){return false;}
 }
 function _geoExitParkMode(){
   _geoClearParkTimer();
@@ -4782,6 +4803,17 @@ async function _geoTdEvent(ev,replay){
   // on it, same as on a foot flip and a ping (owner 2026-09-02: the 12:04
   // exit left the Doe row open until something else happened to run it).
   if(!replay&&(ev.type==='regionExit'||ev.type==='regionEnter')&&_geoEvFresh(ev))_geoDeriveLiveSoon(ev.type);
+  // The phone just started moving after being still (iOS 17 wake stream,
+  // live only: a replayed one describes a drive that already happened). The
+  // fresh fix that rides with it is the ping half through _geoOnPing; the
+  // motion half is either the live flip that follows, or, when the app was
+  // relaunched and the flip is only on the tape, the same question the
+  // fence exit asks: driving right now?
+  if(ev.type==='wake-move'&&!replay&&_geoEvFresh(ev)){
+    _geoParkNote('wake-move',hasFix?'fix':'no fix');
+    if(!_geoDriveWinAt)_geoTapeDriveCheck('wake-move');
+    _geoDeriveLiveSoon('wake-move');
+  }
   if(ev.type==='regionExit'&&_geoEvFresh(ev)){
     if(replay)_geoDriveWindowOpen('fence-exit-replay');
     else{
