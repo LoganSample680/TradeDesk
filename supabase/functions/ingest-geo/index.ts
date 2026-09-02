@@ -437,73 +437,17 @@ Deno.serve(async (req) => {
       // row landed, the dwell silently did not. Check-then-insert instead; the
       // narrow race between check and insert still lands on the unique index,
       // where a duplicate error IS the dedupe working, absorbed row by row.
-      const insertByKey = async (tbl: string, rows: any[]) => {
-        if (!rows.length) return 0;
-        const { data: have } = await svc.from(tbl).select("client_key")
-          .eq("contractor_user_id", cid).in("client_key", rows.map((r) => r.client_key));
-        const haveSet = new Set((have || []).map((r) => r.client_key));
-        const fresh = rows.filter((r) => !haveSet.has(r.client_key));
-        if (!fresh.length) return 0;
-        const { error } = await svc.from(tbl).insert(fresh);
-        if (!error) return fresh.length;
-        let n = 0;
-        for (const r of fresh) {
-          const { error: e2 } = await svc.from(tbl).insert(r);
-          if (!e2) n++;
-        }
-        return n;
-      };
-      derived += await insertByKey("job_time_entries", timeRows);
-      derived += await insertByKey("shop_time_entries", shopRows);
-      if (mileRows.length) {
-        // td_mileage has no key column to conflict on (data is a JSON blob), so
-        // the guard is an existence check on the legKey inside data. The client
-        // side holds the same guard plus the refine sweep, so the narrow race
-        // window converges instead of duplicating.
-        const { data: existing } = await svc.from("td_mileage")
-          .select("id").eq("user_id", cid).is("deleted_at", null)
-          .in("id", mileRows.map((m) => m.id));
-        const have = new Set((existing || []).map((r) => String(r.id)));
-        // ...and the OTHER writer's row for the same drive. The id check above
-        // only stops this function duplicating ITSELF; it never looked for the
-        // phone's own row, and the legKey the two sides mint cannot match
-        // because each dates the departure from its own clock (the phone from
-        // the ping where JS noticed, this from the raw regionExit, seconds
-        // apart). That is how every drive on 2026-08-27 got written twice.
-        //
-        // Same rule as the client's _mileSameDrive (js/mileage.js): overlapping
-        // time windows AND the same destination. Only the window is queryable
-        // here, so this is the coarse half and the client's refine sweep is the
-        // fine half; between them a duplicate is dropped whichever side wrote
-        // first, and both orders were observed live.
-        const spanLo = Math.min(...mileRows.map((m) => Date.parse(m.row.startedIso)));
-        const spanHi = Math.max(...mileRows.map((m) => Date.parse(m.row.endedIso)));
-        const PAD = 5 * 60000;
-        const { data: near } = await svc.from("td_mileage")
-          .select("id,data").eq("user_id", cid).is("deleted_at", null)
-          .gte("data->>startedIso", new Date(spanLo - PAD).toISOString())
-          .lte("data->>startedIso", new Date(spanHi + PAD).toISOString())
-          .limit(200);
-        const overlaps = (m: any) => (near || []).some((r: any) => {
-          const d = r.data || {};
-          if (d.provisional) return false;          // another srv row, not the phone's
-          const B1 = Date.parse(d.startedIso || ""), B2 = Date.parse(d.endedIso || "");
-          const A1 = Date.parse(m.row.startedIso), A2 = Date.parse(m.row.endedIso);
-          if (!(B1 && B2 && A1 && A2) || B2 <= B1 || A2 <= A1) return false;
-          const ov = Math.min(A2, B2) - Math.max(A1, B1);
-          return ov > 0 && ov >= Math.min(A2 - A1, B2 - B1) * 0.5;
-        });
-        const fresh = mileRows.filter((m) => !have.has(m.id) && !overlaps(m));
-        if (fresh.length) {
-          const ts = new Date().toISOString();
-          const { error } = await svc.from("td_mileage").upsert(
-            fresh.map((m) => ({ id: m.id, user_id: cid, data: m.row, updated_at: ts, deleted_at: null, archived_at: null })),
-            { onConflict: "id,user_id", ignoreDuplicates: true },
-          );
-          if (!error) derived += fresh.length;
-        }
-      }
-
+      // ── NO ROWS FROM HERE (owner 2026-09-02, CLAUDE.md 17) ─────────────
+      // This function used to write job_time_entries, shop_time_entries and
+      // td_mileage rows of its own from the fence events it stores: the third
+      // writer for one event, and the one that survived the client-side
+      // cleanup because it lives on the server. His 12:04 fence exit produced
+      // a 247-minute client row on top of the deriver's, and every one of
+      // yesterday's drives was written twice before that. The day deriver on
+      // the phone (js/geo-derive.js) through geo_replace_day is the one
+      // writer. The state machine above still runs for what it is still good
+      // for: the device state the push-ping and the live card read.
+      void timeRows; void shopRows; void mileRows;
 
       // Persist the cursor last, so a crash before this point re-derives (all
       // writes above are idempotent) instead of losing rows. CONDITIONAL: the

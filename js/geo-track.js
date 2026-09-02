@@ -4587,7 +4587,7 @@ async function _geoTdEvent(ev,replay){
     // paperwork. The lifecycle edge and, when it carries one, its fix.
     if(/^app-/.test(String(ev.type||''))){
       _geoAppLogPush(Number(ev.ts)||Date.now(),String(ev.type).slice(4));
-      if(!replay&&ev.type==='app-active'){_geoDeriveRebuildIfStale();_geoTapeDriveCheck('active');}
+      if(!replay&&ev.type==='app-active'){_geoDeriveRebuildIfStale();_geoTapeDriveCheck('active');_geoDeriveLiveSoon('app-active');}
       if(typeof ev.lat==='number'&&typeof ev.lng==='number')_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
     }
     if(!replay&&ev.type==='push-ping')_geoBgUpdateCheck();
@@ -4778,6 +4778,10 @@ async function _geoTdEvent(ev,replay){
   // for the flip. Leaving a fence is not by itself a drive (walking off site,
   // GPS wander at the fence line), and the correlation is what tells them
   // apart.
+  // A fence crossing is the moment the day changed; the day is re-derived
+  // on it, same as on a foot flip and a ping (owner 2026-09-02: the 12:04
+  // exit left the Doe row open until something else happened to run it).
+  if(!replay&&(ev.type==='regionExit'||ev.type==='regionEnter')&&_geoEvFresh(ev))_geoDeriveLiveSoon(ev.type);
   if(ev.type==='regionExit'&&_geoEvFresh(ev)){
     if(replay)_geoDriveWindowOpen('fence-exit-replay');
     else{

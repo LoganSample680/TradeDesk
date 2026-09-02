@@ -689,6 +689,24 @@ test.describe('geo-derive wiring', () => {
       expect(r.gone).toBe(true);
     });
 
+    test('a live fence crossing and a return to the foreground re-derive the day; a replay does not', async () => {
+      const r = await page.evaluate(async () => {
+        const out = [];
+        const fire = async (ev, replay) => { clearTimeout(_geoDeriveLiveT); _geoDeriveLiveT = null; try { await _geoTdEvent(ev, replay); } catch (_e) {} out.push(!!_geoDeriveLiveT); clearTimeout(_geoDeriveLiveT); _geoDeriveLiveT = null; };
+        const keepRebuild = window._geoDeriveRebuildIfStale, keepTape = window._geoTapeDriveCheck;
+        window._geoDeriveRebuildIfStale = () => false; window._geoTapeDriveCheck = async () => false;
+        try {
+          await fire({ type: 'regionExit', ts: Date.now(), lat: 39.1, lng: -94.1, acc: 12, regionId: 'client-1' }, false);
+          await fire({ type: 'regionEnter', ts: Date.now(), lat: 39.1, lng: -94.1, acc: 12, regionId: 'client-1' }, false);
+          await fire({ type: 'app-active', ts: Date.now() }, false);
+          await fire({ type: 'regionExit', ts: Date.now(), lat: 39.1, lng: -94.1, acc: 12, regionId: 'client-1' }, true);
+          await fire({ type: 'regionExit', ts: Date.now() - 3600000, lat: 39.1, lng: -94.1, acc: 12, regionId: 'client-1' }, false);
+        } finally { window._geoDeriveRebuildIfStale = keepRebuild; window._geoTapeDriveCheck = keepTape; }
+        return out;
+      });
+      expect(r).toEqual([true, true, true, false, false]);
+    });
+
     test('the boot rebuild seeds the local logs from the server before it derives', async () => {
       await seed();
       const r = await page.evaluate(async () => {
