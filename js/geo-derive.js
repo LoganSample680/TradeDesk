@@ -72,6 +72,13 @@
 //      are carved out of any surrounding home dwell, never laid on top of it,
 //      so no minute is counted twice. Presence is proven by fixes inside the
 //      fence, never assumed from the app being open somewhere.
+//  12. THE TRUCK WAS WHERE THE PHONE SAT (owner 2026-09-02). A departure's
+//      origin is the last fix before the automotive flip with no drive on
+//      the tape in between, when that fix is inside a fence; the nearest
+//      fix inside the window is the fallback. A phone that slept through
+//      the flip and woke down the road still names the fence it left.
+//      Mirror for arrivals: the first fix after the walking flip and
+//      before the next drive, when none sits inside the window.
 //  11. THE DAY ENDS WITH THE LAST REAL WORK (owner 2026-08-24, restated
 //      2026-09-02 on his own 5:29pm: "those aren't needed"). A dwell at a
 //      base (the shop, a home office) that begins after the day's last
@@ -87,6 +94,7 @@ const GEO_DERIVE_DEFAULTS = Object.freeze({
   wrapMin: 30,            // rule 11: unloading at a real shop after the last job
   pathMax: 400,           // breadcrumbs kept on a mileage row (thinned, endpoints survive)
   fixWindowMs: 5 * 60000, // how far from a flip a fix may sit and still be its fix
+  parkedFixMaxMs: 12 * 3600000, // how old the parked fix before a departure may be
   minLegMs: 2 * 60000,    // a journey shorter than this is a walk across a fence line
   stillEndMs: 10 * 60000, // a truck that sits this long has parked, foot flip or not
   maxFixAccM: 150,        // fixes worse than this are not part of a path
@@ -153,6 +161,38 @@ function _gdFixNear(fixes, ts, windowMs, maxAccM) {
     if (f.acc != null && Number(f.acc) > maxAccM) continue;
     const d = Math.abs(f.ts - ts);
     if (d <= windowMs && d < bestD) { best = f; bestD = d; }
+  }
+  return best;
+}
+
+// THE TRUCK WAS WHERE THE PHONE SAT (owner 2026-09-02, his 7:51 departure).
+// A phone asleep at the shop learns about the automotive flip only when a
+// location event wakes it, one to three minutes later, by which time the
+// nearest fix can already be down the road and outside the fence. But the
+// tape says nothing drove between the last fix before the flip and the flip
+// itself, so that fix is where the truck was parked, however old it is.
+// This is what the old engine got by luck from a stale last-known fix; here
+// it is the rule. Bounded by notBeforeTs (the previous journey's end: a fix
+// from before an earlier drive says nothing about this one) and by age.
+function _gdParkedFixBefore(fixes, ts, notBeforeTs, maxAgeMs, maxAccM) {
+  let best = null;
+  for (const f of fixes) {
+    if (!f || f.lat == null || f.lng == null || typeof f.ts !== 'number') continue;
+    if (f.acc != null && Number(f.acc) > maxAccM) continue;
+    if (f.ts > ts || f.ts < notBeforeTs || ts - f.ts > maxAgeMs) continue;
+    if (!best || f.ts > best.ts) best = f;
+  }
+  return best;
+}
+// The arrival's mirror: the first good fix after the walking flip and before
+// the next drive, for a phone that only woke once it had parked.
+function _gdSettledFixAfter(fixes, ts, notAfterTs, maxAgeMs, maxAccM) {
+  let best = null;
+  for (const f of fixes) {
+    if (!f || f.lat == null || f.lng == null || typeof f.ts !== 'number') continue;
+    if (f.acc != null && Number(f.acc) > maxAccM) continue;
+    if (f.ts < ts || f.ts > notAfterTs || f.ts - ts > maxAgeMs) continue;
+    if (!best || f.ts < best.ts) best = f;
   }
   return best;
 }
@@ -241,8 +281,16 @@ function geoDeriveDay(input) {
   let chain = null;          // {id, originFence, startTs, autoMs, stops}
   let arrived = null;        // {fence, ts, journeyId}: an open dwell awaiting its departure
 
-  for (const j of journeys) {
-    const startFix = at(j.startTs);
+  for (let ji = 0; ji < journeys.length; ji++) {
+    const j = journeys[ji];
+    const prevEnd = ji > 0 && typeof journeys[ji - 1].endTs === 'number' ? journeys[ji - 1].endTs : -Infinity;
+    const nextStart = ji + 1 < journeys.length ? journeys[ji + 1].startTs : Infinity;
+    // Where the truck was parked beats where the phone happened to wake up:
+    // a parked fix inside a fence names the origin even when a later fix
+    // inside the window sits outside every fence.
+    const parkedFix = _gdParkedFixBefore(fixes, j.startTs, prevEnd, opts.parkedFixMaxMs, opts.maxFixAccM);
+    const nearFix = at(j.startTs);
+    const startFix = (parkedFix && fenceOf(parkedFix)) ? parkedFix : (nearFix || parkedFix);
     const depFence = fenceOf(startFix);
     // The departure ping labels the dwell that just ended. If it is missing,
     // the arrival that opened the dwell still knows where it was.
@@ -265,7 +313,7 @@ function geoDeriveDay(input) {
       break;
     }
 
-    const endFix = at(j.endTs);
+    const endFix = at(j.endTs) || _gdSettledFixAfter(fixes, j.endTs, nextStart, opts.parkedFixMaxMs, opts.maxFixAccM);
     const toFence = fenceOf(endFix);
     const autoMs = j.endTs - j.startTs;
 

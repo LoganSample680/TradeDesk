@@ -457,6 +457,54 @@ test.describe('geo-derive wiring', () => {
       expect(r.junk).toEqual([0, 0]);
     });
 
+    test('the server fetch pages by capture time until a short page, so a dense leg comes back whole', async () => {
+      const r = await page.evaluate(async () => {
+        const origSupa = window._supa;
+        const calls = [];
+        const rowsFor = (table, sel) => {
+          if (table === 'geo_events' && sel === 'ts,lat,lon') return Array.from({ length: 1300 }, (_, i) => ({ ts: new Date(Date.parse('2026-09-01T17:20:00Z') + i * 1000).toISOString(), lat: 39 + i * 1e-5, lon: -95 }));
+          if (table === 'geo_events') return [{ ts: '2026-09-01T18:00:00.000Z', type: 'app-active' }];
+          return [{ ts: '2026-09-01T17:25:00.000Z', lat: 39.5, lon: -95.5, accuracy: 7 }];
+        };
+        const chain = (table, sel) => {
+          const c = {};
+          ['eq', 'like', 'gte', 'lt', 'not', 'order'].forEach(k => { c[k] = () => c; });
+          c.range = async (a, b) => { calls.push([table, sel, a, b]); return { data: rowsFor(table, sel).slice(a, b + 1), error: null }; };
+          return c;
+        };
+        window._supa = { from: (t) => ({ select: (sel) => chain(t, sel) }), rpc: origSupa.rpc };
+        try {
+          const out = await _geoDeriveServerFixes(Date.parse('2026-09-01T05:00:00Z'), Date.parse('2026-09-02T05:00:00Z'));
+          return { n: out.length, app: out.appEvents, first: out[0], last: out[out.length - 1], calls,
+            sorted: out.slice(0, 1300).every((f, i, a) => i === 0 || f.ts >= a[i - 1].ts) };
+        } finally { window._supa = origSupa; }
+      });
+      expect(r.n).toBe(1301);
+      expect(r.app).toEqual([{ ts: Date.parse('2026-09-01T18:00:00Z'), kind: 'active' }]);
+      expect(r.calls.filter(c => c[1] === 'ts,lat,lon').map(c => [c[2], c[3]])).toEqual([[0, 999], [1000, 1999]]);
+      expect(r.calls.filter(c => c[0] === 'location_pings')).toHaveLength(1);
+      expect(r.sorted).toBe(true);
+      expect(r.last.acc).toBe(7);
+    });
+
+    test('a complete, dense trace is the drive; the router only outranks a thin one or one that woke late', async () => {
+      const r = await page.evaluate(async () => {
+        window._routeDistance = async () => ({ miles: 3.9, mins: 10 });
+        localStorage.removeItem('zp3_geo_routes');
+        const from = { lat: 39.0123292, lng: -95.7464936 }, to = { lat: 39.0307066, lng: -95.7112082 };
+        const t0 = Date.parse('2026-09-01T17:21:30Z'), t1 = Date.parse('2026-09-01T17:31:24Z');
+        const line = (n, a, b) => Array.from({ length: n }, (_, i) => [a.lat + (b.lat - a.lat) * i / (n - 1), a.lng + (b.lng - a.lng) * i / (n - 1), t0 + (t1 - t0) * i / (n - 1)]);
+        const row = (path, miles) => ({ id: 'x', fromCoord: from, toCoord: to, startedIso: new Date(t0).toISOString(), endedIso: new Date(t1).toISOString(), miles, gpsMiles: miles, calc_method: 'derived-path', path });
+        const dense = row(line(120, from, to), 3.0);
+        const thin = row(line(6, from, to), 2.4);
+        const late = row(line(120, { lat: 39.0200, lng: -95.7300 }, to), 2.1);   // starts a mile in
+        const noPath = { id: 'y', fromCoord: from, toCoord: to, startedIso: new Date(t0).toISOString(), endedIso: new Date(t1).toISOString(), miles: 2.3, gpsMiles: 0, calc_method: 'derived-straight', path: [] };
+        await _geoDeriveRouteMiles([dense, thin, late, noPath]);
+        return [dense, thin, late, noPath].map(m => [m.miles, m.calc_method, m.routeMiles]);
+      });
+      expect(r).toEqual([[3.0, 'derived-path', 3.9], [3.9, 'derived-routed', 3.9], [3.9, 'derived-routed', 3.9], [3.9, 'derived-routed', 3.9]]);
+    });
+
     test('the boot rebuild seeds the local logs from the server before it derives', async () => {
       await seed();
       const r = await page.evaluate(async () => {

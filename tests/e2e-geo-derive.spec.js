@@ -264,13 +264,17 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.legs).toEqual([]);
     });
 
-    test('no fix near a flip means unknown, never a guess', async () => {
+    test('a fix far from a flip is the truck when nothing drove in between, and a guess when something did', async () => {
+      // Until 2026-09-02 this asserted the opposite: fixes 40 minutes from
+      // either flip were "outside the window" and the leg had no ends. Rule
+      // 12: the tape shows the phone parked from 8:20 to 9:00 and again from
+      // 9:20 on, so those fixes ARE where the truck sat.
       const t = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot')];
-      // The only fixes are 40 minutes from either flip: outside the window.
       const f = [fix(T(8, 20), SHOP), fix(T(10, 0), DOE)];
       const r = await run(page, base({ tape: t, fixes: f }));
-      expect(r.legs).toEqual([]);
-      expect(r.pending).toBeNull();
+      expect(r.legs.map(l => [l.from.name, l.to.name, hm(l.startTs), hm(l.endTs)])).toEqual([['TradeDesk shop', 'John Doe', '14:00', '14:20']]);
+      // (A fix from before an EARLIER drive is not this departure's: see
+      // 'a drive in between disqualifies the parked fix' under rule 12.)
     });
 
     test('junk accuracy is not a fix', async () => {
@@ -524,6 +528,78 @@ test.describe('geo-derive: the day deriver', () => {
       expect(rows.td_mileage).toHaveLength(4);
       const sorted = rows.td_mileage.slice().sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
       expect(sorted.map(m => m.startedIso.slice(11, 16))).toEqual(['22:08', '18:17', '17:21', '12:52']);
+    });
+  });
+
+  // ── Rule 12: the truck was where the phone sat ──────────────────────────
+  // Owner 2026-09-02, his 7:51 departure: the app slept through the flip and
+  // woke 0.4 miles down the road, so the nearest fix sat outside the shop
+  // fence and the leg had no origin. The last fix before the flip, with no
+  // drive on the tape since, is where the truck was parked.
+  test.describe('the truck was where the phone sat', () => {
+    const OUT = { lat: 39.0295, lng: -95.7189 };   // 0.4 mi east of the shop, outside every fence
+
+    test('his morning: parked ping at the shop 21 minutes before the flip, first live fix down the road', async () => {
+      const tape = [mo(T(7, 26), 'still'), mo(T(7, 50, 27), 'onFoot'), mo(T(7, 51, 40), 'driving'), mo(T(7, 59, 27), 'onFoot')];
+      const fixes = [fix(T(7, 30), SHOP), fix(T(7, 53, 10), OUT), fix(T(7, 54, 10), { lat: 39.0274, lng: -95.7250 }), fix(T(7, 57, 43), { lat: 39.0128, lng: -95.7439 }), fix(T(7, 59, 27, 5), DOE), fix(T(8, 0), DOE), fix(T(8, 30), DOE)];
+      const r = await run(page, base({ tape, fixes, nowMs: T(9, 0) }));
+      expect(r.legs.map(l => [l.from.name, l.to.name, hm(l.startTs), hm(l.endTs), l.minutes])).toEqual([['TradeDesk shop', 'John Doe', '12:51', '12:59', 8]]);
+      // The clock is the flips, not the fixes.
+      expect(r.legs[0].startTs).toBe(T(7, 51, 40));
+      expect(r.legs[0].endTs).toBe(T(7, 59, 27));
+      // The trace still starts where the phone was, at the shop.
+      expect(r.legs[0].path[0].slice(0, 2)).toEqual([SHOP.lat, SHOP.lng].map(v => Math.round(v * 1e5) / 1e5));
+      expect(r.open && r.open.kind).toBe('client');
+    });
+
+    test('a drive in between disqualifies the parked fix: nothing is invented', async () => {
+      // Shop at 7:00, drove to an unsaved stop 7:10 to 7:20, left it at 7:40
+      // with the first fix at 7:42 out on the road. The 7:00 shop fix is
+      // from before an earlier drive and says nothing about the 7:40 one.
+      const tape = [mo(T(6, 30), 'onFoot'), mo(T(7, 10), 'driving'), mo(T(7, 20), 'onFoot'), mo(T(7, 40), 'driving'), mo(T(7, 50), 'onFoot')];
+      const fixes = [fix(T(7, 0), SHOP), fix(T(7, 10, 5), SHOP), fix(T(7, 20, 5), GAS), fix(T(7, 42), OUT), fix(T(7, 50, 5), DOE), fix(T(8, 30), DOE)];
+      const r = await run(page, base({ tape, fixes, nowMs: T(9, 0) }));
+      // Shop -> gas is pending (unsaved), gas -> Doe: the chain from the shop
+      // collapses through the stop, so the leg is shop -> Doe. What must NOT
+      // happen is the 7:40 origin being read as the shop on its own.
+      expect(r.legs.map(l => [l.from.name, l.to.name, l.collapsed])).toEqual([['TradeDesk shop', 'John Doe', true]]);
+      const r2 = await run(page, base({ tape: tape.slice(2), fixes: fixes.slice(2), nowMs: T(9, 0) }));
+      expect(r2.legs, 'starting at the unsaved stop, the shop fix is never reached for').toEqual([]);
+      expect(r2.dwells).toEqual([]);
+      expect(r2.open && r2.open.name).toBe('John Doe');
+    });
+
+    test('a parked fix outside every fence loses to a fix inside the window that is inside one', async () => {
+      const tape = [mo(T(8, 0), 'onFoot'), mo(T(8, 30), 'driving'), mo(T(8, 45), 'onFoot')];
+      const fixes = [fix(T(8, 5), GAS), fix(T(8, 30, 5), SHOP), fix(T(8, 45, 5), DOE), fix(T(9, 30), DOE)];
+      const r = await run(page, base({ tape, fixes }));
+      expect(r.legs.map(l => [l.from.name, l.to.name])).toEqual([['TradeDesk shop', 'John Doe']]);
+    });
+
+    test('a parked fix older than twelve hours is not the truck any more', async () => {
+      const tape = [mo(T(8, 0), 'onFoot'), mo(T(20, 30), 'driving'), mo(T(20, 45), 'onFoot')];
+      const fixes = [fix(T(7, 0), SHOP), fix(T(20, 32), OUT), fix(T(20, 45, 5), DOE), fix(T(21, 30), DOE)];
+      const r = await run(page, base({ tape, fixes }));
+      expect(r.legs).toEqual([]);
+      expect(r.open && r.open.name).toBe('John Doe');
+      // Eleven hours old is still the truck.
+      const r2 = await run(page, base({ tape, fixes: [fix(T(9, 45), SHOP)].concat(fixes.slice(1)) }));
+      expect(r2.legs.map(l => l.from.name)).toEqual(['TradeDesk shop']);
+    });
+
+    test('arrival mirror: a phone that only woke once it had parked still names the fence', async () => {
+      const tape = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot'), mo(T(12, 0), 'driving'), mo(T(12, 10), 'onFoot')];
+      // No fix within five minutes of the 9:20 walking flip; the first one
+      // after it (9:27) is at Doe, before the next drive.
+      const fixes = [fix(T(9, 0, 5), SHOP), fix(T(9, 27), DOE), fix(T(11, 0), DOE), fix(T(12, 0, 5), DOE), fix(T(12, 10, 5), SHOP), fix(T(12, 30), SHOP)];
+      const r = await run(page, base({ tape, fixes }));
+      expect(r.legs.map(l => [l.from.name, l.to.name, hm(l.endTs)])).toEqual([['TradeDesk shop', 'John Doe', '14:20'], ['John Doe', 'TradeDesk shop', '17:10']]);
+      expect(r.dwells.map(d => [d.name, hm(d.startTs), hm(d.endTs)])).toEqual([['John Doe', '14:20', '17:00']]);
+      // But a fix from after the NEXT drive began is not this arrival: the
+      // 9:20 stop stays unknown, and shop -> unknown -> shop is a round trip.
+      const r2 = await run(page, base({ tape, fixes: [fix(T(9, 0, 5), SHOP), fix(T(12, 0, 5), DOE), fix(T(12, 10, 5), SHOP), fix(T(12, 30), SHOP)] }));
+      expect(r2.legs).toEqual([]);
+      expect(r2.dwells).toEqual([]);
     });
   });
 

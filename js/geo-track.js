@@ -6046,18 +6046,36 @@ async function _geoDeriveTape(sinceMs){
 
 // The server's fixes for a window: what other wakes flushed while the app was
 // dead. Folded into the local log for the boot rebuild only.
+// Every row, in order. The single call with limit(5000) and no ORDER BY
+// that this replaces returned whichever 5,000 rows Postgres reached first
+// across a whole week, so a ten-minute leg with 127 fixes on the server
+// came back with 16 of them (owner 2026-09-02: trips 2 and 4 at 3.9). Paged
+// by capture time until a short page says the window is exhausted.
+const _GEO_FETCH_PAGE=1000;
+const _GEO_FETCH_PAGES=40;
+async function _geoPageAll(build){
+  const out=[];
+  for(let i=0;i<_GEO_FETCH_PAGES;i++){
+    const r=await build().order('ts',{ascending:true}).range(i*_GEO_FETCH_PAGE,(i+1)*_GEO_FETCH_PAGE-1);
+    const data=r&&Array.isArray(r.data)?r.data:null;
+    if(!data)break;
+    out.push.apply(out,data);
+    if(data.length<_GEO_FETCH_PAGE)break;
+  }
+  return out;
+}
 async function _geoDeriveServerFixes(fromMs,toMs){
   const out=[];
   out.appEvents=[];
   try{
     if(!_supa||!_supaUser)return out;
     const me=_supaUser.id,a=new Date(fromMs).toISOString(),b=new Date(toMs).toISOString();
-    const ap=await _supa.from('geo_events').select('ts,type').eq('employee_user_id',me).like('type','app-%').gte('ts',a).lt('ts',b).limit(5000);
-    (ap&&ap.data||[]).forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.appEvents.push({ts:t,kind:String(e.type).slice(4)});});
-    const ev=await _supa.from('geo_events').select('ts,lat,lon').eq('employee_user_id',me).gte('ts',a).lt('ts',b).not('lat','is',null).limit(5000);
-    (ev&&ev.data||[]).forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:null});});
-    const pg=await _supa.from('location_pings').select('ts,lat,lon,accuracy').eq('employee_user_id',me).gte('ts',a).lt('ts',b).limit(5000);
-    (pg&&pg.data||[]).forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:e.accuracy!=null?Number(e.accuracy):null});});
+    const ap=await _geoPageAll(()=>_supa.from('geo_events').select('ts,type').eq('employee_user_id',me).like('type','app-%').gte('ts',a).lt('ts',b));
+    ap.forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.appEvents.push({ts:t,kind:String(e.type).slice(4)});});
+    const ev=await _geoPageAll(()=>_supa.from('geo_events').select('ts,lat,lon').eq('employee_user_id',me).gte('ts',a).lt('ts',b).not('lat','is',null));
+    ev.forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:null});});
+    const pg=await _geoPageAll(()=>_supa.from('location_pings').select('ts,lat,lon,accuracy').eq('employee_user_id',me).gte('ts',a).lt('ts',b));
+    pg.forEach(e=>{const t=Date.parse(e.ts);if(t>0)out.push({ts:t,lat:Number(e.lat),lng:Number(e.lon),acc:e.accuracy!=null?Number(e.accuracy):null});});
   }catch(_e){}
   return out;
 }
@@ -6103,6 +6121,21 @@ function _geoDeriveApplyMileage(dayKey,derived){
 // less than what the trace measured. Same _routeDistance the manual log
 // uses (7.3), answered once per pair of ends and remembered, so a boot
 // rebuild of a week costs one call per distinct drive, not per rebuild.
+const _GEO_TRACE_END_FT=600;      // the trace must start and end inside the fences it joins
+const _GEO_TRACE_GAP_MS=45000;    // and average a breadcrumb at least this often
+const _GEO_TRACE_MIN_PTS=12;
+function _geoTraceComplete(m){
+  try{
+    const p=m&&m.path;
+    if(!Array.isArray(p)||p.length<_GEO_TRACE_MIN_PTS||typeof _geoDistFt!=='function')return false;
+    const near=(pt,c)=>!!(c&&isFinite(c.lat)&&isFinite(c.lng)&&Array.isArray(pt)&&isFinite(+pt[0])&&isFinite(+pt[1])&&
+      _geoDistFt({lat:+pt[0],lng:+pt[1]},{lat:+c.lat,lng:+c.lng})<=_GEO_TRACE_END_FT);
+    if(!near(p[0],m.fromCoord)||!near(p[p.length-1],m.toCoord))return false;
+    const dur=Date.parse(m.endedIso||'')-Date.parse(m.startedIso||'');
+    if(!(dur>0))return false;
+    return dur/p.length<=_GEO_TRACE_GAP_MS&&Number(m.miles)>0;
+  }catch(_e){return false;}
+}
 const _GEO_ROUTE_CACHE_KEY='zp3_geo_routes';
 const _GEO_ROUTE_CACHE_MAX=400;
 function _geoRouteKey(a,b){const r=v=>Math.round(Number(v)*1e4)/1e4;return r(a.lat)+','+r(a.lng)+'>'+r(b.lat)+','+r(b.lng);}
@@ -6123,6 +6156,11 @@ async function _geoDeriveRouteMiles(rows){
       }
       if(!(routed>0))continue;
       m.routeMiles=routed;
+      // A trace that runs fence to fence with a breadcrumb every few seconds
+      // IS the drive (owner 2026-09-02: his 3.0 against the router's 3.9).
+      // The router only outranks a thin one, or one that starts down the
+      // road because the phone woke late.
+      if(_geoTraceComplete(m))continue;
       if(routed>(Number(m.miles)||0)){m.miles=routed;m.calc_method='derived-routed';}
     }catch(_e){}
   }
