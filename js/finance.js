@@ -1030,11 +1030,6 @@ async function expSave(){
       // Only stamp an edit if it was never stamped. Re-stamping would move the
       // pin to wherever they happened to be doing paperwork days later.
       if(typeof _stampGeo==='function'&&expenses[idx]&&expenses[idx].lat==null)_stampGeo(expenses[idx]);
-      // A receipt is the only thing that can tell a crew lunch run from a
-      // personal one, and it rarely arrives while they are still in the car
-      // park. If this one belongs to a stop that was passed through as a
-      // detour, that day gets rebuilt now (mileage.js reviewDetourReceipts).
-      if(typeof reviewDetourReceipts==='function')reviewDetourReceipts();
       showToast('Expense updated, '+vendor+' '+fmt(amount),'✓');
       closeExpenseFlow();
       setTimeout(()=>{if(typeof renderExpenses==='function')renderExpenses();},0);
@@ -1100,8 +1095,6 @@ async function expSave(){
   // Where it was logged. Fire-and-forget: this never blocks or delays the save,
   // and silently does nothing if location was never granted.
   if(typeof _stampGeo==='function')_stampGeo(expenses.find(e=>e.id===expId));
-  // Same rebuild on a fresh receipt: see the edit path above.
-  if(typeof reviewDetourReceipts==='function')reviewDetourReceipts();
   showToast((new Date(date).getFullYear()<new Date().getFullYear()?'Back-tax expense':'Expense')+' saved: '+vendor+' '+fmt(amount),receipt_img?'📎':'🧾');
   if(cat==='tools'&&amount>=500)setTimeout(()=>showToast(svgIcon('💡')+' Equipment $'+amount.toFixed(0)+'+ may qualify for Section 179 immediate deduction, flag for your CPA','📋'),900);
   closeExpenseFlow();

@@ -610,6 +610,8 @@ async function _geoDrainQueue(){
       const i=key?cur.findIndex(x=>x&&x.row&&x.row.client_key===key):0;
       if(i>=0)cur.splice(i,1); else break; // already gone: another drain took it
       _geoQueueWrite(cur);
+      // The table took the day: the screen now reads it back (7.3, 17).
+      if(item.rpc&&item.args&&item.args.p_day){try{_geoDeriveSyncMileage(item.args.p_day);}catch(_e){}}
     }
   }catch(_e){}
   _geoDrainBusy=false;
@@ -1544,7 +1546,6 @@ async function _geoOnPing(pos){
         // collapse as a detour, just continue as if the exit never happened.
         _geoParkNote('flicker-undo',(curLoc&&curLoc.name)||cur.k);
       }else{
-        _geoCollapseDetours();   // unreceipted anonymous stops between here and the last real endpoint are detours
         if(legStart){
           // arriveIso, not null: live it IS now, a replayed TdGeo buffer fix
           // carries the moment the arrival actually happened, and a park
@@ -2626,14 +2627,9 @@ function _geoParkRegions(spot,spotRadius){
 // park mode is about to cut GPS) the leg into it is written immediately and
 // the leg is split at the kerb. Idempotent via a.legClosed, so the later
 // departure never double-logs. A stop that turns out to be a passed-through
-// errand is still folded by _geoCollapseDetours on the next fence arrival,
-// which removes this row and rewrites the direct one, unchanged.
+// errand is the deriver's to fold (js/geo-derive.js rule 6).
 function _geoSettleStopLeg(a,nowIso){
   if(!a||a.legClosed||!_geoDriveStartedAt)return false;
-  // Fold any earlier personal stop FIRST, so the row written here runs from
-  // the last real endpoint (the CPA rule: a lunch stop in the middle makes
-  // one trip with a detour, not two trips).
-  _geoCollapseDetours();
   const ms=Math.max(0,Date.parse(a.lastAt||nowIso)-Date.parse(a.at));
   const stopLoc=_geoStopLoc(a,ms);
   // ── A STOP IS NEVER AN ORIGIN WHILE A REAL FENCE IS KNOWN ────────────────
@@ -2711,67 +2707,6 @@ function _geoCloseStop(a){
   // Logged, and logged as ITSELF. Off-job time is neither job labor nor drive
   // time; folding it into either is what made a lunch break bill to a job.
   _geoWriteStopResolved(a,ms,stopLoc);
-}
-// A personal stop must not become the origin of the next leg. Called once the
-// business at the pin is known (mileage.js _autoNameStopTrip), which is always
-// AFTER the stop closed, because it takes a round trip to Apple to find out.
-//
-// Returns whether it actually restored anything: false means they have already
-// reached the next fence and the leg out of here was measured from the stop, so
-// the caller has to fix that row instead. Both paths exist because which one
-// happens depends on how long they were parked against how long Apple took, and
-// a deduction must not turn on that.
-function _geoPassThroughStop(stopLoc){
-  if(!stopLoc||_geoLegOrigin!==stopLoc)return false;
-  _geoLegOrigin=stopLoc.prevOrigin||null;
-  return true;
-}
-// Personal wandering must not fragment the deductible chain (owner report,
-// 2026-08-07: Home Depot → Jefferson's → PetSmart → home logged
-// "Home Depot -> Stop" as a deductible trip and never finished the leg home).
-// _autoNameStopTrip already collapses a stop Apple NAMES as food; this closes
-// the other half of the same rule: on reaching the next REAL fence, any
-// intervening stop that is still anonymous ("Stop", no tenant answer) and has
-// no same-day receipt at its pin is a detour, not a destination. Its inbound
-// row comes off the log, breadcrumbed onto the surviving row exactly like the
-// named-personal path (so reviewDetourReceipts can still rebuild it), and the
-// leg being written now measures from the last real endpoint: the row reads
-// "Home Depot -> Home Office" at direct miles, per the owner's CPA rule that
-// only the direct miles between two business points are deductible.
-//
-// The chain BREAKS (stops collapsing) at: a stop Apple named (a real tenant,
-// business until proven otherwise), a receipted stop (proven business), or a
-// likely-home stop (home ends a day's chain whatever else is true). Honest
-// limit: an unnamed collapsed stop whose receipt gets typed in days later can
-// only be matched by the receipt's own geo-stamp, since there is no vendor
-// name on the crumb to match against.
-function _geoCollapseDetours(){
-  try{
-    if(typeof mileage==='undefined')return;
-    let guard=8,changed=false;
-    while(guard-->0&&_geoLegOrigin&&_geoLegOrigin.kind==='stop'&&_geoLegOrigin.prevOrigin){
-      const stop=_geoLegOrigin;
-      if(stop.likelyHome)break;
-      if(stop.name&&stop.name!=='Stop')break;
-      const idx=mileage.findIndex(m=>m&&m.gps&&m.toCoord&&
-        Math.abs(m.toCoord.lat-stop.lat)<=1e-5&&Math.abs(m.toCoord.lng-stop.lng)<=1e-5);
-      const inbound=idx>=0?mileage[idx]:null;
-      const day=(inbound&&inbound.date)||todayKey();
-      // _bizReceiptForStop, not expenseForStop: vehicle-operating money is
-      // inside the mileage rate and can never make a stop a business
-      // destination (js/mileage.js owns that rule).
-      if(typeof _bizReceiptForStop==='function'&&_bizReceiptForStop({lat:stop.lat,lng:stop.lng,name:stop.name,day}))break;
-      if(idx>=0)mileage.splice(idx,1);
-      const back=stop.prevOrigin;
-      back.passedThrough={stop:{lat:stop.lat,lng:stop.lng,name:stop.name||'Stop',addr:'',kind:'stop'},
-                          day,leg:inbound||undefined,origin:back};
-      // The dropped sub-leg's wheel time rides onto the surviving direct row.
-      if(inbound&&inbound.mins)back.extraDriveMins=(back.extraDriveMins||0)+inbound.mins;
-      _geoLegOrigin=back;
-      changed=true;
-    }
-    if(changed&&typeof saveAll==='function')saveAll();
-  }catch(_e){}
 }
 // `endedIso` closes the leg at an earlier verified moment than now: the moment
 // they parked, when the stop that follows is not driving.
@@ -2874,7 +2809,6 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // collapsed personal stop's driving is in the tally but is not deductible
   // (the CPA's direct-miles rule). The tally UNDERcounts real roads, so as a
   // floor it can only ever recover miles that were provably driven.
-  const hadDetourLegs=!!(_geoLegOrigin&&_geoLegOrigin.extraDriveMins);
   // The live anchor may still be holding an unnoted pause when the arrival
   // fence closes the leg directly (sparse pings: pizza counter to the shop
   // door in one fix). Note it before the floor is judged.
@@ -2887,14 +2821,13 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // route and the errand's extra miles got claimed). A paused leg had an
   // errand; the direct route is the deductible answer, so the floor stands
   // down. A genuinely forced detour never sits still for 2.5 minutes.
-  const obsMiles=(!stale&&!hadDetourLegs&&!_geoDriveHadPause&&_geoDriveSteps>=8&&_geoDriveMiles>0.3)?Math.round(_geoDriveMiles*10)/10:null;
+  const obsMiles=(!stale&&!_geoDriveHadPause&&_geoDriveSteps>=8&&_geoDriveMiles>0.3)?Math.round(_geoDriveMiles*10)/10:null;
   // THE ROUTE THIS LEG ACTUALLY TOOK. Captured here, before the next leg
   // resets the tally, and on the same terms as obsMiles: a stale leg's
   // breadcrumb is fiction (nobody was watching), and two points are a straight
   // line, not a route. Nothing downstream reads it as distance yet, see the
   // precedence note in _geoAutoMileage: it is drawn, not counted.
   const obsPath=(!stale&&_geoDrivePath.length>=2)?_geoDrivePath.slice():null;
-  if(!stale&&_geoLegOrigin&&_geoLegOrigin.extraDriveMins){driveMins+=_geoLegOrigin.extraDriveMins;delete _geoLegOrigin.extraDriveMins;}
   // ── OUT AND BACK WITH NOTHING BUSINESS IN IT ─────────────────────────────
   // Owner rule (2026-08-10): "a drive from home office shop and back shouldn't
   // count either unless there was a business stop that day."
@@ -6162,6 +6095,65 @@ function _geoDeriveApplyMileage(dayKey,derived){
   });
 }
 
+// ── Road miles for a derived leg ──────────────────────────────────────────
+// Owner 2026-09-02: "Mileage isn't 3.2 like it should be." The trace is a
+// breadcrumb every thirty seconds and cuts every corner, so on its own it
+// undercounts (his 2.7 for a leg the road makes 3.2). A leg's miles are the
+// road distance between its two ends when the router answers, and never
+// less than what the trace measured. Same _routeDistance the manual log
+// uses (7.3), answered once per pair of ends and remembered, so a boot
+// rebuild of a week costs one call per distinct drive, not per rebuild.
+const _GEO_ROUTE_CACHE_KEY='zp3_geo_routes';
+const _GEO_ROUTE_CACHE_MAX=400;
+function _geoRouteKey(a,b){const r=v=>Math.round(Number(v)*1e4)/1e4;return r(a.lat)+','+r(a.lng)+'>'+r(b.lat)+','+r(b.lng);}
+function _geoRouteCacheRead(){try{const c=JSON.parse(localStorage.getItem(_GEO_ROUTE_CACHE_KEY)||'{}');return (c&&typeof c==='object')?c:{};}catch(_e){return {};}}
+async function _geoDeriveRouteMiles(rows){
+  if(!Array.isArray(rows)||typeof _routeDistance!=='function')return rows;
+  const cache=_geoRouteCacheRead();
+  let dirty=false;
+  for(const m of rows){
+    try{
+      if(!m||!m.fromCoord||!m.toCoord||!isFinite(m.fromCoord.lat)||!isFinite(m.toCoord.lat))continue;
+      const k=_geoRouteKey(m.fromCoord,m.toCoord);
+      let routed=Number(cache[k]);
+      if(!(routed>0)){
+        const r=await _routeDistance(m.fromCoord,m.toCoord);
+        routed=(r&&Number(r.miles)>0)?Math.round(Number(r.miles)*10)/10:0;
+        if(routed>0){cache[k]=routed;dirty=true;}
+      }
+      if(!(routed>0))continue;
+      m.routeMiles=routed;
+      if(routed>(Number(m.miles)||0)){m.miles=routed;m.calc_method='derived-routed';}
+    }catch(_e){}
+  }
+  if(dirty){
+    try{
+      const ks=Object.keys(cache);
+      if(ks.length>_GEO_ROUTE_CACHE_MAX)ks.slice(0,ks.length-_GEO_ROUTE_CACHE_MAX).forEach(k=>{delete cache[k];});
+      localStorage.setItem(_GEO_ROUTE_CACHE_KEY,JSON.stringify(cache));
+    }catch(_e){}
+  }
+  return rows;
+}
+
+// ── The screen shows what the table holds ─────────────────────────────────
+// Owner 2026-09-02, the morning after the rebuild: four legs live in
+// td_mileage, three on the phone. Once geo_replace_day has taken a day, the
+// day's legs are read back and the in-memory list is made to match them,
+// keeping what a person set on a row (vehicle, purpose, notes). Whatever
+// else touched the list in between, the table is the truth (CLAUDE.md 17).
+async function _geoDeriveSyncMileage(dayKey){
+  try{
+    if(!dayKey||typeof _supa==='undefined'||!_supa||!_supaUser||typeof mileage==='undefined'||!Array.isArray(mileage))return 0;
+    const{data,error}=await _supa.from('td_mileage').select('id,data').eq('user_id',_supaUser.id).is('deleted_at',null).eq('data->>date',dayKey);
+    if(error||!Array.isArray(data))return 0;
+    const live=data.map(r=>r&&r.data).filter(r=>r&&r.gps===true&&r.id!=null&&r.date===dayKey);
+    _geoDeriveApplyMileage(dayKey,live);
+    try{if(typeof renderAllMileage==='function'&&document.getElementById('mil-table'))renderAllMileage();}catch(_e){}
+    return live.length;
+  }catch(_e){return 0;}
+}
+
 // One day, end to end. Returns the deriver's result, or null when there was
 // nothing to derive from.
 async function _geoDeriveDayNow(dayKey,serverFixes){
@@ -6209,6 +6201,7 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
       return null;
     }
     const rows=_geoDeriveVehicleRows(geoDeriveRows(res,{contractorId:_geoCid(),employeeId:_supaUser.id}));
+    await _geoDeriveRouteMiles(rows.td_mileage);
     _geoEnqueueRpc(dayKey,{
       p_contractor:_geoCid(),p_employee:_supaUser.id,p_day:dayKey,
       p_day_start:new Date(b.start).toISOString(),p_day_end:new Date(b.end).toISOString(),

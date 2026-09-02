@@ -2131,57 +2131,7 @@ test.describe('Automatic mileage from drive legs', () => {
   // Three were cosmetic. One was not, and it is the reason this block exists
   // rather than being waved off: _geoPassThroughStop is in the money path.
   test.describe('the functions no test was reaching', () => {
-    test('_geoPassThroughStop restores the origin a personal stop replaced', async () => {
-      // When a stop turns out to be lunch, the leg it interrupted has to be
-      // re-pointed at wherever the truck REALLY came from, which is the origin
-      // that was current before the stop was opened. Get this wrong and the
-      // detour rule silently measures from the sandwich counter.
-      const out = await page.evaluate(() => {
-        const keepOrigin = _geoLegOrigin;
-        try {
-          const supply = { lat: 38.12, lng: -94.12, name: 'Ace Supply', kind: 'supply' };
-          _geoLegOrigin = supply;
-          // Opening the stop stashes whatever the origin was, the way
-          // _geoCloseStop does when it parks somewhere unrecognised.
-          const stop = { lat: 38.24, lng: -94.24, name: 'Stop', kind: 'stop' };
-          stop.prevOrigin = _geoLegOrigin || null;
-          _geoLegOrigin = stop;
-          const restored = _geoPassThroughStop(stop);
-          const after = _geoLegOrigin;
-          // Called again with a stop that is NOT the current origin: must refuse,
-          // or a stale descriptor could re-point a leg that has moved on.
-          const other = { lat: 39.0, lng: -95.0, name: 'Elsewhere', kind: 'stop', prevOrigin: null };
-          const refused = _geoPassThroughStop(other);
-          return { restored, refused, name: after && after.name, sameObject: after === supply,
-                   originUnchanged: _geoLegOrigin === after };
-        } finally { _geoLegOrigin = keepOrigin; }
-      });
-      expect(out.restored).toBe(true);
-      expect(out.name).toBe('Ace Supply');
-      expect(out.sameObject, 'the ORIGINAL origin descriptor comes back, not a copy').toBe(true);
-      expect(out.refused, 'a stop that is not the current origin must not re-point anything').toBe(false);
-      expect(out.originUnchanged).toBe(true);
-    });
 
-    test('_geoPassThroughStop with nothing to restore leaves the leg alone', async () => {
-      const out = await page.evaluate(() => {
-        const keep = _geoLegOrigin;
-        try {
-          // Null, undefined, and a stop with no stashed origin: the first drive
-          // of the day has nothing behind it, and that is not an error.
-          const a = _geoPassThroughStop(null);
-          const b = _geoPassThroughStop(undefined);
-          const stop = { name: 'Stop', kind: 'stop' };
-          _geoLegOrigin = stop;
-          const c = _geoPassThroughStop(stop);
-          return { a, b, c, after: _geoLegOrigin };
-        } finally { _geoLegOrigin = keep; }
-      });
-      expect(out.a).toBe(false);
-      expect(out.b).toBe(false);
-      expect(out.c, 'it WAS the current origin, so it is consumed').toBe(true);
-      expect(out.after, 'with nothing stashed behind it, the leg has no origin').toBe(null);
-    });
 
     test('_dispatchDur and _dispatchClock survive the inputs a real day hands them', async () => {
       const out = await page.evaluate(() => ({
@@ -4777,34 +4727,6 @@ test.describe('A settled stop never strands the leg origin', () => {
     expect(r.prev).toBeNull();
   });
 
-  test('the collapse chain can now walk back to the fence', async () => {
-    // The whole point of the fallback. Once the stop carries a real endpoint,
-    // _geoCollapseDetours folds the anonymous pin out and the leg is measured
-    // from the shop, which is the CPA's direct-miles rule and the "place"
-    // element of Pub. 463 in one move.
-    const r = await page.evaluate((fence) => {
-      if (typeof mileage !== 'undefined') mileage.length = 0;
-      _geoLegOrigin = null;
-      _geoLastFenceLoc = fence;
-      _geoDriveStartedAt = new Date(Date.now() - 30 * 60000).toISOString();
-      _geoSettleStopLeg({
-        lat: 39.05, lng: -95.68,
-        at: new Date(Date.now() - 20 * 60000).toISOString(),
-        lastAt: new Date(Date.now() - 5 * 60000).toISOString(),
-        legClosed: false,
-      }, new Date().toISOString());
-      const beforeKind = _geoLegOrigin && _geoLegOrigin.kind;
-      _geoCollapseDetours();
-      return {
-        beforeKind,
-        afterName: _geoLegOrigin && _geoLegOrigin.name,
-        afterKind: _geoLegOrigin && _geoLegOrigin.kind,
-      };
-    }, SHOPFENCE);
-    expect(r.beforeKind, 'the stop is the origin until the collapse runs').toBe('stop');
-    expect(r.afterKind, 'and afterwards it is the fence, not the pin').toBe('shop');
-    expect(r.afterName).toBe('TradeDesk shop');
-  });
 
   test('a null anchor and a closed leg are both no-ops, not throws', async () => {
     // §11.1 input classes on the function this change touches.

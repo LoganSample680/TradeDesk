@@ -34,6 +34,9 @@ const GONE = {
     '_mileWorkdaySweep', '_mileFlightSweep', '_mileSameJourney', '_mileSameLeg', '_mileSameArrival',
     '_mileTripWinner', '_mileDedupTrips', 'autoLogDriveTrip',
   ],
+  'the stop classifier that still edited the mileage list on the phone (2026-09-02)': [
+    '_geoCollapseDetours', '_geoPassThroughStop', '_autoNameStopTrip', 'reviewDetourReceipts', '_reoriginTrip',
+  ],
   'the reader\'s correction chain (js/timelog.js, js/finance.js)': [
     '_tlStopAnchored', '_tlShopTape', '_tlAbsorbGaps', '_tlDemoteRoundTrips', '_tlTrimCoveredGapRows',
     '_tlRepairPass', '_tlRepairAfterPaint', '_ccShopTape',

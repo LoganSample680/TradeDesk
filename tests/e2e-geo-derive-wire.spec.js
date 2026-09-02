@@ -178,6 +178,7 @@ test.describe('geo-derive wiring', () => {
       localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 1788214075432: { addr: '2950 SW McClure Rd', lat: DOE.lat, lon: DOE.lng } }));
       window._geoDeriveTape = async () => tape;
       window._geoDrainQueue = () => {};   // hold the queue so it can be inspected
+      window._routeDistance = async () => ({ miles: 0, mins: 0 });   // no router unless a test brings one
       _geoFixLogPush(T[0], SHOP.lat, SHOP.lng, 5);
       _geoFixLogPush(T[1], DOE.lat, DOE.lng, 5);
       _geoFixLogPush(T[2], DOE.lat, DOE.lng, 5);
@@ -383,6 +384,77 @@ test.describe('geo-derive wiring', () => {
       expect(r.n).toBe(6000);
       expect(r.oldest).toBe(true);
       expect(r.app).toBe(1);
+    });
+
+    test('a leg\'s miles are the road distance when the router answers, never less than the trace', async () => {
+      await seed();
+      const r = await page.evaluate(async (DAY) => {
+        window.mileage = [];
+        localStorage.removeItem('zp3_geo_routes');
+        const calls = [];
+        window._routeDistance = async (a, b) => { calls.push([a.lat, b.lat]); return { miles: 3.2, mins: 9 }; };
+        const first = await _geoDeriveDayNow(DAY, null);
+        const q1 = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]')[0].args.p_miles;
+        // Same day again: the cache answers, the router is not asked twice.
+        await _geoDeriveDayNow(DAY, null);
+        const cache = JSON.parse(localStorage.getItem('zp3_geo_routes') || '{}');
+        // A router that says less than the trace does not shrink the leg.
+        window._routeDistance = async () => ({ miles: 0.4, mins: 2 });
+        localStorage.removeItem('zp3_geo_routes');
+        await _geoDeriveDayNow(DAY, null);
+        const q3 = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]')[0].args.p_miles;
+        // A router that throws leaves the trace's number.
+        window._routeDistance = async () => { throw new Error('offline'); };
+        localStorage.removeItem('zp3_geo_routes');
+        await _geoDeriveDayNow(DAY, null);
+        const q4 = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]')[0].args.p_miles;
+        return { legs: first.legs.map(l => l.miles), q1: q1.map(m => [m.miles, m.routeMiles, m.calc_method]), calls: calls.length,
+          cacheN: Object.keys(cache).length, q3: q3.map(m => [m.miles, m.calc_method]), q4: q4.map(m => [m.miles, m.calc_method]),
+          inMem: mileage.map(m => m.miles) };
+      }, DAY);
+      expect(r.q1).toEqual([[3.2, 3.2, 'derived-routed'], [3.2, 3.2, 'derived-routed']]);
+      expect(r.calls, 'one call per distinct pair of ends').toBe(2);
+      expect(r.cacheN).toBe(2);
+      for (let i = 0; i < 2; i++) {
+        expect(r.q3[i][0]).toBeCloseTo(r.legs[i], 5);
+        expect(r.q3[i][1]).toBe('derived-path');
+        expect(r.q4[i][0]).toBeCloseTo(r.legs[i], 5);
+      }
+      expect(r.inMem).toEqual(r.q4.map(x => x[0]));
+    });
+
+    test('once the table has taken a day, the list is read back from it', async () => {
+      await seed();
+      const r = await page.evaluate(async (DAY) => {
+        window.mileage = [{ id: 'hand', gps: false, date: DAY, miles: 12 }, { id: 'stray', gps: true, date: DAY, miles: 1 }];
+        await _geoDeriveDayNow(DAY, null);
+        const legIds = mileage.filter(m => m.gps).map(m => m.id).sort();
+        // Something on the phone drops a leg from the list (the old classifier
+        // did exactly this); a person also set a vehicle on the other one.
+        mileage.splice(mileage.findIndex(m => m.id === legIds[0]), 1);
+        mileage.find(m => m.id === legIds[1]).vehicle = 'F-250';
+        const origSupa = window._supa;
+        const serverRows = legIds.map(id => ({ id, data: { id, gps: true, date: DAY, miles: 3.2, from_name: 'S', to_name: 'D' } }))
+          .concat([{ id: 'other-day', data: { id: 'other-day', gps: true, date: '2026-08-30', miles: 2 } }]);
+        const sel = { data: serverRows, error: null };
+        const chain = { eq: () => chain, is: () => chain, then: (res) => res(sel) };
+        window._supa = { rpc: async () => ({ data: { ok: true }, error: null }), from: (t) => t === 'td_mileage' ? { select: () => chain } : origSupa.from(t) };
+        window._geoDrainQueue = window.__realDrain;
+        try {
+          await _geoDrainQueue();
+          await new Promise(r => setTimeout(r, 50));
+          return { ids: mileage.map(m => m.id).sort(), veh: mileage.find(m => m.id === legIds[1]).vehicle, miles: mileage.filter(m => m.gps).map(m => m.miles),
+            direct: await _geoDeriveSyncMileage(DAY), junk: [await _geoDeriveSyncMileage(''), await _geoDeriveSyncMileage(null)] };
+        } finally { window._supa = origSupa; window._geoDrainQueue = () => {}; }
+      }, DAY);
+      expect(r.ids).toEqual(['hand'].concat(r.ids.filter(i => /^j-/.test(i))).sort());
+      expect(r.ids.filter(i => /^j-/.test(i))).toHaveLength(2);
+      expect(r.ids).not.toContain('stray');
+      expect(r.ids).not.toContain('other-day');
+      expect(r.veh, 'what a person set on the row survives the read-back').toBe('F-250');
+      expect(r.miles).toEqual([3.2, 3.2]);
+      expect(r.direct).toBe(2);
+      expect(r.junk).toEqual([0, 0]);
     });
 
     test('the boot rebuild seeds the local logs from the server before it derives', async () => {

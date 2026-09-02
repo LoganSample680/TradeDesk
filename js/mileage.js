@@ -1087,198 +1087,6 @@ function _bizReceiptForStop(o){
     return e;
   }catch(_e){return null;}
 }
-async function _autoNameStopTrip(rec,to){
-  try{
-    if(typeof _poiAt!=='function')return;
-    // A stop the geofence already recognised as the declared home office keeps
-    // that name. Asking Apple who is at a residential pin gets the business
-    // across the street, and "Home Office" is the answer that makes the first
-    // and last legs of the day deductible in the first place.
-    if(to.likelyHome)return;
-    const poi=await _poiAt({lat:to.lat,lng:to.lng});
-    if(!poi||(!poi.name&&!poi.addr))return;
-    // Stamp the DESCRIPTOR first, not just this row. The very same object is the
-    // ORIGIN of the leg out of this stop (geo-track.js _geoCloseStop assigns it
-    // to _geoLegOrigin), so answering once names both ends of the pair. Naming
-    // only the arrival left the log reading "... -> The Home Depot" followed by
-    // "Stop -> ...", which is the same stop described two ways.
-    if(poi.name)to.name=poi.name;
-    if(poi.addr)to.addr=poi.addr;
-    // A restaurant is only personal when nobody bought anything for the business
-    // there. Buying the crew lunch is a work errand and the drive counts in full
-    // (owner's CPA, 2026-08-02), and the receipt that proves it is one the
-    // contractor already has to keep, so this costs them no extra taps. No
-    // receipt at that pin today, it was their own lunch.
-    // The LEG's date, not today's. A stop entered at 11:50pm and left at 12:05am
-    // closes on the following calendar day, so asking for today's receipts
-    // missed one dated to the drive. The later sweep already used the trip's own
-    // date and would have healed it on the next load; this makes the first
-    // answer right instead of the second.
-    const legDay=(rec&&rec.date)||todayKey();
-    // ── WHAT MAKES AN UNSCHEDULED STOP BUSINESS ──────────────────────────────
-    // Exactly two things, and neither of them is a guess about what the shop
-    // sells (owner 2026-08-10: "the only places that could return as a business
-    // expense is if that place is explicitly listed under their places as a
-    // supply house"):
-    //
-    //   1. It is one of THEIR OWN saved places, with a kind that is business
-    //      (shop, supply house, home office, business meeting). placeAt matches
-    //      on the pin, inside that place's own fence.
-    //   2. There is a receipt at that pin on the leg's day. The contractor
-    //      spending money there IS the claim, and it is evidence they already
-    //      have to keep.
-    //
-    // Everything else comes off the log. This replaced a name-matching guess at
-    // which shops are supply houses, which was mine and was wrong: whether a
-    // Target run is a supply run is the contractor's call, not a regex's. An
-    // unsaved stop is offered as a place to save (js/places.js repeat-stop
-    // suggestions), and saving it as a supply house makes every future stop
-    // there count.
-    //
-    // Still only NAMED stops: an unnamed one is the geofence layer's business
-    // (_geoCollapseDetours), and this must not judge it twice.
-    const savedPlace=(typeof placeAt==='function')?placeAt({lat:to.lat,lon:to.lng}):null;
-    const savedIsBusiness=!!(savedPlace&&_PLACE_KIND_TO_PURPOSE[savedPlace.kind]);
-    const hasReceipt=!!_bizReceiptForStop({lat:to.lat,lng:to.lng,name:poi.name,day:legDay});
-    const personal=!!poi.name&&!savedIsBusiness&&!hasReceipt;
-    // And patch a leg out of here that was ALREADY written. Which of the two
-    // landed first depends on how long Apple took against how long they were
-    // parked, and a record must not depend on that race.
-    mileage.forEach(m=>{
-      if(!m.gps||!m.fromCoord||m.from_name!=='Stop')return;
-      if(Math.abs(m.fromCoord.lat-to.lat)>1e-5||Math.abs(m.fromCoord.lng-to.lng)>1e-5)return;
-      if(poi.name)m.from_name=poi.name;
-      if(poi.addr)m.from=poi.addr;
-    });
-    const saved=mileage.find(m=>m.id===rec.id);
-    if(!saved){saveAll();return;}
-    if(personal){
-      // A detour, not a destination. The leg IN comes back out of the log, and
-      // the leg OUT is measured from where they were before they stopped, so
-      // one supply-house-to-job-site trip stays one trip at its direct distance
-      // instead of becoming two legs whose total depends on where they chose to
-      // eat. Their own Topeka day: the restaurant sat four doors from the job,
-      // so the two-leg version billed 0.7 miles for a 6.5 mile trip.
-      const i=mileage.indexOf(saved);
-      const dropped=i>=0?mileage.splice(i,1)[0]:null;
-      const back=to.prevOrigin;
-      // Nothing to pass through to (the day began at this stop): it stays the
-      // origin, because a leg with no start is worse than one starting at lunch.
-      if(back&&back.lat!=null){
-        // The breadcrumb that makes this reversible. Receipts do not get done at
-        // the counter, they get done in the truck at 5pm or at the kitchen table
-        // on Sunday, and by then this trip is already recorded as a detour. The
-        // dropped leg rides along on whatever row replaces it, so the day can be
-        // rebuilt exactly when the receipt finally lands (owner, 2026-08-02).
-        const crumb={stop:{lat:to.lat,lng:to.lng,name:poi.name,addr:poi.addr||'',kind:'stop'},
-                     day:(dropped&&dropped.date)||legDay,leg:dropped,origin:back};
-        back.passedThrough=crumb;
-        const restored=(typeof _geoPassThroughStop==='function')&&_geoPassThroughStop(to);
-        // Not restored means they already reached the next fence and that leg
-        // was measured from here, so it is that row that needs re-pointing.
-        if(!restored)mileage.forEach(m=>{
-          if(!m.gps||!m.fromCoord)return;
-          if(Math.abs(m.fromCoord.lat-to.lat)>1e-5||Math.abs(m.fromCoord.lng-to.lng)>1e-5)return;
-          m.passedThrough=crumb;
-          _reoriginTrip(m,back);
-        });
-      }
-    }else if(!poi.name){
-      // Apple knows the address but not a tenant. The stop stays "Stop", which
-      // is honest, and the row gains the street address, which is what makes it
-      // readable a year later.
-      saved.to=poi.addr;
-    }else{
-      // Name and address both, the shape an IRS log wants: WHO they went to,
-      // and WHERE that is. `to_name` is what reads on the row, `to` is the
-      // address column the manual log already uses for the same thing.
-      saved.to_name=poi.name;
-      saved.to=poi.addr||poi.name;
-      // The saved place's own kind is the truth; the category guess is only the
-      // fallback for the receipt-without-a-saved-place case.
-      saved.purpose=_autoTripPurpose({kind:(savedPlace&&savedPlace.kind)||_poiPlaceKind(poi.category)});
-    }
-    saveAll();
-    if(document.getElementById('mil-table'))renderAllMileage();
-    if(typeof renderDash==='function')renderDash();
-  }catch(_e){}
-}
-// ── The receipt that turns up later ──────────────────────────────────────────
-// A stop is judged the moment the truck pulls out, because that is when the leg
-// has to be written. But receipts are not done at the counter. They are done in
-// the truck at the end of the day, or at the kitchen table on Sunday, and by
-// then the trip is already on the log as a detour with the crew's lunch run
-// billed as a personal errand (owner, 2026-08-02).
-//
-// So every pass-through leaves the dropped leg attached to the row that replaced
-// it, and this puts the day back the moment the receipt appears. Idempotent: the
-// restored leg carries its original leg key, which autoLogDriveTrip refuses to
-// duplicate, and the crumb is cleared once it is spent.
-//
-// Runs on every expense save and once on load, because the receipt may have been
-// entered on a different device.
-function reviewDetourReceipts(){
-  if(typeof mileage==='undefined'||typeof expenseForStop!=='function')return 0;
-  let n=0;
-  mileage.filter(m=>m&&m.passedThrough&&m.passedThrough.stop).forEach(m=>{
-    const c=m.passedThrough,s=c.stop;
-    // Same rule as the collapse itself: a fuel or service receipt on a
-    // mileage-method vehicle never resurrects a detour, or the gallon would
-    // deduct twice.
-    if(!_bizReceiptForStop({lat:s.lat,lng:s.lng,name:s.name,day:c.day}))return;
-    // It WAS for the business after all. The leg in goes back, exactly as it was
-    // written, and this leg goes back to starting at the stop.
-    if(c.leg&&!mileage.some(x=>x.legKey===c.leg.legKey)){
-      const back=Object.assign({},c.leg);
-      back.to_name=s.name;back.to=s.addr||s.name;
-      back.purpose=_autoTripPurpose({kind:'supply'});
-      mileage.unshift(back);
-      _reoriginTrip(back,c.origin);
-    }
-    delete m.passedThrough;
-    _reoriginTrip(m,s);
-    n++;
-  });
-  if(!n)return 0;
-  saveAll();
-  if(document.getElementById('mil-table'))renderAllMileage();
-  if(typeof renderDash==='function')renderDash();
-  return n;
-}
-// Re-point a trip that was already written from the wrong end, and re-measure
-// it. Only ever used to undo a personal stop: the row was measured from the
-// restaurant and has to be measured from the business point before it instead.
-// Written back to pending first, so a sweep that races this cannot publish the
-// old distance against the new origin.
-function _reoriginTrip(m,from){
-  if(!m||!from||from.lat==null)return;
-  m.from=from.addr||from.name||'';
-  m.from_name=from.name||'';
-  // A re-pointed leg spans a journey the GPS tally never watched as one piece
-  // (and may include a personal stop's driving): the observed-miles floor no
-  // longer applies, only the direct route does. The drawn ROUTE goes with it,
-  // for the same reason and more visibly: a map showing a track that starts
-  // somewhere other than the row's own From is worse than no map.
-  delete m.gpsMiles;
-  delete m.path;
-  const fc=m.fromCoord={lat:from.lat,lng:from.lng};
-  const tc=m.toCoord;
-  m.miles=0;m.calc_method='pending_auto';
-  (async()=>{
-    try{
-      const{miles}=await _routeDistance(fc,tc);
-      if(m.calc_method!=='pending_auto')return;   // something else settled it
-      // A LATER correction re-pointed this leg again while we measured. Same rule
-      // as everywhere else that measures: the most recent origin owns the answer.
-      if(m.fromCoord!==fc||m.toCoord!==tc)return;
-      if(!(miles>0))return;     // not a measurement: leave it pending for the sweep
-      m.miles=Math.round(miles*10)/10;m.calc_method='auto_route';
-      saveAll();
-      if(document.getElementById('mil-table'))renderAllMileage();
-      if(typeof renderDash==='function')renderDash();
-    }catch(_e){}
-  })();
-}
 // ── Two pots of money, and they must never touch ─────────────────────────────
 // The owner's standard-mileage deduction is miles driven in the OWNER'S
 // vehicles. An employee driving their own car generates miles too, and in the
@@ -2735,7 +2543,7 @@ function _milRenderClassifyCard(unclassified){
       '</div>'+
       '<div class="mil-classify-actions">'+
         '<button class="mil-class-btn" onclick="_milSkipClassify('+next.id+')">Skip</button>'+
-        '<button class="mil-class-btn mil-class-business" onclick="openMileageEdit('+next.id+')">'+svgIcon('💼',{size:12})+' Add purpose →</button>'+
+        '<button class="mil-class-btn mil-class-business" onclick="openMileageEdit('+_milIdArg(next.id)+')">'+svgIcon('💼',{size:12})+' Add purpose →</button>'+
       '</div>'+
     '</div>';
 }
@@ -2747,6 +2555,11 @@ function _milSkipClassify(id){
   renderAllMileage();
 }
 
+// A row id inside an inline handler. Ids were numbers once; a derived leg's id
+// is its journey id (j-<uid8>-<base36>), and an unquoted one is a syntax error
+// the moment the button is tapped (owner 2026-09-02: "route is throwing this
+// error"). Quoted, and stripped to the characters an id can contain.
+function _milIdArg(id){return "'"+String(id==null?'':id).replace(/[^A-Za-z0-9_.-]/g,'')+"'";}
 function _milRenderTripList(shown,yr){
   const el=document.getElementById('mil-table');
   if(!el)return;
@@ -2860,7 +2673,7 @@ function _milRenderTripList(shown,yr){
           // group that centers independently on the card's Y axis via
           // .mil-trip-side's justify-content:center, unaffected by where
           // Edit sits (owner call, 2026-08-07).
-          '<button class="mil-trip-edit" onclick="openMileageEdit('+r.id+')">Edit</button>'+
+          '<button class="mil-trip-edit" onclick="openMileageEdit('+_milIdArg(r.id)+')">Edit</button>'+
           '<div class="mil-trip-stats">'+
             (r.miles?'<div class="mil-trip-mi">'+(+r.miles).toFixed(1)+' mi</div>':'')+
             (metaTxt?'<div class="mil-trip-meta">'+metaTxt+'</div>':'')+
@@ -2868,7 +2681,7 @@ function _milRenderTripList(shown,yr){
             // a row with nothing to draw is the dead button js/observability.js
             // exists to catch (§13.1).
             (Array.isArray(r.path)&&r.path.length>=2
-              ?'<button class="mil-trip-route" onclick="openMileageRoute('+r.id+')">'+svgIcon('🗺️',{size:10})+' Route</button>'
+              ?'<button class="mil-trip-route" onclick="openMileageRoute('+_milIdArg(r.id)+')">'+svgIcon('🗺️',{size:10})+' Route</button>'
               :'')+
             stateBadge+
           '</div>'+
@@ -3035,8 +2848,10 @@ function openMileageRoute(id){
   }catch(_e){}
 }
 function openMileageEdit(id){
-  const r=mileage.find(x=>x.id===id);if(!r)return;
-  openLogTripModal({editId:id,fromAddress:r.from||'',toAddress:r.to||'',purpose:r.purpose||'',clientId:r.client_id,clientName:r.client_name||'',vehicle:r.vehicle||'',date:r.date||'',notes:r.notes||'',miles:r.miles||0});
+  // Ids arrive quoted from the inline handler (_milIdArg); a numeric id still
+  // matches, and the row's own id (its real type) is what the edit carries.
+  const r=mileage.find(x=>String(x.id)===String(id));if(!r)return;
+  openLogTripModal({editId:r.id,fromAddress:r.from||'',toAddress:r.to||'',purpose:r.purpose||'',clientId:r.client_id,clientName:r.client_name||'',vehicle:r.vehicle||'',date:r.date||'',notes:r.notes||'',miles:r.miles||0});
 }
 function updateLoggedTrip(id){
   const r=mileage.find(x=>x.id===id);if(!r)return;

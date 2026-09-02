@@ -659,17 +659,36 @@ test.describe('The route a leg actually drove', () => {
   });
 
 
-  test('re-pointing a leg drops its route as well as its tally', async () => {
-    // A map showing a track that starts somewhere other than the row's own
-    // From is worse than no map at all.
+
+  test('the Route and Edit buttons carry a derived leg\'s string id, quoted, and a tap parses', async () => {
+    // Owner 2026-09-02, tapping Route on a derived leg: "SyntaxError: No
+    // identifiers allowed directly after numeric literal". The id was inlined
+    // bare into the handler; j-30a2b589-... is not a number.
     const r = await page.evaluate(() => {
-      const m = { id: 1, from: 'x', fromCoord: { lat: 1, lng: 1 }, toCoord: { lat: 2, lng: 2 },
-                  gpsMiles: 9, path: [[1, 1, 1], [2, 2, 2]], calc_method: 'auto_route' };
-      _reoriginTrip(m, { lat: 3, lng: 3, name: 'Real origin', addr: '3 C St' });
-      return { gps: m.gpsMiles, path: m.path };
+      const keep = mileage.slice();
+      mileage.length = 0;
+      mileage.push({ id: 'j-30a2b589-mtio2tet', gps: true, date: '2026-09-01', from_name: 'Shop', to_name: 'John Doe', miles: 2.7,
+        fromCoord: { lat: 39.03, lng: -95.71 }, toCoord: { lat: 39.01, lng: -95.74 }, path: [[39.03, -95.71, 1], [39.01, -95.74, 2]], created_at: '2026-09-01T12:52:00Z' },
+        { id: 1788267803145036, gps: false, date: '2026-09-01', from_name: 'A', to_name: 'B', miles: 1, created_at: '2026-09-01T13:00:00Z' });
+      try {
+        _milRenderTripList(mileage.slice(), '2026');
+        const html = document.getElementById('mil-table').innerHTML;
+        const attrs = Array.from(document.querySelectorAll('#mil-table [onclick]')).map(b => b.getAttribute('onclick'));
+        const parses = attrs.map(a => { try { new Function(a); return true; } catch (e) { return false; } });
+        let tapErr = null;
+        try { document.querySelector('#mil-table .mil-trip-route').click(); } catch (e) { tapErr = String(e); }
+        const drawn = !!document.getElementById('_mil-route-ov');
+        document.getElementById('_mil-route-ov')?.remove();
+        return { attrs, parses, tapErr, drawn, junk: _milIdArg("j-1'); alert(1); ('") };
+      } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
     });
-    expect(r.gps).toBe(undefined);
-    expect(r.path).toBe(undefined);
+    expect(r.attrs).toContain("openMileageRoute('j-30a2b589-mtio2tet')");
+    expect(r.attrs).toContain("openMileageEdit('j-30a2b589-mtio2tet')");
+    expect(r.attrs).toContain("openMileageEdit('1788267803145036')");
+    expect(r.parses.every(Boolean)).toBe(true);
+    expect(r.tapErr).toBeNull();
+    expect(r.drawn, 'the tap opened the route').toBe(true);
+    expect(r.junk).toBe("'j-1alert1'");
   });
 
   test('the Route button appears only on a row that has a track', async () => {
@@ -689,8 +708,9 @@ test.describe('The route a leg actually drove', () => {
         // summary rail, none of which this assertion is about.
         _milRenderTripList(mileage, new Date().getFullYear());
         const html = (document.getElementById('mil-table') || {}).innerHTML || '';
-        return { with: (html.match(/openMileageRoute\(91\)/g) || []).length,
-                 without: (html.match(/openMileageRoute\(92\)/g) || []).length };
+        // Ids ride quoted in the handler now (_milIdArg), numeric ones too.
+        return { with: (html.match(/openMileageRoute\('91'\)/g) || []).length,
+                 without: (html.match(/openMileageRoute\('92'\)/g) || []).length };
       } finally { mileage.length = 0; saved.forEach(m => mileage.push(m)); }
     });
     expect(r.with).toBe(1);
