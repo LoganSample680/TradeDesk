@@ -1068,6 +1068,28 @@ test.describe('The native half of the drive window', () => {
     }
   });
 
+  // The phone's raw event upload went silent mid-drive twice on 2026-09-02
+  // (last POST 12:50 and 17:01, back only on a relaunch). The flush rides a
+  // background URLSession, and iOS throttles one whose completions the app
+  // never acknowledges. Two halves: the AppDelegate hands the system's
+  // completion to the plugin, the plugin returns it; and a batch already on
+  // its way is not sent again by every timer that wakes at once.
+  test('the background flush session returns its completion handler, and one batch uploads once', () => {
+    const s = swiftSrc();
+    expect(s.includes('public static var backgroundFlushCompletion: (() -> Void)?')).toBe(true);
+    expect(s.includes('public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession)')).toBe(true);
+    expect(s.includes('if inflightNow.values.contains(maxTs) { return }')).toBe(true);
+    const wf = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'ios-beta.yml'), 'utf8');
+    expect(wf.includes('handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void')).toBe(true);
+    expect(wf.includes('TdGeoPlugin.backgroundFlushCompletion = completionHandler')).toBe(true);
+    // The injected method reaches the plugin class, so the AppDelegate imports it.
+    expect(wf.includes("s.replace('import Capacitor', 'import Capacitor\\nimport TdGeo', 1)")).toBe(true);
+    const t = fs.readFileSync(path.join(__dirname, '..', 'native', 'tests', 'TdGeoPluginTests.swift'), 'utf8');
+    for (const name of ['testFlushNow_twiceForTheSameBatchStartsOneUpload', 'testBackgroundSessionEvents_returnTheSystemsCompletionHandlerOnce']) {
+      expect(t.includes(name), `native tests must cover ${name}`).toBe(true);
+    }
+  });
+
   test('wake on movement is the iOS 17 stream, guarded, held only while JS asks, dropped by stopAll', () => {
     const s = swiftSrc();
     expect(s.includes('CAPPluginMethod(name: "setWakeOnMove"')).toBe(true);

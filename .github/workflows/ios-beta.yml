@@ -107,7 +107,21 @@ jobs:
                   NotificationCenter.default.post(name: Notification.Name("TdSilentPush"), object: nil, userInfo: userInfo as? [String: Any] ?? [:])
                   DispatchQueue.main.asyncAfter(deadline: .now() + 15) { completionHandler(.newData) }
               }
+
+              // TdGeo's event flush rides a BACKGROUND URLSession ("td.geo.flush").
+              // When its uploads finish while the app is suspended, iOS wakes
+              // the app through this selector and expects the handler to be
+              // called once the session's events are processed. Without it
+              // the system counts every completion as mishandled and throttles
+              // the session, which is how the phone's raw event upload went
+              // silent mid-drive twice on 2026-09-02 and only came back on a
+              // relaunch. The plugin calls it from urlSessionDidFinishEvents.
+              func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
+                  TdGeoPlugin.backgroundFlushCompletion = completionHandler
+              }
           '''
+          if 'import TdGeo' not in s:
+              s = s.replace('import Capacitor', 'import Capacitor\nimport TdGeo', 1)
           i = s.rfind('}')
           if i < 0:
               print('::error::AppDelegate.swift has no closing brace to anchor on'); sys.exit(1)
@@ -117,7 +131,7 @@ jobs:
           # Each one is load-bearing and each one is checked by name: a patch
           # that half-applied must fail the build, not ship a phone that can
           # never be reached.
-          for m in didRegisterForRemoteNotificationsWithDeviceToken didFailToRegisterForRemoteNotificationsWithError TdSilentPush; do
+          for m in didRegisterForRemoteNotificationsWithDeviceToken didFailToRegisterForRemoteNotificationsWithError TdSilentPush handleEventsForBackgroundURLSession "import TdGeo"; do
             grep -q "$m" ios/App/App/AppDelegate.swift || { echo "::error::AppDelegate APNs patch missing $m"; exit 1; }
           done
 

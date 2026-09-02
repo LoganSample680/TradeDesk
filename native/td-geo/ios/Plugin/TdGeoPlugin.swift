@@ -1160,6 +1160,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
     }
     func wakeUpdateForTest(stationary: Bool) { onWakeUpdate(nil, stationary: stationary) }
     func wakeOnForTest() { wakeOnMoveOn = true }
+    // The upload itself, reachable without a debounce timer or a real
+    // background: the tests point the config at a dead port and assert the
+    // bookkeeping (one in-flight entry per batch, the completion handoff).
+    func flushNowForTest() { flushNow() }
+    var flushInflightKeyForTest: String { flushInflightKey }
+    var flushSessionForTest: URLSession { flushSession }
     #endif
 
     private func record(_ ev: [String: Any]) {
@@ -1555,6 +1561,12 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
         if fresh.isEmpty { return }
         let batch = Array(fresh.prefix(400))
         let maxTs = batch.compactMap { num($0["ts"]) }.max() ?? mark
+        // One upload per batch. Timers frozen through a suspension all fire
+        // together on the wake, and each one used to send the same batch:
+        // eleven identical POSTs inside 200 ms at 17:01:06 today. The batch
+        // already on its way is identified by its newest event.
+        let inflightNow = (d.dictionary(forKey: flushInflightKey) as? [String: Double]) ?? [:]
+        if inflightNow.values.contains(maxTs) { return }
         let payload: [String: Any] = [
             "user_id": userId, "device_id": deviceId, "key": key, "events": batch
         ]
@@ -1577,6 +1589,25 @@ public class TdGeoPlugin: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate
 
     // Watermark advances ONLY on a server 2xx. Anything else leaves the tail
     // in place for the next wake to re-send; the server dedupes the overlap.
+    // ── The background session's completion contract (2026-09-02) ───────────
+    // Uploads finishing while the app is suspended wake it through the
+    // AppDelegate's handleEventsForBackgroundURLSession (workflow-injected,
+    // ios-beta.yml), which parks the system's completion handler here. Once
+    // the session has delivered every event it woke the app for, iOS calls
+    // urlSessionDidFinishEvents and the handler is returned to the system.
+    // Never returning it is what iOS punishes by throttling the session: the
+    // owner's raw event upload went silent mid-drive twice today and only
+    // came back on a relaunch.
+    public static var backgroundFlushCompletion: (() -> Void)?
+
+    public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        DispatchQueue.main.async {
+            let done = TdGeoPlugin.backgroundFlushCompletion
+            TdGeoPlugin.backgroundFlushCompletion = nil
+            done?()
+        }
+    }
+
     public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         let d = UserDefaults.standard
         var inflight = (d.dictionary(forKey: flushInflightKey) as? [String: Double]) ?? [:]

@@ -2126,4 +2126,82 @@ extension TdGeoPluginTests {
         XCTAssertGreaterThanOrEqual(TdGeoPlugin.wakeFixThrottleMsForTest, 10_000)
         XCTAssertLessThanOrEqual(TdGeoPlugin.wakeFixThrottleMsForTest, 120_000)
     }
+
+    // MARK: - The event flush: one upload per batch, and the background session's completion handoff (2026-09-02)
+
+    private func seedFlushConfig() {
+        let d = UserDefaults.standard
+        d.set(["url": "http://127.0.0.1:9/ingest-geo", "userId": "u1", "deviceId": "dev1", "key": "k1"], forKey: plugin.flushCfgKeyForTest)
+        d.removeObject(forKey: plugin.flushMarkKeyForTest)
+        d.removeObject(forKey: plugin.flushInflightKeyForTest)
+        d.set([["type": "fix", "ts": 1_700_000_000_000.0, "lat": 39.0, "lng": -95.0]], forKey: plugin.bufferKeyForTest)
+    }
+
+    func testFlushNow_twiceForTheSameBatchStartsOneUpload() {
+        seedFlushConfig()
+        plugin.flushNowForTest()
+        plugin.flushNowForTest()
+        plugin.flushNowForTest()
+        let inflight = (UserDefaults.standard.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
+        XCTAssertEqual(inflight.count, 1, "the batch already on its way is not sent again")
+        XCTAssertEqual(inflight.values.first, 1_700_000_000_000.0)
+        UserDefaults.standard.removeObject(forKey: plugin.flushInflightKeyForTest)
+        UserDefaults.standard.removeObject(forKey: plugin.flushCfgKeyForTest)
+        UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
+    }
+
+    func testFlushNow_aNewerEventIsANewBatchAndDoesUpload() {
+        seedFlushConfig()
+        plugin.flushNowForTest()
+        var buf = (UserDefaults.standard.array(forKey: plugin.bufferKeyForTest) as? [[String: Any]]) ?? []
+        buf.append(["type": "fix", "ts": 1_700_000_005_000.0, "lat": 39.0, "lng": -95.0])
+        UserDefaults.standard.set(buf, forKey: plugin.bufferKeyForTest)
+        plugin.flushNowForTest()
+        let inflight = (UserDefaults.standard.dictionary(forKey: plugin.flushInflightKeyForTest) as? [String: Double]) ?? [:]
+        XCTAssertEqual(inflight.count, 2)
+        XCTAssertEqual(Set(inflight.values), Set([1_700_000_000_000.0, 1_700_000_005_000.0]))
+        UserDefaults.standard.removeObject(forKey: plugin.flushInflightKeyForTest)
+        UserDefaults.standard.removeObject(forKey: plugin.flushCfgKeyForTest)
+        UserDefaults.standard.removeObject(forKey: plugin.bufferKeyForTest)
+    }
+
+    func testFlushNow_withNoConfigOrNothingFreshSendsNothing() {
+        let d = UserDefaults.standard
+        d.removeObject(forKey: plugin.flushCfgKeyForTest)
+        d.removeObject(forKey: plugin.flushInflightKeyForTest)
+        d.set([["type": "fix", "ts": 1_700_000_000_000.0]], forKey: plugin.bufferKeyForTest)
+        plugin.flushNowForTest()
+        XCTAssertNil(d.dictionary(forKey: plugin.flushInflightKeyForTest), "no config: nothing to send to")
+        seedFlushConfig()
+        d.set(1_700_000_000_000.0, forKey: plugin.flushMarkKeyForTest)   // already acknowledged
+        plugin.flushNowForTest()
+        XCTAssertNil(d.dictionary(forKey: plugin.flushInflightKeyForTest), "nothing newer than the mark: nothing sent")
+        d.removeObject(forKey: plugin.flushCfgKeyForTest)
+        d.removeObject(forKey: plugin.flushMarkKeyForTest)
+        d.removeObject(forKey: plugin.bufferKeyForTest)
+    }
+
+    func testBackgroundSessionEvents_returnTheSystemsCompletionHandlerOnce() {
+        let called = expectation(description: "completion returned to the system")
+        called.expectedFulfillmentCount = 1
+        TdGeoPlugin.backgroundFlushCompletion = { called.fulfill() }
+        plugin.urlSessionDidFinishEvents(forBackgroundURLSession: plugin.flushSessionForTest)
+        plugin.urlSessionDidFinishEvents(forBackgroundURLSession: plugin.flushSessionForTest)   // a second call finds nothing to return
+        wait(for: [called], timeout: 30)
+        let cleared = expectation(description: "read on main")
+        DispatchQueue.main.async {
+            XCTAssertNil(TdGeoPlugin.backgroundFlushCompletion)
+            cleared.fulfill()
+        }
+        wait(for: [cleared], timeout: 30)
+    }
+
+    func testBackgroundSessionEvents_withNoHandlerParkedDoesNotCrash() {
+        TdGeoPlugin.backgroundFlushCompletion = nil
+        plugin.urlSessionDidFinishEvents(forBackgroundURLSession: plugin.flushSessionForTest)
+        let settled = expectation(description: "main drained")
+        DispatchQueue.main.async { settled.fulfill() }
+        wait(for: [settled], timeout: 30)
+        XCTAssertNil(TdGeoPlugin.backgroundFlushCompletion)
+    }
 }
