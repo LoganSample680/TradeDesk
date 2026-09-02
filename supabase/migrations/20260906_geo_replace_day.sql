@@ -40,7 +40,7 @@ language plpgsql security definer
 set search_path = public
 as $$
 declare
-  me         uuid := auth.uid();
+  me         uuid := (auth.uid()::text)::uuid;   -- the cast convention every RPC here follows
   r          jsonb;
   sp         tstzrange;
   pres       tstzrange[];
