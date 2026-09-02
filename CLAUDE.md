@@ -1131,6 +1131,28 @@ beyond the workday,"** NOT as "pay yard dwell past the last run," which the
 owner rejected by name with those numbers. If he ever means the wider reading,
 the 2026-08-24 rule is what has to change, and he has to say so.
 
+### 9.11 Same-Truck Detection: Who Rode With Whom (parked 2026-09-02, owner: "wait on it")
+
+Owner asked whether iOS can tell that two people are in the same vehicle. It
+cannot directly (no such API). The workable answer is correlation of what the
+deriver already has: two people's CoreMotion tapes flip to automotive within
+seconds of each other and their GPS breadcrumbs sit on top of each other for
+the whole drive. Two phones cannot do that unless they share the truck.
+
+- **Rule for the deriver (js/geo-derive.js):** two journeys on the same
+  contractor account whose automotive spans overlap by most of their length
+  AND whose fixes stay within a fence radius of each other for the span are
+  ONE shared journey: one driver (the truck's assigned driver, else the
+  owner, else whoever the truck record names) and N riders. Riders get a
+  `drive-rider` time row and no mileage leg (the vehicle rows already shape
+  this: `_geoDeriveVehicleRows`). No native change, no iOS build.
+- **Not the answer:** vehicle Bluetooth (proves the paired driver only),
+  Nearby Interaction / UWB (foreground only, both apps open), phone-to-phone
+  Bluetooth proximity (lunch table looks like a truck cab).
+- **Parked on purpose:** the owner has larger plans for mileage and time log
+  intelligence and wants this designed inside that, not as a one-off rule.
+  Do not build until he brings it back.
+
 ---
 
 ## 10. Patch-Chain Prohibition: No House-of-Cards Fixing
