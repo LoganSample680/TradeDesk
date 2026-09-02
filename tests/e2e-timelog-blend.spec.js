@@ -142,6 +142,37 @@ test.describe('manual clock over a derived day', () => {
     expect(b.find(x => x.src !== 'manual').min).toBe(90);
   });
 
+  test('where I am right now is a live row on today\'s rail and a line on the open banner', async () => {
+    const r = await page.evaluate(async () => {
+      const me = _supaUser.id;
+      const keepT = timeEntries.slice(); const keepF = window._fetchCrewLabor;
+      window.timeEntries = [];
+      window._fetchCrewLabor = async () => ({ name: {}, entries: [], shopEntries: [] });
+      const since = Date.now() - 47 * 60000;
+      window._geoOpenDwell = { id: 'd-j-x', name: 'John Doe', kind: 'client', sinceTs: since, sinceIso: new Date(since).toISOString(), journeyId: 'x', fence: { addr: '2950 SW McClure Rd' } };
+      try {
+        const rows = await _timeLogRows(null);
+        const live = rows.filter(x => x.live);
+        // Yesterday's dwell is not today's row.
+        window._geoOpenDwell.sinceTs = since - 86400000; window._geoOpenDwell.sinceIso = new Date(since - 86400000).toISOString();
+        const stale = (await _timeLogRows(null)).filter(x => x.live).length;
+        window._geoOpenDwell.sinceTs = since; window._geoOpenDwell.sinceIso = new Date(since).toISOString();
+        let host = document.getElementById('tl-open');
+        if (!host) { host = document.createElement('div'); host.id = 'tl-open'; document.body.appendChild(host); }
+        _tlRenderOpenBanner();
+        const banner = host.innerHTML;
+        window._geoOpenDwell = null;
+        _tlRenderOpenBanner();
+        const cleared = host.style.display;
+        return { live: live.map(x => [x.clientName, x.minutes, x.rawSource, x.personUid === me, x.detail, _tlRailKind(x)]), stale, banner: { onsite: /ON SITE/.test(banner), name: /John Doe/.test(banner), clockOut: /Clock out/.test(banner), tick: /data-tl-open-start="/.test(banner) }, cleared };
+      } finally { window.timeEntries = keepT; window._fetchCrewLabor = keepF; window._geoOpenDwell = null; }
+    });
+    expect(r.live).toEqual([['John Doe', 47, 'client', true, 'On site now', 'job']]);
+    expect(r.stale).toBe(0);
+    expect(r.banner).toEqual({ onsite: true, name: true, clockOut: false, tick: true });
+    expect(r.cleared).toBe('none');
+  });
+
   test('the reader is two passes and nothing else', async () => {
     // What the blend is allowed to do is the whole reader now: no round trip
     // withdrawal, no gap absorption, no duplicate drop, no repair pass.

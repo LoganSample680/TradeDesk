@@ -4548,6 +4548,7 @@ async function _geoTdEvent(ev,replay){
     // paperwork. The lifecycle edge and, when it carries one, its fix.
     if(/^app-/.test(String(ev.type||''))){
       _geoAppLogPush(Number(ev.ts)||Date.now(),String(ev.type).slice(4));
+      if(!replay&&ev.type==='app-active')_geoDeriveRebuildIfStale();
       if(typeof ev.lat==='number'&&typeof ev.lng==='number')_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
     }
     if(!replay&&ev.type==='push-ping')_geoBgUpdateCheck();
@@ -5693,6 +5694,7 @@ function _geoTrackInit(){
   if(!S.teamTracking)return;                 // tracking not enabled for the company
   if(!_supaUser)return;
   _geoDeriveRebuildSoon();
+  _geoOnsiteTickStart();
   // Backgrounding mid-shift KEEPS the entry open (the old handler closed it, a
   // phone in a pocket all day logged only screen-on slivers, and any visit hidden
   // within 2 minutes of arrival was dropped entirely). Instead: snapshot the open
@@ -6158,6 +6160,7 @@ function _geoTraceComplete(m){
     return dur/p.length<=_GEO_TRACE_GAP_MS&&Number(m.miles)>0;
   }catch(_e){return false;}
 }
+let _GEO_ROUTE_TIMEOUT_MS=8000;
 const _GEO_ROUTE_CACHE_KEY='zp3_geo_routes';
 const _GEO_ROUTE_CACHE_MAX=400;
 function _geoRouteKey(a,b){const r=v=>Math.round(Number(v)*1e4)/1e4;return r(a.lat)+','+r(a.lng)+'>'+r(b.lat)+','+r(b.lng);}
@@ -6172,7 +6175,10 @@ async function _geoDeriveRouteMiles(rows){
       const k=_geoRouteKey(m.fromCoord,m.toCoord);
       let routed=Number(cache[k]);
       if(!(routed>0)){
-        const r=await _routeDistance(m.fromCoord,m.toCoord);
+        // Bounded: MapKit's directions callback can simply never come
+        // (offline, blocked), and an unbounded await here stalled the whole
+        // boot rebuild behind one leg (owner 2026-09-02, the 11:39 reopen).
+        const r=await Promise.race([_routeDistance(m.fromCoord,m.toCoord),new Promise(res=>setTimeout(()=>res(null),_GEO_ROUTE_TIMEOUT_MS))]);
         routed=(r&&Number(r.miles)>0)?Math.round(Number(r.miles)*10)/10:0;
         if(routed>0){cache[k]=routed;dirty=true;}
       }
@@ -6280,6 +6286,7 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
       p_time:rows.job_time_entries,p_shop:rows.shop_time_entries,p_miles:rows.td_mileage,
     });
     _geoDeriveApplyMileage(dayKey,rows.td_mileage);
+    _geoOpenDwellPublish(dayKey,res);
     try{_geoParkNote('derived',dayKey+' '+res.dwells.length+'d/'+res.legs.length+'l'+(res.pending?' pending':'')+(res.open?' open':''));}catch(_e){}
     try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
     return res;
@@ -6292,21 +6299,94 @@ function _geoDeriveLiveSoon(why){
   _geoDeriveLiveT=setTimeout(()=>{_geoDeriveLiveT=null;_geoDeriveDayNow(_geoDayKeyOf(Date.now(),_geoBizTz()),null);},4000);
 }
 
+// ── WHEN A DAY IS LOCKED (owner 2026-09-02: "when do we stop, how do we
+// lock in the data?") ─────────────────────────────────────────────────────
+// A derive is a pure function of the tape, the fixes and the rules, so
+// deriving a day again with nothing changed writes the same rows onto the
+// same keys and churns nothing. What CAN change an old day is the rules,
+// and the rules only change with the app version. So a boot rebuild covers
+// today and yesterday (the days still collecting evidence), and reaches
+// back the full week only once per app version, the moment a rule change
+// first lands on the phone. Anything a person fixed by hand is never
+// touched either way (geo_replace_day keeps fixed-* rows).
+const _GEO_DERIVE_DAYS_LIVE=2;
+const _GEO_DERIVE_VER_KEY='zp3_geo_derive_ver';
+const _GEO_DERIVE_STALE_MS=30*60000;
+let _geoDeriveRebuiltAt=0;
+function _geoDeriveAppVer(){try{return (typeof APP_VERSION!=='undefined'&&APP_VERSION)?String(APP_VERSION):'';}catch(_e){return '';}}
+function _geoDeriveRebuildDays(){
+  try{const seen=localStorage.getItem(_GEO_DERIVE_VER_KEY)||'';const ver=_geoDeriveAppVer();return (ver&&seen===ver)?_GEO_DERIVE_DAYS_LIVE:_GEO_DERIVE_DAYS;}catch(_e){return _GEO_DERIVE_DAYS_LIVE;}
+}
 async function _geoDeriveRebuild(){
   const today=_geoDayKeyOf(Date.now(),_geoBizTz());
   const b=_geoDayBounds(today);
   if(!b)return 0;
-  const from=b.start-(_GEO_DERIVE_DAYS-1)*86400000-2*3600000;
+  const days=_geoDeriveRebuildDays();
+  const from=b.start-(days-1)*86400000-2*3600000;
   const server=await _geoDeriveServerFixes(from,b.end);
   _geoFixLogSeed(server);
   _geoAppLogSeed(server.appEvents);
   let n=0;
-  for(let i=_GEO_DERIVE_DAYS-1;i>=0;i--){
+  for(let i=days-1;i>=0;i--){
     const d=_geoDayKeyOf(b.start-i*86400000+3600000,_geoBizTz());
     const r=await _geoDeriveDayNow(d,server);
     if(r)n++;
   }
+  _geoDeriveRebuiltAt=Date.now();
+  try{const ver=_geoDeriveAppVer();if(ver)localStorage.setItem(_GEO_DERIVE_VER_KEY,ver);}catch(_e){}
+  try{_geoParkNote('rebuild',days+'d, '+n+' derived');}catch(_e){}
   return n;
+}
+// A boot rebuild that never finished (a hung lookup, a dead network) used to
+// leave the day stale until the next cold start. Coming back to the app
+// after half an hour runs it again.
+function _geoDeriveRebuildIfStale(){
+  try{
+    if(!window._geoDeriveRebuilt||_geoDeriveRebuildT)return false;
+    if(Date.now()-_geoDeriveRebuiltAt<_GEO_DERIVE_STALE_MS)return false;
+    _geoDeriveRebuild();
+    return true;
+  }catch(_e){return false;}
+}
+
+// ── The open dwell, for the screens ────────────────────────────────────────
+// The deriver reports where the person is right now (a dwell with an arrival
+// and no departure yet) and never writes it, so the dashboard card and the
+// Time Log rail read it from here: {name, kind, sinceTs, sinceIso, journeyId,
+// fence}. Cleared when today derives with nobody on site.
+function _geoOpenDwellPublish(dayKey,res){
+  try{
+    if(dayKey!==_geoDayKeyOf(Date.now(),_geoBizTz()))return;
+    const o=res&&res.open;
+    const next=o?{id:String(o.id||''),name:String(o.name||''),kind:String(o.kind||''),sinceTs:Number(o.sinceTs)||0,
+      sinceIso:new Date(Number(o.sinceTs)||Date.now()).toISOString(),journeyId:String(o.journeyId||''),
+      fence:o.fence?{id:o.fence.id,kind:o.fence.kind,name:o.fence.name,jobId:o.fence.jobId,clientId:o.fence.clientId,addr:o.fence.addr||''}:null}:null;
+    const prev=window._geoOpenDwell||null;
+    const same=(!prev&&!next)||(prev&&next&&prev.id===next.id&&prev.sinceTs===next.sinceTs);
+    window._geoOpenDwell=next;
+    if(same)return;
+    try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}
+    try{if(typeof _tlRenderOpenBanner==='function'&&document.getElementById('pg-timelog')?.classList.contains('active'))_tlRenderOpenBanner();}catch(_e){}
+  }catch(_e){}
+}
+// Once a second, every on-site figure on screen moves (owner 2026-09-02:
+// "show how long I've been here down to the minute"). Reads the arrival
+// instant off the node, touches no data.
+let _geoOnsiteTickT=null;
+function _geoOnsiteTick(){
+  try{
+    const now=Date.now();
+    document.querySelectorAll('[data-onsite-since]').forEach(n=>{
+      const t=Number(n.getAttribute('data-onsite-since'));
+      if(!(t>0))return;
+      const s=Math.max(0,Math.floor((now-t)/1000)),h=Math.floor(s/3600),m=Math.floor((s%3600)/60);
+      n.textContent=(h?h+'h ':'')+m+'m';
+    });
+  }catch(_e){}
+}
+function _geoOnsiteTickStart(){
+  if(_geoOnsiteTickT)return;
+  _geoOnsiteTickT=setInterval(_geoOnsiteTick,1000);
 }
 let _geoDeriveRebuildT=null;
 function _geoDeriveRebuildSoon(){

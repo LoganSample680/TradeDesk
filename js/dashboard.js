@@ -1099,6 +1099,11 @@ function renderDash(){
     // ask 2026-08-07). Reads the fence machine's own drive state, never
     // re-derived: an open drive leg with recent driving speed.
     const _driving=!_onClock&&(typeof _geoDriving==='function')&&_geoDriving();
+    // STANDING IN A FENCE, off the clock (owner 2026-09-02: "show how long
+    // I've been here down to the minute on the on-site banner"). The deriver
+    // reports the open dwell (js/geo-track.js _geoOpenDwellPublish); this
+    // card shows it with the arrival stamp and a figure that ticks.
+    const _openDwell=(!_onClock&&!_driving&&window._geoOpenDwell&&window._geoOpenDwell.sinceTs>0)?window._geoOpenDwell:null;
     // Styles hoisted OUT of the live branch: the optimistic snapshot card
     // below needs the same keyframes before any live state exists.
     if(!document.getElementById('_td-nearby-anim-style')){
@@ -1184,6 +1189,15 @@ function renderDash(){
         ocBtns.push('<button onclick="clockOut();setTimeout(function(){renderDash&&renderDash();},140)" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Clock out</button>');
         if(_cid)ocBtns.push('<button onclick="_nearbyStartWork('+_cid+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button>');
         _nearbyEl.innerHTML=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+_ocNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+ocBtns.join('')+'</div>');
+      } else if(_openDwell){
+        const _od=_openDwell,_f=_od.fence||{};
+        const _kindLabel=_od.kind==='shop'?'At the shop':_od.kind==='home_office'?'At the home office':_od.kind==='supply'?'At the supply house':_od.kind==='job'?'On the job':'On site';
+        const _odExtra='<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:700;margin-top:3px"><span style="flex-shrink:0"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#0E6B39" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Arrived '+_fmtClk(_od.sinceIso)+' <span style="color:#9fb5a8;font-weight:700">·</span> <span data-onsite-since="'+_od.sinceTs+'">'+_fmtDur(_od.sinceTs)+'</span> on site</div>';
+        const _odBtns=[];
+        const _odJob=(_f.jobId!=null&&typeof jobs!=='undefined'&&jobs.find)?jobs.find(j=>String(j.id)===String(_f.jobId)):null;
+        _odBtns.push('<button onclick="clockIn('+(_odJob?_odJob.id:'null')+');setTimeout(function(){renderDash&&renderDash();},140)" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#16A34A;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><path d="M8 5v14l11-7z"/></svg>Clock in</button>');
+        if(_f.clientId!=null)_odBtns.push('<button onclick="_nearbyStartWork('+Number(_f.clientId)+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button>');
+        _nearbyEl.innerHTML=_cardShell(_cardHead(_od.name||_kindLabel,(_f.addr||_kindLabel),_odExtra)+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+_odBtns.join('')+'</div>');
       } else if(_driving){
         // DRIVING: the blue sibling of the green ON SITE card, same shell
         // conventions (badge, title, stat tiles), recolored because "in

@@ -575,6 +575,116 @@ test.describe('geo-derive wiring', () => {
       expect(r).toEqual([5, 6]);
     });
 
+    test('today\'s open dwell is published for the screens, and only today\'s', async () => {
+      const r = await page.evaluate(async ([SHOP, DOE]) => {
+        window.mileage = []; window._geoOpenDwell = null;
+        S.bizTz = 'America/Chicago'; S.officeLat = SHOP.lat; S.officeLon = SHOP.lng; S.bname = 'JS Solutions';
+        window.clients = [{ id: 1788214075432, name: 'John Doe', addr: '2950 SW McClure Rd' }];
+        localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 1788214075432: { addr: '2950 SW McClure Rd', lat: DOE.lat, lon: DOE.lng } }));
+        localStorage.removeItem('zp3_geo_fixlog'); localStorage.removeItem('zp3_geo_queue');
+        const now = Date.now(), t0 = now - 120 * 60000, t1 = now - 110 * 60000;
+        const today = _geoDayKeyOf(now, 'America/Chicago');
+        window._geoDeriveTape = async () => [{ ts: t0 - 3600000, kind: 'onFoot' }, { ts: t0, kind: 'driving' }, { ts: t1, kind: 'onFoot' }];
+        _geoFixLogPush(t0 + 5000, SHOP.lat, SHOP.lng, 5); _geoFixLogPush(t1 + 5000, DOE.lat, DOE.lng, 5); _geoFixLogPush(now - 60000, DOE.lat, DOE.lng, 5);
+        for (let i = 0; i < 25; i++) _geoFixLogPush(t0 + 6000 + i * 20000, SHOP.lat + (DOE.lat - SHOP.lat) * i / 25, SHOP.lng + (DOE.lng - SHOP.lng) * i / 25, 5);
+        const res = await _geoDeriveDayNow(today, null);
+        const od = window._geoOpenDwell;
+        // A past day never touches it.
+        window._geoDeriveTape = async () => [{ ts: Date.parse('2026-08-20T14:00:00Z'), kind: 'onFoot' }, { ts: Date.parse('2026-08-20T15:00:00Z'), kind: 'driving' }, { ts: Date.parse('2026-08-20T15:20:00Z'), kind: 'onFoot' }];
+        await _geoDeriveDayNow('2026-08-20', null);
+        const still = window._geoOpenDwell;
+        // Today with nobody on site clears it.
+        window._geoDeriveTape = async () => [{ ts: t0 - 3600000, kind: 'onFoot' }, { ts: t0, kind: 'driving' }, { ts: t1, kind: 'onFoot' }, { ts: now - 30 * 60000, kind: 'driving' }];
+        await _geoDeriveDayNow(today, null);
+        return { open: !!(res && res.open), od: od && { name: od.name, kind: od.kind, since: od.sinceTs, cid: od.fence && od.fence.clientId }, t1, still: still && still.name, after: window._geoOpenDwell };
+      }, [SHOP, DOE]);
+      expect(r.open).toBe(true);
+      expect(r.od).toEqual({ name: 'John Doe', kind: 'client', since: r.t1, cid: 1788214075432 });
+      expect(r.still).toBe('John Doe');
+      expect(r.after).toBeNull();
+    });
+
+    test('a router that never answers cannot stall the derive', async () => {
+      const r = await page.evaluate(async () => {
+        const keep = _GEO_ROUTE_TIMEOUT_MS; _GEO_ROUTE_TIMEOUT_MS = 150;
+        localStorage.removeItem('zp3_geo_routes');
+        window._routeDistance = () => new Promise(() => {});
+        const from = { lat: 39.0123292, lng: -95.7464936 }, to = { lat: 39.0307066, lng: -95.7112082 };
+        const m = { id: 'x', fromCoord: from, toCoord: to, startedIso: '2026-09-01T17:21:30Z', endedIso: '2026-09-01T17:31:24Z', miles: 2.4, gpsMiles: 2.4, calc_method: 'derived-path', path: [] };
+        const t = Date.now();
+        try { await _geoDeriveRouteMiles([m]); return { ms: Date.now() - t, miles: m.miles, cm: m.calc_method, rm: m.routeMiles }; }
+        finally { _GEO_ROUTE_TIMEOUT_MS = keep; }
+      });
+      expect(r.ms).toBeLessThan(2000);
+      expect([r.miles, r.cm, r.rm]).toEqual([2.4, 'derived-path', undefined]);
+    });
+
+    test('a day is locked: the boot rebuild covers two days, and reaches back a week only when the rules changed', async () => {
+      await seed();
+      const r = await page.evaluate(async () => {
+        const days = [];
+        const origNow = window._geoDeriveDayNow, real = window.__realServerFixes = window.__realServerFixes || _geoDeriveServerFixes;
+        window._geoDeriveDayNow = async (d) => { days.push(d); return { dwells: [], legs: [] }; };
+        window._geoDeriveServerFixes = async () => { const o = []; o.appEvents = []; return o; };
+        try {
+          localStorage.setItem('zp3_geo_derive_ver', APP_VERSION);
+          await _geoDeriveRebuild();
+          const same = days.length; days.length = 0;
+          localStorage.setItem('zp3_geo_derive_ver', '00.00.00.0');
+          await _geoDeriveRebuild();
+          const changed = days.length;
+          const stamped = localStorage.getItem('zp3_geo_derive_ver');
+          // Coming back after half an hour runs it again; sooner does not.
+          window._geoDeriveRebuilt = true; _geoDeriveRebuildT = null;
+          _geoDeriveRebuiltAt = Date.now();
+          const soon = _geoDeriveRebuildIfStale();
+          days.length = 0; _geoDeriveRebuiltAt = Date.now() - 31 * 60000;
+          const later = _geoDeriveRebuildIfStale();
+          await new Promise(res => setTimeout(res, 50));
+          return { same, changed, stamped, soon, later, ran: days.length };
+        } finally { window._geoDeriveDayNow = origNow; window._geoDeriveServerFixes = real; }
+      });
+      expect(r.same).toBe(2);
+      expect(r.changed).toBe(7);
+      expect(r.stamped).toBe(await page.evaluate(() => APP_VERSION));
+      expect(r.soon).toBe(false);
+      expect(r.later).toBe(true);
+      expect(r.ran).toBe(2);
+    });
+
+    test('the dashboard card shows the open dwell with an arrival stamp and a figure that ticks', async () => {
+      const r = await page.evaluate(async () => {
+        const since = Date.now() - 95 * 60000;
+        window._activeTimer = null;
+        const keepDrv = window._geoDriving; window._geoDriving = () => false;
+        window._geoOpenDwell = { id: 'd-x', name: 'John Doe', kind: 'client', sinceTs: since, sinceIso: new Date(since).toISOString(), journeyId: 'x',
+          fence: { id: 'client-1788214075432', kind: 'client', name: 'John Doe', clientId: 1788214075432, addr: '2950 SW McClure Rd' } };
+        try {
+          goPg && goPg('pg-dash');
+          renderDash();
+          await new Promise(res => setTimeout(res, 400));
+          const el = document.getElementById('dash-nearby');
+          const html = el ? el.innerHTML : '';
+          const node = el && el.querySelector('[data-onsite-since]');
+          const first = node && node.textContent;
+          node && node.setAttribute('data-onsite-since', String(Date.now() - 3660000));
+          _geoOnsiteTick();
+          const ticked = node && node.textContent;
+          window._geoOpenDwell = null;
+          renderDash();
+          await new Promise(res => setTimeout(res, 400));
+          const gone = !document.querySelector('#dash-nearby [data-onsite-since]');
+          return { has: /John Doe/.test(html) && /Arrived/.test(html), clockIn: /clockIn\(null\)/.test(html), proposal: /_nearbyStartWork\(1788214075432\)/.test(html), first, ticked, gone };
+        } finally { window._geoDriving = keepDrv; }
+      });
+      expect(r.has).toBe(true);
+      expect(r.clockIn).toBe(true);
+      expect(r.proposal).toBe(true);
+      expect(r.first).toBe('1h 35m');
+      expect(r.ticked).toBe('1h 1m');
+      expect(r.gone).toBe(true);
+    });
+
     test('the boot rebuild seeds the local logs from the server before it derives', async () => {
       await seed();
       const r = await page.evaluate(async () => {
@@ -601,6 +711,9 @@ test.describe('geo-derive wiring', () => {
         const orig = window._geoDeriveDayNow;
         window._geoDeriveDayNow = async (d) => { days.push(d); return { dwells: [], legs: [] }; };
         window._geoDeriveServerFixes = async () => [];
+        // A rule change (no stamp for this version) is what reaches back the
+        // full week; a locked week derives two days (the test above).
+        localStorage.removeItem('zp3_geo_derive_ver');
         try { const n = await _geoDeriveRebuild(); return { n, days }; }
         finally { window._geoDeriveDayNow = orig; }
       });

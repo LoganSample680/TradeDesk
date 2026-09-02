@@ -332,6 +332,31 @@ async function _timeLogRows(sinceISO){
     });
   });
   const crew=(typeof _fetchCrewLabor==='function')?await _fetchCrewLabor(sinceISO):{name:{},entries:[]};
+  // WHERE I AM RIGHT NOW (owner 2026-09-02: "continue to update the time
+  // log day rail in real time"). The deriver never writes an open dwell (no
+  // departure yet), so the rail draws it from the live report, running to
+  // this moment; the 30s refresh moves it, the arrival closes it into a real
+  // row on the next derive.
+  try{
+    const od=window._geoOpenDwell;
+    const me=(typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
+    if(od&&od.sinceTs>0&&me){
+      const today=(typeof _bizDateStr==='function')?_bizDateStr(new Date()):dateKey(new Date());
+      const day=(typeof _bizDateStr==='function')?_bizDateStr(new Date(od.sinceTs)):dateKey(new Date(od.sinceTs));
+      const mins=Math.max(0,Math.round((Date.now()-od.sinceTs)/60000));
+      if(day===today&&mins>=1&&!(sinceISO&&od.sinceIso<sinceISO)){
+        const kind=od.kind==='shop'?'shop':od.kind==='job'?'geofence':od.kind==='client'?'client':'place';
+        rows.push({
+          id:'open-'+(od.id||od.sinceTs),rawId:null,source:kind==='shop'?'shop':'auto',rawSource:kind,date:day,minutes:mins,
+          personName:(typeof getOwnerName==='function'&&getOwnerName())||'Me',personUid:me,
+          clientName:od.name||(kind==='shop'?((typeof S!=='undefined'&&S&&S.bname)||'Shop'):'On site'),
+          addr:(od.fence&&od.fence.addr)||'',jobName:'',clientKey:od.id||null,
+          unpaid:false,detail:'On site now',live:true,
+          startTime:od.sinceIso,endTime:new Date().toISOString()
+        });
+      }
+    }
+  }catch(_e){}
   // Shop rows, AS STORED (owner 2026-09-02). The day deriver
   // (js/geo-derive.js) already decided what a shop dwell was: bounded by an
   // arrival and a departure, one row per visit, no overlap with anything
@@ -1865,11 +1890,21 @@ function _tlRenderOpenBanner(){
   const open=_tlOpenEntries();
   const canForce=typeof _canViewComp==='function'&&_canViewComp();
   const myUid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
-  const visible=canForce?open:open.filter(r=>r.personUid===myUid);
+  let visible=canForce?open:open.filter(r=>r.personUid===myUid);
+  // And the fence I am standing in, ticking, with no button: nothing to
+  // clock out of, the departure will close it (owner 2026-09-02).
+  try{
+    const od=window._geoOpenDwell;
+    const me=(typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
+    if(od&&od.sinceTs>0&&me){
+      visible=visible.concat([{rawId:null,geo:true,personName:(typeof getOwnerName==='function'&&getOwnerName())||'Me',personUid:me,
+        clientName:od.name||'On site',jobName:'',startTime:od.sinceIso,startMs:od.sinceTs,elapsedMin:Math.max(0,Math.round((Date.now()-od.sinceTs)/60000))}]);
+    }
+  }catch(_e){}
   if(!visible.length){el.innerHTML='';el.style.display='none';return;}
   el.style.display='block';
   el.innerHTML='<div class="card" style="margin-bottom:14px;border:1px solid var(--c-green-edge);background:var(--c-green-soft)">'+
-    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--c-green-deep);margin-bottom:6px">'+svgIcon('▶',{size:12})+' Currently clocked in</div>'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--c-green-deep);margin-bottom:6px">'+svgIcon('▶',{size:12})+(visible.some(r=>!r.geo)?' Currently clocked in':' On site now')+'</div>'+
     visible.map(r=>
       // 10+ hrs still open is almost always a forgotten clock-out, not a real
       // shift: flag it so a manager (or the person themselves) notices
@@ -1895,7 +1930,8 @@ function _tlRenderOpenBanner(){
           // button silently did nothing (owner report 2026-08-31, Jack).
           // Someone else's entry: the manager-only force-close, which
           // audit-tags who closed it.
-          (r.personUid===myUid?'<button onclick="clockOutEntry('+r.rawId+');_tlRenderOpenBanner()" class="btn btn-sm" style="font-size:11px">Clock out</button>'
+          (r.geo?'<span style="font-size:10px;font-weight:800;padding:2px 6px;border-radius:4px;background:var(--c-green-edge);color:var(--c-green-deep)">ON SITE</span>'
+            :r.personUid===myUid?'<button onclick="clockOutEntry('+r.rawId+');_tlRenderOpenBanner()" class="btn btn-sm" style="font-size:11px">Clock out</button>'
             :canForce?'<button onclick="forceClockOutEntry('+r.rawId+')" class="btn btn-sm" style="font-size:11px">Clock out</button>':'')+
         '</div>'+
       '</div>'
