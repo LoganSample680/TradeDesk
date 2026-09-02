@@ -94,15 +94,19 @@ test.describe('geofence ingest contract', () => {
       'and so is the value it compares against').toBe(true);
   });
 
-  test('rows are still written BEFORE the cursor moves, so a crash re-derives', () => {
+  test('the server writes no automatic rows: one deriver, one writer (CLAUDE.md 17)', () => {
+    // Until 2026-09-02 this asserted the opposite: derived rows written
+    // before the cursor moved. That writer was the third for one fence event
+    // and the one that outlived the client cleanup; the owner's 12:04 exit
+    // produced a 247-minute client row on top of the deriver's. The function
+    // stores events and device state, and nothing else.
     const srv = SERVER();
-    // The ordering the original code called out and this must not quietly
-    // invert: derived rows first, cursor last. Swapping them would mean a
-    // crash between the two advances past rows that were never written.
-    const rows = srv.indexOf('derived += await insertByKey("job_time_entries"');
-    const cursor = srv.indexOf('const nextState = { dwell, leg, pending');
-    expect(rows).toBeGreaterThan(-1);
-    expect(cursor).toBeGreaterThan(rows);
+    expect(srv.includes('insertByKey('), 'the row inserter is gone').toBe(false);
+    expect(srv.includes('svc.from("td_mileage").upsert('), 'no mileage rows').toBe(false);
+    expect(/svc\.from\("(job_time_entries|shop_time_entries)"\)\s*\.(insert|upsert)\(/.test(srv), 'no time rows').toBe(false);
+    expect(srv.includes('void timeRows; void shopRows; void mileRows;'), 'the state machine\'s rows go nowhere').toBe(true);
+    // The cursor still moves last and conditionally, for the device state.
+    expect(srv.indexOf('const nextState = { dwell, leg, pending')).toBeGreaterThan(-1);
   });
 
   test('a contended cursor is reported, never swallowed', () => {
@@ -113,12 +117,9 @@ test.describe('geofence ingest contract', () => {
 
   test('the derive is safe to run twice: every write is idempotent', () => {
     const srv = SERVER();
-    // This is what makes the retry legal at all. If any of these became a
-    // plain insert, a re-derived pass would duplicate his mileage.
-    expect(srv.includes('const fresh = rows.filter((r) => !haveSet.has(r.client_key));'),
-      'time rows are check-then-insert').toBe(true);
-    expect(srv.includes('{ onConflict: "id,user_id", ignoreDuplicates: true }'),
-      'mileage rows ignore a duplicate id').toBe(true);
+    // This is what makes the retry legal at all.
+    // (The time and mileage writers are gone, see the test above; what is
+    // left to be idempotent is the raw event store and the cursor.)
     expect(srv.includes('{ onConflict: "employee_user_id,type,ts,region_id", ignoreDuplicates: true }'),
       'raw events ignore a re-flushed buffer').toBe(true);
     // And the cursor is what stops a re-run reconsuming events the winner
