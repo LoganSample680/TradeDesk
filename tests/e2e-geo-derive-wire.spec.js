@@ -43,7 +43,16 @@ test.describe('geo-derive wiring', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
   test.beforeEach(async () => {
-    await page.evaluate(() => { localStorage.removeItem('zp3_geo_queue'); localStorage.removeItem('zp3_geo_fixlog'); });
+    await page.evaluate(() => {
+      localStorage.removeItem('zp3_geo_queue'); localStorage.removeItem('zp3_geo_fixlog');
+      // A fence crossing or an app-active in an earlier test arms a 4-second
+      // live derive (_geoDeriveLiveSoon) and boot arms a 2.5-second rebuild;
+      // either landing inside a later test's window counts an extra day
+      // (CI, WebKit, 2026-09-02: the lock-policy test saw 3 and 4 days for
+      // two rebuilds). Every test starts with no timer left over.
+      if (_geoDeriveLiveT) { clearTimeout(_geoDeriveLiveT); _geoDeriveLiveT = null; }
+      if (_geoDeriveRebuildT) { clearTimeout(_geoDeriveRebuildT); _geoDeriveRebuildT = null; }
+    });
   });
 
   test.describe('one writer', () => {
