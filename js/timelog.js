@@ -129,76 +129,6 @@ function _tlOpenEntries(){
   });
   return rows.sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
 }
-// An unpaid stop only exists BETWEEN work (owner rule 2026-08-24): it earns a
-// line on the log only when the same person has a real location event, a job
-// or client geofence (live, gap, or reconciled), a saved place/supply house,
-// a manual clock record, or a shop session, both BEFORE it and AFTER it on
-// the same Central-time calendar day, AND at least one of those sides is a
-// job/place/manual event, never shop-to-shop alone. The owner's exact spec:
-// "at least two geofence events, one from shop, one at a job site or supply
-// house and back." Shop out, stop, shop back is an errand from the yard on a
-// day with no work in it, not a leg of a work trip (owner report 2026-08-24:
-// a no-work Saturday still showed an unpaid stop bracketed by two shop
-// sessions). A stop floating on its own, before the first fence of the day,
-// after the last one, or spanning midnight, is an overnight park or tracker
-// noise, and rendering those is what filled the log with random unpaid
-// lines (and, stretched by the disabled gap-absorb sweep, impossible 24h+
-// days). Display-level on purpose: nothing here mutates data, a
-// non-qualifying row simply never renders, so a later fence event landing
-// from another device can still promote it back into view on the next open.
-function _tlStopAnchored(arrMs,depMs,anchors){
-  if(!(arrMs>0&&depMs>=arrMs)||!Array.isArray(anchors))return false;
-  const dstr=d=>(typeof _bizDateStr==='function')?_bizDateStr(d):dateKey(d);
-  const day=dstr(new Date(arrMs));
-  if(day!==dstr(new Date(depMs)))return false;   // spans midnight: never shown
-  const SLACK=2*60000;   // kerb-edge timestamp rounding, same floor the merge gap used
-  // Overlap veto first: an anchor covering more than the edge slack of the
-  // stop means the person was provably on site (or at the shop) during it, so
-  // the "unpaid" row is a stretched artifact, not time between fences.
-  //
-  // EVERY ANCHOR EXCEPT A MANUAL CLOCK (owner 2026-09-01: "9:17 to 11:17
-  // wasnt all time spect at oakley remember, that was a untracked address
-  // that should have shown grey"). The veto's whole argument is that the
-  // anchor PROVES where somebody was, and a fence does. A clock does not: it
-  // brackets a shift, so it overlaps every minute of the day by design.
-  // Jack's Sept 1 clock ran 07:42 to 15:00 and vetoed all six of his stops at
-  // once, which is why his untracked client visits, the part of the day where
-  // he did the work, never appeared on the rail at all.
-  //
-  // A clock is still evidence that the day WAS a work day, so it keeps its
-  // vote in the before/after/workSide test below. It just stops being
-  // evidence of a location it never had.
-  for(const a of anchors){
-    if(a&&!a.clock&&Math.min(a.dep,depMs)-Math.max(a.arr,arrMs)>SLACK)return false;
-  }
-  let before=false,after=false,workSide=false;
-  for(const a of anchors){
-    if(!a)continue;
-    // A CLOCK BOUNDS A STOP BY CONTAINING IT, NOT BY ABUTTING IT.
-    //
-    // Every other anchor is a fence, and a fence bounds a stop by ENDING just
-    // before it or STARTING just after it. A clock is the two ends of the
-    // shift, so the question it answers is "was this inside the day", and the
-    // answer comes from its start and its end respectively.
-    //
-    // Without this, only stops with a fence on BOTH sides survived. Jack's
-    // afternoon (12:14 onward) has no fence after it at all: he left the shop,
-    // saw an untracked client and drove home, so four of his six stops, the
-    // whole back half of his working day, were dropped for want of a trailing
-    // fence that was never going to exist. His clock-out at 3:00pm is a real
-    // timestamped event and is exactly the boundary those stops needed.
-    const bOk=a.clock?(a.arr<=arrMs+SLACK&&dstr(new Date(a.arr))===day)
-                     :(a.dep<=arrMs+SLACK&&dstr(new Date(a.dep))===day);
-    const aOk=a.clock?(a.dep>=depMs-SLACK&&dstr(new Date(a.dep))===day)
-                     :(a.arr>=depMs-SLACK&&dstr(new Date(a.arr))===day);
-    if(bOk)before=true;
-    if(aOk)after=true;
-    // a.shop marks a shop session; anything else (job fence, place, manual
-    // clock) is work, and at least one qualifying side must be work.
-    if((bOk||aOk)&&!a.shop)workSide=true;
-  }
-  return before&&after&&workSide;
-}
 // A day should read as one continuous span, not a list of islands (owner
 // report 2026-08-24, Fri 8/21: on site until 11:37, unpaid lunch starting
 // 11:42, back on site at 12:45, so five minutes and then fourteen minutes of
@@ -221,23 +151,6 @@ function _tlStopAnchored(arrMs,depMs,anchors){
 // (that is exactly how days grew past 24 hours). Anything bigger is left
 // visible. Display-only, nothing here writes.
 const _TL_GAP_ABSORB_MAX_MS=30*60000;
-// The motion history covering every shop session on screen, or null when
-// there is none to read. One query for the whole range rather than one per
-// session: the coprocessor keeps about a week and the answer is the same
-// tape either way.
-async function _tlShopTape(byUid){
-  try{
-    if(typeof _geoMotionTape!=='function')return null;
-    let lo=0,hi=0;
-    Object.keys(byUid||{}).forEach(uid=>(byUid[uid]||[]).forEach(e=>{
-      const a=Date.parse((e&&e.arrived_at)||'')||0,b=Date.parse((e&&e.departed_at)||'')||0;
-      if(a>0&&(!lo||a<lo))lo=a;
-      if(b>hi)hi=b;
-    }));
-    if(!(lo>0&&hi>lo))return null;
-    return await _geoMotionTape(lo,hi);
-  }catch(_e){return null;}
-}
 // ── The day must be continuous (owner 2026-08-29) ──────────────────────────
 // "just want time in order from motion to drive, jacks house to Laurie's,
 // then show unaccounted for time in between, then arrival at Laurie's,
@@ -312,155 +225,6 @@ function _tlFillUnaccounted(rows,cid){
     }
   });
   return out;
-}
-function _tlAbsorbGaps(rows,cid){
-  if(!Array.isArray(rows))return rows;
-  const byDay={};
-  rows.forEach(r=>{
-    if(!r||!r.startTime||!r.endTime||!r.date)return;
-    const a=Date.parse(r.startTime),b=Date.parse(r.endTime);
-    if(!(a>0&&b>=a))return;
-    // Same one-person-one-bucket fold as _tlFillUnaccounted below: an
-    // owner-logged row (null uid) and that owner's GPS rows are one person.
-    const _k=String((r.personUid||cid||'owner'))+'|'+r.date;
-    (byDay[_k]=byDay[_k]||[]).push(r);
-  });
-  Object.keys(byDay).forEach(k=>{
-    const day=byDay[k].sort((x,y)=>Date.parse(x.startTime)-Date.parse(y.startTime));
-    for(let i=1;i<day.length;i++){
-      const prev=day[i-1],next=day[i];
-      const pEnd=Date.parse(prev.endTime),nStart=Date.parse(next.startTime);
-      const gap=nStart-pEnd;
-      if(!(gap>0)||gap>_TL_GAP_ABSORB_MAX_MS)continue;
-      // The later row wins when both could take it: the travel that ends at a
-      // stop belongs to that stop, and a gap in front of a paid row is only
-      // ever absorbed by the unpaid row behind it.
-      const taker=next.unpaid?next:(prev.unpaid?prev:null);
-      if(!taker)continue;
-      if(taker===next)taker.startTime=prev.endTime;else taker.endTime=next.startTime;
-      taker.minutes=Math.max(0,Math.round((Date.parse(taker.endTime)-Date.parse(taker.startTime))/60000));
-    }
-  });
-  return rows;
-}
-// ── A MANUAL CLOCK AND THE GPS UNDER IT ARE THE SAME HOURS ────────────────
-//
-// Owner, 2026-09-01: "when a manual clock is riding on the auto stuff they
-// need to blend together, so anything that completes two fences gets logged
-// over it and the total is correct, thats important."
-//
-// They did not blend. A manual clock row and every auto row underneath it went
-// into one list and were summed, so Jack's real day (clock 07:42 to 17:00, over
-// a drive to Oakley, 93 minutes at the shop, a 62-minute drive and 44 minutes
-// back) came to 12h57m for nine hours and twenty minutes of work. Nothing
-// anywhere checked whether a GPS row sat inside a clock window.
-//
-// The rule, and it is his: the clock is the OUTER BRACKET and the fences are
-// the DETAIL. A row with a confirmed arrival and a confirmed departure is
-// something the phone watched happen, so it is logged over the clock and keeps
-// its own label (Driving, Shop, on site); the clock keeps only the minutes
-// nothing else explains. The total is then exactly what the clock said, which
-// is the part that matters, and the day still reads complete rather than with
-// a chunk silently missing (his Aug 23 rule).
-//
-// Deliberately NOT blended:
-//   - unpaid rows (a geofenced lunch). Deducting a break from a clock is a
-//     payroll decision, and he has been explicit that the office decides what
-//     to pay: the app logs, it does not dock.
-//   - auto rows OUTSIDE the window. A drive before he clocked in is still a
-//     drive, and the clock never claimed it.
-//   - the open row. It is not in `rows` at all until it closes, so a running
-//     clock cannot be blended against a day that has not finished.
-//
-// Each auto row is spent at most ONCE, so two clocks covering the same drive
-// cannot each deduct it and drive the day negative. An auto row that only
-// PARTLY overlaps is charged in proportion: Jack's 07:23 drive lands two of
-// its twenty-one minutes inside the clock, so two is what comes off.
-// ── A LEG THAT ENDS WHERE IT STARTED HAS NO DESTINATION ───────────────────
-//
-// Owner, 2026-09-01: "drive time at 9:17 am to 11:17 am is still wrong, that
-// was manual time that shouldve covered his off the books addresses we dont
-// have."
-//
-// The row said "Drive time, 1200 SW Oakley Ave, 9:17 to 11:17". He was AT
-// Oakley at 9:17. He left, saw a client at an address the app has never been
-// told about, and came back, and the engine kept the two endpoints and threw
-// the middle away: two hours framed as a drive to a place he had not left.
-// The same defect produces the 0.5 mile Oakley-to-Oakley mileage row.
-//
-// A leg whose destination is the place it departed from is not a leg. The app
-// does not know where he went, and the honest row says so: it becomes manual
-// time, which is the bucket for exactly this, and stays there until somebody
-// classifies it. Nothing is deleted and no minutes are invented; the claim is
-// just withdrawn.
-//
-// DELIBERATELY NARROW. It fires only when the drive's own destination matches
-// the place immediately before it. A shop-to-supply-house-to-shop run reads as
-// two legs with a real place in the middle and is untouched, which is what
-// keeps genuine round-trip mileage counting.
-function _tlDemoteRoundTrips(rows){
-  if(!Array.isArray(rows))return rows;
-  const isDrive=r=>r&&r.source==='auto'&&typeof _geoIsDriveSource==='function'&&
-    _geoIsDriveSource(r.rawSource||'');
-  // '-' is _tlJobClientInfo's placeholder for "nothing to name", so two rows
-  // carrying it are two UNKNOWNS, not the same place. Treating them as a match
-  // demoted the ordinary ride home from a job whose lookup happened to miss,
-  // which is a real leg with real miles on it (caught by the workday fixtures
-  // the moment this rule landed). Only a real name can close a round trip.
-  const named=r=>{
-    const n=String((r&&(r.dest_place||r.clientName))||'').trim().toLowerCase();
-    return (n==='-'||n==='')?'':n;
-  };
-  // A shop session and a drive that ends at the shop are the same location
-  // under two names: the session is built from shop_time_entries and carries
-  // the business name, the drive carries the saved PLACE name. Comparing the
-  // strings would never match. The places list is the fact that joins them.
-  const _shopNames=new Set();
-  try{
-    ((typeof getPlaces==='function'?getPlaces():[])||[]).forEach(p=>{
-      if(p&&p.name&&String(p.kind||'')==='shop')_shopNames.add(String(p.name).trim().toLowerCase());
-    });
-  }catch(_e){}
-  const sameSpot=(from,drive)=>{
-    const to=named(drive);
-    if(!to)return false;
-    if(from.source==='shop')return _shopNames.has(to);
-    const f=named(from);
-    return !!f&&f===to;
-  };
-  const byDay={};
-  rows.forEach(r=>{
-    if(!r||!r.startTime||!r.endTime||!r.date)return;
-    const k=String(r.personUid||'owner')+'|'+r.date;
-    (byDay[k]=byDay[k]||[]).push(r);
-  });
-  Object.keys(byDay).forEach(k=>{
-    const day=byDay[k].sort((a,b)=>Date.parse(a.startTime)-Date.parse(b.startTime));
-    for(let i=0;i<day.length;i++){
-      const d=day[i];
-      if(!isDrive(d))continue;
-      const to=named(d);
-      if(!to)continue;   // an unnamed destination can never match anything
-      // The last thing that was somewhere, before this drive began. Stops and
-      // other drives are skipped: neither is a place he can be said to have
-      // left from.
-      let from=null;
-      for(let j=i-1;j>=0;j--){
-        const p=day[j];
-        if(isDrive(p)||p.unpaid||p.source==='manual')continue;
-        from=p;break;
-      }
-      if(!from||!sameSpot(from,d))continue;
-      d.unpaid=true;
-      d.roundTrip=true;
-      d.rawSource='stop';
-      d.detail=(typeof _tlSourceLabel==='function')?_tlSourceLabel('stop'):'Unaccounted';
-      // The name goes with the claim. Keeping it would leave a grey row still
-      // insisting he was at Oakley for two hours.
-      d.clientName='-';d.addr='';d.dest_place=null;
-    }
-  });
-  return rows;
 }
 function _tlBlendManual(rows){
   if(!Array.isArray(rows))return rows;
@@ -568,177 +332,35 @@ async function _timeLogRows(sinceISO){
     });
   });
   const crew=(typeof _fetchCrewLabor==='function')?await _fetchCrewLabor(sinceISO):{name:{},entries:[]};
-  // Anchor windows per person for _tlStopAnchored above: every on-site record
-  // that isn't itself a stop or wheel time, plus shop sessions (their own
-  // table) and the person's manual clock entries.
-  const anchorsByUid={};
-  const _anchorPush=(uid,arrIso,depIso,isShop,isClock)=>{
-    const arr=Date.parse(arrIso),dep=Date.parse(depIso);
-    if(!(arr>0&&dep>0))return;
-    (anchorsByUid[uid]=anchorsByUid[uid]||[]).push({arr,dep,shop:!!isShop,clock:!!isClock});
-  };
-  const _anchorSrc=s=>{const t=String(s||'');return /^(geofence|manual|place)$/.test(t)||/^(geofence|place)-/.test(t);};
-  (crew.entries||[]).forEach(e=>{
-    if(e&&e.arrived_at&&e.departed_at&&_anchorSrc(e.source))_anchorPush(e.employee_user_id,e.arrived_at,e.departed_at);
-  });
+  // Shop rows, AS STORED (owner 2026-09-02). The day deriver
+  // (js/geo-derive.js) already decided what a shop dwell was: bounded by an
+  // arrival and a departure, one row per visit, no overlap with anything
+  // else. There is nothing left for this screen to clip, trim, fold or
+  // re-grade, and the twenty functions that used to do so are gone with the
+  // three-writer design that made them necessary.
   (crew.shopEntries||[]).forEach(e=>{
-    if(e&&e.arrived_at&&e.departed_at)_anchorPush(e.employee_user_id,e.arrived_at,e.departed_at,true);
-  });
-  // Shop/yard dwell as its own row (owner request 2026-08-24, "why are there
-  // gaps between them"): shop time was tracked and already PAID in Crew Cost
-  // (js/finance.js _openCrewCost adds it straight into e.min), but the Time
-  // Log listed only job and drive rows, so every hour at the yard read as a
-  // hole in the day. Overlaying it closed nearly every gap in the owner's
-  // week: Thu 8/20's 45-minute midday hole was the shop 12:33-1:18 exactly.
-  //
-  // PAID now, matching Crew Cost, but only inside the workday: the day auto
-  // clocks out at its last real work event (js/geo-track.js _geoShopCutoffs,
-  // see the rule comment there). Two owner reports on 2026-08-24 drove that,
-  // and one rule answers both: yard dwell AFTER the last job or supply run
-  // ("don't want shop time to calculate after the last job site or supply
-  // run of the day") and yard dwell on a day with NO job or supply fence at
-  // all both credit zero minutes, and a zero-credit session does not render.
-  // Nothing is being hidden, there is no gap to close after the day has
-  // ended, and a Saturday at the yard is not a shift.
-  const _shopCut=(typeof _geoShopCutoffs==='function')
-    ? _geoShopCutoffs((crew.entries||[]).concat(
-        timeEntries.filter(e=>!e.open&&e.start_time&&e.end_time).map(e=>({
-          employee_user_id:e.logged_by_uid||(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null,
-          arrived_at:e.start_time,departed_at:e.end_time,source:'manual'
-        }))))
-    : {};
-  // Grouped per person because the paid spans are computed in ORDER for one
-  // person at a time: overlapping sessions clip against each other so no
-  // minute is ever paid twice (js/geo-track.js _geoShopPaidSpans).
-  // Resolved once for the whole render: getPlaces() on every row would be a
-  // lookup per entry for a set that cannot change mid-render.
-  const _baseNames=(typeof _geoBaseNames==='function')?_geoBaseNames():new Set();
-  const _shopByUid={};
-  (crew.shopEntries||[]).forEach(e=>{
-    if(!e||!e.arrived_at||!e.departed_at)return;
-    (_shopByUid[e.employee_user_id]=_shopByUid[e.employee_user_id]||[]).push(e);
-  });
-  // The sessions that actually SURVIVED onto the log, keyed by their raw
-  // window. A dropped duplicate must never leave a hole (see _shopCovers).
-  const _shopKept={};
-  // The motion tape for the whole rendered range, fetched ONCE and handed
-  // down: at a shop that is also the house it trims each session to the part
-  // where somebody was actually walking (js/geo-track.js _geoActiveTrim).
-  // Null on every non-iPhone build and whenever the coprocessor has nothing,
-  // and then _geoShopPaidSpans bills the dwell exactly as it did before.
-  const _shopTape=await _tlShopTape(_shopByUid);
-  Object.keys(_shopByUid).forEach(uid=>{
-    const list=_shopByUid[uid];
-    const mine=(crew.entries||[]).filter(x=>x&&String(x.employee_user_id)===String(uid));
-    const spans=(typeof _geoShopPaidSpans==='function')?_geoShopPaidSpans(list,_shopCut[uid]||{},mine,_shopTape):[];
-    list.forEach((e,i)=>{
-      const arr=Date.parse(e.arrived_at),dep=Date.parse(e.departed_at);
-      if(!(arr>0&&dep>arr))return;
-      // Same physical-impossibility bound the rest of the log honors: a dwell
-      // that spans Central midnight is the truck sitting at the yard overnight,
-      // not a shift, and must never land as paid time (owner rule 2026-08-24).
-      const dstr=d=>(typeof _bizDateStr==='function')?_bizDateStr(d):dateKey(d);
-      const day=dstr(new Date(arr));
-      if(day!==dstr(new Date(dep)))return;
-      // (the span builder folds a blip-split visit into its first row, so a
-      // merged-away row simply reports zero minutes below)
-      const sp=spans[i]||{startMs:arr,endMs:dep,minutes:e.minutes||0,clipped:false};
-      // Zero paid minutes means outside the workday window, or folded into an
-      // earlier session that already carries this stretch. Either way there is
-      // no second row to draw.
-      if((sp.minutes||0)<1)return;
-      // It earned minutes and is about to be drawn, so it is now allowed to
-      // stand in for its place-row twin. Recorded against the RAW window,
-      // because that is the window the twin carries; sp may be clipped.
-      (_shopKept[uid]=_shopKept[uid]||[]).push({a:arr,b:dep});
-      // Trimmed by the clock-out rather than by the person leaving: show when
-      // the clock actually stopped and say why, so the rule is visible instead
-      // of quietly eating minutes. Exact edges (the common case) read plain.
-      const trimmed=sp.endMs<(sp.rawEndMs||dep)-60000;
-      rows.push({
-        id:'s'+uid+'_'+e.arrived_at,
-        source:'shop',date:day,minutes:sp.minutes,
-        personName:crew.name[uid]||'Crew',personUid:uid,
-        clientName:(typeof S!=='undefined'&&S&&S.bname)?S.bname:'Shop',
-        addr:(typeof _geoShopAddr==='function'&&_geoShopAddr())||'',jobName:'',
-        clientKey:null,unpaid:false,
-        detail:trimmed?'Shop time · auto clock-out':'Shop time',
-        // Unchanged edges keep the source string exactly: only an edge the
-        // clock-out or the overlap clip actually moved is re-stamped.
-        startTime:sp.clipped?new Date(sp.startMs).toISOString():e.arrived_at,
-        endTime:sp.endMs===dep?e.departed_at:new Date(sp.endMs).toISOString(),
-        mergedCount:sp.mergedCount||1,
-        rawId:null,rawSource:'shop'
-      });
+    if(!e||!e.arrived_at||!e.departed_at||!e.employee_user_id)return;
+    const arr=Date.parse(e.arrived_at),dep=Date.parse(e.departed_at);
+    if(!(arr>0&&dep>arr))return;
+    const uid=e.employee_user_id;
+    const mins=Number(e.minutes)>0?Math.round(Number(e.minutes)):Math.round((dep-arr)/60000);
+    if(mins<1)return;
+    const day=(typeof _bizDateStr==='function')?_bizDateStr(new Date(arr)):dateKey(new Date(arr));
+    rows.push({
+      id:'s'+uid+'_'+e.arrived_at,
+      source:'shop',date:day,minutes:mins,
+      personName:crew.name[uid]||'Crew',personUid:uid,
+      clientName:(typeof S!=='undefined'&&S&&S.bname)?S.bname:'Shop',
+      addr:(typeof _geoShopAddr==='function'&&_geoShopAddr())||'',jobName:'',
+      clientKey:e.client_key||null,unpaid:false,
+      detail:'Shop time',
+      startTime:e.arrived_at,endTime:e.departed_at,
+      mergedCount:1,
+      rawId:e.id!=null?e.id:null,rawSource:'shop'
     });
   });
-  timeEntries.forEach(e=>{
-    if(e.open||!e.start_time||!e.end_time)return;
-    // null logged_by_uid means the owner, the same convention the geo/dedup
-    // code uses; the owner's crew rows carry the contractor uid.
-    const uid=e.logged_by_uid||(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
-    // TAGGED AS A CLOCK, and the tag is load-bearing (see the overlap veto in
-    // _tlStopAnchored). A clock brackets a whole shift by design and says
-    // nothing about where the person stood minute to minute; every other
-    // anchor is a fence that does.
-    if(uid)_anchorPush(uid,e.start_time,e.end_time,false,true);
-  });
-  // ── ONE VISIT, ONE ROW (owner 2026-09-01) ─────────────────────────────────
-  //
-  // "the two onsites for sw oakley are actually shop times which we already
-  // have."
-  //
-  // He is right, and the cause is that his dad's shop is TWO records in his
-  // account at once: the configured shop coordinate AND a saved place. Those
-  // are watched by two independent state machines in js/geo-track.js (inShop
-  // at :1148 and atPlaceId), and on departure each writes its own row, one
-  // into shop_time_entries and one into job_time_entries as a 'place'. The
-  // engine already half-knows (":1355, SHOP outranks PLACE because the shop is
-  // often saved as a place too") but that precedence only decides where you
-  // currently ARE, and the shop dwell block is deliberately independent of it.
-  //
-  // Fixing the engine is the real answer and is its own piece of work. What
-  // must not wait is the log showing one visit twice, so the reader drops the
-  // place row when a shop session already covers the same window for the same
-  // person. Shop wins because that is the record the owner recognises: it is
-  // the yard, and it is what the split bar has always called it.
-  //
-  // A DROP IS ONLY SAFE IF THE SURVIVOR SURVIVED (owner 2026-09-01, his own
-  // 12:31pm reading "UNACCOUNTED · What was this time?" for the 46 minutes
-  // that had read "Shop time · JS Solutions" the render before).
-  //
-  // The first cut matched against every raw shop session, on the assumption
-  // that a session always draws a row. It does not: _geoShopPaidSpans can
-  // credit it zero (outside the workday window, folded into an earlier
-  // session, or, where the shop IS the house, trimmed by the motion tape down
-  // to the part somebody was actually walking, which is exactly nothing on an
-  // afternoon spent sitting at a desk). Both halves of the duplicate then
-  // disappeared, the reader saw a 46-minute hole where two records had been,
-  // and _tlFillUnaccounted did its job and asked him what the time was.
-  //
-  // It cascaded, which is why this is worth the care: with the 12:31 stop
-  // gone, the 1:17 drive to John Doe had the MORNING John Doe visit as the
-  // last place he was seen leaving, so _tlDemoteRoundTrips read it as a leg
-  // that ended where it started and greyed it out as unpaid. One dropped row
-  // took a second row's colour, its label and its pay with it.
-  //
-  // Matching _shopKept instead of _shopByUid means the place row is only ever
-  // yielded to a shop row that is really there.
-  const _shopCovers=(uid,arrIso,depIso)=>{
-    const list=_shopKept[uid];
-    if(!list||!list.length)return false;
-    const a=Date.parse(arrIso),b=Date.parse(depIso||'');
-    if(!(a>0&&b>a))return false;
-    const SLACK=3*60000;   // kerb-edge rounding between two writers of one event
-    return list.some(x=>Math.abs(x.a-a)<=SLACK&&Math.abs(x.b-b)<=SLACK);
-  };
   (crew.entries||[]).forEach(e=>{
     if(!e.arrived_at)return;
-    // The duplicate, dropped before anything else looks at it. Raw 'place'
-    // only: place-office and place-load are minutes something PROVED were
-    // work, and a shop session never produces those.
-    if(String(e.source||'')==='place'&&e.departed_at&&
-       _shopCovers(e.employee_user_id,e.arrived_at,e.departed_at))return;
     // Off-job stops (lunch, an errand) still get a row (owner request
     // 2026-08-23: "needs logged as lunches or unaccounted for time", the day
     // should read complete, not like a chunk is silently missing), but the
@@ -746,60 +368,10 @@ async function _timeLogRows(sinceISO){
     // and _tlComputeOT both skip unpaid minutes, so a lunch break never
     // becomes paid time or pushes someone into overtime they never worked.
     const isUnpaid=typeof _geoIsOffJobSource==='function'&&_geoIsOffJobSource(e.source);
-    // A drive leg outside the workday window is a personal trip the tracker
-    // happened to catch, not work (owner 2026-08-24, the Tue 8/18 family
-    // pictures run: "it should be dropped"). Only drives can land outside the
-    // window, since job and place visits are what define it, so this can never
-    // hide on-site time. js/geo-track.js _geoRowInWorkday carries the rule.
-    if(typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(e.source)&&
-       typeof _geoRowInWorkday==='function'){
-      const _dday=(typeof _bizDateStr==='function')?_bizDateStr(new Date(e.arrived_at)):dateKey(new Date(e.arrived_at));
-      if(!_geoRowInWorkday(e.arrived_at,e.departed_at,((_shopCut[e.employee_user_id]||{})[_dday])||null))return;
-    }
-    // BASE DWELL ANSWERS TO THE DAY, exactly like the yard already does.
-    //
-    // The shop loop above bounds a session by Central midnight and clamps it
-    // to the day's clock-out. A home office is the same kind of place and got
-    // neither, so sitting at his own house overnight wrote a 12-hour visit:
-    // owner and Jack both, four nights running, up to 1557 minutes. See
-    // _geoIsBaseRow (js/geo-track.js) for why a supply house is deliberately
-    // NOT a base and still ends the day.
-    // NOT PAID VERSUS UNPAID. ACCOUNTED VERSUS UNACCOUNTED (owner, 2026-09-01):
-    // "skip the paid versus unpaid stuff out, just log it as unaccounted if
-    // they are floating between fences ... doesn't get included in time unless
-    // classified (i.e. lunch, breaks, business trips)."
-    //
-    // A first cut DROPPED the row when base dwell fell outside the workday.
-    // Wrong twice: it broke the rule above, and it broke the owner's own Aug 23
-    // rule that a day "should read complete, not like a chunk is silently
-    // missing". It also zeroed 45 minutes of real home-office paperwork on a
-    // day with no drives.
-    //
-    // Nothing is hidden now. This lands in the SAME shape _tlFillUnaccounted
-    // already writes for a hole between fences (7.3): the row keeps its true
-    // span, says why it does not count, and the unpaid flag holds it out of
-    // hours and overtime exactly as a lunch already is. The owner decides what
-    // to pay; the app does not decide for them.
+    // A row that used to be re-graded here (a home-office dwell clamped to
+    // the workday, an overnight park) now arrives from the deriver already
+    // bounded. Nothing to explain away.
     let _unacctWhy='';
-    if(typeof _geoIsBaseRow==='function'&&_geoIsBaseRow(e,_baseNames)){
-      const _ba=Date.parse(e.arrived_at)||0,_bd=Date.parse(e.departed_at||'')||0;
-      const _bds=d=>(typeof _bizDateStr==='function')?_bizDateStr(d):dateKey(d);
-      if(!(_ba>0&&_bd>_ba))return;      // unparseable: nothing to draw either way
-      const _bpm=(typeof _geoShopPaidMin==='function')
-        ? _geoShopPaidMin(e.arrived_at,e.departed_at,
-            ((_shopCut[e.employee_user_id]||{})[_bds(new Date(_ba))])||null)
-        : (e.minutes||0);
-      // Crossing Central midnight is the truck home for the night, never a
-      // shift (owner rule 2026-08-24: "it's not humanely possible for any day
-      // to have more than 24 hours"). Unaccounted, not deleted.
-      if(_bds(new Date(_ba))!==_bds(new Date(_bd)))_unacctWhy='Overnight at your own place';
-      else if(_bpm<1)_unacctWhy='Outside the day\u2019s work';
-      else e=Object.assign({},e,{minutes:_bpm});   // clamped COPY, stored row untouched
-    }
-    // The anchor rule (owner 2026-08-24, see _tlStopAnchored above): an
-    // unpaid stop with no real location event on both sides of it that same
-    // Central day never renders at all.
-    if(isUnpaid&&!_tlStopAnchored(Date.parse(e.arrived_at),Date.parse(e.departed_at||e.arrived_at),anchorsByUid[e.employee_user_id]||[]))return;
     const info=_tlJobClientInfo(e.job_id);
     // dest_place is the actual name behind a job_id:null row (a supply
     // house, a home office, an unscheduled client visit, or wherever a
@@ -829,9 +401,10 @@ async function _timeLogRows(sinceISO){
   // measures overlap off exactly those times: running it later would have it
   // judging windows that had already been stretched, and would let a clock's
   // own hours be counted as a hole somebody has to answer for.
-  // Round trips are withdrawn BEFORE the blend, or a claim the app is about to
-  // retract would still be deducted from the clock as though it were real work.
-  return _tlFillUnaccounted(_tlAbsorbGaps(_tlBlendManual(_tlDemoteRoundTrips(rows)),_cid),_cid)
+  // The clock blends over the derived day, and what is left is unaccounted.
+  // No round-trip withdrawal, no gap absorption, no duplicate drop: the
+  // deriver's output has none of those to correct.
+  return _tlFillUnaccounted(_tlBlendManual(rows),_cid)
     .sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 }
 function _tlYears(rows){
@@ -2282,109 +1855,6 @@ function _tlSubtractCovered(a,b,covers){
   });
   return free.filter(([s,e])=>e-s>=_TL_GAP_MIN_KEEP_MS);
 }
-// Runs at boot, after the geo sweeps have settled the derived rows: their
-// answer is the input here, so this has to be last or it would trim against a
-// half-corrected day.
-async function _tlTrimCoveredGapRows(){
-  const note=(ev,x)=>{try{if(typeof _geoParkNote==='function')_geoParkNote(ev,x);}catch(_e){}};
-  // Concurrency guard (11.2), needed the moment the once-latch stopped being
-  // set up front: supaLoadFromCloud re-runs on reconnect, so two invocations
-  // can now overlap across this function's awaits, both holding the same
-  // claims. One runs, the overlap no-ops.
-  if(window._tlGapTrimBusy)return 0;
-  window._tlGapTrimBusy=true;
-  try{
-    // The guard latches at the END, not here. It used to latch first, which
-    // meant one silent failure (no client yet, a dropped read, anything the
-    // catch below swallowed) killed the trim for the whole session with no
-    // trace: the exact shape of the owner's 08/27 manual row surviving a boot
-    // that healed everything around it. supaLoadFromCloud re-runs on
-    // reconnect, so an unlatched miss simply tries again.
-    if(window._tlGapTrimRan)return 0;
-    if(typeof timeEntries==='undefined'||!Array.isArray(timeEntries))return 0;
-    const claims=timeEntries.filter(_tlIsGapAnswer);
-    if(!claims.length){window._tlGapTrimRan=true;return 0;}
-    if(typeof _supa==='undefined'||!_supa||typeof _supaUser==='undefined'||!_supaUser)return 0;
-    // Every derived row that could cover a claim, over the span the claims
-    // actually occupy: one query, not one per row.
-    const starts=claims.map(e=>Date.parse(e.start_time)||0).filter(Boolean);
-    const ends=claims.map(e=>Date.parse(e.end_time)||0).filter(Boolean);
-    if(!starts.length||!ends.length)return 0;
-    const lo=new Date(Math.min.apply(null,starts)-3600000).toISOString();
-    const hi=new Date(Math.max.apply(null,ends)+3600000).toISOString();
-    const covers=[];
-    for(const tbl of ['job_time_entries','shop_time_entries']){
-      const{data,error}=await _supa.from(tbl).select('arrived_at,departed_at')
-        .is('deleted_at',null).eq('employee_user_id',_supaUser.id)
-        .gte('arrived_at',lo).lte('arrived_at',hi);
-      if(error||!Array.isArray(data))continue;
-      data.forEach(r=>{
-        const a=Date.parse(r&&r.arrived_at)||0,b=Date.parse(r&&r.departed_at)||0;
-        if(b>a)covers.push([a,b]);
-      });
-    }
-    // No derived rows came back at all: that is a failed read, not an empty
-    // day, and trimming against it would delete every answer the person ever
-    // gave. Same interlock the dwell sweep carries. Unlatched, so a flaky
-    // read retries on the next load instead of dying quietly.
-    if(!covers.length){note('gap-trim','no covers, retrying next load');return 0;}
-    let changed=0;
-    // A stack of answers on ONE span is one answer plus leftovers. Newest
-    // wins: it is the last thing the person actually chose. (His 08/27 window
-    // carried three, two Breaks and a Personal, because the old repeat bug
-    // wrote a fresh row on every tap.)
-    const bySpan={};
-    claims.forEach(e=>{
-      const a=Date.parse(e.start_time)||0,b=Date.parse(e.end_time)||0;
-      if(!(b>a))return;
-      (bySpan[a+'|'+b]=bySpan[a+'|'+b]||[]).push(e);
-    });
-    Object.keys(bySpan).forEach(k=>{
-      const stack=bySpan[k];
-      if(stack.length<2)return;
-      stack.slice(0,-1).forEach(e=>{
-        e.deleted=true;e._gapTrimmed='superseded';
-        note('gap-trim',String(e.id).slice(0,10)+' superseded by a later answer');
-        changed++;
-      });
-    });
-    claims.forEach(e=>{
-      if(e.deleted)return;
-      const a=Date.parse(e.start_time)||0,b=Date.parse(e.end_time)||0;
-      if(!(b>a))return;
-      const left=_tlSubtractCovered(a,b,covers);
-      if(left.length===1&&left[0][0]===a&&left[0][1]===b)return;   // untouched
-      if(!left.length){
-        e.deleted=true;e._gapTrimmed='covered';
-        note('gap-trim',String(e.id).slice(0,10)+' '+(e.minutes||'?')+'m withdrawn, covered');
-        changed++;
-        return;
-      }
-      // Keep the longest surviving piece. A claim broken into two by a row in
-      // the middle is one person's one answer, and splitting it into two rows
-      // would invent a second entry they never made.
-      const keep=left.slice().sort((x,y)=>(y[1]-y[0])-(x[1]-x[0]))[0];
-      e.start_time=new Date(keep[0]).toISOString();
-      e.end_time=new Date(keep[1]).toISOString();
-      e.minutes=Math.max(1,Math.round((keep[1]-keep[0])/60000));
-      e._gapTrimmed='trimmed';
-      note('gap-trim',String(e.id).slice(0,10)+' trimmed to '+e.minutes+'m');
-      changed++;
-    });
-    if(changed){
-      // Deleted claims leave the array the same way every other delete on this
-      // page does, so the cloud sweep carries the removal like any other.
-      for(let i=timeEntries.length-1;i>=0;i--)if(timeEntries[i]&&timeEntries[i].deleted)timeEntries.splice(i,1);
-      if(typeof saveAll==='function')saveAll();
-      if(typeof supaSaveToCloud==='function')supaSaveToCloud();
-      if(typeof renderTimeLog==='function')renderTimeLog();
-    }
-    window._tlGapTrimRan=true;
-    note('gap-trim-done','claims='+claims.length+' changed='+changed);
-    return changed;
-  }catch(_e){note('gap-trim','threw: '+String(_e&&_e.message).slice(0,80));return 0;}
-  finally{window._tlGapTrimBusy=false;}
-}
 // Still-clocked-in banner, separate from the year/month/day history below,
 // refreshed on its own 30s tick while this page is open so elapsed time keeps
 // moving without re-rendering the whole accordion tree. Stops itself the
@@ -2897,65 +2367,6 @@ async function _tlShareWeek(){
   const rows=_tlLastRows.filter(r=>r.date>=wkStartStr&&r.date<=wkEndStr);
   return _tlShareText(rows,wkStartStr,'This week\'s hours');
 }
-// ── The repair pass, moved OFF the critical path (owner report 2026-08-26:
-// "why the slowness on time log where skeleton takes forever") ──────────────
-//
-// All of this used to run BEFORE the first fetch, so the skeleton sat through
-// three reconciler passes with 150ms waits between them, a write-queue drain,
-// and a full cleanup sweep, and only then did the page ask the server for the
-// hours it was there to show. Each of those does its own round trips, so on a
-// truck connection the wait was seconds of shimmer for work the viewer never
-// asked for.
-//
-// It still all runs, and still on every open, for the reasons each block
-// documents. It just runs AFTER the hours are on screen. CLAUDE.md 8.3 is
-// explicit that a slow reveal is never the answer to async data: paint
-// instantly, repaint once when the real thing lands.
-async function _tlRepairPass(){
-    // Catch up any already-closed gap before showing hours. _geoReconcileSoon's
-    // periodic trigger only ever fires from a LIVE GPS watcher (js/geo-track.js:
-    // "if(_geoWatchId==null&&_geoNativeWatcherId==null)return;"), so a gap left
-    // by a drive that already finished never gets backfilled once tracking goes
-    // quiet (owner report 2026-08-21: hours still missing on reopening Time Log
-    // well after the job). Opening this page is an explicit, deliberate look at
-    // hours, not ambient background noise, so it calls the reconciler directly
-    // instead of waiting on a live ping stream that may never come again today.
-    //
-    // An explicit false means the pass was SKIPPED (a GPS ping was mid-flight,
-    // exactly when a phone with live tracking opens this page right after a
-    // drive), not that it ran and found nothing: retry briefly rather than
-    // silently never repairing this visit (owner report 2026-08-21, round two).
-    // Then drain the write queue, so a row the reconciler just enqueued is on
-    // the server BEFORE _timeLogRows fetches: without this the repair raced its
-    // own render and only showed up on the NEXT visit to this page.
-    if(typeof _geoReconcileFromMileage==='function'){
-      try{
-        // 150ms, not 350ms: three attempts at the old backoff held the skeleton
-        // on screen for up to ~1050ms in the worst case (owner report
-        // 2026-08-23: skeleton "way too long" specifically on this page). Still
-        // three tries, same protection against the mid-flight-ping race the
-        // retry exists for, just a shorter wait between them.
-        for(let _i=0;_i<3;_i++){
-          const ran=await _geoReconcileFromMileage();
-          if(ran!==false)break;
-          await new Promise(res=>setTimeout(res,150));
-        }
-        if(typeof _geoDrainQueue==='function')await _geoDrainQueue();
-      }catch(_e){}
-    }
-    // The cleanup sweeps are NOT the reconciler's business (owner report
-    // 2026-08-25: "still not seeing time log clear the shit that doesn't
-    // matter"). The reconciler skips its own tail on three exits that say
-    // nothing about whether there is junk to clear (a ping mid-flight, a pass
-    // already running, or simply no window to repair), and on a phone with
-    // live tracking the ping exit is the common case: the three retries above
-    // can all come back false and the log then renders whatever stale
-    // duplicates and orphaned drive rows were already there. Run the sweeps
-    // here directly, every open. _geoCleanupSweeps carries its own busy flag
-    // and a 10s recency skip, so when the reconciler above DID run to
-    // completion this is a cheap no-op rather than a second round of queries.
-    if(typeof _geoCleanupSweeps==='function'){try{await _geoCleanupSweeps();}catch(_e){}}
-}
 // Cheap enough to run on every open, and the only thing that decides whether
 // the repair earned a repaint. Count plus total minutes catches an added row,
 // a removed row, and a retimed one, which is everything the repair can do.
@@ -2989,22 +2400,6 @@ const _TL_REPAIR_MIN_GAP_MS=30000;
 // (caught by CI shard 6, 2026-08-27: the year-filter test read "No time
 // logged in 2026" painted by the PREVIOUS test's leftover repair).
 let _tlRenderGen=0;
-async function _tlRepairAfterPaint(paintedRows,gen){
-  if(_tlRepairRunning)return false;
-  if(_tlRepairAt&&Date.now()-_tlRepairAt<_TL_REPAIR_MIN_GAP_MS)return false;
-  _tlRepairRunning=true;_tlRepairAt=Date.now();
-  try{
-    await _tlRepairPass();
-    if(gen!==undefined&&gen!==_tlRenderGen)return false;   // a newer render owns the screen
-    const fresh=await _timeLogRows(null);
-    if(_tlRowsFingerprint(fresh)===_tlRowsFingerprint(paintedRows))return false;
-    if(gen!==undefined&&gen!==_tlRenderGen)return false;   // re-check across the await
-    // noRepair: the pass just ran. Without it this recurses on every open.
-    await renderTimeLog({noRepair:true});
-    return true;
-  }catch(_e){return false;}
-  finally{_tlRepairRunning=false;}
-}
 // ── The rows the screen is currently painted from ─────────────────────────
 // Owner, 2026-08-31: "like almost 2 seconds to change a day, thats awful."
 // _timeLogRows is expensive by nature (three Supabase queries through
@@ -3087,10 +2482,10 @@ async function renderTimeLog(opts){
   // not earned a repair pass (same rule the _tlRepairAt floor above exists
   // for), but the rows it painted from came out of memory and something on
   // the server may have moved since.
+  // The Time Log never writes (owner 2026-09-02). It used to run a repair
+  // pass on every open; now it only checks that what it painted is what the
+  // server holds.
   if(_cached){try{_tlRevalidateRows(allRows,_gen);}catch(_e){}}
-  else if(!(opts&&opts.noRepair)){
-    try{_tlRepairAfterPaint(allRows,_gen);}catch(_e){}
-  }
   // Set as soon as the rows are in hand, not at the end: the render has
   // several early returns after this point and every one of them is still a
   // completed first load as far as the placeholder is concerned.

@@ -66,15 +66,6 @@ test.describe('geo-derive wiring', () => {
       expect(r.afterHuman, 'a manual clock-out and a hand-fixed row still land').toEqual(['man-1', 'fixed-abc']);
     });
 
-    test('the engine\'s mileage writer is gated too', async () => {
-      const r = await page.evaluate(() => {
-        const before = mileage.length;
-        const out = _geoAutoMileage({ lat: 1, lng: 1, name: 'A' }, { lat: 2, lng: 2, name: 'B' }, 'k1', '2026-09-01T13:00:00Z', true, 10, '2026-09-01T13:10:00Z');
-        return { out, added: mileage.length - before };
-      });
-      expect(r.out).toBeNull();
-      expect(r.added).toBe(0);
-    });
   });
 
   test.describe('the fix log', () => {

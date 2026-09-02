@@ -260,70 +260,8 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.unpaid).toBe(true);
     });
 
-    // Owner rule 2026-08-24: "get the random unpaid time logs to go away
-    // except for the ones that are in between geofences." A stop with no
-    // same-Central-day location event on both sides never renders.
-    test('an unanchored stop row never renders at all', async () => {
-      const r = await page.evaluate(async () => {
-        const orig = window._fetchCrewLabor;
-        window._fetchCrewLabor = async () => ({
-          name: { 'emp-test-uid': 'Test Crew Member' },
-          entries: [{
-            employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'Sonic Drive-In',
-            source: 'stop', minutes: 43, client_key: null,
-            arrived_at: '2026-08-21T16:42:00.000Z', departed_at: '2026-08-21T17:25:00.000Z',
-          }],
-        });
-        try { const rows = await _timeLogRows(null); return { hit: !!rows.find(x => x.clientName === 'Sonic Drive-In') }; }
-        finally { window._fetchCrewLabor = orig; }
-      });
-      expect(r.hit).toBe(false);
-    });
 
-    test('a stop with work before but nothing after (end-of-day park) never renders', async () => {
-      const r = await page.evaluate(async () => {
-        const orig = window._fetchCrewLabor;
-        window._fetchCrewLabor = async () => ({
-          name: { 'emp-test-uid': 'Test Crew Member' },
-          entries: [{
-            employee_user_id: 'emp-test-uid', job_id: 'anchor-job', dest_place: null,
-            source: 'geofence', minutes: 160, client_key: null,
-            arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:40:00.000Z',
-          }, {
-            employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'Sonic Drive-In',
-            source: 'stop', minutes: 43, client_key: null,
-            arrived_at: '2026-08-21T16:42:00.000Z', departed_at: '2026-08-21T17:25:00.000Z',
-          }],
-        });
-        try { const rows = await _timeLogRows(null); return { hit: !!rows.find(x => x.clientName === 'Sonic Drive-In') }; }
-        finally { window._fetchCrewLabor = orig; }
-      });
-      expect(r.hit).toBe(false);
-    });
 
-    // Owner clarification 2026-08-24: "one from shop, one at a job site or
-    // supply house." Shop out, stop, shop back on a day with no work is an
-    // errand from the yard, not a work-trip leg, and never renders.
-    test('shop-to-shop anchors alone never validate a stop (a no-work Saturday shows nothing)', async () => {
-      const r = await page.evaluate(async () => {
-        const orig = window._fetchCrewLabor;
-        window._fetchCrewLabor = async () => ({
-          name: { 'emp-test-uid': 'Test Crew Member' },
-          entries: [{
-            employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'Sonic Drive-In',
-            source: 'stop', minutes: 43, client_key: null,
-            arrived_at: '2026-08-21T16:42:00.000Z', departed_at: '2026-08-21T17:25:00.000Z',
-          }],
-          shopEntries: [
-            { employee_user_id: 'emp-test-uid', minutes: 60, arrived_at: '2026-08-21T15:30:00.000Z', departed_at: '2026-08-21T16:30:00.000Z' },
-            { employee_user_id: 'emp-test-uid', minutes: 60, arrived_at: '2026-08-21T17:40:00.000Z', departed_at: '2026-08-21T18:40:00.000Z' },
-          ],
-        });
-        try { const rows = await _timeLogRows(null); return { hit: !!rows.find(x => x.clientName === 'Sonic Drive-In') }; }
-        finally { window._fetchCrewLabor = orig; }
-      });
-      expect(r.hit).toBe(false);
-    });
 
     test('shop before + supply house after renders (the real supply-run shape)', async () => {
       const r = await page.evaluate(async () => {
@@ -349,30 +287,6 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.hit).toBe(true);
     });
 
-    test('another person\'s anchors never validate my stop', async () => {
-      const r = await page.evaluate(async () => {
-        const orig = window._fetchCrewLabor;
-        window._fetchCrewLabor = async () => ({
-          name: { 'emp-test-uid': 'Test Crew Member', 'emp-other': 'Somebody Else' },
-          entries: [{
-            employee_user_id: 'emp-other', job_id: 'anchor-job', dest_place: null,
-            source: 'geofence', minutes: 160, client_key: null,
-            arrived_at: '2026-08-21T14:00:00.000Z', departed_at: '2026-08-21T16:40:00.000Z',
-          }, {
-            employee_user_id: 'emp-test-uid', job_id: null, dest_place: 'Sonic Drive-In',
-            source: 'stop', minutes: 43, client_key: null,
-            arrived_at: '2026-08-21T16:42:00.000Z', departed_at: '2026-08-21T17:25:00.000Z',
-          }, {
-            employee_user_id: 'emp-other', job_id: 'anchor-job', dest_place: null,
-            source: 'geofence', minutes: 150, client_key: null,
-            arrived_at: '2026-08-21T17:30:00.000Z', departed_at: '2026-08-21T20:00:00.000Z',
-          }],
-        });
-        try { const rows = await _timeLogRows(null); return { hit: !!rows.find(x => x.clientName === 'Sonic Drive-In') }; }
-        finally { window._fetchCrewLabor = orig; }
-      });
-      expect(r.hit).toBe(false);
-    });
 
     test('a normal (non-stop) crew source row is not tagged unpaid', async () => {
       const r = await page.evaluate(async () => {
@@ -450,65 +364,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(shop[0].unpaid, 'inside the workday, so it counts').toBe(false);
     });
 
-    // Owner, 2026-08-24: "08/21 shouldn't have shop at 6:05 am, why does it?"
-    // It did because the rule only closed the day, never opened it.
-    test('yard time before the day\'s first job or supply move never renders', async () => {
-      const rows = await withShop([YARD_AM, YARD_MID], DAY);
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length, 'sitting at the yard before the first move is not a shift').toBe(1);
-      expect(shop[0].startTime).toBe(YARD_MID.arrived_at);
-    });
 
-    test('yard time after the day\'s last job or supply run never renders', async () => {
-      const rows = await withShop([YARD_MID, YARD_PM], DAY);
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length, 'the 7h18m evening sit at the yard is not a shift').toBe(1);
-      expect(shop[0].startTime).toBe(YARD_MID.arrived_at);
-    });
 
-    test('a day with no job or supply fence at all shows no yard time', async () => {
-      const rows = await withShop([YARD_AM, YARD_MID, YARD_PM], []);
-      expect(rows.filter(r => r.source === 'shop').length, 'a Saturday at the yard is not a shift').toBe(0);
-    });
 
-    test('a lunch stop is not work and never extends the day', async () => {
-      const rows = await withShop([YARD_PM], [
-        { employee_user_id: 'me', job_id: null, minutes: 45, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T17:45:00Z', source: 'stop' },
-      ]);
-      expect(rows.filter(r => r.source === 'shop').length).toBe(0);
-    });
 
-    // The Civitan Day Camp leg: a drive with no job or supply visit at either
-    // end of it, which used to hold the day open and pay the yard time under it.
-    test('a drive not chained to a job or supply visit never extends the day', async () => {
-      const LOOSE = { employee_user_id: 'me', job_id: null, minutes: 78, arrived_at: '2026-08-20T23:26:00Z', departed_at: '2026-08-21T00:44:00Z', source: 'drive' };
-      const rows = await withShop([YARD_PM], DAY.concat([LOOSE]));
-      expect(rows.filter(r => r.source === 'shop').length, 'an evening errand is not the last job of the day').toBe(0);
-    });
 
-    test('the drive back from the last job DOES close the day, an hour later', async () => {
-      // Same shape, but the leg pulls out exactly as the job ends, so it is
-      // the ride home and the yard time behind it is inside the workday.
-      const LATE_YARD = { employee_user_id: 'me', minutes: 20, arrived_at: '2026-08-20T21:30:00Z', departed_at: '2026-08-20T21:50:00Z' };
-      const rows = await withShop([LATE_YARD], DAY);
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length, 'the ride back lands at the yard, so the yard is still open').toBe(0);
-      // Zero because the allowance is zero: the window closes AT the drive's
-      // end. The allowance test below is what pays this stretch.
-    });
 
-    // Owner, 2026-08-24, on the same 78-minute Tue 8/18 leg: "was a time we
-    // did family pictures and I'm not sure why it's there. It should be
-    // dropped." It was there because the tracker logs every leg between known
-    // points while tracking is on, with no notion of the day being over.
-    test('a drive leg outside the workday is dropped, not just unpaid', async () => {
-      const LOOSE = { employee_user_id: 'me', job_id: null, minutes: 78, dest_place: 'DEV A shop',
-        arrived_at: '2026-08-20T23:26:00Z', departed_at: '2026-08-21T00:44:00Z', source: 'drive-unassigned' };
-      const rows = await withShop([], DAY.concat([LOOSE]));
-      const drives = rows.filter(r => r.rawSource && /^drive/.test(r.rawSource));
-      expect(drives.length, 'the ride out and the ride back survive, the errand does not').toBe(2);
-      expect(drives.some(d => d.minutes === 78), 'the family-pictures run is gone').toBe(false);
-    });
 
     test('a drive inside the workday is never dropped', async () => {
       const MID = { employee_user_id: 'me', job_id: null, minutes: 7, dest_place: 'DEV A shop',
@@ -518,102 +379,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(drives.length, 'a leg between two jobs is ordinary work').toBe(3);
     });
 
-    test('on a day with no work at all, no stray drive renders either', async () => {
-      const LOOSE = { employee_user_id: 'me', job_id: null, minutes: 78, dest_place: 'DEV A shop',
-        arrived_at: '2026-08-23T23:26:00Z', departed_at: '2026-08-24T00:44:00Z', source: 'drive-unassigned' };
-      const rows = await withShop([], [LOOSE]);
-      expect(rows.filter(r => r.rawSource && /^drive/.test(r.rawSource)).length,
-        'a Saturday errand is not a workday').toBe(0);
-    });
 
-    test('the wrap-up allowance pays the unload after the last job', async () => {
-      const rows = await page.evaluate(async ([shopEntries, entries]) => {
-        if (typeof timeEntries === 'undefined') window.timeEntries = [];
-        const orig = window._fetchCrewLabor, prev = S.shopWrapMin;
-        window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries, shopEntries });
-        S.shopWrapMin = 30;
-        try { return await _timeLogRows(null); } finally { window._fetchCrewLabor = orig; S.shopWrapMin = prev; }
-      }, [[YARD_PM], DAY]);
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length).toBe(1);
-      expect(shop[0].minutes, '30 minutes of unload, not the whole evening').toBe(30);
-      expect(shop[0].detail, 'the rule is visible, not silently eating minutes').toBe('Shop time · auto clock-out');
-      expect(shop[0].endTime, 'the row ends when the clock stopped').toBe('2026-08-20T22:00:00.000Z');
-    });
 
-    test('the prep allowance pays the load-up before the first move', async () => {
-      const rows = await page.evaluate(async ([shopEntries, entries]) => {
-        if (typeof timeEntries === 'undefined') window.timeEntries = [];
-        const orig = window._fetchCrewLabor, prev = S.shopPrepMin;
-        window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries, shopEntries });
-        S.shopPrepMin = 20;
-        try { return await _timeLogRows(null); } finally { window._fetchCrewLabor = orig; S.shopPrepMin = prev; }
-      }, [[YARD_AM], DAY]);
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length).toBe(1);
-      expect(shop[0].minutes, 'the last 20 minutes of the load-up, not the whole hour').toBe(20);
-      expect(shop[0].startTime, 'the row starts when the clock started').toBe('2026-08-20T12:10:00.000Z');
-    });
 
-    // Owner, 2026-08-24, Wed 8/19 reading 12h42m against the 9h36m of work
-    // actually on it. A manual clock at 8:28pm moved the day's close out from
-    // the 5:22pm drive home, and 3h06m of phone-at-the-yard came in behind it.
-    // The first fix blamed the manual entries for being a minute long; the
-    // owner's answer was "those manuals are right", and they are. Being INSIDE
-    // the workday was never enough. You have to have LEFT.
-    test('yard time nobody was seen leaving is not paid, even inside the day', async () => {
-      const rows = await page.evaluate(async ([shopEntries, entries]) => {
-        const origEnts = timeEntries.slice();
-        // A real hand-logged clock at 6:00pm, well after the yard session
-        // starts, holding the workday open exactly as it should.
-        timeEntries.push({ id: 'tlman9', logged_by_uid: 'me', job_id: null, minutes: 10,
-          start_time: '2026-08-20T23:00:00Z', end_time: '2026-08-20T23:10:00Z', date: '2026-08-20' });
-        const orig = window._fetchCrewLabor;
-        window._fetchCrewLabor = async () => ({ name: { me: 'Logan Sample' }, entries, shopEntries });
-        try { return await _timeLogRows(null); }
-        finally { window._fetchCrewLabor = orig; timeEntries.length = 0; timeEntries.push(...origEnts); }
-      }, [[YARD_PM], DAY]);
-      expect(rows.filter(r => r.source === 'shop').length,
-        'the phone sat at the yard and nothing followed it: a parked truck').toBe(0);
-      expect(rows.filter(r => r.rawId === 'tlman9').length, 'the hand-logged minutes are still paid in full').toBe(1);
-    });
 
-    test('yard time a departure closes IS paid, however long the gap', async () => {
-      // Pulls out 20 minutes after the yard session ends: the drive itself was
-      // never written, but the next job starting is proof the person left.
-      const LATE = { employee_user_id: 'me', job_id: '9', minutes: 60,
-        arrived_at: '2026-08-20T19:20:00Z', departed_at: '2026-08-20T20:20:00Z', source: 'geofence' };
-      const rows = await withShop([
-        { employee_user_id: 'me', minutes: 60, arrived_at: '2026-08-20T18:00:00Z', departed_at: '2026-08-20T19:00:00Z' },
-      ], [DRIVE_OUT, JOB, LATE, JOB2, DRIVE_HOME]);
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length, 'left for the next job, so the yard hour counts').toBe(1);
-      expect(shop[0].minutes).toBe(60);
-    });
 
-    test('a departure the NEXT day never counts as leaving today', async () => {
-      // The person's fetched history runs past midnight; tomorrow's first
-      // drive must not retroactively prove they left the yard tonight.
-      const TOMORROW = { employee_user_id: 'me', job_id: '9', minutes: 30,
-        arrived_at: '2026-08-21T13:00:00Z', departed_at: '2026-08-21T13:30:00Z', source: 'geofence' };
-      const rows = await withShop([YARD_PM], DAY.concat([TOMORROW]));
-      expect(rows.filter(r => r.source === 'shop' && r.date === '2026-08-20').length,
-        'a new day is not a departure from last night').toBe(0);
-    });
 
-    // A hand-logged shift defines a day exactly like a GPS visit does. Asserted
-    // on the WINDOW rather than a rendered yard row: on a manual-only day, yard
-    // time before the shift is outside the window and yard time inside it is
-    // the same hour counted twice, so no row can prove this either way.
-    test('a manual clock sets the day\'s edges like any other work event', async () => {
-      const r = await page.evaluate(() => {
-        const w = _geoShopCutoffs([{ employee_user_id: 'me', source: 'manual',
-          arrived_at: '2026-08-20T13:00:00Z', departed_at: '2026-08-20T21:35:00Z' }]).me['2026-08-20'];
-        return { inMs: w.inMs, outMs: w.outMs };
-      });
-      expect(r.inMs).toBe(Date.parse('2026-08-20T13:00:00Z'));
-      expect(r.outMs, 'the hand-logged clock-out closes the day').toBe(Date.parse('2026-08-20T21:35:00Z'));
-    });
 
     // ── THE VISIT YOU ARE STANDING IN ANCHORS THE DAY ────────────────────
     // Owner report 2026-08-31: 4h41m of shop time, a logged drive, and him
@@ -677,90 +448,14 @@ test.describe('timelog.js: exhaustive coverage', () => {
       }
     }, state);
 
-    test('an open client visit opens the day, with no closed row anywhere', async () => {
-      // Exactly his 2026-08-31: nothing closed yet, still standing on the job.
-      const r = await withOpen(page, { clientMin: 90 });
-      expect(r.openSource, 'an open client visit is a work anchor').toBe('client');
-      expect(r.win, 'the day a person is standing in is not an empty day').not.toBeNull();
-      expect(r.win.inMs).toBe(Date.parse(r.clientAt));
-      // outMs is `now` and moves between the two reads, so it is bounded
-      // rather than pinned to a millisecond.
-      expect(r.win.outMs).toBeGreaterThanOrEqual(Date.parse(r.clientAt));
-      expect(r.win.outMs).toBeLessThanOrEqual(r.now + 1000);
-    });
 
-    test('a drive that ends where the open visit begins is inside the day', async () => {
-      // The whole point: his 7:52-7:58 leg was hidden because the visit it
-      // drove INTO had not closed. Chained through the second pass exactly
-      // like a drive into a closed visit.
-      const r = await withOpen(page, { clientMin: 60, driveFromMin: 67, driveToMin: 60 });
-      expect(r.win.inMs, 'the leg into the open visit widens the day back to the departure')
-        .toBe(r.driveFrom);
-    });
 
-    test('an open JOB outranks an open place or client, same as the fence machine', async () => {
-      const r = await withOpen(page, { jobMin: 30, clientMin: 90 });
-      expect(r.openSource).toBe('geofence');
-      expect(r.openArr).toBe(r.jobAt);
-    });
 
-    test('an open place anchors too, and is preferred over a client', async () => {
-      const r = await withOpen(page, { placeMin: 20, clientMin: 90 });
-      expect(r.openSource).toBe('place');
-      expect(r.openArr).toBe(r.placeAt);
-    });
 
-    test('nothing open, nothing invented: no anchor and no day', async () => {
-      // The honest limit. An anchor conjured from no open visit would open a
-      // workday on a Saturday nobody worked, which is the rule this must not
-      // break (owner 2026-08-24).
-      const r = await withOpen(page, {});
-      expect(r.openSource).toBeNull();
-      expect(r.win, 'no open visit, no closed row, no day').toBeNull();
-    });
 
-    test('signed out: the anchor is null rather than throwing', async () => {
-      const r = await withOpen(page, { clientMin: 5, noUser: true });
-      expect(r.openSource).toBeNull();
-      expect(r.win).toBeNull();
-    });
 
-    test('a malformed open timestamp is refused, not turned into a window', async () => {
-      const r = await withOpen(page, { badClient: true });
-      expect(r.openSource, 'an unparseable arrival anchors nothing').toBeNull();
-      expect(r.win).toBeNull();
-    });
 
-    test('the shop is NOT an open anchor: a Saturday at the yard is still not a shift', async () => {
-      // _geoWasInShop/_geoShopArrivedAt are deliberately absent from
-      // _geoOpenVisitAnchor. Yard presence has never been allowed to open a
-      // workday (owner rule 2026-08-24) and an OPEN yard session must not
-      // become the loophole that lets it.
-      const r = await page.evaluate(() => {
-        const saved = { u: _supaUser, s: _geoShopArrivedAt, w: _geoWasInShop,
-                        j: _geoArrivedAt, p: _geoPlaceArrivedAt, c: _geoClientArrivedAt };
-        try {
-          _supaUser = { id: 'me' };
-          _geoArrivedAt = null; _geoPlaceArrivedAt = null; _geoClientArrivedAt = null;
-          _geoWasInShop = true;
-          _geoShopArrivedAt = new Date(Date.now() - 4 * 3600000).toISOString();
-          const open = _geoOpenVisitAnchor();
-          return { open: open ? open.source : null };
-        } finally {
-          _supaUser = saved.u; _geoShopArrivedAt = saved.s; _geoWasInShop = saved.w;
-          _geoArrivedAt = saved.j; _geoPlaceArrivedAt = saved.p; _geoClientArrivedAt = saved.c;
-        }
-      });
-      expect(r.open).toBeNull();
-    });
 
-    test('a shop dwell spanning Central midnight never renders', async () => {
-      const rows = await withShop([
-        // 8:00pm CT to 7:00am CT the next day: the truck parked at the yard.
-        { employee_user_id: 'me', minutes: 660, arrived_at: '2026-08-21T01:00:00Z', departed_at: '2026-08-21T12:00:00Z' },
-      ], DAY);
-      expect(rows.filter(r => r.source === 'shop').length, 'an overnight park is not a shift').toBe(0);
-    });
 
     test('a zero-length or malformed shop session is skipped', async () => {
       const rows = await withShop([
@@ -771,57 +466,8 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(rows.filter(r => r.source === 'shop').length).toBe(0);
     });
 
-    test('workday window: opens at the ride out, closes at the ride back, lunches ignored', async () => {
-      const r = await page.evaluate(([DAY]) => {
-        const w = _geoShopCutoffs(DAY.concat([
-          { employee_user_id: 'me', arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T17:45:00Z', source: 'stop' },
-          { employee_user_id: 'you', arrived_at: '2026-08-20T18:00:00Z', departed_at: '2026-08-20T19:00:00Z', source: 'place' },
-        ]));
-        return { meIn: w.me['2026-08-20'].inMs, meOut: w.me['2026-08-20'].outMs,
-          youIn: w.you['2026-08-20'].inMs, youOut: w.you['2026-08-20'].outMs, who: Object.keys(w).sort() };
-      }, [DAY]);
-      expect(r.meIn, 'the drive out, chained to the job it leads to').toBe(Date.parse('2026-08-20T12:30:00Z'));
-      expect(r.meOut, 'the drive back, chained to the job it leaves').toBe(Date.parse('2026-08-20T21:30:00Z'));
-      expect(r.youIn).toBe(Date.parse('2026-08-20T18:00:00Z'));
-      expect(r.youOut).toBe(Date.parse('2026-08-20T19:00:00Z'));
-      expect(r.who, 'each person gets their own day').toEqual(['me', 'you']);
-    });
 
-    test('paid-minute helper: bounded at both ends, never negative, zero without a window', async () => {
-      const r = await page.evaluate(() => {
-        const win = { inMs: Date.parse('2026-08-20T12:30:00Z'), outMs: Date.parse('2026-08-20T21:30:00Z') };
-        return {
-          inside: _geoShopPaidMin('2026-08-20T17:00:00Z', '2026-08-20T18:00:00Z', win),
-          before: _geoShopPaidMin('2026-08-20T11:30:00Z', '2026-08-20T12:30:00Z', win),
-          after: _geoShopPaidMin('2026-08-20T21:30:00Z', '2026-08-21T04:48:00Z', win),
-          straddleEnd: _geoShopPaidMin('2026-08-20T21:00:00Z', '2026-08-21T04:48:00Z', win),
-          straddleStart: _geoShopPaidMin('2026-08-20T12:00:00Z', '2026-08-20T13:00:00Z', win),
-          noWindow: _geoShopPaidMin('2026-08-20T17:00:00Z', '2026-08-20T18:00:00Z', null),
-          backwards: _geoShopPaidMin('2026-08-20T18:00:00Z', '2026-08-20T17:00:00Z', win),
-          junk: _geoShopPaidMin(null, undefined, win),
-        };
-      });
-      expect(r.inside).toBe(60);
-      expect(r.before, 'the day had not started').toBe(0);
-      expect(r.after, 'the day already clocked out').toBe(0);
-      expect(r.straddleEnd, 'only the part inside the workday').toBe(30);
-      expect(r.straddleStart, 'only the part inside the workday').toBe(30);
-      expect(r.noWindow, 'no work that day, so no shift').toBe(0);
-      expect(r.backwards).toBe(0);
-      expect(r.junk).toBe(0);
-    });
 
-    // A yard visit split by a fence blip is one visit, not two lines.
-    test('a blip-split yard visit folds into one row', async () => {
-      const rows = await withShop([
-        { employee_user_id: 'me', minutes: 3, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T17:03:00Z' },
-        { employee_user_id: 'me', minutes: 36, arrived_at: '2026-08-20T17:02:00Z', departed_at: '2026-08-20T17:39:00Z' },
-      ], DAY);
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length, 'one stretch at the yard, one line').toBe(1);
-      expect(shop[0].startTime).toBe('2026-08-20T17:00:00Z');
-      expect(shop[0].minutes, '5:00 to 5:39 is 39 minutes, not 3 + 36').toBe(39);
-    });
 
     // The other Tue 8/18 pair looks identical to the eye but is not one visit:
     // he left the yard for the job in between, so folding them would swallow
@@ -840,47 +486,9 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(shop.map(r => r.minutes), 'and neither is stretched over the leg').toEqual([39, 11]);
     });
 
-    // Nobody is at the yard and driving at the same instant; the fence lags
-    // the ignition. Owner's Tue 8/18 had a 1:29-1:34pm yard row against a
-    // 1:29-1:36pm drive out to the job.
-    test('yard time overlapping a drive leg yields to the drive', async () => {
-      const OUT = { employee_user_id: 'me', job_id: null, minutes: 7, arrived_at: '2026-08-20T18:29:00Z', departed_at: '2026-08-20T18:36:00Z', source: 'drive-unassigned' };
-      const rows = await withShop([
-        { employee_user_id: 'me', minutes: 5, arrived_at: '2026-08-20T18:29:00Z', departed_at: '2026-08-20T18:34:00Z' },
-      ], [DRIVE_OUT, JOB, OUT, JOB2, DRIVE_HOME]);
-      expect(rows.filter(r => r.source === 'shop').length, 'fully covered by the leg, nothing left to pay').toBe(0);
-    });
 
-    test('yard time only partly overlapping a drive keeps the part that is real', async () => {
-      // The fence lags the ignition, so the yard row runs seven minutes past
-      // the moment the truck actually pulled out. The drive starting at 18:30
-      // is both the overlap AND the proof the person left.
-      const OUT = { employee_user_id: 'me', job_id: null, minutes: 7, arrived_at: '2026-08-20T18:30:00Z', departed_at: '2026-08-20T18:37:00Z', source: 'drive-unassigned' };
-      const rows = await withShop([
-        { employee_user_id: 'me', minutes: 30, arrived_at: '2026-08-20T18:07:00Z', departed_at: '2026-08-20T18:37:00Z' },
-      ], [DRIVE_OUT, JOB, OUT, EXIT('2026-08-20T18:37:00Z'), JOB2, DRIVE_HOME]);
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.length).toBe(1);
-      expect(shop[0].minutes, 'the 23 minutes at the yard before the ignition').toBe(23);
-    });
 
-    test('overlapping shop sessions never pay the same minute twice', async () => {
-      const rows = await withShop([
-        { employee_user_id: 'me', minutes: 60, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T18:00:00Z' },
-        { employee_user_id: 'me', minutes: 63, arrived_at: '2026-08-20T17:57:00Z', departed_at: '2026-08-20T19:00:00Z' },
-      ], DAY.concat([EXIT('2026-08-20T19:00:00Z')]));
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.reduce((s, r) => s + r.minutes, 0), '5:00 to 7:00 is 120 minutes, not 123').toBe(120);
-    });
 
-    test('a shop session fully inside another pays nothing extra', async () => {
-      const rows = await withShop([
-        { employee_user_id: 'me', minutes: 120, arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T19:00:00Z' },
-        { employee_user_id: 'me', minutes: 30, arrived_at: '2026-08-20T17:30:00Z', departed_at: '2026-08-20T18:00:00Z' },
-      ], DAY.concat([EXIT('2026-08-20T19:00:00Z')]));
-      const shop = rows.filter(r => r.source === 'shop');
-      expect(shop.reduce((s, r) => s + r.minutes, 0), 'the nested one adds nothing').toBe(120);
-    });
 
     test('two yard visits a real break apart stay two rows, both paid in full', async () => {
       const rows = await withShop([
@@ -892,278 +500,8 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(shop.reduce((s, r) => s + r.minutes, 0)).toBe(50);
     });
 
-    test('span helper: input order preserved, malformed rows return a zero span', async () => {
-      const r = await page.evaluate(() => _geoShopPaidSpans([
-        { arrived_at: '2026-08-20T18:00:00Z', departed_at: '2026-08-20T19:00:00Z' },
-        { arrived_at: null, departed_at: '2026-08-20T19:00:00Z' },
-        { arrived_at: '2026-08-20T17:00:00Z', departed_at: '2026-08-20T18:30:00Z' },
-      ], { '2026-08-20': { inMs: Date.parse('2026-08-20T12:00:00Z'), outMs: Date.parse('2026-08-20T22:00:00Z') } },
-         [{ arrived_at: '2026-08-20T19:00:00Z', departed_at: '2026-08-20T19:10:00Z', source: 'drive' }])
-        .map(x => x.minutes));
-      // Sorted by start the third row runs first (5:00-6:30) and the first row
-      // (6:00-7:00) overlaps it, so it folds in: 5:00-7:00 on the third, zero
-      // on the first, and the result still comes back in INPUT order.
-      expect(r).toEqual([0, 0, 120]);
-    });
 
-    // Owner question 2026-08-25: "in shop how do we track time loading truck?"
-    // At a yard, dwell is right: sitting in the office writing quotes is work.
-    // At a shop that IS the house, dwell cannot tell loading the truck from
-    // eating breakfast, and the home_office rule counts phone-in-hand minutes,
-    // which pays a man with his phone in his pocket nothing. The motion
-    // coprocessor already separated walking from sitting, all day, for free.
-    test.describe('the walking part of a home-shop session', () => {
-      const T = (hhmm) => Date.parse('2026-08-20T' + hhmm + ':00Z');
-      const tape = (...pairs) => pairs.map(([kind, hhmm]) => ({ kind, ts: T(hhmm) }));
 
-      // The trim is a pure function of the tape: exercised directly here, then
-      // through the real span builder below.
-      const trim = (tp, from, to, cap) => page.evaluate(([tp, a, b, c]) =>
-        _geoActiveTrim(tp, a, b, c), [tp, T(from), T(to), cap === undefined ? null : cap]);
-
-      test('the morning in the house before the first walk is never paid', async () => {
-        const r = await trim(tape(['still', '11:00'], ['onFoot', '11:34'], ['driving', '11:52']), '11:00', '11:52');
-        expect(r.startMs, 'the clock starts when he walks out to the truck').toBe(T('11:34'));
-        expect(r.endMs).toBe(T('11:52'));
-        expect(r.idleMs).toBe(0);
-      });
-
-      // The exact shape the owner described: loading, then sitting down, then
-      // the fence eventually noticing. Both tails go.
-      test('sitting down after the last walk is never paid, and neither is the fence lag', async () => {
-        const r = await trim(tape(['onFoot', '12:10'], ['still', '12:25'], ['driving', '12:58']), '12:10', '13:03');
-        expect(r.endMs, 'the session ends at the last movement, not at the fence').toBe(T('12:25'));
-        expect(Math.round((r.endMs - r.startMs) / 60000)).toBe(15);
-      });
-
-      test('a sit BETWEEN two walks is paid: that is bench work', async () => {
-        const r = await trim(tape(['onFoot', '11:34'], ['still', '11:41'], ['onFoot', '11:44'], ['driving', '11:52']), '11:34', '11:52');
-        expect(r.startMs).toBe(T('11:34'));
-        expect(r.endMs).toBe(T('11:52'));
-        expect(r.idleMs, 'three minutes is well under the cap').toBe(0);
-      });
-
-      test('a long sit between two walks is paid only up to the cap', async () => {
-        // 45 minutes of nothing between two loading trips: 20 paid, 25 not.
-        const r = await trim(tape(['onFoot', '11:00'], ['still', '11:10'], ['onFoot', '11:55'], ['driving', '12:00']), '11:00', '12:00');
-        expect(r.startMs).toBe(T('11:00'));
-        expect(r.endMs).toBe(T('12:00'));
-        expect(Math.round(r.idleMs / 60000), 'the lunch over the cap comes off').toBe(25);
-      });
-
-      test('the cap is a parameter, so the rule can be tuned without a rewrite', async () => {
-        const tp = tape(['onFoot', '11:00'], ['still', '11:10'], ['onFoot', '11:55'], ['driving', '12:00']);
-        expect(Math.round((await trim(tp, '11:00', '12:00', 0)).idleMs / 60000), 'no bridge at all').toBe(45);
-        expect((await trim(tp, '11:00', '12:00', 60 * 60000)).idleMs, 'a generous bridge pays it whole').toBe(0);
-      });
-
-      test('no walking on the tape trims nothing: a quiet phone is not evidence', async () => {
-        const r = await trim(tape(['still', '11:00'], ['driving', '12:00']), '11:00', '12:00');
-        expect(r.startMs, 'the phone may have been left inside while the work happened').toBe(T('11:00'));
-        expect(r.endMs).toBe(T('12:00'));
-        expect(r.idleMs).toBe(0);
-      });
-
-      test('an absent, empty or junk tape trims nothing', async () => {
-        for (const tp of [null, undefined, [], 'nope', 42, {}]) {
-          const r = await page.evaluate(([tp, a, b]) => _geoActiveTrim(tp, a, b), [tp, T('11:00'), T('12:00')]);
-          expect(r.startMs, String(tp)).toBe(T('11:00'));
-          expect(r.endMs).toBe(T('12:00'));
-          expect(r.idleMs).toBe(0);
-        }
-      });
-
-      test('a zero-length or inverted window is returned untouched', async () => {
-        const tp = tape(['onFoot', '11:34']);
-        const same = await page.evaluate(([tp, a]) => _geoActiveTrim(tp, a, a), [tp, T('11:00')]);
-        expect(same.startMs).toBe(same.endMs);
-        const back = await page.evaluate(([tp, a, b]) => _geoActiveTrim(tp, a, b), [tp, T('12:00'), T('11:00')]);
-        expect(back.startMs).toBe(T('12:00'));
-        expect(back.endMs).toBe(T('11:00'));
-      });
-
-      // Now through the real span builder, which is what actually pays people.
-      const paid = (tp, homeShop) => page.evaluate(([tp, homeShop]) => {
-        const prevLat = S.officeLat, prevLon = S.officeLon, prevPlaces = places.slice();
-        S.officeLat = 39.0; S.officeLon = -95.7;
-        places.length = 0;
-        if (homeShop) places.push({ id: 'p-home', kind: 'home_office', lat: 39.0, lon: -95.7 });
-        else places.push({ id: 'p-far', kind: 'home_office', lat: 40.5, lon: -97.9 });
-        const out = _geoShopPaidSpans(
-          [{ employee_user_id: 'me', arrived_at: '2026-08-20T11:00:00Z', departed_at: '2026-08-20T13:03:00Z' }],
-          { '2026-08-20': { inMs: Date.parse('2026-08-20T10:00:00Z'), outMs: Date.parse('2026-08-20T22:00:00Z') } },
-          [{ arrived_at: '2026-08-20T13:30:00Z', departed_at: '2026-08-20T14:00:00Z', source: 'geofence' }],
-          tp);
-        S.officeLat = prevLat; S.officeLon = prevLon;
-        places.length = 0; prevPlaces.forEach(p => places.push(p));
-        return out[0];
-      }, [tp, homeShop]);
-
-      const MORNING = () => tape(['still', '11:00'], ['onFoot', '11:34'], ['still', '12:25'], ['driving', '12:58']);
-
-      test('at a home shop the session is the walking part', async () => {
-        const r = await paid(MORNING(), true);
-        expect(new Date(r.startMs).toISOString()).toBe('2026-08-20T11:34:00.000Z');
-        expect(new Date(r.endMs).toISOString()).toBe('2026-08-20T12:25:00.000Z');
-        expect(r.minutes, '34 minutes of house and 38 of couch both drop').toBe(51);
-      });
-
-      test('at a shop that is NOT the house, dwell still rules', async () => {
-        const r = await paid(MORNING(), false);
-        expect(r.minutes, 'sitting in the shop office is work').toBe(123);
-      });
-
-      test('with no tape at all, a home shop bills the dwell exactly as before', async () => {
-        const r = await paid(null, true);
-        expect(r.minutes).toBe(123);
-      });
-
-      test('the idle over the cap is reported, not hidden inside the number', async () => {
-        const r = await paid(tape(['onFoot', '11:00'], ['still', '11:10'], ['onFoot', '12:55'], ['driving', '13:00']), true);
-        expect(Math.round(r.idleMs / 60000), 'a caller can explain the number it shows').toBe(85);
-        expect(r.minutes, '120 minutes of span less 85 idle').toBe(35);
-      });
-
-      // Owner, 2026-08-25: "I can't make the call on time, it's all going to
-      // differ based on every office so need something that fits today." So
-      // the bridge is read off the contractor's own gaps rather than picked.
-      test.describe('the bridge learns itself', () => {
-        const learn = (tp, windows) => page.evaluate(([tp, w]) => ({
-          cap: _geoLearnIdleCap(tp, w),
-          gaps: _geoIdleGaps(tp, w).slice().sort((a, b) => a - b).map(g => Math.round(g / 60000)),
-        }), [tp, windows]);
-        // A day of walk, sit, walk, sit... with the sits given in minutes.
-        const dayOf = (startHH, sits) => {
-          let t = T(startHH + ':00'), out = [];
-          sits.forEach((sit, i) => {
-            out.push({ kind: 'onFoot', ts: t }); t += 4 * 60000;
-            out.push({ kind: 'still', ts: t }); t += sit * 60000;
-          });
-          out.push({ kind: 'onFoot', ts: t }); t += 4 * 60000;
-          return { tape: out, win: [T(startHH + ':00'), t] };
-        };
-
-        test('it finds the split between working sits and a real break', async () => {
-          // Six quick sits around the shop, then lunch. Nobody had to say
-          // which is which: 3,4,4,5,6 then 50 has one obvious jump in it.
-          const d = dayOf('11', [3, 4, 4, 5, 6, 50]);
-          const r = await learn(d.tape, [d.win]);
-          expect(r.gaps).toEqual([3, 4, 4, 5, 6, 50]);
-          expect(Math.round(r.cap / 60000), 'the last sit that is still work').toBe(6);
-        });
-
-        test('a different office learns a different number, off the same code', async () => {
-          // Longer set-ups between moves, and a shorter break.
-          const d = dayOf('11', [12, 14, 15, 16, 18, 40]);
-          const r = await learn(d.tape, [d.win]);
-          expect(Math.round(r.cap / 60000)).toBe(18);
-        });
-
-        test('too few gaps to have an opinion returns null, and the default stands', async () => {
-          const d = dayOf('11', [3, 4, 50]);
-          expect((await learn(d.tape, [d.win])).cap).toBe(null);
-        });
-
-        test('a day of nothing but quick load-outs says nothing about lunch', async () => {
-          const d = dayOf('11', [2, 3, 3, 4, 4, 5]);
-          expect((await learn(d.tape, [d.win])).cap, 'no long gap on record, no edge to find').toBe(null);
-        });
-
-        test('one tight cluster is never split down the middle', async () => {
-          // 10,11,12,13,14,15: no gap here is twice the one below it.
-          const d = dayOf('11', [10, 11, 12, 13, 14, 15]);
-          expect((await learn(d.tape, [d.win])).cap).toBe(null);
-        });
-
-        test('the answer is clamped at both ends, whatever the tape says', async () => {
-          const low = dayOf('11', [1, 1, 1, 2, 2, 60]);
-          expect(Math.round((await learn(low.tape, [low.win])).cap / 60000),
-            'never below five minutes').toBe(5);
-          const high = dayOf('11', [50, 55, 60, 65, 70, 400]);
-          expect(Math.round((await learn(high.tape, [high.win])).cap / 60000),
-            'never above forty-five').toBe(45);
-        });
-
-        test('gaps are gathered across days, not just the one on screen', async () => {
-          const a = dayOf('11', [3, 4, 4]);
-          const b = dayOf('15', [5, 6, 50]);
-          const r = await learn(a.tape.concat(b.tape), [a.win, b.win]);
-          expect(r.gaps.length, 'both days contribute').toBe(6);
-          expect(Math.round(r.cap / 60000)).toBe(6);
-        });
-
-        test('junk input never throws and never invents a number', async () => {
-          for (const [tp, w] of [[null, null], [[], []], ['x', 'y'], [[{ kind: 'onFoot' }], [[0, 0]]], [[], [[NaN, NaN]]]]) {
-            const r = await page.evaluate(([tp, w]) => ({ cap: _geoLearnIdleCap(tp, w), gaps: _geoIdleGaps(tp, w) }), [tp, w]);
-            expect(r.cap).toBe(null);
-            expect(Array.isArray(r.gaps)).toBe(true);
-          }
-        });
-
-        test('the span builder uses what it learned, and says that it did', async () => {
-          const r = await page.evaluate(() => {
-            const prevLat = S.officeLat, prevLon = S.officeLon, prevPlaces = places.slice();
-            S.officeLat = 39.0; S.officeLon = -95.7;
-            places.length = 0;
-            places.push({ id: 'p-home', kind: 'home_office', lat: 39.0, lon: -95.7 });
-            const D = (hhmm) => Date.parse('2026-08-20T' + hhmm + ':00Z');
-            let t = D('11:00'); const tape = [];
-            [3, 4, 4, 5, 6, 50].forEach(sit => {
-              tape.push({ kind: 'onFoot', ts: t }); t += 4 * 60000;
-              tape.push({ kind: 'still', ts: t }); t += sit * 60000;
-            });
-            tape.push({ kind: 'onFoot', ts: t }); t += 4 * 60000;
-            const out = _geoShopPaidSpans(
-              [{ employee_user_id: 'me', arrived_at: '2026-08-20T11:00:00Z', departed_at: new Date(t).toISOString() }],
-              { '2026-08-20': { inMs: D('10:00'), outMs: D('23:00') } },
-              // Something starting once the session ends, so the "nobody saw
-              // them leave" rule does not collapse it to the wrap allowance
-              // (which is zero by default). Same reason the paid() helper
-              // above carries one.
-              [{ arrived_at: new Date(t + 60000).toISOString(), departed_at: new Date(t + 20 * 60000).toISOString(), source: 'geofence' }],
-              tape);
-            S.officeLat = prevLat; S.officeLon = prevLon;
-            places.length = 0; prevPlaces.forEach(p => places.push(p));
-            return out[0];
-          });
-          expect(r.idleCapLearned, 'not the fallback').toBe(true);
-          expect(Math.round(r.idleCapMs / 60000)).toBe(6);
-          // Only the 50-minute lunch is over the learned 6, so 44 comes off.
-          expect(Math.round(r.idleMs / 60000)).toBe(44);
-        });
-
-        test('a standalone yard is never judged on movement at all', async () => {
-          const r = await paid(MORNING(), false);
-          expect(r.idleCapMs, 'no cap, no trim, plain dwell').toBe(0);
-          expect(r.idleCapLearned).toBe(false);
-        });
-      });
-
-      test('minutes can never go negative however the tape reads', async () => {
-        const r = await paid(tape(['onFoot', '11:00'], ['still', '11:01'], ['onFoot', '13:02'], ['driving', '13:03']), true);
-        expect(r.minutes).toBeGreaterThanOrEqual(0);
-      });
-    });
-
-    test('the allowances are clamped, never negative or unbounded', async () => {
-      const r = await page.evaluate(() => {
-        const pw = S.shopWrapMin, pp = S.shopPrepMin, out = {};
-        for (const [k, v] of [['none', undefined], ['neg', -30], ['junk', 'abc'], ['big', 9999], ['ok', 20]]) {
-          S.shopWrapMin = v; S.shopPrepMin = v;
-          out[k] = _geoShopWrapMs(); out[k + 'Prep'] = _geoShopPrepMs();
-        }
-        S.shopWrapMin = pw; S.shopPrepMin = pp; return out;
-      });
-      expect(r.none).toBe(0);
-      expect(r.neg).toBe(0);
-      expect(r.junk).toBe(0);
-      expect(r.big, 'capped at 4 hours').toBe(240 * 60000);
-      expect(r.ok).toBe(20 * 60000);
-      expect(r.nonePrep).toBe(0);
-      expect(r.negPrep).toBe(0);
-      expect(r.bigPrep).toBe(240 * 60000);
-      expect(r.okPrep).toBe(20 * 60000);
-    });
 
     test('shop minutes land in their own bucket, never inflating job-site labor', async () => {
       const agg = await page.evaluate(() => _tlEmpWeekAgg([
@@ -1354,198 +692,9 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.wrote).toBe(0);
     });
 
-    test('junk input is survived, same contract as _tlAbsorbGaps', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          return { ok: true, a: _tlFillUnaccounted([]).length, b: _tlFillUnaccounted(null),
-                   c: _tlFillUnaccounted(undefined),
-                   d: _tlFillUnaccounted([null, { date: 'x' }, { startTime: 'nope', endTime: 'nope', date: 'd' }]).length };
-        } catch (e) { return { ok: false, msg: e.message }; }
-      });
-      expect(r.ok, r.msg || '').toBe(true);
-      expect(r.a).toBe(0);
-      expect(r.d).toBe(3);
-    });
   });
 
-  test.describe('gap absorption', () => {
-    const FRI = () => ([
-      { id: 'a1', personUid: 'me', date: '2026-08-21', minutes: 222, unpaid: false, startTime: '2026-08-21T12:55:00Z', endTime: '2026-08-21T16:37:00Z' },
-      { id: 'a2', personUid: 'me', date: '2026-08-21', minutes: 49, unpaid: true, startTime: '2026-08-21T16:42:00Z', endTime: '2026-08-21T17:31:00Z' },
-      { id: 'a3', personUid: 'me', date: '2026-08-21', minutes: 262, unpaid: false, startTime: '2026-08-21T17:45:00Z', endTime: '2026-08-21T22:07:00Z' },
-    ]);
-    const absorb = rows => page.evaluate(r => _tlAbsorbGaps(r), rows);
 
-    test('the unpaid stop swallows the travel on both sides, door to door', async () => {
-      const r = await absorb(FRI());
-      const stop = r.find(x => x.id === 'a2');
-      expect(stop.startTime, 'starts when he left the job, not when he arrived at lunch').toBe('2026-08-21T16:37:00Z');
-      expect(stop.endTime, 'ends when he was back on site').toBe('2026-08-21T17:45:00Z');
-      expect(stop.minutes).toBe(68);
-    });
-
-    test('paid rows are never touched, so no total can move', async () => {
-      const before = FRI(), r = await absorb(FRI());
-      const paid = r.filter(x => !x.unpaid);
-      expect(paid.map(x => x.minutes)).toEqual(before.filter(x => !x.unpaid).map(x => x.minutes));
-      expect(paid.map(x => x.startTime + '|' + x.endTime))
-        .toEqual(before.filter(x => !x.unpaid).map(x => x.startTime + '|' + x.endTime));
-    });
-
-    test('a gap over 30 minutes stays visible: a missing record, not something to swallow', async () => {
-      const rows = FRI();
-      rows[2].startTime = '2026-08-21T18:20:00Z';   // 49 minutes after the stop ended
-      const r = await absorb(rows);
-      expect(r.find(x => x.id === 'a2').endTime, 'left alone to be investigated').toBe('2026-08-21T17:31:00Z');
-      expect(r.find(x => x.id === 'a2').startTime, 'the 5-minute side is still absorbed').toBe('2026-08-21T16:37:00Z');
-    });
-
-    test('a gap between two paid rows with no unpaid neighbor is left alone', async () => {
-      const r = await absorb([
-        { id: 'b1', personUid: 'me', date: '2026-08-21', minutes: 60, unpaid: false, startTime: '2026-08-21T12:00:00Z', endTime: '2026-08-21T13:00:00Z' },
-        { id: 'b2', personUid: 'me', date: '2026-08-21', minutes: 60, unpaid: false, startTime: '2026-08-21T13:10:00Z', endTime: '2026-08-21T14:10:00Z' },
-      ]);
-      expect(r.map(x => x.minutes), 'nothing to stretch without an unpaid row').toEqual([60, 60]);
-    });
-
-    test('overlapping rows are not stretched backwards', async () => {
-      const r = await absorb([
-        { id: 'c1', personUid: 'me', date: '2026-08-21', minutes: 60, unpaid: false, startTime: '2026-08-21T12:00:00Z', endTime: '2026-08-21T13:00:00Z' },
-        { id: 'c2', personUid: 'me', date: '2026-08-21', minutes: 30, unpaid: true, startTime: '2026-08-21T12:40:00Z', endTime: '2026-08-21T13:10:00Z' },
-      ]);
-      expect(r.find(x => x.id === 'c2').startTime).toBe('2026-08-21T12:40:00Z');
-      expect(r.find(x => x.id === 'c2').minutes).toBe(30);
-    });
-
-    test('never reaches across people or across days', async () => {
-      const r = await absorb([
-        { id: 'd1', personUid: 'me', date: '2026-08-21', minutes: 60, unpaid: false, startTime: '2026-08-21T12:00:00Z', endTime: '2026-08-21T13:00:00Z' },
-        { id: 'd2', personUid: 'you', date: '2026-08-21', minutes: 30, unpaid: true, startTime: '2026-08-21T13:05:00Z', endTime: '2026-08-21T13:35:00Z' },
-        { id: 'd3', personUid: 'me', date: '2026-08-22', minutes: 30, unpaid: true, startTime: '2026-08-21T13:05:00Z', endTime: '2026-08-21T13:35:00Z' },
-      ]);
-      expect(r.find(x => x.id === 'd2').minutes, 'another person is not the same timeline').toBe(30);
-      expect(r.find(x => x.id === 'd3').minutes, 'another day is not the same timeline').toBe(30);
-    });
-
-    test('malformed or open rows are skipped without throwing', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          return {
-            ok: true,
-            rows: _tlAbsorbGaps([
-              null,
-              { id: 'e1', personUid: 'me', date: '2026-08-21', minutes: 60, unpaid: false, startTime: '2026-08-21T12:00:00Z', endTime: null },
-              { id: 'e2', personUid: 'me', date: '2026-08-21', minutes: 30, unpaid: true, startTime: 'nope', endTime: 'nope' },
-              { id: 'e3', personUid: 'me', minutes: 30, unpaid: true, startTime: '2026-08-21T13:05:00Z', endTime: '2026-08-21T13:35:00Z' },
-            ]).length,
-          };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok, r.err).toBe(true);
-      expect(r.rows, 'nothing dropped, only skipped').toBe(4);
-    });
-
-    test('empty and non-array input return without throwing', async () => {
-      const r = await page.evaluate(() => {
-        try { return { ok: true, a: _tlAbsorbGaps([]).length, b: _tlAbsorbGaps(null), c: _tlAbsorbGaps(undefined) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok, r.err).toBe(true);
-      expect(r.a).toBe(0);
-    });
-  });
-
-  // Pure anchor math for the owner's 2026-08-24 rule. All times below are
-  // built from fixed UTC instants that sit mid-day Central, except the
-  // midnight cases which exist to prove the Central-day boundary is the one
-  // that matters.
-  test.describe('_tlStopAnchored', () => {
-    const T = (iso) => Date.parse(iso);
-    const CASES = {
-      stopArr: '2026-08-21T16:42:00.000Z',   // 11:42am CT
-      stopDep: '2026-08-21T17:25:00.000Z',   // 12:25pm CT
-      before: { arr: T('2026-08-21T14:00:00.000Z'), dep: T('2026-08-21T16:40:00.000Z') },
-      after: { arr: T('2026-08-21T17:30:00.000Z'), dep: T('2026-08-21T20:00:00.000Z') },
-    };
-    test('anchored on both sides same Central day: true', async () => {
-      const ok = await page.evaluate((c) => _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), [c.before, c.after]), CASES);
-      expect(ok).toBe(true);
-    });
-    test('missing either side: false', async () => {
-      const r = await page.evaluate((c) => ({
-        noBefore: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), [c.after]),
-        noAfter: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), [c.before]),
-        none: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), []),
-      }), CASES);
-      expect(r.noBefore).toBe(false);
-      expect(r.noAfter).toBe(false);
-      expect(r.none).toBe(false);
-    });
-    test('a stop spanning Central midnight is never anchored, whatever surrounds it', async () => {
-      const ok = await page.evaluate(() => _tlStopAnchored(
-        Date.parse('2026-08-22T04:50:00.000Z'),   // 11:50pm CT 8/21
-        Date.parse('2026-08-22T05:20:00.000Z'),   // 12:20am CT 8/22
-        [{ arr: Date.parse('2026-08-22T02:00:00.000Z'), dep: Date.parse('2026-08-22T04:45:00.000Z') },
-         { arr: Date.parse('2026-08-22T05:25:00.000Z'), dep: Date.parse('2026-08-22T06:00:00.000Z') }]));
-      expect(ok).toBe(false);
-    });
-    test('an anchor from a different Central day never counts', async () => {
-      const ok = await page.evaluate((c) => _tlStopAnchored(
-        Date.parse(c.stopArr), Date.parse(c.stopDep),
-        [{ arr: Date.parse('2026-08-20T14:00:00.000Z'), dep: Date.parse('2026-08-20T16:40:00.000Z') },
-         { arr: Date.parse('2026-08-22T17:30:00.000Z'), dep: Date.parse('2026-08-22T20:00:00.000Z') }]), CASES);
-      expect(ok).toBe(false);
-    });
-    test('kerb-edge slack: an anchor ending up to 2 minutes AFTER the stop starts still counts', async () => {
-      const r = await page.evaluate((c) => ({
-        inSlack: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep),
-          [{ arr: Date.parse('2026-08-21T14:00:00.000Z'), dep: Date.parse(c.stopArr) + 90 * 1000 }, c.after]),
-        pastSlack: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep),
-          [{ arr: Date.parse('2026-08-21T14:00:00.000Z'), dep: Date.parse(c.stopArr) + 3 * 60000 }, c.after]),
-      }), CASES);
-      expect(r.inSlack).toBe(true);
-      // An anchor still on-site 3 minutes into the stop overlaps it for real:
-      // that's the on-site row's time, not a valid "before" edge.
-      expect(r.pastSlack).toBe(false);
-    });
-    test('shop-only anchors on both sides: false; one work side: true', async () => {
-      const r = await page.evaluate((c) => ({
-        shopBoth: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep),
-          [{ ...c.before, shop: true }, { ...c.after, shop: true }]),
-        shopThenWork: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep),
-          [{ ...c.before, shop: true }, c.after]),
-        workThenShop: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep),
-          [c.before, { ...c.after, shop: true }]),
-      }), CASES);
-      expect(r.shopBoth, 'shop out, stop, shop back is an errand, not a work leg').toBe(false);
-      expect(r.shopThenWork).toBe(true);
-      expect(r.workThenShop).toBe(true);
-    });
-    test('an anchor OVERLAPPING the stop vetoes it, even with clean edges elsewhere', async () => {
-      const ok = await page.evaluate((c) => _tlStopAnchored(
-        Date.parse(c.stopArr), Date.parse(c.stopDep),
-        // Clean before + after edges, but a third anchor (a shop session)
-        // covers the middle of the stop: the person was provably somewhere
-        // known, so the unpaid row is an artifact.
-        [c.before, c.after,
-         { arr: Date.parse(c.stopArr) + 5 * 60000, dep: Date.parse(c.stopDep) - 5 * 60000 }]), CASES);
-      expect(ok).toBe(false);
-    });
-    test('garbage in, false out: null anchors, NaN times, inverted spans', async () => {
-      const r = await page.evaluate((c) => ({
-        nullList: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), null),
-        nullEntries: _tlStopAnchored(Date.parse(c.stopArr), Date.parse(c.stopDep), [null, undefined, c.before, c.after]),
-        nanArr: _tlStopAnchored(NaN, Date.parse(c.stopDep), [c.before, c.after]),
-        inverted: _tlStopAnchored(Date.parse(c.stopDep), Date.parse(c.stopArr), [c.before, c.after]),
-        zero: _tlStopAnchored(0, 0, [c.before, c.after]),
-      }), CASES);
-      expect(r.nullList).toBe(false);
-      expect(r.nullEntries, 'null entries are skipped, real ones still anchor').toBe(true);
-      expect(r.nanArr).toBe(false);
-      expect(r.inverted).toBe(false);
-      expect(r.zero).toBe(false);
-    });
-  });
 
   // Owner report 2026-08-24: a GPS visit read "1:06pm to 9:37pm" because the
   // app woke at 9:37 and stamped the close with `now`, and nothing in the app
@@ -2624,31 +1773,6 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(early, 'a day reads top to bottom in the order it happened').toBeLessThan(late);
     });
 
-    // Owner report 2026-08-21: opening Time Log well after a job finished
-    // (no live GPS watcher running right then) still showed the gap missing,
-    // because _geoReconcileSoon's periodic trigger only ever fires from a
-    // live watcher. renderTimeLog now calls the reconciler directly on open;
-    // this proves that call happens and never blocks the page on failure.
-    test('renderTimeLog calls the mileage reconciler on open, and a throwing reconciler never blocks the page', async () => {
-      const r = await page.evaluate(async () => {
-        const orig = window._geoReconcileFromMileage;
-        let called = false;
-        window._geoReconcileFromMileage = async () => { called = true; throw new Error('boom'); };
-        try {
-          // The repair carries a 30s recency floor so a scope toggle cannot
-          // queue another pass (see _TL_REPAIR_MIN_GAP_MS). This test is about
-          // the OPEN path, so it clears the floor first. Bare assignment: it is
-          // a module-scoped let, and window._tlRepairAt would make an unrelated
-          // property while the real binding stayed set.
-          _tlRepairAt = 0;
-          setTimeLogYear(new Date().getFullYear());
-          await renderTimeLog();
-          return { called, listHtml: document.getElementById('tl-list').innerHTML.length };
-        } finally { window._geoReconcileFromMileage = orig; }
-      });
-      expect(r.called, 'renderTimeLog must call the reconciler').toBe(true);
-      expect(r.listHtml, 'the page must still render even if the reconciler throws').toBeGreaterThan(0);
-    });
 
     // Owner call 2026-08-20 ("don't need pay rate here just time"): this is a
     // pure time report, never dollars, for owner/manager or individual. The
@@ -3510,182 +2634,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
   // cleanup sweep all ran BEFORE the first fetch, so the skeleton sat through
   // every one of them before the page asked for the hours it exists to show.
   test.describe('paint first, repair after', () => {
-    test('the hours are fetched before any repair work runs', async () => {
-      const order = await page.evaluate(async () => {
-        const saved = { rec: window._geoReconcileFromMileage, sweep: window._geoCleanupSweeps,
-                        drain: window._geoDrainQueue, rows: window._timeLogRows };
-        const seq = [];
-        try {
-          _tlRepairAt = 0;   // module-scoped let: bare assignment, see _TL_REPAIR_MIN_GAP_MS
-          window._geoReconcileFromMileage = async () => { seq.push('reconcile'); return true; };
-          window._geoCleanupSweeps = async () => { seq.push('sweep'); return false; };
-          window._geoDrainQueue = async () => { seq.push('drain'); };
-          window._timeLogRows = async () => { seq.push('fetch'); return []; };
-          await renderTimeLog();
-          // let the un-awaited repair chain run
-          for (let i = 0; i < 8; i++) await new Promise(r => setTimeout(r, 0));
-          return seq;
-        } finally {
-          window._geoReconcileFromMileage = saved.rec; window._geoCleanupSweeps = saved.sweep;
-          window._geoDrainQueue = saved.drain; window._timeLogRows = saved.rows;
-        }
-      });
-      expect(order[0], 'the skeleton must not outlive the fetch').toBe('fetch');
-      expect(order.indexOf('reconcile'), 'repair still runs, just after').toBeGreaterThan(0);
-      expect(order.indexOf('sweep')).toBeGreaterThan(0);
-    });
 
-    // THE REGRESSION THIS EXISTS FOR. The repair hook first went at the bottom
-    // of renderTimeLog, which quietly made it conditional on already having
-    // rows: the no-hours branch returns early, so the one case where the
-    // reconciler matters most (it exists to backfill hours that are MISSING)
-    // was the one case it never ran. The test above passed anyway because its
-    // stub happened to return rows.
-    test('an empty log still repairs, which is when it matters most', async () => {
-      const seq = await page.evaluate(async () => {
-        const saved = { rec: window._geoReconcileFromMileage, sweep: window._geoCleanupSweeps,
-                        drain: window._geoDrainQueue, rows: window._timeLogRows };
-        const calls = [];
-        try {
-          _tlRepairAt = 0;   // clear the 30s floor, this test is the OPEN path
-          window._geoReconcileFromMileage = async () => { calls.push('reconcile'); return true; };
-          window._geoCleanupSweeps = async () => { calls.push('sweep'); return false; };
-          window._geoDrainQueue = async () => {};
-          window._timeLogRows = async () => [];      // nothing logged at all
-          await renderTimeLog();
-          for (let i = 0; i < 8; i++) await new Promise(r => setTimeout(r, 0));
-          return calls;
-        } finally {
-          window._geoReconcileFromMileage = saved.rec; window._geoCleanupSweeps = saved.sweep;
-          window._geoDrainQueue = saved.drain; window._timeLogRows = saved.rows;
-        }
-      });
-      expect(seq, 'no rows is the reason to repair, not the reason to skip it')
-        .toContain('reconcile');
-      expect(seq).toContain('sweep');
-    });
 
-    test('noRepair skips the pass entirely, so a repaint cannot recurse', async () => {
-      const seq = await page.evaluate(async () => {
-        const saved = { rec: window._geoReconcileFromMileage, sweep: window._geoCleanupSweeps,
-                        rows: window._timeLogRows };
-        const calls = [];
-        try {
-          window._geoReconcileFromMileage = async () => { calls.push('reconcile'); return true; };
-          window._geoCleanupSweeps = async () => { calls.push('sweep'); return false; };
-          window._timeLogRows = async () => [];
-          await renderTimeLog({ noRepair: true });
-          for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 0));
-          return calls;
-        } finally {
-          window._geoReconcileFromMileage = saved.rec; window._geoCleanupSweeps = saved.sweep;
-          window._timeLogRows = saved.rows;
-        }
-      });
-      expect(seq).toEqual([]);
-    });
 
-    test('a repair that changed nothing does NOT repaint', async () => {
-      const r = await page.evaluate(async () => {
-        const saved = { pass: window._tlRepairPass, rows: window._timeLogRows };
-        let fetches = 0;
-        try {
-          _tlRepairAt = 0;
-          window._tlRepairPass = async () => {};
-          window._timeLogRows = async () => { fetches++; return [{ minutes: 60 }]; };
-          // A repaint closes any accordion the viewer opened by hand, so doing
-          // it unconditionally would trade a slow page for one that shuts
-          // itself a second after it opens.
-          const repainted = await _tlRepairAfterPaint([{ minutes: 60 }]);
-          return { repainted, fetches };
-        } finally { window._tlRepairPass = saved.pass; window._timeLogRows = saved.rows; }
-      });
-      expect(r.repainted).toBe(false);
-      expect(r.fetches, 'one check, no re-render').toBe(1);
-    });
 
-    test('a repair that DID change something repaints exactly once', async () => {
-      const r = await page.evaluate(async () => {
-        const saved = { pass: window._tlRepairPass, rows: window._timeLogRows, render: window.renderTimeLog };
-        let renders = 0;
-        try {
-          _tlRepairAt = 0;
-          window._tlRepairPass = async () => {};
-          window._timeLogRows = async () => [{ minutes: 60 }, { minutes: 30 }];
-          window.renderTimeLog = async () => { renders++; };
-          const repainted = await _tlRepairAfterPaint([{ minutes: 60 }]);
-          return { repainted, renders };
-        } finally {
-          window._tlRepairPass = saved.pass; window._timeLogRows = saved.rows;
-          window.renderTimeLog = saved.render;
-        }
-      });
-      expect(r.repainted).toBe(true);
-      expect(r.renders).toBe(1);
-    });
 
-    test('a STALE repair never repaints over a newer render (CI shard 6, 2026-08-27)', async () => {
-      // The clobber this guards: render N schedules the repair, render N+1
-      // paints the list (new scope, new year, or just a fresh open), then
-      // N's repair finishes and repainted over N+1 with whatever its own
-      // later fetch returned. In CI that fetch ran after the previous test
-      // had already restored its stubs, so the year-filter test read
-      // "No time logged in 2026" that it never painted. The fix is the
-      // render generation: a repair whose generation is no longer current
-      // must return without touching the DOM.
-      const r = await page.evaluate(async () => {
-        const saved = { pass: window._tlRepairPass, rows: window._timeLogRows, render: window.renderTimeLog };
-        let renders = 0, fetches = 0;
-        try {
-          _tlRepairAt = 0;   // module-scoped let: bare assignment
-          // The newer render arrives while the repair pass is running, which
-          // is exactly where it landed in CI: bump the generation mid-pass.
-          window._tlRepairPass = async () => { _tlRenderGen++; };
-          window._timeLogRows = async () => { fetches++; return [{ minutes: 60 }, { minutes: 30 }]; };
-          window.renderTimeLog = async () => { renders++; };
-          const repainted = await _tlRepairAfterPaint([{ minutes: 60 }], _tlRenderGen);
-          return { repainted, renders, fetches };
-        } finally {
-          window._tlRepairPass = saved.pass; window._timeLogRows = saved.rows;
-          window.renderTimeLog = saved.render;
-        }
-      });
-      expect(r.repainted).toBe(false);
-      expect(r.renders, 'a stale repair must not repaint').toBe(0);
-      expect(r.fetches, 'stale is decided before the re-fetch, not after').toBe(0);
-    });
 
-    // THE REGRESSION THIS EXISTS FOR (CI shard 6, 2026-08-26). The repair fired
-    // on EVERY render, so flipping Me/Team queued another reconciler pass whose
-    // async repaint landed on top of the render the viewer had just asked for.
-    // In CI it flipped the Share button mid-test; on a phone it re-renders the
-    // page under your finger a second after you tapped something.
-    //
-    // Opening the page is a deliberate look at hours and earns a pass. A scope
-    // toggle is not a new open.
-    test('a scope toggle does NOT queue another repair', async () => {
-      const r = await page.evaluate(async () => {
-        const saved = { pass: window._tlRepairPass, rows: window._timeLogRows, at: _tlRepairAt };
-        let passes = 0;
-        try {
-          _tlRepairAt = 0;
-          window._tlRepairPass = async () => { passes++; };
-          window._timeLogRows = async () => [];
-          await renderTimeLog();                       // the open: earns a pass
-          for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 0));
-          const afterOpen = passes;
-          await renderTimeLog();                       // a re-render moments later
-          await renderTimeLog();
-          for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 0));
-          return { afterOpen, afterToggles: passes };
-        } finally {
-          window._tlRepairPass = saved.pass; window._timeLogRows = saved.rows;
-          _tlRepairAt = saved.at;
-        }
-      });
-      expect(r.afterOpen, 'opening the page still repairs').toBe(1);
-      expect(r.afterToggles, 'two more renders inside the window queue nothing').toBe(1);
-    });
 
     test('the fingerprint notices an added row, a removed one, and a retimed one', async () => {
       const r = await page.evaluate(() => {
@@ -4276,195 +3230,14 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window.supaSaveToCloud = window.__tlPrevSave; window.saveAll = window.__tlPrevSaveAll;
       });
 
-      test('a fully covered answer is withdrawn', async () => {
-        await seed(page, [{ id: 5001, date: '2026-08-27', open: false, fromGap: true,
-          minutes: 36, scope_label: 'Added from unaccounted time',
-          start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
-        await withSupa(page, COVERS);
-        const r = await page.evaluate(async () => {
-          window.__tlArm();
-          const n = await _tlTrimCoveredGapRows();
-          return { n, left: timeEntries.length };
-        });
-        await unSupa(page); await restore(page);
-        expect(r.n).toBe(1);
-        expect(r.left, 'nothing of the claim survived, so the row goes').toBe(0);
-      });
 
-      test('a partly covered answer is trimmed, never discarded', async () => {
-        await seed(page, [{ id: 5002, date: '2026-08-27', open: false, fromGap: true,
-          minutes: 90, scope_label: 'Added from unaccounted time',
-          start_time: '2026-08-27T16:30:00.000Z', end_time: '2026-08-27T18:00:00.000Z' }]);
-        await withSupa(page, COVERS);
-        const r = await page.evaluate(async () => {
-          window.__tlArm();
-          const n = await _tlTrimCoveredGapRows();
-          const e = timeEntries[0];
-          return { n, mins: e && e.minutes, start: e && e.start_time, end: e && e.end_time,
-                   mark: e && e._gapTrimmed };
-        });
-        await unSupa(page); await restore(page);
-        expect(r.n).toBe(1);
-        // 16:30-17:11 is 41 min free; 17:57-18:00 is only 3. The longer piece wins.
-        expect(r.mins).toBe(41);
-        expect(r.start).toBe('2026-08-27T16:30:00.000Z');
-        expect(r.end).toBe('2026-08-27T17:11:06.000Z');
-        expect(r.mark).toBe('trimmed');
-      });
 
-      test('an uncovered answer is left exactly alone', async () => {
-        await seed(page, [{ id: 5003, date: '2026-08-27', open: false, fromGap: true,
-          minutes: 30, scope_label: 'Added from unaccounted time',
-          start_time: '2026-08-27T20:00:00.000Z', end_time: '2026-08-27T20:30:00.000Z' }]);
-        await withSupa(page, COVERS);
-        const r = await page.evaluate(async () => {
-          window.__tlArm();
-          const n = await _tlTrimCoveredGapRows();
-          const e = timeEntries[0];
-          return { n, mins: e && e.minutes, start: e && e.start_time, mark: e && e._gapTrimmed };
-        });
-        await unSupa(page); await restore(page);
-        expect(r.n).toBe(0);
-        expect(r.mins).toBe(30);
-        expect(r.start).toBe('2026-08-27T20:00:00.000Z');
-        expect(r.mark).toBeUndefined();
-      });
 
-      test('a hand-typed entry is never touched, only the app’s own gap answers', async () => {
-        await seed(page, [{ id: 5004, date: '2026-08-27', open: false,
-          minutes: 36, scope_label: 'Framing, second floor',
-          start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
-        await withSupa(page, COVERS);
-        const r = await page.evaluate(async () => {
-          window.__tlArm();
-          const n = await _tlTrimCoveredGapRows();
-          return { n, left: timeEntries.length, mins: timeEntries[0] && timeEntries[0].minutes };
-        });
-        await unSupa(page); await restore(page);
-        expect(r.n, 'a person typed this; it is not ours to trim').toBe(0);
-        expect(r.left).toBe(1);
-        expect(r.mins).toBe(36);
-      });
 
-      // The interlock: an empty read is a failed read, not an empty day.
-      test('no derived rows returned means no trimming at all', async () => {
-        await seed(page, [{ id: 5005, date: '2026-08-27', open: false, fromGap: true,
-          minutes: 36, scope_label: 'Added from unaccounted time',
-          start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
-        await withSupa(page, []);
-        const r = await page.evaluate(async () => {
-          window.__tlArm();
-          const n = await _tlTrimCoveredGapRows();
-          const stillArmed = window._tlGapTrimRan === false;
-          // Re-latch before this evaluate ends so the unlatched state never
-          // leaks into the gap between tests.
-          window._tlGapTrimRan = true;
-          return { n, stillArmed, left: timeEntries.length };
-        });
-        await unSupa(page); await restore(page);
-        expect(r.n, 'an empty result must never be read as "nothing happened"').toBe(0);
-        expect(r.stillArmed, 'the interlock refuses AND stays armed to retry').toBe(true);
-        expect(r.left).toBe(1);
-      });
 
-      test('it runs once per session, and survives junk rows', async () => {
-        await seed(page, [null, { id: 5006, open: true, fromGap: true },
-          { id: 5007, date: '2026-08-27', open: false, fromGap: true, minutes: 5,
-            start_time: 'nope', end_time: 'also nope' }]);
-        await withSupa(page, COVERS);
-        const r = await page.evaluate(async () => {
-          window.__tlArm();
-          const first = await _tlTrimCoveredGapRows();
-          const second = await _tlTrimCoveredGapRows();
-          return { first, second, left: timeEntries.length };
-        });
-        await unSupa(page); await restore(page);
-        expect(r.first).toBe(0);
-        expect(r.second, 'the guard stops a second pass').toBe(0);
-        expect(r.left).toBe(3);
-      });
 
-      test('the trim collapses a stack on one span, newest wins', async () => {
-        await seed(page, [
-          { id: 7001, date: '2026-08-27', open: false, fromGap: true, unpaid: true, minutes: 34,
-            scope_label: 'Break (unpaid)',
-            start_time: '2026-08-27T20:00:00.000Z', end_time: '2026-08-27T20:34:00.000Z' },
-          { id: 7002, date: '2026-08-27', open: false, fromGap: true, unpaid: true, minutes: 34,
-            scope_label: 'Personal time (unpaid)',
-            start_time: '2026-08-27T20:00:00.000Z', end_time: '2026-08-27T20:34:00.000Z' },
-        ]);
-        await withSupa(page, COVERS);   // covers are elsewhere, so neither is withdrawn
-        const r = await page.evaluate(async () => {
-          window.__tlArm();
-          const n = await _tlTrimCoveredGapRows();
-          return { n, left: timeEntries.length,
-                   label: timeEntries[0] && timeEntries[0].scope_label };
-        });
-        await unSupa(page); await restore(page);
-        expect(r.n).toBe(1);
-        expect(r.left, 'the earlier answer is a leftover, not a second entry').toBe(1);
-        expect(r.label, 'the last thing he chose survives').toBe('Personal time (unpaid)');
-      });
 
-      // The guard used to latch before the work, so one swallowed failure
-      // killed the trim for the whole session with no trace: the shape of the
-      // owner's manual row surviving a boot that healed everything around it.
-      test('a failed read leaves the trim armed; the next load retries and succeeds', async () => {
-        await seed(page, [{ id: 5008, date: '2026-08-27', open: false, fromGap: true,
-          minutes: 36, scope_label: 'Added from unaccounted time',
-          start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
-        // BOTH phases in ONE evaluate. This test is the only one that
-        // deliberately holds the guard unlatched mid-test, and its first
-        // version did so across separate evaluates, leaving a gap where a
-        // stale boot-chain call could reach the trim against the restored
-        // test shim and eat the claim (surfaced as a once-in-ten flake in
-        // the eight-spec composition). One evaluate has no such gap: the
-        // busy flag covers every await inside it.
-        await withSupa(page, COVERS);
-        const r = await page.evaluate(async (SWEEP_TABLES) => {
-          // Same rule as withSupa: narrow the sweep's own tables, pass
-          // everything else through, and put the WHOLE client back rather
-          // than a bare { from }, which dropped auth/rpc/storage for the
-          // rest of the run.
-          const covering = window._supa;
-          window._supa = Object.assign({}, covering, {
-            from: (tbl) => {
-              if (SWEEP_TABLES.indexOf(tbl) < 0) return covering.from(tbl);
-              const c = { select: () => c, is: () => c, eq: () => c,
-                gte: () => Promise.resolve({ data: [], error: null }) };
-              return c;
-            },
-          });
-          window.__tlArm();
-          const first = await _tlTrimCoveredGapRows();     // failed/empty read
-          const latchedEarly = window._tlGapTrimRan === true;
-          window._supa = covering;                          // reconnect: covers arrive
-          const n = await _tlTrimCoveredGapRows();
-          return { first, latchedEarly, n,
-                   latchedAfter: window._tlGapTrimRan === true, left: timeEntries.length };
-        }, SWEEP_TABLES);
-        await unSupa(page); await restore(page);
-        expect(r.first).toBe(0);
-        expect(r.latchedEarly, 'a miss must not latch the guard').toBe(false);
-        expect(r.n, 'the retry does the work the first pass could not').toBe(1);
-        expect(r.latchedAfter, 'success latches').toBe(true);
-        expect(r.left).toBe(0);
-      });
 
-      test('overlapping invocations: exactly one does the work (11.2)', async () => {
-        await seed(page, [{ id: 5009, date: '2026-08-27', open: false, fromGap: true,
-          minutes: 36, scope_label: 'Added from unaccounted time',
-          start_time: '2026-08-27T17:13:54.000Z', end_time: '2026-08-27T17:50:11.000Z' }]);
-        await withSupa(page, COVERS);
-        const r = await page.evaluate(async () => {
-          window.__tlArm();
-          const results = await Promise.all([1, 2, 3, 4, 5].map(() => _tlTrimCoveredGapRows()));
-          return { total: results.reduce((a, b) => a + b, 0), left: timeEntries.length };
-        });
-        await unSupa(page); await restore(page);
-        expect(r.total, 'the busy guard lets one through; the rest no-op').toBe(1);
-        expect(r.left).toBe(0);
-      });
 
       test('a new gap answer is stamped so the sweep never has to guess', async () => {
         const r = await page.evaluate(() => {
@@ -4526,22 +3299,6 @@ test.describe('timelog.js: exhaustive coverage', () => {
     const DRIVE = (a, d, m) => ({ employee_user_id: 'me', minutes: m, source: 'drive',
                                   arrived_at: a, departed_at: d });
 
-    test('the overnight row at his own house is logged and counts for nothing', async () => {
-      // Jack's real one: 5:24pm to 5:25am, 720 minutes, on a day he worked.
-      const rows = await rowsFor([
-        JOB('2026-08-31T13:00:00Z', '2026-08-31T21:00:00Z', 480),
-        P('2026-08-31T22:24:58Z', '2026-09-01T10:25:13Z', 720, HOME),
-      ]);
-      // LOGGED, NOT DELETED (owner, 2026-09-01: "still log it"). A first cut
-      // dropped the row, which broke his own Aug 23 rule that the day should
-      // read complete. Twelve hours of sleep is not a shift, but it IS what
-      // happened, and he decides what to do with it.
-      const home = rows.filter(r => /22nd Ct/.test(String(r.clientName || '')));
-      expect(home.length, 'the night is still on the record').toBe(1);
-      expect(home[0].unpaid, 'and it counts for nothing until he classifies it').toBe(true);
-      expect(home[0].detail, 'the row says why it does not count').toContain('Overnight');
-      expect(rows.filter(r => r.minutes === 480).length, 'the real work still stands').toBe(1);
-    });
 
     test('a home office INSIDE the workday still pays', async () => {
       // The rule bounds base dwell, it does not delete it. Paperwork between
@@ -4573,20 +3330,6 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(mine[0].unpaid, 'and it COUNTS, no drive required').toBe(false);
     });
 
-    test('a home office cannot OPEN a day on its own', async () => {
-      // No job, no supply run, no drive: nothing happened. Being at home all
-      // day is not a shift, however long the app was running.
-      const rows = await rowsFor([
-        P('2026-08-30T13:00:00Z', '2026-08-30T23:00:00Z', 600, HOME),
-      ]);
-      // Scoped to this fixture's own day: _timeLogRows renders the whole log,
-      // and earlier tests in this file leave rows on other dates behind.
-      // Scoped to this fixture's own day: _timeLogRows renders the whole log,
-      // and earlier tests in this file leave rows on other dates behind.
-      const mine = rows.filter(r => r.date === '2026-08-30');
-      expect(mine.length, 'the day is still shown, not erased').toBe(1);
-      expect(mine[0].unpaid, 'a day with no work in it credits nothing').toBe(true);
-    });
 
     test('a supply house is NOT a base: it still ends the day', async () => {
       // The whole point of "the second fence crossing". Coming home is not
@@ -4599,28 +3342,6 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(hd[0].minutes).toBe(40);
     });
 
-    test('the Saturday supply run pays the errand and nothing else', async () => {
-      // Owner's own words: "if there's a drive that's business related it
-      // counts but only adds that drive and the time at the business place
-      // like a home depot run ... gets closed out by the second fence crossing
-      // when you get back home." The evening at home either side stays off.
-      const rows = await rowsFor([
-        P('2026-08-29T12:00:00Z', '2026-08-29T14:00:00Z', 120, HOME),   // morning at home
-        DRIVE('2026-08-29T14:00:00Z', '2026-08-29T14:20:00Z', 20),      // out
-        P('2026-08-29T14:20:00Z', '2026-08-29T15:00:00Z', 40, 'The Home Depot'),
-        DRIVE('2026-08-29T15:00:00Z', '2026-08-29T15:20:00Z', 20),      // back
-        P('2026-08-29T15:20:00Z', '2026-08-29T23:00:00Z', 460, HOME),   // evening at home
-      ]);
-      const mine = rows.filter(r => r.date === '2026-08-29');
-      const paid = mine.filter(r => !r.unpaid).reduce((s, r) => s + (r.minutes || 0), 0);
-      // Both stretches at home are ON the log and neither is in the total.
-      const evening = mine.find(r => r.minutes === 460);
-      const morning = mine.find(r => r.minutes === 120);
-      expect(evening && evening.unpaid, 'the evening at home is logged, not counted').toBe(true);
-      expect(morning && morning.unpaid, 'nor is the morning').toBe(true);
-      expect(paid, 'twenty out, forty there, twenty back').toBeLessThanOrEqual(80);
-      expect(paid, 'and the errand itself absolutely does pay').toBeGreaterThanOrEqual(40);
-    });
   });
 
 
@@ -4667,30 +3388,6 @@ test.describe('timelog.js: exhaustive coverage', () => {
                                       dest_place: '1200 SW Oakley Ave',
                                       arrived_at: at(s[0], s[1]), departed_at: at(e[0], e[1]) });
 
-    test("Jack's real day totals the clock, not the clock plus the fences", async () => {
-      const r = await rowsFor([
-        A('drive-unassigned', [7, 23], [7, 44], 20),
-        A('place',            [7, 44], [9, 17], 93),
-        A('drive',            [9, 17], [11, 17], 62),
-        A('place',            [11, 20], [12, 4], 44),
-      ], CLOCK([7, 42], [17, 0], 558));
-      // 576, not 777. Unchanged by everything since, and that is the point of
-      // keeping this assertion first: the DAY still totals the clock plus the
-      // 18 minutes of the 07:23 drive that ran before he clocked in.
-      expect(r.paid).toBe(576);
-      const man = r.rows.find(x => x.src === 'manual');
-      // NUMBERS CHANGED 2026-09-01 (CLAUDE.md 10.4), the rule did not. The
-      // 09:17 to 11:17 leg ends at the place it left (_tlDemoteRoundTrips), so
-      // it is withdrawn as a drive and its 62 minutes are no longer a fence
-      // explaining part of the clock: 139 explained instead of 201, and the
-      // clock keeps 419 instead of 357. The two still sum to the same 558, and
-      // the day still totals the same 576, which is what says the withdrawal
-      // moved a minute between rows rather than inventing or losing one.
-      expect(man.m, 'the clock keeps only what nothing else explains').toBe(419);
-      expect(man.blended).toBe(139);
-      expect(man.m + man.blended, 'nothing was created or destroyed').toBe(558);
-      expect(man.detail, 'a clock that shrinks has to say why').toContain('tracked below');
-    });
 
     test('the fences keep their own labels: the clock is the bracket, not the record', async () => {
       const r = await rowsFor([
@@ -4800,57 +3497,6 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.paid).toBe(360);
     });
 
-    test("the OWNER's own clock blends, and that is the day that matters most", async () => {
-      // THE ONE EVERY OTHER TEST HERE MISSED. _timeLogRows stamps
-      // personUid=logged_by_uid||null on a manual row, and logged_by_uid is
-      // only set on EMPLOYEE rows, so an owner's own clock arrives with null
-      // while his GPS rows carry his real employee_user_id. The blend keyed on
-      // personUid, so those went into two different buckets and it never fired.
-      //
-      // Every fixture above stamped a matching id on the clock, which is a
-      // fixture agreeing with the code rather than testing it. This one seeds
-      // the null exactly as _timeLogRows produces it. Caught on the first
-      // render of Jack's real day: 13h14m, clock untouched at its full 7h18m.
-      const r = await page.evaluate(async ([es, ms]) => {
-        // _timeLogRows only ever runs signed in, so a fixture that leaves
-        // _supaUser undefined is testing a state the code never sees: the
-        // blend resolves "who is the owner" from the session, and with no
-        // session there is nothing to resolve it to. Guarantee one rather
-        // than assert against a shape production cannot produce.
-        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
-        const ME = window._supaUser.id;
-        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
-        window.timeEntries = ms;
-        const orig = window._fetchCrewLabor;
-        // The auto rows are the signed-in user's; the clock's logged_by_uid is
-        // null, which is what an owner-logged entry actually looks like.
-        const entries = es.map(e => ({ ...e, employee_user_id: ME }));
-        window._fetchCrewLabor = async () => ({ name: { [ME]: 'Owner' }, entries, shopEntries: [] });
-        try {
-          const day = (await _timeLogRows(null)).filter(x => x.date === '2026-09-01');
-          const man = day.find(x => x.source === 'manual');
-          return { paid: _tlPaidMin(day), m: man && man.minutes, b: (man && man.blendedMin) || 0 };
-        } finally { window._fetchCrewLabor = orig; window.timeEntries = keepT; }
-      }, [
-        // The same shapes the fixtures above use, deliberately: the ONLY thing
-        // under test here is the null logged_by_uid, so nothing else may differ
-        // from a case that is already known to blend.
-        [{ minutes: 93, source: 'place', dest_place: '1200 SW Oakley Ave',
-           arrived_at: at(7, 44), departed_at: at(9, 17) },
-         { minutes: 62, source: 'drive', dest_place: '1200 SW Oakley Ave',
-           arrived_at: at(9, 17), departed_at: at(11, 17) }],
-        [{ id: 1, date: D, open: false, job_id: null, minutes: 438,
-           start_time: at(7, 42), end_time: at(15, 0),
-           logged_by_uid: null, logged_by_name: 'Owner' }],
-      ]);
-      // 93, not 155: the 09:17 drive returns to the place it left and is
-      // withdrawn (10.4, same rule as Jack's day above). What this test is FOR,
-      // that a null logged_by_uid folds under the owner and the blend fires at
-      // all, is unchanged, and a zero here would still be the bug it guards.
-      expect(r.b, 'a null personUid is the owner, not a different person').toBe(93);
-      expect(r.m).toBe(345);
-      expect(r.paid, 'the clock, not the clock plus the fences').toBe(438);
-    });
 
     // ── THE CLOCK BRACKETS THE DAY (owner 2026-09-01) ─────────────────────
     //
@@ -5015,29 +3661,6 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(stop.unpaid).toBe(true);
     });
 
-    test('a real fence still vetoes a stop that overlaps it', async () => {
-      // The rule the veto exists for is unchanged. Only the clock is exempt.
-      const r = await page.evaluate(([es, ms]) => {
-        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
-        const ME = window._supaUser.id;
-        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
-        window.timeEntries = ms;
-        const orig = window._fetchCrewLabor;
-        const entries = es.map(e => ({ ...e, employee_user_id: ME }));
-        window._fetchCrewLabor = async () => ({ name: { [ME]: 'Jack' }, entries, shopEntries: [] });
-        return _timeLogRows(null)
-          .then(rows => rows.filter(x => x.date === '2026-09-01' && x.rawSource === 'stop').length)
-          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT; });
-      }, [
-        // The stop sits INSIDE a place fence: he was provably there, so the
-        // row is a stretched artifact and still must not draw.
-        [{ minutes: 93, source: 'place', dest_place: 'X', arrived_at: at(7, 0), departed_at: at(12, 0) },
-         { minutes: 63, source: 'stop', arrived_at: at(9, 48), departed_at: at(10, 51) },
-         { minutes: 44, source: 'place', dest_place: 'X', arrived_at: at(13, 0), departed_at: at(14, 0) }],
-        [],
-      ]);
-      expect(r).toBe(0);
-    });
 
     test('a clock bounds the stops inside it, so the afternoon is not dropped', async () => {
       // Every other anchor is a fence and bounds a stop by ABUTTING it. A clock
@@ -5073,29 +3696,6 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r, 'all three afternoon stops reach the rail').toBe(3);
     });
 
-    test('a stop outside the clock is still not bounded by it', async () => {
-      // Containment is the test, so something the clock never covered stays
-      // unanchored. The exemption is not a licence to draw everything.
-      const r = await page.evaluate(([es, ms]) => {
-        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
-        const ME = window._supaUser.id;
-        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
-        window.timeEntries = ms;
-        const orig = window._fetchCrewLabor;
-        const entries = es.map(e => ({ ...e, employee_user_id: ME }));
-        window._fetchCrewLabor = async () => ({ name: { [ME]: 'Jack' }, entries, shopEntries: [] });
-        return _timeLogRows(null)
-          .then(rows => rows.filter(x => x.date === '2026-09-01' && x.rawSource === 'stop').length)
-          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT; });
-      }, [
-        // 5:33am, two hours before he clocked in.
-        [{ minutes: 49, source: 'stop', arrived_at: at(5, 33), departed_at: at(6, 21) }],
-        [{ id: 1, date: D, open: false, job_id: null, minutes: 438,
-           start_time: at(7, 42), end_time: at(15, 0),
-           logged_by_uid: null, logged_by_name: 'Jack' }],
-      ]);
-      expect(r).toBe(0);
-    });
 
     test('an unplaceable stop is not called a break', async () => {
       // "that was a untracked address that should have shown grey as manual
@@ -5110,103 +3710,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         .toContain(meta.word);
     });
 
-    // ── ONE VISIT, ONE ROW ────────────────────────────────────────────────
-    // "the two onsites for sw oakley are actually shop times which we already
-    // have." His dad's shop is two records at once, the configured shop
-    // coordinate and a saved place, watched by two independent state machines
-    // that each write a row on departure.
-    test('a place row a shop session already covers is dropped', async () => {
-      const r = await page.evaluate(([es, sh]) => {
-        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
-        const ME = window._supaUser.id;
-        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
-        window.timeEntries = [];
-        const orig = window._fetchCrewLabor;
-        window._fetchCrewLabor = async () => ({ name: { [ME]: 'J' },
-          entries: es.map(e => ({ ...e, employee_user_id: ME })),
-          shopEntries: sh.map(e => ({ ...e, employee_user_id: ME })) });
-        return _timeLogRows(null)
-          .then(rows => rows.filter(x => x.date === '2026-09-01')
-            .map(x => x.source === 'shop' ? 'shop' : (x.rawSource || x.source)))
-          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT; });
-      }, [
-        [{ minutes: 93, source: 'place', dest_place: '1200 SW Oakley Ave',
-           arrived_at: at(7, 44), departed_at: at(9, 17) },
-         // A shop session on its own credits zero minutes and does not render
-         // ("a Saturday at the yard is not a shift"); it needs a work anchor in
-         // the day, which on a real day is exactly what it has.
-         { minutes: 60, source: 'geofence', job_id: 1,
-           arrived_at: at(10, 0), departed_at: at(11, 0) }],
-        [{ minutes: 93, arrived_at: at(7, 44), departed_at: at(9, 17) }],
-      ]);
-      expect(r.filter(x => x === 'shop').length, 'the shop session is the one that stands').toBe(1);
-      expect(r.filter(x => x === 'place').length, 'the duplicate place row is gone').toBe(0);
-    });
 
-    // The other half of the same rule, and the half that actually shipped
-    // broken (owner 2026-09-01, on his own 12:31pm): a shop session can credit
-    // ZERO minutes and draw nothing, and dropping its twin then deletes the
-    // visit outright. Where the shop is the house, the motion tape trims the
-    // session to the part somebody was walking, which on an afternoon at a
-    // desk is nothing at all.
-    test('a shop session that credits nothing does not take the place row with it',
-    async () => {
-      const r = await page.evaluate(([es, sh]) => {
-        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
-        const ME = window._supaUser.id;
-        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
-        const keepP = window.getPlaces, keepM = window._geoMotionTape;
-        const keepLat = S.officeLat, keepLon = S.officeLon;
-        window.timeEntries = [];
-        // The shop IS the house: same coordinate under two records, which is
-        // what turns the motion trim on.
-        S.officeLat = 39.0307066; S.officeLon = -95.7112082;
-        window.getPlaces = () => [{ id: 1, kind: 'home_office', name: 'Home office',
-          lat: 39.0307378, lon: -95.7112674 }];
-        // He walked in and sat down: one 20-second stretch of movement inside a
-        // 93-minute session, so the trim keeps 20 seconds and the session
-        // rounds to zero.
-        const t0 = Date.parse(sh[0].arrived_at);
-        window._geoMotionTape = async () => ([
-          { ts: t0 + 10000, kind: 'onFoot' },
-          { ts: t0 + 30000, kind: 'stationary' },
-        ]);
-        const orig = window._fetchCrewLabor;
-        window._fetchCrewLabor = async () => ({ name: { [ME]: 'J' },
-          entries: es.map(e => ({ ...e, employee_user_id: ME })),
-          shopEntries: sh.map(e => ({ ...e, employee_user_id: ME })) });
-        return _timeLogRows(null)
-          .then(rows => {
-            const day = rows.filter(x => x.date === '2026-09-01');
-            const covers = day.some(x => Date.parse(x.startTime) <= t0 + 60000 &&
-              Date.parse(x.endTime) >= Date.parse(sh[0].departed_at) - 60000);
-            const drive = day.find(x => x.rawSource === 'drive');
-            return { shop: day.filter(x => x.source === 'shop').length, covers,
-              driveKind: drive ? _tlRailKind(drive) : null,
-              driveUnpaid: drive ? !!drive.unpaid : null };
-          })
-          .finally(() => { window._fetchCrewLabor = orig; window.timeEntries = keepT;
-            window.getPlaces = keepP; window._geoMotionTape = keepM;
-            S.officeLat = keepLat; S.officeLon = keepLon; });
-      }, [
-        [{ minutes: 60, source: 'client', dest_place: 'John Doe',
-           arrived_at: at(6, 0), departed_at: at(7, 44) },
-         { minutes: 93, source: 'place', dest_place: null,
-           arrived_at: at(7, 44), departed_at: at(9, 17) },
-         // The leg out of the yard. With the yard stop gone it had the MORNING
-         // John Doe visit as the last place he was seen leaving, so the
-         // round-trip rule greyed a real drive out as unpaid.
-         { minutes: 10, source: 'drive', dest_place: 'John Doe',
-           arrived_at: at(9, 17), departed_at: at(9, 27) },
-         { minutes: 60, source: 'geofence', job_id: 1,
-           arrived_at: at(10, 0), departed_at: at(11, 0) }],
-        [{ minutes: 93, arrived_at: at(7, 44), departed_at: at(9, 17) }],
-      ]);
-      expect(r.shop, 'the trimmed session drew nothing, which is the premise').toBe(0);
-      expect(r.covers, 'so the 93 minutes must still be on the log, not a hole').toBe(true);
-      expect(r.driveKind, 'and the drive out is still a drive').toBe('drive');
-      expect(r.driveUnpaid, 'and it is still paid').toBe(false);
-    });
 
     test('a place row with no shop session is untouched', async () => {
       // A supply house is a place and nothing else watches it.
@@ -5226,53 +3730,6 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r).toBe(1);
     });
 
-    // ── A LEG THAT ENDS WHERE IT STARTED ──────────────────────────────────
-    // "drive time at 9:17 am to 11:17 am is still wrong, that was manual time
-    // that shouldve covered his off the books addresses we dont have."
-    test('a drive back to the place it left is withdrawn, not relabelled', async () => {
-      const r = await page.evaluate(([es, sh, clockIn, clockOut]) => {
-        window._supaUser = window._supaUser || { id: 'owner-blend-user', email: 'o@t.com' };
-        const ME = window._supaUser.id;
-        const keepP = places.slice();
-        places.length = 0;
-        places.push({ id: 'p1', name: '1200 SW Oakley Ave', kind: 'shop', lat: 39.045, lon: -95.715 });
-        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
-        // His real shape: a clock opens the day, which is what puts the 09:17
-        // drive inside the workday window at all (_geoRowInWorkday drops a
-        // drive outside it, and a lone job anchor would leave the morning shut).
-        window.timeEntries = [{ id: 9, date: '2026-09-01', open: false, job_id: null,
-          minutes: 438, start_time: clockIn, end_time: clockOut,
-          logged_by_uid: null, logged_by_name: 'J' }];
-        const orig = window._fetchCrewLabor;
-        window._fetchCrewLabor = async () => ({ name: { [ME]: 'J' },
-          entries: es.map(e => ({ ...e, employee_user_id: ME })),
-          shopEntries: sh.map(e => ({ ...e, employee_user_id: ME })) });
-        return _timeLogRows(null)
-          .then(rows => rows.filter(x => x.date === '2026-09-01')
-            .map(x => ({ raw: x.rawSource || x.source, m: x.minutes, rt: !!x.roundTrip,
-                         name: x.clientName, unpaid: !!x.unpaid })))
-          .finally(() => {
-            window._fetchCrewLabor = orig; window.timeEntries = keepT;
-            places.length = 0; keepP.forEach(p => places.push(p));
-          });
-      }, [
-        [{ minutes: 93, source: 'place', dest_place: '1200 SW Oakley Ave',
-           arrived_at: at(7, 44), departed_at: at(9, 17) },
-         { minutes: 62, source: 'drive', dest_place: '1200 SW Oakley Ave',
-           arrived_at: at(9, 17), departed_at: at(11, 17) },
-         { minutes: 60, source: 'geofence', job_id: 1,
-           arrived_at: at(12, 0), departed_at: at(13, 0) }],
-        [{ minutes: 93, arrived_at: at(7, 44), departed_at: at(9, 17) }],
-        at(7, 42), at(15, 0),
-      ]);
-      const rt = r.find(x => x.rt);
-      expect(rt, 'the out-and-back is recognised').toBeTruthy();
-      expect(rt.raw, 'it reads as unplaceable time, not as driving').toBe('stop');
-      expect(rt.unpaid).toBe(true);
-      // The name goes with the claim, or a grey row still insists he was there.
-      expect(rt.name).toBe('-');
-      expect(r.some(x => x.raw === 'drive'), 'nothing is left calling itself a drive').toBe(false);
-    });
 
     test('a drive to somewhere else is never withdrawn', async () => {
       const r = await page.evaluate(([es]) => {

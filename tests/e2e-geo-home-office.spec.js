@@ -155,107 +155,8 @@ test.describe('Home office: presence is not work', () => {
       expect(rows.every(v => v === false)).toBe(true);
     });
 
-    test('a real evening of paperwork bills the minutes worked', async () => {
-      // Two hours at the desk, tapping through estimates the whole time. This is
-      // the half of the owner's idea that has to WORK, not just the half that
-      // has to stop: a fix that bills nothing at a home office is not a fix.
-      const rows = await occupy({ origin: HOME, dwellMins: 120, pings: 25, interact: true });
-      const m = shopMins(rows);
-      // 24 credited samples of 5 min each, and the per-sample cap is what keeps
-      // this honest rather than letting one tap claim the whole dwell.
-      expect(m).toBeGreaterThanOrEqual(110);
-      expect(m).toBeLessThanOrEqual(120);
-    });
 
-    test('backgrounded for half of it bills only the half worked', async () => {
-      // An hour of real work, then the phone goes in a pocket for an hour. The
-      // web app stops getting pings when backgrounded, which is exactly the
-      // wanted behaviour, and the per-sample cap stops the gap being back-credited.
-      const rows = await page.evaluate(async (a) => {
-        const realEnq = _geoEnqueue, realUser = _supaUser, realNow = Date.now;
-        const out = [];
-        _supaUser = { id: 'u-home' };
-        _geoEnqueue = (tbl, row) => out.push(Object.assign({ _tbl: tbl }, row));
-        const t0 = realNow.call(Date); let cursor = t0;
-        Date.now = () => cursor;
-        try {
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
-          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
-          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-          _geoLastFenceAt = null; _geoLegAtShop = false;
-          _geoHomeDwell = null; _geoWasAtHome = false;
-          const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
-          for (let i = 0; i < 13; i++) {           // 12 x 5min credited = 60 min
-            _geoLastInteractAt = cursor;
-            await ping(a.HOME);
-            cursor += 5 * 60000;
-          }
-          cursor += 60 * 60000;                     // pocketed: no pings at all
-          // Cursor clock, for the same reason occupy() uses it: a wall-clock
-          // fallback would bill cursor-to-cursor, 120 minutes, and fail the
-          // 55-65 band below.
-          _geoShopArrivedAt = new Date(cursor - 120 * 60000).toISOString();
-          out.length = 0;
-          await ping(a.ROAD);                       // walks back out two hours later
-          return out;
-        } finally { Date.now = realNow; _geoEnqueue = realEnq; _supaUser = realUser; }
-      }, { HOME, ROAD });
-      const m = shopMins(rows);
-      expect(m).toBeGreaterThanOrEqual(55);
-      expect(m).toBeLessThanOrEqual(65);      // NOT the 120 minutes of wall clock
-    });
 
-    // Owner audit finding, 2026-08-23: a live account (Shop == the contractor's
-    // house, exactly this describe's scenario) showed a 9-second
-    // shop_time_entries dwell billed as 5 minutes. Root cause: returning home
-    // before the sampler's "second consecutive away ping" ever got to null the
-    // old dwell object handed the new, unrelated visit the old one's
-    // already-billed activeMs. The closer marking the object `.closed`
-    // (instead of nulling it outright, which would have broken "the tally
-    // survives exactly the ping that closes the visit" below) and the sampler
-    // starting fresh on `.closed` is the fix; this proves it holds. Uses the
-    // Shop departure path deliberately, not a saved PLACE: a place/client exit
-    // into open road now needs two confirming pings (owner mandate
-    // 2026-08-20), but Shop still closes on the very first one (see
-    // "backgrounded for half of it" above), so this stays a clean one-ping
-    // close-then-reopen, same shape as the production data.
-    test('a quick return before the second away-ping does not inherit the closed dwell\'s minutes', async () => {
-      const rows = await page.evaluate(async (a) => {
-        const realEnq = _geoEnqueue, realUser = _supaUser, realNow = Date.now;
-        const out = [];
-        _supaUser = { id: 'u-home' };
-        _geoEnqueue = (tbl, row) => out.push(Object.assign({ _tbl: tbl }, row));
-        let cursor = realNow.call(Date);
-        Date.now = () => cursor;
-        try {
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
-          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
-          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-          _geoLastFenceAt = null; _geoLegAtShop = false;
-          _geoHomeDwell = null; _geoWasAtHome = false;
-          const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
-          // Dwell #1: real paperwork, ~5 active minutes, tapping the whole time.
-          for (let i = 0; i < 5; i++) { _geoLastInteractAt = cursor; await ping(a.HOME); cursor += 60000; }
-          if (_geoShopArrivedAt) _geoShopArrivedAt = new Date(cursor - 5 * 60000).toISOString();
-          out.length = 0;
-          await ping(a.ROAD);   // closes dwell #1, one ping, same as "backgrounded for half of it"
-          cursor += 1000;
-          const afterFirstClose = out.slice();
-          out.length = 0;
-          await ping(a.HOME);   // right back home, one ping, no tap this time
-          cursor += 1000;
-          await ping(a.ROAD);   // closes dwell #2 almost immediately
-          return { afterFirstClose, afterSecondClose: out.slice() };
-        } finally { Date.now = realNow; _geoEnqueue = realEnq; _supaUser = realUser; }
-      }, { HOME, ROAD });
-      const firstMins = shopMins(rows.afterFirstClose);
-      expect(firstMins).toBeGreaterThanOrEqual(4);
-      expect(firstMins).toBeLessThanOrEqual(5);
-      // Dwell #2 was one ping with no interaction: effectively zero active ms,
-      // under the 2-minute floor. It must bill NOTHING, not dwell #1's 5 minutes.
-      expect(shopMins(rows.afterSecondClose)).toBe(0);
-      expect(rows.afterSecondClose.filter(r => r._tbl === 'shop_time_entries').length).toBe(0);
-    });
   });
 
   test.describe('everywhere else still bills presence', () => {
@@ -267,26 +168,7 @@ test.describe('Home office: presence is not work', () => {
       }, { YARD });
     });
 
-    test('an untagged shop bills the full dwell', async () => {
-      // The regression guard for the whole change: an ordinary yard is not a
-      // home office, so eight hours there is eight hours, untouched app or not.
-      const rows = await occupy({ origin: YARD, dwellMins: 8 * 60, pings: 6, interact: false });
-      const m = shopMins(rows);
-      expect(m).toBeGreaterThanOrEqual(478);
-      expect(m).toBeLessThanOrEqual(482);
-    });
 
-    test('a supply house bills the full dwell', async () => {
-      await page.evaluate((d) => {
-        S.officeLat = 41.0; S.officeLon = -92.0;     // shop far away, out of the picture
-        places.length = 0;
-        savePlace({ name: 'Home Depot', kind: 'supply', lat: d.YARD.lat, lon: d.YARD.lon, confirmedBy: 'manual' });
-      }, { YARD });
-      const rows = await occupy({ origin: YARD, dwellMins: 40, pings: 4, interact: false });
-      const m = placeMins(rows);
-      expect(m).toBeGreaterThanOrEqual(38);
-      expect(m).toBeLessThanOrEqual(42);
-    });
   });
 
   test.describe('a home office that is NOT the shop', () => {
@@ -305,31 +187,6 @@ test.describe('Home office: presence is not work', () => {
       }, { HOME });
     });
 
-    test('the office minutes survive a two-ping exit, which is the only kind a place fence has', async () => {
-      // Caught by the live flow test on the self-hosted runner, 2026-08-29:
-      // the Loading row landed and the Office row did not exist at all.
-      //
-      // The sampler's comment said the tally "deliberately SURVIVES the first
-      // ping outside the fence... the closers run later in this same ping".
-      // True when written, wrong from 2026-08-20, when a place/client exit
-      // started requiring the pending-then-confirming PAIR: the place closer
-      // then ran on the SECOND outside ping, by which time `!_geoWasAtHome`
-      // had already nulled the tally. Every home-office visit closed through
-      // the place path silently lost its paperwork minutes.
-      // Ten pings across forty minutes, so each sample is four minutes and the
-      // sampler's five-minute per-sample cap never binds: nine credited gaps of
-      // four minutes is 36, and that is the number the row must carry. (At five
-      // pings the same forty minutes correctly credits only 20, because the cap
-      // is what stops a phone pocketed for an hour dumping the hour in on one
-      // tap. Worth knowing before reading this number as a bug.)
-      const rows = await occupy({ origin: HOME, dwellMins: 40, pings: 10, interact: true });
-      const place = rows.filter(r => r._tbl === 'job_time_entries' && /^place/.test(r.source || ''));
-      expect(place.length, 'the place path wrote a row at all').toBeGreaterThan(0);
-      const office = place.find(r => r.source === 'place-office');
-      expect(office, 'the paperwork row exists').toBeTruthy();
-      expect(office.minutes).toBeGreaterThanOrEqual(34);
-      expect(office.minutes).toBeLessThanOrEqual(38);
-    });
 
     test('and the night still bills nothing through that same two-ping exit', async () => {
       // The other half: the fix must not have bought the office minutes back
@@ -434,269 +291,11 @@ test.describe('Home office: presence is not work', () => {
     expect(r.loads).toBe(2);
   });
 
-  // ── The seven-day re-derive (owner 2026-08-29) ─────────────────────────────
-  // "I also want the code to retroactively clean up by using the core motion
-  // tape", automatically, for everyone. It runs on the build already in his
-  // pocket: motionSince has shipped since 08-11, so nothing here waits on iOS.
-  test('_geoTapeRegradeSweep re-stamps a fence-clipped visit from the tape and leaves an honest one alone', async () => {
-    const r = await page.evaluate(async () => {
-      const saved = { supa: _supa, user: _supaUser, td: _geoTdPlugin, enq: _geoEnqueue, places: window.getPlaces };
-      const enq = [];
-      try {
-        const T = (h, m) => Date.UTC(2026, 7, 28, h, m, 0);
-        // The fence recorded 09:52 to 12:08. The truck was actually stopped
-        // 09:49 to 12:14, which is Jack's real eight minutes.
-        const rows = [
-          { id: 'row-clipped', arrived_at: new Date(T(9, 52)).toISOString(),
-            departed_at: new Date(T(12, 8)).toISOString(), minutes: 136,
-            source: 'client', dest_place: 'Laurie Schonfeldt', client_key: 'k1', job_id: null },
-          // Already agrees with the tape inside the noise floor: must not be touched.
-          { id: 'row-honest', arrived_at: new Date(T(14, 0)).toISOString(),
-            departed_at: new Date(T(14, 30)).toISOString(), minutes: 30,
-            source: 'client', dest_place: 'Laurie Schonfeldt', client_key: 'k2', job_id: null },
-        ];
-        const q = { _d: { data: rows, error: null } };
-        q.then = (res, rej) => Promise.resolve(q._d).then(res, rej);
-        ['select', 'is', 'eq', 'gte'].forEach(m => { q[m] = () => q; });
-        _supa = { from: () => q };
-        _supaUser = { id: 'u-regrade' };
-        window.getPlaces = () => [];          // Laurie's is NOT his own place
-        _geoEnqueue = (tbl, row) => enq.push({ tbl, row });
-        _geoTdPlugin = () => ({
-          motionSince: () => Promise.resolve({ available: true, transitions: [
-            { kind: 'driving', ts: T(9, 46) },
-            { kind: 'onFoot',  ts: T(9, 49) },   // truck actually stops
-            { kind: 'still',   ts: T(9, 58) },
-            { kind: 'onFoot',  ts: T(12, 10) },
-            { kind: 'driving', ts: T(12, 14) },  // actually pulls out
-            { kind: 'onFoot',  ts: T(12, 18) },
-            { kind: 'still',   ts: T(14, 2) },
-            { kind: 'onFoot',  ts: T(14, 28) },
-          ] }),
-        });
-        window._geoTapeRegradeRan = false;
-        const changed = await _geoTapeRegradeSweep();
-        const upd = enq.find(x => x.row && x.row.id === 'row-clipped');
-        return {
-          changed,
-          touchedHonest: enq.some(x => x.row && x.row.id === 'row-honest'),
-          mins: upd ? upd.row.minutes : null,
-          arrived: upd ? upd.row.arrived_at : null,
-          keptId: upd ? upd.row.id : null,
-          keptKey: upd ? upd.row.client_key : null,
-          loads: enq.filter(x => x.row && x.row.source === 'place-load').length,
-        };
-      } finally {
-        _supa = saved.supa; _supaUser = saved.user; _geoTdPlugin = saved.td;
-        _geoEnqueue = saved.enq; window.getPlaces = saved.places;
-        window._geoTapeRegradeRan = true;
-      }
-    });
-    expect(r.changed).toBe(1);
-    // 09:49 to 12:14 is 145 minutes, the number the fence lost.
-    expect(r.mins).toBe(145);
-    expect(r.arrived).toBe('2026-08-28T09:49:00.000Z');
-    // Re-stamped IN PLACE: the id and client_key survive, so a job link or a
-    // human correction is never thrown away and rebuilt.
-    expect(r.keptId).toBe('row-clipped');
-    expect(r.keptKey).toBe('k1');
-    // A row the tape agrees with is left alone entirely.
-    expect(r.touchedHonest).toBe(false);
-    // Laurie's is not his own place, so packing up stays on site, no load row.
-    expect(r.loads).toBe(0);
-  });
 
-  test('_geoTapeRegradeSweep will not move a boundary no drive anchors', async () => {
-    // Caught in review, not theorised: with no drive inside the padded window
-    // the tape only proves he was not driving, never where the visit began or
-    // ended. Taking the span anyway stretched an honest 30-minute row to fill
-    // the whole 20-minute pad on both sides, which is a lie in the direction
-    // of more billable time.
-    const r = await page.evaluate(async () => {
-      const saved = { supa: _supa, user: _supaUser, td: _geoTdPlugin, enq: _geoEnqueue, places: window.getPlaces };
-      const enq = [];
-      try {
-        const T = (h, m) => Date.UTC(2026, 7, 28, h, m, 0);
-        const rows = [{ id: 'row-unanchored', arrived_at: new Date(T(14, 0)).toISOString(),
-          departed_at: new Date(T(14, 30)).toISOString(), minutes: 30,
-          source: 'client', dest_place: 'Laurie Schonfeldt', client_key: 'k', job_id: null }];
-        const q = { _d: { data: rows, error: null } };
-        q.then = (res, rej) => Promise.resolve(q._d).then(res, rej);
-        ['select', 'is', 'eq', 'gte'].forEach(m => { q[m] = () => q; });
-        _supa = { from: () => q }; _supaUser = { id: 'u-anchor' };
-        window.getPlaces = () => [];
-        _geoEnqueue = (t, row) => enq.push(row);
-        // Walking and standing still all afternoon. Not one drive.
-        _geoTdPlugin = () => ({ motionSince: () => Promise.resolve({ available: true, transitions: [
-          { kind: 'onFoot', ts: T(13, 30) }, { kind: 'still', ts: T(14, 2) }, { kind: 'onFoot', ts: T(14, 28) },
-        ] }) });
-        window._geoTapeRegradeRan = false;
-        const changed = await _geoTapeRegradeSweep();
-        return { changed, wrote: enq.length };
-      } finally {
-        _supa = saved.supa; _supaUser = saved.user; _geoTdPlugin = saved.td;
-        _geoEnqueue = saved.enq; window.getPlaces = saved.places; window._geoTapeRegradeRan = true;
-      }
-    });
-    expect(r.changed).toBe(0);
-    expect(r.wrote).toBe(0);
-  });
 
-  // ── The same visit, written twice (owner's real 8/27) ──────────────────────
-  // His day read 15h 25m and about 4h 34m of it was duplicate, including one
-  // John Doe visit logged at 242 minutes TWICE. The keys were minted 149.6
-  // seconds apart while both rows stored the identical arrived_at, so the
-  // unique index never fired. Fixture is those exact rows.
-  test('_geoDupeSweep drops the twin and keeps the hours, not the label', async () => {
-    const r = await page.evaluate(async () => {
-      const saved = { supa: _supa, user: _supaUser, del: window._tdSoftDelete };
-      const deleted = [], updated = [];
-      try {
-        const T = (h, m, s2) => Date.UTC(2026, 7, 27, h, m, s2 || 0);
-        const row = (id, src, dest, a, b, job) => ({
-          id, source: src, dest_place: dest, job_id: job || null, client_key: 'k' + id,
-          arrived_at: new Date(a).toISOString(), departed_at: new Date(b).toISOString(),
-          minutes: Math.round((b - a) / 60000),
-        });
-        const rows = [
-          // The 242-minute John Doe visit, twice, one without a name.
-          row('A', 'client', null,       T(12, 59, 6), T(17, 1, 35)),
-          row('B', 'client', 'John Doe', T(12, 59, 6), T(17, 1, 35)),
-          // The 269-minute visit with the 14-minute fragment nested in it.
-          row('C', 'client', null,       T(17, 57, 43), T(22, 26, 48)),
-          row('D', 'client', 'John Doe', T(22, 13, 40), T(22, 28, 9)),
-          // Two observations of one stop, 35 seconds apart.
-          row('E', 'stop', null, T(22, 59, 10), T(23, 12, 56)),
-          row('F', 'stop', null, T(22, 59, 45), T(23, 12, 56)),
-          // NOT duplicates: same source, no overlap at all.
-          row('G', 'stop', null, T(23, 59, 32), T(24 % 24 === 0 ? 23 : 23, 59, 59)),
-          // NOT duplicates: overlapping but tied to DIFFERENT jobs.
-          row('H', 'client', null, T(9, 0, 0), T(10, 0, 0), 11),
-          row('I', 'client', null, T(9, 0, 0), T(10, 0, 0), 22),
-        ];
-        const q = { _d: { data: rows, error: null } };
-        q.then = (res, rej) => Promise.resolve(q._d).then(res, rej);
-        ['select', 'is', 'eq', 'gte'].forEach(m => { q[m] = () => q; });
-        const upd = { eq: (col, v) => { updated.push(v); return Promise.resolve({ error: null }); } };
-        _supa = { from: () => Object.assign(Object.create(q), q, { update: (patch) => { updated.patch = patch; return upd; } }) };
-        _supaUser = { id: 'u-dupe' };
-        window._tdSoftDelete = async (tbl, id) => { deleted.push(id); };
-        window._geoDupeSweepRan = false;
-        const n = await _geoDupeSweep();
-        return { n, deleted, updated: updated.slice(), patch: updated.patch };
-      } finally {
-        _supa = saved.supa; _supaUser = saved.user;
-        window._tdSoftDelete = saved.del; window._geoDupeSweepRan = true;
-      }
-    });
-    // Three duplicates found: the John Doe twin, the nested fragment, one stop.
-    expect(r.n).toBe(3);
-    // A and B are the same 242 minutes. Equal length, so the NAMED one wins.
-    expect(r.deleted).toContain('A');
-    expect(r.deleted).not.toContain('B');
-    // The 14-minute fragment goes, the 269-minute visit stays. Preferring the
-    // better NAME first here would have destroyed four and a half hours.
-    expect(r.deleted).toContain('D');
-    expect(r.deleted, 'the long visit must never lose to a fragment').not.toContain('C');
-    // ...and C inherits the name it lacked rather than rendering as a dash.
-    expect(r.updated).toContain('C');
-    expect(r.patch).toEqual({ dest_place: 'John Doe' });
-    // One of the two stop observations goes; the longer survives.
-    expect(r.deleted.filter(x => x === 'E' || x === 'F').length).toBe(1);
-    expect(r.deleted).toContain('F');
-    // Different jobs are never the same event, however the clocks line up.
-    expect(r.deleted).not.toContain('H');
-    expect(r.deleted).not.toContain('I');
-  });
 
-  test('_geoDupeSweep collapses one drive written under two source labels', async () => {
-    // His 08-27 17:28 leg: the server deriver wrote 'drive' and the phone
-    // wrote 'drive-unassigned', 2.4 seconds apart, 0.992 overlap. Matching the
-    // source string exactly left both standing forever. They disagree about
-    // whether the leg is assigned to a job, not about whether it happened.
-    const r = await page.evaluate(async () => {
-      const saved = { supa: _supa, user: _supaUser, del: window._tdSoftDelete };
-      const deleted = [], updated = [];
-      try {
-        const T = (h, m, s2) => Date.UTC(2026, 7, 27, h, m, s2 || 0);
-        const row = (id, src, dest, a, b) => ({
-          id, source: src, dest_place: dest, job_id: null, client_key: 'k' + id,
-          arrived_at: new Date(a).toISOString(), departed_at: new Date(b).toISOString(),
-          minutes: Math.round((b - a) / 60000),
-        });
-        const rows = [
-          // 17:28:08 -> 17:34:37, server, named off a stale fence fix.
-          row('S', 'drive', '2015 SW Randolph Ave', T(22, 28, 8), T(22, 34, 37)),
-          // 17:28:11 -> 17:34:53, phone, named off the place it resolved to.
-          row('P', 'drive-unassigned', 'TradeDesk shop', T(22, 28, 11), T(22, 34, 53)),
-          // A stop overlapping a drive is NOT the same event, whatever the clocks say.
-          row('X', 'stop', null, T(22, 28, 9), T(22, 34, 50)),
-        ];
-        const q = { _d: { data: rows, error: null } };
-        q.then = (res, rej) => Promise.resolve(q._d).then(res, rej);
-        ['select', 'is', 'eq', 'gte'].forEach(m => { q[m] = () => q; });
-        const upd = { eq: (col, v) => { updated.push(v); return Promise.resolve({ error: null }); } };
-        _supa = { from: () => Object.assign(Object.create(q), q, { update: (patch) => { updated.patch = patch; return upd; } }) };
-        _supaUser = { id: 'u-cls' };
-        window._tdSoftDelete = async (tbl, id) => { deleted.push(id); };
-        window._geoDupeSweepRan = false;
-        const n = await _geoDupeSweep();
-        return { n, deleted, updated: updated.slice() };
-      } finally {
-        _supa = saved.supa; _supaUser = saved.user;
-        window._tdSoftDelete = saved.del; window._geoDupeSweepRan = true;
-      }
-    });
-    expect(r.n, 'exactly one collapse: the two drives').toBe(1);
-    // The longer row survives, which here is also the one named off the place
-    // rather than off a fix that was 3,044 ft stale.
-    expect(r.deleted).toEqual(['S']);
-    expect(r.deleted, 'a stop is still not a drive').not.toContain('X');
-  });
 
-  test('_geoDupeSweep is a no-op with nothing to do, and never runs twice', async () => {
-    const r = await page.evaluate(async () => {
-      const saved = { supa: _supa, user: _supaUser, del: window._tdSoftDelete };
-      const deleted = [];
-      try {
-        const q = { _d: { data: [], error: null } };
-        q.then = (res, rej) => Promise.resolve(q._d).then(res, rej);
-        ['select', 'is', 'eq', 'gte'].forEach(m => { q[m] = () => q; });
-        _supa = { from: () => q }; _supaUser = { id: 'u-none' };
-        window._tdSoftDelete = async (t, id) => { deleted.push(id); };
-        window._geoDupeSweepRan = false;
-        const first = await _geoDupeSweep();
-        const second = await _geoDupeSweep();
-        return { first, second, deleted };
-      } finally {
-        _supa = saved.supa; _supaUser = saved.user;
-        window._tdSoftDelete = saved.del; window._geoDupeSweepRan = true;
-      }
-    });
-    expect(r.first).toBe(0);
-    expect(r.second).toBe(0);
-    expect(r.deleted.length).toBe(0);
-  });
 
-  test('_geoTapeRegradeSweep does nothing when there is no tape, and never runs twice', async () => {
-    const r = await page.evaluate(async () => {
-      const saved = { td: _geoTdPlugin, enq: _geoEnqueue };
-      const enq = [];
-      try {
-        _geoEnqueue = (t, row) => enq.push(row);
-        // No coprocessor: a fenceless guess is exactly what this replaces.
-        _geoTdPlugin = () => ({ motionSince: () => Promise.resolve({ available: false, transitions: [] }) });
-        window._geoTapeRegradeRan = false;
-        const noTape = await _geoTapeRegradeSweep();
-        // Latch: a second call in the same session is a no-op.
-        const second = await _geoTapeRegradeSweep();
-        return { noTape, second, wrote: enq.length };
-      } finally { _geoTdPlugin = saved.td; _geoEnqueue = saved.enq; window._geoTapeRegradeRan = true; }
-    });
-    expect(r.noTape).toBe(0);
-    expect(r.second).toBe(0);
-    expect(r.wrote).toBe(0);
-  });
 
   test('_geoFoldLoadIntoOnsite: packing up at a customer is on-site, at your own place it is loading', async () => {
     const r = await page.evaluate(() => {
@@ -974,22 +573,6 @@ test.describe('Home office: presence is not work', () => {
       }, { tape, spans, kind: kind || 'home_office', s: T, e: T + dwellMins * 60000 });
     }
 
-    test('a morning of paperwork then a load-out writes exactly two labelled rows', async () => {
-      const rows = await closeHome({
-        tape: [{ kind: 'onFoot', ts: m(10) }, { kind: 'still', ts: m(32) }, { kind: 'driving', ts: m(34) }],
-        spans: [[T, m(8)]], dwellMins: 36,
-      });
-      const by = (src) => rows.filter(r => r.source === src);
-      expect(by('place-load').length).toBe(1);
-      expect(by('place-office').length).toBe(1);
-      expect(by('place').length).toBe(0);            // never the old anonymous row
-      expect(by('place-load')[0].minutes).toBe(22);
-      expect(by('place-office')[0].minutes).toBe(8);
-      // Both carry the place name and their own dedupe key, so the drain can
-      // never collapse the two rows of one visit into one.
-      expect(by('place-load')[0].dest_place).toBe('Home Office');
-      expect(by('place-load')[0].client_key).not.toBe(by('place-office')[0].client_key);
-    });
 
     test('THE OVERNIGHT ROW: asleep at the home office bills nothing at all', async () => {
       // The regression guard for the live defect this work was found by. Jack
@@ -1020,17 +603,6 @@ test.describe('Home office: presence is not work', () => {
       expect(rows.length).toBe(0);
     });
 
-    test('a supply house is untouched: one place row, the full dwell', async () => {
-      // The line this change must not move. A tape is handed in and ignored,
-      // because presence at a supply house has always been the work.
-      const rows = await closeHome({
-        tape: [{ kind: 'onFoot', ts: m(10) }, { kind: 'driving', ts: m(34) }],
-        spans: [[T, m(8)]], dwellMins: 36, kind: 'supply',
-      });
-      expect(rows.length).toBe(1);
-      expect(rows[0].source).toBe('place');
-      expect(rows[0].minutes).toBe(36);
-    });
 
     test('every home-office source counts as overhead, never as job labour', async () => {
       // The trap this change had to clear: _geoIsPlaceSource was an exact
@@ -1087,89 +659,8 @@ test.describe('Home office: presence is not work', () => {
       expect(out.b).toBe(0);
     });
 
-    test('the re-grade no-ops with no home office saved, and never throws', async () => {
-      const out = await page.evaluate(async () => {
-        places.length = 0;                  // nothing tagged home_office
-        window._geoHomeRegradeRan = false;
-        try { return { v: await _geoHomeRegradeSweep() }; }
-        catch (e) { return { threw: String(e) }; }
-      });
-      expect(out.threw).toBeUndefined();
-      expect(out.v).toBe(0);
-    });
 
-    test('the re-grade recovers the load-out and drops the dwell row', async () => {
-      // The live shape: a home-office visit that closed under the old rule as
-      // one raw-dwell 'place' row. The tape still proves a walk ran into the
-      // drive, so that becomes a Loading row and the dwell row goes.
-      //
-      // The paperwork half is deliberately NOT recovered: app-active time was
-      // only ever in memory, so a visit that closed before the rule existed
-      // has no evidence of it and this must never invent one.
-      const out = await page.evaluate(async () => {
-        const T = Date.parse('2026-08-21T12:00:00.000Z'), m = n => T + n * 60000;
-        const enq = [], del = [];
-        const realEnq = _geoEnqueue, realUser = _supaUser, realSupa = _supa;
-        const realTape = window._geoMotionTape, realDel = window._tdSoftDelete;
-        _supaUser = { id: 'u-home' };
-        _geoEnqueue = (tbl, row) => enq.push(Object.assign({ _tbl: tbl }, row));
-        window._tdSoftDelete = async (tbl, id) => { del.push(id); };
-        window._geoMotionTape = async () => ([
-          { kind: 'onFoot', ts: m(10) }, { kind: 'still', ts: m(32) }, { kind: 'driving', ts: m(34) },
-        ]);
-        _supa = { from: () => ({ select: () => ({ is: () => ({ eq: () => ({ eq: () => ({ gte: async () => ({
-          data: [{ id: 'old-row-1', arrived_at: new Date(T).toISOString(),
-                   departed_at: new Date(m(36)).toISOString(), minutes: 36,
-                   source: 'place', dest_place: 'Home Office', client_key: 'k1' }] }) }) }) }) }) }) };
-        try {
-          places.length = 0;
-          savePlace({ id: 'ho-regrade', name: 'Home Office', kind: 'home_office', lat: 41.5, lon: -93.5, confirmedBy: 'manual' });
-          window._geoHomeRegradeRan = false;
-          const n = await _geoHomeRegradeSweep();
-          return { n, enq, del };
-        } finally {
-          _geoEnqueue = realEnq; _supaUser = realUser; _supa = realSupa;
-          window._geoMotionTape = realTape; window._tdSoftDelete = realDel;
-        }
-      });
-      expect(out.n).toBe(1);
-      expect(out.del).toEqual(['old-row-1']);          // the raw-dwell row goes
-      expect(out.enq.length).toBe(1);                  // exactly one replacement
-      expect(out.enq[0].source).toBe('place-load');
-      expect(out.enq[0].minutes).toBe(22);             // the walk, not the 36-minute visit
-      expect(out.enq.find(r => r.source === 'place-office'), 'paperwork is never invented').toBeFalsy();
-    });
 
-    test('the re-grade drops a dwell row the tape cannot vouch for, and adds nothing', async () => {
-      // The overnight case, retroactively: no walking on the tape, so there is
-      // no load-out to recover and the row that billed the night still goes.
-      const out = await page.evaluate(async () => {
-        const T = Date.parse('2026-08-21T02:00:00.000Z');
-        const enq = [], del = [];
-        const realEnq = _geoEnqueue, realUser = _supaUser, realSupa = _supa;
-        const realTape = window._geoMotionTape, realDel = window._tdSoftDelete;
-        _supaUser = { id: 'u-home' };
-        _geoEnqueue = (tbl, row) => enq.push(Object.assign({ _tbl: tbl }, row));
-        window._tdSoftDelete = async (tbl, id) => { del.push(id); };
-        window._geoMotionTape = async () => ([{ kind: 'still', ts: T + 60000 }]);
-        _supa = { from: () => ({ select: () => ({ is: () => ({ eq: () => ({ eq: () => ({ gte: async () => ({
-          data: [{ id: 'night-row', arrived_at: new Date(T).toISOString(),
-                   departed_at: new Date(T + 567 * 60000).toISOString(), minutes: 567,
-                   source: 'place', dest_place: 'Home Office', client_key: 'k2' }] }) }) }) }) }) }) };
-        try {
-          places.length = 0;
-          savePlace({ id: 'ho-regrade2', name: 'Home Office', kind: 'home_office', lat: 41.5, lon: -93.5, confirmedBy: 'manual' });
-          window._geoHomeRegradeRan = false;
-          await _geoHomeRegradeSweep();
-          return { enq, del };
-        } finally {
-          _geoEnqueue = realEnq; _supaUser = realUser; _supa = realSupa;
-          window._geoMotionTape = realTape; window._tdSoftDelete = realDel;
-        }
-      });
-      expect(out.del).toEqual(['night-row']);
-      expect(out.enq.length).toBe(0);
-    });
 
     // ── A drive row is paid for the part that was actually driving ─────────
     test('a long still inside a drive comes off, a red light does not', async () => {
@@ -1204,107 +695,9 @@ test.describe('Home office: presence is not work', () => {
       expect(out.backwards).toBe(0);
     });
 
-    test('the drive trim only ever reduces, and leaves a tapeless row alone', async () => {
-      const out = await page.evaluate(async () => {
-        const T = Date.parse('2026-08-21T10:00:00.000Z'), m = n => T + n * 60000;
-        const realSupa = _supa, realUser = _supaUser, realTape = window._geoMotionTape;
-        const updates = [];
-        _supaUser = { id: 'u-home' };
-        _supa = { from: () => ({
-          select: () => ({ is: () => ({ eq: () => ({ gte: async () => ({ data: [
-            { id: 'parked', arrived_at: new Date(T).toISOString(), departed_at: new Date(m(62)).toISOString(), minutes: 63, source: 'drive' },
-            { id: 'clean', arrived_at: new Date(T).toISOString(), departed_at: new Date(m(20)).toISOString(), minutes: 20, source: 'drive' },
-            { id: 'onsite', arrived_at: new Date(T).toISOString(), departed_at: new Date(m(99)).toISOString(), minutes: 99, source: 'geofence' },
-          ] }) }) }) }),
-          update: (patch) => ({ eq: async (_c, id) => { updates.push({ id, patch }); return {}; } }),
-        }) };
-        window._geoMotionTape = async (s, e) => (e - s > 30 * 60000)
-          ? [{ kind: 'driving', ts: T }, { kind: 'still', ts: m(3) }, { kind: 'driving', ts: m(58) }]
-          : [{ kind: 'driving', ts: T }];      // the short leg never stopped
-        try {
-          window._geoDriveTrimRan = false;
-          const n = await _geoDriveTapeTrim();
-          return { n, updates };
-        } finally { _supa = realSupa; _supaUser = realUser; window._geoMotionTape = realTape; }
-      });
-      expect(out.n).toBe(1);
-      expect(out.updates.length, 'the clean leg and the on-site row are untouched').toBe(1);
-      expect(out.updates[0].id).toBe('parked');
-      expect(out.updates[0].patch).toEqual({ minutes: 13 });   // 63 paid, 50 parked
-    });
 
-    test('the relabel fixes customer visits already written as supply runs', async () => {
-      // Owner 2026-08-29: "code should fix Laurie and today's jobs." Keyed on
-      // client_key, which both writers have always stamped '-vis-client-'
-      // into, so a saved place that happens to share a customer's name is
-      // never swept up by accident.
-      const out = await page.evaluate(async () => {
-        const realSupa = _supa, realUser = _supaUser;
-        const updated = [];
-        _supaUser = { id: 'u-home' };
-        _supa = { from: () => ({
-          select: () => ({ is: () => ({ eq: () => ({ eq: () => ({ gte: async () => ({ data: [
-            { id: 'r1', client_key: '987ebc83-vis-client-1787361287073-aaa', source: 'place', dest_place: 'Laurie Schonfeldt' },
-            { id: 'r2', client_key: '987ebc83-vis-client-1787361287073-bbb', source: 'place', dest_place: 'Laurie Schonfeldt' },
-            { id: 'r3', client_key: '987ebc83-vis-place-1787001824911-ccc', source: 'place', dest_place: 'The Home Depot' },
-            { id: 'r4', client_key: '', source: 'place', dest_place: 'Mystery' },
-          ] }) }) }) }) }),
-          update: (patch) => ({ in: async (_c, ids) => { updated.push({ patch, ids }); return {}; } }),
-        }) };
-        try {
-          window._geoClientRelabelRan = false;
-          const n = await _geoClientRelabelSweep();
-          return { n, updated };
-        } finally { _supa = realSupa; _supaUser = realUser; }
-      });
-      expect(out.n).toBe(2);
-      expect(out.updated.length).toBe(1);
-      expect(out.updated[0].patch).toEqual({ source: 'client' });
-      expect(out.updated[0].ids.sort(), 'the supply house and the keyless row are left alone').toEqual(['r1', 'r2']);
-    });
 
-    test('the relabel runs once per session and no-ops with nothing to fix', async () => {
-      const out = await page.evaluate(async () => {
-        const realSupa = _supa, realUser = _supaUser;
-        _supaUser = { id: 'u-home' };
-        _supa = { from: () => ({ select: () => ({ is: () => ({ eq: () => ({ eq: () => ({ gte: async () => ({ data: [] }) }) }) }) }) }) };
-        try {
-          window._geoClientRelabelRan = false;
-          const a = await _geoClientRelabelSweep();
-          window._geoClientRelabelRan = false;
-          let threw = null;
-          _supa = null;                                   // signed out mid-session
-          try { await _geoClientRelabelSweep(); } catch (e) { threw = String(e); }
-          return { a, threw };
-        } finally { _supa = realSupa; _supaUser = realUser; }
-      });
-      expect(out.a).toBe(0);
-      expect(out.threw).toBeNull();
-    });
 
-    test('a customer visit is on-site work, never a supply run', async () => {
-      // Owner 2026-08-29: "why did Laurie go as supply run when she was a
-      // lead? That shouldn't happen." _geoCloseClientEntry wrote 'place', the
-      // same value a Home Depot visit gets, so a real beta user's 2h07m at a
-      // customer's house was pooled with the parts counter and billed as
-      // overhead. No bid or job is required for it to be work: the owner's
-      // rule is "Jack did work with no bid and that's fine."
-      const out = await page.evaluate(async () => {
-        const rows = [], realEnq = _geoEnqueue, realUser = _supaUser;
-        _supaUser = { id: 'u-home' };
-        _geoEnqueue = (tbl, row) => rows.push(Object.assign({ _tbl: tbl }, row));
-        try {
-          if (typeof clients !== 'undefined') { clients.length = 0; clients.push({ id: 'c-laurie', name: 'Laurie Schonfeldt' }); }
-          const t = Date.parse('2026-08-21T14:00:00.000Z');
-          _geoCloseClientEntry('c-laurie', new Date(t).toISOString(), new Date(t + 99 * 60000).toISOString());
-          return rows;
-        } finally { _geoEnqueue = realEnq; _supaUser = realUser; }
-      });
-      expect(out.length).toBe(1);
-      expect(out[0].source).toBe('client');
-      expect(out[0].minutes).toBe(99);
-      expect(out[0].dest_place).toBe('Laurie Schonfeldt');
-    });
 
     test('client time lands in on-site labour, not the overhead bucket', async () => {
       const out = await page.evaluate(() => ({

@@ -3159,23 +3159,6 @@ async function _openCrewCost(){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   _crewCostRender('week');
 }
-// The motion history covering every shop session in the range, or null when
-// there is none. Mirrors _tlShopTape (js/timelog.js) deliberately: Crew Cost
-// and the Time Log must never disagree about a paid minute, so both read the
-// same tape and both hand it to the one function that owns the rule.
-async function _ccShopTape(byUid){
-  try{
-    if(typeof _geoMotionTape!=='function')return null;
-    let lo=0,hi=0;
-    Object.keys(byUid||{}).forEach(uid=>(byUid[uid]||[]).forEach(e=>{
-      const a=Date.parse((e&&e.arrived_at)||'')||0,b=Date.parse((e&&e.departed_at)||'')||0;
-      if(a>0&&(!lo||a<lo))lo=a;
-      if(b>hi)hi=b;
-    }));
-    if(!(lo>0&&hi>lo))return null;
-    return await _geoMotionTape(lo,hi);
-  }catch(_e){return null;}
-}
 async function _crewCostRender(range){
   const body=document.getElementById('_crew-cost-body');if(!body)return;
   ['today','week','month','quarter','ytd'].forEach(r=>{const b=document.getElementById('_cc-'+r);if(b){const on=r===range;b.style.background=on?'var(--blue)':'var(--bg2)';b.style.color=on?'#fff':'var(--text)';b.style.borderColor=on?'var(--blue)':'var(--border2)';}});
@@ -3231,39 +3214,13 @@ async function _crewCostRender(range){
   });
   const _ccOverlapMs=(aStart,aEnd,windows)=>windows.reduce((sum,[bStart,bEnd])=>
     sum+Math.max(0,Math.min(aEnd,bEnd)-Math.max(aStart,bStart)),0);
-  // Computed before anything is aggregated: both the drive filter just below
-  // and the shop spans further down need the day's workday window.
-  const shopCut=(typeof _geoShopCutoffs==='function')?_geoShopCutoffs(ents):{};
-  const _ccBases=(typeof _geoBaseNames==='function')?_geoBaseNames():new Set();
+  // Rows arrive AS THE DAY WAS (owner 2026-09-02, js/geo-derive.js): a
+  // drive is between two saved addresses or it was never written, a dwell is
+  // bounded by an arrival and a departure, and nothing overlaps. Crew Cost
+  // reads the same rows the Time Log draws and applies no grading of its own,
+  // which is the only way the two screens can agree about a paid minute.
   ents.forEach(en=>{
     const uid=en.employee_user_id;if(!uid)return;
-    // Same workday bound the Time Log applies: a drive leg outside the day's
-    // first and last real job/supply activity is a personal trip the tracker
-    // caught, never paid labor (js/geo-track.js _geoRowInWorkday). Applied
-    // here too so Crew Cost and the Time Log cannot disagree about a day.
-    if(_geoIsDriveSource(en.source)&&typeof _geoRowInWorkday==='function'&&en.arrived_at){
-      const dd=_bizDateStr(new Date(en.arrived_at));
-      if(!_geoRowInWorkday(en.arrived_at,en.departed_at,((shopCut[uid]||{})[dd])||null))return;
-    }
-    // Base dwell answers to the workday too, or Crew Cost pays for a night at
-    // home that the Time Log correctly refuses to show. The comment above is
-    // explicit that these two must never disagree about a paid minute; see
-    // _geoIsBaseRow (js/geo-track.js).
-    if(typeof _geoIsBaseRow==='function'&&_geoIsBaseRow(en,_ccBases)&&en.arrived_at){
-      const _ba=Date.parse(en.arrived_at)||0,_bd=Date.parse(en.departed_at||'')||0;
-      if(!(_ba>0&&_bd>_ba))return;
-      // Overnight at his own place: on the record, never on the payroll.
-      if(_bizDateStr(new Date(_ba))!==_bizDateStr(new Date(_bd))){_emp(uid).offMin+=(en.minutes||0);return;}
-      const _bpm=(typeof _geoShopPaidMin==='function')
-        ? _geoShopPaidMin(en.arrived_at,en.departed_at,((shopCut[uid]||{})[_bizDateStr(new Date(_ba))])||null)
-        : (en.minutes||0);
-      // Logged, never costed. Mirrors the off-job branch just below rather
-      // than dropping the row, so Crew Cost shows the same day the Time Log
-      // does and the two can never disagree about a minute (owner: still log
-      // it, the office decides what to pay).
-      if(_bpm<1){_emp(uid).offMin+=(en.minutes||0);return;}
-      en=Object.assign({},en,{minutes:_bpm});
-    }
     const e=_emp(uid);let m=en.minutes||0;
     // Off-job time (lunch, an errand) is shown but never PAID: it stays out of
     // e.min, which drives loaded cost and wage, and out of dayMins, which drives
@@ -3289,48 +3246,24 @@ async function _crewCostRender(range){
     }
     const day=_bizDateStr(new Date(en.arrived_at));e.dayMins[day]=(e.dayMins[day]||0)+m;
   });
-  // The day auto clocks out at its last real work event, so yard dwell after
-  // the last job or supply run (and yard dwell on a day with no work fence at
-  // all) is worth zero paid minutes: js/geo-track.js _geoShopCutoffs carries
-  // the full rule. Applied HERE as well as on the Time Log on purpose, Crew
-  // Cost is where those minutes turn into money, and two screens disagreeing
-  // about what a day paid is worse than either answer alone.
-  // Per person, in order: the clock-out bound AND the no-minute-paid-twice
-  // clip between overlapping sessions both live in _geoShopPaidSpans
-  // (js/geo-track.js), so this screen and the Time Log cannot drift apart.
-  const shopByUid={};
+  // Shop rows, as stored, trimmed only by a manual clock that covers them
+  // (picking up material FOR a job and clocking that job is one span of
+  // work, not two).
   shopEnts.forEach(en=>{
     if(!en||!en.employee_user_id||!en.arrived_at)return;
+    const uid=en.employee_user_id;
     const a=Date.parse(en.arrived_at);
     const b=en.departed_at?Date.parse(en.departed_at):a+(en.minutes||0)*60000;
-    (shopByUid[en.employee_user_id]=shopByUid[en.employee_user_id]||[])
-      .push({arrived_at:en.arrived_at,departed_at:new Date(b).toISOString()});
+    if(!(a>0&&b>a))return;
+    const raw=Number(en.minutes)>0?Math.round(Number(en.minutes)):Math.round((b-a)/60000);
+    const overlapMin=Math.round(_ccOverlapMs(a,b,manualWindows[uid]||[])/60000);
+    const m=Math.max(0,raw-Math.min(raw,overlapMin));
+    if(m<1)return;
+    const e=_emp(uid);
+    const day=_bizDateStr(new Date(a));
+    e.min+=m;e.shopMin+=m;
+    e.dayMins[day]=(e.dayMins[day]||0)+m;
   });
-  // Same tape the Time Log reads, for the same reason: at a home shop the
-  // paid span is the walking part (js/geo-track.js _geoActiveTrim). Crew Cost
-  // and the Time Log must never disagree about a number, so both fetch it and
-  // both hand it to the one function that owns the rule.
-  const shopTape=await _ccShopTape(shopByUid);
-  for(const uid of Object.keys(shopByUid)){
-    const mine=ents.filter(x=>x&&String(x.employee_user_id)===String(uid));
-    const spans=(typeof _geoShopPaidSpans==='function')?_geoShopPaidSpans(shopByUid[uid],shopCut[uid]||{},mine,shopTape):[];
-    shopByUid[uid].forEach((en,i)=>{
-      const sp=spans[i];if(!sp)return;
-      const bounded=sp.minutes||0;
-      // Overlap is measured against the BOUNDED window, not the raw one: a
-      // manual clock outside the workday would otherwise be subtracted from
-      // minutes the clock-out already removed, double-docking the same time.
-      const overlapMin=Math.round(_ccOverlapMs(sp.startMs,sp.endMs,manualWindows[uid]||[])/60000);
-      const m=Math.max(0,bounded-Math.min(bounded,overlapMin));   // never below 0, never over the bounded span
-      // Bucket created only once the session actually pays something, otherwise
-      // a person whose whole week was after-hours yard dwell renders as a 0.0h row.
-      if(m<1)return;
-      const e=_emp(uid);
-      const day=_bizDateStr(new Date(sp.startMs));
-      e.min+=m;e.shopMin+=m;
-      e.dayMins[day]=(e.dayMins[day]||0)+m;
-    });
-  }
   // Revenue attribution + overtime per employee
   Object.keys(byEmp).forEach(uid=>{
     const bidsSeen=new Set(Object.keys(byEmp[uid].jobs).filter(k=>k!=='unknown'));

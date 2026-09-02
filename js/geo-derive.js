@@ -373,6 +373,9 @@ function geoDeriveRows(result, ids) {
       startedIso: iso(l.startTs), endedIso: iso(l.endTs), mins: l.minutes,
       miles: l.miles, calc_method: 'derived-' + l.milesFrom,
       collapsedStops: l.stops || 0,
+      // The destination fence rides along (stripped by the wiring) so the
+      // purpose can be resolved through the same table the manual log uses.
+      _to: { kind: l.to.kind, clientId: l.to.clientId, jobId: l.to.jobId, placeId: l.to.placeId },
       client_id: l.to.clientId != null ? l.to.clientId : null,
       client_name: l.to.clientId != null ? (l.to.name || '') : '',
       purpose: l.to.kind === 'shop' ? 'Shop' : (l.to.kind === 'supply' ? 'Supply run' : (l.to.clientId != null || l.to.jobId != null ? 'Client Consult' : 'Business')),

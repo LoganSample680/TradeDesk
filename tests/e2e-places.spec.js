@@ -1159,43 +1159,17 @@ test.describe('Places, drive attribution and the map', () => {
   });
 
   test('a saved business-meeting place fences an automatic drive as "Business meeting", not "Other"', async () => {
-    const out = await page.evaluate(async () => {
-      const realUser = _supaUser, realRoute = _routeDistance;
-      _supaUser = { id: 'u-consult' };
-      window._routeDistance = _routeDistance = async () => ({ miles: 3, mins: 9 });
-      try {
-        places.length = 0;
-        savePlace({ name: "Advisor's Office", kind: 'business_meeting', lat: 39.10, lon: -95.10, confirmedBy: 'manual' });
-        S.officeLat = 39.00; S.officeLon = -95.00; S.teamTracking = true;
-        _geoJobCoords = {};
-        _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
-        _geoShopArrivedAt = null; _geoDriveStartedAt = null;
-        _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-        _geoLastFenceAt = null; _geoLegAtShop = false;
-        _geoHomeDwell = null; _geoWasAtHome = false;
-        _geoLastFenceLoc = null; _geoLegOrigin = null;
-        _geoPingBusy = false;
-        const before = mileage.length;
-        const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
-        await ping({ lat: 39.00, lon: -95.00 });     // at the shop
-        // Rewind ONLY _geoLastFenceAt, never _geoDriveStartedAt (arriving at the
-        // shop already cleared it back to null): a single ping spanning the whole
-        // trip is what the app actually sees on a backgrounded phone, and it is
-        // the overnight-style inference branch in _geoOnPing that supplies the
-        // leg's origin (_geoLegOrigin) FROM this timestamp. Pre-setting
-        // _geoDriveStartedAt here would skip that branch and leave the origin
-        // null, which is exactly the mistake that made this test fail the first
-        // time (mileageAdded came back empty: _geoAutoMileage refuses a null
-        // "from"). Same pattern e2e-geo-auto-mileage.spec.js's drive() helper uses.
-        if (_geoLastFenceAt) _geoLastFenceAt = new Date(Date.now() - 20 * 60000).toISOString();
-        await ping({ lat: 39.10, lon: -95.10 });     // arrive at the advisor's office
-        await new Promise(r => setTimeout(r, 30));
-        const row = mileage.slice(0, Math.max(0, mileage.length - before))[0];
-        return { purpose: row && row.purpose, toName: row && row.to_name };
-      } finally {
-        _supaUser = realUser;
-        window._routeDistance = _routeDistance = realRoute;
-      }
+    // The drive is derived now (owner 2026-09-02): the deriver resolves the
+    // destination fence, and the vehicle/purpose mapping stamps the purpose
+    // through the same table the manual log uses.
+    const out = await page.evaluate(() => {
+      const day = '2026-09-01', t0 = Date.parse('2026-09-01T13:00:00Z');
+      const from = { id: 'shop', kind: 'shop', name: 'Shop', lat: 39.00, lng: -95.00 };
+      const to = { id: 'place-9', kind: 'business_meeting', name: "Advisor's Office", placeId: 9, lat: 39.10, lng: -95.10 };
+      const res = { day, dwells: [], legs: [{ id: 'j-bm', from, to, startTs: t0, endTs: t0 + 9 * 60000, minutes: 9, miles: 3, milesFrom: 'path', collapsed: false, stops: 0 }] };
+      const rows = _geoDeriveVehicleRows(geoDeriveRows(res, { contractorId: 'o', employeeId: 'o' }));
+      const row = rows.td_mileage[0];
+      return { purpose: row && row.purpose, toName: row && row.to_name };
     });
     expect(out.toName).toBe("Advisor's Office");
     expect(out.purpose).toBe('Business meeting');

@@ -1896,21 +1896,14 @@ function _bootSyncSettled(){
   // logged before the dedup existed, or by another device, heal here too.
   // heal=true: boot is the one moment the wider overlapping-clocks twin rule
   // is safe, the live sweep stays strict (see _mileSameLeg).
-  try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
-  // Same idea for job_time_entries (js/geo-track.js _geoTimeEntriesSettleChain:
   // dedup, owner rule 2026-08-21, then same-place merge and gap-absorption,
   // owner rule 2026-08-23): a duplicate visit collapses to the longest here
   // too, whatever wrote it and whenever, chained so each step sees the last
   // one's writes rather than firing in parallel against a stale snapshot.
-  try{if(typeof _geoTimeEntriesSettleChain==='function')_geoTimeEntriesSettleChain();}catch(_e){}
-  // And drive-time hygiene (js/geo-track.js _geoSyncDriveTimeEntries, owner
   // rule 2026-08-22): the dedup just above ran (heal=true, sync), so any
   // duplicate mileage leg it merged away has already lost its legKey by the
   // time this runs, and the matching paid drive-time row drops with it.
-  try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
-  // And shop_time_entries duplicates (js/geo-track.js _geoDedupShopTimeEntries,
   // owner audit 2026-08-23): no other sweep touches that table at all.
-  try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
 }
 function _removeBootOverlay(immediate){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
@@ -2372,7 +2365,7 @@ async function supaInit(){
         // dashboard render holds the FULL shimmer (every widget + greeting),
         // one swap + one waterfall when the load below fully settles, exactly
         // like a fresh boot. _bootCascadeRan resets so this load gets its pour.
-        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;window._mileMotionHealRan=false;window._milePersonalSweepRan=false;window._mileWorkdaySweepRan=false;window._mileFlightSweepRan=false;window._geoOpenRestored=false;window._bootChecklistHoldUntil=null;window._bootChecklistPending=0;
+        window._bootSyncPending=true;window._bootSkelDone=false;window._bootCascadeRan=false;window._bootGeoHoldUntil=null;window._bootShimmerT0=null;window._bootSettleWaitT0=null;window._locPromptSticky=null;window._geoOpenRestored=false;window._bootChecklistHoldUntil=null;window._bootChecklistPending=0;
         goPg('pg-dash');
         try{
         const hasAccount=await loadAccountData();
@@ -8336,12 +8329,10 @@ async function supaLoadFromCloud({silent=false}={}){
     // merged the cloud's copies straight back in and nothing re-collapsed
     // them. Healing here re-collapses any resurrection the moment it arrives;
     // the saveAll inside the sweep then propagates the deletes for real.
-    try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
     // Same reconnect-triggered heal for job_time_entries duplicates, same
     // reasoning: a delete that never reached the cloud (offline heal) comes
     // back the moment the cloud's copy merges in, so this re-collapses it
     // for real, this time with a live connection to make the delete stick.
-    try{if(typeof _geoTimeEntriesSettleChain==='function')_geoTimeEntriesSettleChain();}catch(_e){}
     // Restore _geoLastFenceLoc/_geoLastFenceAt from the persisted open-entry
     // record BEFORE the mileage sweeps below run, not after. This used to
     // only happen ~2.4s later via _geoTrackInit's own deliberate boot delay
@@ -8355,82 +8346,58 @@ async function supaLoadFromCloud({silent=false}={}){
     // holds ~a week of history, so a leg that over-paid an errand's detour
     // before the walk check existed corrects itself here (once per session,
     // reductions only, js/mileage.js).
-    try{if(typeof _mileMotionHealSweep==='function')_mileMotionHealSweep();}catch(_e){}
     // The tape itself goes up (js/geo-track.js _geoTapeSync), so the week of
     // onFoot/still/driving the coprocessor holds stops being handset-only, and
     // then any home-office visit that closed before the load-out rule existed
-    // is re-graded from it (_geoHomeRegradeSweep). Both are once-per-session
     // and both no-op without a tape, same as the mileage sweep above.
     try{if(typeof _geoTapeSync==='function')_geoTapeSync();}catch(_e){}
-    try{if(typeof _geoHomeRegradeSweep==='function')_geoHomeRegradeSweep();}catch(_e){}
     // And the seven-day re-derive from the same tape (owner 2026-08-29). It
     // runs for everyone automatically, after the home regrade so the two
     // never fight over the same row on the same boot, and it needs no iOS
     // build: motionSince has shipped since 08-11.
-    try{if(typeof _geoTapeRegradeSweep==='function')_geoTapeRegradeSweep();}catch(_e){}
     // Duplicates first among equals is tempting but wrong: the regrade above
     // re-stamps boundaries, and doing that to a row that is about to be
     // deleted as a duplicate wastes a write. It runs after, on the survivors.
-    try{if(typeof _geoDupeSweep==='function')_geoDupeSweep();}catch(_e){}
     // And the dwells that were closed by whatever arrived next instead of by
     // the departure. Last of the three on purpose: it reads the drive rows as
     // the fence's testimony, so it wants them deduped and re-stamped first.
-    try{if(typeof _geoDwellRetroSweep==='function')_geoDwellRetroSweep();}catch(_e){}
     // Loading up, last: it walks the drives that survived everything above,
     // so running it earlier would hang a load-out off a drive about to be
     // removed as a duplicate or truncated with its day.
     // Re-time BEFORE the load-out sweep: that one hangs a load in front of a
     // drive's start, so it has to see the drive's real start rather than the
     // fence's late one.
-    try{if(typeof _geoRetimeToTapeSweep==='function')await _geoRetimeToTapeSweep();}catch(_e){}
     // The reconciler proper: drives the tape shows and no row carries, with
     // the arrival-side fence row as the confirmation. AFTER retime so the
     // rows it measures overlap against sit on their true boundaries, BEFORE
     // the load sweep so a filled drive can grow its load-out the same boot.
-    try{if(typeof _geoTapeFillSweep==='function')await _geoTapeFillSweep();}catch(_e){}
-    try{if(typeof _geoLoadRetroSweep==='function')_geoLoadRetroSweep();}catch(_e){}
     // LAST, deliberately: it trims the person's gap answers against the
     // derived rows, so it has to see those rows in their settled state. Run
     // earlier it would measure a half-corrected day and cut the wrong minutes.
-    try{if(typeof _tlTrimCoveredGapRows==='function')await _tlTrimCoveredGapRows();}catch(_e){}
     // And the customer visits already on record that were written as supply
-    // runs before the source split (js/geo-track.js _geoClientRelabelSweep).
-    try{if(typeof _geoClientRelabelSweep==='function')_geoClientRelabelSweep();}catch(_e){}
     // And a drive row is paid only for the part the tape says was driving
-    // (js/geo-track.js _geoDriveTapeTrim): the same evidence the home-office
     // re-grade reads, pointed at the rows either side of it.
-    try{if(typeof _geoDriveTapeTrim==='function')_geoDriveTapeTrim();}catch(_e){}
     // Promote server-provisional mileage rows (real-time geofence ingest):
     // route the real distance, apply the commute rule, drop redundant twins.
     // Same once-per-session settle point as the sweeps around it.
-    try{if(typeof _mileServerRefine==='function')_mileServerRefine();}catch(_e){}
     // And re-judge named personal stops (the Casey's loop): the live decision
     // runs once when Apple names the stop, so a day the app died through, or
     // a day judged under an older rule, never gets a second look without this.
-    try{if(typeof _milePersonalStopSweep==='function')_milePersonalStopSweep();}catch(_e){}
     // Same reductions-only, once-per-session shape as its sibling above, but
     // judged against the day's WORKDAY WINDOW rather than the destination
-    // (js/mileage.js _mileWorkdaySweep): a leg driven outside the day's first
     // and last real job or supply activity is a personal trip the tracker
     // happened to catch, and it has no business in an IRS log. Ordered after
     // the personal-stop sweep so a leg that one already collapsed is never
     // re-judged here.
-    try{if(typeof _mileWorkdaySweep==='function')_mileWorkdaySweep();}catch(_e){}
     // And clear anything already logged that a vehicle could not have driven
-    // (js/mileage.js _mileFlightSweep, owner report 2026-08-24: a flight was
     // booking itself as several hundred deductible miles). Runs before the
     // drive-time pass below on purpose, so the flight's paid wheel time goes
     // with it in the same settle.
-    try{if(typeof _mileFlightSweep==='function')_mileFlightSweep();}catch(_e){}
     // Drive-time hygiene last, after every mileage sweep above has had its
     // turn: a leg the personal-stop sweep just collapsed away, or the motion
     // heal just corrected, is exactly the kind of change whose paid
     // drive-time counterpart needs re-checking (js/geo-track.js
-    // _geoSyncDriveTimeEntries, owner rule 2026-08-22).
-    try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
     // Same reconnect-triggered heal for shop_time_entries duplicates
-    // (js/geo-track.js _geoDedupShopTimeEntries, owner audit 2026-08-23).
-    try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
 
     // ── One-time fleet lift out of the settings blob (20260809_td_vehicles) ──
     // MUST run here, after the load: only now do we know whether this account
@@ -8988,16 +8955,6 @@ function _initRealtimeSubscriptions(uid){
       .on('postgres_changes',{event:'*',schema:'public',table:'proposal_views',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{_fetchProposalViews();})
       .on('postgres_changes',{event:'*',schema:'public',table:'job_time_entries',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{
         _fetchProposalViews();
-        // A peer's own offline dedup can leave a delete stranded locally (it
-        // never reached the cloud), so its duplicate rides back in over
-        // realtime the moment that peer reconnects. Re-collapse shortly
-        // after the burst settles, same debounce shape as td_mileage above.
-        clearTimeout(window._rtTimeDedupTimer);
-        window._rtTimeDedupTimer=setTimeout(()=>{
-          try{if(typeof _geoTimeEntriesSettleChain==='function')_geoTimeEntriesSettleChain();}catch(_e){}
-          try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
-          try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
-        },1500);
       })
       .subscribe(_sigFeedStatus);
   }catch(_sf){}
@@ -9109,17 +9066,6 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   // A mileage row arriving over realtime can be a peer resurrecting a healed
   // duplicate (its own offline heal never propagated). Re-collapse shortly
   // after the burst settles; the heal is a no-op when nothing matches.
-  if(tbl==='td_mileage'){
-    clearTimeout(window._rtMileHealTimer);
-    window._rtMileHealTimer=setTimeout(()=>{
-      try{if(typeof _mileDedupTrips==='function')_mileDedupTrips(true);}catch(_e){}
-      // A peer's mileage collapse/dedup just landed here too: whatever legKey
-      // it dropped needs its paid drive-time counterpart re-checked (owner
-      // rule 2026-08-22, js/geo-track.js _geoSyncDriveTimeEntries).
-      try{if(typeof _geoSyncDriveTimeEntries==='function')_geoSyncDriveTimeEntries();}catch(_e){}
-      try{if(typeof _geoDedupShopTimeEntries==='function')_geoDedupShopTimeEntries();}catch(_e){}
-    },1500);
-  }
   if(fromRealtime&&Date.now()-_lastLocalSaveAt<5000)return;
   if(fromRealtime){
     // BURST-COALESCED render for realtime events: a peer save that touches N rows

@@ -1850,3 +1850,40 @@ small-to-mid trade contractor) and full-lifecycle scope:
 **Also worth a scan:** FieldEdge, Workiz, Service Fusion, ServiceM8, Kickserv, Tradify,
 simPRO (acquired by ServiceTitan in 2024, verify current product relationship before
 citing as independent), mHelpDesk, Sera Systems.
+
+---
+
+## 17. Time and Mileage: One Deriver, One Writer (owner rule 2026-09-02)
+
+Three weeks of Time Log patches never converged because three independent
+observers (the phone's strict fence, its park resolver, and the server's
+region ingest) each wrote rows for the same physical event, about twenty
+sweeps then reconciled them on boot and on every Time Log open, and the reader
+corrected the result on screen. Nothing anywhere stated what a row was
+supposed to be. That design is gone. The rule now:
+
+- **`js/geo-derive.js` is the only thing that decides what a drive or a dwell
+  is.** `geoDeriveDay(tape, fixes, fences)` is pure: the CoreMotion tape and
+  the GPS fixes in, dwells and legs out, same input same output same ids. The
+  owner's spec is quoted in its header. One journey id per automotive flip.
+  Both ends saved or no leg. A personal stop collapses to the direct route.
+  Same fence both ends is a round trip. Unresolved by midnight writes nothing;
+  the manual clock covers it. A dwell is a row only between an arrival and a
+  departure.
+- **`geo_replace_day` (Supabase RPC) is the only writer of automatic rows.**
+  It replaces one person's automatic rows for one day in one transaction,
+  refuses any set with an overlap, preserves manual clocks and hand-fixed
+  rows, and carries hand-set attributes across a re-derived mileage leg.
+- **The phone derives; the screens read.** Live: the automotive -> foot flip
+  and the 30-minute push-ping re-derive today. Boot: the tape's seven-day
+  window is re-derived once. `_geoEnqueue` is gated so no engine closer can
+  write an automatic row again; manual and `fixed-*` rows still land.
+- **The Time Log and Crew Cost read rows as stored.** The reader keeps
+  exactly two passes: `_tlBlendManual` (the clock is the bracket, automatic
+  rows overlay it, the remainder is Manual time) and `_tlFillUnaccounted` (a
+  hole between rows is a question). Nothing else.
+- **Never add a sweep, a reconciler, a dedup, or a reader-side correction.**
+  If the day is wrong, the deriver is wrong: fix the rule there, add the case
+  to `tests/e2e-geo-derive.spec.js`, and the boot rebuild repairs history.
+  `tests/e2e-geo-derive-gone.spec.js` fails CI if any of the deleted names
+  come back.

@@ -167,139 +167,13 @@ test.describe('Automatic mileage from drive legs', () => {
   }
 
   test.describe('every leg type logs a measured trip', () => {
-    test('shop to job: Job site, attached to the client, MapKit miles', async () => {
-      const { rows, calls } = await drive({ from: SHOP, to: JOB, viaRoad: true });
-      expect(rows.length).toBe(1);
-      const t = rows[0];
-      expect(t.miles).toBe(12.3);              // MapKit's number, rounded to a tenth
-      expect(t.calc_method).toBe('auto_route');
-      expect(t.purpose).toBe('Job site');
-      expect(t.client_id).toBe(7701);
-      expect(t.to_name).toBe('Miller Residence');
-      expect(t.from_name).toBe('Shop');
-      expect(t.gps).toBe(true);
-      // The two points handed to MapKit are the GEOCODES, not the GPS fixes. The
-      // shop fix was exact here, so the job end is what proves it: the arrival
-      // ping is the job coordinate itself only because the fixture put it there,
-      // whereas the ORIGIN could only be 38.0/-94.0 by coming off S.officeLat.
-      expect(calls.length).toBe(1);
-      expect(calls[0].f.lat).toBeCloseTo(38.0, 4);
-      expect(calls[0].f.lng).toBeCloseTo(-94.0, 4);
-      expect(calls[0].t.lat).toBeCloseTo(38.06, 4);
-    });
 
-    test('job to supply house: Supply run, named from the saved place', async () => {
-      const { rows } = await drive({ from: JOB, to: SUPPLY, viaRoad: true });
-      expect(rows.length).toBe(1);
-      expect(rows[0].purpose).toBe('Supply run');
-      expect(rows[0].to_name).toBe('Ace Supply');
-      expect(rows[0].from_name).toBe('Miller Residence');
-      expect(rows[0].miles).toBe(12.3);
-    });
 
-    test('job back to the shop: the new Shop trip type', async () => {
-      const { rows } = await drive({ from: JOB, to: SHOP, viaRoad: true });
-      expect(rows.length).toBe(1);
-      expect(rows[0].purpose).toBe('Shop');
-      expect(await page.evaluate(() => MILE_PURPOSES.includes('Shop'))).toBe(true);
-    });
 
-    test('shop to a home office: Home Office', async () => {
-      const { rows } = await drive({ from: SHOP, to: HOMEOFF, viaRoad: true });
-      expect(rows.length).toBe(1);
-      expect(rows[0].purpose).toBe('Home Office');
-    });
 
-    test('a leg seen in ONE ping still logs, same as one seen from the road', async () => {
-      // A pocketed phone backgrounds and delivers no fix mid-drive, so the last
-      // fix is on site and the next is at the destination. If mileage only
-      // existed when GPS happened to sample the road, the deduction would
-      // depend on luck.
-      const { rows, calls } = await drive({ from: SHOP, to: JOB, viaRoad: false });
-      expect(rows.length).toBe(1);
-      expect(rows[0].miles).toBe(12.3);
-      expect(calls[0].f.lat).toBeCloseTo(38.0, 4);   // still the shop geocode
-    });
 
-    // Behavior intentionally changed (owner report, 2026-08-07): an anonymous
-    // stop used to terminate the leg and produce a deductible "-> Stop" row,
-    // which is how a real errand day logged "Home Depot -> Stop" for a
-    // restaurant and inflated the deduction. An unnamed, unreceipted stop is
-    // now a detour: its inbound row collapses (breadcrumbed, reversible by
-    // receipt) and the surviving row runs endpoint to endpoint at direct
-    // miles, per the CPA rule already documented on _geoCloseStop.
-    test('an anonymous unreceipted stop in the middle collapses into ONE direct endpoint-to-endpoint trip', async () => {
-      const { rows } = await drive({ from: JOB, to: SUPPLY, dwellStop: true });
-      expect(rows.length, 'the detour must not split the deductible trip').toBe(1);
-      const t = rows[0];
-      expect(t.from_name).toBe('Miller Residence');   // the JOB endpoint, not the kerb
-      expect(t.to_name).toBe('Ace Supply');
-      expect(t.to_name).not.toBe('Stop');
-      // The dropped sub-leg rides along as the breadcrumb that makes this
-      // reversible when a receipt for the stop turns up later.
-      expect(t.passedThrough && t.passedThrough.stop).toBeTruthy();
-      expect(t.passedThrough.stop.lat).toBeCloseTo(38.24, 2);
-      // Wheel time surfaces on the row and sums BOTH sub-legs (~20 + ~20 min).
-      expect(t.mins).toBeGreaterThanOrEqual(38);
-      expect(t.mins).toBeLessThanOrEqual(42);
-    });
 
-    test('the same stop WITH a same-day receipt at its pin stays a real destination, two trips', async () => {
-      await page.evaluate((LUNCH) => {
-        window.__origExpenses = expenses.slice();
-        expenses.push({ id: 991001, vendor: 'Ace Lunch Counter', amount: 42, cat: 'meals',
-          date: todayKey(), lat: LUNCH.lat, lon: LUNCH.lon, geoAcc: 10, geoAt: new Date().toISOString() });
-      }, LUNCH);
-      const { rows } = await drive({ from: JOB, to: SUPPLY, dwellStop: true });
-      await page.evaluate(() => { expenses.length = 0; window.__origExpenses.forEach(e => expenses.push(e)); window.__origExpenses = null; });
-      expect(rows.length, 'a receipted stop is proven business, the split stands').toBe(2);
-      const tos = rows.map(r => Math.round((r.toCoord?.lat || 0) * 100) / 100);
-      expect(tos).toContain(38.24);      // inbound ended at the receipted stop
-      expect(tos).toContain(38.12);      // outbound ended at the supply house
-    });
 
-    test('drive time surfaces on the mileage row and renders in the log', async () => {
-      const { rows } = await drive({ from: SHOP, to: JOB, viaRoad: true });
-      expect(rows[0].mins, 'the ~20-minute leg carries its wheel time').toBeGreaterThanOrEqual(19);
-      expect(rows[0].mins).toBeLessThanOrEqual(21);
-      const out = await page.evaluate(() => {
-        window.__origMileage = mileage.slice();
-        mileage.length = 0;
-        // 9:12 IN THE BUSINESS'S ZONE, built through the app's own inverse
-        // converter, because the row RENDERS in that zone. setHours() builds
-        // the runner's 9:12, which is a different instant everywhere except a
-        // machine that happens to sit in the business's timezone, and the
-        // assertions below are about the clock a contractor reads.
-        const day = _bizDateStr(new Date());
-        const startIso = _tlBizInputToIso(day + 'T09:12');
-        const endIso = _tlBizInputToIso(day + 'T10:47');
-        mileage.push({ id: 991002, date: day, from_name: 'Shop', to_name: 'Miller Residence',
-          miles: 12.3, mins: 95, startedIso: startIso, endedIso: endIso,
-          purpose: 'Job site', gps: true, created_at: new Date().toISOString() });
-        renderAllMileage();
-        const trip = document.querySelector('.mil-day-trip[data-lp-id="991002"]');
-        const res = {
-          // WHERE stays on the left, untouched by the clock/duration.
-          routeText: trip?.querySelector('.mil-day-trip-route')?.innerText || '',
-          // WHEN + HOW LONG live together in one right-aligned stats stack,
-          // not scattered beside each stop (that read as floating, disjointed
-          // text at a different position on every row).
-          mi: trip?.querySelector('.mil-trip-mi')?.innerText || '',
-          meta: trip?.querySelector('.mil-trip-meta')?.innerText || '',
-        };
-        mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
-        return res;
-      });
-      expect(out.routeText).toContain('Shop');
-      expect(out.routeText).toContain('Miller Residence');
-      expect(out.routeText).not.toContain('9:12');   // no clock text bleeds into the route column
-      expect(out.routeText).not.toContain('10:47');
-      expect(out.mi).toContain('12.3 mi');
-      expect(out.meta).toContain('1h 35m');    // wheel time
-      expect(out.meta).toContain('9:12a');     // and the trip's real clock, compact format
-      expect(out.meta).toContain('10:47a');
-      expect(out.meta.indexOf('·')).toBeGreaterThan(-1);   // duration and clock on ONE grouped line
-    });
 
     test('the log is year -> month -> day on the SAME Books accordion, never a hand-rolled one', async () => {
       // Owner 2026-08-13: "same accordion constant logic, no new hand rolled
@@ -624,101 +498,10 @@ test.describe('Automatic mileage from drive legs', () => {
   });
 
   test.describe('the vehicle rule', () => {
-    test('employee in a company truck: miles log, on that truck', async () => {
-      const { rows } = await drive({ from: SHOP, to: JOB, viaRoad: true, asEmployee: true, empVehicle: 'v-van' });
-      expect(rows.length).toBe(1);
-      expect(rows[0].vehicleId).toBe('v-van');
-      expect(rows[0].vehicle).toBe('Transit');
-      // Never the owner's default: an employee's truck is the one they picked.
-      expect(rows[0].vehicleId).not.toBe('v-truck');
-    });
 
-    // WHAT THESE TWO USED TO ASSERT, and why it changed (2026-08-02).
-    //
-    // They asserted no mileage row at all for an employee in their own car, and
-    // that was right about the thing it was protecting: those miles are not the
-    // owner's to deduct, and a row that reached the deduction total would inflate
-    // it with miles the owner's vehicles never drove.
-    //
-    // But dropping the row threw away the fact as well as the deduction. Some
-    // states require reimbursing an employee for driving their own car, and a
-    // contractor in one of them was left with no record of a debt they already
-    // had. The row is written now and flagged reimbursable, and deductibleTrips
-    // is what keeps it out of every deduction total, which is the guarantee these
-    // tests were really defending. So they now assert both halves rather than
-    // just the absence.
-    test('employee in their OWN car: logged for reimbursement, never for the deduction', async () => {
-      const { rows } = await drive({ from: SHOP, to: JOB, viaRoad: true, asEmployee: true, empVehicle: 'personal' });
-      expect(rows.length).toBe(1);
-      expect(rows[0].reimbursable).toBe(true);
-      // The flag is what this drive controls. That the flag actually keeps a row
-      // out of every deduction total is proven in "two pots of money" below,
-      // against an array this test does not have to own: asserting it here on
-      // the whole of `mileage` counted every row the rest of the file had
-      // already left behind.
-    });
 
-    test('employee who picked no vehicle: recorded, claimed by nobody', async () => {
-      // CHANGED 2026-08-03, owner's call, and the old assertion was mine from
-      // earlier in this same PR.
-      //
-      // Old behaviour: no pick was treated as "their own car", so it logged one
-      // reimbursable row. The reasoning was that an unrecorded drive is more
-      // likely personal than company, so recording the debt was the safe side.
-      //
-      // Why that was wrong: no pick does not mean personal car. It means nobody
-      // said anything. They may have been in the company truck, riding with
-      // somebody, or not driving at all. Booking a reimbursement off that
-      // invents a debt from a blank, and it contradicted the rule this codebase
-      // already states in _autoTripVehicle: no pick, no mileage. 'rider' two
-      // cases down has always claimed nothing for exactly this reason.
-      //
-      // New behaviour: the TIME still logs, because the drive happened and is
-      // compensable. The money claim waits until somebody records a vehicle.
-      const { rows } = await drive({ from: SHOP, to: JOB, viaRoad: true, asEmployee: true, empVehicle: '' });
-      // Recorded, not discarded (revised again 2026-08-03): one row, marked
-      // unattributed, counted by neither side until somebody says what he drove.
-      expect(rows.length).toBe(1);
-      expect(rows[0].vehicleUnknown).toBe(true);
-      expect(!!rows[0].reimbursable).toBe(false);
-    });
 
-    test('an employee in their own car is still PAID for the drive', async () => {
-      // The whole point of splitting these two: drive time is compensable labor
-      // whatever they are sitting in. Only the DEDUCTION is the company's.
-      const out = await page.evaluate(async (d) => {
-        const realUser = _supaUser, realEmp = _isEmployee;
-        const legs = [], realEnq = _geoEnqueue;
-        _supaUser = { id: 'u-mi' }; _isEmployee = true;
-        localStorage.setItem('emp_vehicle_' + todayKey(), 'personal');
-        _geoEnqueue = (tbl, row) => legs.push(row);
-        try {
-          __seedGeo();
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
-          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
-          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLastFenceLoc = null; _geoLegOrigin = null;
-          const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
-          await ping(d.SHOP);
-          await ping(d.ROAD);
-          if (_geoDriveStartedAt) _geoDriveStartedAt = new Date(Date.now() - 20 * 60000).toISOString();
-          await ping(d.JOB);
-          return legs.filter(r => /^drive/.test(r.source || ''));
-        } finally { _supaUser = realUser; _isEmployee = realEmp; _geoEnqueue = realEnq; }
-      }, { SHOP, ROAD, JOB });
-      expect(out.length).toBe(1);
-      expect(out[0].source).toBe('drive-personal');
-      expect(out[0].minutes).toBeGreaterThanOrEqual(19);
-    });
 
-    test('owner on a personal vehicle: miles DO log, on the default truck', async () => {
-      // The owner is the business. Their own car's business miles are exactly
-      // what the standard mileage deduction is for, so there is no gate here.
-      const { rows } = await drive({ from: SHOP, to: JOB, viaRoad: true });
-      expect(rows.length).toBe(1);
-      expect(rows[0].vehicleId).toBe('v-truck');
-      expect(rows[0].vehicle).toBe('F-250');
-    });
 
     test('one active vehicle needs no default set at all', async () => {
       const out = await page.evaluate(() => {
@@ -821,76 +604,10 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.added).toBe(0);
     });
 
-    test('home office checkbox ticked: home to the SHOP logs', async () => {
-      // The exact promise the Settings checkbox has always made on screen, and
-      // never kept until now. Red before this fix: 0 rows.
-      const out = await homeDeparture(SHOP, { box: true });
-      expect(out.added).toBe(1);
-      expect(out.rows[0].purpose).toBe('Shop');
-      // Named, not an anonymous "Stop". A mileage row has to read as a record
-      // somebody could defend a year later.
-      expect(out.rows[0].from).toBe('Home Office');
-      expect(out.rows[0].miles).toBe(9);
-    });
 
-    test('home office checkbox ticked: home to a SUPPLY HOUSE logs', async () => {
-      const out = await homeDeparture(SUPPLY, { box: true });
-      expect(out.added).toBe(1);
-      expect(out.rows[0].purpose).toBe('Supply run');
-      expect(out.rows[0].from).toBe('Home Office');
-    });
 
-    test('home office checkbox ticked: home to a JOB logs', async () => {
-      const out = await homeDeparture(JOB, { box: true });
-      expect(out.added).toBe(1);
-      expect(out.rows[0].purpose).toBe('Job site');
-      expect(out.rows[0].from).toBe('Home Office');
-    });
 
-    test('home tagged as a home office PLACE logs, with or without the box', async () => {
-      // The second, older route to the same declaration: saving the house as a
-      // place of kind home_office makes it a fence, so the departure is an
-      // ordinary fence-to-fence leg and never reaches the commute guard at all.
-      // Both routes have to work, because the app offers both.
-      const out = await homeDeparture(SUPPLY, { tagPlace: true });
-      expect(out.added).toBe(1);
-      expect(out.rows[0].from).toBe('Home Office');
-      expect(out.rows[0].purpose).toBe('Supply run');
-    });
 
-    test('and back: the return leg from a supply house home is measured too', async () => {
-      // "home to supply and back", the owner's words. The return trip is a
-      // separate leg and has to log on its own.
-      const out = await page.evaluate(async (d) => {
-        const realUser = _supaUser, realRoute = _routeDistance;
-        const keepHo = S.homeOffice, keepPlaces = places.slice();
-        _supaUser = { id: 'u-mi' };
-        window._routeDistance = _routeDistance = async () => ({ miles: 6.2, mins: 11 });
-        const before = mileage.length;
-        try {
-          __seedGeo();   // rebuilds `places`, so the home-office tag goes after it
-          S.homeOffice = true;
-          savePlace({ name: 'Home Office', kind: 'home_office', lat: d.HOME.lat, lon: d.HOME.lon, confirmedBy: 'manual' });
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
-          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
-          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLastFenceLoc = null; _geoLegOrigin = null;
-          _geoHomeDwell = null; _geoWasAtHome = false;
-          const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
-          const back = () => { if (_geoLastFenceAt) _geoLastFenceAt = new Date(Date.now() - 25 * 60000).toISOString(); };
-          await ping(d.HOME); back();
-          await ping(d.SUPPLY); back();
-          await ping(d.HOME);
-          await new Promise(r => setTimeout(r, 40));
-          const rows = mileage.slice(0, Math.max(0, mileage.length - before));
-          return rows.map(m => m.from_name + ' -> ' + m.to_name).sort();
-        } finally {
-          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
-          S.homeOffice = keepHo; places.length = 0; keepPlaces.forEach(p => places.push(p));
-        }
-      }, { HOME: { lat: 38.3000, lon: -94.3000 }, SUPPLY });
-      expect(out).toEqual(['Ace Supply -> Home Office', 'Home Office -> Ace Supply']);
-    });
 
     test("the owner's home office does not exempt an EMPLOYEE's driveway", async () => {
       // S.homeOffice is one account-level flag describing ONE residence. Read
@@ -966,681 +683,9 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
-  test.describe('what must never be logged', () => {
-
-    test('one leg can only ever bill once, however many times it replays', async () => {
-      const out = await page.evaluate(async (d) => {
-        const realUser = _supaUser, realRoute = _routeDistance;
-        _supaUser = { id: 'u-mi' };
-        window._routeDistance = _routeDistance = async () => ({ miles: 5, mins: 9 });
-        const before = mileage.length;
-        try {
-          const from = { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' };
-          const to = { lat: d.JOB.lat, lng: d.JOB.lon, name: 'Miller Residence', kind: 'job', clientId: 7701 };
-          const iso = new Date().toISOString();
-          autoLogDriveTrip({ from, to, legKey: 'leg-dupe-1', startedIso: iso });
-          autoLogDriveTrip({ from, to, legKey: 'leg-dupe-1', startedIso: iso });
-          autoLogDriveTrip({ from, to, legKey: 'leg-dupe-1', startedIso: iso });
-          await new Promise(r => setTimeout(r, 20));
-          return { added: mileage.length - before };
-        } finally { _supaUser = realUser; window._routeDistance = _routeDistance = realRoute; }
-      }, { SHOP, JOB });
-      expect(out.added).toBe(1);
-    });
-
-    // ── A SERVER ESTIMATE MUST NOT BLOCK THE MEASUREMENT ──────────────────
-    // Owner, 2026-08-31, on his drive home: the log read 2.1 miles from "John
-    // Doe" to "2015 SW Randolph Ave" for the exact road he had driven out on
-    // at 3.2 miles an hour earlier. Giving both writers one clock made their
-    // legKeys match, which killed the duplicate rows and, in the same stroke,
-    // let the server's provisional straight-line row satisfy the idempotence
-    // guard so the phone never wrote its measured one.
-    const srvRow = (d, over) => Object.assign({
-      id: 'srv-leg-prov-1', legKey: 'leg-prov-1', gps: true, provisional: true,
-      calc_method: 'server_est', miles: 2.1, gpsMiles: 0,
-      startedIso: new Date(Date.now() - 20 * 60000).toISOString(),
-      endedIso: new Date(Date.now() - 7 * 60000).toISOString(), mins: 13,
-      from_name: 'John Doe', from: '2950 SW McClure Rd',
-      to_name: '2015 SW Randolph Ave', to: '2015 SW Randolph Ave',
-      fromCoord: { lat: d.JOB.lat, lng: d.JOB.lon },
-      toCoord: { lat: d.SHOP.lat, lng: d.SHOP.lon },
-      purpose: 'Business', loggedAt: new Date().toISOString(),
-    }, over || {});
-
-    const overServer = (page, world) => page.evaluate(async (d) => {
-      const realUser = _supaUser, realRoute = _routeDistance;
-      const before = mileage.slice();
-      _supaUser = { id: 'u-mi' };
-      window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 9 });
-      try {
-        mileage.unshift(d.srv);
-        const from = { lat: d.JOB.lat, lng: d.JOB.lon, name: 'John Doe', kind: 'client', clientId: 7701 };
-        const to = { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' };
-        const r = autoLogDriveTrip({ from, to, legKey: 'leg-prov-1',
-          startedIso: new Date(Date.now() - 18 * 60000).toISOString() });
-        await new Promise(x => setTimeout(x, 40));
-        const rows = mileage.filter(m => m && m.legKey === 'leg-prov-1');
-        return { returned: !!r, count: rows.length,
-                 id: rows[0] && rows[0].id, miles: rows[0] && rows[0].miles,
-                 calc: rows[0] && rows[0].calc_method,
-                 prov: rows[0] && rows[0].provisional,
-                 from: rows[0] && rows[0].from_name, to: rows[0] && rows[0].to_name };
-      } finally {
-        _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
-        mileage.length = 0; before.forEach(m => mileage.push(m));
-      }
-    }, world);
-
-    test('the measured leg replaces a provisional server row instead of being dropped', async () => {
-      const r = await overServer(page, { srv: srvRow({ JOB, SHOP }), JOB, SHOP });
-      expect(r.returned, 'the phone must not silently decline to log its own drive').toBe(true);
-      expect(r.count, 'one drive, still one row').toBe(1);
-      expect(r.miles, 'the routed distance, not the straight-line estimate').toBe(3.2);
-      expect(r.calc).toBe('auto_route');
-      expect(r.prov, 'and it is no longer a provisional row').toBeUndefined();
-    });
-
-    test('it keeps the server row id, so the cloud row is updated not orphaned', async () => {
-      // Delete-and-recreate would leave a window with no record of the drive
-      // at all, which is exactly what cost Jack a whole trip on 2026-08-30.
-      const r = await overServer(page, { srv: srvRow({ JOB, SHOP }), JOB, SHOP });
-      expect(r.id).toBe('srv-leg-prov-1');
-    });
-
-    test('the phone\'s own names win: "Shop", not the fence id the server saw', async () => {
-      const r = await overServer(page, { srv: srvRow({ JOB, SHOP }), JOB, SHOP });
-      expect(r.from).toBe('John Doe');
-      expect(r.to, 'the server had no idea this place was the shop').toBe('Shop');
-    });
-
-    test('a REAL client row still blocks it: that guard has not moved', async () => {
-      // The idempotence this whole key exists for. Only a provisional row may
-      // be replaced; a settled one means the leg is already properly logged.
-      const r = await overServer(page, {
-        srv: srvRow({ JOB, SHOP }, { provisional: undefined, calc_method: 'auto_route', miles: 3.2 }),
-        JOB, SHOP });
-      expect(r.returned, 'a settled row is still the end of the matter').toBe(false);
-      expect(r.count).toBe(1);
-      expect(r.id).toBe('srv-leg-prov-1');
-    });
-
-    test('a provisional row alongside a settled one does not open the door', async () => {
-      // Mixed set: every row for the key must be provisional before the guard
-      // stands down, or a stray server duplicate would let a settled leg be
-      // rewritten.
-      const r = await page.evaluate(async (d) => {
-        const realUser = _supaUser, realRoute = _routeDistance;
-        const before = mileage.slice();
-        _supaUser = { id: 'u-mi' };
-        window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 9 });
-        try {
-          mileage.unshift({ id: 'real-1', legKey: 'leg-mix-1', gps: true, miles: 3.2,
-            calc_method: 'auto_route', from_name: 'John Doe', to_name: 'Shop',
-            fromCoord: { lat: d.JOB.lat, lng: d.JOB.lon }, toCoord: { lat: d.SHOP.lat, lng: d.SHOP.lon } });
-          mileage.unshift({ id: 'srv-1', legKey: 'leg-mix-1', gps: true, provisional: true,
-            miles: 2.1, calc_method: 'server_est',
-            fromCoord: { lat: d.JOB.lat, lng: d.JOB.lon }, toCoord: { lat: d.SHOP.lat, lng: d.SHOP.lon } });
-          const from = { lat: d.JOB.lat, lng: d.JOB.lon, name: 'John Doe', kind: 'client' };
-          const to = { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' };
-          const r2 = autoLogDriveTrip({ from, to, legKey: 'leg-mix-1', startedIso: new Date().toISOString() });
-          return { returned: !!r2, count: mileage.filter(m => m && m.legKey === 'leg-mix-1').length };
-        } finally {
-          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
-          mileage.length = 0; before.forEach(m => mileage.push(m));
-        }
-      }, { JOB, SHOP });
-      expect(r.returned).toBe(false);
-      expect(r.count, 'nothing added, nothing rewritten').toBe(2);
-    });
-
-    test('no prior row at all is unchanged: a fresh leg still just writes', async () => {
-      const r = await page.evaluate(async (d) => {
-        const realUser = _supaUser, realRoute = _routeDistance;
-        const before = mileage.slice();
-        _supaUser = { id: 'u-mi' };
-        window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 9 });
-        try {
-          const from = { lat: d.JOB.lat, lng: d.JOB.lon, name: 'John Doe', kind: 'client' };
-          const to = { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' };
-          const r2 = autoLogDriveTrip({ from, to, legKey: 'leg-fresh-1', startedIso: new Date().toISOString() });
-          await new Promise(x => setTimeout(x, 40));
-          const rows = mileage.filter(m => m && m.legKey === 'leg-fresh-1');
-          return { returned: !!r2, count: rows.length, miles: rows[0] && rows[0].miles };
-        } finally {
-          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
-          mileage.length = 0; before.forEach(m => mileage.push(m));
-        }
-      }, { JOB, SHOP });
-      expect(r.returned).toBe(true);
-      expect(r.count).toBe(1);
-      expect(r.miles).toBe(3.2);
-    });
-
-    test('the leg key on the trip matches the one on the time entry', async () => {
-      // This is what makes the pair auditable: the mileage row and the drive it
-      // came from name the same leg.
-      const out = await page.evaluate(async (d) => {
-        const realUser = _supaUser, realEnq = _geoEnqueue, realRoute = _routeDistance;
-        const legs = [];
-        _supaUser = { id: 'u-mi' };
-        _geoEnqueue = (tbl, row) => legs.push(row);
-        window._routeDistance = _routeDistance = async () => ({ miles: 7, mins: 12 });
-        const before = mileage.length;
-        try {
-          __seedGeo();
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
-          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
-          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLastFenceLoc = null; _geoLegOrigin = null;
-          const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
-          await ping(d.SHOP);
-          await ping(d.ROAD);
-          if (_geoDriveStartedAt) _geoDriveStartedAt = new Date(Date.now() - 20 * 60000).toISOString();
-          await ping(d.JOB);
-          await new Promise(r => setTimeout(r, 30));
-          const trip = mileage[0];
-          const leg = legs.find(r => /^drive/.test(r.source || ''));
-          return { added: mileage.length - before, tripKey: trip && trip.legKey, legKey: leg && leg.client_key };
-        } finally { _supaUser = realUser; _geoEnqueue = realEnq; window._routeDistance = _routeDistance = realRoute; }
-      }, { SHOP, ROAD, JOB });
-      expect(out.added).toBe(1);
-      expect(out.tripKey).toBeTruthy();
-      expect(out.tripKey).toBe(out.legKey);
-    });
-
-    // ── One journey, one row (owner's triple-logged drive, 2026-08-11) ───────
-    // One real drive to a client produced THREE rows: the automatic leg, the
-    // same leg re-closed after a parking-lot truck move, and a manual drive
-    // started mid-route. Two guards now stand between that day and the log.
-
-    test('a re-closed leg mints the SAME key, so it can never write twice', async () => {
-      // The leg key was random per close, so the idempotency built on it never
-      // fired for a replayed arrival. Deterministic now: person + leg start.
-      const out = await page.evaluate(async (d) => {
-        const realUser = _supaUser, realRoute = _routeDistance;
-        _supaUser = { id: 'u-dedup' };
-        window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 6 });
-        const keep = mileage.splice(0);
-        try {
-          const from = { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' };
-          const to = { lat: d.JOB.lat, lng: d.JOB.lon, name: 'John Doe', kind: 'job', clientId: 7788 };
-          const iso = new Date(Date.now() - 10 * 60000).toISOString();
-          // Two closes of one leg, the way the truck move re-delivered it:
-          // same leg start, keys minted independently at each close.
-          autoLogDriveTrip({ from, to, legKey: _geoLegKey(iso), startedIso: iso });
-          autoLogDriveTrip({ from, to, legKey: _geoLegKey(iso), startedIso: iso });
-          await new Promise(r => setTimeout(r, 30));
-          return { rows: mileage.length, stable: _geoLegKey(iso) === _geoLegKey(iso) };
-        } finally {
-          mileage.length = 0; keep.forEach(m => mileage.push(m));
-          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
-        }
-      }, { SHOP, JOB });
-      expect(out.stable).toBe(true);
-      expect(out.rows).toBe(1);
-    });
-
-    test('the triple-logged drive collapses to one row, the longest', async () => {
-      const out = await page.evaluate(() => {
-        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
-        const keep = mileage.splice(0);
-        try {
-          // The owner's three rows, verbatim shape: manual partial from
-          // mid-route, the real 7:51-7:57 leg, and its 7:51-8:01 replay.
-          mileage.push(
-            { id: 1, gps: true, calc_method: 'gps_time', miles: 2.4, client_id: 77,
-              loggedAt: '2026-08-11T12:58:30Z', startedIso: '2026-08-11T12:53:00Z', date: '2026-08-11' },
-            { id: 2, gps: true, legKey: 'leg-a', calc_method: 'auto_route', miles: 3.2, client_id: 77,
-              fromCoord: SHOP2, toCoord: JOHN, startedIso: '2026-08-11T12:51:00Z',
-              endedIso: '2026-08-11T12:57:00Z', loggedAt: '2026-08-11T12:57:02Z', date: '2026-08-11' },
-            { id: 3, gps: true, legKey: 'leg-b', calc_method: 'auto_route', miles: 3.2, client_id: 77,
-              fromCoord: SHOP2, toCoord: JOHN, startedIso: '2026-08-11T12:51:00Z',
-              endedIso: '2026-08-11T13:01:00Z', loggedAt: '2026-08-11T13:01:05Z', date: '2026-08-11' });
-          const removed = _mileDedupTrips();
-          const again = _mileDedupTrips();   // idempotent: healing must not keep healing
-          return { removed, again, rows: mileage.map(m => ({ id: m.id, miles: m.miles })) };
-        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
-      });
-      expect(out.removed).toBe(2);
-      expect(out.again).toBe(0);
-      expect(out.rows).toEqual([{ id: 2, miles: 3.2 }]);   // the longest, and the FIRST close
-    });
-
-    // ── The sweep that deleted a real drive (Jack, 2026-08-30) ──────────────
-    // 8.4 miles home, recorded by the server while the app was closed. He
-    // opened the app for three seconds. This sweep picked a winner that had
-    // never been uploaded, deleted the loser that HAD been, and the drive was
-    // gone: the delete goes straight to the cloud via _tdSoftDelete, so it
-    // lands whether or not the save that would justify it ever runs.
-    test('a saved row is never deleted for a winner that is not in the cloud', async () => {
-      const out = await page.evaluate(() => {
-        const A = { lat: 39.0475, lng: -95.6815 }, HOME = { lat: 39.0226, lng: -95.798 };
-        const keep = mileage.splice(0);
-        const hadHash = _syncedHash.td_mileage;
-        try {
-          // 501 is the server's row and it IS in the cloud. 502 is the phone's,
-          // newer so it wins the pair, and has never been uploaded.
-          mileage.push(
-            // The PHONE row (502) is logged first, because it closes the leg
-            // locally the moment the drive ends, and the server's copy lands
-            // afterwards. So the winner rule (earliest loggedAt) hands the
-            // journey to the row that has never been uploaded, which is
-            // precisely the shape that lost the drive.
-            { id: 501, gps: true, legKey: 'leg-srv', calc_method: 'auto_route', miles: 8.4,
-              fromCoord: A, toCoord: HOME, startedIso: '2026-08-30T22:45:18Z',
-              endedIso: '2026-08-30T23:25:13Z', loggedAt: '2026-08-30T23:25:20Z', date: '2026-08-30' },
-            { id: 502, gps: true, legKey: 'leg-phone', calc_method: 'auto_route', miles: 8.4,
-              fromCoord: A, toCoord: HOME, startedIso: '2026-08-30T22:45:21Z',
-              endedIso: '2026-08-30T23:25:16Z', loggedAt: '2026-08-30T23:25:14Z', date: '2026-08-30' });
-          _syncedHash.td_mileage = new Map([['501', 'h']]);
-          // BOOT HEAL, which is the pass that actually ran on his phone: the
-          // live sweep only pairs legs whose starts match to the millisecond,
-          // and two writers never agree that closely.
-          const removed = _mileDedupTrips(true);
-          return { removed, ids: mileage.map(m => String(m.id)).sort() };
-        } finally {
-          mileage.length = 0; keep.forEach(m => mileage.push(m));
-          if (hadHash) _syncedHash.td_mileage = hadHash; else delete _syncedHash.td_mileage;
-        }
-      });
-      // Both survive. A duplicate for one session beats the trip, permanently.
-      expect(out.removed, 'nothing may be dropped this pass').toBe(0);
-      expect(out.ids).toEqual(['501', '502']);
-    });
-
-    test('once the winner IS in the cloud, the duplicate collapses as before', async () => {
-      const out = await page.evaluate(() => {
-        const A = { lat: 39.0475, lng: -95.6815 }, HOME = { lat: 39.0226, lng: -95.798 };
-        const keep = mileage.splice(0);
-        const hadHash = _syncedHash.td_mileage;
-        try {
-          mileage.push(
-            // The PHONE row (502) is logged first, because it closes the leg
-            // locally the moment the drive ends, and the server's copy lands
-            // afterwards. So the winner rule (earliest loggedAt) hands the
-            // journey to the row that has never been uploaded, which is
-            // precisely the shape that lost the drive.
-            { id: 501, gps: true, legKey: 'leg-srv', calc_method: 'auto_route', miles: 8.4,
-              fromCoord: A, toCoord: HOME, startedIso: '2026-08-30T22:45:18Z',
-              endedIso: '2026-08-30T23:25:13Z', loggedAt: '2026-08-30T23:25:20Z', date: '2026-08-30' },
-            { id: 502, gps: true, legKey: 'leg-phone', calc_method: 'auto_route', miles: 8.4,
-              fromCoord: A, toCoord: HOME, startedIso: '2026-08-30T22:45:21Z',
-              endedIso: '2026-08-30T23:25:16Z', loggedAt: '2026-08-30T23:25:14Z', date: '2026-08-30' });
-          // Both persisted now: the deferral was only ever about protecting the
-          // ONLY saved copy, so the dedupe must resume doing its job.
-          _syncedHash.td_mileage = new Map([['501', 'h'], ['502', 'h']]);
-          const removed = _mileDedupTrips(true);
-          return { removed, ids: mileage.map(m => String(m.id)) };
-        } finally {
-          mileage.length = 0; keep.forEach(m => mileage.push(m));
-          if (hadHash) _syncedHash.td_mileage = hadHash; else delete _syncedHash.td_mileage;
-        }
-      });
-      expect(out.removed).toBe(1);
-      expect(out.ids).toEqual(['502']);
-    });
-
-    test('two rows neither of which is saved still collapse, there is nothing to protect', async () => {
-      const out = await page.evaluate(() => {
-        const A = { lat: 39.0475, lng: -95.6815 }, HOME = { lat: 39.0226, lng: -95.798 };
-        const keep = mileage.splice(0);
-        const hadHash = _syncedHash.td_mileage;
-        try {
-          mileage.push(
-            { id: 601, gps: true, legKey: 'leg-x', calc_method: 'auto_route', miles: 8.4,
-              fromCoord: A, toCoord: HOME, startedIso: '2026-08-30T22:45:18Z',
-              endedIso: '2026-08-30T23:25:13Z', loggedAt: '2026-08-30T23:25:14Z', date: '2026-08-30' },
-            { id: 602, gps: true, legKey: 'leg-y', calc_method: 'auto_route', miles: 8.4,
-              fromCoord: A, toCoord: HOME, startedIso: '2026-08-30T22:45:21Z',
-              endedIso: '2026-08-30T23:25:16Z', loggedAt: '2026-08-30T23:25:18Z', date: '2026-08-30' });
-          _syncedHash.td_mileage = new Map();
-          const removed = _mileDedupTrips(true);
-          return { removed, n: mileage.length };
-        } finally {
-          mileage.length = 0; keep.forEach(m => mileage.push(m));
-          if (hadHash) _syncedHash.td_mileage = hadHash; else delete _syncedHash.td_mileage;
-        }
-      });
-      // The guard protects PERSISTED evidence. It is not a licence to hoard
-      // duplicates that exist only in memory.
-      expect(out.removed).toBe(1);
-      expect(out.n).toBe(1);
-    });
-
-    // ── Two writers, one drive, two origins (owner's real 8/27) ──────────────
-    // His day logged 22.1 miles across 8 legs against roughly 15.1 actually
-    // driven, a 46% overstatement on a tax record, because three drives each
-    // kept two rows. Both writers agreed where he ARRIVED and disagreed about
-    // where he set off ("Shop -> John Doe 3.2mi" beside "Stop -> John Doe
-    // 2.5mi", same 7:51 departure), so the both-endpoints twin test never
-    // fired and _mileSameJourney bails outright when both rows carry legKeys.
-    test('one drive with two origins collapses; a genuine repeat run does not', async () => {
-      const out = await page.evaluate(() => {
-        const JOHN = { lat: 39.0208, lng: -95.7351 };
-        const SHOP = { lat: 39.0325, lng: -95.69 }, KERB = { lat: 39.0301, lng: -95.7013 };
-        const keep = mileage.splice(0);
-        try {
-          mileage.push(
-            { id: 1, gps: true, legKey: 'leg-mtbj12c9', calc_method: 'auto_route', miles: 3.2,
-              from_name: 'Shop', to_name: 'John Doe', fromCoord: SHOP, toCoord: JOHN,
-              startedIso: '2026-08-27T12:51:00Z', endedIso: '2026-08-27T12:59:00Z',
-              loggedAt: '2026-08-27T12:59:02Z', date: '2026-08-27' },
-            { id: 2, gps: true, legKey: 'leg-mtbiue45', calc_method: 'auto_route', miles: 2.5,
-              from_name: 'Stop', to_name: 'John Doe', fromCoord: KERB, toCoord: JOHN,
-              startedIso: '2026-08-27T12:51:00Z', endedIso: '2026-08-27T12:56:00Z',
-              loggedAt: '2026-08-27T12:56:04Z', date: '2026-08-27' });
-          const live = _mileDedupTrips();          // live sweep leaves auto rows alone
-          const healed = _mileDedupTrips(true);    // boot heal collapses them
-          const again = _mileDedupTrips(true);
-          return { live, healed, again, rows: mileage.map(m => ({ id: m.id, miles: m.miles })) };
-        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
-      });
-      expect(out.live, 'the live sweep must not touch two auto rows').toBe(0);
-      expect(out.healed).toBe(1);
-      expect(out.again, 'healing must not keep healing').toBe(0);
-      // One drive, 3.2 miles, not 5.7.
-      expect(out.rows).toEqual([{ id: 1, miles: 3.2 }]);
-    });
-
-    test('a genuinely repeated run to the same client survives, because it does not overlap', async () => {
-      // The rule the both-endpoints test was protecting: a crew really can
-      // drive to one client twice in a day. Sequential, never simultaneous.
-      const out = await page.evaluate(() => {
-        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP = { lat: 39.0325, lng: -95.69 };
-        const keep = mileage.splice(0);
-        try {
-          mileage.push(
-            { id: 1, gps: true, legKey: 'leg-am', calc_method: 'auto_route', miles: 3.2,
-              from_name: 'Shop', to_name: 'John Doe', fromCoord: SHOP, toCoord: JOHN,
-              startedIso: '2026-08-27T12:51:00Z', endedIso: '2026-08-27T12:59:00Z',
-              loggedAt: '2026-08-27T12:59:02Z', date: '2026-08-27' },
-            { id: 2, gps: true, legKey: 'leg-pm', calc_method: 'auto_route', miles: 3.2,
-              from_name: 'Shop', to_name: 'John Doe', fromCoord: SHOP, toCoord: JOHN,
-              startedIso: '2026-08-27T17:50:00Z', endedIso: '2026-08-27T17:58:00Z',
-              loggedAt: '2026-08-27T17:58:03Z', date: '2026-08-27' });
-          const healed = _mileDedupTrips(true);
-          return { healed, rows: mileage.map(m => m.id) };
-        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
-      });
-      expect(out.healed).toBe(0);
-      expect(out.rows).toEqual([1, 2]);
-    });
-
-    test('dedup waits for the measurement, then the partial manual row yields', async () => {
-      // The automatic row is born at zero miles (no signal is the normal case).
-      // Zero must never "lose" to the typed number: the pair defers, and the
-      // sweep after the fill settles it.
-      const out = await page.evaluate(() => {
-        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
-        const keep = mileage.splice(0);
-        try {
-          const manual = { id: 1, gps: true, calc_method: 'gps_time', miles: 2.4, client_id: 77,
-            loggedAt: '2026-08-11T12:58:30Z', startedIso: '2026-08-11T12:53:00Z', date: '2026-08-11' };
-          const auto = { id: 2, gps: true, legKey: 'leg-a', calc_method: 'pending_auto', miles: 0, client_id: 77,
-            fromCoord: SHOP2, toCoord: JOHN, startedIso: '2026-08-11T12:51:00Z',
-            endedIso: '2026-08-11T12:57:00Z', loggedAt: '2026-08-11T12:57:02Z', date: '2026-08-11' };
-          mileage.push(manual, auto);
-          const deferred = _mileDedupTrips();
-          auto.miles = 3.2; auto.calc_method = 'auto_route';
-          const settled = _mileDedupTrips();
-          return { deferred, settled, left: mileage.map(m => m.id) };
-        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
-      });
-      expect(out.deferred).toBe(0);
-      expect(out.settled).toBe(1);
-      expect(out.left).toEqual([2]);
-    });
-
-    test('a MEASURED auto row absorbs an UNMEASURED manual one now, not never (fuzzer find 2026-08-13)', async () => {
-      // A manual trip whose From was left blank (the realistic mid-drive tap)
-      // can never be measured: no origin to route from. "Wait until both have
-      // numbers" therefore left it as a permanent 0-mile duplicate. Deleting
-      // it early loses nothing, the winner rule hands the journey to the
-      // automatic row whatever the numbers say. The REVERSE still defers
-      // (previous test): a pending auto row must prove it can measure before
-      // it may eat the only real number in the pair.
-      const out = await page.evaluate(() => {
-        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
-        const keep = mileage.splice(0);
-        try {
-          const manual = { id: 11, calc_method: 'pending', miles: 0, client_id: 77,
-            from: '', from_name: '', to: 'John Doe', to_name: 'John Doe',
-            loggedAt: '2026-08-11T12:55:30Z', date: '2026-08-11' };
-          const auto = { id: 12, gps: true, legKey: 'leg-abs', calc_method: 'auto_route', miles: 3.2, client_id: 77,
-            fromCoord: SHOP2, toCoord: JOHN, startedIso: '2026-08-11T12:51:00Z',
-            endedIso: '2026-08-11T12:57:00Z', loggedAt: '2026-08-11T12:57:02Z', date: '2026-08-11' };
-          mileage.push(manual, auto);
-          const dropped = _mileDedupTrips();
-          return { dropped, left: mileage.map(m => m.id) };
-        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
-      });
-      expect(out.dropped, 'the unmeasurable manual row is absorbed immediately').toBe(1);
-      expect(out.left).toEqual([12]);
-    });
-
-    test("the phone's real rows: heal mode collapses what the strict sweep must not", async () => {
-      // The shapes that actually survived on the owner's phone (2026-08-11
-      // screenshot): a "Log a trip" row with no startedIso, no coords, no
-      // client link, names only; and a replay pair whose starts differ by 45
-      // seconds while both display 7:51a. Boot heal collapses all three. The
-      // live sweep leaves the offset pair alone (CI fixtures fabricate
-      // overlapping clocks for deliberately distinct legs, so the wider twin
-      // rule is boot-only).
-      const out = await page.evaluate(() => {
-        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
-        const rows = () => ([
-          { id: 1, calc_method: 'address', miles: 2.4, client_id: null, client_name: '',
-            to: '2950 SW McClure Rd', to_name: 'John Doe', loggedAt: '2026-08-11T12:55:10Z', date: '2026-08-11' },
-          { id: 2, gps: true, legKey: 'rnd-a1', calc_method: 'auto_route', miles: 3.2, client_id: 77,
-            to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
-            startedIso: '2026-08-11T12:51:02Z', endedIso: '2026-08-11T12:57:10Z', loggedAt: '2026-08-11T12:57:12Z', date: '2026-08-11' },
-          { id: 3, gps: true, legKey: 'rnd-b2', calc_method: 'auto_route', miles: 3.2, client_id: 77,
-            to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
-            startedIso: '2026-08-11T12:51:47Z', endedIso: '2026-08-11T13:01:20Z', loggedAt: '2026-08-11T13:01:22Z', date: '2026-08-11' },
-        ]);
-        const keep = mileage.splice(0);
-        try {
-          rows().forEach(m => mileage.push(m));
-          const healed = _mileDedupTrips(true);
-          const left = mileage.map(m => m.id);
-          mileage.length = 0; rows().slice(1).forEach(m => mileage.push(m));   // just the replay pair
-          const live = _mileDedupTrips();
-          return { healed, left, live, liveLeft: mileage.length };
-        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
-      });
-      expect(out.healed).toBe(2);
-      expect(out.left).toEqual([2]);
-      expect(out.live).toBe(0);          // strict mode defers the offset pair to boot
-      expect(out.liveLeft).toBe(2);
-    });
-
-    // Owner audit 2026-08-24: the 8/21 twin pair survived in the CLOUD days
-    // after every boot's heal pass spliced one away locally, because a cloud
-    // reload restored it before any save swept it. A dropped twin must be a
-    // REAL deletion: tombstoned and deleted from td_mileage directly.
-    test('a dropped auto twin is deleted from the cloud, not just spliced locally', async () => {
-      const out = await page.evaluate(() => {
-        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
-        const keep = mileage.splice(0);
-        const savedSupa = window._supa, savedUser = window._supaUser;
-        const cloudDeletes = [];
-        window._supaUser = window._supaUser || { id: 'twin-del-u' };
-        // Records the SOFT delete (2026-08-26): sweeps stamp deleted_at through
-        // _tdSoftDelete now rather than issuing a DELETE, so the recorder has to
-        // watch update().in() to see the same event. The hard-delete branch is
-        // kept so this still catches a sweep that regresses to one.
-        window._supa = { from: (tbl) => ({
-          delete: () => ({ eq: (c1, v1) => ({ eq: () => ({ then: (res, rej) => { cloudDeletes.push({ tbl, id: v1 }); return Promise.resolve({ error: null }).then(res, rej); } }) }) }),
-          update: (patch) => { const u = { in: (col, vals) => { (vals || []).forEach(v => cloudDeletes.push({ tbl, id: String(v) })); return u; },
-                                           eq: () => u, then: (res, rej) => Promise.resolve({ error: null }).then(res, rej) }; return u; },
-          select: () => { const q = new Proxy(function(){}, { get: (_, k) =>
-            k === 'then' ? (res, rej) => Promise.resolve({ data: [], error: null }).then(res, rej) : () => q }); return q; },
-        }) };
-        try {
-          mileage.push(
-            { id: 9301, gps: true, legKey: 'twin-w', calc_method: 'auto_route', miles: 3.2, client_id: 77,
-              to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
-              startedIso: '2026-08-21T12:48:53.281Z', endedIso: '2026-08-21T12:55:55.101Z', loggedAt: '2026-08-21T12:55:55.106Z', date: '2026-08-21' },
-            { id: 9302, gps: true, legKey: 'twin-l', calc_method: 'auto_route', miles: 3.2, client_id: 77,
-              to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
-              startedIso: '2026-08-21T12:48:53.275Z', endedIso: '2026-08-21T12:58:34.983Z', loggedAt: '2026-08-21T14:52:11.874Z', date: '2026-08-21' });
-          const healed = _mileDedupTrips(true);
-          return { healed, left: mileage.map(m => m.id), cloudDeletes };
-        } finally {
-          mileage.length = 0; keep.forEach(m => mileage.push(m));
-          window._supa = savedSupa; window._supaUser = savedUser;
-        }
-      });
-      expect(out.healed).toBe(1);
-      expect(out.left, 'the contemporaneous close survives, the replay dies').toEqual([9301]);
-      // ASSERTION UPDATED 2026-08-26 (10.4). This required a HARD .delete() on
-      // td_mileage. Owner directive that day: every sweep soft deletes so a
-      // wrong guess can be undone, and _mileDedupTrips now goes through
-      // _tdSoftDelete like the rest. The intent the test was protecting is
-      // unchanged and still checked, the loser must be removed on the SERVER so
-      // no reload resurrects it, only the verb changed from delete to a
-      // deleted_at stamp.
-      expect(out.cloudDeletes, 'the loser is removed on the server, so no reload can resurrect it')
-        .toEqual([{ tbl: 'td_mileage', id: '9302' }]);
-    });
-
-    test('a backdated manual trip to the same client is never eaten', async () => {
-      // Arrive at John Doe at 7:57, remember at 8:03 that YESTERDAY'S trip
-      // there was never logged, type it in with yesterday's date. The entry's
-      // created-timestamp lands inside today's leg window and the names
-      // match; only the filed DATE says it is a different journey.
-      const out = await page.evaluate(() => {
-        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
-        const keep = mileage.splice(0);
-        try {
-          mileage.push(
-            { id: 1, gps: true, legKey: 'leg-a', calc_method: 'auto_route', miles: 3.2, client_id: 77,
-              to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
-              startedIso: '2026-08-11T12:51:00Z', endedIso: '2026-08-11T12:57:00Z',
-              loggedAt: '2026-08-11T12:57:02Z', date: '2026-08-11' },
-            { id: 2, calc_method: 'address', miles: 6.8, client_id: 77, to_name: 'John Doe',
-              loggedAt: '2026-08-11T13:03:00Z', date: '2026-08-10' });
-          return { healed: _mileDedupTrips(true), rows: mileage.length };
-        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
-      });
-      expect(out.healed).toBe(0);
-      expect(out.rows).toBe(2);
-    });
-
-    test('a forced detour keeps its observed miles, GPS undercount never does', async () => {
-      // The route is the answer unless the wheels observably covered more.
-      // observedMiles rides in from the leg close (geo-track owns when it is
-      // trustworthy); the measurement takes max(route, observed), capped 4x.
-      const out = await page.evaluate(async (d) => {
-        const realUser = _supaUser, realRoute = _routeDistance;
-        _supaUser = { id: 'u-detour' };
-        window._routeDistance = _routeDistance = async () => ({ miles: 12.3, mins: 20 });
-        const keep = mileage.splice(0);
-        try {
-          const from = { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' };
-          const to = { lat: d.JOB.lat, lng: d.JOB.lon, name: 'Miller Residence', kind: 'job', clientId: 7701 };
-          const t = (m) => new Date(Date.now() - m * 60000).toISOString();
-          autoLogDriveTrip({ from, to, legKey: 'leg-det-1', startedIso: t(50), observedMiles: 17.9 }); // real detour
-          autoLogDriveTrip({ from, to, legKey: 'leg-det-2', startedIso: t(30), observedMiles: 5.1 });  // GPS undercount
-          autoLogDriveTrip({ from, to, legKey: 'leg-det-3', startedIso: t(10), observedMiles: 900 });  // GPS blowup
-          await new Promise(r => setTimeout(r, 60));
-          const by = (k) => mileage.find(m => m.legKey === k);
-          return { detour: by('leg-det-1').miles, under: by('leg-det-2').miles, blowup: by('leg-det-3').miles };
-        } finally {
-          mileage.length = 0; keep.forEach(m => mileage.push(m));
-          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
-        }
-      }, { SHOP, JOB });
-      expect(out.detour).toBe(17.9);
-      expect(out.under).toBe(12.3);
-      expect(out.blowup).toBe(12.3);
-    });
-
-    test('the heal runs after every cloud merge, not only at boot', async () => {
-      // Owner report 2026-08-11: duplicates purged during an OFFLINE boot came
-      // back. The heal's deletes never reached the cloud, and the reconnect
-      // load merged the cloud's copies straight back in with nothing left to
-      // re-collapse them. The heal must therefore ride every completed load
-      // and the realtime burst path, where the resurrection actually arrives.
-      const fs = require('fs');
-      const path = require('path');
-      const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
-      const afterLoad = src.indexOf('_loadedDataOwner=(_supaUser');   // unique to the load tail
-      expect(afterLoad, 'load completion point exists').toBeGreaterThan(0);
-      expect(src.slice(afterLoad, afterLoad + 1200), 'heal rides the load completion')
-        .toContain('_mileDedupTrips(true)');
-      expect(src, 'realtime mileage bursts re-collapse too').toContain('_rtMileHealTimer');
-    });
-
-    test('dedup never crosses people, destinations, or distinct auto legs', async () => {
-      const out = await page.evaluate(() => {
-        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
-        const base = { gps: true, legKey: 'leg-a', calc_method: 'auto_route', miles: 3.2, client_id: 77,
-          fromCoord: SHOP2, toCoord: JOHN, startedIso: '2026-08-11T12:51:00Z',
-          endedIso: '2026-08-11T12:57:00Z', loggedAt: '2026-08-11T12:57:02Z', date: '2026-08-11' };
-        const keep = mileage.splice(0);
-        try {
-          const run = (rows) => { mileage.length = 0; rows.forEach(m => mileage.push(m)); return _mileDedupTrips(); };
-          // Same clocks, another crew member: two real drives.
-          const people = run([{ ...base }, { ...base, id: 9, legKey: 'leg-b', logged_by_id: 'emp-1' }]);
-          // Same clocks, different destination: two real drives.
-          const dests = run([{ ...base }, { ...base, id: 9, legKey: 'leg-b', client_id: 88, toCoord: { lat: 39.1, lng: -95.6 } }]);
-          // Distinct auto legs to one place, windows overlapping: the fence
-          // wrote two legs, so they are two drives. Only same-START twins and
-          // manual-vs-auto pairs ever collapse.
-          const legs = run([{ ...base }, { ...base, id: 9, legKey: 'leg-b', miles: 1.1,
-            startedIso: '2026-08-11T12:54:00Z', endedIso: '2026-08-11T12:56:00Z', loggedAt: '2026-08-11T12:56:02Z' }]);
-          return { people, dests, legs };
-        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
-      });
-      expect(out.people).toBe(0);
-      expect(out.dests).toBe(0);
-      expect(out.legs).toBe(0);
-    });
-  });
 
   test.describe('no signal at the destination', () => {
-    test('the trip is saved before the route is asked for, so a failure keeps it', async () => {
-      // Rural sites are the norm. A trip that only exists when the network
-      // happens to be up is the deduction going missing exactly where the
-      // contractor works hardest.
-      const out = await page.evaluate(async (d) => {
-        const realUser = _supaUser, realRoute = _routeDistance;
-        _supaUser = { id: 'u-mi' };
-        window._routeDistance = _routeDistance = async () => { throw new Error('offline'); };
-        try {
-          const rec = autoLogDriveTrip({
-            from: { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' },
-            to: { lat: d.JOB.lat, lng: d.JOB.lon, name: 'Miller Residence', kind: 'job', clientId: 7701 },
-            legKey: 'leg-offline-1', startedIso: new Date().toISOString()
-          });
-          await new Promise(r => setTimeout(r, 20));
-          const saved = mileage.find(m => m.id === rec.id);
-          return { exists: !!saved, miles: saved && saved.miles, method: saved && saved.calc_method,
-                   hasCoords: !!(saved && saved.fromCoord && saved.toCoord) };
-        } finally { _supaUser = realUser; window._routeDistance = _routeDistance = realRoute; }
-      }, { SHOP, JOB });
-      expect(out.exists).toBe(true);
-      expect(out.miles).toBe(0);
-      expect(out.method).toBe('pending_auto');
-      // Both coordinates survive on the row, which is what lets the sweep below
-      // finish the job later without re-geocoding anything.
-      expect(out.hasCoords).toBe(true);
-    });
 
-    test('the pending sweep finishes it when the network comes back', async () => {
-      const out = await page.evaluate(async () => {
-        const realRoute = _routeDistance;
-        window._routeDistance = _routeDistance = async () => ({ miles: 18.76, mins: 30 });
-        try {
-          await _retryPendingTrips();
-          const saved = mileage.find(m => m.legKey === 'leg-offline-1');
-          return { miles: saved && saved.miles, method: saved && saved.calc_method };
-        } finally { window._routeDistance = _routeDistance = realRoute; }
-      });
-      expect(out.miles).toBe(18.8);
-      expect(out.method).toBe('auto_route');
-    });
 
     test('the sweep still resolves hand-typed pending trips by address', async () => {
       // Blast-radius guard: _retryPendingTrips is shared with the manual log and
@@ -1663,56 +708,7 @@ test.describe('Automatic mileage from drive legs', () => {
   });
 
   test.describe('the row itself', () => {
-    test('a 7pm trip lands on today, not tomorrow in UTC', async ({ browser }) => {
-      // An ISO timestamp is UTC. Slicing it puts an evening supply run in
-      // Central time on the next DAY, and on New Year's Eve in the next tax YEAR.
-      //
-      // This test OWNS its timezone. CI runners are UTC, where 7pm local is 7pm
-      // UTC and the slice happens to be right, so shared-context version of this
-      // test passed with the bug still in. A test that cannot go red is not a
-      // test. America/Chicago is the app's own reference zone (§2 version bumps,
-      // _bizDateStr in finance.js) and is behind UTC, so the evening genuinely
-      // rolls the UTC date over.
-      const ctx = await browser.newContext({ timezoneId: 'America/Chicago', bypassCSP: true });
-      const p2 = await ctx.newPage();
-      try {
-        await mockAllExternal(p2);
-        await p2.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
-        await waitForAppBoot(p2);
-        const out = await p2.evaluate(async (d) => {
-          const realUser = _supaUser, realRoute = _routeDistance;
-          _supaUser = { id: 'u-mi' };
-          window._routeDistance = _routeDistance = async () => ({ miles: 3, mins: 6 });
-          try {
-            const evening = new Date(); evening.setHours(19, 30, 0, 0);
-            const rec = autoLogDriveTrip({
-              from: { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' },
-              to: { lat: d.JOB.lat, lng: d.JOB.lon, name: 'Miller Residence', kind: 'job' },
-              legKey: 'leg-evening-1', startedIso: evening.toISOString()
-            });
-            return { date: rec.date, expected: dateKey(evening), utcSlice: evening.toISOString().slice(0, 10) };
-          } finally { _supaUser = realUser; window._routeDistance = _routeDistance = realRoute; }
-        }, { SHOP, JOB });
-        // The premise of the test: in this zone the two answers really do differ,
-        // so passing means the local date was used and not the UTC one.
-        expect(out.utcSlice).not.toBe(out.expected);
-        expect(out.date).toBe(out.expected);
-      } finally { await ctx.close(); }
-    });
 
-    test('missing an endpoint logs nothing rather than a wrong number', async () => {
-      const out = await page.evaluate((d) => {
-        const before = mileage.length;
-        const to = { lat: d.JOB.lat, lng: d.JOB.lon, name: 'J', kind: 'job' };
-        autoLogDriveTrip({ from: null, to, legKey: 'k1' });
-        autoLogDriveTrip({ from: { name: 'no coords', kind: 'shop' }, to, legKey: 'k2' });
-        autoLogDriveTrip({ from: to, to: null, legKey: 'k3' });
-        autoLogDriveTrip({ from: to, to, legKey: '' });
-        autoLogDriveTrip({});
-        return { added: mileage.length - before };
-      }, { JOB });
-      expect(out.added).toBe(0);
-    });
 
     test('purpose mapping covers every destination kind, and defaults safely', async () => {
       const out = await page.evaluate(() => ({
@@ -1911,71 +907,9 @@ test.describe('Automatic mileage from drive legs', () => {
         ({ to: m.to_name, raw: m.to, purpose: m.purpose }))), 200));
     }, { legKey, at });
 
-    test('an unknown stop is named from the business standing at it', async () => {
-      await withMapkit({ poiName: 'The Home Depot', poiCategory: 'MKPOICategoryStore',
-                        poiAddr: '1100 SW Wanamaker Rd, Topeka, KS 66604', geoFails: true });
-      const out = await stopTrip('leg-stop-depot', { lat: 39.03, lng: -95.77 });
-      expect(out.length).toBe(1);
-      expect(out[0].to).toBe('The Home Depot');
-      // WHO they went to and WHERE that is, the shape an IRS log wants. The
-      // distance is still measured between the two coordinates, never between
-      // these two strings.
-      expect(out[0].raw).toBe('1100 SW Wanamaker Rd, Topeka, KS 66604');
-      // What it IS decides what it cost: a store is a supply run.
-      expect(out[0].purpose).toBe('Supply run');
-    });
 
-    test('the leg OUT of a named stop is named too, whichever landed first', async () => {
-      // One stop, two legs: in and out. Naming only the arrival left the log
-      // reading "... → The Home Depot" followed by "Stop → ...", the same
-      // parking lot described two ways. Which leg is written first depends on
-      // how long Apple takes against how long they were parked, so both orders
-      // are driven here.
-      await withMapkit({ poiName: 'The Home Depot', poiCategory: 'MKPOICategoryStore',
-                         poiAddr: '1100 SW Wanamaker Rd, Topeka, KS 66604', geoFails: true });
-      const out = await page.evaluate(async () => {
-        const stop = { lat: 39.03, lng: -95.77, name: 'Stop', kind: 'stop' };
-        const job = { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job', addr: '9 Elm St' };
-        mileage.length = 0;
-        // OUT written first: the descriptor is still the anonymous "Stop".
-        autoLogDriveTrip({ from: job, to: stop, legKey: 'pair-in', startedIso: new Date().toISOString() });
-        autoLogDriveTrip({ from: stop, to: job, legKey: 'pair-out', startedIso: new Date().toISOString() });
-        await new Promise(r => setTimeout(r, 250));
-        const first = mileage.map(m => ({ k: m.legKey, from: m.from_name, to: m.to_name }));
-        // IN written, lookup lands, THEN the leg out: the descriptor itself
-        // carries the name by now, so no patching is needed at all.
-        mileage.length = 0;
-        const stop2 = { lat: 39.03, lng: -95.77, name: 'Stop', kind: 'stop' };
-        autoLogDriveTrip({ from: job, to: stop2, legKey: 'seq-in', startedIso: new Date().toISOString() });
-        await new Promise(r => setTimeout(r, 250));
-        autoLogDriveTrip({ from: stop2, to: job, legKey: 'seq-out', startedIso: new Date().toISOString() });
-        await new Promise(r => setTimeout(r, 100));
-        return { first, second: mileage.map(m => ({ k: m.legKey, from: m.from_name, to: m.to_name })) };
-      });
-      const outLeg = out.first.find(t => t.k === 'pair-out');
-      expect(outLeg.from).toBe('The Home Depot');
-      const seqOut = out.second.find(t => t.k === 'seq-out');
-      expect(seqOut.from).toBe('The Home Depot');
-    });
 
-    test('a nameless stop still gets its street address', async () => {
-      // Apple knows the building but not the tenant. "Stop" is honest about what
-      // the app knows; the address is what makes the row readable.
-      await withMapkit({ poiFails: true, geoName: '900 N Kansas Ave', geoAddr: '900 N Kansas Ave' });
-      const out = await stopTrip('leg-stop-addr', { lat: 39.07, lng: -95.66 });
-      expect(out.length).toBe(1);
-      expect(out[0].to).toBe('Stop');
-      expect(out[0].raw).toBe('900 N Kansas Ave');
-    });
 
-    test('lunch never reaches the mileage log', async () => {
-      // The owner's rule, walking a real day: "then I'm going God knows where to
-      // get lunch (this shouldn't count)". A drive to a restaurant is a personal
-      // errand, and billing it inflates a deduction they would be defending.
-      await withMapkit({ poiName: "Bobo's Drive In", poiCategory: 'MKPOICategoryRestaurant', geoFails: true });
-      const out = await stopTrip('leg-stop-lunch', { lat: 39.04, lng: -95.70 });
-      expect(out).toEqual([]);
-    });
 
     // ── The detour, and the errand that looks exactly like it ───────────────
     // Owner's CPA (2026-08-02): a lunch break in the middle of a supply-house to
@@ -2015,123 +949,10 @@ test.describe('Automatic mileage from drive legs', () => {
       return mileage.map(m => ({ k: m.legKey, from: m.from_name, to: m.to_name, fromCoord: m.fromCoord }));
     }, opts);
 
-    test('a personal lunch is a detour: one trip, direct, no lunch legs', async () => {
-      await withMapkit({ poiName: "Bobo's Drive In", poiCategory: 'MKPOICategoryRestaurant', geoFails: true });
-      // _geoLegOrigin has to BE the stop for the pass-through to fire, the same
-      // state the geofence leaves behind when it closes one.
-      await page.evaluate(() => { if (typeof _geoLegOrigin !== 'undefined') _geoLegOrigin = null; });
-      const out = await detour({ tag: 'detour', receipt: false, outFirst: true,
-                                 stop: { lat: 39.05, lng: -95.68 } });
-      // The leg to lunch is gone entirely.
-      expect(out.find(t => t.k === 'detour-in')).toBeUndefined();
-      // And the leg onward is measured from the supply house, not the diner.
-      const onward = out.find(t => t.k === 'detour-out');
-      expect(onward.from).toBe('Ace Supply');
-      expect(onward.fromCoord).toEqual({ lat: 39.03, lng: -95.77 });
-    });
 
-    test('lunch bought for the crew is an errand: both legs count', async () => {
-      // Same restaurant, same stop, same everything except a receipt logged at
-      // that pin today. That is the contractor saying it was for the business,
-      // and it is the evidence the deduction rests on.
-      await withMapkit({ poiName: "Bobo's Drive In", poiCategory: 'MKPOICategoryRestaurant', geoFails: true });
-      const out = await detour({ tag: 'crew', receipt: true, outFirst: true,
-                                 stop: { lat: 39.05, lng: -95.68 } });
-      const inLeg = out.find(t => t.k === 'crew-in');
-      expect(inLeg).toBeDefined();
-      expect(inLeg.to).toBe("Bobo's Drive In");
-      // The leg out still starts where they actually were.
-      const onward = out.find(t => t.k === 'crew-out');
-      expect(onward.fromCoord).toEqual({ lat: 39.05, lng: -95.68 });
-    });
 
-    test('a stop nobody can name is kept, not binned', async () => {
-      // Silence from Apple is not evidence of lunch. A contractor parked
-      // mid-workday is far more often at a gate or a yard than at a sandwich
-      // counter, and dropping a real leg costs them money that keeping an
-      // unnamed one does not.
-      await withMapkit({ poiFails: true, geoFails: true });
-      const out = await stopTrip('leg-stop-anon', { lat: 39.05, lng: -95.60 });
-      expect(out.length).toBe(1);
-      expect(out[0].to).toBe('Stop');
-      expect(out[0].purpose).toBe('Other');
-    });
 
-    test('a known destination is never sent for a lookup', async () => {
-      // Only kind:'stop' is anonymous. A job, the yard, or a saved place already
-      // carries the name the contractor gave it, and Apple must not rename it.
-      await withMapkit({ poiName: 'The Home Depot', poiCategory: 'MKPOICategoryStore', geoFails: true });
-      const out = await page.evaluate(() => {
-        mileage.length = 0;
-        autoLogDriveTrip({
-          from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
-          to: { lat: 39.03, lng: -95.77, name: 'Ace Supply', kind: 'supply' },
-          legKey: 'leg-known-dest', startedIso: new Date().toISOString(),
-        });
-        return new Promise(r => setTimeout(() => r(mileage.map(m => m.to_name)), 200));
-      });
-      expect(out).toEqual(['Ace Supply']);
-    });
 
-    // REWRITTEN 2026-08-10. This block used to test a predicate that decided,
-    // from Apple's POI category and then from the shop's NAME, whether a stop
-    // was a work errand. Both were guesses, and the second one was mine. The
-    // rule is now the contractor's own (owner: "the only places that could
-    // return as a business expense is if that place is explicitly listed under
-    // their places as a supply house"), so the predicate is deleted and what is
-    // tested is the decision itself.
-    // Owner rule (2026-08-10): "a drive from home office shop and back
-    // shouldn't count either unless there was a business stop that day."
-    //
-    // This is the other half of the Target run. Once the personal stop is
-    // collapsed out of the middle, what survives is a leg whose ORIGIN AND
-    // DESTINATION ARE THE SAME PLACE, and that shape can only mean a round trip
-    // with nothing business in it: a business stop would have ENDED the leg
-    // there and started a new one, so shop to supply house to shop is two legs,
-    // neither starting and ending in the same spot.
-    test('out from the shop and back logs no miles, but still pays the drive', async () => {
-      const out = await page.evaluate(() => {
-        const miles = [], times = [];
-        const realMile = window._geoAutoMileage, realEnq = window._geoEnqueue;
-        const realVeh = window._isCompanyVehicleToday, realUser = window._supaUser;
-        window._geoAutoMileage = () => { miles.push(1); };
-        window._geoEnqueue = (tbl) => { if (tbl === 'job_time_entries') times.push(1); };
-        window._isCompanyVehicleToday = () => true;
-        window._supaUser = { id: 'u1' };
-        const SHOP = { lat: 39.04, lng: -95.76, name: 'Shop', kind: 'shop', placeId: 'p-shop' };
-        const JOB = { lat: 39.07, lng: -95.72, name: 'Miller job', kind: 'job', jobId: 77 };
-        const ago = (m) => new Date(Date.now() - m * 60000).toISOString();
-        const run = (origin, dest, drivenMiles) => {
-          miles.length = 0; times.length = 0;
-          // Bare assignment: script-scoped `let`, so window.X would miss it.
-          _geoLegOrigin = Object.assign({}, origin);
-          _geoDriveMiles = drivenMiles;
-          _geoDriveEntry(dest.jobId || null, ago(25), dest.name, null, false, dest, false);
-          return { miles: miles.length, times: times.length };
-        };
-        try {
-          return {
-            roundTrip: run(SHOP, SHOP, 9),
-            toJob: run(SHOP, JOB, 9),
-            fromJob: run(JOB, SHOP, 9),
-            bounce: run(SHOP, SHOP, 0.05),
-          };
-        } finally {
-          window._geoAutoMileage = realMile; window._geoEnqueue = realEnq;
-          window._isCompanyVehicleToday = realVeh; window._supaUser = realUser;
-          _geoLegOrigin = null; _geoDriveMiles = 0;
-        }
-      });
-      expect(out.roundTrip.miles, 'a personal errand and back is not a deduction').toBe(0);
-      // Stripping the hours too would be a payroll bug dressed up as a mileage
-      // fix: a crew member driving is paid for it whatever the errand was.
-      expect(out.roundTrip.times, 'the drive time is still theirs').toBe(1);
-      expect(out.toJob.miles, 'a real leg to a job site is untouched').toBe(1);
-      expect(out.fromJob.miles, 'and the leg back from it').toBe(1);
-      // Distinct from the fence-bounce guard, which drops the whole leg
-      // including the time, because that one never happened at all.
-      expect(out.bounce.miles + out.bounce.times, 'a fence bounce is still dropped whole').toBe(0);
-    });
 
     test('the guessing predicates are gone, not merely unused', async () => {
       const gone = await page.evaluate(() => ({
@@ -2221,49 +1042,6 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.blind).toBe('Ace Supply');
     });
 
-    test('a receipt logged the next morning still fixes the day', async () => {
-      // The hole the owner found: the call is made when the truck pulls out, but
-      // receipts get done in the truck at 5pm or at the kitchen table on Sunday.
-      // Worse, _stampGeo records where they were WHEN THEY LOGGED IT, so a late
-      // receipt carries the kitchen's coordinate and can never geo-match the
-      // diner. The vendor name and the date they put on it are what survive.
-      await withMapkit({ poiName: "Bobo's Drive In", poiCategory: 'MKPOICategoryRestaurant', geoFails: true });
-      const out = await page.evaluate(async () => {
-        if (typeof expenses !== 'undefined') expenses.length = 0;
-        if (typeof _geoLegOrigin !== 'undefined') _geoLegOrigin = null;
-        mileage.length = 0;
-        const depot = { lat: 39.03, lng: -95.77, name: 'Ace Supply', kind: 'supply', addr: '400 Depot Rd' };
-        const job = { lat: 39.06, lng: -95.67, name: 'Miller residence', kind: 'job', addr: '9 Elm St' };
-        const stop = { lat: 39.05, lng: -95.68, name: 'Stop', kind: 'stop', prevOrigin: depot };
-        autoLogDriveTrip({ from: depot, to: stop, legKey: 'late-in', startedIso: new Date().toISOString() });
-        autoLogDriveTrip({ from: stop, to: job, legKey: 'late-out', startedIso: new Date().toISOString() });
-        await new Promise(r => setTimeout(r, 300));
-        const before = mileage.map(m => ({ k: m.legKey, from: m.from_name }));
-        // Sunday at the kitchen table: right vendor, right date, and a
-        // coordinate that is nowhere near the diner. Exactly what a real late
-        // receipt looks like.
-        expenses.push({ id: _newId(), date: todayKey(), vendor: "Bobo's Drive-In", amount: 84.20,
-                        cat: 'Meals', lat: 39.99, lon: -96.99, geoAt: new Date().toISOString(), geoAcc: 10 });
-        const restored = reviewDetourReceipts();
-        await new Promise(r => setTimeout(r, 300));
-        const after = mileage.map(m => ({ k: m.legKey, from: m.from_name, to: m.to_name }));
-        // Second sweep must be a no-op, or every load re-adds the leg.
-        const again = reviewDetourReceipts();
-        return { before, after, restored, again, count: mileage.length };
-      });
-      // Before: the detour, one leg, starting at the supply house.
-      expect(out.before.find(t => t.k === 'late-in')).toBeUndefined();
-      expect(out.before.find(t => t.k === 'late-out').from).toBe('Ace Supply');
-      // After: both legs back, the stop named from the receipt's business.
-      expect(out.restored).toBe(1);
-      const inLeg = out.after.find(t => t.k === 'late-in');
-      expect(inLeg).toBeDefined();
-      expect(inLeg.to).toBe("Bobo's Drive In");
-      expect(out.after.find(t => t.k === 'late-out').from).toBe("Bobo's Drive In");
-      // Idempotent: running it again changes nothing and adds nothing.
-      expect(out.again).toBe(0);
-      expect(out.count).toBe(2);
-    });
 
     test('a vendor is matched on its letters, not its punctuation', async () => {
       const out = await page.evaluate(() => ({
@@ -2331,32 +1109,6 @@ test.describe('Automatic mileage from drive legs', () => {
   // these endpoints are not addresses at all. But the ROW has to read like a
   // record, so every endpoint that has a street address carries it.
   test.describe('street addresses on an automatic trip', () => {
-    test('the yard travels as its business address', async () => {
-      const out = await page.evaluate(() => {
-        const prev = { a: S.baddr, c: S.bcity, s: S.state, z: S.bzip };
-        S.baddr = '2015 SW Randolph Ave'; S.bcity = 'Topeka'; S.state = 'KS'; S.bzip = '66604';
-        const addr = _geoShopAddr();
-        mileage.length = 0;
-        autoLogDriveTrip({
-          from: { lat: 39.03, lng: -95.71, name: 'Shop', kind: 'shop', addr },
-          to: { lat: 39.05, lng: -95.67, name: 'Miller residence', kind: 'job', addr: '309 S Kansas Ave, Topeka, KS' },
-          legKey: 'leg-shop-addr', startedIso: new Date().toISOString(),
-        });
-        const row = { from: mileage[0].from, fromName: mileage[0].from_name, to: mileage[0].to,
-                      fc: mileage[0].fromCoord, tc: mileage[0].toCoord };
-        Object.assign(S, { baddr: prev.a, bcity: prev.c, state: prev.s, bzip: prev.z });
-        return { addr, row };
-      });
-      expect(out.addr).toBe('2015 SW Randolph Ave, Topeka, KS 66604');
-      expect(out.row.from).toBe('2015 SW Randolph Ave, Topeka, KS 66604');
-      // The friendly name is still what the row is labelled with.
-      expect(out.row.fromName).toBe('Shop');
-      expect(out.row.to).toBe('309 S Kansas Ave, Topeka, KS');
-      // And the coordinates are on the row regardless, because THEY are what
-      // the distance is measured between.
-      expect(out.row.fc).toEqual({ lat: 39.03, lng: -95.71 });
-      expect(out.row.tc).toEqual({ lat: 39.05, lng: -95.67 });
-    });
 
     test('no business address on file is not an error', async () => {
       const out = await page.evaluate(() => {
@@ -2430,46 +1182,7 @@ test.describe('Automatic mileage from drive legs', () => {
       await page.evaluate(() => { gps.active = false; gps.startTime = null; });
     });
 
-    test('starting the drive MID-drive keeps the longer measured record', async () => {
-      // The leg began at 8:00 and they tapped Drive at 8:10. The automatic row
-      // covers the whole journey; their typed number covers the tail of it.
-      const out = await page.evaluate(() => {
-        autoLogDriveTrip({
-          from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
-          to: { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' },
-          legKey: 'mid-drive', startedIso: new Date(Date.now() - 20 * 60000).toISOString(),
-        });
-        mileage[0].miles = 12.4; mileage[0].calc_method = 'auto_route';
-        gps.active = true; gps.startTime = Date.now() - 10 * 60000;
-        return mileage.length;
-      });
-      expect(out).toBe(1);
-      const rows = await endDrive(5);
-      // One row, and it is the measured one, not the 5 they typed.
-      expect(rows.length).toBe(1);
-      expect(rows[0].k).toBe('mid-drive');
-      expect(rows[0].miles).toBe(12.4);
-      expect(rows[0].method).toBe('auto_route');
-    });
 
-    test('tapping Drive before setting off is the same answer', async () => {
-      const rows = await page.evaluate(() => {
-        gps.active = true; gps.startTime = Date.now() - 15 * 60000;
-        autoLogDriveTrip({
-          from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
-          to: { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' },
-          legKey: 'tapped-first', startedIso: new Date(Date.now() - 14 * 60000).toISOString(),
-        });
-        mileage[0].miles = 9.1; mileage[0].calc_method = 'auto_route';
-        return mileage.length;
-      });
-      // The automatic row is written either way now: suppressing it was the
-      // thing that lost the measured record when the tap came mid-drive.
-      expect(rows).toBe(1);
-      const after = await endDrive(4);
-      expect(after.length).toBe(1);
-      expect(after[0].miles).toBe(9.1);
-    });
 
     test('with no automatic row the manual entry is the record', async () => {
       // Tracking off, or a leg the geofence never saw. Their number is all there
@@ -2507,66 +1220,7 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(after.find(t => t.k === 'manual').miles).toBe(6);
     });
 
-    test('the automatic row records when the leg BEGAN, not just when it landed', async () => {
-      // loggedAt is the arrival. Without the start there is no way to tell a
-      // journey already under way from one that began after the tap, which is
-      // the whole question.
-      const out = await page.evaluate(() => {
-        const iso = new Date(Date.now() - 25 * 60000).toISOString();
-        autoLogDriveTrip({
-          from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
-          to: { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' },
-          legKey: 'has-start', startedIso: iso,
-        });
-        return { stored: mileage[0].startedIso, iso };
-      });
-      expect(out.stored).toBe(out.iso);
-    });
 
-    // ── Two measurements of one leg, racing ─────────────────────────────────
-    // A leg to an unnamed stop is measured the moment it is written. If that
-    // stop then turns out to have been PASSED THROUGH (lunch, a personal
-    // detour), the leg is re-pointed at the real origin and measured again. Now
-    // two route calls are in flight for one row, and the network decides which
-    // lands first, not us.
-    //
-    // The first one had no guard at all. When it landed second it stamped the
-    // distance from the WRONG origin as final, and the correcting call then saw
-    // a settled row and stepped aside, so the wrong number won permanently. It
-    // needs a slow route call to show up, which is to say it shows up on a phone
-    // and never on a desk.
-    test('a leg re-pointed while its distance is in flight keeps the CORRECTED miles', async () => {
-      const out = await page.evaluate(async () => {
-        mileage.length = 0;
-        const origRoute = window._routeDistance;
-        let resolveStale, resolveTrue, call = 0;
-        window._routeDistance = () => {
-          call++;
-          return call === 1
-            ? new Promise(r => { resolveStale = () => r({ miles: 40, mins: 60 }); })
-            : new Promise(r => { resolveTrue = () => r({ miles: 6, mins: 12 }); });
-        };
-        try {
-          const rec = autoLogDriveTrip({
-            from: { lat: 38.00, lng: -94.00, name: 'Stop', kind: 'stop' },
-            to: { lat: 38.10, lng: -94.10, name: 'Miller residence', kind: 'job' },
-            legKey: 'reorigin-race',
-          });
-          // The stop was lunch. The leg really began at the supply house.
-          _reoriginTrip(rec, { lat: 38.05, lng: -94.05, name: 'Home Depot', addr: '1 Supply Rd' });
-          // The correction answers first, the original answers last: the order
-          // that used to lose the correction.
-          resolveTrue(); await new Promise(r => setTimeout(r, 0));
-          resolveStale(); await new Promise(r => setTimeout(r, 40));
-          return { miles: rec.miles, from: rec.from_name, method: rec.calc_method, calls: call };
-        } finally { window._routeDistance = origRoute; }
-      });
-      expect(out.calls).toBe(2);
-      expect(out.from).toBe('Home Depot');
-      expect(out.method).toBe('auto_route');
-      // 40 is the distance from the lunch stop, measured before the correction.
-      expect(out.miles).toBe(6);
-    });
 
     test('the pending sweep also stands down when the leg moves under it', async () => {
       // Same race, other measurer. The sweep picks up a pending_auto row, starts
@@ -2642,20 +1296,6 @@ test.describe('Automatic mileage from drive legs', () => {
       }
     });
 
-    test('the automatic row crossing midnight is filed the same way', async () => {
-      const out = await page.evaluate(() => {
-        const iso = new Date(new Date().setHours(23, 52, 0, 0) - 24 * 3600000).toISOString();
-        autoLogDriveTrip({
-          from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
-          to: { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' },
-          legKey: 'midnight-auto', startedIso: iso,
-        });
-        const row = mileage.find(r => r.legKey === 'midnight-auto');
-        return { date: row && row.date, expected: dateKey(new Date(iso)), today: todayKey() };
-      });
-      expect(out.date).toBe(out.expected);
-      expect(out.date).not.toBe(out.today);   // yesterday's leg, filed yesterday
-    });
   });
 
   // ── The sweep that overwrote correct miles with garbage ───────────────────
@@ -3274,78 +1914,6 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
-  // ── Nobody said what they were driving ─────────────────────────────────────
-  // Owner (2026-08-03): "treat none like rider". The vehicle mode has four
-  // states and only three were handled. 'none' means no truck assigned on the
-  // dispatch board AND no pick made on the phone, and it fell through to
-  // reimbursable, booking money the business never agreed to off a drive where
-  // the app cannot say whether they were in the company truck, riding with
-  // somebody, or on a bus. It invented a debt out of a blank.
-  test.describe('a crew member with no vehicle recorded', () => {
-    const legAs = (mode) => page.evaluate(async (m) => {
-      const realUser = _supaUser, realEmp = _isEmployee, realRoute = _routeDistance, realMode = window._shiftVehicleMode;
-      const queued = [];
-      const realEnq = window._geoEnqueue;
-      _supaUser = { id: 'u-mode' }; _isEmployee = true;
-      window._routeDistance = _routeDistance = async () => ({ miles: 6.2, mins: 14 });
-      window._shiftVehicleMode = () => m;
-      window._geoEnqueue = (tbl, row) => queued.push({ tbl, row });
-      const before = mileage.length;
-      try {
-        _geoLegOrigin = { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' };
-        _geoDriveEntry(9901, new Date(Date.now() - 20 * 60000).toISOString(), null, null, false,
-                       { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' });
-        await new Promise(r => setTimeout(r, 50));
-        const rows = mileage.slice(0, Math.max(0, mileage.length - before));
-        return {
-          miles: rows.map(r => ({ reimbursable: !!r.reimbursable, unknown: !!r.vehicleUnknown })),
-          timeEntries: queued.filter(q => q.tbl === 'job_time_entries').map(q => q.row.source),
-        };
-      } finally {
-        _supaUser = realUser; _isEmployee = realEmp;
-        window._routeDistance = _routeDistance = realRoute;
-        window._shiftVehicleMode = realMode; window._geoEnqueue = realEnq;
-        _geoLegOrigin = null;
-      }
-    }, mode);
-
-    test("'none' records the drive and claims nothing on either side", async () => {
-      // CHANGED 2026-08-03: this asserted zero rows. Discarding it meant that
-      // when somebody remembered on Thursday that Danny was in his own truck,
-      // there was nothing left to correct. The row is kept and marked
-      // unattributed instead: out of the deduction, out of what the crew are
-      // owed, and one tap from being either.
-      const out = await legAs('none');
-      expect(out.timeEntries.length).toBe(1);       // the drive is compensable
-      expect(out.miles.length).toBe(1);             // and it is on the record
-      expect(out.miles[0].unknown).toBe(true);
-      expect(out.miles[0].reimbursable).toBe(false);
-    });
-
-    test("'none' is recorded as unassigned, never as personal", async () => {
-      // The time entry is what somebody reads a year later. Calling an unknown
-      // vehicle "personal" is the same wrong assumption the mileage side made.
-      const out = await legAs('none');
-      expect(out.timeEntries[0]).toBe('drive-unassigned');
-      expect(out.timeEntries[0]).toMatch(/^drive/);   // still drive time to every money view
-    });
-
-    test("'own' still books the reimbursement, which is the point of the split", async () => {
-      const out = await legAs('own');
-      expect(out.miles.length).toBe(1);
-      expect(out.miles[0].reimbursable).toBe(true);
-      expect(out.timeEntries[0]).toBe('drive-personal');
-    });
-
-    test("'truck' still deducts, and 'rider' still claims nothing", async () => {
-      const truck = await legAs('truck');
-      expect(truck.miles.length).toBe(1);
-      expect(truck.miles[0].reimbursable).toBe(false);
-      const rider = await legAs('rider');
-      expect(rider.miles).toEqual([]);
-      expect(rider.timeEntries[0]).toBe('drive-rider');
-    });
-  });
 
   // ── Correcting a job's address mid-shift ───────────────────────────────────
   // The job-coordinate cache was keyed on the job id alone and never
@@ -3409,89 +1977,6 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
-  // ── The truck that sat at the yard overnight ───────────────────────────────
-  // _geoLastFenceAt is how a leg's start is inferred when the whole trip lands
-  // in one ping, and it is only ever cleared when tracking stops. Parked at the
-  // yard at 5pm with the phone asleep, driven to a job at 7:30 the next morning,
-  // it inferred a FOURTEEN HOUR drive: billed as job time into Job Profit and
-  // crew cost, mileage dated to yesterday, and at New Year the wrong tax year.
-  // The persisted job entry already guards its day boundary; this in-memory
-  // timestamp did not.
-  //
-  // Owner's call (2026-08-03): keep the miles, drop the hours.
-  test.describe('a leg inferred across an overnight gap', () => {
-    const overnightLeg = (hoursAgo) => page.evaluate(async (h) => {
-      const realUser = _supaUser, realRoute = _routeDistance;
-      const queued = [];
-      const realEnq = window._geoEnqueue;
-      _supaUser = { id: 'u-overnight' };
-      window._routeDistance = _routeDistance = async () => ({ miles: 9.4, mins: 18 });
-      window._geoEnqueue = (tbl, row) => queued.push({ tbl, row });
-      // Isolated log: a stale leg now checks the log for an already-covering
-      // row (the gap-echo guard), and this fixture fabricates a 14-hour clock
-      // inside a session whose earlier tests logged the same shop -> job leg
-      // minutes ago on the WALL clock. In the real world those rows could only
-      // exist during the sleep if they were echoes; in the compressed fixture
-      // world they are unrelated tests. Give the fabricated night its own log.
-      const savedLog = mileage.slice();
-      mileage.length = 0;
-      const before = mileage.length;
-      try {
-        __seedGeo();
-        _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
-        _geoShopArrivedAt = null; _geoDriveStartedAt = null;
-        _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-        _geoLastFenceAt = null; _geoLegAtShop = false;
-        _geoLastFenceLoc = null; _geoLegOrigin = null;
-        _geoHomeDwell = null; _geoWasAtHome = false;
-        const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
-        await ping(h.SHOP);                       // parked at the yard, evening
-        _geoLastFenceAt = new Date(Date.now() - h.hours * 3600000).toISOString();
-        await ping(h.JOB);                        // first fix of the next morning
-        await new Promise(r => setTimeout(r, 50));
-        const rows = mileage.slice(0, Math.max(0, mileage.length - before));
-        return {
-          rows: rows.map(m => ({ from: m.from_name, to: m.to_name, miles: m.miles, date: m.date })),
-          timeEntries: queued.filter(q => q.tbl === 'job_time_entries').map(q => q.row.minutes),
-          today: todayKey(),
-          // The local day the leg STARTED. Equals `today` except when CI runs
-          // inside the first h hours after local midnight, where a real leg
-          // legitimately started yesterday.
-          startDay: dateKey(new Date(Date.now() - h.hours * 3600000)),
-        };
-      } finally {
-        _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
-        window._geoEnqueue = realEnq;
-        mileage.length = 0; savedLog.forEach(m => mileage.push(m));
-      }
-    }, { SHOP, JOB, hours: hoursAgo });
-
-    test('fourteen hours asleep: the miles are kept, the hours are not', async () => {
-      const out = await overnightLeg(14);
-      expect(out.rows.length, 'the drive is real and must still be logged').toBe(1);
-      expect(out.rows[0].miles).toBe(9.4);
-      // Dated to the morning we SAW them, never to yesterday's last fence ping.
-      expect(out.rows[0].date).toBe(out.today);
-      // And no invented shift lands in payroll.
-      expect(out.timeEntries, 'a duration nobody observed must not be claimed').toEqual([]);
-    });
-
-    test('a normal twenty-minute leg still logs its time', async () => {
-      // The guard must not swallow ordinary legs: this is the case that keeps
-      // "drop the hours" from quietly becoming "never log hours".
-      const out = await overnightLeg(20 / 60);
-      expect(out.rows.length).toBe(1);
-      // Dated by when the drive STARTED, which is `today` for 23h40m of every
-      // day but legitimately yesterday when CI runs just after local midnight
-      // (assertion used to pin `today` and failed exactly there, 2026-08-07
-      // run at 00:0x UTC). The 14h stale case above still pins `today`: a
-      // stale leg is deliberately stamped at the moment we SAW them.
-      expect(out.rows[0].date).toBe(out.startDay);
-      expect(out.timeEntries.length).toBe(1);
-      expect(out.timeEntries[0]).toBeGreaterThanOrEqual(19);
-      expect(out.timeEntries[0]).toBeLessThanOrEqual(21);
-    });
-  });
 
   // ── The End Drive match, and what it is allowed to throw away ──────────────
   // Caught by the FULL live suite on the local runner, and it was mine: the
@@ -3780,33 +2265,9 @@ test.describe('Automatic mileage from drive legs', () => {
       });
     };
 
-    test('yard, job, supply run, back to the job, home to the yard', async () => {
-      const rows = await walkDay([SHOP, JOB, SUPPLY, JOB, SHOP]);
-      expectChain(rows, ['Shop', 'Miller Residence', 'Ace Supply', 'Miller Residence', 'Shop']);
-    });
 
-    test('two supply runs off the same job in one day', async () => {
-      // Returning to a place already visited earlier the same day is the case
-      // that breaks a fence machine keeping one "current" anything.
-      const rows = await walkDay([SHOP, JOB, SUPPLY, JOB, SUPPLY, JOB, SHOP]);
-      expectChain(rows, ['Shop', 'Miller Residence', 'Ace Supply', 'Miller Residence',
-                         'Ace Supply', 'Miller Residence', 'Shop']);
-    });
 
-    test('back to the yard mid-afternoon and out to the job again', async () => {
-      const rows = await walkDay([SHOP, JOB, SHOP, JOB, SHOP]);
-      expectChain(rows, ['Shop', 'Miller Residence', 'Shop', 'Miller Residence', 'Shop']);
-    });
 
-    test('a six-leg day logs six trips and not one more', async () => {
-      // Idempotency across a long chain: the leg key is what stops a replayed or
-      // re-entered ping from billing the same miles twice, and a long day is
-      // where a duplicate would first show up.
-      const rows = await walkDay([SHOP, JOB, SUPPLY, JOB, SUPPLY, JOB, SHOP]);
-      expect(rows.length).toBe(6);
-      const seen = rows.map(r => `${r.from}>${r.to}@${rows.indexOf(r)}`);
-      expect(new Set(seen).size).toBe(6);
-    });
 
     test('no console errors across a full day', async () => {
       await assertNoErrors(page);
@@ -3844,74 +2305,8 @@ test.describe('Automatic mileage from drive legs', () => {
       } finally { window._routeDistance = realRoute; _supa = realSupa; }
     }, { tag });
 
-    test('the drive is still recorded, and its time entry is still held', async () => {
-      const out = await offlineLeg('a');
-      // The row is LOCAL. It does not need the network to exist, only to be
-      // priced. Losing the drive because the cell tower was out would be the
-      // worst possible failure here: the one record nobody can reconstruct.
-      expect(out.rows.length).toBe(1);
-      expect(out.rows[0].method).toBe('pending_auto');
-      expect(out.queued).toBe(1);
-    });
 
-    test('coming back into signal prices the leg and empties the queue', async () => {
-      const out = await page.evaluate(async () => {
-        const realRoute = window._routeDistance, realSupa = _supa;
-        try {
-          const pend = mileage.filter(m => String(m.legKey || '').startsWith('offline-'));
-          window._routeDistance = async () => ({ miles: 9.1, mins: 18 });
-          const sent = [];
-          _supa = { from: () => ({
-            upsert: async (row) => { sent.push(row); return { error: null }; },
-            insert: async (row) => { sent.push(row); return { error: null }; },
-          }) };
-          await _retryPendingTrips();
-          await _geoDrainQueue();
-          return { priced: pend.map(m => ({ miles: m.miles, method: m.calc_method })),
-                   sent: sent.length, left: _geoQueueRead().length };
-        } finally { window._routeDistance = realRoute; _supa = realSupa; }
-      });
-      expect(out.priced.length).toBeGreaterThan(0);
-      out.priced.forEach(r => { expect(r.method).toBe('auto_route'); expect(r.miles).toBe(9.1); });
-      expect(out.sent).toBeGreaterThan(0);
-      expect(out.left, 'the queue must be empty once it has drained').toBe(0);
-    });
 
-    test('two legs closed back to back offline both survive the drain', async () => {
-      // The queue's own failure mode, and the one that looked like a flaky
-      // backend: a drain that snapshots the queue before an await and writes
-      // that stale copy back erases anything enqueued while the request was in
-      // flight. One of the two legs vanishes, and which one depends on network
-      // timing. Guarding it here because this PR puts real drive legs through
-      // that queue on every stop.
-      const out = await page.evaluate(async () => {
-        const realSupa = _supa;
-        try { localStorage.removeItem('zp3_geo_queue'); } catch (e) {}
-        try {
-          const sent = [];
-          let resolveFirst;
-          _supa = { from: () => ({
-            upsert: (row) => {
-              sent.push(row.leg_key);
-              // The first send hangs just long enough for a second leg to close
-              // underneath it, which is exactly what a slow tower does.
-              if (sent.length === 1) return new Promise(r => { resolveFirst = () => r({ error: null }); });
-              return Promise.resolve({ error: null });
-            },
-            insert: async (row) => { sent.push(row.leg_key); return { error: null }; },
-          }) };
-          _geoEnqueue('job_time_entries', { job_id: 1, leg_key: 'race-leg-1' });
-          await new Promise(r => setTimeout(r, 10));
-          _geoEnqueue('job_time_entries', { job_id: 2, leg_key: 'race-leg-2' });
-          resolveFirst();
-          await new Promise(r => setTimeout(r, 80));
-          return { sent, left: _geoQueueRead().length };
-        } finally { _supa = realSupa; }
-      });
-      expect(out.sent, 'both legs must reach the backend').toContain('race-leg-1');
-      expect(out.sent).toContain('race-leg-2');
-      expect(out.left).toBe(0);
-    });
 
     test('no console errors while offline', async () => {
       await assertNoErrors(page);
@@ -3947,72 +2342,12 @@ test.describe('Automatic mileage from drive legs', () => {
       } finally { window._routeDistance = realRoute; window._poiAt = realPoi; }
     }, opts);
 
-    test('the router refusing leaves the leg recorded but UNPRICED, never guessed', async () => {
-      const out = await leg({ tag: 'reject', routeMode: 'reject' });
-      expect(out.length).toBe(1);
-      // 0 miles and still pending is the correct state: the drive happened, we
-      // just cannot say how far yet. Inventing a number here is how a deduction
-      // becomes indefensible.
-      expect(out[0].miles).toBe(0);
-      expect(out[0].method).toBe('pending_auto');
-    });
 
-    test('a router that never answers at all does not hold up the row', async () => {
-      const out = await leg({ tag: 'hang', routeMode: 'hang' });
-      expect(out.length).toBe(1);
-      expect(out[0].method).toBe('pending_auto');
-    });
 
-    test('an unpriced leg is picked up and settled by the next sweep', async () => {
-      // The other half of the promise: pending is a waiting room, not a grave.
-      const out = await page.evaluate(async () => {
-        const realRoute = window._routeDistance;
-        try {
-          const pending = mileage.filter(m => m.calc_method === 'pending_auto' && m.fromCoord && m.toCoord);
-          if (!pending.length) return { skipped: true };
-          window._routeDistance = async () => ({ miles: 7.7, mins: 15 });
-          await _retryPendingTrips();
-          return { settled: pending.map(m => ({ miles: m.miles, method: m.calc_method })) };
-        } finally { window._routeDistance = realRoute; }
-      });
-      expect(out.skipped, 'the tests above must have left pending rows to sweep').toBeFalsy();
-      out.settled.forEach(r => {
-        expect(r.method).toBe('auto_route');
-        expect(r.miles).toBe(7.7);
-      });
-    });
 
-    test('a router answering with nonsense does not write nonsense', async () => {
-      const out = await leg({ tag: 'garbage', routeMode: 'garbage' });
-      expect(out.length).toBe(1);
-      // NaN miles on a mileage row is worse than no miles: it survives the sweep
-      // (it is no longer pending) and prints as a real figure on a tax export.
-      expect(Number.isFinite(out[0].miles)).toBe(true);
-      expect(out[0].miles).toBe(0);
-      expect(out[0].method).toBe('pending_auto');
-    });
 
-    test('Apple not knowing who is at the pin KEEPS the leg', async () => {
-      // A contractor parked mid-workday is far more often at a supply yard or a
-      // gate than at a sandwich counter. Silence is not evidence of lunch, and
-      // dropping a real leg costs them money.
-      const out = await leg({ tag: 'poinull', toStop: true, poiMode: 'null' });
-      expect(out.length).toBe(1);
-      expect(out[0].to).toBe('Stop');
-    });
 
-    test('the POI lookup throwing keeps the leg too, and stays off the console', async () => {
-      const out = await leg({ tag: 'poithrow', toStop: true, poiMode: 'throw' });
-      expect(out.length).toBe(1);
-      expect(out[0].to).toBe('Stop');
-    });
 
-    test('only a NAMED food stop disqualifies a leg', async () => {
-      // The one case that removes it, and it takes a positive identification to
-      // do so. Contrast with the two tests above: uncertainty keeps the leg.
-      const out = await leg({ tag: 'poifood', toStop: true, poiMode: 'food' });
-      expect(out.length).toBe(0);
-    });
 
     test('no console errors from any of it', async () => {
       await assertNoErrors(page);
@@ -4288,105 +2623,6 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
-  // ── Client-address fences ───────────────────────────────────────────────────
-  // Owner report (2026-08-07): a spontaneous drive from the home office to a
-  // client, app open the whole way, logged NOTHING, because the fence machine
-  // only knew today's scheduled jobs, the shop, and saved places. The client's
-  // driveway read as an anonymous stop and the detour collapse folded the round
-  // trip into personal wandering. Clients' cached geocodes (zp3_nearby_geo, the
-  // nearby-job card's own cache) are now the weakest fence type, so any client
-  // visit is a real destination whether or not work is scheduled.
-  test.describe('client-address fences', () => {
-    const clientDrive = (o) => page.evaluate(async (a) => {
-      const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue;
-      const entries = [];
-      window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
-      _supaUser = { id: 'u-client-fence' };
-      window._routeDistance = _routeDistance = async () => ({ miles: 12.34, mins: 21 });
-      const before = mileage.length;
-      try {
-        __seedGeo();
-        clients.push({ id: 7702, name: 'John Doe', addr: '77 Doe Ln, Topeka, KS' });
-        const geoCache = { 7702: { lat: a.client.lat, lon: a.client.lon, addr: '77 Doe Ln, Topeka, KS' } };
-        if (a.cacheMiller) geoCache[7701] = { lat: a.job.lat, lon: a.job.lon, addr: '400 Oak St' };
-        localStorage.setItem('zp3_nearby_geo', JSON.stringify(geoCache));
-        _geoClientCacheMemo = null;              // the memo must re-read the seeded cache
-        _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
-        _geoShopArrivedAt = null; _geoDriveStartedAt = null;
-        _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-        _geoLastFenceAt = null; _geoLegAtShop = false;
-        _geoHomeDwell = null; _geoWasAtHome = false;
-        _geoLastFenceLoc = null; _geoLegOrigin = null;
-        _geoCurrentClient = null; _geoClientArrivedAt = null;
-        try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
-        const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
-        const rewind = (m) => {
-          const t = new Date(Date.now() - m * 60000).toISOString();
-          if (_geoDriveStartedAt) _geoDriveStartedAt = t;
-          if (_geoLastFenceAt) _geoLastFenceAt = t;
-        };
-        await ping(a.from);
-        rewind(20);
-        await ping(a.to);
-        await new Promise(r => setTimeout(r, 30));
-        const out = { state: { client: _geoCurrentClient, job: _geoCurrentJob } };
-        if (a.returnHome) {
-          // Park in the driveway half an hour, then drive back: the visit entry
-          // and the return leg both need real elapsed time.
-          const back = new Date(Date.now() - 30 * 60000).toISOString();
-          _geoClientArrivedAt = back; _geoLastFenceAt = back;
-          await ping(a.from);
-          await new Promise(r => setTimeout(r, 30));
-        }
-        out.rows = mileage.slice(0, Math.max(0, mileage.length - before));
-        out.entries = entries;
-        return out;
-      } finally {
-        window._geoEnqueue = realEnq;
-        _supaUser = realUser;
-        window._routeDistance = _routeDistance = realRoute;
-        try { localStorage.removeItem('zp3_nearby_geo'); } catch (e) {}
-        _geoClientCacheMemo = null;
-        _geoCurrentClient = null; _geoClientArrivedAt = null;
-      }
-    }, o);
-
-    test('a client with NO job today is a real destination: named trip, Client Consult, bound to the client record', async () => {
-      const r = await clientDrive({ from: HOMEOFF, to: CLIENT, job: JOB, client: CLIENT });
-      expect(r.state.client).toBe('7702');
-      expect(r.rows.length).toBe(1);
-      expect(r.rows[0].from_name).toBe('Home Office');
-      expect(r.rows[0].to_name).toBe('John Doe');
-      expect(r.rows[0].purpose).toBe('Client Consult');
-      expect(r.rows[0].client_id).toBe(7702);
-      expect(r.rows[0].miles).toBe(12.3);
-    });
-
-    test('the round trip logs BOTH legs plus the visit itself, nothing collapses as a detour', async () => {
-      const r = await clientDrive({ from: HOMEOFF, to: CLIENT, job: JOB, client: CLIENT, returnHome: true });
-      expect(r.rows.length).toBe(2);
-      const outLeg = r.rows.find(m => m.to_name === 'John Doe');
-      const backLeg = r.rows.find(m => m.from_name === 'John Doe');
-      expect(outLeg, 'the leg out survives the return').toBeTruthy();
-      expect(backLeg, 'the return leg is measured FROM the client, not from home').toBeTruthy();
-      expect(backLeg.to_name).toBe('Home Office');
-      // 'client', not 'place' (2026-08-29): John Doe is a customer, and a
-      // customer's address stopped sharing a source with a supply house.
-      const visit = r.entries.find(e => e.tbl === 'job_time_entries' && e.row.source === 'client' && e.row.dest_place === 'John Doe');
-      expect(visit, 'the half hour in the driveway is a place-visit entry under the client\'s name').toBeTruthy();
-      expect(visit.row.minutes).toBeGreaterThanOrEqual(28);
-      expect(visit.row.job_id).toBe(null);
-    });
-
-    test('a scheduled job at the same address still wins: the fence stays a job, the purpose stays Job site', async () => {
-      const r = await clientDrive({ from: SHOP, to: JOB, job: JOB, client: CLIENT, cacheMiller: true });
-      expect(r.state.job, 'the job fence outranks the client fence at the same coordinates').toBe(9901);
-      expect(r.state.client).toBe(null);
-      expect(r.rows.length).toBe(1);
-      expect(r.rows[0].purpose).toBe('Job site');
-      expect(r.rows[0].to_name).toBe('Miller Residence');
-    });
-  });
 
   // ── The Capacitor native-shell bridge ───────────────────────────────────────
   // Owner direction (2026-08-07): the free path to background drives is the
@@ -4396,74 +2632,6 @@ test.describe('Automatic mileage from drive legs', () => {
   // (arrive/depart, time on site, drive legs, mileage) works with the screen
   // locked and ZERO logic changes. In a plain browser the bridge must be inert.
   test.describe('the Capacitor native-shell bridge', () => {
-    test('inside the shell: the background watcher replaces the web watcher, and a locked-screen drive still logs', async () => {
-      const r = await page.evaluate(async (a) => {
-        const realCap = window.Capacitor, realUser = _supaUser, realRoute = _routeDistance;
-        const realGeoWatch = navigator.geolocation.watchPosition;
-        const added = [];
-        let removed = null, webWatchCalls = 0;
-        navigator.geolocation.watchPosition = () => { webWatchCalls++; return 424242; };
-        _supaUser = { id: 'u-native' };
-        window._routeDistance = _routeDistance = async () => ({ miles: 12.34, mins: 21 });
-        const before = mileage.length;
-        try {
-          __seedGeo();
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
-          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
-          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-          _geoLastFenceAt = null; _geoLegAtShop = false;
-          _geoHomeDwell = null; _geoWasAtHome = false;
-          _geoLastFenceLoc = null; _geoLegOrigin = null;
-          _geoCurrentClient = null; _geoClientArrivedAt = null;
-          _geoWatchId = null; _geoNativeWatcherId = null; _geoNativeStarting = false;
-          try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
-          window.Capacitor = {
-            isNativePlatform: () => true,
-            registerPlugin: (name) => name === 'BackgroundGeolocation' ? {
-              addWatcher: (opts, cb) => { added.push({ opts, cb }); return Promise.resolve('w-1'); },
-              removeWatcher: (o) => { removed = o; return Promise.resolve(); },
-            } : null,
-          };
-          startGeoTracking();
-          await new Promise(r2 => setTimeout(r2, 10));
-          const out = {
-            watcherAdded: added.length,
-            watcherId: _geoNativeWatcherId,
-            webWatcherStarted: webWatchCalls,
-            background: !!(added[0] && added[0].opts && added[0].opts.backgroundMessage),
-          };
-          // The phone is in a pocket, screen locked: the ONLY fixes are the
-          // plugin's. One at the shop, one at the job twenty minutes later.
-          const cb = added[0].cb;
-          await cb({ latitude: a.shop.lat, longitude: a.shop.lon, accuracy: 8, speed: 0 });
-          const t = new Date(Date.now() - 20 * 60000).toISOString();
-          if (_geoLastFenceAt) _geoLastFenceAt = t;
-          await cb({ latitude: a.job.lat, longitude: a.job.lon, accuracy: 8, speed: 0 });
-          await new Promise(r2 => setTimeout(r2, 30));
-          out.rows = mileage.slice(0, Math.max(0, mileage.length - before)).map(m => ({ from: m.from_name, to: m.to_name, miles: m.miles }));
-          stopGeoTracking();
-          out.removed = removed;
-          out.clearedId = _geoNativeWatcherId;
-          return out;
-        } finally {
-          navigator.geolocation.watchPosition = realGeoWatch;
-          window.Capacitor = realCap;
-          _supaUser = realUser;
-          window._routeDistance = _routeDistance = realRoute;
-          _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
-        }
-      }, { shop: SHOP, job: JOB });
-      expect(r.watcherAdded).toBe(1);
-      expect(r.watcherId).toBe('w-1');
-      expect(r.webWatcherStarted, 'the web watcher must not double up inside the shell').toBe(0);
-      expect(r.background, 'the watcher is a BACKGROUND watcher, message and title present').toBe(true);
-      expect(r.rows.length, 'a locked-screen drive still logs its measured trip').toBe(1);
-      expect(r.rows[0].from).toBe('Shop');
-      expect(r.rows[0].to).toBe('Miller Residence');
-      expect(r.rows[0].miles).toBe(12.3);
-      expect(r.removed && r.removed.id, 'stopGeoTracking removes the plugin watcher').toBe('w-1');
-      expect(r.clearedId).toBe(null);
-    });
 
     // Owner report (2026-08-08): even with the plugin running, WKWebView
     // popped its per-WEBSITE location prompt because features like weather
@@ -4810,67 +2978,6 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.driveOpen, 'the departing fix itself opens the drive leg').toBe(true);
     });
 
-    test('the disk buffer replays with original timestamps: a drive the app slept through still logs', async () => {
-      const r = await page.evaluate(async (a) => {
-        const realCap = window.Capacitor, realUser = _supaUser, realRoute = _routeDistance;
-        const realEnq = window._geoEnqueue;
-        const entries = [];
-        _supaUser = { id: 'u-replay' };
-        window._routeDistance = _routeDistance = async () => ({ miles: 12.34, mins: 21 });
-        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
-        const before = mileage.length;
-        try {
-          __seedGeo();
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
-          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
-          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-          _geoLastFenceAt = null; _geoLegAtShop = false;
-          _geoHomeDwell = null; _geoWasAtHome = false;
-          _geoLastFenceLoc = null; _geoLegOrigin = null;
-          _geoCurrentClient = null; _geoClientArrivedAt = null;
-          _geoWatchId = null; _geoNativeWatcherId = null; _geoNativeStarting = false;
-          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
-          try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
-          const now = Date.now();
-          // The app was dead for the whole drive: the buffer holds a fix at the
-          // shop 30 minutes ago and the arrival at the job 2 minutes ago.
-          window.Capacitor = {
-            isNativePlatform: () => true,
-            registerPlugin: (name) => name === 'TdGeo' ? {
-              addListener: () => {},
-              startParked: () => Promise.resolve({ armed: 0 }),
-              stopAll: () => Promise.resolve(),
-              drainBuffer: () => Promise.resolve({ fixes: [
-                { type: 'fix', lat: a.job.lat, lng: a.job.lon, acc: 8, speed: 0, ts: now - 2 * 60000 },
-                { type: 'fix', lat: a.shop.lat, lng: a.shop.lon, acc: 8, speed: 0, ts: now - 30 * 60000 },
-              ] }),
-            } : null,
-          };
-          _geoTdInit();
-          await new Promise(r2 => setTimeout(r2, 60));
-          const rows = mileage.slice(0, Math.max(0, mileage.length - before)).map(m => ({ from: m.from_name, to: m.to_name, miles: m.miles }));
-          const drive = entries.find(e => e.tbl === 'job_time_entries' && /^drive/.test(e.row.source));
-          return { rows, driveMins: drive && drive.row.minutes, arrivedAt: drive && drive.row.departed_at, expectArrive: new Date(now - 2 * 60000).toISOString() };
-        } finally {
-          window.Capacitor = realCap; _supaUser = realUser;
-          window._routeDistance = _routeDistance = realRoute;
-          window._geoEnqueue = realEnq;
-          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
-          _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoDriveReset();
-          _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
-          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoStopAnchor = null; _geoLegOrigin = null;
-        }
-      }, { shop: SHOP, job: JOB });
-      // Without honest timestamps both fixes collapse to the replay moment, the
-      // leg reads zero minutes, and the 2-minute floor silently drops the trip.
-      expect(r.rows.length, 'the slept-through drive logs its measured trip').toBe(1);
-      expect(r.rows[0].from).toBe('Shop');
-      expect(r.rows[0].to).toBe('Miller Residence');
-      expect(r.rows[0].miles).toBe(12.3);
-      expect(r.driveMins, 'the leg is clocked shop-fix to job-fix, 28 minutes').toBe(28);
-      expect(r.arrivedAt, 'arrival is stamped when it happened, not when it replayed').toBe(r.expectArrive);
-    });
 
     // Owner report (2026-08-09): 30 minutes parked at home, arrow still on.
     // Root cause: park entry hung entirely on a setTimeout, and WKWebView
@@ -5473,68 +3580,7 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.closedTotal, 'the whole wander-and-return produced zero closes').toBe(0);
     });
 
-    test('two agreeing out-of-fence pings DO close the visit when no speed signal is available', async () => {
-      const r = await page.evaluate(async (a) => {
-        const realUser = _supaUser, realEnq = window._geoEnqueue;
-        const entries = [];
-        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
-        _supaUser = { id: 'u-confirm' };
-        try {
-          __seedGeo();
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
-          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
-          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLegOrigin = null;
-          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoExitPending = null;
-          const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
-          await ping(a.job);
-          _geoArrivedAt = new Date(Date.now() - 10 * 60000).toISOString();
-          await ping(a.road);                               // first out-of-fence ping: pending
-          const afterFirst = { job: _geoCurrentJob, closed: entries.length };
-          await ping(a.road);                               // second agreeing ping: confirmed
-          return {
-            afterFirst, jobAfter: _geoCurrentJob, closedAfter: entries.length,
-            closedTbl: entries[0] && entries[0].tbl,
-          };
-        } finally {
-          _supaUser = realUser; window._geoEnqueue = realEnq;
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoExitPending = null;
-        }
-      }, { job: JOB, road: ROAD });
-      expect(r.afterFirst.job, 'the first out-of-fence ping must not close it yet').toBe(9901);
-      expect(r.afterFirst.closed).toBe(0);
-      expect(r.jobAfter, 'the SECOND agreeing ping confirms the departure').toBe(null);
-      expect(r.closedAfter, 'exactly one close, on the confirming ping').toBe(1);
-      expect(r.closedTbl).toBe('job_time_entries');
-    });
 
-    test('a driving-speed reading confirms departure immediately, no second ping needed', async () => {
-      const r = await page.evaluate(async (a) => {
-        const realUser = _supaUser, realEnq = window._geoEnqueue;
-        const entries = [];
-        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
-        _supaUser = { id: 'u-speed' };
-        try {
-          __seedGeo();
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
-          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
-          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLegOrigin = null;
-          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoExitPending = null;
-          await _geoOnPing({ coords: { latitude: a.job.lat, longitude: a.job.lon, accuracy: 8 } });
-          _geoArrivedAt = new Date(Date.now() - 10 * 60000).toISOString();
-          // One ping, outside the fence, reporting real driving speed (~13mph).
-          await _geoOnPing({ coords: { latitude: a.road.lat, longitude: a.road.lon, accuracy: 8, speed: 6 } });
-          return { job: _geoCurrentJob, closed: entries.length, closedTbl: entries[0] && entries[0].tbl };
-        } finally {
-          _supaUser = realUser; window._geoEnqueue = realEnq;
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoExitPending = null;
-        }
-      }, { job: JOB, road: ROAD });
-      expect(r.job, 'a confirmed driving-speed ping closes the visit on the FIRST out-of-fence reading').toBe(null);
-      expect(r.closed).toBe(1);
-      expect(r.closedTbl).toBe('job_time_entries');
-    });
 
     test('bad-accuracy pings never confirm a departure, no matter how many arrive', async () => {
       const r = await page.evaluate(async (a) => {
@@ -5611,63 +3657,6 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.driveEntries, 'no drive time entry for a fence bounce').toBe(0);
     });
 
-    // Owner correction (2026-08-09): every endpoint IS saved (house as a
-    // place, FBC as an estimate, work as a job), so FBC -> home should have
-    // routed. The real hole: the open-state blob carried "a drive is open"
-    // but not WHERE IT STARTED. _geoLegOrigin was memory-only, so an app kill
-    // (which park mode deliberately invites) left the restored drive with no
-    // origin, and _geoAutoMileage bails without one: drive TIME logged, and
-    // no mileage row at all. The origin now rides to disk with the drive.
-    test('a drive restored after an app kill still knows where it started, and logs its miles', async () => {
-      const r = await page.evaluate(async (a) => {
-        const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue;
-        const before = mileage.length;
-        _supaUser = { id: 'u-origin' };
-        window._routeDistance = _routeDistance = async () => ({ miles: 7.7, mins: 14 });
-        window._geoEnqueue = () => {};
-        try {
-          __seedGeo();
-          const t0 = Date.now();
-          // Parked at a lunch stop with the leg out of the client still open,
-          // then the screen locks and iOS kills the app.
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
-          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoLegAtShop = false;
-          _geoCurrentClient = null; _geoClientArrivedAt = null;
-          _geoDriveStartedAt = new Date(t0 - 50 * 60000).toISOString();
-          _geoLegOrigin = { lat: a.job.lat, lng: a.job.lon, name: 'Miller Residence', kind: 'job', addr: '9 Job St' };
-          _geoLastFenceLoc = _geoLegOrigin;
-          _geoLastFenceAt = new Date(t0 - 50 * 60000).toISOString();
-          _geoPersistOpen(new Date(t0 - 45 * 60000).toISOString());
-          // ── app dies here ──
-          _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null;
-          _geoLastFenceAt = null; _geoGapHiddenAt = null; _geoStopAnchor = null;
-          _geoQuietSinceMs = null; _geoParkPrevFix = null; _geoFenceEnteredAtMs = null;
-          window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
-          _geoRestoreOpen();
-          const restoredOrigin = _geoLegOrigin && _geoLegOrigin.name;
-          const restoredDrive = !!_geoDriveStartedAt;
-          // Relaunch lands them arriving at the saved shop: the leg must log.
-          _geoDriveMiles = 6;
-          await _geoOnPing({ coords: { latitude: a.shop.lat, longitude: a.shop.lon, accuracy: 8, speed: 0 }, __tdTs: t0 });
-          await new Promise(r2 => setTimeout(r2, 60));
-          const rows = mileage.slice(0, Math.max(0, mileage.length - before))
-            .map(m => ({ from: m.from_name, to: m.to_name, miles: m.miles }));
-          return { restoredOrigin, restoredDrive, rows };
-        } finally {
-          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
-          window._geoEnqueue = realEnq;
-          _geoDriveStartedAt = null; _geoDriveReset(); _geoLegOrigin = null;
-          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoGapHiddenAt = null;
-          _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
-          _geoClearOpen(); mileage.length = before; saveAll();
-        }
-      }, { job: JOB, shop: SHOP });
-      expect(r.restoredDrive, 'the open drive comes back').toBe(true);
-      expect(r.restoredOrigin, 'and so does where it started').toBe('Miller Residence');
-      expect(r.rows.length, 'so the leg logs its miles instead of vanishing').toBe(1);
-      expect(r.rows[0].from).toBe('Miller Residence');
-      expect(r.rows[0].miles).toBe(7.7);
-    });
 
     // ── STANDING AT A CUSTOMER IS OPEN STATE ──────────────────────────────
     // _geoPersistOpen covered job, shop and drive. A client or place visit was
@@ -5818,60 +3807,6 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(half.b, 'and a clock with nothing to attribute it to is not either').toBeNull();
     });
 
-    // A drive still in progress (not at a job, not at the shop) when the app died
-    // AND the calendar rolled to a new day before it ever restarted: previously
-    // _geoRestoreOpen's day-mismatch branch salvaged an open job/shop dwell but
-    // just discarded an open DRIVE outright, silently losing the hours. The
-    // destination is genuinely unknown (they never arrived), so this claims no
-    // mileage, only the payroll-relevant time entry.
-    test('a drive still open across a day rollover is salvaged as time, not silently dropped', async () => {
-      const r = await page.evaluate(async (a) => {
-        const realUser = _supaUser, realEnq = window._geoEnqueue;
-        const entries = [];
-        _supaUser = { id: 'u-rollover' };
-        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
-        try {
-          __seedGeo();
-          const t0 = Date.now();
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
-          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoLegAtShop = false;
-          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoStopAnchor = null;
-          const driveStart = new Date(t0 - 40 * 60000).toISOString();
-          const hiddenAt = new Date(t0 - 5 * 60000).toISOString();
-          _geoDriveStartedAt = driveStart;
-          _geoLegOrigin = { lat: a.job.lat, lng: a.job.lon, name: 'Miller Residence', kind: 'job' };
-          _geoLastFenceLoc = _geoLegOrigin;
-          _geoLastFenceAt = driveStart;
-          _geoPersistOpen(hiddenAt);
-          // Back-date the persisted blob's day so restore sees yesterday, the
-          // same shape a real overnight app-kill produces.
-          const raw = JSON.parse(localStorage.getItem('zp3_geo_open'));
-          raw.day = 'not-today';
-          localStorage.setItem('zp3_geo_open', JSON.stringify(raw));
-          // ── app dies here, relaunches tomorrow ──
-          _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null;
-          _geoLastFenceAt = null; _geoGapHiddenAt = null; _geoStopAnchor = null;
-          window._geoOpenRestored = false;   // fresh restore per test, one-shot guard added in js/geo-track.js
-          _geoRestoreOpen();
-          const salvaged = entries.filter(e => e.tbl === 'job_time_entries' && e.row.source === 'drive-unassigned-salvaged');
-          return {
-            restoredDrive: !!_geoDriveStartedAt, // must NOT come back live, the day already rolled
-            salvagedCount: salvaged.length,
-            salvaged: salvaged[0] && salvaged[0].row,
-          };
-        } finally {
-          _supaUser = realUser; window._geoEnqueue = realEnq;
-          _geoDriveStartedAt = null; _geoDriveReset(); _geoLegOrigin = null;
-          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoGapHiddenAt = null;
-          _geoClearOpen();
-        }
-      }, { job: JOB });
-      expect(r.restoredDrive, 'a rolled-over day never resumes as a live drive').toBe(false);
-      expect(r.salvagedCount, 'the in-progress drive logs its time instead of vanishing').toBe(1);
-      expect(r.salvaged.job_id, 'destination was never known, so no job is claimed').toBe(null);
-      expect(r.salvaged.dest_place, 'and no place is claimed either').toBe(null);
-      expect(r.salvaged.minutes).toBe(35);
-    });
 
     test('a bounce restored after a kill is still refused, because the origin came back with it', async () => {
       const r = await page.evaluate(async (a) => {
@@ -5915,135 +3850,6 @@ test.describe('Automatic mileage from drive legs', () => {
 
   });
 
-  // ── Same-fence flicker (owner video 2026-08-20) ─────────────────────────────
-  // Real device: two near-duplicate "Driving" legs both to job "John Doe",
-  // same start, end times two minutes apart, then several more 2-6 minute
-  // job<->shop blips through midday, all while genuinely parked. Root cause:
-  // once _geoExitPending confirms a departure (a lone driving-speed blip, or
-  // two borderline-accuracy pings agreeing) and the drive clock opens, the
-  // VERY NEXT ping landing back inside that SAME fence had no guard at all,
-  // it went through the unconditional "single clean ping into a well-defined
-  // fence" trust path (protected further below), because by then `prev` reads
-  // null, so the settle-back looks identical to a brand-new arrival. See
-  // _geoFlickerCandidate in js/geo-track.js for the full mechanism.
-  test.describe('same-fence flicker (owner video 2026-08-20)', () => {
-    test('a confirmed exit that settles back into the SAME job within the grace window logs no drive leg and never splits the visit', async () => {
-      const r = await page.evaluate(async (a) => {
-        const realUser = _supaUser, realEnq = window._geoEnqueue;
-        const entries = [];
-        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
-        _supaUser = { id: 'u-flicker' };
-        try {
-          __seedGeo();
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
-          _geoShopArrivedAt = null; _geoDriveStartedAt = null; _geoDriveReset();
-          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLegOrigin = null;
-          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoExitPending = null;
-          _geoFlickerCandidate = null;
-          const ping = (c, extra) => _geoOnPing({
-            coords: Object.assign({ latitude: c.lat, longitude: c.lon, accuracy: 8 }, extra || {}),
-          });
-          // Arrive at the job: single ping, trusted immediately.
-          await ping(a.job);
-          const arrivedAt = _geoArrivedAt;
-          // A spurious driving-speed blip reads them outside every fence: the
-          // exit is confirmed on the FIRST ping (real evidence of motion, by
-          // design, see _GEO_DRIVEBY_SPEED_MPS).
-          await ping(a.road, { speed: 5 });
-          const afterExit = { job: _geoCurrentJob, driveOpen: !!_geoDriveStartedAt, closed: entries.length };
-          // GPS settles right back inside the SAME job fence, moments later.
-          await ping(a.job);
-          const afterFlicker = {
-            job: _geoCurrentJob, arrivedAt: _geoArrivedAt,
-            driveOpen: !!_geoDriveStartedAt, closed: entries.length,
-          };
-          // Backdate the (restored) arrival to simulate a real, longer dwell
-          // already in progress, then leave for real: proves the flicker never
-          // split the visit, the eventual close spans the WHOLE time, the
-          // original arrival included.
-          _geoArrivedAt = new Date(Date.parse(_geoArrivedAt) - 12 * 60000).toISOString();
-          const trueArrivedAt = _geoArrivedAt;
-          await ping(a.road, { speed: 5 });   // the real departure, confirmed immediately
-          await new Promise(r2 => setTimeout(r2, 30));
-          return {
-            arrivedAt, afterExit, afterFlicker, trueArrivedAt,
-            driveRows: entries.filter(e => e.tbl === 'job_time_entries' && /^drive/.test(e.row.source)),
-            allRows: entries.filter(e => e.tbl === 'job_time_entries')
-              .map(e => ({ source: e.row.source, arrived_at: e.row.arrived_at, departed_at: e.row.departed_at, minutes: e.row.minutes, job_id: e.row.job_id })),
-          };
-        } finally {
-          _supaUser = realUser; window._geoEnqueue = realEnq;
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoDriveReset();
-          _geoExitPending = null; _geoFlickerCandidate = null; _geoStopAnchor = null; _geoLegOrigin = null;
-        }
-      }, { job: JOB, road: ROAD });
-
-      expect(r.afterExit.job, 'the spurious exit is confirmed immediately (real evidence of motion)').toBe(null);
-      expect(r.afterExit.driveOpen, 'a drive clock opens for the (phantom) exit').toBe(true);
-      expect(r.afterExit.closed, 'arriving seconds ago: the close floor (mins<2) refuses to write anything yet').toBe(0);
-      expect(r.afterFlicker.job, 'settling back into the SAME job undoes the exit').toBe(9901);
-      expect(r.afterFlicker.arrivedAt, 'the ORIGINAL arrival time survives, not a fresh one').toBe(r.arrivedAt);
-      expect(r.afterFlicker.driveOpen, 'the phantom drive clock is discarded').toBe(false);
-      expect(r.afterFlicker.closed, 'still nothing written after the undo').toBe(0);
-      expect(r.driveRows.length, 'no drive leg was ever logged for the flicker').toBe(0);
-      expect(r.allRows.length, 'exactly one row for the whole visit, never split in two').toBe(1);
-      expect(r.allRows[0].job_id).toBe('9901');
-      expect(r.allRows[0].arrived_at, 'the row spans the ORIGINAL arrival, flicker gap included').toBe(r.trueArrivedAt);
-      expect(r.allRows[0].minutes).toBeGreaterThanOrEqual(12);
-    });
-
-    // The mirror case: a same-fence flicker must never suppress a REAL exit to
-    // somewhere else. This is the "single clean ping into a well-defined
-    // fence" trust path the flicker guard must leave untouched (js/geo-track.js
-    // comment above _geoExitPending): a job/shop/place/client entry is
-    // trusted on ONE ping whether or not a drive clock happens to be open,
-    // because the flicker candidate only ever matches its OWN exact fence.
-    test('settling into a DIFFERENT fence right after an exit is a real trip, not a flicker', async () => {
-      const r = await page.evaluate(async (a) => {
-        const realUser = _supaUser, realEnq = window._geoEnqueue;
-        const entries = [];
-        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
-        _supaUser = { id: 'u-real-trip' };
-        try {
-          __seedGeo();
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
-          _geoShopArrivedAt = null; _geoDriveStartedAt = null; _geoDriveReset();
-          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLegOrigin = null;
-          _geoCurrentClient = null; _geoClientArrivedAt = null; _geoExitPending = null;
-          _geoFlickerCandidate = null;
-          const ping = (c, extra) => _geoOnPing({
-            coords: Object.assign({ latitude: c.lat, longitude: c.lon, accuracy: 8 }, extra || {}),
-          });
-          await ping(a.job);                       // arrive at the job
-          await ping(a.road, { speed: 5 });         // confirmed exit, drive opens
-          // Backdate the drive clock so this reads as a real 20-minute drive,
-          // same as every other real-trip test in this file (drive()'s own
-          // rewind helper): a sub-second synthetic gap between pings would
-          // otherwise trip the existing mins<2 pass-through floor in
-          // _geoDriveEntry, unrelated to the thing under test here.
-          if (_geoDriveStartedAt) _geoDriveStartedAt = new Date(Date.now() - 20 * 60000).toISOString();
-          await ping(a.shop);                       // lands at a DIFFERENT, real fence
-          await new Promise(r2 => setTimeout(r2, 30));
-          return {
-            job: _geoCurrentJob, atShop: _geoWasInShop, legAtShop: _geoLegAtShop,
-            driveRows: entries.filter(e => e.tbl === 'job_time_entries' && /^drive/.test(e.row.source)).length,
-          };
-        } finally {
-          _supaUser = realUser; window._geoEnqueue = realEnq;
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
-          _geoDriveStartedAt = null; _geoDriveReset();
-          _geoExitPending = null; _geoFlickerCandidate = null; _geoStopAnchor = null; _geoLegOrigin = null;
-        }
-      }, { job: JOB, road: ROAD, shop: SHOP });
-
-      expect(r.job, 'no longer at the job').toBe(null);
-      expect(r.atShop, 'a single clean ping into a DIFFERENT fence is still trusted immediately').toBe(true);
-      expect(r.legAtShop).toBe(true);
-      expect(r.driveRows, 'a real trip to a different destination still logs its drive leg').toBe(1);
-    });
-  });
 
   // ── TdGeo live delivery vs buffer replay (owner video 2026-08-21) ───────────
   // The owner's phone showed two "Driving" legs to the same job, both display
@@ -6173,133 +3979,7 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
-  test.describe('TdGeo live delivery vs buffer replay (owner video 2026-08-21)', () => {
-    // One physical drive, told to _geoTdEvent twice: once "live" (a JS-side
-    // processing lag simulated via a stubbed Date.now, standing in for the
-    // main-thread contention the code's own comments already document as
-    // real) and once "replayed" the way a reload's drainBuffer would, with
-    // the SAME two native events and their true, unstubbed ts fields.
-    async function driveTwice(a) {
-      return page.evaluate(async (d) => {
-        const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue, realNow = Date.now;
-        _supaUser = { id: 'u-replay-clock' };
-        window._routeDistance = _routeDistance = async () => ({ miles: 8.1, mins: 9 });
-        window._geoEnqueue = () => {};
-        const before = mileage.length;
-        const reset = (trueExitTs) => {
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoDriveStartedAt = null; _geoDriveReset();
-          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-          _geoLegOrigin = null; _geoCurrentClient = null; _geoClientArrivedAt = null;
-          _geoExitPending = null; _geoFlickerCandidate = null; _geoParkModeOn = false;
-          _geoParkCluster = null; _geoSoftJob = null;
-          // Parked at the shop before the drive, as if freshly booted (a
-          // reload wipes every one of these `let` module variables).
-          _geoWasInShop = true; _geoLegAtShop = true;
-          _geoShopArrivedAt = new Date(trueExitTs - 30 * 60000).toISOString();
-          _geoLastFenceAt = new Date(trueExitTs - 60000).toISOString();
-          _geoLastFenceLoc = { lat: d.shop.lat, lng: d.shop.lon, name: 'Shop', kind: 'shop' };
-        };
-        try {
-          __seedGeo();
-          // The TRUE native capture instants (what TdGeoPlugin.swift actually
-          // stamped and buffered, byte-identical on both passes below).
-          const trueExitTs = Date.parse('2026-08-21T07:52:03.000Z');
-          const trueArriveTs = Date.parse('2026-08-21T08:00:10.000Z');
-          const exitEvent = { type: 'regionExit', lat: d.road.lat, lng: d.road.lon, acc: 20, speed: 12, ts: trueExitTs };
-          const arriveEvent = { type: 'fix', lat: d.job.lat, lng: d.job.lon, acc: 8, speed: 0, ts: trueArriveTs };
 
-          // ── PASS 1: "live" delivery, lagging the true capture moment ──────
-          reset(trueExitTs);
-          Date.now = () => trueExitTs + 5000;      // 5s of live-processing lag
-          await _geoTdEvent(exitEvent, false);
-          Date.now = () => trueArriveTs + 118000;  // ~2min of lag (a busy main
-          await _geoTdEvent(arriveEvent, false);   // thread, a slow geocode)
-          Date.now = realNow;
-
-          // ── PASS 2: buffer replay after a "reload", true ts honored ───────
-          reset(trueExitTs);
-          await _geoTdEvent(exitEvent, true);
-          await _geoTdEvent(arriveEvent, true);
-
-          await new Promise(r => setTimeout(r, 30));
-          const rows = mileage.slice(0, Math.max(0, mileage.length - before));
-          return {
-            count: rows.length,
-            legKeys: [...new Set(rows.map(m => m.legKey))],
-            rows: rows.map(m => ({ from: m.from_name, to: m.to_name, startedIso: m.startedIso, endedIso: m.endedIso, mins: m.mins })),
-          };
-        } finally {
-          Date.now = realNow;
-          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute; window._geoEnqueue = realEnq;
-          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
-          _geoDriveStartedAt = null; _geoDriveReset(); _geoLegAtShop = false;
-          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoStopAnchor = null; _geoLegOrigin = null;
-          _geoExitPending = null; _geoFlickerCandidate = null; _geoParkCluster = null; _geoSoftJob = null;
-        }
-      }, a);
-    }
-
-    test('the same drive, live then replayed, collapses to ONE row', async () => {
-      const out = await driveTwice({ shop: SHOP, road: ROAD, job: JOB });
-      // Both passes display the same "7:52a" start (5s apart, same minute),
-      // and both are real ~8-10 minute drives, well clear of the 2-min floor.
-      // Before the fix this produced 2 rows with 2 different legKeys, exactly
-      // the owner's screenshot. The deterministic legKey now agrees on both
-      // passes (both clock off the true ev.ts), so the second close is
-      // recognised as the first one again and never writes a second row.
-      expect(out.count, 'one physical drive must never produce two rows').toBe(1);
-      expect(out.legKeys.length).toBe(1);
-      expect(out.rows[0].startedIso).toBe('2026-08-21T07:52:03.000Z');
-      expect(out.rows[0].endedIso).toBe('2026-08-21T08:00:10.000Z');
-      expect(out.rows[0].to).toBe('Miller Residence');
-    });
-  });
-
-  // ── Mileage-side cleanup: the owner's real duplicate pair (2026-08-21) ─────
-  // Proves the ALREADY-SHIPPED boot heal (efa418d, 2026-08-11) still collapses
-  // this exact shape once it runs: same person, same near-identical shop/job
-  // endpoints, starts a few seconds apart, overlapping windows. This is the
-  // cleanup half of the fix, independent of the prevention fix above: it is
-  // what actually clears rows a phone already wrote before this deploy landed
-  // (existing duplicate rows the owner already has need this heal to run on
-  // their next boot/reconnect; the prevention fix above only stops NEW ones).
-  test.describe('the owner\'s real duplicate pair heals (owner video 2026-08-21)', () => {
-    test('same job, starts seconds apart, ends 2 minutes apart: heal keeps one', async () => {
-      const out = await page.evaluate(() => {
-        const JOHN = { lat: 39.0208, lng: -95.7351 }, SHOP2 = { lat: 39.0325, lng: -95.69 };
-        // Same measured route both times (same two geocoded endpoints), so
-        // _mileTripWinner's mileage comparison ties and falls to earliest
-        // loggedAt, "the contemporaneous one" (its own documented rule).
-        // Row 501 is the LIVE row: written for real, in real time, during
-        // the drive. Row 502 is its buffer-replayed twin: it only exists
-        // once a LATER reload runs drainBuffer, so its loggedAt is later in
-        // wall-clock terms even though the trip IT describes started first.
-        const rows = [
-          { id: 501, gps: true, legKey: 'live-8f2a', calc_method: 'auto_route', miles: 3.1, client_id: 77,
-            to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
-            startedIso: '2026-08-21T07:52:08.000Z', endedIso: '2026-08-21T08:02:08.000Z',
-            mins: 10, loggedAt: '2026-08-21T08:02:10.000Z', date: '2026-08-21' },
-          { id: 502, gps: true, legKey: 'replay-3c91', calc_method: 'auto_route', miles: 3.1, client_id: 77,
-            to_name: 'John Doe', client_name: 'John Doe', fromCoord: SHOP2, toCoord: JOHN,
-            startedIso: '2026-08-21T07:52:03.000Z', endedIso: '2026-08-21T08:00:10.000Z',
-            mins: 8, loggedAt: '2026-08-21T09:15:00.000Z', date: '2026-08-21' },
-        ];
-        const keep = mileage.splice(0);
-        try {
-          rows.forEach(m => mileage.push(m));
-          const healed = _mileDedupTrips(true);
-          const left = mileage.map(m => m.id);
-          mileage.length = 0; rows.forEach(m => mileage.push(m));
-          const live = _mileDedupTrips();   // the live sweep must defer this to boot
-          return { healed, left, live, liveLeft: mileage.length };
-        } finally { mileage.length = 0; keep.forEach(m => mileage.push(m)); }
-      });
-      expect(out.healed, 'exactly one duplicate collapses').toBe(1);
-      expect(out.left).toEqual([501]);
-      expect(out.live, 'the strict live sweep does not touch this pair').toBe(0);
-      expect(out.liveLeft).toBe(2);
-    });
-  });
 
   // ── The last leg of the day (owner report 2026-08-09) ───────────────────────
   // "FBC to Culver's for personal lunch, then home, it didn't grab my mileage
@@ -6350,13 +4030,6 @@ test.describe('Automatic mileage from drive legs', () => {
       }
     }, { spot, shop: SHOP, ...(o || {}) });
 
-    test('parking at an unknown kerb writes the leg in, before they ever drive away again', async () => {
-      const r = await parkAt({ lat: SHOP.lat + 0.09, lon: SHOP.lon + 0.09 });
-      expect(r.rows.length, 'the leg lands while they are still parked').toBe(1);
-      expect(r.rows[0].from).toBe('Shop');
-      expect(r.rows[0].miles).toBe(5.1);
-      expect(r.afterDeparture, 'driving off never logs the same leg twice').toBe(1);
-    });
 
     test('parking at home names the endpoint Home rather than an anonymous Stop', async () => {
       const r = await page.evaluate(async (a) => {
@@ -6463,18 +4136,6 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.afterTick.renders, 'same-road pings update text in place, never re-render the dashboard').toBe(r.onRoad.renders);
     });
 
-    // Old contract: nothing detected -> the card faded to display:none. New
-    // contract (owner 2026-08-19, "ability for somebody to clock in at all
-    // times, nothing dependent on anything"): this card never goes blank
-    // anymore, the DRIVING banner clearing reveals the always-there manual
-    // clock control instead of hiding the element entirely.
-    test('arriving at the job clears the DRIVING banner into the manual clock card, and the LOGGED trip still comes from the geocodes', async () => {
-      const r = await bannerDrive({ shop: SHOP, road: ROAD, road2: ROAD2, job: JOB, tick: true, arrive: true });
-      expect(r.afterArrive.display).toBe('block');
-      expect(r.afterArrive.html).toContain('Not clocked in');
-      expect(r.rows.length).toBe(1);
-      expect(r.rows[0].miles, 'route measurement rounded to a tenth, never the banner\'s straight-line tally').toBe(12.3);
-    });
 
     test('parked somewhere unknown, the DRIVING banner clears into the manual clock card once driving speed stops', async () => {
       const r = await bannerDrive({ shop: SHOP, road: ROAD, road2: ROAD2, job: JOB, park: true });
@@ -6695,43 +4356,6 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.timeEntries, 'and no time entry either').toBe(0);
     });
 
-    test('a genuinely lost drive still recovers: the same route logged BEFORE the origin re-visit is no cover', async () => {
-      // The ordering guard is what keeps twice-daily runs safe: yesterday's
-      // (or this morning's) run of the same route was logged BEFORE we were
-      // last seen at the origin, so it cannot cover THIS leg, and the stale
-      // recovery still writes the miles (hours stay unclaimed, per the
-      // 2026-08-03 rule).
-      const r = await page.evaluate(async (a) => {
-        const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue;
-        const queued = []; const savedLog = mileage.slice(); mileage.length = 0;
-        _supaUser = { id: 'u-echo2' };
-        window._routeDistance = _routeDistance = async () => ({ miles: 12.3, mins: 14 });
-        window._geoEnqueue = (tbl, row) => queued.push({ tbl, row });
-        try {
-          __seedGeo();
-          const nowIso = new Date().toISOString();
-          _geoLegOrigin = { lat: a.shop.lat, lng: a.shop.lon, name: 'Shop', kind: 'shop' };
-          _geoLastFenceAt = new Date(Date.now() - 14 * 3600000).toISOString();
-          // Same route, logged 15h ago: BEFORE the 14h-old origin visit.
-          mileage.unshift({ id: 997402, gps: true, legKey: 'cov-2', calc_method: 'auto_route', miles: 12.3,
-            date: todayKey(), loggedAt: new Date(Date.now() - 15 * 3600000).toISOString(),
-            fromCoord: { lat: a.shop.lat, lng: a.shop.lon }, toCoord: { lat: a.job.lat, lng: a.job.lon } });
-          const before = mileage.length;
-          _geoDriveEntry(null, nowIso, null, nowIso, true, { lat: a.job.lat, lng: a.job.lon, name: 'Job', kind: 'job' }, true);
-          await new Promise(r2 => setTimeout(r2, 30));
-          const added = mileage.length - before;
-          const row = added > 0 ? mileage[0] : null;
-          return { added, miles: row && row.miles, timeEntries: queued.filter(q => q.tbl === 'job_time_entries').length };
-        } finally {
-          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute; window._geoEnqueue = realEnq;
-          mileage.length = 0; savedLog.forEach(m => mileage.push(m));
-          _geoLegOrigin = null; _geoLastFenceAt = null;
-        }
-      }, { shop: SHOP, job: JOB });
-      expect(r.added, 'the lost drive is real and still logs').toBe(1);
-      expect(r.miles, 'measured like any recovered stale leg').toBe(12.3);
-      expect(r.timeEntries, 'a duration nobody observed is still never claimed').toBe(0);
-    });
 
     test('_mileTapeHadPause: the coprocessor walk check reads windows honestly', async () => {
       // Owner 2026-08-14: "time isn't a good enough factor." The motion
@@ -6820,133 +4444,8 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.jamMiles, 'no walk on record: the observed detour still collects').toBe(5.3);
     });
 
-    test('the retroactive walk sweep corrects a week of over-paid errand legs: reductions only, once per session', async () => {
-      // Owner 2026-08-14: the coprocessor stores about a week, so it can
-      // correct data and rows. Rows whose measurement KEPT the observed tally
-      // (the floor collected) get the walk question after the load settles:
-      // walked = re-measured down to the direct route. Rows outside the week,
-      // rows with a driving-only record, and hand-edited rows (tally no
-      // longer matches) are untouched, and the sweep runs once per session.
-      const r = await page.evaluate(async () => {
-        const realRoute = _routeDistance, realTd = window._geoTdPlugin, realRan = window._mileMotionHealRan;
-        window.__origMileage = mileage.slice();
-        try {
-          mileage.length = 0;
-          const mk = (id, endMsAgo, miles, gpsMiles) => {
-            const end = Date.now() - endMsAgo;
-            return { id, date: todayKey(), gps: true, legKey: 'heal-' + id, calc_method: 'auto_route',
-              miles, gpsMiles, mins: 12,
-              fromCoord: { lat: 39.02, lng: -95.73 }, toCoord: { lat: 39.0, lng: -95.7 },
-              startedIso: new Date(end - 14 * 60000).toISOString(), endedIso: new Date(end).toISOString(),
-              loggedAt: new Date(end).toISOString() };
-          };
-          const A = mk(998601, 2 * 86400000, 5.3, 5.3);    // walked, in window -> corrects
-          const B = mk(998602, 3 * 86400000, 5.3, 5.3);    // driving-only -> untouched
-          const C = mk(998603, 9 * 86400000, 5.3, 5.3);    // beyond the week -> untouched
-          const D = mk(998604, 2 * 86400000, 3.2, 5.3);    // hand-edited -> untouched
-          mileage.push(A, B, C, D);
-          window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 9 });
-          const aStart = Date.parse(A.startedIso);
-          window._geoTdPlugin = () => ({ motionSince: async (o) => {
-            // Only row A's window carries a walk.
-            const isA = Math.abs((o.sinceMs || 0) - (aStart - 120000)) < 60000;
-            return { available: true, transitions: isA
-              ? [{ kind: 'driving', ts: aStart }, { kind: 'onFoot', ts: aStart + 5 * 60000 }, { kind: 'still', ts: aStart + 5 * 60000 + 30000 }, { kind: 'onFoot', ts: aStart + 8 * 60000 }, { kind: 'driving', ts: aStart + 8 * 60000 + 30000 }]
-              : [{ kind: 'driving', ts: (o.sinceMs || 0) + 130000 }] };
-          } });
-          window._mileMotionHealRan = false;
-          const fixed1 = await _mileMotionHealSweep();
-          const after = Object.fromEntries(mileage.map(m => [m.id, { miles: m.miles, paused: !!m.pausedLeg }]));
-          const fixed2 = await _mileMotionHealSweep();   // session guard: never twice
-          return { fixed1, fixed2, after };
-        } finally {
-          window._routeDistance = _routeDistance = realRoute; window._geoTdPlugin = realTd; window._mileMotionHealRan = realRan;
-          mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
-        }
-      });
-      expect(r.fixed1, 'exactly the walked in-window row corrects').toBe(1);
-      expect(r.after[998601], 'walked leg reduced to the direct route and marked').toEqual({ miles: 3.2, paused: true });
-      expect(r.after[998602].miles, 'driving-only record untouched').toBe(5.3);
-      expect(r.after[998603].miles, 'beyond the coprocessor week untouched').toBe(5.3);
-      expect(r.after[998604], 'hand-edited row untouched, never re-marked').toEqual({ miles: 3.2, paused: false });
-      expect(r.fixed2, 'once per session, never a second stampede').toBe(0);
-    });
 
-    test('the walk sweep rides the load settle point beside the dedup heal', () => {
-      const fs = require('fs');
-      const path = require('path');
-      const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
-      const anchor = src.indexOf('_loadedDataOwner=(_supaUser');
-      expect(anchor).toBeGreaterThan(0);
-      expect(src.slice(anchor, anchor + 2200), 'sweep fires after every completed load')
-        .toContain("_mileMotionHealSweep==='function')_mileMotionHealSweep()");
-    });
 
-    test("the owner's real Friday: personal loop off the deduction, job sites untouched", async () => {
-      // Owner's 2026-08-14 day: home office -> John Doe -> library (personal
-      // notary) -> Casey's (gas, logged as an expense) -> John Doe -> shop.
-      // The app logged the Casey's legs as deductible because a FUEL receipt
-      // satisfied the "money spent here" test, money already inside the
-      // mileage rate. Three fixes meet here: fuel no longer qualifies a stop
-      // on a mileage-method vehicle, the retroactive sweep re-judges named
-      // stops after the fact, and a loop returning to the same business point
-      // claims nothing. Job sites and clients are refused before the personal
-      // test is asked: the first cut of this sweep collapsed John Doe himself
-      // out of the day, which is the worst failure a row-removing sweep has.
-      const r = await page.evaluate(async () => {
-        const realRoute = _routeDistance;
-        const keep = { m: mileage.slice(), e: expenses.slice(), v: vehicles.slice(), c: clients.slice(), j: jobs.slice(), p: places.slice(), ran: window._milePersonalSweepRan };
-        const HOME = { lat: 39.0300, lng: -95.7600 }, JOHN = { lat: 39.0208, lng: -95.7351 };
-        const CASEYS = { lat: 39.0300, lng: -95.7200 }, SHOP = { lat: 39.0000, lng: -95.7000 };
-        const d = todayKey();
-        try {
-          window._routeDistance = _routeDistance = async (f, t) => {
-            const R = (x) => x * Math.PI / 180;
-            const dd = 3958.8 * Math.acos(Math.min(1, Math.sin(R(f.lat)) * Math.sin(R(t.lat)) +
-              Math.cos(R(f.lat)) * Math.cos(R(t.lat)) * Math.cos(R(t.lng - f.lng))));
-            return { miles: Math.round(dd * 1.25 * 10) / 10, mins: 9 };
-          };
-          vehicles.length = 0; vehicles.push({ id: 'v1', name: 'F-250', status: 'active', deductionMethod: 'mileage' });
-          places.length = 0; savePlace({ name: 'Home Office', kind: 'home_office', lat: HOME.lat, lon: HOME.lng, confirmedBy: 'manual' });
-          clients.length = 0; clients.push({ id: 8801, name: 'John Doe', addr: '2950 SW McClure Rd', lat: JOHN.lat, lng: JOHN.lng });
-          jobs.length = 0; jobs.push({ id: 9911, name: 'John Repaint', client_id: 8801, lat: JOHN.lat, lon: JOHN.lng, start: d, days: 1, status: 'upcoming' });
-          expenses.length = 0;
-          expenses.push({ id: 77, date: d, cat: 'fuel', amount: 141.5, vendor: 'Caseys', vehicleId: 'v1', vehicleName: 'F-250', lat: CASEYS.lat, lon: CASEYS.lng });
-          mileage.length = 0;
-          mileage.push(
-            { id: 1, gps: true, legKey: 'L1', calc_method: 'auto_route', miles: 4.0, date: d, from_name: 'Home Office', to_name: 'John Doe', client_id: 8801, purpose: 'Job site',
-              fromCoord: HOME, toCoord: JOHN, startedIso: d + 'T13:00:00Z', endedIso: d + 'T13:12:00Z', loggedAt: d + 'T13:12:02Z' },
-            // 'Supply run' is what the app ACTUALLY stamped here: _poiPlaceKind
-            // labels any non-food business 'supply'. That label blocked the
-            // sweep until the purpose guard came out, so the fixture carries
-            // it or the test cannot catch the regression.
-            { id: 3, gps: true, legKey: 'L3', calc_method: 'auto_route', miles: 4.7, date: d, from_name: 'John Doe', to_name: 'Caseys', purpose: 'Supply run',
-              fromCoord: JOHN, toCoord: CASEYS, startedIso: d + 'T15:45:41Z', endedIso: d + 'T16:36:00Z', loggedAt: d + 'T16:36:02Z',
-              passedThrough: { stop: { lat: 39.025, lng: -95.728, name: 'Shawnee County Public Library' } } },
-            { id: 4, gps: true, legKey: 'L4', calc_method: 'auto_route', miles: 4.5, date: d, from_name: 'Caseys', to_name: 'John Doe', client_id: 8801, purpose: 'Job site',
-              fromCoord: CASEYS, toCoord: JOHN, startedIso: d + 'T16:49:00Z', endedIso: d + 'T16:58:00Z', loggedAt: d + 'T16:58:02Z' },
-            { id: 5, gps: true, legKey: 'L5', calc_method: 'auto_route', miles: 3.2, date: d, from_name: 'John Doe', to_name: 'Shop', purpose: 'Shop',
-              fromCoord: JOHN, toCoord: SHOP, startedIso: d + 'T22:00:00Z', endedIso: d + 'T22:08:00Z', loggedAt: d + 'T22:08:02Z' }
-          );
-          window._milePersonalSweepRan = false;
-          const fixed = await _milePersonalStopSweep();
-          return { fixed, rows: mileage.map(m => m.from_name + ' -> ' + m.to_name), total: +mileage.reduce((s, m) => s + (m.miles || 0), 0).toFixed(1) };
-        } finally {
-          window._routeDistance = _routeDistance = realRoute;
-          mileage.length = 0; keep.m.forEach(x => mileage.push(x));
-          expenses.length = 0; keep.e.forEach(x => expenses.push(x));
-          vehicles.length = 0; keep.v.forEach(x => vehicles.push(x));
-          clients.length = 0; keep.c.forEach(x => clients.push(x));
-          jobs.length = 0; keep.j.forEach(x => jobs.push(x));
-          places.length = 0; keep.p.forEach(x => places.push(x));
-          window._milePersonalSweepRan = keep.ran;
-        }
-      });
-      expect(r.fixed, 'the Casey\'s loop is the one thing collapsed').toBe(1);
-      expect(r.rows, 'the day is the two real business drives, nothing else')
-        .toEqual(['Home Office -> John Doe', 'John Doe -> Shop']);
-      expect(r.total, 'deductible miles match the IRS reading of the day').toBe(7.2);
-    });
 
     test('a fuel receipt never qualifies a stop on a mileage vehicle; materials always do', async () => {
       const r = await page.evaluate(() => {
@@ -6973,28 +4472,6 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.materials, 'money spent on the job still proves a business stop').toBe(true);
     });
 
-    test('dedup keeps the CORRECTED row, not the longer orphan it replaced', async () => {
-      const r = await page.evaluate(() => {
-        const keep = mileage.slice();
-        const JOHN = { lat: 39.0208, lng: -95.7351 }, CASEYS = { lat: 39.0300, lng: -95.7200 };
-        const d = todayKey();
-        try {
-          mileage.length = 0;
-          mileage.push(
-            { id: 2, gps: true, legKey: 'A', calc_method: 'auto_route', miles: 5.6, date: d, from_name: 'John Doe', to_name: 'Stop',
-              fromCoord: JOHN, toCoord: CASEYS, startedIso: d + 'T15:45:04Z', endedIso: d + 'T15:59:00Z', loggedAt: d + 'T15:59:02Z' },
-            { id: 3, gps: true, legKey: 'B', calc_method: 'auto_route', miles: 4.7, date: d, from_name: 'John Doe', to_name: 'Caseys',
-              fromCoord: JOHN, toCoord: CASEYS, startedIso: d + 'T15:45:41Z', endedIso: d + 'T16:36:00Z', loggedAt: d + 'T16:36:02Z',
-              passedThrough: { stop: { lat: 39.025, lng: -95.728, name: 'Shawnee County Public Library' } } }
-          );
-          _mileDedupTrips(true);
-          return mileage.map(m => ({ id: m.id, to: m.to_name, miles: m.miles }));
-        } finally { mileage.length = 0; keep.forEach(x => mileage.push(x)); }
-      });
-      expect(r.length, 'one journey, one row').toBe(1);
-      expect(r[0].id, 'the breadcrumbed, corrected row survives').toBe(3);
-      expect(r[0].miles, 'and its collapsed distance is what stands, not the orphan\'s inflated one').toBe(4.7);
-    });
 
     test('the pending sweep applies the route clock to an impossible window', async () => {
       const r = await page.evaluate(async () => {
@@ -7075,13 +4552,6 @@ test.describe('Automatic mileage from drive legs', () => {
       return { dropped, left, err };
     }, [rows, ents]);
 
-    test('a leg driven after the day clocked out is removed', async () => {
-      // 6:26pm to 7:44pm, well past the 4:00pm close.
-      const r = await run([leg({ startedIso: '2026-08-20T23:26:00Z', endedIso: '2026-08-21T00:44:00Z', to_name: 'Shop', from_name: 'Civitan Day Camp' })], ENTS);
-      expect(r.err).toBe(null);
-      expect(r.dropped, 'the family-pictures run is not a business trip').toBe(1);
-      expect(r.left).toEqual([]);
-    });
 
     test('a leg inside the workday is never touched', async () => {
       const r = await run([leg({ startedIso: '2026-08-20T13:30:00Z', endedIso: '2026-08-20T13:40:00Z' })], ENTS);
@@ -7097,53 +4567,9 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.left.length).toBe(1);
     });
 
-    test('every leg on a day with no work at all is removed', async () => {
-      const r = await run([leg({ date: '2026-08-22', startedIso: '2026-08-22T16:47:00Z', endedIso: '2026-08-22T16:57:00Z' })], ENTS);
-      expect(r.dropped, 'a Saturday errand is not a deduction').toBe(1);
-    });
 
-    // ── The cascade that ate real deductible miles (owner, 2026-08-25) ──────
-    //
-    // His live diagnostic log at 18:39 that day:
-    //   mile-offday - John Doe to Shop 3.2mi 2026-08-19T22:18:05.091Z
-    //   mile-offday - John Doe to Shop 3.2mi 2026-08-18T22:19:15.091Z
-    //
-    // Two real 4:18pm drives home from a client, deleted from the IRS log. The
-    // chain: a bad reconciler trim removed those days' on-site rows, so the day
-    // had no work event, so the workday window collapsed, so "a day with no
-    // work at all means every leg on it is personal" judged both drives
-    // personal and swept them. Absence of a time entry is evidence the TIME
-    // side failed, never evidence the DRIVING was personal.
-    //
-    // The owner's original rule is unchanged and still tested just above: an
-    // anonymous Stop on a no-work day is an errand and goes.
-    test('a named business leg on a day with no time entries is NOT removed', async () => {
-      const r = await run([leg({ date: '2026-08-22', from_name: 'John Doe', to_name: 'Shop',
-        startedIso: '2026-08-22T22:18:05.091Z', endedIso: '2026-08-22T22:25:00.000Z' })], ENTS);
-      expect(r.err).toBe(null);
-      expect(r.dropped, 'the exact leg his log shows being destroyed').toBe(0);
-      expect(r.left).toEqual(['Shop@2026-08-22T22:18:05.091Z']);
-    });
 
-    test('one anonymous end is enough to drop it on a no-work day', async () => {
-      for (const ends of [{ from_name: 'Stop', to_name: 'John Doe' },
-                          { from_name: 'John Doe', to_name: 'Stop' },
-                          { from_name: '', to_name: 'Shop' },
-                          { from_name: 'Shop', to_name: '' },
-                          { from_name: '?', to_name: 'Shop' }]) {
-        const r = await run([leg(Object.assign({ date: '2026-08-22',
-          startedIso: '2026-08-22T16:47:00Z', endedIso: '2026-08-22T16:57:00Z' }, ends))], ENTS);
-        expect(r.dropped, 'half-anonymous is still an errand: ' + JSON.stringify(ends)).toBe(1);
-      }
-    });
 
-    test('a leg OUTSIDE a real workday window is still removed, named ends or not', async () => {
-      // 08-20 HAS a window, so the named-ends reprieve must not reach it or the
-      // family-pictures run comes back from the dead.
-      const r = await run([leg({ startedIso: '2026-08-20T23:26:00Z', endedIso: '2026-08-21T00:44:00Z',
-        from_name: 'Civitan Day Camp', to_name: 'Shop' })], ENTS);
-      expect(r.dropped, 'evidence of that day exists, and this leg sits outside it').toBe(1);
-    });
 
     test('_mileNamedEnd: only a real resolved place counts', async () => {
       const r = await page.evaluate(() => ({
@@ -7171,25 +4597,7 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.left.length).toBe(1);
     });
 
-    test('it runs once per session', async () => {
-      const rows = [leg({ startedIso: '2026-08-20T23:26:00Z', endedIso: '2026-08-21T00:44:00Z' })];
-      const first = await run(rows, ENTS);
-      expect(first.dropped).toBe(1);
-      const again = await page.evaluate(async () => {
-        const prev = window._mileWorkdaySweepRan;
-        window._mileWorkdaySweepRan = true;
-        const n = await (window.__real_mileWorkdaySweep || _mileWorkdaySweep)();
-        window._mileWorkdaySweepRan = prev;
-        return n;
-      });
-      expect(again, 'a second pass in the same session is a no-op').toBe(0);
-    });
 
-    test('malformed rows and an empty log never throw', async () => {
-      const r = await run([{ id: 'x', gps: true }, { id: 'y', gps: true, startedIso: 'nope', endedIso: 'nope' }], ENTS);
-      expect(r.err).toBe(null);
-      expect(r.dropped).toBe(0);
-    });
   });
 
   // Owner report 2026-08-24, from the air: a flight was still tacking on
@@ -7266,23 +4674,8 @@ test.describe('Automatic mileage from drive legs', () => {
       return { dropped, left, err };
     }, rows);
 
-    test('the flight already in the log is removed', async () => {
-      const r = await runF([fleg({ mins: 30 })]);
-      expect(r.err).toBe(null);
-      expect(r.dropped).toBe(1);
-      expect(r.left).toEqual([]);
-    });
 
-    test('it reads the clock span when the row carries no wheel time', async () => {
-      const r = await runF([fleg({ startedIso: '2026-08-24T14:00:00Z', endedIso: '2026-08-24T14:30:00Z' })]);
-      expect(r.dropped).toBe(1);
-    });
 
-    test('the drive either side of the flight is untouched', async () => {
-      const r = await runF([fleg({ mins: 30 }), fleg({ toCoord: { lat: 38.1, lng: -94 }, to_name: 'Job', miles: 7, mins: 12 })]);
-      expect(r.dropped).toBe(1);
-      expect(r.left, 'only the flight goes').toEqual(['Job']);
-    });
 
     test('a hand-entered trip is never second-guessed', async () => {
       const r = await runF([fleg({ gps: false, legKey: null, mins: 30 })]);
@@ -7294,51 +4687,9 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.dropped).toBe(0);
     });
 
-    test('a row with nothing to judge is left alone', async () => {
-      const r = await runF([fleg({ mins: 0, startedIso: null, endedIso: null }), fleg({ fromCoord: null, mins: 30 })]);
-      expect(r.err).toBe(null);
-      expect(r.dropped).toBe(0);
-      expect(r.left.length).toBe(2);
-    });
 
-    test('malformed rows and an empty log never throw', async () => {
-      const r = await runF([{ id: 'x', gps: true }, { id: 'y', gps: true, startedIso: 'nope', endedIso: 'nope' }]);
-      expect(r.err).toBe(null);
-      expect(r.dropped).toBe(0);
-      const empty = await runF([]);
-      expect(empty.err).toBe(null);
-      expect(empty.dropped).toBe(0);
-    });
 
-    test('it runs once per session', async () => {
-      const first = await runF([fleg({ mins: 30 })]);
-      expect(first.dropped).toBe(1);
-      const again = await page.evaluate(async () => {
-        const prev = window._mileFlightSweepRan;
-        window._mileFlightSweepRan = true;
-        const n = await _mileFlightSweep();
-        window._mileFlightSweepRan = prev;
-        return n;
-      });
-      expect(again, 'a second pass in the same session is a no-op').toBe(0);
-    });
 
-    test('concurrent calls only let one pass through', async () => {
-      const out = await page.evaluate(async () => {
-        const orig = { mileage: mileage.slice(), supa: window._supa, ran: window._mileFlightSweepRan, user: window._supaUser };
-        mileage.length = 0;
-        mileage.push({ id: 'fl-c', gps: true, legKey: 'fl-c', mins: 30,
-          fromCoord: { lat: 38, lng: -94 }, toCoord: { lat: 38.8, lng: -94 }, to_name: 'Denver', miles: 420, date: '2026-08-24' });
-        window._supaUser = { id: 'fl-user' };
-        window._mileFlightSweepRan = false;
-        window._supa = { from: () => ({ delete: () => ({ eq: () => ({ eq: () => ({ then: (res) => Promise.resolve({ error: null }).then(res) }) }) }) }) };
-        const all = await Promise.all([1, 2, 3, 4, 5].map(() => _mileFlightSweep()));
-        mileage.length = 0; orig.mileage.forEach(m => mileage.push(m));
-        window._supa = orig.supa; window._mileFlightSweepRan = orig.ran; window._supaUser = orig.user;
-        return all;
-      });
-      expect(out.filter(n => n > 0).length, 'exactly one caller does the work').toBe(1);
-    });
   });
 
 });
@@ -7521,118 +4872,6 @@ test.describe('Sandbox: a minted flip id survives the whole journey', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('the drive John Doe -> shop is logged once, under the flip id', async () => {
-    const r = await page.evaluate(async (d) => {
-      const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue;
-      const enq = [];
-      const before = mileage.slice();
-      try {
-        _supaUser = { id: 'sandbox0-0000-0000-0000-000000000000' };
-        // The router answers the way MapKit does for that road.
-        window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 8 });
-        window._geoEnqueue = (tbl, row) => enq.push({ tbl, ...row });
-        mileage.length = 0;
-
-        // His two ends, as the app knows them.
-        S.officeLat = d.SHOP.lat; S.officeLon = d.SHOP.lon; S.teamTracking = true;
-        clients.length = 0;
-        clients.push({ id: 1787003875684, name: 'John Doe', addr: '2950 SW McClure Rd, Topeka, KS 66614' });
-        jobs.length = 0;
-        // A client fence resolves out of the GEOCODE CACHE keyed by client id,
-        // not from a lat/lng on the record (_geoClientAt), and the cached
-        // address has to match the client's current one or the entry is
-        // ignored as stale. A first cut of this put the coordinates on the
-        // client and the fence never resolved at all, so the leg never opened.
-        localStorage.setItem('zp3_nearby_geo', JSON.stringify({
-          '1787003875684': { addr: '2950 SW McClure Rd, Topeka, KS 66614',
-                             lat: d.JOHN.lat, lon: d.JOHN.lon },
-        }));
-        _geoClientCacheMemo = null;
-
-        // Standing at John Doe's, nothing open but the visit. Cleared field by
-        // field the way every other test in this file does: there is no
-        // _geoReset global, the reset lives inside the tracking teardown.
-        _geoPingBusy = false;
-        _geoCurrentJob = null; _geoArrivedAt = null;
-        _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
-        _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
-        _geoCurrentClient = null; _geoClientArrivedAt = null;
-        _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null;
-        _geoLastFenceAt = null; _geoStopAnchor = null;
-        _geoDrivePendingAt = null; _geoDrivePendingId = null; _geoLegFlipId = null;
-        _geoLastMotionKind = 'still';
-        // speed rides along because a real drive has one, and leaving a CLIENT
-        // fence is gated on confirmation: either a driving-speed reading (real
-        // evidence of motion) or a second agreeing ping. A fixture with no
-        // speed only ever arms the pending exit and the leg never opens, which
-        // is what the first cut of this did.
-        const ping = (c, mps) => _geoOnPing({ coords: {
-          latitude: c.lat, longitude: c.lon, accuracy: 8,
-          ...(mps != null ? { speed: mps } : {}) } });
-        await ping(d.JOHN);
-
-        // 1. He walks to the truck. Rest, so no departure is claimed.
-        await _geoTdEvent({ type: 'motion', kind: 'walking', prevKind: 'still',
-                            ts: Date.now() - 9 * 60000, flipId: 'fWALK000000000001' });
-        const afterWalk = { pending: _geoDrivePendingAt, id: _geoDrivePendingId };
-
-        // 2. THE FLIP. CoreMotion says automotive, the plugin mints the id.
-        await _geoTdEvent({ type: 'motion', kind: 'automotive', prevKind: 'walking',
-                            ts: Date.now() - 8 * 60000, flipId: d.FLIP });
-        const afterFlip = { pending: _geoDrivePendingAt, id: _geoDrivePendingId };
-
-        // 3. He clears John Doe's fence at road speed. This is what spends the
-        // flip.
-        await ping(d.MID, 20);
-        const afterExit = { started: _geoDriveStartedAt, leg: _geoLegFlipId };
-
-        // 4. He arrives at the shop. The leg closes and both rows are written.
-        // The accumulator is deliberately NOT preset: a first cut seeded it at
-        // 3.1 and the pings then added the MID -> SHOP hop on top, so the
-        // observed tally beat the route and the forced-detour floor correctly
-        // took 4.3. The engine was right and the fixture was lying; a real
-        // drive's tally comes from its own pings.
-        await ping(d.SHOP);
-        await new Promise(res => setTimeout(res, 80));
-
-        const rows = mileage.slice();
-        return {
-          afterWalk, afterFlip, afterExit,
-          mileage: rows.map(m => ({ legKey: m.legKey, from: m.from_name, to: m.to_name,
-                                    miles: m.miles, calc: m.calc_method })),
-          drives: enq.filter(e => e.tbl === 'job_time_entries' && /^drive/.test(e.source || ''))
-                     .map(e => ({ key: e.client_key, dest: e.dest_place, source: e.source })),
-        };
-      } finally {
-        _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
-        window._geoEnqueue = realEnq;
-        mileage.length = 0; before.forEach(m => mileage.push(m));
-        _geoDrivePendingAt = null; _geoDrivePendingId = null; _geoLegFlipId = null;
-      }
-    }, { JOHN, SHOP, MID, FLIP });
-
-    // Stage 1: walking is rest. Nothing claimed, nothing named.
-    expect(r.afterWalk.pending, 'a walk to the truck is not a departure').toBeNull();
-    expect(r.afterWalk.id).toBeNull();
-
-    // Stage 2: the flip is HELD with its id, not written.
-    expect(r.afterFlip.pending, 'the flip marks the moment').not.toBeNull();
-    expect(r.afterFlip.id, 'and carries its own id').toBe(FLIP);
-
-    // Stage 3: the fence spends it, and the leg takes the id AND the clock.
-    expect(r.afterExit.started, 'the leg opens at the flip, not at the fence').not.toBeNull();
-    expect(r.afterExit.leg, 'and is named by the flip that opened it').toBe(FLIP);
-
-    // Stage 4: exactly one drive, one mileage row, both under that id.
-    expect(r.drives.length, 'one drive, one time entry').toBe(1);
-    expect(r.drives[0].key, 'keyed by the flip, not by a timestamp').toBe(FLIP);
-    expect(r.mileage.length, 'one drive, one mileage row').toBe(1);
-    expect(r.mileage[0].legKey, 'the same id on both halves').toBe(FLIP);
-    expect(r.mileage[0].from).toBe('John Doe');
-    expect(r.mileage[0].to).toBe('Shop');
-    expect(r.mileage[0].miles, 'the routed distance, not a straight line').toBe(3.2);
-    expect(r.mileage[0].calc).toBe('auto_route');
-  });
 
 
   test('the drawn route starts at the DOOR, not where the exit confirmed', async () => {
@@ -7711,57 +4950,6 @@ test.describe('Sandbox: a minted flip id survives the whole journey', () => {
       .toBeGreaterThan(ft([JOHN.lat, JOHN.lon], [MID.lat, MID.lon]) / 5280 * 0.9);
   });
 
-  test('a second delivery of the same flip cannot make a second row', async () => {
-    // The property the id exists for, stated directly: replay the whole
-    // journey twice and there is still one row, because the key is the flip
-    // rather than a clock two writers can read differently.
-    const r = await page.evaluate(async (d) => {
-      const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue;
-      const before = mileage.slice();
-      try {
-        _supaUser = { id: 'sandbox0-0000-0000-0000-000000000000' };
-        window._routeDistance = _routeDistance = async () => ({ miles: 3.2, mins: 8 });
-        window._geoEnqueue = () => {};
-        mileage.length = 0;
-        S.officeLat = d.SHOP.lat; S.officeLon = d.SHOP.lon; S.teamTracking = true;
-        clients.length = 0;
-        clients.push({ id: 1787003875684, name: 'John Doe', addr: '2950 SW McClure Rd, Topeka, KS 66614' });
-        jobs.length = 0;
-        localStorage.setItem('zp3_nearby_geo', JSON.stringify({
-          '1787003875684': { addr: '2950 SW McClure Rd, Topeka, KS 66614',
-                             lat: d.JOHN.lat, lon: d.JOHN.lon },
-        }));
-        _geoClientCacheMemo = null;
-        const ping = (c, mps) => _geoOnPing({ coords: {
-          latitude: c.lat, longitude: c.lon, accuracy: 8,
-          ...(mps != null ? { speed: mps } : {}) } });
-        for (let pass = 0; pass < 2; pass++) {
-          _geoPingBusy = false;
-          _geoCurrentJob = null; _geoArrivedAt = null;
-          _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
-          _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
-          _geoCurrentClient = null; _geoClientArrivedAt = null;
-          _geoDriveStartedAt = null; _geoLegOrigin = null; _geoLastFenceLoc = null;
-          _geoLastFenceAt = null; _geoStopAnchor = null;
-          _geoDrivePendingAt = null; _geoDrivePendingId = null; _geoLegFlipId = null;
-          _geoLastMotionKind = 'walking';
-          await ping(d.JOHN);
-          await _geoTdEvent({ type: 'motion', kind: 'automotive', prevKind: 'walking',
-                              ts: Date.now() - 8 * 60000, flipId: d.FLIP });
-          await ping(d.MID, 20);
-          await ping(d.SHOP);
-          await new Promise(res => setTimeout(res, 80));
-        }
-        return { rows: mileage.filter(m => m && m.legKey === d.FLIP).length };
-      } finally {
-        _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
-        window._geoEnqueue = realEnq;
-        mileage.length = 0; before.forEach(m => mileage.push(m));
-        _geoDrivePendingAt = null; _geoDrivePendingId = null; _geoLegFlipId = null;
-      }
-    }, { JOHN, SHOP, MID, FLIP });
-    expect(r.rows, 'the same flip can only ever own one row').toBe(1);
-  });
 });
 
 test.describe('A drive opens at the moment the tape saw, not the moment the fence noticed', () => {
@@ -8077,23 +5265,6 @@ test.describe('a recorded path outranks a routed guess', () => {
     expect(r.negative, 'a negative distance is not a shorter drive').toBe(0);
   });
 
-  test('the refine keeps the traced distance instead of the routed one', async ({ page }) => {
-    const r = await page.evaluate(() => {
-      const src = String(_mileServerRefine);
-      return {
-        usesObserved: src.includes('_mileObservedMiles(m)'),
-        // Shorter is never taken: a route is the minimum a leg between two
-        // points can be, so an observed figure BELOW it is a lost-hop tally,
-        // not a shortcut.
-        onlyLonger: /obs>miles&&obs<=miles\*4/.test(src.replace(/\s/g, '')),
-        // A walked errand still wins over both, unchanged.
-        walkCheck: src.includes('_mileTapeHadPause'),
-      };
-    });
-    expect(r.usesObserved, 'the evidence in the row has to be consulted').toBe(true);
-    expect(r.onlyLonger).toBe(true);
-    expect(r.walkCheck).toBe(true);
-  });
 
   test('the pending-retry path reads the path too, not only the odometer', async ({ page }) => {
     // It already preferred a longer observed distance, but only via gpsMiles,

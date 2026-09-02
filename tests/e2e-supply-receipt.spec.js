@@ -54,39 +54,9 @@ test.describe('Receipt-gated supply runs', () => {
   });
 
   test.describe('the hold', () => {
-    test('a leg INTO a supply place is written held and kept out of the deduction', async () => {
-      const row = await logLeg(JOB, SUPPLY, 'sr-in-1');
-      expect(row).toBeTruthy();
-      expect(row.pendingReceipt).toBe(true);
-      expect(row.supplyRunKey).toBe(row.date + '|Home Depot');
-      const ded = await page.evaluate(() => deductibleTrips(mileage).length);
-      expect(ded, 'a held row must not deduct').toBe(0);
-    });
 
-    test('the leg back OUT of the supply place is held under the SAME run key', async () => {
-      const inRow = await logLeg(JOB, SUPPLY, 'sr-out-1');
-      const outRow = await logLeg(SUPPLY, JOB, 'sr-out-2');
-      expect(outRow.pendingReceipt).toBe(true);
-      expect(outRow.supplyRunKey).toBe(inRow.supplyRunKey);
-    });
 
-    test('an ordinary leg is untouched: no hold, deducts as always', async () => {
-      const row = await logLeg(HOME, JOB, 'sr-plain-1');
-      expect(row.pendingReceipt).toBeUndefined();
-      expect(row.supplyRunKey).toBeUndefined();
-      const ded = await page.evaluate(() => deductibleTrips(mileage).length);
-      expect(ded).toBe(1);
-    });
 
-    test('pendingSupplyRuns groups both legs of one visit into one run', async () => {
-      await logLeg(JOB, SUPPLY, 'sr-grp-1');
-      await logLeg(SUPPLY, JOB, 'sr-grp-2');
-      const runs = await page.evaluate(() => pendingSupplyRuns());
-      expect(runs.length).toBe(1);
-      expect(runs[0].name).toBe('Home Depot');
-      expect(runs[0].count).toBe(2);
-      expect(runs[0].miles).toBeCloseTo(11.0, 1);   // 5.5 + 5.5 from the stub
-    });
 
     test('pendingSupplyStores nests multiple visits to the SAME store, oldest first', async () => {
       const out = await page.evaluate(() => {

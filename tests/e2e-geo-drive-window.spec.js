@@ -658,25 +658,6 @@ test.describe('The route a leg actually drove', () => {
     expect(r).toBe(1);   // only the one well-formed point survives
   });
 
-  test('autoLogDriveTrip stores a real path and refuses a degenerate one', async () => {
-    const r = await page.evaluate(() => {
-      const saved = mileage.slice();
-      try {
-        mileage.length = 0;
-        const from = { lat: 39.1, lng: -94.1, name: 'Shop', addr: '1 A St' };
-        const to = { lat: 39.2, lng: -94.2, name: 'Job', addr: '2 B St' };
-        autoLogDriveTrip({ from, to, legKey: 'k1', startedIso: new Date().toISOString(),
-                           path: [[39.1, -94.1, 1], [39.15, -94.15, 2], [39.2, -94.2, 3]] });
-        autoLogDriveTrip({ from, to: { lat: 39.3, lng: -94.3, name: 'Job2' }, legKey: 'k2',
-                           startedIso: new Date().toISOString(), path: [[39.1, -94.1, 1]] });
-        const a = mileage.find(m => m.legKey === 'k1');
-        const b = mileage.find(m => m.legKey === 'k2');
-        return { a: a && a.path && a.path.length, b: b && b.path };
-      } finally { mileage.length = 0; saved.forEach(m => mileage.push(m)); }
-    });
-    expect(r.a).toBe(3);
-    expect(r.b).toBe(undefined);   // two points are a straight line, not a route
-  });
 
   test('re-pointing a leg drops its route as well as its tally', async () => {
     // A map showing a track that starts somewhere other than the row's own
