@@ -622,6 +622,43 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.twoPeople).toBe(0);
     });
 
+    // Owner 2026-09-03: "there should be gaps between them if it was opened
+    // and then backgrounded, time should start when app flips open and stop
+    // and write when app flips to background, there should be no unaccounted
+    // for blips in between." js/geo-derive.js _gdOffice already bounds each
+    // Office row to exactly one app-open -> app-background span (_gdAppOpen),
+    // so a real gap between two Office rows on the same day IS the app being
+    // closed, proven by those same flips. "No location or motion on record"
+    // is a lie about a fact the deriver actually has, so this one adjacency
+    // is the one hole the fill pass must leave alone.
+    test('a gap between two Office rows is the app closing, not a question', async () => {
+      const office = (id, a, b) => ({
+        id, personUid: 'jack', date: '2026-09-02', unpaid: false, source: 'auto', rawSource: 'place-office',
+        minutes: Math.round((Date.parse(b) - Date.parse(a)) / 60000), startTime: a, endTime: b,
+      });
+      const r = await page.evaluate((rows) => _tlFillUnaccounted(rows).map(x => x.source), [
+        office('o1', '2026-09-02T12:00:00Z', '2026-09-02T12:05:00Z'),   // app open 7:00-7:05 CT
+        office('o2', '2026-09-02T13:00:00Z', '2026-09-02T13:05:00Z'),   // app open again an hour later
+      ]);
+      expect(r.sort()).toEqual(['auto', 'auto']);   // no 'unaccounted' row between them
+    });
+
+    test('the same gap IS flagged when only one side is an Office row', async () => {
+      const office = (id, a, b) => ({
+        id, personUid: 'jack', date: '2026-09-02', unpaid: false, source: 'auto', rawSource: 'place-office',
+        minutes: Math.round((Date.parse(b) - Date.parse(a)) / 60000), startTime: a, endTime: b,
+      });
+      const auto = (id, a, b) => ({
+        id, personUid: 'jack', date: '2026-09-02', unpaid: false, source: 'auto', rawSource: 'client',
+        minutes: Math.round((Date.parse(b) - Date.parse(a)) / 60000), startTime: a, endTime: b,
+      });
+      const r = await page.evaluate((rows) => _tlFillUnaccounted(rows).map(x => x.source), [
+        office('o1', '2026-09-02T12:00:00Z', '2026-09-02T12:05:00Z'),
+        auto('c1', '2026-09-02T13:00:00Z', '2026-09-02T13:05:00Z'),
+      ]);
+      expect(r).toEqual(['auto', 'auto', 'unaccounted']);
+    });
+
     test('a hole is free until it is added, then it counts like any manual entry', async () => {
       const r = await page.evaluate(() => {
         const saved = { te: timeEntries.slice(), save: window.saveAll, cloud: window.supaSaveToCloud,

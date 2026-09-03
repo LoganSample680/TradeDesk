@@ -207,11 +207,19 @@ function _tlFillUnaccounted(rows,cid){
     // negative gap, and a short row nested inside a long one must not split
     // the long one's remainder into two phantom holes.
     let mark=Date.parse(day[0].endTime);
+    let markRow=day[0];
     for(let i=1;i<day.length;i++){
       const r=day[i];
       const a=Date.parse(r.startTime),b=Date.parse(r.endTime);
       const gap=a-mark;
-      if(gap>=_TL_UNACCOUNTED_MIN_MS){
+      // Two Office rows back to back (js/geo-derive.js _gdOffice): each one is
+      // bounded by an app-open flip and an app-background flip (owner
+      // 2026-09-03, "time should start when app flips open and stop and
+      // write when app flips to background"). The gap between them IS the
+      // app being closed, proven by those same flips, not a mystery: "No
+      // location or motion on record" would be a lie about a fact we have.
+      const _bothOffice=markRow.rawSource==='place-office'&&r.rawSource==='place-office';
+      if(gap>=_TL_UNACCOUNTED_MIN_MS&&!_bothOffice){
         out.push({
           id:'u'+k+'_'+mark,rawId:null,source:'unaccounted',rawSource:'unaccounted',
           date:r.date,minutes:Math.round(gap/60000),
@@ -221,7 +229,7 @@ function _tlFillUnaccounted(rows,cid){
           startTime:new Date(mark).toISOString(),endTime:r.startTime
         });
       }
-      if(b>mark)mark=b;
+      if(b>mark){mark=b;markRow=r;}
     }
   });
   return out;
