@@ -179,6 +179,11 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
     expect(r.after.pending).toBeNull();
     expect(r.after.stored).toBeNull();
     expect(r.after.toast).toBe(true);
+    // The toast stays inside a 390px screen and wraps to a line or two (CLAUDE.md 15.3).
+    const tb = await page.locator('.td-dayend-toast').boundingBox();
+    expect(tb.x).toBeGreaterThanOrEqual(0);
+    expect(tb.x + tb.width).toBeLessThanOrEqual(390);
+    expect(tb.height).toBeLessThan(70);
     expect(r.after.cancel[0].ids).toEqual(['dayend', 'dayend2']);
     expect(r.undone).toBe(true);
     expect(r.open2).toBe(true);

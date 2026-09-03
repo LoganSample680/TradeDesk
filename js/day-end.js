@@ -325,8 +325,10 @@ function _dayEndToast(msg){
     if(typeof document==='undefined')return;
     const t=document.createElement('div');
     t.className='td-dayend-toast';
-    t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:20px;font-size:13px;font-weight:700;z-index:9999;display:flex;align-items:center;gap:10px;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.3)';
-    t.innerHTML=escHtml(msg)+' &nbsp;<button type="button" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:4px 10px;border-radius:12px;font-size:12px;cursor:pointer;font-family:inherit">Undo</button>';
+    // Two lines when the words need them (this one names a day): a toast
+    // must never run off a 390px screen (CLAUDE.md 15.1).
+    t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 24px);box-sizing:border-box;background:#222;color:#fff;padding:10px 16px;border-radius:20px;font-size:13px;font-weight:700;line-height:1.3;z-index:9999;display:flex;align-items:center;gap:12px;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+    t.innerHTML='<span style="min-width:0">'+escHtml(msg)+'</span><button type="button" style="flex-shrink:0;background:rgba(255,255,255,.2);border:none;color:#fff;padding:4px 10px;border-radius:12px;font-size:12px;cursor:pointer;font-family:inherit">Undo</button>';
     t.querySelector('button').onclick=()=>{_dayEndUndo();t.remove();};
     document.body.appendChild(t);
     setTimeout(()=>{if(t.parentNode)t.remove();},8000);
