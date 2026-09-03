@@ -5798,6 +5798,11 @@ function _geoTrackInit(){
       if(document.hidden){
         _geoGapHiddenAt=new Date().toISOString();
         _geoPersistOpen(_geoGapHiddenAt);
+        // GPS boundary pin: fire one fix the instant the app backgrounds so the
+        // deriver has a hard location proof at the Office row's end edge rather
+        // than interpolating from whatever coarse fix happened to be nearby.
+        // Symmetric with _geoWakeNudge on the foreground side.
+        try{if((_geoWatchId!=null||_geoNativeWatcherId!=null)&&navigator.geolocation){navigator.geolocation.getCurrentPosition(_geoOnPing,()=>{},{enableHighAccuracy:true,maximumAge:0,timeout:10000});}}catch(_e){}
         // ── THE OTHER ARROW (owner 2026-09-01) ──────────────────────────────
         // "when tradedesk backgrounds I see the blue navigation arrow." The
         // drive window and the heartbeat are two of the three things that can

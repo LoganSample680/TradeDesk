@@ -1530,6 +1530,31 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     await geoRestore();
   });
 
+  test('background GPS pin: visibilitychange to hidden fires a fresh fix for the Office row end edge', async () => {
+    await geoReset();
+    const r = await page.evaluate(() => {
+      const calls = [];
+      const origGeo = navigator.geolocation.getCurrentPosition;
+      navigator.geolocation.getCurrentPosition = (cb, err, opts) => { calls.push(opts || {}); };
+      const origWatch = _geoWatchId;
+      try {
+        S.teamTracking = true;
+        if (typeof _geoTrackInit === 'function') _geoTrackInit();
+        _geoWatchId = 12345;
+        try { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); } catch (e) {}
+        document.dispatchEvent(new Event('visibilitychange'));
+        return { count: calls.length, maxAge: calls[0] && calls[0].maximumAge };
+      } finally {
+        navigator.geolocation.getCurrentPosition = origGeo;
+        _geoWatchId = origWatch;
+        try { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); } catch (e) {}
+      }
+    });
+    expect(r.count).toBeGreaterThanOrEqual(1);
+    expect(r.maxAge).toBe(0);
+    await geoRestore();
+  });
+
   // Regression (owner report, 2026-08-06): "the mileage hits itself on all
   // geofences the moment you cross without stopping". A single ping inside a
   // job/shop/place fence used to end the drive and start a dwell instantly,
