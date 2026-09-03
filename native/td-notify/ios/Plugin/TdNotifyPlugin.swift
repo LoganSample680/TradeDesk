@@ -60,6 +60,7 @@ public class TdNotifyPlugin: CAPPlugin, CAPBridgedPlugin {
         content.title = title
         content.body = body
         content.sound = .default
+        if #available(iOS 15.0, *) { content.interruptionLevel = .timeSensitive }
         if let payload = call.getObject("data") { content.userInfo = payload }
 
         var trigger: UNNotificationTrigger? = nil
