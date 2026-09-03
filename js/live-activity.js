@@ -162,11 +162,25 @@ async function _liveActSet(channel,state){
     const started=_liveLast[channel]!=null;
     const fn=started?P.update:P.start;
     if(typeof fn!=='function')return false;
-    const r=await fn.call(P,payload);
+    let r=await fn.call(P,payload);
     // update() returns ok:false when the card is already gone (the user swiped
     // it away, or iOS reclaimed it). Start it again rather than going silent
     // for the rest of the shift.
-    if(started&&r&&r.ok===false&&typeof P.start==='function')await P.start(payload);
+    if(started&&r&&r.ok===false&&typeof P.start==='function')r=await P.start(payload);
+    // A FAILED start must not be remembered (owner 2026-09-03: nothing on the
+    // island all day, on drive, arrival or departure). The plugin RESOLVES
+    // {ok:false, reason} rather than throwing: ActivityKit refused, the card
+    // was started from the background, Live Activities are off. Caching the
+    // signature anyway made that one failure permanent, because every later
+    // call with the same state hit the dedup above and returned without ever
+    // retrying. The geo engine re-asserts each state on a timer, so leaving
+    // the signature unset is all a retry needs.
+    if(r&&r.ok===false){
+      const why=(r&&r.reason)?String(r.reason):'unknown';
+      console.warn('[LiveAct] '+channel+' start refused:',why);
+      try{if(typeof _toast==='function')_toast('Live Activity ('+channel+'): '+why);}catch(_e){}
+      return false;
+    }
     _liveLast[channel]=sig;
     return true;
   }catch(_e){return false;}

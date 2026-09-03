@@ -189,6 +189,45 @@ test.describe('Live Activities: what reaches the lock screen', () => {
     expect(r).toEqual([{ name: 'end', ch: 'clock' }]);
   });
 
+  // Regression (owner 2026-09-03: nothing on the island all day, on drive,
+  // arrival OR departure). The plugin RESOLVES {ok:false, reason} when
+  // ActivityKit refuses; _liveActSet used to cache the state signature
+  // anyway, so that one refusal was permanent: every later call with the
+  // same state hit the dedup and returned without ever retrying the start.
+  test('a refused start is not remembered, so the next assert retries it', async () => {
+    const r = await page.evaluate(async () => {
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const P = window.Capacitor.registerPlugin('TdLive');
+      const realStart = P.start;
+      let refuse = true;
+      P.start = (args) => {
+        window.__td.calls.push({ name: 'start', args: args || {} });
+        return Promise.resolve(refuse ? { ok: false, reason: 'not allowed from background' } : { ok: true });
+      };
+      try {
+        const since = Math.floor(Date.now() / 1000) - 600;
+        const dwell = { id: 'd-r', name: 'John Doe', kind: 'client', sinceTs: since * 1000, fence: {} };
+        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 40));
+        const afterRefusal = window.__td.calls.filter(c => c.name === 'start').length;
+        // Same dwell again: because the refusal was not cached, this must
+        // reach the plugin a second time instead of being deduped away.
+        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 40));
+        const afterRetry = window.__td.calls.filter(c => c.name === 'start').length;
+        // Now the phone allows it: the card goes up and THAT is remembered.
+        refuse = false;
+        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 40));
+        const afterSuccess = window.__td.calls.filter(c => c.name === 'start').length;
+        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 40));
+        const afterDedup = window.__td.calls.filter(c => c.name === 'start').length;
+        return { afterRefusal, afterRetry, afterSuccess, afterDedup };
+      } finally { P.start = realStart; await _liveActEndAll(); }
+    });
+    expect(r.afterRefusal).toBe(1);
+    expect(r.afterRetry).toBe(2);      // retried, not silently deduped
+    expect(r.afterSuccess).toBe(3);
+    expect(r.afterDedup).toBe(3);      // success IS cached: no wasted budget
+  });
+
   // ── The on-site card (owner 2026-09-02) ────────────────────────────────
   // "A popup on the dynamic island and lock screen when we arrive with a
   // running timer of how long we're there." Driven by the deriver's open
