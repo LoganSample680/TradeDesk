@@ -6528,10 +6528,20 @@ function _geoOpenDwellPublish(dayKey,res){
     try{
       if(window._obs&&typeof window._obs.track==='function'){
         const nd=((res&&res.dwells)||[]).length,nl=((res&&res.legs)||[]).length;
-        const js=((res&&res.journeys)||[]),nj=js.length,pend=js.filter(j=>j&&(j.open||j.pending)).length;
+        const nj=((res&&res.journeys)||[]).length;
+        // A pending CHAIN is res.pending, not a flag on a journey. The first
+        // cut of this filtered journeys for a `.pending` property that does
+        // not exist, so it reported "nothing pending" for a day that may well
+        // have been held in a pending chain, and that wrong reading was passed
+        // on to the owner as a ruled-out cause.
+        const pend=(res&&res.pending)?1:0;
+        // How many fences the deriver was even given. An arrival cannot
+        // resolve to a client whose coordinates are missing, and a day with
+        // no fences looks exactly like a day where nobody stopped anywhere.
+        const nf=((res&&res.fenceCount)!=null)?res.fenceCount:-1;
         const why=(res&&res.openWhy)?String(res.openWhy):'?';
         window._obs.track('derive_open_'+(next?'yes':'none'),
-          (next?String(next.kind||''):why+' d'+nd+'/l'+nl+'/j'+nj+(pend?'/pending'+pend:'')).slice(0,60));
+          (next?String(next.kind||''):why+' d'+nd+'/l'+nl+'/j'+nj+'/f'+nf+(pend?'/PENDING':'')).slice(0,60));
       }
     }catch(_e){}
     // The day that ended on its own (js/day-end.js): back at the home office

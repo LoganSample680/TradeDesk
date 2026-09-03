@@ -515,6 +515,10 @@ function geoDeriveDay(input) {
     // Diagnostic only, never a rule: which branch decided there is nobody on
     // site. Empty when `open` is set.
     openWhy: open ? '' : openWhy,
+    // How many fences this derive was handed. A client whose coordinates
+    // never made it into the fence list cannot be arrived at, and that is
+    // indistinguishable from a day where nobody stopped anywhere.
+    fenceCount: fences.length,
     pending: chain ? { id: chain.id, origin: chain.originFence, startTs: chain.startTs, stops: chain.stops, autoMinutes: Math.round(chain.autoMs / 60000) } : null,
     journeys,
   };
