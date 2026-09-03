@@ -14,6 +14,11 @@ final class TdNotifyPluginTests: XCTestCase {
     override func setUp() {
         super.setUp()
         plugin = TdNotifyPlugin()
+        let auth = expectation(description: "request auth")
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in
+            auth.fulfill()
+        }
+        wait(for: [auth], timeout: 10)
     }
 
     override func tearDown() {
