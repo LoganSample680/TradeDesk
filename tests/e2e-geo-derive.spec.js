@@ -396,6 +396,39 @@ test.describe('geo-derive: the day deriver', () => {
   // and a closed visit means `open` is null, so nothing was ever published
   // to the on-site card or the Live Activity.
   test.describe('one fix outside a fence is not leaving', () => {
+    // The one that cost the owner his whole day, 2026-09-03. A UAT roll
+    // reloaded the app at 14:19, the radio spun up, and CoreMotion called it
+    // automotive. That open journey ended his John Doe visit at the flip and
+    // cleared the arrival, so the tail reported no open dwell at all: the
+    // on-site card fell back to the proximity prompt with no arrival stamp,
+    // the Time Log showed 08:01 to 14:19, and _liveActOnSite was handed null
+    // so the island and lock screen went dark. He never moved: every fix after
+    // the flip stayed 61 to 317 ft from the client for hours.
+    test('a phantom automotive flip does not end a visit the phone never left', async () => {
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(8, 0), 'driving'), mo(T(8, 20), 'onFoot'),
+                    mo(T(14, 19), 'driving')];   // opens and never closes
+      const fixes = [fix(T(8, 0, 5), SHOP), fix(T(8, 20, 5), DOE), fix(T(10, 0), DOE), fix(T(12, 0), DOE),
+                     fix(T(14, 19), DOE), fix(T(14, 25), DOE), fix(T(15, 0), DOE), fix(T(15, 30), DOE)];
+      const r = await run(page, base({ tape, fixes, fences: [SHOP, DOE], nowMs: T(15, 45) }));
+      // Still on site, still measured from the real 08:20 arrival.
+      expect(r.open && r.open.name).toBe('John Doe');
+      expect(hm(r.open.sinceTs)).toBe(hm(T(8, 20)));
+      // And no closed visit was invented at the flip.
+      expect(r.dwells.filter(d => d.kind === 'client')).toEqual([]);
+    });
+
+    test('a real drive still ends the visit: fixes stop coming from inside the fence', async () => {
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(8, 0), 'driving'), mo(T(8, 20), 'onFoot'),
+                    mo(T(12, 0), 'driving')];
+      const AWAY = { lat: DOE.lat + 0.02, lng: DOE.lng };
+      const fixes = [fix(T(8, 0, 5), SHOP), fix(T(8, 20, 5), DOE), fix(T(10, 0), DOE),
+                     fix(T(12, 0, 5), DOE), fix(T(12, 4), AWAY), fix(T(12, 8), AWAY)];
+      const r = await run(page, base({ tape, fixes, fences: [SHOP, DOE], nowMs: T(12, 30) }));
+      expect(r.open).toBeNull();
+      expect(r.dwells.filter(d => d.kind === 'client').map(d => [hm(d.startTs), hm(d.endTs)]))
+        .toEqual([[hm(T(8, 20)), hm(T(12, 0))]]);
+    });
+
     test('a lone outlier mid-visit does not close it: the visit stays open', async () => {
       const tape = [mo(T(7, 0), 'onFoot'), mo(T(8, 0), 'driving'), mo(T(8, 20), 'onFoot')];
       // Arrive at DOE at 08:20 and stay. At 14:19 one cached fix lands well

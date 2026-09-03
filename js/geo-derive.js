@@ -326,6 +326,31 @@ function geoDeriveDay(input) {
     // the arrival that opened the dwell still knows where it was.
     const fromFence = depFence || (arrived && arrived.fence) || null;
 
+    // A JOURNEY THAT NEVER LEFT IS NOT A DEPARTURE.
+    //
+    // CoreMotion calls automotive on things that are not a drive: the radio
+    // spinning up on an app relaunch, a phone set on a running truck, a jostle
+    // in a tool bag. When such a flip has no closing flip yet, the branch below
+    // used to close the dwell at the flip and clear `arrived`, so the tail had
+    // nothing left to report and `open` came back null. Nothing is written for
+    // a still-open journey either (rule 5), so the day just loses the person:
+    // the on-site card falls back to the proximity prompt with no arrival
+    // stamp, the Time Log shows the visit ending at the flip, and
+    // _liveActOnSite is handed null so the Dynamic Island and lock screen go
+    // dark and stay dark.
+    //
+    // Owner, at John Doe from 08:01 and never away: an open journey minted at
+    // 14:19:38, the second a UAT roll reloaded the app, ended his visit there
+    // while every single fix after it sat 61 to 317 ft from the client, inside
+    // the 600 ft fence. He was still standing in the same spot hours later.
+    //
+    // So an OPEN journey only ends the dwell once something has actually left
+    // the fence. A closed journey is untouched: it has a destination flip and
+    // the rest of the loop decides what it was.
+    if (arrived && j.open && _gdStayedPut(fixes, arrived.fence, j.startTs, nowMs, opts)) {
+      // Went nowhere. Keep standing where we are and ignore this journey.
+      continue;
+    }
     if (arrived) {
       const f = fromFence && (!depFence || _gdSameFence(depFence, arrived.fence) || !arrived.fence)
         ? (arrived.fence || depFence) : (depFence || arrived.fence);
@@ -487,6 +512,43 @@ function geoDeriveDay(input) {
 
 // Stretches of proven presence inside a fence: consecutive fixes inside it
 // are one stretch; the first fix outside ends it at the last one inside.
+// Did the phone STAY PUT inside this fence after an automotive flip?
+//
+// Not the same question as "did it leave". A drive that started 30 seconds ago
+// has not left either: there are simply no fixes yet. What separates a real
+// departure from a phantom flip is TIME plus continued presence. Somebody who
+// flipped to automotive and is still producing fixes inside the same fence ten
+// minutes later did not drive off; the radio, a jostle or a relaunch called it
+// automotive. Somebody genuinely pulling away stops producing them.
+//
+// stillEndMs is the same threshold the deriver already uses for "a truck that
+// sits this long has parked", which is the identical judgement from the other
+// side, so it is reused rather than adding a second number.
+function _gdStayedPut(fixes, fence, sinceTs, nowMs, opts) {
+  if (!fence) return false;
+  const r = (opts && Number(opts.radiusFt) > 0) ? Number(opts.radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
+  const maxAcc = (opts && Number(opts.maxFixAccM) > 0) ? Number(opts.maxFixAccM) : GEO_DERIVE_DEFAULTS.maxFixAccM;
+  const settle = (opts && Number(opts.stillEndMs) > 0) ? Number(opts.stillEndMs) : GEO_DERIVE_DEFAULTS.stillEndMs;
+  const later = (fixes || []).filter(f => f && typeof f.ts === 'number' && f.ts >= sinceTs &&
+    (nowMs == null || f.ts <= nowMs) && f.lat != null && f.lng != null &&
+    (f.acc == null || Number(f.acc) <= maxAcc)).sort((a, b) => a.ts - b.ts);
+  let outside = 0, proof = false;
+  for (const f of later) {
+    if (_gdSameFence(geoFenceAt(f, [fence], r), fence)) {
+      outside = 0;
+      // Still here, well after the flip: that is the proof.
+      if (f.ts - sinceTs >= settle) proof = true;
+      continue;
+    }
+    // Two in a row outside is a real departure, and it ends the question even
+    // if later fixes wander back (corroborated for the same reason the open
+    // tail needs it: geo_events carries no accuracy, so one coarse fix must
+    // never decide this on its own).
+    if (++outside >= 2) return false;
+  }
+  return proof;
+}
+
 function _gdPresence(fixes, fence, radiusFt, maxAccM) {
   const pts = fixes.filter(f => f && f.lat != null && f.lng != null && typeof f.ts === 'number' &&
     (f.acc == null || Number(f.acc) <= maxAccM)).sort((a, b) => a.ts - b.ts);

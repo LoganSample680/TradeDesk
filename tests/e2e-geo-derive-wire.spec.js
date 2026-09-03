@@ -692,9 +692,14 @@ test.describe('geo-derive wiring', () => {
         window._geoDeriveTape = async () => [{ ts: Date.parse('2026-08-20T14:00:00Z'), kind: 'onFoot' }, { ts: Date.parse('2026-08-20T15:00:00Z'), kind: 'driving' }, { ts: Date.parse('2026-08-20T15:20:00Z'), kind: 'onFoot' }];
         await _geoDeriveDayNow('2026-08-20', null);
         const still = window._geoOpenDwell;
-        // Today with nobody on site clears it.
+        // Today with nobody on site clears it. The flip alone is not enough
+        // any more (owner rule 2026-09-03: the visit stays open until
+        // CoreMotion says automotive AND the fixes actually leave the fence),
+        // so the truck has to be seen pulling away, not just declared to.
         const tDep = Math.max(t1 + 60000, now - 30 * 60000);   // after the arrival, whatever the hour
         window._geoDeriveTape = async () => [{ ts: t0 - 3600000, kind: 'onFoot' }, { ts: t0, kind: 'driving' }, { ts: t1, kind: 'onFoot' }, { ts: tDep, kind: 'driving' }];
+        _geoFixLogPush(tDep + 120000, DOE.lat + 0.02, DOE.lng, 5);
+        _geoFixLogPush(tDep + 240000, DOE.lat + 0.04, DOE.lng, 5);
         await _geoDeriveDayNow(today, null);
         return { open: !!(res && res.open), od: od && { name: od.name, kind: od.kind, since: od.sinceTs, cid: od.fence && od.fence.clientId }, t1, still: still && still.name, after: window._geoOpenDwell };
       }, [SHOP, DOE]);
