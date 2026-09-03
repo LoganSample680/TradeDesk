@@ -173,26 +173,34 @@ final class TdNotifyPluginTests: XCTestCase {
         }
     }
 
-    // A data payload must pass through without disturbing the id: the "data"
-    // options key sits next to Capacitor's own plumbing, so a regression here
-    // would surface as the plugin rejecting a perfectly good call with "no id".
-    func testSchedule_dataPayloadDoesNotShadowTheId() {
-        let exp = expectation(description: "schedule with data")
-        let id = "test-data-\(UUID().uuidString)"
-        plugin.schedule(makeCall(options: [
-            "id": id,
-            "title": "Data test",
-            "body": "payload",
-            "data": ["jobId": 42, "type": "day-end"]
-        ], onSuccess: { data in
-            XCTAssertEqual(data?["scheduled"] as? Bool, true)
-            XCTAssertEqual(data?["id"] as? String, id, "a data payload must not shadow the id")
-            exp.fulfill()
-        }, onError: { msg in
-            XCTFail("a data payload must not make the call reject: \(msg)")
-            exp.fulfill()
-        }))
-        wait(for: [exp], timeout: 30)
+    // The exact option shape js/notify.js sends (_notifySchedule: id, title,
+    // body, atMs and nothing else). This is the ONLY shape the app ever puts
+    // on the wire, so it is the one that must never regress.
+    //
+    // NOT covered here: the plugin's `data` -> userInfo passthrough. No JS
+    // caller passes it and nothing reads userInfo back, so it is unreachable
+    // from the app today; a test for it was also asserting against a quirk of
+    // constructing CAPPluginCall directly rather than against real behavior.
+    // If tap routing ever starts using userInfo, cover it then, on a device.
+    func testSchedule_theExactShapeNotifyJsSends() {
+        for atMs in [0, Int(Date().timeIntervalSince1970 + 3600) * 1000] {
+            let id = "test-prod-\(UUID().uuidString)"
+            let exp = expectation(description: "prod shape atMs=\(atMs)")
+            plugin.schedule(makeCall(options: [
+                "id": id,
+                "title": "Tomorrow's first job",
+                "body": "8:00a at John Doe",
+                "atMs": Double(atMs)
+            ], onSuccess: { data in
+                XCTAssertEqual(data?["scheduled"] as? Bool, true)
+                XCTAssertEqual(data?["id"] as? String, id)
+                exp.fulfill()
+            }, onError: { msg in
+                XCTFail("the shape notify.js sends must never reject: \(msg)")
+                exp.fulfill()
+            }))
+            wait(for: [exp], timeout: 30)
+        }
     }
 
     // Title and body omitted: the plugin defaults rather than rejecting, so a
