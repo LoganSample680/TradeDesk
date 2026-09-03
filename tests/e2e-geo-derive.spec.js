@@ -412,6 +412,46 @@ test.describe('geo-derive: the day deriver', () => {
     // with nobody looking at the screen: such a launch never becomes active
     // and never enters background, so the interval it opened ran on until the
     // next real cycle and billed a phone in a pocket as paperwork.
+    // Regression, the owner's own account, 2026-09-03. His shop fence and his
+    // home-office fence sit 5 m apart at the same house (a real setup: the
+    // yard IS the property). _gdPresence tests the home fence alone, so a fix
+    // there is "present" for the office rule, but the full geoFenceAt gives
+    // that fix to the SHOP, because shop outranks home_office. The house
+    // therefore produced a shop dwell with an office row laid straight over
+    // it, and nothing carved it, so geo_replace_day refused the whole day for
+    // overlapping pairs. His 3rd sat refused from 07:48 on: no arrival at the
+    // client, no rows, an empty Time Log all day.
+    const SHOPHOME = { id: 'place-shophome', kind: 'shop', name: 'TradeDesk shop', lat: 39.0307066, lng: -95.7112082 };
+    const HOMEOFF = { id: 'place-homeoff', kind: 'home_office', name: '2015 SW Randolph Ave', lat: 39.0307378, lng: -95.7112674, addr: '2015 SW Randolph Ave' };
+    const SHFIX = { lat: SHOPHOME.lat, lng: SHOPHOME.lng };
+
+    test('paperwork at a shop that IS the house carves the shop row, it never lays a second row over it', async () => {
+      const FF = [SHOPHOME, HOMEOFF, DOE];
+      // At the house from 06:00, app open 07:00-07:30, first drive at 08:00.
+      const tape = [mo(T(6, 0), 'onFoot'), mo(T(8, 0), 'driving'), mo(T(8, 20), 'onFoot')];
+      const fixes = [fix(T(6, 0), SHFIX), fix(T(7, 0), SHFIX), fix(T(7, 30), SHFIX),
+                     fix(T(8, 0, 5), SHFIX), fix(T(8, 20, 5), DOE), fix(T(12, 0), DOE)];
+      const appEvents = [app(T(7, 0), 'active'), app(T(7, 30), 'background')];
+      const r = await run(page, base({ tape, fixes, fences: FF, appEvents }));
+      // NOTHING may overlap: that is the condition geo_replace_day enforces.
+      const rows = r.dwells.slice().sort((a, b) => a.startTs - b.startTs);
+      const overlaps = rows.filter((d, i) => i > 0 && d.startTs < rows[i - 1].endTs)
+        .map(d => [d.kind, hm(d.startTs)]);
+      expect(overlaps).toEqual([]);
+      // The paperwork is its own row, and the shop time around it survives as
+      // SHOP time, not rewritten into a home-office row.
+      expect(rows.filter(d => d.kind === 'office').map(d => [hm(d.startTs), hm(d.endTs)]))
+        .toEqual([[hm(T(7, 0)), hm(T(7, 30))]]);
+      // The carve must not INVENT a home-office row out of the shop dwell it
+      // cut: the remainder keeps its own identity, and being at the house
+      // before the first drive is not paid shop time (rule 11 drops it), so
+      // what is left here is the paperwork alone.
+      expect(rows.filter(d => d.kind === 'home_office')).toEqual([]);
+      // And the client visit that follows is intact: the refused write is what
+      // was costing the owner his arrival.
+      expect(rows.some(d => d.kind === 'client' || (r.open && r.open.kind === 'client'))).toBe(true);
+    });
+
     test('a background relaunch is not the app being open: no Office row from a phone in a pocket', async () => {
       const fixes = [fix(T(9, 30), HFIX), fix(T(10, 0), HFIX), fix(T(11, 0), HFIX), fix(T(12, 0), HFIX)];
       // iOS wakes the process twice at the house. The person never opens it.

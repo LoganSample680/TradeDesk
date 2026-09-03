@@ -537,10 +537,24 @@ function _gdOffice(dwells, open, journeys, fixes, fences, appEvents, dayStart, d
     }
     office = merged.filter(([a, b]) => b - a >= 60000);
     if (!office.length) continue;
-    // Carve them out of this fence's home dwells.
+    // Carve them out of whatever base dwell holds that place at that time.
+    //
+    // It used to carve ONLY dwells whose fence was this home office. That is
+    // not the same set the office spans were built from: _gdPresence tests the
+    // home fence ALONE, so any fix at the house counts as present, while the
+    // full-array geoFenceAt gives that same fix to the SHOP, because shop
+    // outranks home_office and the owner's two fences are 5 m apart. So the
+    // house produced a shop dwell, the office row was laid on top of it, and
+    // nothing carved it: "geo_replace_day: N overlapping pair(s)", which
+    // refuses the WHOLE day. The owner's 2026-09-03 sat refused from 07:48
+    // onward, so no arrival, no rows, nothing on the Time Log all day.
+    // A shop that shares its spot with a home office is that house.
+    const isHere = d => _gdSameFence(d.fence, home) ||
+      (d.kind === 'shop' && _gdShopIsHome(d.fence, fences, opts.radiusFt) &&
+       _gdMiles(d.fence, home) * 5280 <= (Number(opts.radiusFt) > 0 ? Number(opts.radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt));
     const next = [];
     for (const d of out) {
-      if (!_gdSameFence(d.fence, home) || d.kind !== 'home_office') { next.push(d); continue; }
+      if (!_gdIsBaseKind(d.kind) || !isHere(d)) { next.push(d); continue; }
       let pieces = [[d.startTs, d.endTs]];
       for (const [oa, ob] of office) {
         const np = [];
@@ -551,7 +565,10 @@ function _gdOffice(dwells, open, journeys, fixes, fences, appEvents, dayStart, d
         }
         pieces = np;
       }
-      pieces.forEach(([a, b]) => { if (b - a >= 60000) next.push(Object.assign(_gdDwell(home, a, b, d.journeyId, false), { closedBy: d.closedBy })); });
+      // The remainder keeps its OWN identity: carving paperwork out of a shift
+      // at the yard leaves shop time, never a home-office row invented from
+      // the fence the carve happened to be keyed on.
+      pieces.forEach(([a, b]) => { if (b - a >= 60000) next.push(Object.assign(_gdDwell(d.fence, a, b, d.journeyId, false), { closedBy: d.closedBy })); });
     }
     office.forEach(([a, b]) => next.push(Object.assign(_gdDwell(home, a, b, 'o-' + String(home.id) + '-' + Math.round(a).toString(36), false), { kind: 'office' })));
     out = next.sort((x, y) => x.startTs - y.startTs);
