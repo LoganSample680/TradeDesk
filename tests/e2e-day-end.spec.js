@@ -56,7 +56,18 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // DIAGNOSTIC (WebKit, CI only): the card keeps re-rendering under a
+    // click. Record every renderDash caller for the life of the page.
+    await page.evaluate(() => { window.__mark = 1; window.__rd = []; const o = renderDash; window.renderDash = function () { window.__rd.push(Date.now() + ' ' + String(new Error().stack).split('\n').slice(0, 7).join(' | ')); if (window.__rd.length > 400) window.__rd.splice(0, 200); return o.apply(this, arguments); }; });
   });
+  // A physical tap that, if the card will not hold still, names the callers.
+  async function tapOrDump(id) {
+    try { await page.locator('#' + id).click({ timeout: 10000 }); }
+    catch (e) {
+      const d = await page.evaluate(() => ({ mark: window.__mark, n: (window.__rd || []).length, last: (window.__rd || []).slice(-8), pending: _dayEndPending(), open: window._geoOpenDwell, cascade: !!document.querySelector('#pg-dash.boot-cascade'), disp: document.getElementById('dash-nearby').style.display, ver: typeof APP_VERSION !== 'undefined' ? APP_VERSION : null, entries: timeEntries.map((x) => ({ id: x.id, open: x.open })) }));
+      throw new Error('tap ' + id + ' failed: ' + JSON.stringify(d, null, 1));
+    }
+  }
 
   test.beforeEach(async () => {
     await page.evaluate(async ({ START }) => {
@@ -230,15 +241,7 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
     await expect(page.locator('#dash-dayend-yes')).toBeVisible();
     const [noBox, yesBox] = await Promise.all([page.locator('#dash-dayend-no').boundingBox(), page.locator('#dash-dayend-yes').boundingBox()]);
     expect(noBox.x + noBox.width).toBeLessThanOrEqual(yesBox.x);
-    // DIAGNOSTIC (WebKit, CI only): the card keeps re-rendering under the
-    // click. Record every renderDash caller so the CI log names it.
-    await page.evaluate(() => { window.__rd = []; window.__rdOrig = renderDash; window.renderDash = function () { window.__rd.push(String(new Error().stack).split('\n').slice(0, 6).join(' | ')); return window.__rdOrig.apply(this, arguments); }; });
-    try { await page.locator('#dash-dayend-no').click({ timeout: 8000 }); }
-    catch (e) {
-      const d = await page.evaluate(() => ({ n: window.__rd.length, last: window.__rd.slice(-5), pending: _dayEndPending(), open: window._geoOpenDwell, cascade: !!document.querySelector('#pg-dash.boot-cascade'), disp: document.getElementById('dash-nearby').style.display, entries: timeEntries.map((x) => ({ id: x.id, open: x.open })) }));
-      throw new Error('click failed: ' + JSON.stringify(d, null, 1));
-    }
-    finally { await page.evaluate(() => { if (window.__rdOrig) { window.renderDash = window.__rdOrig; window.__rdOrig = null; } }); }
+    await tapOrDump('dash-dayend-no');
     const r = await page.evaluate(() => ({ p: _dayEndPending(), timer: !!_activeTimer, html: document.getElementById('dash-nearby').innerHTML }));
     expect(r.p).toBeNull();
     expect(r.timer).toBe(true);               // dismiss never touches the clock
@@ -249,7 +252,7 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
   test('tapping Yes on the card clocks out at the arrival time', async () => {
     const d0 = await seedOpenClock();
     await page.evaluate(({ dwell, res }) => { _dayEndOnDwell(dwell, res); goPg('pg-dash'); renderDash(); }, { dwell: homeDwell(d0.HOME), res: dayRes(d0.HOME) });
-    await page.locator('#dash-dayend-yes').click();
+    await tapOrDump('dash-dayend-yes');
     const r = await page.evaluate(() => { const e = timeEntries.find((x) => x.id === 9001); return { open: e.open, end: e.end_time, timer: !!_activeTimer, html: document.getElementById('dash-nearby').innerHTML }; });
     expect(r.open).toBe(false);
     expect(r.end).toBe(new Date(d0.HOME).toISOString());
