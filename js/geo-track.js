@@ -3904,6 +3904,52 @@ function _geoDriveCorrelate(half,atMs,why){
 // at boot and on every return to the foreground. Bounded: a drive that
 // started more than half an hour ago is the passenger-or-forgotten case the
 // window cap already closes, not a reason to spend radio.
+// THE TAPE IS THE PRIMARY DEPARTURE SIGNAL (owner 2026-09-03).
+//
+// CoreMotion gives the same fact through two doors. The LIVE stream
+// (startActivityUpdates) reports "automotive" and is the only real-time
+// source, but it waits for confidence: on the owner's own 16:08 departure it
+// did not speak until 16:08:57. The HISTORY query (motionSince) reports the
+// same flip as "driving" and already had it at 16:08:06, fifty-one seconds
+// earlier and with the truer timestamp.
+//
+// The deriver already reads the history, so the LEG starts at the right
+// instant either way. What the gap costs is the POSITION: the fix attached to
+// the departure is taken most of a minute into the drive rather than at the
+// curb, and that fix is what decides which fence was departed from.
+//
+// So the history is polled while the app is alive and no drive window is
+// open, and whichever door reports first opens the window. The live flip
+// remains the backup, unchanged, for every moment the JS is not running.
+//
+// Honest limit: iOS suspends the WebView in the background, so this poll only
+// covers the app being on screen or briefly awake. That IS the case the owner
+// hit, and the existing wake-driven calls (app-active, fence-exit) already
+// cover the rest.
+const _GEO_TAPE_POLL_MS=15000;
+// How long after a drive window opens the failsafe second fix is taken: long
+// enough for the dense window to have spun the radio up, short enough that the
+// truck is still near the curb it left.
+const _GEO_DRIVE_CONFIRM_MS=8000;
+let _geoTapePollT=null;
+function _geoTapePollStart(){
+  if(_geoTapePollT)return;
+  try{
+    _geoTapePollT=setInterval(()=>{
+      try{
+        // Nothing to find while a window is already open, and the check
+        // itself returns early on that, but skip the bridge call entirely.
+        if(_geoDriveWinAt)return;
+        if(typeof document!=='undefined'&&document.hidden)return;
+        _geoTapeDriveCheck('poll');
+      }catch(_e){}
+    },_GEO_TAPE_POLL_MS);
+  }catch(_e){}
+}
+function _geoTapePollStop(){
+  try{if(_geoTapePollT){clearInterval(_geoTapePollT);_geoTapePollT=null;}}catch(_e){}
+}
+
 const _GEO_TAPE_DRIVE_MAX_MS=30*60000;
 function _geoTapeSaysDriving(tape,nowMs){
   const now=Number(nowMs)||Date.now();
@@ -3945,6 +3991,21 @@ function _geoDriveWindowOpen(why){
   if(first){try{if(typeof _liveActDrive==='function')_liveActDrive();}catch(_e){}}
   // The truck moved: a day the phone thought had ended did not (js/day-end.js).
   if(first){try{if(typeof _dayEndOnDrive==='function')_dayEndOnDrive();}catch(_e){}}
+  // THE FAILSAFE SECOND FIX (owner 2026-09-03: "it should also fire a second
+  // GPS ping, good failsafe"). The first fix at a departure is whatever the
+  // radio had a moment ago, which after a stretch of coarse sampling can be
+  // the last known rather than where the truck actually is. A second one a
+  // few seconds later, once the dense window has spun the radio up, gives the
+  // departure a fix that was actually measured. Cheap: one extra reading per
+  // drive, not per ping, and only on the window's FIRST open.
+  if(first){
+    setTimeout(()=>{
+      try{
+        if(!_geoDriveWinAt)return;   // window already closed: nothing to confirm
+        if(navigator.geolocation)navigator.geolocation.getCurrentPosition(_geoOnPing,()=>{},{enableHighAccuracy:true,maximumAge:0,timeout:10000});
+      }catch(_e){}
+    },_GEO_DRIVE_CONFIRM_MS);
+  }
   return true;
 }
 function _geoDriveWindowClose(why){
@@ -5135,6 +5196,7 @@ function stopGeoTracking(){
   // door it has instead of being cleared out from under it: stopAll ends the
   // native side, this ends the JS side's memory of it.
   _geoDriveWindowClose('tracking-off');
+  _geoTapePollStop();
   {const Td=_geoTdPlugin();try{if(Td&&typeof Td.stopAll==='function')Td.stopAll();}catch(_e){}}
   if(_geoNativeWatcherId!=null){
     const BG=_geoNativePlugin();
@@ -5783,6 +5845,9 @@ function _geoTrackInit(){
   _geoDeriveRebuildSoon();
   _geoOnsiteTickStart();
   setTimeout(()=>{try{_geoTapeDriveCheck('boot');}catch(_e){}},1500);
+  // The history is the PRIMARY departure signal; the live automotive flip is
+  // the backup (owner 2026-09-03). See _geoTapePollStart.
+  _geoTapePollStart();
   // Backgrounding mid-shift KEEPS the entry open (the old handler closed it, a
   // phone in a pocket all day logged only screen-on slivers, and any visit hidden
   // within 2 minutes of arrival was dropped entirely). Instead: snapshot the open

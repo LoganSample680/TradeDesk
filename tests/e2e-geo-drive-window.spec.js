@@ -575,6 +575,63 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
     expect(r.types).toEqual(['fix']);
   });
 
+  // Owner 2026-09-03: the history query knew he was driving at 16:08:06, the
+  // live automotive flip did not speak until 16:08:57. The tape is therefore
+  // polled as the PRIMARY departure signal, with the live flip as the backup.
+  //
+  // It does NOT get to open the window by itself, and that is deliberate and
+  // unchanged: a motion flip alone is not a departure, because the coprocessor
+  // reads automotive from a ride in somebody else's truck. What the poll buys
+  // is the MOTION half arriving early, so the window opens on the first fix
+  // that pairs with it instead of waiting most of a minute for the live flip.
+  test('the tape poll supplies the motion half early, and a fix then opens the window', async () => {
+    const r = await run(`
+      const keepTape = window._geoDeriveTape;
+      _geoDriveWindowClose('test');
+      _geoDriveCorrMotionAt = 0; _geoDriveCorrFixAt = 0;
+      // The coprocessor's history says a drive started a minute ago. The live
+      // stream has said nothing: no 'motion' event is delivered at all.
+      window._geoDeriveTape = async () => [
+        { ts: Date.now() - 5 * 60000, kind: 'onFoot' },
+        { ts: Date.now() - 60000, kind: 'driving' },
+      ];
+      try {
+        await _geoTapeDriveCheck('poll');
+        const motionHalf = _geoDriveCorrMotionAt > 0, openedOnTapeAlone = _geoDriveWindowOn();
+        // Now a fix lands. It pairs with the half the poll already banked.
+        await _geoTdEvent({ type: 'wake-move', ts: Date.now(), lat: 39.1, lng: -94.1, acc: 8 }, false);
+        return { motionHalf, openedOnTapeAlone, on: _geoDriveWindowOn(), pendingAt: !!_geoDrivePendingAt };
+      } finally { window._geoDeriveTape = keepTape; }
+    `);
+    expect(r.motionHalf).toBe(true);        // banked early, off the tape
+    expect(r.openedOnTapeAlone).toBe(false); // never on a flip alone
+    expect(r.on).toBe(true);                 // the fix pairs and it opens
+    // And the leg starts from the FLIP's moment off the tape, not from now.
+    expect(r.pendingAt).toBe(true);
+  });
+
+  test('the poll reads nothing once a window is open, so it costs nothing mid-drive', async () => {
+    const r = await run(`
+      const keepTape = window._geoDeriveTape;
+      let asked = 0;
+      window._geoDeriveTape = async () => { asked++; return [
+        { ts: Date.now() - 5 * 60000, kind: 'onFoot' },
+        { ts: Date.now() - 60000, kind: 'driving' },
+      ]; };
+      try {
+        _geoDriveWindowClose('test');
+        _geoDriveCorrMotionAt = 0; _geoDriveCorrFixAt = 0;
+        await _geoTapeDriveCheck('poll');
+        await _geoTdEvent({ type: 'wake-move', ts: Date.now(), lat: 39.1, lng: -94.1, acc: 8 }, false);
+        const afterOpen = asked;
+        await _geoTapeDriveCheck('poll');   // window open: must not read again
+        return { afterOpen, afterSecond: asked, on: _geoDriveWindowOn() };
+      } finally { window._geoDeriveTape = keepTape; }
+    `);
+    expect(r.afterSecond).toBe(r.afterOpen);
+    expect(r.on).toBe(true);
+  });
+
   test('no console errors across the drive window', async () => { await assertNoErrors(page); });
 });
 
