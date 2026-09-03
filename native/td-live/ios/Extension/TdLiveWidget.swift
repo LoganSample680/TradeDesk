@@ -617,24 +617,24 @@ struct TdLiveWidget: Widget {
                     // Activities do the same in this exact spot.
                     .dynamicTypeSize(.large)
             } compactTrailing: {
-                // Compact has room for one clock, not two: the overall "on
-                // site" number is the one that matters at a glance here, the
-                // per-step breakdown is what the expanded island is for.
+                // NOTHING HERE, on purpose (owner 2026-09-03: "can we make
+                // these Dynamic Island go away and just do the lock screen?").
                 //
-                // CAPPED WIDTH, and it has to be (owner 2026-09-03, with a
-                // screenshot: "way too large"). Text(timerInterval:) reserves
-                // horizontal room for the WIDEST string that timer could ever
-                // render, not the one on screen now. A shift that has been
-                // running ten hours makes SwiftUI hold space for a long clock,
-                // and the OS grows the pill around it until it spans most of
-                // the top of the phone. Capping it keeps the island the size
-                // of a glance, and the number still fits: this readout is
-                // 13pt and h:mm needs about five characters of it.
-                Readout(state: context.state, size: 13)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .frame(maxWidth: 52, alignment: .trailing)
-                    .dynamicTypeSize(.large) // see compactLeading's note
+                // We cannot. iOS binds the two presentations: a Live Activity
+                // must supply both, and while one is running on a Dynamic
+                // Island phone the island shows it. There is no flag for lock
+                // screen only. The nearest thing the OS allows is to give the
+                // island as little as possible, which is this: the compact
+                // pill collapses to the brand mark and its status dot, close
+                // to the bare sensor housing, while the lock screen and the
+                // expanded island (tap and hold) keep the full readout.
+                //
+                // This also removes the width problem at its source rather
+                // than capping it. Text(timerInterval:) reserves room for the
+                // WIDEST string that timer could ever render, so a shift
+                // running over ten hours stretched the pill across most of the
+                // top of the phone. No text, no reservation.
+                EmptyView()
             } minimal: {
                 // Minimal is a ~16pt circle shared with whatever else is live, so
                 // it gets the dot only. A truncated clock here reads as garbage.
