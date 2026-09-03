@@ -88,6 +88,17 @@ const _liveLast={};
 // server-side knows more about a drive than the phone in the truck does.
 const _LIVE_PUSH_CHANNELS={clock:true};
 
+// Report a Live Activity outcome to telemetry (analytics_events via
+// ingest-telemetry). console.warn is NOT captured by js/observability.js, only
+// console.error is, so every diagnostic added to this file so far has been
+// invisible to anyone not holding the phone: three rounds of "still nothing on
+// my island" with no evidence to work from. A tracked event lands server-side
+// where it can actually be read, and unlike console.error it does not trip
+// assertNoErrors in the offline suite.
+function _liveActReport(event, ctx){
+  try{if(window._obs&&typeof window._obs.track==='function')window._obs.track('liveact_'+event,String(ctx||'').slice(0,60));}catch(_e){}
+}
+
 async function _liveActSet(channel,state){
   if(!(await _liveActReady())){
     // No plugin at all is the ordinary web case, not a fault: every desktop
@@ -101,9 +112,9 @@ async function _liveActSet(channel,state){
     if(!P2)return false;
     try{
       const diag=await P2.isSupported().catch(()=>({err:'call failed'}));
-      console.warn('[LiveAct] not ready',JSON.stringify(diag));
+      _liveActReport('notready',channel+':'+(diag&&diag.supported?'disabled':'unsupported'));
       if(typeof _toast==='function')_toast('Live Activity: '+((diag&&diag.supported)?'disabled in Settings':'not supported on this phone'));
-    }catch(_e){}
+    }catch(_e){_liveActReport('notready',channel+':threw');}
     return false;
   }
   const P=_liveActPlugin();
@@ -185,13 +196,17 @@ async function _liveActSet(channel,state){
     // the signature unset is all a retry needs.
     if(r&&r.ok===false){
       const why=(r&&r.reason)?String(r.reason):'unknown';
-      console.warn('[LiveAct] '+channel+' start refused:',why);
+      _liveActReport('refused',channel+':'+why);
       try{if(typeof _toast==='function')_toast('Live Activity ('+channel+'): '+why);}catch(_e){}
       return false;
     }
+    // The card is up. Reported too, because "it started and you still see
+    // nothing" and "it never started" are different bugs with different
+    // fixes, and from a chat message they look identical.
+    _liveActReport(started?'updated':'started',channel);
     _liveLast[channel]=sig;
     return true;
-  }catch(_e){return false;}
+  }catch(_e){_liveActReport('threw',channel+':'+((_e&&_e.message)||'?'));return false;}
 }
 
 async function _liveActEnd(channel){
