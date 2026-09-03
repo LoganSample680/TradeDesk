@@ -224,6 +224,10 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
     // Only one primary action on the card (CLAUDE.md 15.1), and it sits on the
     // right, "Still working" on the left (owner 2026-09-03).
     expect(await card.locator('button').count()).toBe(2);
+    // The card's reveal waits out the boot waterfall (dashboard.js _holdReveal),
+    // so the boxes are measured once it is actually on screen (midnight job, 2026-09-03).
+    await expect(page.locator('#dash-dayend-no')).toBeVisible();
+    await expect(page.locator('#dash-dayend-yes')).toBeVisible();
     const [noBox, yesBox] = await Promise.all([page.locator('#dash-dayend-no').boundingBox(), page.locator('#dash-dayend-yes').boundingBox()]);
     expect(noBox.x + noBox.width).toBeLessThanOrEqual(yesBox.x);
     await page.locator('#dash-dayend-no').click();
