@@ -6518,6 +6518,21 @@ function _geoOpenDwellPublish(dayKey,res){
     const prev=window._geoOpenDwell||null;
     const same=(!prev&&!next)||(prev&&next&&prev.id===next.id&&prev.sinceTs===next.sinceTs);
     window._geoOpenDwell=next;
+    // Report the DERIVER'S VERDICT, not just what the card did with it.
+    // Standing inside a fence with no on-site card and no Live Activity, the
+    // liveact_* events said only that nothing asked for a card; they could not
+    // say WHY the deriver thought nobody was on site. Guessing at that from
+    // chat cost the owner most of 2026-09-03. open:none plus the day's shape
+    // (how many dwells, legs and journeys came out, and whether any journey is
+    // still hanging) names the rule that decided it.
+    try{
+      if(window._obs&&typeof window._obs.track==='function'){
+        const nd=((res&&res.dwells)||[]).length,nl=((res&&res.legs)||[]).length;
+        const js=((res&&res.journeys)||[]),nj=js.length,pend=js.filter(j=>j&&(j.open||j.pending)).length;
+        window._obs.track('derive_open_'+(next?'yes':'none'),
+          (next?String(next.kind||''):'d'+nd+'/l'+nl+'/j'+nj+(pend?'/pending'+pend:'')).slice(0,60));
+      }
+    }catch(_e){}
     // The day that ended on its own (js/day-end.js): back at the home office
     // with the manual clock still running, or at a job with none. Runs on
     // every publish because the same dwell only proposes once; a fresh
