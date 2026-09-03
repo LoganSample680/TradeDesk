@@ -620,7 +620,20 @@ struct TdLiveWidget: Widget {
                 // Compact has room for one clock, not two: the overall "on
                 // site" number is the one that matters at a glance here, the
                 // per-step breakdown is what the expanded island is for.
+                //
+                // CAPPED WIDTH, and it has to be (owner 2026-09-03, with a
+                // screenshot: "way too large"). Text(timerInterval:) reserves
+                // horizontal room for the WIDEST string that timer could ever
+                // render, not the one on screen now. A shift that has been
+                // running ten hours makes SwiftUI hold space for a long clock,
+                // and the OS grows the pill around it until it spans most of
+                // the top of the phone. Capping it keeps the island the size
+                // of a glance, and the number still fits: this readout is
+                // 13pt and h:mm needs about five characters of it.
                 Readout(state: context.state, size: 13)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(maxWidth: 52, alignment: .trailing)
                     .dynamicTypeSize(.large) // see compactLeading's note
             } minimal: {
                 // Minimal is a ~16pt circle shared with whatever else is live, so
