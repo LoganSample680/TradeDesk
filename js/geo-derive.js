@@ -408,8 +408,58 @@ function geoDeriveDay(input) {
   if (arrived && arrived.fence) {
     let end = arrived.ts, left = false;
     const later = fixes.filter(f => f.ts > arrived.ts && f.ts < dayEnd && (f.acc == null || Number(f.acc) <= opts.maxFixAccM)).sort((a, b) => a.ts - b.ts);
-    for (const f of later) {
-      if (_gdSameFence(geoFenceAt(f, fences, opts.radiusFt), arrived.fence)) { end = f.ts; continue; }
+    // A departure needs CORROBORATION: one fix outside is not leaving.
+    //
+    // This guard existed in the old engine and was lost in the rewrite. Its
+    // original note (js/geo-track.js, owner report 2026-08-06) still holds
+    // word for word: "A single fix, especially the first one back after
+    // sleep, is never enough on its own: one coarse wake-up fix falsely
+    // closed real, still-on-site visits."
+    //
+    // It bit again on 2026-09-03, harder. Standing at John Doe all day, the
+    // 14:19 foreground wake produced one cached fix 343 ft out, past the
+    // 300 ft fence. That lone outlier closed a visit that was still running:
+    // the Time Log cut the afternoon, and because the closed dwell means
+    // `open` is null, _geoOpenDwellPublish had nothing to publish, so
+    // _liveActOnSite was never called and the Dynamic Island and lock screen
+    // stayed empty all day with no error anywhere to explain it.
+    //
+    // geo_events stores no accuracy column, so every server fix arrives with
+    // acc null and the maxFixAccM filter above can never reject a coarse one.
+    // Corroboration is the defence that does not depend on data we do not
+    // have: a real departure keeps producing fixes outside, an outlier is
+    // followed by fixes back inside.
+    // STILL HERE means still inside the fence we arrived at, NOT "that fence
+    // still wins the ranking contest against every other fence".
+    //
+    // geoFenceAt returns the highest-RANKED fence containing a fix (job beats
+    // shop beats home_office beats client). Testing the winner against
+    // arrived.fence means a dwell opened at a CLIENT is reported as departed
+    // the moment any higher-ranked fence starts containing the same spot,
+    // with the person standing perfectly still. A job scheduled at that
+    // client's address mid-day does exactly that, and so does any re-derive
+    // that rebuilds the fence list.
+    //
+    // Owner, on site at John Doe all day 2026-09-03: the visit was stamped
+    // departed at 14:19:38, the instant a UAT roll reloaded the app and
+    // rebuilt the fences. Every fix after it sits 61 to 317 ft from the
+    // client, well inside the 600 ft fence: nobody went anywhere. Closing it
+    // also nulled `open`, so the on-site card had nothing to publish and the
+    // Dynamic Island and lock screen stayed empty for the rest of the day.
+    //
+    // Testing containment against arrived.fence ALONE (the _gdPresence idiom)
+    // asks the only question that matters, and a real departure still leaves
+    // that fence like any other.
+    const inFence = f => _gdSameFence(geoFenceAt(f, [arrived.fence], opts.radiusFt), arrived.fence);
+    for (let i = 0; i < later.length; i++) {
+      if (inFence(later[i])) { end = later[i].ts; continue; }
+      // Outside. Confirmed only if the NEXT fix is also outside; a single
+      // outlier between two inside fixes is noise and is skipped.
+      const next = later[i + 1];
+      if (next && inFence(next)) continue;
+      // Nothing after it to corroborate with either: an unconfirmed last
+      // reading does not get to end a day that may still be running.
+      if (!next) continue;
       left = true; break;
     }
     if (left) {

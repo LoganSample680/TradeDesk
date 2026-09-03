@@ -303,8 +303,12 @@ test.describe('geo-derive: the day deriver', () => {
     test('a fix outside the fence closes a dwell the tape never closed', async () => {
       // Arrived at Doe 9:20, no departure flip, but at 11:00 the phone was two
       // miles away. The dwell ends at the last fix that was still inside.
+      // Two fixes away, not one: a departure needs corroboration now, because
+      // a single coarse wake-up fix was closing visits that were still
+      // running (owner, on site all day 2026-09-03). The dwell still ends at
+      // the last fix that was inside.
       const t = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot')];
-      const f = [fix(T(9, 0, 5), SHOP), fix(T(9, 20, 5), DOE), fix(T(10, 30), DOE), fix(T(11, 0), GAS)];
+      const f = [fix(T(9, 0, 5), SHOP), fix(T(9, 20, 5), DOE), fix(T(10, 30), DOE), fix(T(11, 0), GAS), fix(T(11, 20), GAS)];
       const r = await run(page, base({ tape: t, fixes: f }));
       expect(r.dwells.map(d => [d.name, hm(d.startTs), hm(d.endTs), d.closedBy])).toEqual([['John Doe', '14:20', '15:30', 'fix']]);
       expect(r.open).toBeNull();
@@ -383,6 +387,67 @@ test.describe('geo-derive: the day deriver', () => {
         expect(r.legs).toEqual([]);
       });
     }
+  });
+
+  // ── A departure needs corroboration ─────────────────────────────────────
+  // Owner, standing at John Doe all day 2026-09-03: no Dynamic Island, no
+  // lock screen, and the Time Log cut his afternoon at 14:19. One cached fix
+  // 343 ft out at a foreground wake closed a visit that was still running,
+  // and a closed visit means `open` is null, so nothing was ever published
+  // to the on-site card or the Live Activity.
+  test.describe('one fix outside a fence is not leaving', () => {
+    test('a lone outlier mid-visit does not close it: the visit stays open', async () => {
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(8, 0), 'driving'), mo(T(8, 20), 'onFoot')];
+      // Arrive at DOE at 08:20 and stay. At 14:19 one cached fix lands well
+      // outside the fence, then the real fixes resume at DOE.
+      const OUT = { lat: DOE.lat + 0.003, lng: DOE.lng };    // ~1100 ft north, well past the 600 ft fence
+      const fixes = [fix(T(8, 0, 5), SHOP), fix(T(8, 20, 5), DOE), fix(T(10, 0), DOE), fix(T(12, 0), DOE),
+                     fix(T(14, 19), OUT), fix(T(14, 25), DOE), fix(T(15, 0), DOE)];
+      const r = await run(page, base({ tape, fixes, fences: [SHOP, DOE] }));
+      expect(r.open && r.open.kind).toBe('client');
+      expect(hm(r.open.sinceTs)).toBe(hm(T(8, 20)));
+      // No closed client row was written for a visit that never ended.
+      expect(r.dwells.filter(d => d.kind === 'client')).toEqual([]);
+    });
+
+    test('two fixes outside in a row IS leaving: the visit closes at the last one inside', async () => {
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(8, 0), 'driving'), mo(T(8, 20), 'onFoot')];
+      const OUT = { lat: DOE.lat + 0.003, lng: DOE.lng };
+      const fixes = [fix(T(8, 0, 5), SHOP), fix(T(8, 20, 5), DOE), fix(T(10, 0), DOE),
+                     fix(T(12, 0), OUT), fix(T(12, 10), OUT), fix(T(12, 20), OUT)];
+      const r = await run(page, base({ tape, fixes, fences: [SHOP, DOE] }));
+      expect(r.open).toBeNull();
+      expect(r.dwells.filter(d => d.kind === 'client').map(d => [hm(d.startTs), hm(d.endTs)]))
+        .toEqual([[hm(T(8, 20)), hm(T(10, 0))]]);
+    });
+
+    // The one that actually cost the owner his day, 2026-09-03. A job fence
+    // outranks a client fence (job 0, client 3), so once a job exists at the
+    // same address, geoFenceAt hands every later fix to the JOB. Testing that
+    // winner against the fence we arrived at read as "departed" with the man
+    // standing still, and it fired on the fence rebuild a UAT roll triggers.
+    test('a higher-ranked fence appearing at the same address does not end the visit', async () => {
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(8, 0), 'driving'), mo(T(8, 20), 'onFoot')];
+      const fixes = [fix(T(8, 0, 5), SHOP), fix(T(8, 20, 5), DOE), fix(T(10, 0), DOE),
+                     fix(T(12, 0), DOE), fix(T(14, 19), DOE), fix(T(15, 0), DOE)];
+      // A JOB at John Doe's address, right on top of the client fence.
+      const JOBATDOE = { id: 'job-777', kind: 'job', name: 'John Doe repipe', jobId: 777, lat: DOE.lat, lng: DOE.lng };
+      const r = await run(page, base({ tape, fixes, fences: [SHOP, DOE, JOBATDOE] }));
+      // Still on site, and still measured from the real arrival.
+      expect(r.open).not.toBeNull();
+      expect(hm(r.open.sinceTs)).toBe(hm(T(8, 20)));
+      // Nothing was written as a closed visit for a day that never ended.
+      expect(r.dwells.filter(d => d.kind === 'client' || d.kind === 'job')).toEqual([]);
+    });
+
+    test('a single unconfirmed reading at the very end never ends the day', async () => {
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(8, 0), 'driving'), mo(T(8, 20), 'onFoot')];
+      const OUT = { lat: DOE.lat + 0.003, lng: DOE.lng };
+      const fixes = [fix(T(8, 0, 5), SHOP), fix(T(8, 20, 5), DOE), fix(T(10, 0), DOE), fix(T(12, 0), OUT)];
+      const r = await run(page, base({ tape, fixes, fences: [SHOP, DOE] }));
+      expect(r.open && r.open.kind).toBe('client');
+      expect(hm(r.open.sinceTs)).toBe(hm(T(8, 20)));
+    });
   });
 
   // ── Rule 10: paperwork at the home office ───────────────────────────────
