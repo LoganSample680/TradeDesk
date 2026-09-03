@@ -213,8 +213,11 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
     await expect(card).toContainText('Back at ' + HOME_FENCE.name);
     await expect(page.locator('#dash-dayend-yes')).toHaveText('Clock out at 7:40 PM');
     await expect(page.locator('#dash-dayend-no')).toHaveText('Still working');
-    // Only one primary action on the card (CLAUDE.md 15.1).
+    // Only one primary action on the card (CLAUDE.md 15.1), and it sits on the
+    // right, "Still working" on the left (owner 2026-09-03).
     expect(await card.locator('button').count()).toBe(2);
+    const [noBox, yesBox] = await Promise.all([page.locator('#dash-dayend-no').boundingBox(), page.locator('#dash-dayend-yes').boundingBox()]);
+    expect(noBox.x + noBox.width).toBeLessThanOrEqual(yesBox.x);
     await page.locator('#dash-dayend-no').click();
     const r = await page.evaluate(() => ({ p: _dayEndPending(), timer: !!_activeTimer, html: document.getElementById('dash-nearby').innerHTML }));
     expect(r.p).toBeNull();
