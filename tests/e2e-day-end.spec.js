@@ -230,12 +230,23 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
     // Only one primary action on the card (CLAUDE.md 15.1), and it sits on the
     // right, "Still working" on the left (owner 2026-09-03).
     expect(await card.locator('button').count()).toBe(2);
-    // The card's reveal waits out the boot waterfall (dashboard.js _holdReveal),
-    // so the boxes are measured once it is actually on screen (midnight job, 2026-09-03).
+    // The card's reveal waits out the boot waterfall (dashboard.js _holdReveal)
+    // AND runs an entrance animation, so a one-shot boundingBox right after
+    // toBeVisible races it: webkit reported the element visible and then handed
+    // back a null box, failing shard 1 three separate times on 2026-09-03 while
+    // passing every time it ran alone. expect.poll retries until the layout has
+    // actually settled, which is the same assertion without the race.
     await expect(page.locator('#dash-dayend-no')).toBeVisible();
     await expect(page.locator('#dash-dayend-yes')).toBeVisible();
-    const [noBox, yesBox] = await Promise.all([page.locator('#dash-dayend-no').boundingBox(), page.locator('#dash-dayend-yes').boundingBox()]);
-    expect(noBox.x + noBox.width).toBeLessThanOrEqual(yesBox.x);
+    await expect.poll(async () => {
+      const [noBox, yesBox] = await Promise.all([
+        page.locator('#dash-dayend-no').boundingBox(),
+        page.locator('#dash-dayend-yes').boundingBox(),
+      ]);
+      if (!noBox || !yesBox) return null;
+      // "Still working" on the left, the clock-out on the right (owner 2026-09-03).
+      return noBox.x + noBox.width <= yesBox.x;
+    }, { message: 'Still working sits left of the clock-out button' }).toBe(true);
     await page.locator('#dash-dayend-no').click();
     const r = await page.evaluate(() => ({ p: _dayEndPending(), timer: !!_activeTimer, html: document.getElementById('dash-nearby').innerHTML }));
     expect(r.p).toBeNull();
