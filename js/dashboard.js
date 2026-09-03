@@ -1176,7 +1176,28 @@ function renderDash(){
             (extra||'')+
           '</div>'+
         '</div>';
-      if(_onClock){
+      const _dayEndP=(typeof _dayEndPending==='function')?_dayEndPending():null;
+      if(_dayEndP){
+        // YOUR DAY: the phone proposes, the person confirms (js/day-end.js,
+        // owner 2026-09-02: "tap to confirm then that tap clocks him out at
+        // 7:40"). Sits where the clock card would, until answered.
+        const _dt=_dayEndCardText(_dayEndP);
+        const _svgClk=(c)=>'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="'+c+'" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+        const _deHead='<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
+          '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
+            '<span style="position:absolute;inset:0;border-radius:50%;border:2px solid rgba(22,163,74,.5);animation:tdGeoPing 2.4s ease-out infinite"></span>'+
+            '<span style="position:relative;z-index:2;width:34px;height:34px;border-radius:50%;background:linear-gradient(160deg,#22c55e,#0E6B39);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(14,107,57,.5)">'+_svgPin('#fff',17)+'</span>'+
+          '</div>'+
+          '<div style="flex:1;min-width:0">'+
+            '<span style="display:inline-flex;align-items:center;gap:6px;background:#1B1612;color:#fff;font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:4px 9px;border-radius:20px;margin-bottom:5px">'+escHtml(_dt.badge)+'</span>'+
+            '<div style="font-size:17px;font-weight:800;letter-spacing:-.02em;line-height:1.2;color:#1B1612">'+escHtml(_dt.title)+'</div>'+
+            '<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:600;margin-top:3px"><span style="flex-shrink:0">'+_svgClk('#0E6B39')+'</span><span style="min-width:0;line-height:1.3">'+escHtml(_dt.sub)+'</span></div>'+
+          '</div>'+
+        '</div>';
+        const _deBtns='<button id="dash-dayend-yes" onclick="_dayEndConfirm()" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px">'+escHtml(_dt.yes)+'</button>'+
+          '<button id="dash-dayend-no" onclick="_dayEndDismiss()" style="flex:0 0 auto;border-radius:12px;padding:13px 14px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center">'+escHtml(_dt.no)+'</button>';
+        _nearbyEl.innerHTML=_cardShell(_deHead+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+_deBtns+'</div>');
+      } else if(_onClock){
         // ON THE CLOCK: live time-on-site (updateClockTimer ticks #dash-onsite-time every 1s).
         const _aj=(typeof jobs!=='undefined'&&jobs.find)?jobs.find(j=>j.id===_onClock.jobId):null;
         const _cAddr=(_aj&&_aj.addr)||((typeof clients!=='undefined'&&clients.find)?((clients.find(c=>c.name===_onClock.clientName)||{}).addr||''):'')||'';

@@ -3943,6 +3943,8 @@ function _geoDriveWindowOpen(why){
   // The island shows the drive from the first second of the window, not from
   // the first fix that moves the tally (js/live-activity.js).
   if(first){try{if(typeof _liveActDrive==='function')_liveActDrive();}catch(_e){}}
+  // The truck moved: a day the phone thought had ended did not (js/day-end.js).
+  if(first){try{if(typeof _dayEndOnDrive==='function')_dayEndOnDrive();}catch(_e){}}
   return true;
 }
 function _geoDriveWindowClose(why){
@@ -6498,7 +6500,16 @@ function _geoOpenDwellPublish(dayKey,res){
     const prev=window._geoOpenDwell||null;
     const same=(!prev&&!next)||(prev&&next&&prev.id===next.id&&prev.sinceTs===next.sinceTs);
     window._geoOpenDwell=next;
-    if(same)return;
+    // The day that ended on its own (js/day-end.js): back at the home office
+    // with the manual clock still running, or at a job with none. Runs on
+    // every publish because the same dwell only proposes once; a fresh
+    // proposal repaints the Home card even when the dwell itself is unchanged.
+    let deNew=false;
+    try{if(typeof _dayEndOnDwell==='function')deNew=(_dayEndOnDwell(next,res)==='new');}catch(_e){}
+    if(same){
+      if(deNew){try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}}
+      return;
+    }
     // The lock screen and the island show the same fact (js/live-activity.js).
     try{if(typeof _liveActOnSite==='function')_liveActOnSite(next);}catch(_e){}
     try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}
