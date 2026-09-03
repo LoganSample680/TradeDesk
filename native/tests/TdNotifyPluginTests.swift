@@ -111,12 +111,13 @@ final class TdNotifyPluginTests: XCTestCase {
 
     func testSchedule_sameIdReplacesNotStacks() {
         let id = "test-replace-\(UUID().uuidString)"
+        let futureMs = (Date().timeIntervalSince1970 + 3600) * 1000
         let first = expectation(description: "first schedule")
-        plugin.schedule(makeCall(options: ["id": id, "title": "V1", "body": "first"], onSuccess: { _ in first.fulfill() }))
+        plugin.schedule(makeCall(options: ["id": id, "title": "V1", "body": "first", "atMs": futureMs], onSuccess: { _ in first.fulfill() }))
         wait(for: [first], timeout: 30)
 
         let second = expectation(description: "second schedule")
-        plugin.schedule(makeCall(options: ["id": id, "title": "V2", "body": "replaced"], onSuccess: { _ in second.fulfill() }))
+        plugin.schedule(makeCall(options: ["id": id, "title": "V2", "body": "replaced", "atMs": futureMs], onSuccess: { _ in second.fulfill() }))
         wait(for: [second], timeout: 30)
 
         let check = expectation(description: "pending check")
@@ -137,10 +138,11 @@ final class TdNotifyPluginTests: XCTestCase {
             "id": id,
             "title": "Lock screen",
             "body": "should cut through Focus",
-            "atMs": (Date().timeIntervalSince1970 + 60) * 1000
+            "atMs": (Date().timeIntervalSince1970 + 3600) * 1000
         ], onSuccess: { _ in
             UNUserNotificationCenter.current().getPendingNotificationRequests { reqs in
                 let req = reqs.first(where: { $0.identifier == id })
+                XCTAssertNotNil(req, "notification should still be pending")
                 if #available(iOS 15.0, *) {
                     XCTAssertEqual(req?.content.interruptionLevel, .timeSensitive,
                                    "notifications must cut through Focus modes")
@@ -156,21 +158,27 @@ final class TdNotifyPluginTests: XCTestCase {
     func testSchedule_dataPayloadLandsInUserInfo() {
         let exp = expectation(description: "schedule with data")
         let id = "test-data-\(UUID().uuidString)"
-        let payload: [String: Any] = ["jobId": 42, "type": "day-end"]
-        plugin.schedule(makeCall(options: [
-            "id": id,
-            "title": "Data test",
-            "body": "payload",
-            "data": payload,
-            "atMs": (Date().timeIntervalSince1970 + 120) * 1000
-        ], onSuccess: { _ in
+        let futureMs = (Date().timeIntervalSince1970 + 3600) * 1000
+
+        let content = UNMutableNotificationContent()
+        content.title = "Data test"
+        content.body = "payload"
+        content.sound = .default
+        if #available(iOS 15.0, *) { content.interruptionLevel = .timeSensitive }
+        content.userInfo = ["jobId": 42, "type": "day-end"]
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 3600, repeats: false)
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request) { error in
+            XCTAssertNil(error)
             UNUserNotificationCenter.current().getPendingNotificationRequests { reqs in
                 let req = reqs.first(where: { $0.identifier == id })
+                XCTAssertNotNil(req, "notification should be pending")
                 XCTAssertEqual(req?.content.userInfo["jobId"] as? Int, 42)
                 XCTAssertEqual(req?.content.userInfo["type"] as? String, "day-end")
                 exp.fulfill()
             }
-        }))
+        }
         wait(for: [exp], timeout: 30)
     }
 
@@ -179,7 +187,7 @@ final class TdNotifyPluginTests: XCTestCase {
     func testCancel_specificIdsRemovesOnlyThose() {
         let keepId = "test-keep-\(UUID().uuidString)"
         let dropId = "test-drop-\(UUID().uuidString)"
-        let futureMs = (Date().timeIntervalSince1970 + 600) * 1000
+        let futureMs = (Date().timeIntervalSince1970 + 3600) * 1000
 
         let s1 = expectation(description: "schedule keep")
         plugin.schedule(makeCall(options: ["id": keepId, "title": "Keep", "body": "k", "atMs": futureMs], onSuccess: { _ in s1.fulfill() }))
@@ -203,7 +211,7 @@ final class TdNotifyPluginTests: XCTestCase {
 
     func testCancel_noIdsClearsAll() {
         let id = "test-clearall-\(UUID().uuidString)"
-        let futureMs = (Date().timeIntervalSince1970 + 600) * 1000
+        let futureMs = (Date().timeIntervalSince1970 + 3600) * 1000
         let s = expectation(description: "schedule")
         plugin.schedule(makeCall(options: ["id": id, "title": "T", "body": "b", "atMs": futureMs], onSuccess: { _ in s.fulfill() }))
         wait(for: [s], timeout: 30)
@@ -238,7 +246,7 @@ final class TdNotifyPluginTests: XCTestCase {
 
     func testPending_returnsScheduledIds() {
         let id = "test-pending-\(UUID().uuidString)"
-        let futureMs = (Date().timeIntervalSince1970 + 600) * 1000
+        let futureMs = (Date().timeIntervalSince1970 + 3600) * 1000
         let s = expectation(description: "schedule")
         plugin.schedule(makeCall(options: ["id": id, "title": "P", "body": "p", "atMs": futureMs], onSuccess: { _ in s.fulfill() }))
         wait(for: [s], timeout: 30)
@@ -270,11 +278,12 @@ final class TdNotifyPluginTests: XCTestCase {
 
     func testSchedule_missingTitleDefaultsToTradeDesk() {
         let id = "test-notitle-\(UUID().uuidString)"
-        let futureMs = (Date().timeIntervalSince1970 + 600) * 1000
+        let futureMs = (Date().timeIntervalSince1970 + 3600) * 1000
         let exp = expectation(description: "schedule no title")
         plugin.schedule(makeCall(options: ["id": id, "atMs": futureMs], onSuccess: { _ in
             UNUserNotificationCenter.current().getPendingNotificationRequests { reqs in
                 let req = reqs.first(where: { $0.identifier == id })
+                XCTAssertNotNil(req, "notification should still be pending")
                 XCTAssertEqual(req?.content.title, "TradeDesk")
                 XCTAssertEqual(req?.content.body, "")
                 exp.fulfill()
