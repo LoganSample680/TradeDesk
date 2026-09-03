@@ -239,8 +239,14 @@ test.describe('Live Activities: what reaches the lock screen', () => {
         _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 60));
         const afterRefusal = window.__td.calls.filter(c => c.name === 'start').length;
         // The phone comes back on screen. The held payload is replayed.
+        //
+        // _liveActForeground is called directly rather than by dispatching a
+        // visibilitychange event: that event wakes EVERY listener in the app,
+        // including the cloud sync, which then failed against this spec's
+        // Supabase stub and tripped assertNoErrors in a later test on shard 3.
+        // The listener wiring itself is one line and is not what this asserts.
         backgrounded = false;
-        document.dispatchEvent(new Event('visibilitychange'));
+        await _liveActForeground();
         await new Promise(r => setTimeout(r, 120));
         const afterForeground = window.__td.calls.filter(c => c.name === 'start').length;
         // And the card that is now up is remembered, so an unchanged assert
