@@ -214,6 +214,35 @@ test.describe('Live Activities: what reaches the lock screen', () => {
     expect(r.toasts).toEqual([]);
   });
 
+  // Owner 2026-09-03, home for the evening with the card still up: "I need it
+  // to go away or be very small, right now it's wasted space running when I'm
+  // home and done working."
+  test('no on-site card at the house, and an existing one ends on arrival there', async () => {
+    const r = await page.evaluate(async () => {
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const since = Date.now() - 45 * 60000;
+      const atDoe = { id: 'd-doe', name: 'John Doe', kind: 'client', sinceTs: since, atHome: false, fence: {} };
+      const atHouse = { id: 'd-home', name: 'TradeDesk shop', kind: 'shop', sinceTs: Date.now() - 5 * 60000, atHome: true, fence: {} };
+      // A real visit puts a card up.
+      _liveActOnSite(atDoe); await new Promise(r => setTimeout(r, 60));
+      const atWork = window.__td.calls.filter(c => c.name === 'start').length;
+      // Driving home and arriving: the card comes down, nothing replaces it.
+      const homeAccepted = _liveActOnSite(atHouse);
+      await new Promise(r => setTimeout(r, 60));
+      const ended = window.__td.calls.filter(c => c.name === 'end').length;
+      const startsAfter = window.__td.calls.filter(c => c.name === 'start').length;
+      // And asking again at home never puts one back.
+      _liveActOnSite(atHouse); await new Promise(r => setTimeout(r, 60));
+      return { atWork, homeAccepted, ended, startsAfter,
+               startsFinal: window.__td.calls.filter(c => c.name === 'start').length };
+    });
+    expect(r.atWork).toBe(1);          // a client visit is worth a card
+    expect(r.homeAccepted).toBe(false); // the house is not
+    expect(r.ended).toBe(1);            // and it took the old one down
+    expect(r.startsAfter).toBe(1);      // nothing started in its place
+    expect(r.startsFinal).toBe(1);      // still nothing, however often we ask
+  });
+
   // The one that actually explains the whole day (owner 2026-09-03, confirmed
   // from his own telemetry): liveact_refused carried iOS's own words, "The
   // operation couldn't be completed. Target is not foreground". ActivityKit

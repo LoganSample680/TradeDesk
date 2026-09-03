@@ -468,6 +468,25 @@ function _liveActDrive(){
 // to the clock card rather than stacking a second timer for the same spot.
 function _liveActOnSite(dwell){
   const d=dwell||null;
+  // HOME IS NOT A CARD (owner 2026-09-03: "I need it to go away or be very
+  // small, right now it's wasted space running when I'm home and done
+  // working"). The lock screen and the island are for work in progress. Being
+  // at your own house is the one dwell nobody needs told about, and it is also
+  // the longest one of the day, so it is exactly the card that would sit there
+  // all evening earning nothing.
+  //
+  // The deriver decides this, not this file: a home office and a shop at the
+  // same address are two fences and the shop outranks the home office, so the
+  // dwell at the owner's own house arrives here as kind 'shop'. atHome is the
+  // deriver's answer to "is this the house", from the same test rule 11 uses.
+  //
+  // Deliberately not a size tweak: a smaller card at home is still a card
+  // about nothing. A clock-in at home still shows, because that is the person
+  // saying they ARE working, and it comes through the clock channel.
+  if(d&&d.atHome){
+    if(_liveLast.onsite!=null)_liveActEnd('onsite');
+    return false;
+  }
   if(!d||!(Number(d.sinceTs)>0)||_liveLast.clock!=null){
     if(_liveLast.onsite!=null)_liveActEnd('onsite');
     return false;

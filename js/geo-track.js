@@ -6577,7 +6577,7 @@ function _geoOpenDwellPublish(dayKey,res){
   try{
     if(dayKey!==_geoDayKeyOf(Date.now(),_geoBizTz()))return;
     const o=res&&res.open;
-    const next=o?{id:String(o.id||''),name:String(o.name||''),kind:String(o.kind||''),sinceTs:Number(o.sinceTs)||0,
+    const next=o?{id:String(o.id||''),name:String(o.name||''),kind:String(o.kind||''),sinceTs:Number(o.sinceTs)||0,atHome:!!o.atHome,
       sinceIso:new Date(Number(o.sinceTs)||Date.now()).toISOString(),journeyId:String(o.journeyId||''),
       fence:o.fence?{id:o.fence.id,kind:o.fence.kind,name:o.fence.name,jobId:o.fence.jobId,clientId:o.fence.clientId,addr:o.fence.addr||''}:null}:null;
     const prev=window._geoOpenDwell||null;

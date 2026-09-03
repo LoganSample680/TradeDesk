@@ -498,7 +498,18 @@ function geoDeriveDay(input) {
     } else {
       openWhy = '';
       open = { id: 'd-' + arrived.journeyId, fence: arrived.fence, kind: String(arrived.fence.kind || 'other'),
-        name: arrived.fence.name || '', sinceTs: arrived.ts, journeyId: String(arrived.journeyId) };
+        name: arrived.fence.name || '', sinceTs: arrived.ts, journeyId: String(arrived.journeyId),
+        // IS THIS THE HOUSE? (owner 2026-09-03: "I need it to go away or be
+        // very small, right now it's wasted space running when I'm home and
+        // done working.") The live screens want to say nothing at all once
+        // somebody is home, and they cannot work that out for themselves: a
+        // home office and a shop at the same address are two fences, and the
+        // shop OUTRANKS the home office, so the dwell at his own house comes
+        // back kind 'shop' and looks like the yard. _gdShopIsHome already
+        // knows the difference and is the same test rule 11 uses to decide
+        // that an evening at the house is not a shift.
+        atHome: String(arrived.fence.kind) === 'home_office' ||
+                _gdShopIsHome(arrived.fence, fences, opts.radiusFt) };
     }
   }
 
