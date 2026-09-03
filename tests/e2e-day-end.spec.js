@@ -59,7 +59,15 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
   });
 
   test.beforeEach(async () => {
-    await page.evaluate(({ START }) => {
+    await page.evaluate(async ({ START }) => {
+      // The boot-time derive (a 2.5 s rebuild timer, a 4 s live timer) must
+      // not fire mid-test: on WebKit it lands late, publishes "nobody on
+      // site" for today, and withdraws the very proposal a test is looking
+      // at (shard 1, 2026-09-03). Same guard as e2e-geo-derive-wire.
+      if (_geoDeriveLiveT) { clearTimeout(_geoDeriveLiveT); _geoDeriveLiveT = null; }
+      if (_geoDeriveRebuildT) { clearTimeout(_geoDeriveRebuildT); _geoDeriveRebuildT = null; }
+      window._geoDeriveRebuilt = true;
+      if (_geoDeriveRebuildP) { try { await _geoDeriveRebuildP; } catch (_e) {} }
       window.__td.calls.length = 0;
       S.bizTz = 'America/Chicago';
       S.ownerName = 'Jack Sample';
