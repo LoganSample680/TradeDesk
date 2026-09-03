@@ -80,6 +80,11 @@ const _LIVE_TINT={drive:'#0085E7',clock:'#12A85C',onsite:'#F2A93B'};
 // card actually changes (every fix, versus every tenth of a mile).
 const _liveLast={};
 
+// Payloads iOS refused to START because the app was backgrounded, held until
+// it is on screen again. Keyed by channel, so a newer state simply replaces an
+// older one rather than queueing a stale card.
+const _liveWant={};
+
 // Which channels ask ActivityKit for an APNs push token, so the SERVER can
 // change or end the card with the app closed (update-live-activity). The clock
 // card earns it first: a manager force-closing a forgotten clock from Time Log
@@ -197,7 +202,20 @@ async function _liveActSet(channel,state){
     if(r&&r.ok===false){
       const why=(r&&r.reason)?String(r.reason):'unknown';
       _liveActReport('refused',channel+':'+why);
-      try{if(typeof _toast==='function')_toast('Live Activity ('+channel+'): '+why);}catch(_e){}
+      // "Target is not foreground" is iOS refusing to START a card from a
+      // backgrounded app. It is not a fault in the payload and it is not
+      // permanent: the same request succeeds the next time the app is on
+      // screen. UPDATES are allowed from the background, so once a card is up
+      // it keeps ticking; only the birth is gated.
+      //
+      // This is why the on-site card never appeared once (owner, all of
+      // 2026-09-03): a dwell is published by the geo engine with the phone in
+      // a pocket, so every single request to start it was refused, while the
+      // drive card flashed up for a second at 16:09 purely because he had the
+      // app open at that instant. Hold the payload and start it the moment we
+      // are foreground again.
+      if(/not\s*foreground|background/i.test(why))_liveWant[channel]=payload;
+      else try{if(typeof _toast==='function')_toast('Live Activity ('+channel+'): '+why);}catch(_e){}
       return false;
     }
     // The card is up. Reported too, because "it started and you still see
@@ -470,3 +488,52 @@ function _liveActOnSite(dwell){
   });
   return true;
 }
+
+// ── The foreground is the only place a card can be BORN ──────────────────────
+// ActivityKit refuses Activity.request() from a backgrounded app ("Target is
+// not foreground"). Updates are fine from anywhere, so a card that is already
+// up keeps ticking with the phone in a pocket; it is only the start that has
+// to happen on screen.
+//
+// Everything that wants a card is driven by the geo engine, which by design
+// runs while the app is backgrounded, so without this every on-site card was
+// requested at exactly the moment iOS would not grant it. The owner watched a
+// drive card flash up for one second on 2026-09-03 (it started only because
+// the app happened to be open) and never once saw an on-site card all day.
+//
+// So on every return to the foreground: replay anything iOS refused, then
+// re-assert the live state, which is idempotent because _liveActSet dedups on
+// a signature and an unchanged card costs nothing.
+async function _liveActForeground(){
+  try{
+    if(!(await _liveActReady()))return;
+    const P=_liveActPlugin();
+    if(!P||typeof P.start!=='function')return;
+    for(const ch of Object.keys(_liveWant)){
+      const payload=_liveWant[ch];
+      delete _liveWant[ch];
+      if(!payload)continue;
+      try{
+        const r=await P.start(payload);
+        if(r&&r.ok===false){_liveActReport('refused',ch+':'+((r&&r.reason)||'unknown'));continue;}
+        _liveActReport('started',ch);
+        // Rebuild the signature the same way _liveActSet does, so the next
+        // unchanged assert is deduped instead of spending another update.
+        _liveLast[ch]=[payload.kind,payload.title,payload.detail,payload.timer?'T':payload.value,
+          payload.tint,payload.dualTimer?'D':'',payload.nextScopeId,payload.isLastScope?'L':''].join('|');
+      }catch(_e){}
+    }
+    // Re-assert from the live state too: a dwell that was published while the
+    // app was closed never got as far as a refusal to remember.
+    try{if(typeof window!=='undefined'&&window._geoOpenDwell&&typeof _liveActOnSite==='function')_liveActOnSite(window._geoOpenDwell);}catch(_e){}
+    try{if(typeof _liveActDrive==='function')_liveActDrive();}catch(_e){}
+  }catch(_e){}
+}
+
+try{
+  if(typeof document!=='undefined'&&document.addEventListener){
+    document.addEventListener('visibilitychange',function(){
+      try{if(document.visibilityState==='visible')_liveActForeground();}catch(_e){}
+    });
+  }
+}catch(_e){}

@@ -214,6 +214,47 @@ test.describe('Live Activities: what reaches the lock screen', () => {
     expect(r.toasts).toEqual([]);
   });
 
+  // The one that actually explains the whole day (owner 2026-09-03, confirmed
+  // from his own telemetry): liveact_refused carried iOS's own words, "The
+  // operation couldn't be completed. Target is not foreground". ActivityKit
+  // refuses Activity.request() from a backgrounded app. Every on-site card is
+  // requested by the geo engine with the phone in a pocket, so every one was
+  // refused; the drive card flashed up for a second only because he happened
+  // to have the app open at that instant.
+  test('a start refused for being backgrounded is replayed the next time the app is on screen', async () => {
+    const r = await page.evaluate(async () => {
+      await _liveActEndAll(); window.__td.calls.length = 0;
+      const P = window.Capacitor.registerPlugin('TdLive');
+      const realStart = P.start;
+      let backgrounded = true;
+      P.start = (args) => {
+        window.__td.calls.push({ name: 'start', args: args || {} });
+        return Promise.resolve(backgrounded
+          ? { ok: false, reason: "The operation couldn't be completed. Target is not foreground" }
+          : { ok: true, id: 'a1' });
+      };
+      try {
+        const since = Date.now() - 30 * 60000;
+        const dwell = { id: 'd-fg', name: 'John Doe', kind: 'client', sinceTs: since, fence: { addr: '2950 SW McClure Rd' } };
+        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 60));
+        const afterRefusal = window.__td.calls.filter(c => c.name === 'start').length;
+        // The phone comes back on screen. The held payload is replayed.
+        backgrounded = false;
+        document.dispatchEvent(new Event('visibilitychange'));
+        await new Promise(r => setTimeout(r, 120));
+        const afterForeground = window.__td.calls.filter(c => c.name === 'start').length;
+        // And the card that is now up is remembered, so an unchanged assert
+        // does not spend another ActivityKit call.
+        _liveActOnSite(dwell); await new Promise(r => setTimeout(r, 60));
+        const afterRepeat = window.__td.calls.filter(c => c.name === 'start').length;
+        return { afterRefusal, afterForeground, afterRepeat };
+      } finally { P.start = realStart; await _liveActEndAll(); }
+    });
+    expect(r.afterRefusal).toBe(1);          // refused while backgrounded
+    expect(r.afterForeground).toBe(2);       // replayed on foreground
+    expect(r.afterRepeat).toBe(2);           // and then deduped
+  });
+
   // Regression (owner 2026-09-03: nothing on the island all day, on drive,
   // arrival OR departure). The plugin RESOLVES {ok:false, reason} when
   // ActivityKit refuses; _liveActSet used to cache the state signature
