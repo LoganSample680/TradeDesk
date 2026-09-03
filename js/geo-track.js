@@ -6529,8 +6529,9 @@ function _geoOpenDwellPublish(dayKey,res){
       if(window._obs&&typeof window._obs.track==='function'){
         const nd=((res&&res.dwells)||[]).length,nl=((res&&res.legs)||[]).length;
         const js=((res&&res.journeys)||[]),nj=js.length,pend=js.filter(j=>j&&(j.open||j.pending)).length;
+        const why=(res&&res.openWhy)?String(res.openWhy):'?';
         window._obs.track('derive_open_'+(next?'yes':'none'),
-          (next?String(next.kind||''):'d'+nd+'/l'+nl+'/j'+nj+(pend?'/pending'+pend:'')).slice(0,60));
+          (next?String(next.kind||''):why+' d'+nd+'/l'+nl+'/j'+nj+(pend?'/pending'+pend:'')).slice(0,60));
       }
     }catch(_e){}
     // The day that ended on its own (js/day-end.js): back at the home office

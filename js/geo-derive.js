@@ -430,6 +430,11 @@ function geoDeriveDay(input) {
   // never written as a row. That is what keeps an evening at the home office
   // from being paid because nobody drove anywhere afterwards.
   let open = null;
+  // Why there is no open dwell, for telemetry. Standing inside a fence with
+  // the island dark, "open: none" alone could not say which branch dropped the
+  // person, and guessing at it from chat burned most of 2026-09-03 on two
+  // wrong theories. Named here, at the only place that decides it.
+  let openWhy = !arrived ? 'no-arrival' : (!arrived.fence ? 'arrival-unfenced' : 'left');
   if (arrived && arrived.fence) {
     let end = arrived.ts, left = false;
     const later = fixes.filter(f => f.ts > arrived.ts && f.ts < dayEnd && (f.acc == null || Number(f.acc) <= opts.maxFixAccM)).sort((a, b) => a.ts - b.ts);
@@ -489,7 +494,9 @@ function geoDeriveDay(input) {
     }
     if (left) {
       if (end > arrived.ts) dwells.push(Object.assign(_gdDwell(arrived.fence, arrived.ts, end, arrived.journeyId, false), { closedBy: 'fix' }));
+      openWhy = 'left-at-fix';
     } else {
+      openWhy = '';
       open = { id: 'd-' + arrived.journeyId, fence: arrived.fence, kind: String(arrived.fence.kind || 'other'),
         name: arrived.fence.name || '', sinceTs: arrived.ts, journeyId: String(arrived.journeyId) };
     }
@@ -505,6 +512,9 @@ function geoDeriveDay(input) {
     dwells: ended.filter(d => d.minutes >= 1),
     legs,
     open,
+    // Diagnostic only, never a rule: which branch decided there is nobody on
+    // site. Empty when `open` is set.
+    openWhy: open ? '' : openWhy,
     pending: chain ? { id: chain.id, origin: chain.originFence, startTs: chain.startTs, stops: chain.stops, autoMinutes: Math.round(chain.autoMs / 60000) } : null,
     journeys,
   };
