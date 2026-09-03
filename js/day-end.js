@@ -31,6 +31,7 @@
 const _DAY_END_STILL_MS=20*60000;   // parked at the home office this long after the last drive
 const _DAY_END_NUDGE2_HOUR=21;      // a second nudge at 9 pm if it is still open
 const _DAY_END_KEY='zp3_day_end';
+const _DAY_END_ARR_KEY='zp3_day_end_arr';   // {dayKey:{ms,name}}: the last home-office arrival the deriver saw, per day
 const _DAY_END_IDS=['dayend','dayend2','daystart'];
 
 function _dayEndRead(){
@@ -82,11 +83,96 @@ function _dayEndNudgeAt(h){
   const d=new Date();d.setHours(h,0,0,0);return d.getTime();
 }
 
+function _dayEndTodayKey(){try{return _geoDayKeyOf(Date.now(),_geoBizTz());}catch(_e){return todayKey();}}
+function _dayEndTodayStart(){try{const b=_geoDayBounds(_dayEndTodayKey());return (b&&b.start>0)?b.start:NaN;}catch(_e){return NaN;}}
+// "7:40 PM", or "7:40 PM yesterday" when the instant is not today: the same
+// clock-out time reads as a different fact the morning after.
+function _dayEndWhen(ms){
+  const t=_dayEndFmt(ms);
+  try{
+    const k=_geoDayKeyOf(Number(ms),_geoBizTz()),today=_dayEndTodayKey();
+    if(k===today)return t;
+    const b=_geoDayBounds(today);
+    if(b&&_geoDayKeyOf(b.start-3600000,_geoBizTz())===k)return t+' yesterday';
+    return t+' '+new Date(Number(ms)).toLocaleDateString('en-US',{timeZone:_geoBizTz(),weekday:'short'});
+  }catch(_e){return t;}
+}
+
+// ── The clock that crossed midnight (owner 2026-09-03) ──────────────────────
+// Jack's 7:44 AM clock was still open at 7 AM the next day, 23 hours on the
+// meter. The evening proposal needs a drive TODAY, and his last drive was
+// yesterday, so the morning after it had nothing to say, and once he drove
+// again that morning the house looked like a fresh arrival. Owner: "before he
+// has the ability to clock in he needs to clock out and it show his 7:40 pm
+// proposal time, should carry over today." So every derived day notes its
+// last home-office arrival, and an entry that started before today is ended
+// at the last such arrival before today, whatever today's drives do.
+function _dayEndArrRead(){
+  try{const o=JSON.parse(localStorage.getItem(_DAY_END_ARR_KEY)||'null');return (o&&typeof o==='object'&&!Array.isArray(o))?o:{};}catch(_e){return {};}
+}
+// Called for EVERY derived day (js/geo-track.js, the boot rebuild covers a
+// week). Returns true when it just produced a new proposal for a stale clock.
+function _dayEndNoteDay(dayKey,res){
+  try{
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(String(dayKey||'')))return false;
+    const legs=(res&&Array.isArray(res.legs))?res.legs:[];
+    let best=null;
+    for(const l of legs){
+      if(l&&l.to&&String(l.to.kind)==='home_office'&&Number(l.endTs)>0&&(!best||Number(l.endTs)>best.ms))best={ms:Number(l.endTs),name:String(l.to.name||'')};
+    }
+    const o=res&&res.open;
+    if(o&&String(o.kind)==='home_office'&&Number(o.sinceTs)>0&&(!best||Number(o.sinceTs)>best.ms))best={ms:Number(o.sinceTs),name:String(o.name||'')};
+    const m=_dayEndArrRead();
+    if(best)m[dayKey]=best;else delete m[dayKey];
+    const keys=Object.keys(m).sort();
+    while(keys.length>8)delete m[keys.shift()];
+    try{localStorage.setItem(_DAY_END_ARR_KEY,JSON.stringify(m));}catch(_e){}
+    return _dayEndStale()==='new';
+  }catch(_e){return false;}
+}
+// My open entry that started before today's business day, or null.
+function _dayEndStaleEntry(){
+  const e=_dayEndOpenEntry();
+  if(!e)return null;
+  const s=Date.parse(e.start_time||''),t=_dayEndTodayStart();
+  return (s>0&&t>0&&s<t)?e:null;
+}
+// Propose the end of a stale clock at the last home-office arrival between
+// its start and today. No evidence, no guess: the banner's own clock-out
+// still works. 'new' when a proposal was just written, true when it stands.
+function _dayEndStale(){
+  try{
+    const e=_dayEndStaleEntry();
+    if(!e)return false;
+    const s=Date.parse(e.start_time||''),t=_dayEndTodayStart();
+    const m=_dayEndArrRead();
+    let best=null;
+    for(const k of Object.keys(m)){const a=m[k];if(a&&Number(a.ms)>s&&Number(a.ms)<t&&(!best||Number(a.ms)>best.ms))best={ms:Number(a.ms),name:String(a.name||'')};}
+    if(!best)return false;
+    const cur=_dayEndRead();
+    if(cur&&cur.kind==='end'&&String(cur.entryId)===String(e.id)&&cur.endMs===best.ms)return true;
+    const name=_dayEndFirstName();
+    _dayEndWrite({kind:'end',entryId:e.id,endMs:best.ms,day:_geoDayKeyOf(best.ms,_geoBizTz()),madeAt:Date.now(),where:best.name||'the home office',stale:true});
+    _notifySchedule('dayend',name?('Hey '+name+'!'):'Your day','Looks like your day ended at '+_dayEndWhen(best.ms)+'. Tap to confirm.',0);
+    return 'new';
+  }catch(_e){return false;}
+}
+// A proposal that names a time before today survives today's drives: the day
+// it belongs to is already over.
+function _dayEndCancelToday(){
+  const p=_dayEndRead();
+  if(!p||p.kind!=='end')return false;
+  const t=_dayEndTodayStart();
+  if(p.stale||(t>0&&Number(p.endMs)<t))return false;
+  return _dayEndCancel('end');
+}
+
 // The proposal still standing, or null. A proposal to END dies with the
 // entry it names (closed by hand, or deleted); a proposal to START dies at
 // midnight or once any entry exists for the day.
 function _dayEndPending(){
-  const p=_dayEndRead();
+  let p=_dayEndRead();
+  if(!p){if(_dayEndStale())p=_dayEndRead();}
   if(!p)return null;
   if(p.kind==='end'){
     const e=(Array.isArray(timeEntries)?timeEntries:[]).find(x=>x&&String(x.id)===String(p.entryId));
@@ -109,17 +195,20 @@ function _dayEndOnDwell(dwell,res){
   try{
     const legs=(res&&Array.isArray(res.legs))?res.legs:[];
     const journeys=(res&&Array.isArray(res.journeys))?res.journeys:[];
-    if(!dwell||!(Number(dwell.sinceTs)>0)){_dayEndCancel('end');return false;}
+    // A clock from before today ends where yesterday ended, never where today's
+    // dwell says; today's drives are a new day on top of an unclosed one.
+    if(_dayEndStaleEntry())return _dayEndStale();
+    if(!dwell||!(Number(dwell.sinceTs)>0)){_dayEndCancelToday();return false;}
     const kind=String(dwell.kind||'');
     if(kind==='home_office'){
       const e=_dayEndOpenEntry();
-      if(!e){_dayEndCancel('end');return false;}
+      if(!e){_dayEndCancelToday();return false;}
       if(!legs.length&&!journeys.length)return false;             // no drive today: the house is where they are
       const cur=_dayEndRead();
       if(cur&&cur.kind==='end'&&String(cur.entryId)===String(e.id)&&cur.endMs===Number(dwell.sinceTs))return true;
       const endMs=Number(dwell.sinceTs);
       const name=_dayEndFirstName();
-      const p={kind:'end',entryId:e.id,endMs,day:todayKey(),madeAt:Date.now(),where:String(dwell.name||'the home office')};
+      const p={kind:'end',entryId:e.id,endMs,day:_dayEndTodayKey(),madeAt:Date.now(),where:String(dwell.name||'the home office')};
       _dayEndWrite(p);
       const title=name?('Hey '+name+'!'):'Your day';
       const body='Looks like your day ended at '+_dayEndFmt(endMs)+'. Tap to confirm.';
@@ -147,7 +236,7 @@ function _dayEndOnDwell(dwell,res){
 }
 // The truck moved again: a day that "ended" did not. Only the END proposal
 // is withdrawn; a START proposal stands until answered or the day changes.
-function _dayEndOnDrive(){_dayEndCancel('end');}
+function _dayEndOnDrive(){_dayEndCancelToday();}
 function _dayEndCancel(kind){
   const p=_dayEndRead();
   if(!p||(kind&&p.kind!==kind))return false;
@@ -181,7 +270,7 @@ function _dayEndConfirm(){
     _dayEndWrite(null);
     try{_notifyCancel(['dayend','dayend2']);}catch(_e){}
     saveAll();
-    _dayEndToast('Clocked out at '+_dayEndFmt(endMs)+', '+_fmtMin(e.minutes)+' logged');
+    _dayEndToast('Clocked out at '+_dayEndWhen(endMs)+', '+_fmtMin(e.minutes)+' logged');
     try{renderDash&&renderDash();}catch(_e){}
     return true;
   }
@@ -247,6 +336,6 @@ function _dayEndToast(msg){
 // The Home card's copy, one place for both kinds.
 function _dayEndCardText(p){
   if(!p)return null;
-  if(p.kind==='end')return{badge:'YOUR DAY',title:'Looks like your day ended at '+_dayEndFmt(p.endMs),sub:'Back at '+(p.where||'the home office')+', timer still running',yes:'Clock out at '+_dayEndFmt(p.endMs),no:'Still working'};
+  if(p.kind==='end')return{badge:'YOUR DAY',title:'Looks like your day ended at '+_dayEndWhen(p.endMs),sub:'Back at '+(p.where||'the home office')+', timer still running',yes:'Clock out at '+_dayEndWhen(p.endMs),no:'Still working'};
   return{badge:'YOUR DAY',title:'Looks like you started at '+_dayEndFmt(p.startMs),sub:(p.where?('At '+p.where+' now, '):'')+'no timer running',yes:'Clock in from '+_dayEndFmt(p.startMs),no:'Not today'};
 }

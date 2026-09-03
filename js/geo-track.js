@@ -6410,6 +6410,9 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
       p_time:rows.job_time_entries,p_shop:rows.shop_time_entries,p_miles:rows.td_mileage,
     });
     _geoDeriveApplyMileage(dayKey,rows.td_mileage);
+    // Every derived day tells js/day-end.js where it ended, so a clock that
+    // crossed midnight can be closed at yesterday's arrival home.
+    try{if(typeof _dayEndNoteDay==='function'&&_dayEndNoteDay(dayKey,res)&&typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}
     _geoOpenDwellPublish(dayKey,res);
     try{_geoParkNote('derived',dayKey+' '+res.dwells.length+'d/'+res.legs.length+'l'+(res.pending?' pending':'')+(res.open?' open':''));}catch(_e){}
     try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
