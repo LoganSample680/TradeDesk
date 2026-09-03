@@ -6514,12 +6514,17 @@ function _geoOpenDwellPublish(dayKey,res){
     // proposal repaints the Home card even when the dwell itself is unchanged.
     let deNew=false;
     try{if(typeof _dayEndOnDwell==='function')deNew=(_dayEndOnDwell(next,res)==='new');}catch(_e){}
+    // The lock screen and the island show the same fact (js/live-activity.js).
+    // Runs on EVERY publish, not just a changed dwell: the request is one
+    // shot at the arrival instant otherwise, so a bridge that wasn't ready
+    // yet (or a start that failed) left the island empty for the whole
+    // dwell with nothing to retry it. _liveActSet dedups on a signature, so
+    // re-asserting an unchanged dwell costs nothing.
+    try{if(typeof _liveActOnSite==='function')_liveActOnSite(next);}catch(_e){}
     if(same){
       if(deNew){try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}}
       return;
     }
-    // The lock screen and the island show the same fact (js/live-activity.js).
-    try{if(typeof _liveActOnSite==='function')_liveActOnSite(next);}catch(_e){}
     try{if(typeof renderDash==='function'&&document.getElementById('pg-dash')?.classList.contains('active'))renderDash();}catch(_e){}
     try{if(typeof _tlRenderOpenBanner==='function'&&document.getElementById('pg-timelog')?.classList.contains('active'))_tlRenderOpenBanner();}catch(_e){}
   }catch(_e){}

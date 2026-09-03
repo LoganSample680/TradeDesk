@@ -700,6 +700,34 @@ test.describe('geo-derive wiring', () => {
       expect(r.after).toBeNull();
     });
 
+    // Regression (owner 2026-09-03: on site since 8:01a, nothing on the
+    // island). The Live Activity used to be requested only when the dwell
+    // CHANGED, so the one attempt at the arrival instant was all there was:
+    // a bridge that wasn't ready yet left the island empty for the whole
+    // dwell with nothing to retry it. Every publish must re-assert it.
+    test('an unchanged open dwell still re-asserts the on-site Live Activity', async () => {
+      const r = await page.evaluate(async () => {
+        const keep = window._liveActOnSite;
+        const seen = [];
+        window._liveActOnSite = (d) => { seen.push(d ? String(d.name || '') : null); return true; };
+        try {
+          const since = Date.now() - 20 * 60000;
+          const mk = () => ({ open: { id: 'd-same', name: 'John Doe', kind: 'client', sinceTs: since, journeyId: 'j1',
+            fence: { id: 'f1', kind: 'client', name: 'John Doe', jobId: null, clientId: 7, addr: '2950 SW McClure Rd' } } });
+          const today = _geoDayKeyOf(Date.now(), _geoBizTz());
+          window._geoOpenDwell = null;
+          _geoOpenDwellPublish(today, mk());          // arrival: the first assert
+          const first = seen.length;
+          _geoOpenDwellPublish(today, mk());          // identical dwell: must assert again
+          _geoOpenDwellPublish(today, mk());
+          return { first, total: seen.length, names: seen };
+        } finally { window._liveActOnSite = keep; }
+      });
+      expect(r.first).toBe(1);
+      expect(r.total).toBe(3);
+      expect(r.names).toEqual(['John Doe', 'John Doe', 'John Doe']);
+    });
+
     test('a router that never answers cannot stall the derive', async () => {
       const r = await page.evaluate(async () => {
         const keep = _GEO_ROUTE_TIMEOUT_MS; _GEO_ROUTE_TIMEOUT_MS = 150;
@@ -802,11 +830,16 @@ test.describe('geo-derive wiring', () => {
           renderDash();
           await new Promise(res => setTimeout(res, 400));
           const gone = !document.querySelector('#dash-nearby [data-onsite-since]');
-          return { has: /John Doe/.test(html) && /Arrived/.test(html), clockIn: /clockIn\(null\)/.test(html), proposal: /_nearbyStartWork\(1788214075432\)/.test(html), first, ticked, gone };
+          return { has: /John Doe/.test(html) && /Arrived/.test(html), clockIn: /clockIn\(/.test(html), proposal: /_nearbyStartWork\(1788214075432\)/.test(html), first, ticked, gone };
         } finally { window._geoDriving = keepDrv; }
       });
       expect(r.has).toBe(true);
-      expect(r.clockIn).toBe(true);
+      // Was clockIn===true. The auto-detected dwell card no longer offers a
+      // manual clock (owner 2026-09-03): the deriver already owns this dwell
+      // and writes its time row, so a manual clock on top of it is a second
+      // observer of one physical event (CLAUDE.md 17). The arrival stamp and
+      // the ticking figure below ARE the clock.
+      expect(r.clockIn).toBe(false);
       expect(r.proposal).toBe(true);
       expect(r.first).toBe('1h 35m');
       expect(r.ticked).toBe('1h 1m');

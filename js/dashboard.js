@@ -1215,11 +1215,22 @@ function renderDash(){
         const _od=_openDwell,_f=_od.fence||{};
         const _kindLabel=_od.kind==='shop'?'At the shop':_od.kind==='home_office'?'At the home office':_od.kind==='supply'?'At the supply house':_od.kind==='job'?'On the job':'On site';
         const _odExtra='<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:700;margin-top:3px"><span style="flex-shrink:0"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#0E6B39" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Arrived '+_fmtClk(_od.sinceIso)+' <span style="color:#9fb5a8;font-weight:700">·</span> <span data-onsite-since="'+_od.sinceTs+'">'+_fmtDur(_od.sinceTs)+'</span> on site</div>';
+        // NO Clock in button here (owner 2026-09-03: "since we have auto
+        // tracking now we dont need the click in button since it already
+        // shows when I arrived and how long im on site for"). The arrival
+        // stamp and the running duration above ARE the clock: the deriver
+        // already owns this dwell and will write the time row for it
+        // (CLAUDE.md 17), so a manual clock on top of it is a second
+        // observer of the same physical event and the exact overlap the
+        // one-deriver rule exists to prevent. Manual clock-in still lives
+        // on the pre-arrival geofence card and the job sheet, for time
+        // the deriver cannot see.
         const _odBtns=[];
-        const _odJob=(_f.jobId!=null&&typeof jobs!=='undefined'&&jobs.find)?jobs.find(j=>String(j.id)===String(_f.jobId)):null;
-        _odBtns.push('<button onclick="clockIn('+(_odJob?_odJob.id:'null')+');setTimeout(function(){renderDash&&renderDash();},140)" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#16A34A;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><path d="M8 5v14l11-7z"/></svg>Clock in</button>');
         if(_f.clientId!=null)_odBtns.push('<button onclick="_nearbyStartWork('+Number(_f.clientId)+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button>');
-        _nearbyEl.innerHTML=_cardShell(_cardHead(_od.name||_kindLabel,(_f.addr||_kindLabel),_odExtra)+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+_odBtns.join('')+'</div>');
+        // No buttons at all (a dwell with no client, e.g. the shop) closes
+        // the card at the head rather than leaving an empty padded strip.
+        const _odBtnRow=_odBtns.length?'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+_odBtns.join('')+'</div>':'<div style="height:14px"></div>';
+        _nearbyEl.innerHTML=_cardShell(_cardHead(_od.name||_kindLabel,(_f.addr||_kindLabel),_odExtra)+_odBtnRow);
       } else if(_driving){
         // DRIVING: the blue sibling of the green ON SITE card, same shell
         // conventions (badge, title, stat tiles), recolored because "in

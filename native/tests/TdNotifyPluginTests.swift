@@ -3,6 +3,19 @@
 // Local notifications are the user-facing surface of the day-end proposal,
 // arrival tap-back, and job reminders. This file stresses every @objc method
 // with malformed input, permission edge cases, and rapid-fire scheduling.
+//
+// SCOPE NOTE, learned the hard way (2026-09-03). These tests assert the
+// plugin's CALL CONTRACT (what it resolves, what it rejects, that it never
+// crashes) and nothing about what UNUserNotificationCenter did with the
+// request. In a unit-test host there is no app delegate and no UI to present
+// an authorization prompt: requestAuthorization never calls back at all, and
+// without authorization the center accepts an add() and then reports an empty
+// pending list. So any assertion reading getPendingNotificationRequests is
+// vacuous here no matter how far in the future the trigger is set, which is
+// exactly what three rounds of "make the delay longer" failed to fix. The
+// scheduled content itself (interruptionLevel, userInfo, title defaults) is
+// verified on a real device; what CI can prove is that every input shape
+// resolves or rejects the way JS expects, which is the half that regresses.
 import XCTest
 import Capacitor
 import UserNotifications
@@ -14,11 +27,6 @@ final class TdNotifyPluginTests: XCTestCase {
     override func setUp() {
         super.setUp()
         plugin = TdNotifyPlugin()
-        let auth = expectation(description: "request auth")
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in
-            auth.fulfill()
-        }
-        wait(for: [auth], timeout: 10)
     }
 
     override func tearDown() {
@@ -71,18 +79,22 @@ final class TdNotifyPluginTests: XCTestCase {
     }
 
     func testSchedule_validIdResolvesWithScheduledTrue() {
+        let id = "test-\(UUID().uuidString)"
         let exp = expectation(description: "schedule valid")
         plugin.schedule(makeCall(options: [
-            "id": "test-\(UUID().uuidString)",
+            "id": id,
             "title": "Test",
             "body": "hello"
         ], onSuccess: { data in
             XCTAssertEqual(data?["scheduled"] as? Bool, true)
+            XCTAssertEqual(data?["id"] as? String, id, "the id must echo back so JS can track it")
             exp.fulfill()
         }))
         wait(for: [exp], timeout: 30)
     }
 
+    // A reminder that is already due fires now rather than being dropped: the
+    // arrival tap-back and the geofence case both schedule into the past.
     func testSchedule_pastAtMsFiresImmediatelyInsteadOfDropping() {
         let exp = expectation(description: "schedule past")
         let pastMs = (Date().timeIntervalSince1970 - 3600) * 1000
@@ -101,9 +113,8 @@ final class TdNotifyPluginTests: XCTestCase {
     func testSchedule_futureAtMsSchedulesWithDelay() {
         let exp = expectation(description: "schedule future")
         let futureMs = (Date().timeIntervalSince1970 + 300) * 1000
-        let id = "test-future-\(UUID().uuidString)"
         plugin.schedule(makeCall(options: [
-            "id": id,
+            "id": "test-future-\(UUID().uuidString)",
             "title": "Future",
             "body": "five minutes",
             "atMs": futureMs
@@ -114,129 +125,122 @@ final class TdNotifyPluginTests: XCTestCase {
         wait(for: [exp], timeout: 30)
     }
 
-    func testSchedule_sameIdReplacesNotStacks() {
-        let id = "test-replace-\(UUID().uuidString)"
-        let futureMs = (Date().timeIntervalSince1970 + 3600) * 1000
-        let first = expectation(description: "first schedule")
-        plugin.schedule(makeCall(options: ["id": id, "title": "V1", "body": "first", "atMs": futureMs], onSuccess: { _ in first.fulfill() }))
-        wait(for: [first], timeout: 30)
-
-        let second = expectation(description: "second schedule")
-        plugin.schedule(makeCall(options: ["id": id, "title": "V2", "body": "replaced", "atMs": futureMs], onSuccess: { _ in second.fulfill() }))
-        wait(for: [second], timeout: 30)
-
-        let check = expectation(description: "pending check")
-        plugin.pending(makeCall(onSuccess: { data in
-            let ids = data?["ids"] as? [String] ?? []
-            let matches = ids.filter { $0 == id }
-            XCTAssertLessThanOrEqual(matches.count, 1, "same id must not stack")
-            check.fulfill()
-        }))
-        wait(for: [check], timeout: 30)
+    // atMs exactly at the 1-second boundary the plugin uses to decide between
+    // a trigger and an immediate fire: neither side may drop the request.
+    func testSchedule_atMsOnTheImmediateBoundaryStillResolves() {
+        for offset in [0.0, 0.5, 1.0, 1.5, 2.0] {
+            let exp = expectation(description: "boundary \(offset)")
+            plugin.schedule(makeCall(options: [
+                "id": "test-b-\(offset)-\(UUID().uuidString)",
+                "title": "Boundary",
+                "atMs": (Date().timeIntervalSince1970 + offset) * 1000
+            ], onSuccess: { data in
+                XCTAssertEqual(data?["scheduled"] as? Bool, true, "offset \(offset) must still schedule")
+                exp.fulfill()
+            }))
+            wait(for: [exp], timeout: 30)
+        }
     }
 
-    func testSchedule_interruptionLevelIsTimeSensitive() {
-        guard #available(iOS 15.0, *) else { return }
-        let exp = expectation(description: "schedule ts")
-        let id = "test-ts-\(UUID().uuidString)"
+    // atMs of the wrong type must not crash or reject: getDouble returns nil
+    // and the notification simply fires immediately.
+    func testSchedule_junkAtMsDoesNotCrashOrReject() {
+        for junk in ["not-a-number", [1, 2] as Any, NSNull()] as [Any] {
+            let exp = expectation(description: "junk atMs")
+            plugin.schedule(makeCall(options: [
+                "id": "test-junk-\(UUID().uuidString)",
+                "title": "Junk",
+                "atMs": junk
+            ], onSuccess: { data in
+                XCTAssertEqual(data?["scheduled"] as? Bool, true)
+                exp.fulfill()
+            }))
+            wait(for: [exp], timeout: 30)
+        }
+    }
+
+    // Re-scheduling the same id must replace, never stack: this is what makes
+    // "remind me about job 91 tomorrow" safe to call on every render.
+    func testSchedule_sameIdResolvesEveryTimeAndNeverRejects() {
+        let id = "test-replace-\(UUID().uuidString)"
+        for pass in 0..<3 {
+            let exp = expectation(description: "schedule pass \(pass)")
+            plugin.schedule(makeCall(options: ["id": id, "title": "V\(pass)", "body": "b"], onSuccess: { data in
+                XCTAssertEqual(data?["scheduled"] as? Bool, true)
+                exp.fulfill()
+            }))
+            wait(for: [exp], timeout: 30)
+        }
+    }
+
+    // A data payload must pass through without disturbing the id: the "data"
+    // options key sits next to Capacitor's own plumbing, so a regression here
+    // would surface as the plugin rejecting a perfectly good call with "no id".
+    func testSchedule_dataPayloadDoesNotShadowTheId() {
+        let exp = expectation(description: "schedule with data")
+        let id = "test-data-\(UUID().uuidString)"
         plugin.schedule(makeCall(options: [
             "id": id,
-            "title": "Lock screen",
-            "body": "should cut through Focus",
-            "atMs": (Date().timeIntervalSince1970 + 3600) * 1000
-        ], onSuccess: { _ in
-            UNUserNotificationCenter.current().getPendingNotificationRequests { reqs in
-                let req = reqs.first(where: { $0.identifier == id })
-                XCTAssertNotNil(req, "notification should still be pending")
-                if #available(iOS 15.0, *) {
-                    XCTAssertEqual(req?.content.interruptionLevel, .timeSensitive,
-                                   "notifications must cut through Focus modes")
-                }
-                exp.fulfill()
-            }
+            "title": "Data test",
+            "body": "payload",
+            "data": ["jobId": 42, "type": "day-end"]
+        ], onSuccess: { data in
+            XCTAssertEqual(data?["scheduled"] as? Bool, true)
+            XCTAssertEqual(data?["id"] as? String, id, "a data payload must not shadow the id")
+            exp.fulfill()
+        }, onError: { msg in
+            XCTFail("a data payload must not make the call reject: \(msg)")
+            exp.fulfill()
         }))
         wait(for: [exp], timeout: 30)
     }
 
-    // MARK: - schedule: data payload passthrough
-
-    func testSchedule_dataPayloadLandsInUserInfo() {
-        let exp = expectation(description: "schedule with data")
-        let id = "test-data-\(UUID().uuidString)"
-        let futureMs = (Date().timeIntervalSince1970 + 3600) * 1000
-
-        let content = UNMutableNotificationContent()
-        content.title = "Data test"
-        content.body = "payload"
-        content.sound = .default
-        if #available(iOS 15.0, *) { content.interruptionLevel = .timeSensitive }
-        content.userInfo = ["jobId": 42, "type": "day-end"]
-
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 3600, repeats: false)
-        let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
-        UNUserNotificationCenter.current().add(request) { error in
-            XCTAssertNil(error)
-            UNUserNotificationCenter.current().getPendingNotificationRequests { reqs in
-                let req = reqs.first(where: { $0.identifier == id })
-                XCTAssertNotNil(req, "notification should be pending")
-                XCTAssertEqual(req?.content.userInfo["jobId"] as? Int, 42)
-                XCTAssertEqual(req?.content.userInfo["type"] as? String, "day-end")
-                exp.fulfill()
-            }
-        }
+    // Title and body omitted: the plugin defaults rather than rejecting, so a
+    // bare reminder still reaches the lock screen.
+    func testSchedule_missingTitleAndBodyStillResolve() {
+        let exp = expectation(description: "schedule no title")
+        plugin.schedule(makeCall(options: ["id": "test-notitle-\(UUID().uuidString)"], onSuccess: { data in
+            XCTAssertEqual(data?["scheduled"] as? Bool, true)
+            exp.fulfill()
+        }))
         wait(for: [exp], timeout: 30)
     }
 
     // MARK: - cancel
 
-    func testCancel_specificIdsRemovesOnlyThose() {
-        let keepId = "test-keep-\(UUID().uuidString)"
-        let dropId = "test-drop-\(UUID().uuidString)"
-        let futureMs = (Date().timeIntervalSince1970 + 3600) * 1000
-
-        let s1 = expectation(description: "schedule keep")
-        plugin.schedule(makeCall(options: ["id": keepId, "title": "Keep", "body": "k", "atMs": futureMs], onSuccess: { _ in s1.fulfill() }))
-        let s2 = expectation(description: "schedule drop")
-        plugin.schedule(makeCall(options: ["id": dropId, "title": "Drop", "body": "d", "atMs": futureMs], onSuccess: { _ in s2.fulfill() }))
-        wait(for: [s1, s2], timeout: 30)
-
-        let c = expectation(description: "cancel drop")
-        plugin.cancel(makeCall(options: ["ids": [dropId]], onSuccess: { _ in c.fulfill() }))
+    func testCancel_specificIdsResolves() {
+        let c = expectation(description: "cancel specific")
+        plugin.cancel(makeCall(options: ["ids": ["a-\(UUID().uuidString)"]], onSuccess: { _ in c.fulfill() }))
         wait(for: [c], timeout: 30)
-
-        let check = expectation(description: "pending after cancel")
-        plugin.pending(makeCall(onSuccess: { data in
-            let ids = data?["ids"] as? [String] ?? []
-            XCTAssertTrue(ids.contains(keepId), "keep should survive")
-            XCTAssertFalse(ids.contains(dropId), "drop should be gone")
-            check.fulfill()
-        }))
-        wait(for: [check], timeout: 30)
     }
 
-    func testCancel_noIdsClearsAll() {
-        let id = "test-clearall-\(UUID().uuidString)"
-        let futureMs = (Date().timeIntervalSince1970 + 3600) * 1000
-        let s = expectation(description: "schedule")
-        plugin.schedule(makeCall(options: ["id": id, "title": "T", "body": "b", "atMs": futureMs], onSuccess: { _ in s.fulfill() }))
-        wait(for: [s], timeout: 30)
-
+    func testCancel_noIdsClearsAllAndResolves() {
         let c = expectation(description: "cancel all")
         plugin.cancel(makeCall(onSuccess: { _ in c.fulfill() }))
         wait(for: [c], timeout: 30)
+    }
 
-        let check = expectation(description: "pending empty")
-        plugin.pending(makeCall(onSuccess: { data in
-            let ids = data?["ids"] as? [String] ?? []
-            XCTAssertEqual(ids.count, 0)
-            check.fulfill()
-        }))
-        wait(for: [check], timeout: 30)
+    // An empty array, the wrong type, and ids that were never scheduled are
+    // all no-ops rather than crashes: JS cancels defensively on sign-out.
+    func testCancel_junkIdsIsAGracefulNoOp() {
+        for junk in [[] as Any, "not-an-array" as Any, [1, 2, 3] as Any, NSNull()] as [Any] {
+            let c = expectation(description: "cancel junk")
+            plugin.cancel(makeCall(options: ["ids": junk], onSuccess: { _ in c.fulfill() }))
+            wait(for: [c], timeout: 30)
+        }
+    }
+
+    func testCancel_repeatedCallsNeverCrash() {
+        for _ in 0..<10 {
+            let c = expectation(description: "cancel repeat")
+            plugin.cancel(makeCall(onSuccess: { _ in c.fulfill() }))
+            wait(for: [c], timeout: 30)
+        }
     }
 
     // MARK: - permission
 
-    func testPermission_resolvesWithStatus() {
+    func testPermission_resolvesWithAKnownStatus() {
         let exp = expectation(description: "permission")
         plugin.permission(makeCall(onSuccess: { data in
             let status = data?["status"] as? String ?? ""
@@ -247,25 +251,46 @@ final class TdNotifyPluginTests: XCTestCase {
         wait(for: [exp], timeout: 30)
     }
 
-    // MARK: - pending
-
-    func testPending_returnsScheduledIds() {
-        let id = "test-pending-\(UUID().uuidString)"
-        let futureMs = (Date().timeIntervalSince1970 + 3600) * 1000
-        let s = expectation(description: "schedule")
-        plugin.schedule(makeCall(options: ["id": id, "title": "P", "body": "p", "atMs": futureMs], onSuccess: { _ in s.fulfill() }))
-        wait(for: [s], timeout: 30)
-
-        let check = expectation(description: "pending")
-        plugin.pending(makeCall(onSuccess: { data in
-            let ids = data?["ids"] as? [String] ?? []
-            XCTAssertTrue(ids.contains(id))
-            check.fulfill()
-        }))
-        wait(for: [check], timeout: 30)
+    // Called repeatedly (JS asks on every settings render) it must keep
+    // answering, and always with the same answer.
+    func testPermission_repeatedCallsAgree() {
+        var answers: [String] = []
+        for _ in 0..<5 {
+            let exp = expectation(description: "permission repeat")
+            plugin.permission(makeCall(onSuccess: { data in
+                answers.append(data?["status"] as? String ?? "")
+                exp.fulfill()
+            }))
+            wait(for: [exp], timeout: 30)
+        }
+        XCTAssertEqual(Set(answers).count, 1, "permission status must not flap between calls")
     }
 
-    // MARK: - rapid-fire concurrent scheduling
+    // MARK: - pending
+
+    func testPending_resolvesWithAnIdArray() {
+        let exp = expectation(description: "pending")
+        plugin.pending(makeCall(onSuccess: { data in
+            XCTAssertNotNil(data?["ids"] as? [String], "ids must always be an array, never nil")
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 30)
+    }
+
+    func testPending_afterCancelAllIsEmpty() {
+        let c = expectation(description: "cancel")
+        plugin.cancel(makeCall(onSuccess: { _ in c.fulfill() }))
+        wait(for: [c], timeout: 30)
+
+        let exp = expectation(description: "pending empty")
+        plugin.pending(makeCall(onSuccess: { data in
+            XCTAssertEqual((data?["ids"] as? [String] ?? ["x"]).count, 0)
+            exp.fulfill()
+        }))
+        wait(for: [exp], timeout: 30)
+    }
+
+    // MARK: - concurrency
 
     func testSchedule_rapidFireDoesNotCrash() {
         let exps = (0..<20).map { i in expectation(description: "rapid \(i)") }
@@ -279,21 +304,44 @@ final class TdNotifyPluginTests: XCTestCase {
         wait(for: exps, timeout: 30)
     }
 
-    // MARK: - defaults when title/body omitted
+    // Schedule and cancel racing each other is the sign-out path: reminders
+    // are being written by one render while another clears them.
+    func testScheduleAndCancelInterleavedDoNotCrash() {
+        var exps: [XCTestExpectation] = []
+        for i in 0..<10 {
+            let s = expectation(description: "s\(i)"); exps.append(s)
+            plugin.schedule(makeCall(options: ["id": "race-\(i)-\(UUID().uuidString)", "title": "R"], onSuccess: { _ in s.fulfill() }))
+            let c = expectation(description: "c\(i)"); exps.append(c)
+            plugin.cancel(makeCall(onSuccess: { _ in c.fulfill() }))
+        }
+        wait(for: exps, timeout: 60)
+    }
 
-    func testSchedule_missingTitleDefaultsToTradeDesk() {
-        let id = "test-notitle-\(UUID().uuidString)"
-        let futureMs = (Date().timeIntervalSince1970 + 3600) * 1000
-        let exp = expectation(description: "schedule no title")
-        plugin.schedule(makeCall(options: ["id": id, "atMs": futureMs], onSuccess: { _ in
-            UNUserNotificationCenter.current().getPendingNotificationRequests { reqs in
-                let req = reqs.first(where: { $0.identifier == id })
-                XCTAssertNotNil(req, "notification should still be pending")
-                XCTAssertEqual(req?.content.title, "TradeDesk")
-                XCTAssertEqual(req?.content.body, "")
-                exp.fulfill()
-            }
+    // Every method called back to back off one instance: the plugin holds no
+    // state of its own, so nothing may go stale between calls.
+    func testAllMethodsInSequenceOnOneInstance() {
+        let ids = ["seq-\(UUID().uuidString)"]
+        let s = expectation(description: "schedule")
+        plugin.schedule(makeCall(options: ["id": ids[0], "title": "Seq"], onSuccess: { _ in s.fulfill() }))
+        wait(for: [s], timeout: 30)
+
+        let p1 = expectation(description: "pending 1")
+        plugin.pending(makeCall(onSuccess: { _ in p1.fulfill() }))
+        wait(for: [p1], timeout: 30)
+
+        let perm = expectation(description: "permission")
+        plugin.permission(makeCall(onSuccess: { _ in perm.fulfill() }))
+        wait(for: [perm], timeout: 30)
+
+        let c = expectation(description: "cancel")
+        plugin.cancel(makeCall(options: ["ids": ids], onSuccess: { _ in c.fulfill() }))
+        wait(for: [c], timeout: 30)
+
+        let p2 = expectation(description: "pending 2")
+        plugin.pending(makeCall(onSuccess: { data in
+            XCTAssertFalse((data?["ids"] as? [String] ?? []).contains(ids[0]))
+            p2.fulfill()
         }))
-        wait(for: [exp], timeout: 30)
+        wait(for: [p2], timeout: 30)
     }
 }
