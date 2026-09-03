@@ -189,6 +189,31 @@ test.describe('Live Activities: what reaches the lock screen', () => {
     expect(r).toEqual([{ name: 'end', ch: 'clock' }]);
   });
 
+  // Regression (CI, webkit shard 1, 2026-09-03): the not-ready diagnostic
+  // toasted on EVERY caller, including the ordinary web case where there is
+  // no Capacitor at all. That put a floating element over the Home card
+  // between a visibility check and a boundingBox measurement, and it would
+  // have popped a meaningless toast on every arrival for every web user.
+  // A person can only act on the on-device cases, so only those speak.
+  test('no plugin at all is silent: the web app never toasts about Live Activities', async () => {
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const toasts = [];
+      const realToast = window._toast;
+      window._toast = (m) => { toasts.push(String(m)); };
+      window.Capacitor = { isNativePlatform: () => false, registerPlugin: () => ({}), Plugins: {} };
+      try {
+        // Force the readiness cache to re-evaluate against the web platform.
+        const keep = window._liveSupported; window._liveSupported = undefined;
+        const ok = await _liveActSet('drive', { kind: 'DRIVING', title: 'On the road' });
+        window._liveSupported = keep;
+        return { ok, toasts };
+      } finally { window.Capacitor = realCap; window._toast = realToast; }
+    });
+    expect(r.ok).toBe(false);
+    expect(r.toasts).toEqual([]);
+  });
+
   // Regression (owner 2026-09-03: nothing on the island all day, on drive,
   // arrival OR departure). The plugin RESOLVES {ok:false, reason} when
   // ActivityKit refuses; _liveActSet used to cache the state signature

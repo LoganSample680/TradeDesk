@@ -90,11 +90,19 @@ const _LIVE_PUSH_CHANNELS={clock:true};
 
 async function _liveActSet(channel,state){
   if(!(await _liveActReady())){
+    // No plugin at all is the ordinary web case, not a fault: every desktop
+    // and mobile browser, and the whole offline test suite, has no Capacitor.
+    // Saying anything here would pop a toast on every arrival for every web
+    // user, and it put a floating element over the Home card mid-measurement
+    // in CI. Stay silent unless we are ON a device and the device said no,
+    // which is the only case a person can actually act on (turn Live
+    // Activities back on in Settings).
+    const P2=_liveActPlugin();
+    if(!P2)return false;
     try{
-      const P2=_liveActPlugin();
-      const diag=P2?await P2.isSupported().catch(()=>({err:'call failed'})):{noPlugin:true};
+      const diag=await P2.isSupported().catch(()=>({err:'call failed'}));
       console.warn('[LiveAct] not ready',JSON.stringify(diag));
-      if(typeof _toast==='function')_toast('Live Activity: '+(diag.noPlugin?'no plugin':(diag.supported?'':'not supported ')+(diag.enabled?'':'disabled in Settings')||JSON.stringify(diag)));
+      if(typeof _toast==='function')_toast('Live Activity: '+((diag&&diag.supported)?'disabled in Settings':'not supported on this phone'));
     }catch(_e){}
     return false;
   }
