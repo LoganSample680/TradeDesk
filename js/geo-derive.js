@@ -453,9 +453,20 @@ function _gdPresence(fixes, fence, radiusFt, maxAccM) {
 
 // App-open intervals from the lifecycle tape, clipped to the day.
 function _gdAppOpen(appEvents, dayStart, dayEnd, nowMs) {
+  // ONLY app-active opens a foreground interval. app-relaunch used to count
+  // too, and that was wrong: a relaunch is a new PROCESS, and iOS starts the
+  // process on its own for a geofence crossing, a significant-change wake or
+  // a silent push, with nobody looking at the screen. Such a launch never
+  // becomes active and never enters background either, so the interval it
+  // opened stayed open until the next real cycle, or ran to now, and hours of
+  // a phone sitting in a pocket at the house counted as paperwork. That is the
+  // exact opposite of the rule this serves (owner: "never office time unless
+  // it's outside of business hours and we're home actively with the app
+  // open"). A relaunch the PERSON caused is followed by its own app-active,
+  // which opens the interval properly, so nothing real is lost.
   const ev = (Array.isArray(appEvents) ? appEvents : [])
     .filter(e => e && typeof e.ts === 'number' && e.kind)
-    .map(e => ({ ts: e.ts, on: /active|relaunch/.test(String(e.kind)) }))
+    .map(e => ({ ts: e.ts, on: String(e.kind) === 'active' }))
     .sort((a, b) => a.ts - b.ts);
   const out = [];
   let openAt = null;

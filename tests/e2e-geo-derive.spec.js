@@ -406,6 +406,29 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.open && r.open.kind).toBe('home_office');
     });
 
+    // Regression (owner 2026-09-03). app-relaunch used to count as the app
+    // being open. A relaunch is a new PROCESS, and iOS starts one on its own
+    // for a geofence crossing, a significant-change wake or a silent push,
+    // with nobody looking at the screen: such a launch never becomes active
+    // and never enters background, so the interval it opened ran on until the
+    // next real cycle and billed a phone in a pocket as paperwork.
+    test('a background relaunch is not the app being open: no Office row from a phone in a pocket', async () => {
+      const fixes = [fix(T(9, 30), HFIX), fix(T(10, 0), HFIX), fix(T(11, 0), HFIX), fix(T(12, 0), HFIX)];
+      // iOS wakes the process twice at the house. The person never opens it.
+      const appEvents = [app(T(9, 45), 'relaunch'), app(T(11, 15), 'relaunch')];
+      const r = await run(page, base({ tape: [], fixes, fences: F, appEvents }));
+      expect(r.dwells.filter(d => d.kind === 'office')).toEqual([]);
+    });
+
+    test('a relaunch the person caused still counts, via the app-active that follows it', async () => {
+      const fixes = [fix(T(9, 30), HFIX), fix(T(10, 0), HFIX), fix(T(11, 0), HFIX), fix(T(12, 0), HFIX)];
+      const appEvents = [app(T(9, 58), 'relaunch'), app(T(10, 0), 'active'), app(T(11, 0), 'background')];
+      const r = await run(page, base({ tape: [], fixes, fences: F, appEvents }));
+      // Starts at the app-active, NOT at the relaunch two minutes earlier.
+      expect(r.dwells.filter(d => d.kind === 'office').map(d => [hm(d.startTs), hm(d.endTs), d.minutes]))
+        .toEqual([['15:00', '16:00', 60]]);
+    });
+
     test('a Sunday of invoicing with no drive at all counts', async () => {
       const fixes = [fix(T(9, 30), HFIX), fix(T(10, 0), HFIX), fix(T(11, 0), HFIX), fix(T(12, 0), HFIX)];
       const appEvents = [app(T(10, 0), 'active'), app(T(11, 0), 'background'), app(T(11, 30), 'active'), app(T(11, 45), 'background')];

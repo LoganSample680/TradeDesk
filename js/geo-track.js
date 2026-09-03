@@ -6159,7 +6159,17 @@ async function _geoDeriveTape(sinceMs){
 // line (owner 2026-09-02, "mileage route is wrong"). If the trace is thin
 // while the server is dense, check the policy before the query.
 // A heartbeat's position is the 3 km keepalive fix: not a breadcrumb.
-const _GEO_FRESH_FIX_TYPES=['fix','push-ping'];
+// A push-ping's position is the plugin's CACHED location, never a fresh one:
+// silentPush (TdGeoPlugin.swift) reads mgr().location and requests nothing, so
+// after a heartbeat's 3 km-accuracy session it reports wherever the phone last
+// happened to resolve. Owner, on site at John Doe 2026-09-03: the cached point
+// sat 343 ft from where he was standing, outside the 300 ft fence, so every
+// push-ping read as a departure and re-entry. Those phantom crossings are what
+// produced "geo_replace_day: 4 overlapping pair(s) in the derived set", and a
+// refused write means the whole day never lands. Only 'fix' carries a position
+// the deriver can trust; a push-ping still counts as a wake and still triggers
+// the derive, it just no longer claims to know where the phone is.
+const _GEO_FRESH_FIX_TYPES=['fix'];
 const _GEO_FETCH_PAGE=1000;
 const _GEO_FETCH_PAGES=40;
 async function _geoPageAll(build){

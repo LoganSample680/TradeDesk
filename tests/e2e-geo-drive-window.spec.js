@@ -567,7 +567,12 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
     expect(r.fixHalf).toBe(true);
     expect(r.open).toBe(true);
     // The plugin writes a plain fix beside the transition; the trace reads that one.
-    expect(r.types).toEqual(['fix', 'push-ping']);
+    // Was ['fix','push-ping']. push-ping was dropped 2026-09-03: silentPush
+    // reports mgr().location, the CACHED position, so it claimed a location it
+    // had not measured. On the owner's own John Doe visit that cache sat 343 ft
+    // out, past the 300 ft fence, and the phantom exits it manufactured were
+    // what made geo_replace_day refuse the day for overlapping pairs.
+    expect(r.types).toEqual(['fix']);
   });
 
   test('no console errors across the drive window', async () => { await assertNoErrors(page); });

@@ -495,10 +495,14 @@ test.describe('geo-derive wiring', () => {
       expect(r.calls.filter(c => c[1] === 'ts,lat,lon').map(c => [c[2], c[3]])).toEqual([[0, 999], [1000, 1999]]);
       expect(r.calls.filter(c => c[0] === 'location_pings')).toHaveLength(1);
       // Only rows whose position is fresh feed the trace: never a fence or
-      // motion row's stale last-known.
+      // motion row's stale last-known, and since 2026-09-03 never a push-ping
+      // either. silentPush reports mgr().location without requesting a fix, so
+      // it carries whatever the phone last resolved: 343 ft off on the owner's
+      // own John Doe visit, past the 300 ft fence, which manufactured the
+      // phantom exits behind "geo_replace_day: 4 overlapping pair(s)".
       const ins = r.calls.filter(c => c[0] === 'in');
       expect(ins.length).toBeGreaterThan(0);
-      ins.forEach(c => expect(c).toEqual(['in', 'type', ['fix', 'push-ping']]));
+      ins.forEach(c => expect(c).toEqual(['in', 'type', ['fix']]));
       expect(r.sorted).toBe(true);
       expect(r.last.acc).toBe(7);
     });
