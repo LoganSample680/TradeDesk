@@ -89,7 +89,15 @@ const _liveLast={};
 const _LIVE_PUSH_CHANNELS={clock:true};
 
 async function _liveActSet(channel,state){
-  if(!(await _liveActReady()))return false;
+  if(!(await _liveActReady())){
+    try{
+      const P2=_liveActPlugin();
+      const diag=P2?await P2.isSupported().catch(()=>({err:'call failed'})):{noPlugin:true};
+      console.warn('[LiveAct] not ready',JSON.stringify(diag));
+      if(typeof _toast==='function')_toast('Live Activity: '+(diag.noPlugin?'no plugin':(diag.supported?'':'not supported ')+(diag.enabled?'':'disabled in Settings')||JSON.stringify(diag)));
+    }catch(_e){}
+    return false;
+  }
   const P=_liveActPlugin();
   if(!P)return false;
   _liveActWireTokens();
