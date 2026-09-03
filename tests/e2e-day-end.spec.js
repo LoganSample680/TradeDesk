@@ -230,7 +230,15 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
     await expect(page.locator('#dash-dayend-yes')).toBeVisible();
     const [noBox, yesBox] = await Promise.all([page.locator('#dash-dayend-no').boundingBox(), page.locator('#dash-dayend-yes').boundingBox()]);
     expect(noBox.x + noBox.width).toBeLessThanOrEqual(yesBox.x);
-    await page.locator('#dash-dayend-no').click();
+    // DIAGNOSTIC (WebKit, CI only): the card keeps re-rendering under the
+    // click. Record every renderDash caller so the CI log names it.
+    await page.evaluate(() => { window.__rd = []; window.__rdOrig = renderDash; window.renderDash = function () { window.__rd.push(String(new Error().stack).split('\n').slice(0, 6).join(' | ')); return window.__rdOrig.apply(this, arguments); }; });
+    try { await page.locator('#dash-dayend-no').click({ timeout: 8000 }); }
+    catch (e) {
+      const d = await page.evaluate(() => ({ n: window.__rd.length, last: window.__rd.slice(-5), pending: _dayEndPending(), open: window._geoOpenDwell, cascade: !!document.querySelector('#pg-dash.boot-cascade'), disp: document.getElementById('dash-nearby').style.display, entries: timeEntries.map((x) => ({ id: x.id, open: x.open })) }));
+      throw new Error('click failed: ' + JSON.stringify(d, null, 1));
+    }
+    finally { await page.evaluate(() => { if (window.__rdOrig) { window.renderDash = window.__rdOrig; window.__rdOrig = null; } }); }
     const r = await page.evaluate(() => ({ p: _dayEndPending(), timer: !!_activeTimer, html: document.getElementById('dash-nearby').innerHTML }));
     expect(r.p).toBeNull();
     expect(r.timer).toBe(true);               // dismiss never touches the clock
