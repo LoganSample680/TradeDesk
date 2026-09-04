@@ -303,6 +303,34 @@ function _dayEndOnDwell(dwell,res){
       const startMs=_crew?Number(dwell.sinceTs):Number(leg.startTs);
       if(cur&&cur.kind==='start'&&cur.startMs===startMs)return true;
       const name=_dayEndFirstName();
+      // THE START IS INFERRED, NOT ASKED (owner 2026-09-04: "I think its
+      // important to have a layer of smarts in this, less taps is always
+      // better, feel we can always infer a start time based on the first geo
+      // fence entered for the day, clock out is different").
+      //
+      // The two ends of a day are not the same problem, which is why only one
+      // of them still asks. A clock-OUT is a guess about the FUTURE: the truck
+      // is at the house and nothing has moved for twenty minutes, but the day
+      // may not be done, and starting it again after a wrong auto clock-out is
+      // real work for the person. That one still proposes and waits
+      // (owner 2026-09-02).
+      //
+      // A start is a guess about the PAST. He is standing at a fence the
+      // business saved; he got there at a time the phone watched. Asking him
+      // to confirm a fact costs a tap and tells him nothing he does not
+      // already know, and CLAUDE.md 12 says the tap count IS the product.
+      //
+      // So it clocks him in and TELLS him, rather than asking. The notification
+      // says what happened instead of what to tap, and Undo on the Home card is
+      // unchanged: nothing here is one-way.
+      _dayEndWrite({kind:'start',startMs,day:todayKey(),madeAt:Date.now(),where:String(dwell.name||'')});
+      if(_dayEndConfirm()){
+        _notifySchedule('daystart',name?('Hey '+name+'!'):'Your day',
+          'Clocked you in at '+_dayEndFmt(startMs)+(dwell.name?(' at '+dwell.name):'')+'. Tap to change it.',0);
+        return 'new';
+      }
+      // The write did not take (no id, no storage): fall back to asking, which
+      // is better than a day that silently never started.
       _dayEndWrite({kind:'start',startMs,day:todayKey(),madeAt:Date.now(),where:String(dwell.name||'')});
       _notifySchedule('daystart',name?('Hey '+name+'!'):'Your day','Looks like you started at '+_dayEndFmt(startMs)+'. Tap to clock in.',0);
       return 'new';

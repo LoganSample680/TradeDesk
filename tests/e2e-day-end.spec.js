@@ -304,7 +304,17 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
     expect(r.p).toBeNull();
   });
 
-  test('morning mirror: no clock running, drove from home to the shop: proposes the departure as the clock-in', async () => {
+  // CHANGED 2026-09-04 (10.4). This used to assert a PENDING proposal and a
+  // "Tap to clock in" notification, then confirm it by hand. The owner made the
+  // start automatic: "less taps is always better, feel we can always infer a
+  // start time based on the first geo fence entered for the day, clock out is
+  // different." A start is a guess about the past and the phone watched it
+  // happen; a clock-out is a guess about the future and still asks.
+  //
+  // What has NOT changed and is still asserted below: the owner's clock-in is
+  // his DEPARTURE, the entry lands open with the timer running, and Undo is
+  // still there. Only the tap is gone.
+  test('morning mirror: no clock running, drove from home to the shop: clocks in at the departure', async () => {
     const dep = START, arr = START + 11 * 60000;
     const r = await page.evaluate(async ({ dep, arr, SHOP_FENCE, HOME_FENCE }) => {
       // A manual-clock user: an entry of theirs three days ago, none today.
@@ -323,13 +333,12 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
       return { ret, p, calls, html, ok, start: e && e.start_time, date: e && e.date, timer: !!_activeTimer, timerEntry: _activeTimer && _activeTimer.entryId === (e && e.id), pending: _dayEndPending() };
     }, { dep, arr, SHOP_FENCE, HOME_FENCE });
     expect(r.ret).toBe('new');
-    expect(r.p).toMatchObject({ kind: 'start', startMs: dep, where: SHOP_FENCE.name });
+    // Already written: nothing is left pending for him to answer.
+    expect(r.p).toBeNull();
     expect(r.calls.length).toBe(1);
-    expect(r.calls[0]).toMatchObject({ id: 'daystart', title: 'Hey Jack!', body: 'Looks like you started at 7:44 AM. Tap to clock in.', atMs: 0 });
-    expect(r.html).toContain('Looks like you started at 7:44 AM');
-    expect(r.html).toContain('Clock in from 7:44 AM');
-    expect(r.html).toContain('Not today');
-    expect(r.ok).toBe(true);
+    expect(r.calls[0]).toMatchObject({ id: 'daystart', title: 'Hey Jack!', atMs: 0 });
+    expect(r.calls[0].body, 'told, not asked').toContain('Clocked you in at 7:44 AM');
+    expect(r.calls[0].body).not.toContain('Tap to clock in');
     expect(r.start).toBe(new Date(dep).toISOString());
     expect(r.date).toBe('2026-09-02');
     expect(r.timer).toBe(true);
@@ -391,13 +400,12 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
       }
     }, { dep, arr, SHOP_FENCE, HOME_FENCE });
     expect(r.ret).toBe('new');
-    // The ARRIVAL, eleven minutes after the owner's answer would have been.
-    expect(r.p).toMatchObject({ kind: 'start', startMs: arr, where: SHOP_FENCE.name });
-    expect(r.p.startMs).not.toBe(dep);
+    // The ARRIVAL, eleven minutes after the owner's answer would have been,
+    // and written straight in rather than offered (2026-09-04).
+    expect(r.p).toBeNull();
     expect(r.calls[0].body).toContain('7:55 AM');
-    // And the clock it writes on confirm starts there too, not at the drive.
-    expect(r.ok).toBe(true);
-    expect(r.start).toBe(new Date(arr).toISOString());
+    expect(r.start, 'the clock starts at the fence, not at the drive').toBe(new Date(arr).toISOString());
+    expect(r.start).not.toBe(new Date(dep).toISOString());
   });
 
   // ── The clock-in moves back to the arrival ──────────────────────────────
@@ -513,7 +521,11 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
     expect(r.p).toBeNull();
   });
 
-  test('a start proposal dies once any entry exists for the day', async () => {
+  // CHANGED 2026-09-04 (10.4). There is no pending start to die any more: the
+  // mirror writes the clock itself. What this still proves is the thing it was
+  // always for, that nothing is left in storage arguing with an entry that
+  // exists, and that clocking in by hand on top of it is harmless.
+  test('the mirror leaves nothing pending, and a hand clock-in on top is harmless', async () => {
     const dep = START, arr = START + 11 * 60000;
     const r = await page.evaluate(({ dep, arr, SHOP_FENCE, HOME_FENCE }) => {
       const old = Date.now() - 3 * 86400000;
@@ -523,7 +535,7 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
       clockIn(null);
       return { p1, p2: _dayEndPending(), stored: localStorage.getItem('zp3_day_end') };
     }, { dep, arr, SHOP_FENCE, HOME_FENCE });
-    expect(r.p1).toMatchObject({ kind: 'start' });
+    expect(r.p1, 'written, not left pending').toBeNull();
     expect(r.p2).toBeNull();
     expect(r.stored).toBeNull();
   });
