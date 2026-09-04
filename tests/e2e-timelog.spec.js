@@ -3526,15 +3526,61 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(out.key).toBe(null);
       expect(out.name).toBe('Job site');
       expect(out.mileage, 'naming time never writes a mileage leg').toBe(0);
-      expect(out.html).toContain('Job site');
-      expect(out.html).toContain('Address not saved');
+      // The tag carries the whole statement (owner 2026-09-04: "job site
+      // should say unsaved job site"), and the row prints no title of its own
+      // rather than repeating it.
+      expect(out.html).toContain('Unsaved job site');
       // It must never read as the geofenced kind, which is what an audit turns
       // on. The two real 'place' rows in this fixture DO say "On site", so the
       // check is that the job-site row itself does not: its own block carries
       // the JOB SITE tag and the address disclaimer, never the saved-client one.
-      const block = out.html.slice(out.html.indexOf('Job site') - 400,
-                                   out.html.indexOf('Address not saved') + 40);
-      expect(block).not.toContain('On site');
+      const i = out.html.indexOf('Unsaved job site');
+      expect(out.html.slice(i, i + 300)).not.toContain('On site');
+    });
+
+    // ── The punch list of 2026-09-04 ──────────────────────────────────────
+    // "got two clock ins at 755 am and 1243 pm, 1243 should go away."
+    // Jack's stray one ran 17:43:36 to 17:43:43. Seven seconds, and it drew a
+    // full CLOCKED IN and CLOCKED OUT pair on his rail as if it were a shift.
+    test('a seven-second clock is a thumb landing twice, not a shift', async () => {
+      const r = await rowsFor([], [
+        { id: 1, date: D, open: false, job_id: null, minutes: 470,
+          start_time: at(7, 55), end_time: at(15, 45), logged_by_uid: 'jack', logged_by_name: 'Jack' },
+        { id: 2, date: D, open: false, job_id: null, minutes: 1,
+          start_time: '2026-09-01T12:43:36.394Z', end_time: '2026-09-01T12:43:43.576Z',
+          logged_by_uid: 'jack', logged_by_name: 'Jack' },
+      ]);
+      expect(r.rows.filter(x => x.src === 'manual').length, 'the real clock, and only it').toBe(1);
+      expect(r.paid).toBe(470);
+    });
+
+    // BOTH tests have to agree, or a real shift saved with placeholder times
+    // would vanish off the rail.
+    test('a short span with real minutes on it is still a shift', async () => {
+      const r = await rowsFor([], [
+        { id: 1, date: D, open: false, job_id: null, minutes: 480,
+          start_time: at(8, 0), end_time: at(8, 0), logged_by_uid: 'jack', logged_by_name: 'Jack' },
+      ]);
+      expect(r.rows.filter(x => x.src === 'manual').length).toBe(1);
+      expect(r.paid).toBe(480);
+    });
+
+    // "clock out also needs a edit button."
+    test('both ends of the clock can be edited, not just the way in', async () => {
+      const html = await page.evaluate(async ([es, ms]) => {
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
+        try {
+          return _tlDayRailHtml((await _timeLogRows(null)).filter(r => r.date === '2026-09-01'));
+        } finally { window._fetchCrewLabor = orig; window.timeEntries = keepT; }
+      }, [[A('place', [9, 0], [10, 0], 60)], CLOCK([8, 0], [16, 0], 480)]);
+      const inCap = html.slice(html.indexOf('data-kind="clock-in"'));
+      const outCap = html.slice(html.indexOf('data-kind="clock-out"'));
+      expect(inCap.slice(0, inCap.indexOf('</li>'))).toContain('tl-rail-edit');
+      expect(outCap.slice(0, outCap.indexOf('</li>')),
+        'a wrong clock-out is as common as a wrong clock-in').toContain('tl-rail-edit');
     });
 
     test('the fences keep their own labels: the clock is the bracket, not the record', async () => {

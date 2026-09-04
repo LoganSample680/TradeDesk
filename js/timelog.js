@@ -398,6 +398,20 @@ async function _timeLogRows(sinceISO){
   timeEntries.forEach(e=>{
     if(e.open)return; // still running, shown separately, see _tlOpenEntries
     if(sinceISO&&e.start_time&&e.start_time<sinceISO)return;
+    // A MIS-TAP IS NOT A CLOCK (owner 2026-09-04, on Jack's 31 August: "got
+    // two clock ins at 755 am and 1243 pm, 1243 should go away"). That second
+    // one ran from 17:43:36 to 17:43:43. Seven seconds. His 3 September has a
+    // one-second twin. Nobody clocks in and out again inside a minute, so both
+    // are a thumb landing twice, and each one draws a full CLOCKED IN and
+    // CLOCKED OUT pair on the rail as if it were a shift.
+    // Hidden, never deleted: the row stays in the table untouched, and a clock
+    // of a minute or more is still drawn however short the day thinks it is.
+    // BOTH tests have to agree before anything is hidden. A short SPAN alone is
+    // not proof: plenty of entries carry a placeholder start and end with the
+    // real duration in `minutes`, and dropping those would delete real shifts
+    // off the rail. A mis-tap is the entry that is short by both measures.
+    const _ms=(e.start_time&&e.end_time)?(Date.parse(e.end_time)-Date.parse(e.start_time)):NaN;
+    if(_ms>=0&&_ms<60000&&(e.minutes||0)<=1)return;
     const info=_tlJobClientInfo(e.job_id);
     rows.push({
       id:'m'+e.id,rawId:e.id,source:'manual',date:e.date,minutes:e.minutes||0,
@@ -996,7 +1010,12 @@ const _TL_RAIL_META={
   // says so, but an audit has to tell it apart from a geofenced client: 'On
   // site' is a saved address, 'Job site' is one nobody saved, and the row
   // prints "Address not saved" underneath rather than implying a location.
-  site:  {c:'var(--blue)',       icon:'📍', word:'Job site'},
+  // "job site should say unsaved job site" (owner 2026-09-04). UNSAVED is the
+  // load-bearing word: an audit turns on telling a geofenced client apart from
+  // a stretch the clock vouched for that no fence could name, and 'Job site'
+  // alone did not carry that. The tag says it, so the row prints no title of
+  // its own, the same way the gap row refuses to repeat its own tag.
+  site:  {c:'var(--blue)',       icon:'📍', word:'Unsaved job site'},
   manual:{c:'var(--text3)',      icon:'▶',  word:'Manual'},
   gap:   {c:'var(--border2)',    icon:'❓', word:'Unaccounted'}
 };
@@ -1087,7 +1106,7 @@ function _tlRailRow(r){
     // exactly that distinction: 'On site' over a saved client, this over a
     // stretch the clock vouched for and no fence could name.
     const ttl=leg?((leg.from_name||'—')+' → '+(leg.to_name||r.clientName||'—'))
-                 :(kind==='site'?(r.detail||'Address not saved')
+                 :(kind==='site'?''
                  :(_bareName||r.addr||(r.source==='manual'?'Clocked in':m.word)));
     // THE SUB-LINE IS THE CLOCK, AND ONLY THE CLOCK (owner 2026-08-30: "why
     // put tradedesk shop under the sub title that already says it ... can
@@ -1118,7 +1137,10 @@ function _tlRailRow(r){
       const clocked=(r.minutes||0)+_bl;
       sub=(sub?sub+' · ':'')+fm(clocked)+' clocked, '+fm(_bl)+' tracked below';
     }
-    body='<div class="tl-rail-ttl">'+escHtml(ttl)+'</div>'+
+    // An empty title draws no element. An unsaved job site has no name to
+    // give, and an empty <div> there would leave a blank line hanging off the
+    // spine where a name would sit.
+    body=(ttl?'<div class="tl-rail-ttl">'+escHtml(ttl)+'</div>':'')+
          (sub?'<div class="tl-rail-sub">'+escHtml(sub)+'</div>':'');
   }
   // The word rides with the icon in every case, so the colour is never doing
@@ -1225,7 +1247,11 @@ function _tlClockCapHtml(r,which,clockedMin){
   // The same edit control the clock row carried, kept on the OPENING cap: a
   // wrong clock-in is the thing people actually need to fix, and losing the
   // way to fix it was never part of moving where it is drawn (§7.2).
-  const edit=(isIn&&typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
+  // ON BOTH CAPS (owner 2026-09-04: "clock out also needs a edit button").
+  // A wrong clock-OUT is just as common as a wrong clock-in, and the editor it
+  // opens is the same one for the same entry: it edits the clock, not the end
+  // of it, so there was never a reason for only one end to reach it.
+  const edit=(typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
     ?'<button type="button" class="tl-rail-edit" onclick="_openEditTimeEntry('+r.rawId+')">Edit</button>'
     :'';
   const dur=isIn?''
