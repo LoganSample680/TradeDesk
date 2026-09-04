@@ -1384,6 +1384,40 @@ test.describe('geo-derive: the day deriver', () => {
           .map(x => x.minutes)).toEqual([72]);
       });
 
+      // THE FIXES INSIDE THE GAP ARE THE PROOF (owner 2026-09-04: "if we
+      // cant reliably tell what happened and where he was at from 214 to 253
+      // and he was contstantly moving during that time I say we merge them,
+      // if we can prove he stopped then we split it to a unsaved address").
+      //
+      // His 3 September, 2:43 to 2:47pm. The bracket test above cannot see
+      // this one: the last fix BEFORE the gap is 2,437 ft away and the first
+      // fix after it is somewhere else again, so "same place either side"
+      // says no. What proves it is the six fixes at one identical coordinate
+      // from 2:44 to 2:49, which sit inside the gap and just past its end.
+      // The day merged a real stop into one 39-minute drive.
+      test('a still run inside the gap proves the stop, whatever the brackets say', async () => {
+        const LOT = { lat: 39.04668, lng: -95.72346 };
+        const t = [mo(T(11, 0), 'onFoot'),
+          mo(T(14, 14), 'automotive'), mo(T(14, 43), 'cycling'),
+          mo(T(14, 47), 'automotive'), mo(T(14, 53), 'onFoot')];
+        const f = [fix(T(14, 14, 5), { lat: DS.lat, lng: DS.lng }),
+          // The brackets are far apart and far from the stop.
+          fix(T(14, 42), FAR1), fix(T(14, 52), FAR2),
+          // The proof: one spot, 2:44 to 2:49, straddling the gap's end.
+          fix(T(14, 44), LOT), fix(T(14, 45), LOT), fix(T(14, 46), LOT),
+          fix(T(14, 47, 30), LOT), fix(T(14, 48), LOT), fix(T(14, 48, 30), LOT),
+          fix(T(14, 53, 5), { lat: JH.lat, lng: JH.lng }), fix(T(15, 30), { lat: JH.lat, lng: JH.lng })];
+        const rows = await page.evaluate((inp) => {
+          const r = geoDeriveDay(inp);
+          return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+        }, base({ tape: t, fixes: f, fences: F, nowMs: T(18, 0) }));
+        const stops = rows.job_time_entries.filter(x => x.source === 'unsaved');
+        expect(rows.job_time_entries.filter(x => x.source === 'drive').length,
+          'two drives, not one 39-minute one').toBe(2);
+        expect(stops.length, 'and the stop between them').toBe(1);
+        expect([stops[0].arrived_at.slice(11, 16), stops[0].departed_at.slice(11, 16)]).toEqual(['19:43', '19:47']);
+      });
+
       test('a short gap with no fixes at all is not a stop: nothing is invented', async () => {
         const t = [mo(T(11, 0), 'onFoot'),
           mo(T(12, 4), 'automotive'), mo(T(12, 18), 'cycling'),
@@ -1434,6 +1468,60 @@ test.describe('geo-derive: the day deriver', () => {
       // does not.
       expect(one.job_time_entries.filter(t => t.source === 'drive').length, 'one drive, not two').toBe(1);
       expect(two.job_time_entries.filter(t => t.source === 'drive').length).toBe(2);
+    });
+
+    // A MINUTE IS NOT A DRIVE EITHER (owner 2026-09-04, his 2 September).
+    // The phone sat at one coordinate from 8:03am to 12:32pm and CoreMotion
+    // twitched automotive for one minute at 8:17. That drew two unsaved
+    // addresses with a drive wedged between them, out of one place he never
+    // left. The floor that refuses a one-minute stop refuses a one-minute
+    // drive between two stops.
+    test.describe('a minute is not a drive either', () => {
+      const JH = { id: 'p-jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
+      const DS = { id: 'p-ds', kind: 'shop', name: '1200 SW Oakley Ave', lat: 39.0456577, lng: -95.7151106 };
+      const F = [JH, DS];
+      const SITE = { lat: 38.98378, lng: -95.72182 };
+
+      const rowsFor = (page, tape, fixes) => page.evaluate((inp) => {
+        const r = geoDeriveDay(inp);
+        return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+      }, base({ tape, fixes, fences: F, nowMs: T(20, 0) }));
+
+      test('an interior one-minute blip merges the two stops around it', async () => {
+        const t = [mo(T(7, 45), 'automotive'), mo(T(8, 3), 'onFoot'),
+          mo(T(8, 17), 'automotive'), mo(T(8, 18), 'onFoot'),
+          mo(T(12, 37), 'automotive'), mo(T(12, 44), 'onFoot'),
+          mo(T(13, 0), 'automotive'), mo(T(13, 1), 'onFoot')];
+        const f = [fix(T(7, 44), { lat: JH.lat, lng: JH.lng }),
+          fix(T(8, 3, 5), SITE), fix(T(8, 31), SITE), fix(T(9, 4), SITE),
+          fix(T(10, 0), SITE), fix(T(11, 6), SITE), fix(T(12, 32), SITE),
+          fix(T(12, 44, 5), { lat: 39.0255, lng: -95.7249 }),
+          fix(T(13, 1, 5), { lat: DS.lat, lng: DS.lng }),
+          fix(T(14, 0), { lat: DS.lat, lng: DS.lng })];
+        const rows = await rowsFor(page, t, f);
+        const stops = rows.job_time_entries.filter(x => x.source === 'unsaved');
+        const drives = rows.job_time_entries.filter(x => x.source === 'drive');
+        expect(drives.map(d => d.arrived_at.slice(11, 16)),
+          'the 8:17 blip is gone').toEqual(['12:45', '17:37', '18:00']);
+        expect(stops.map(x => [x.arrived_at.slice(11, 16), x.departed_at.slice(11, 16)])[0],
+          'one place, all morning').toEqual(['13:03', '17:37']);
+      });
+
+      test('but a short FIRST or LAST segment is the trip itself and survives', async () => {
+        // A one-minute hop from the lot into the shop is the arrival. Drop it
+        // and the leg has nothing that says he got there.
+        const t = [mo(T(7, 45), 'automotive'), mo(T(8, 3), 'onFoot'),
+          mo(T(13, 0), 'automotive'), mo(T(13, 1), 'onFoot')];
+        const f = [fix(T(7, 44), { lat: JH.lat, lng: JH.lng }),
+          fix(T(8, 3, 5), SITE), fix(T(10, 0), SITE), fix(T(12, 32), SITE),
+          fix(T(13, 1, 5), { lat: DS.lat, lng: DS.lng }),
+          fix(T(14, 0), { lat: DS.lat, lng: DS.lng })];
+        const rows = await rowsFor(page, t, f);
+        const drives = rows.job_time_entries.filter(x => x.source === 'drive');
+        expect(drives.length).toBe(2);
+        expect(drives[drives.length - 1].minutes).toBe(1);
+        expect(drives[drives.length - 1].dest_place).toBe('1200 SW Oakley Ave');
+      });
     });
 
     // ── A parked truck ends the drive, whatever the tape says ───────────

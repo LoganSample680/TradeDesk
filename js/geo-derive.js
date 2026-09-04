@@ -108,6 +108,25 @@ const GEO_DERIVE_DEFAULTS = Object.freeze({
   parkedFixMaxMs: 12 * 3600000, // how old the parked fix before a departure may be
   maxMph: 90,             // a trace point faster than this from the last kept one is not on the road
   minLegMs: 2 * 60000,    // a journey shorter than this is a walk across a fence line
+  // PROOF THAT HE STOPPED, inside a drive the tape never ended (owner
+  // 2026-09-04: "if we cant reliably tell what happened ... and he was
+  // constantly moving during that time I say we merge them, if we can prove he
+  // stopped then we split it to a unsaved address").
+  //
+  // Its own number because the two nearby ones mean different things and
+  // neither fits. minLegMs (2 min) is about a journey being too short to
+  // matter, and at two minutes this test starts firing on the OWNER's account,
+  // which has no missing stops: that is the tell it has gone too far.
+  // stillEndMs (10 min) is when a truck that stopped reporting has parked, and
+  // at ten it misses a real one: his 3 September, 2:44 to 2:49, six fixes at
+  // one identical coordinate 2,395 ft from his dad's shop.
+  //
+  // Measured on both accounts over seven days, clusters of fixes within
+  // radiusFt of each other inside a drive: 2 min gives 36 splits (8 of them
+  // the owner's, all wrong), 3 gives 19, 4 gives 12, 5 gives 6, 10 gives 4.
+  // Four is the lowest that still leaves the owner's account untouched, and it
+  // is the one that catches his 2:44.
+  parkedStillMs: 4 * 60000,
   stillEndMs: 10 * 60000, // a truck that sits this long has parked, foot flip or not
   maxFixAccM: 150,        // fixes worse than this are not part of a path
 });
@@ -283,25 +302,35 @@ function _gdPathMiles(fixes, a, b, maxAccM, endpoints, maxMph) {
 // and the only way to tell them apart is where he was on the far side of it.
 //
 // So the test is a CLUSTER: consecutive fixes within a fence radius of each
-// other spanning stillEndMs. That covers the long silence too, because a fix,
-// a thirty-minute hole and a fix at the same spot is one cluster, while the
-// same hole with the far end four miles away is not.
-function _gdParkedSplit(j, fixes, opts) {
-  const still = (Number(opts.stillEndMs) > 0) ? Number(opts.stillEndMs) : GEO_DERIVE_DEFAULTS.stillEndMs;
-  const r = (Number(opts.radiusFt) > 0) ? Number(opts.radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
-  const maxAcc = (Number(opts.maxFixAccM) > 0) ? Number(opts.maxFixAccM) : GEO_DERIVE_DEFAULTS.maxFixAccM;
-  const end = (typeof j.endTs === 'number') ? j.endTs : Infinity;
+// other spanning parkedStillMs. That covers the long silence too, because a
+// fix, a thirty-minute hole and a fix at the same spot is one cluster, while
+// the same hole with the far end four miles away is not. See parkedStillMs in
+// GEO_DERIVE_DEFAULTS for why four minutes and not two, five or ten.
+// THE PHONE NEVER LEFT ONE SPOT. The first run of fixes inside a window that
+// all sit within radiusFt of each other and span at least minMs, as
+// [firstTs, lastTs], or null. One scan, used by both things that need to know
+// whether he actually stopped: the parked-truck split below and the
+// stop-proof for a gap between two driving segments.
+function _gdStillRun(fixes, from, to, minMs, opts) {
+  const r = (opts && Number(opts.radiusFt) > 0) ? Number(opts.radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
+  const maxAcc = (opts && Number(opts.maxFixAccM) > 0) ? Number(opts.maxFixAccM) : GEO_DERIVE_DEFAULTS.maxFixAccM;
   const inside = (fixes || []).filter(f => f && f.lat != null && f.lng != null &&
-    typeof f.ts === 'number' && f.ts >= j.startTs && f.ts <= end &&
+    typeof f.ts === 'number' && f.ts >= from && f.ts <= to &&
     (f.acc == null || Number(f.acc) <= maxAcc)).sort((a, b) => a.ts - b.ts);
   for (let i = 0; i < inside.length; i++) {
     // How long did it sit in this one spot?
     let k = i;
     while (k + 1 < inside.length && _gdMiles(inside[i], inside[k + 1]) * 5280 <= r) k++;
-    if (inside[k].ts - inside[i].ts >= still) return [inside[i].ts, inside[k].ts];
+    if (inside[k].ts - inside[i].ts >= minMs) return [inside[i].ts, inside[k].ts];
     i = k;
   }
   return null;
+}
+
+function _gdParkedSplit(j, fixes, opts) {
+  const still = (Number(opts.parkedStillMs) > 0) ? Number(opts.parkedStillMs) : GEO_DERIVE_DEFAULTS.parkedStillMs;
+  const end = (typeof j.endTs === 'number') ? j.endTs : Infinity;
+  return _gdStillRun(fixes, j.startTs, end, still, opts);
 }
 
 function _gdJourneys(tape, personId, opts, dayStart, dayEnd, nowMs, fixes) {
@@ -784,8 +813,26 @@ function _gdStopProved(fixes, gapStart, gapEnd, opts) {
     if (f.ts <= gapStart) { if (!before || f.ts > before.ts) before = f; }
     else if (f.ts >= gapEnd) { if (!after || f.ts < after.ts) after = f; }
   }
-  if (!before || !after) return false;
-  return _gdMiles(before, after) * 5280 <= r;
+  if (before && after && _gdMiles(before, after) * 5280 <= r) return true;
+  // THE FIXES INSIDE THE GAP ARE THE PROOF (owner 2026-09-04: "if we can prove
+  // he stopped then we split it to a unsaved address").
+  //
+  // The test above asks where the phone was on either SIDE of the gap, which
+  // is the only thing available when the gap itself is silent. His 3
+  // September, 2:43 to 2:47pm, is the case where it is not: six fixes at one
+  // identical coordinate from 2:44 to 2:49, 2,395 ft from his dad's shop.
+  // Every one of them sits inside the gap or just past its end, so neither
+  // bracket saw them, the last fix before was 2,437 ft away, and the day
+  // merged a real stop into one 39-minute drive.
+  //
+  // Same scan and same threshold as the parked-truck split: a run of fixes
+  // that never left one spot for parkedStillMs. The window is widened by that
+  // much on each side so a run straddling the gap boundary is seen whole, and
+  // the run still has to OVERLAP the gap to count, so a stop that belongs to
+  // the drive before or after this one does not split this one.
+  const parked = (opts && Number(opts.parkedStillMs) > 0) ? Number(opts.parkedStillMs) : GEO_DERIVE_DEFAULTS.parkedStillMs;
+  const run = _gdStillRun(fixes, gapStart - parked, gapEnd + parked, parked, opts);
+  return !!(run && run[0] < gapEnd && run[1] > gapStart);
 }
 
 function _gdPresence(fixes, fence, radiusFt, maxAccM) {
@@ -1121,8 +1168,20 @@ function geoDeriveRows(result, ids) {
     // unsaved address is never a mileage endpoint: "we make no inferences
     // here, this app was built to survive a IRS audit"). Time and mileage stop
     // being the same row, which is the whole change.
-    const segs = (Array.isArray(l.drives) && l.drives.length) ? l.drives
+    const segsRaw = (Array.isArray(l.drives) && l.drives.length) ? l.drives
       : [[l.startTs, l.endTs, (l.minutes || 0) * 60000]];
+    // A MINUTE IS NOT A DRIVE EITHER. The same floor that refuses to write a
+    // one-minute stop refuses to write a one-minute drive BETWEEN two stops:
+    // his 2 September, 8:17 to 8:18am, with the phone at one coordinate from
+    // 8:03 to 12:32 either side of it, and his 3 September at 10:05. Those are
+    // CoreMotion twitching at a parked truck, and drawing them splits one
+    // unsaved address into two with a drive wedged in the middle.
+    //
+    // Interior segments only. The first and last segments of a leg are its
+    // departure and its arrival: however short, they are the only thing that
+    // says he left the shop or reached it, and dropping one loses the trip.
+    const segs = segsRaw.filter((sg, i) => i === 0 || i === segsRaw.length - 1 ||
+      (Number(sg[1]) - Number(sg[0])) >= GEO_DERIVE_DEFAULTS.minLegMs);
     segs.forEach((sg, i) => {
       const a = Number(sg[0]), b = Number(sg[1]);
       if (!(a > 0 && b > a)) return;
