@@ -94,10 +94,15 @@ test.describe('month bars: the ruler and the shape', () => {
 
   test('a bar is always taller than it is wide, however few there are', async ({ page }) => {
     const r = await page.evaluate(async () => {
+      // AMENDED 2026-09-04 (10.4, design handoff). The 56px cap on the COLUMN
+      // is gone; the BAR is what is capped now (clamp per level), so the tile
+      // can be as wide as the track while the bar stays a bar. Measure the
+      // bar for "taller than wide" and the tile for the WCAG target.
       const shot = () => [...document.querySelectorAll('.tl-wbar-col')].map(c => {
-        const b = c.getBoundingClientRect();
+        const b = c.querySelector('.tl-wbar-stack').getBoundingClientRect();
+        const hit = c.querySelector('.tl-wbar-hit').getBoundingClientRect();
         const plot = c.querySelector('.tl-wbar-plot').getBoundingClientRect();
-        return { w: Math.round(b.width), plotH: Math.round(plot.height) };
+        return { w: Math.round(b.width), hitW: Math.round(hit.width), plotH: Math.round(plot.height) };
       });
       const month = shot();                       // four weekly bars
       _tlDrillTo('week', '2026-08-23');
@@ -115,8 +120,12 @@ test.describe('month bars: the ruler and the shape', () => {
     [...r.month, ...r.week, ...r.one].forEach(c => {
       expect(c.w).toBeLessThan(c.plotH);
       // And still a real target: WCAG 2.5.8's 24px minimum.
-      expect(c.w).toBeGreaterThanOrEqual(24);
+      expect(c.hitW).toBeGreaterThanOrEqual(24);
     });
+    // The clamp ceilings: 46px for a week-of-the-month bar, 36px for a day.
+    r.month.forEach(c => expect(c.w).toBeLessThanOrEqual(46));
+    r.one.forEach(c => expect(c.w).toBeLessThanOrEqual(46));
+    r.week.forEach(c => expect(c.w).toBeLessThanOrEqual(36));
   });
 
   test('the unanswered badge never leaves the chart', async ({ page }) => {
@@ -571,7 +580,9 @@ test.describe('month bars: the page', () => {
       const cols = [...bars.querySelectorAll('.tl-wbar-col')];
       return {
         n: cols.length,
-        labels: cols.map(c => c.querySelector('.tl-wbar-dow').textContent),
+        // firstChild: the label's own text, without the › chevron span that
+        // follows it on an openable column.
+        labels: cols.map(c => c.querySelector('.tl-wbar-dow').firstChild.textContent),
         amts: cols.map(c => c.querySelector('.tl-wbar-amt').textContent +
                             c.querySelector('.tl-wbar-sub').textContent),
         opens: cols.map(c => c.querySelector('.tl-wbar-hit').getAttribute('onclick')),
@@ -580,7 +591,9 @@ test.describe('month bars: the page', () => {
     });
     expect(r.n).toBe(4);
     // A month runs left to right, and the eye is being asked to read a trend.
-    expect(r.labels).toEqual(['8/2', '8/9', '8/16', '8/23']);
+    // AMENDED 2026-09-04 (10.4, design handoff): a RANGE, not a start date. A
+    // bare "8/23" under a bar covering seven days read as one day's total.
+    expect(r.labels).toEqual(['2\u20138', '9\u201315', '16\u201322', '23\u201329']);
     expect(r.amts).toEqual(['24h22m', '26h35m', '7h18m', '39h27m']);
     // 40 hours is the line that changes what somebody does next at this zoom,
     // the way 8 hours is at the week's.
@@ -588,6 +601,31 @@ test.describe('month bars: the page', () => {
     // A bar goes DOWN a level now, instead of opening an accordion below.
     r.opens.forEach(o => expect(o).toContain("_tlDrillTo('week'"));
     expect(r.opens[3]).toContain('2026-08-23');
+  });
+
+  // Design handoff 2026-09-04: "a month column must derive its totals from
+  // the weeks it drills into, never carry its own roll-up." It already does
+  // (_tlMonthBarsHtml folds each week's rows), and this pins it: the number
+  // under the bar is the number at the top of the week it opens.
+  test('a month column says exactly what the week it opens says', async ({ page }) => {
+    const r = await page.evaluate(async () => {
+      const col = [...document.querySelectorAll('.tl-drill-body .tl-wbar-col')][3];
+      const under = col.querySelector('.tl-wbar-amt').textContent + ' ' + col.querySelector('.tl-wbar-sub').textContent;
+      col.querySelector('.tl-wbar-hit').click();
+      await new Promise(r2 => setTimeout(r2, 50));
+      return { under: under.trim(), head: document.querySelector('.tl-monav-tot').textContent.trim(),
+               level: _tlDrill.level };
+    });
+    expect(r.level).toBe('week');
+    expect(r.under).toBe('39h 27m');
+    expect(r.head).toBe('39h 27m');
+  });
+
+  test('week labels are ranges, and a week across a month boundary names both months', async ({ page }) => {
+    const r = await page.evaluate(() => [
+      _tlWeekRangeLabel('2026-08-23'), _tlWeekRangeLabel('2026-08-30'), _tlWeekRangeLabel('2026-02-01'),
+      _tlWeekRangeLabel('junk'), _tlWeekRangeLabel(''), _tlWeekRangeLabel(null)]);
+    expect(r).toEqual(['23\u201329', 'Aug 30\u2013Sep 5', '1\u20137', 'junk', '', '']);
   });
 
   test('the unanswered hole is flagged at month zoom too', async ({ page }) => {

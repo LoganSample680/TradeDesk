@@ -1374,12 +1374,21 @@ body.dark .cal-cell.other{background:var(--cream)}
    arrow produced the same motion for two things that mean nothing alike, and
    the one that changed what the chart IS was the one saying nothing.
    Marginally longer than the sideways .2s because it covers more ground. */
-@keyframes td-drill-down{from{opacity:0;transform:scale(.93)}to{opacity:1;transform:none}}
-@keyframes td-drill-up{from{opacity:0;transform:scale(1.05)}to{opacity:1;transform:none}}
+/* THE ZOOM COMES OUT OF THE BAR YOU TOUCHED (design handoff 2026-09-04).
+   It used to grow from a fixed 50% 40%, the middle of the card, whichever
+   column was tapped, so the drill read as a page swap. --tl-drill-x is the
+   tapped column's horizontal centre, written onto the body by the render
+   (_tlDrillXStyle); the Y origin is the baseline because that is where the
+   bars grow from. Coming back up anchors on the column being returned to and
+   rings it for one beat (td-seam) so the eye lands oriented. */
+@keyframes td-drill-down{from{opacity:0;transform:scale(.86)}to{opacity:1;transform:none}}
+@keyframes td-drill-up{from{opacity:0;transform:scale(1.08)}to{opacity:1;transform:none}}
 .tl-mbars-down{animation:td-drill-down .24s cubic-bezier(.22,1,.36,1) both;
-  transform-origin:50% 40%}
+  transform-origin:var(--tl-drill-x,50%) 100%}
 .tl-mbars-up{animation:td-drill-up .24s cubic-bezier(.22,1,.36,1) both;
-  transform-origin:50% 40%}
+  transform-origin:var(--tl-drill-x,50%) 100%}
+@keyframes td-seam{from{box-shadow:0 0 0 2px #B7CDED}to{box-shadow:0 0 0 2px rgba(183,205,237,0)}}
+.tl-wbar-seam{animation:td-seam 1s ease-out .12s both}
 /* ── Time log: the week bars ──
    Seven columns, one big number above them (the shared employee card), and a
    guide line at 8 hours so a long day is over a LINE and not merely taller
@@ -1396,24 +1405,40 @@ body.dark .cal-cell.other{background:var(--cream)}
    the guide line has to land on exactly the y the columns measure from and an
    absolutely positioned child offsets from the PADDING box. One number, two
    readers: hard-coding it twice is how the guide drifts off the bars. */
-.tl-wbar-wrap{--tl-pad:12px;position:relative;margin:2px 0 0;
+/* --tl-tile is the tile's own top padding (.tl-wbar-hit): the plot inside a
+   column starts that far below the wrap's padding box, so the overlays that
+   must land on the same y as the bars (guide, gridlines, floor) offset by it
+   too. One number, three readers. */
+.tl-wbar-wrap{--tl-pad:12px;--tl-tile:8px;position:relative;margin:2px 0 0;
   padding:var(--tl-pad) var(--tl-pad) 8px;
   background:var(--bg-card);border-radius:var(--r-lg);box-shadow:var(--shadow-card)}
 .tl-wbar-plotarea{position:absolute;left:var(--tl-pad);right:var(--tl-pad);
-  top:var(--tl-pad);height:92px;pointer-events:none;z-index:3}
+  top:calc(var(--tl-pad) + var(--tl-tile));height:158px;pointer-events:none;z-index:3}
+/* Gridlines and the floor sit BEHIND the bars (z 1; the guide stays above at
+   3). One continuous floor across all the columns, replacing the per-column
+   baseline the plot used to carry, so seven columns share one line. */
+.tl-wbar-grid{position:absolute;left:var(--tl-pad);right:var(--tl-pad);
+  top:calc(var(--tl-pad) + var(--tl-tile));height:158px;pointer-events:none;z-index:1}
+.tl-wbar-grid i{position:absolute;left:0;right:0;height:1px;background:#F0F2F6}
+.tl-wbar-grid b{position:absolute;left:0;right:0;bottom:0;height:2px;border-radius:1px;background:#E2E5EB}
+body.dark .tl-wbar-grid i{background:rgba(255,255,255,.06)}
+body.dark .tl-wbar-grid b{background:rgba(255,255,255,.14)}
 /* Dark enough to read on the blue of a tall bar AND on the page behind a short
    one, with a light halo either side so it never dissolves into the bar it is
    crossing. A pale line here was invisible on exactly the long days it exists
    to flag. */
 .tl-wbar-guide{position:absolute;left:0;right:0;height:0;display:block;
-  border-top:1px dashed var(--text3);
+  border-top:1.5px dashed var(--denim-edge,#B7CDED);
   box-shadow:0 1px 0 rgba(255,255,255,.55),0 -1px 0 rgba(255,255,255,.55)}
 body.dark .tl-wbar-guide{box-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,.45)}
-.tl-wbar-guide b{position:absolute;right:0;top:-13px;font-size:9px;font-weight:800;
-  color:var(--text3);background:var(--bg-card);padding:0 3px;line-height:12px}
+.tl-wbar-guide b{position:absolute;right:0;top:-9px;height:17px;padding:0 7px;
+  border-radius:9px;background:#EDF2FA;color:var(--text2);
+  font-size:9px;font-weight:800;line-height:17px;letter-spacing:.04em}
+body.dark .tl-wbar-guide b{background:rgba(183,205,237,.18);color:var(--text)}
 .tl-wbar{list-style:none;margin:0;padding:0;display:grid;
-  grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;position:relative;z-index:2;
+  grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;position:relative;z-index:2;
   justify-items:center}
+.tl-wbar.tl-wbar-dense{gap:1px}
 /* A month with one week gave that week the whole page and it read as a block,
    not a bar (owner 2026-08-30: "one week looks awful"). The TRACK still splits
    evenly so every column keeps the same ruler; the bar inside it is capped and
@@ -1426,15 +1451,23 @@ body.dark .tl-wbar-guide{box-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,
    weeks, four weeks and seven days now all look like the same object, and the
    seven-day week is unchanged because its tracks were already narrower than
    this. */
-.tl-wbar-col{min-width:0;justify-self:center;width:100%;max-width:56px}
+/* The 56px column cap is gone: the BAR is capped now, with clamp() per level
+   (below), so the track can be as wide as the tile it lives in while one
+   week and seven days still draw the same object. */
+.tl-wbar-col{min-width:0;justify-self:center;width:100%}
 .tl-wbar-hit{display:flex;flex-direction:column;align-items:stretch;width:100%;min-width:0;
-  background:none;border:0;padding:0;margin:0;font-family:inherit;cursor:pointer}
+  background:none;border:0;padding:var(--tl-tile) 2px 9px;margin:0;font-family:inherit;cursor:pointer}
 /* The column the bar grows inside. Height is fixed so every day is measured
    against the same ruler; the bar itself is a percentage of it. A BASELINE,
    not a filled track: a full-height grey box on a day with nothing logged read
    heavier than the real bars beside it, which is backwards. */
-.tl-wbar-plot{position:relative;height:92px;display:flex;align-items:flex-end;
-  box-shadow:inset 0 -2px 0 var(--line-2)}
+/* 158px, in three places that must move together: this, .tl-wbar-plotarea,
+   .tl-wbar-grid, and _TL_BAR_H in js/timelog.js. Fixed at every width on
+   purpose: a chart that grows with the viewport makes the same week look like
+   a different week on a different device. */
+.tl-wbar-plot{position:relative;height:158px;display:flex;align-items:flex-end;justify-content:center}
+.tl-wbar-week .tl-wbar-stack{width:clamp(13px,68%,36px)}
+.tl-wbar-month .tl-wbar-stack{width:clamp(16px,62%,46px)}
 /* The bars grow out of the baseline instead of appearing at full height.
    scaleY from the bottom, not a height transition: §8.5 bans animating height,
    and scaling the stack takes its segments with it, which is what a stacked
@@ -1446,7 +1479,7 @@ body.dark .tl-wbar-guide{box-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,
    and the sequence past that is stagger, not duration. */
 @keyframes td-bar-rise{from{transform:scaleY(0)}to{transform:scaleY(1)}}
 .tl-wbar-stack{display:flex;flex-direction:column;width:100%;overflow:hidden;
-  border-radius:6px 6px 3px 3px;min-height:3px;transform-origin:bottom;
+  border-radius:11px 11px 5px 5px;min-height:4px;transform-origin:bottom;
   animation:td-bar-rise .34s cubic-bezier(.22,1,.36,1) both}
 /* Staggered left to right so the chart reads as filling in rather than
    flashing. Small enough that the last column still lands inside §8.4's
@@ -1467,8 +1500,8 @@ body.dark .tl-wbar-guide{box-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,
    show. This is vestibular, not taste. */
 @media (prefers-reduced-motion:reduce){
   .tl-wbar-stack,.tl-mbars-back,.tl-mbars-fwd,
-  .tl-mbars-down,.tl-mbars-up{animation:none}
-  .tl-monav-btn{transition:none}
+  .tl-mbars-down,.tl-mbars-up,.tl-wbar-seam{animation:none}
+  .tl-monav-btn,.tl-wbar-hit{transition:none}
 }
 .tl-wbar-seg{display:block;width:100%;min-height:2px}
 /* Whose week this is. Sits between the back link and the stepper because that
@@ -1483,7 +1516,7 @@ body.dark .tl-wbar-guide{box-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,
    label under it, an hours line under that. What it promises is what arrives,
    so the swap reads as the same object resolving rather than one thing being
    replaced by another. */
-.tl-skel-bar{display:block;width:100%;border-radius:6px 6px 3px 3px}
+.tl-skel-bar{display:block;width:100%;border-radius:11px 11px 5px 5px}
 .tl-skel-lbl{display:block;height:11px;width:62%;margin:6px auto 0}
 .tl-skel-amt{display:block;height:11px;width:80%;margin:4px auto 0}
 .tl-skel-btn{display:block;width:44px;height:44px;border-radius:11px;flex-shrink:0}
@@ -1505,39 +1538,67 @@ body.dark .tl-wbar-guide{box-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,
    move. That is the badge below, and it is why it is a number and not the
    words "tap for details": a label tells, and telling is the thing the owner
    has cut three times today. */
+/* Directional: light from the upper-left, cast down and to the right, so the
+   bar is a raised object and not a printed region. The tile under it does the
+   hover work now, so the bar itself no longer changes on hover. */
 .tl-wbar-stack{position:relative;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 1px 2px rgba(17,24,39,.18)}
-.tl-wbar-hit:hover .tl-wbar-stack{
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 2px 5px rgba(17,24,39,.26)}
+  box-shadow:inset 0 1.5px 0 rgba(255,255,255,.55),inset 1.5px 0 0 rgba(255,255,255,.16),
+    inset 0 -10px 14px rgba(17,24,39,.14),
+    1px 1px 2px rgba(17,24,39,.11),4px 5px 10px rgba(17,24,39,.15),9px 13px 24px rgba(17,24,39,.10)}
 body.dark .tl-wbar-stack{
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 1px 2px rgba(0,0,0,.5)}
-body.dark .tl-wbar-hit:hover .tl-wbar-stack{
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.26),0 2px 5px rgba(0,0,0,.6)}
+  box-shadow:inset 0 1.5px 0 rgba(255,255,255,.16),inset 1.5px 0 0 rgba(255,255,255,.26),
+    inset 0 -10px 14px rgba(0,0,0,.3),
+    1px 1px 2px rgba(0,0,0,.5),4px 5px 10px rgba(0,0,0,.5),9px 13px 24px rgba(0,0,0,.5)}
 /* The count of places actually stopped, printed on the bar it belongs to.
    ABSOLUTE, not a flex item: as a flex item it would eat height out of the
    segments and the bar would stop being an honest measurement of minutes.
    A white pill so it reads on any bucket colour without needing a per-colour
    rule, and aria-hidden in the markup because the button's label already says
    "8 stops" in words. */
-.tl-wbar-n{position:absolute;left:50%;bottom:3px;transform:translateX(-50%);
-  font-style:normal;font-size:10px;font-weight:900;line-height:15px;
-  min-width:15px;height:15px;padding:0 4px;border-radius:8px;text-align:center;
-  background:rgba(255,255,255,.93);color:#111827;
+.tl-wbar-n{position:absolute;left:50%;bottom:5px;transform:translateX(-50%);
+  font-style:normal;font-size:10px;font-weight:900;line-height:16px;
+  min-width:16px;height:16px;padding:0 4px;border-radius:8px;text-align:center;
+  background:rgba(255,255,255,.94);color:#111827;
   font-variant-numeric:tabular-nums;pointer-events:none;
-  box-shadow:0 1px 1px rgba(17,24,39,.2)}
+  box-shadow:0 1px 2px rgba(17,24,39,.2)}
 /* The column has to LOOK pressable or the tap is a secret. The whole column
    lights up, not just the bar, so the target and the affordance are the same
    shape, and it presses on touch where there is no hover at all. */
-.tl-wbar-hit{border-radius:7px;transition:background .12s ease,transform .12s ease}
-.tl-wbar-hit:hover{background:var(--cream)}
-.tl-wbar-hit:active{background:var(--cream);transform:scale(.96)}
+/* A LIFTING TILE. The whole column is the target and the affordance: it lifts
+   on hover, presses on touch, and a column with nothing in it does neither and
+   says so with its cursor, so the affordance never lies. */
+.tl-wbar-hit{border-radius:13px;
+  transition:background .16s ease,box-shadow .16s ease,transform .16s cubic-bezier(.22,1,.36,1)}
+.tl-wbar-hit:hover{background:#FAFBFC;
+  box-shadow:0 6px 16px rgba(27,22,18,.09),0 0 0 1px var(--line);transform:translateY(-3px)}
+.tl-wbar-hit:active{transform:translateY(0) scale(.97);
+  box-shadow:0 1px 3px rgba(27,22,18,.10),0 0 0 1px var(--line)}
+body.dark .tl-wbar-hit:hover{background:rgba(255,255,255,.04)}
 .tl-wbar-hit:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.tl-wbar-col.tl-wbar-none .tl-wbar-hit{cursor:default}
+.tl-wbar-col.tl-wbar-none .tl-wbar-hit:hover,.tl-wbar-col.tl-wbar-none .tl-wbar-hit:active{
+  background:none;box-shadow:none;transform:none}
+/* The persistent "these open" cue, in the app's own action colour. Hover does
+   not exist on the phone, which is the device that matters here; this does. */
+.tl-wbar-go{font:800 13px/1 var(--font-ui,inherit);color:var(--blue);margin-left:1px}
+/* The key, quiet: it is a legend, not data. */
+.tl-wbar-key{display:flex;flex-wrap:wrap;gap:2px 9px;margin-top:12px;padding-top:10px;
+  border-top:1px solid #EEF0F4;font-size:9px;font-weight:700;letter-spacing:.02em;color:var(--text3)}
+.tl-wbar-key span{display:inline-flex;align-items:center;gap:4px}
+.tl-wbar-key i{display:inline-block;width:7px;height:7px;border-radius:2px}
+body.dark .tl-wbar-key{border-top-color:rgba(255,255,255,.08)}
 .tl-wbar-share{display:block;margin:10px auto 0;padding:0 12px;height:34px;
   border-radius:9px;border:1.5px solid var(--line-2);background:var(--bg-card);
   color:var(--text);font-family:inherit;font-size:12px;font-weight:800;cursor:pointer;
   display:flex;align-items:center;gap:6px}
 .tl-wbar-share:hover{border-color:var(--ink)}
-.tl-wbar-dow{font-size:11px;font-weight:800;color:var(--text2);margin-top:6px;line-height:1.1}
+/* Fixed min-height per level so a two-line range like "Aug 30–Sep 5" can wrap
+   without pushing that one column's amounts down and breaking the shared
+   baseline. */
+.tl-wbar-dow{font-size:11px;font-weight:800;color:var(--text2);margin-top:6px;line-height:1.18;
+  text-wrap:balance;min-height:14px}
+.tl-wbar-month .tl-wbar-dow{min-height:26px}
+.tl-wbar-col.tl-wbar-none .tl-wbar-dow{color:var(--text3)}
 /* The height comparison, restated in words: a chart that only encodes hours as
    a height is unreadable to anyone who cannot judge one, and a short day must
    never be mistakable for a day that recorded nothing (1.4.1). */
@@ -1545,9 +1606,10 @@ body.dark .tl-wbar-hit:hover .tl-wbar-stack{
    ever abbreviated or clipped (owner 2026-08-30: "don't want hours cutting
    off"). Fixed line-heights so a day with no minutes part still leaves the
    same vertical space and the seven columns stay bottom-aligned. */
-.tl-wbar-amt{font-size:11px;font-weight:800;color:var(--text);margin-top:3px;
-  font-variant-numeric:tabular-nums;line-height:13px;height:13px;white-space:nowrap}
-.tl-wbar-sub{font-size:9.5px;font-weight:700;color:var(--text3);
+.tl-wbar-amt{font-family:var(--font-display);font-size:14px;font-weight:900;color:var(--text);
+  margin-top:4px;letter-spacing:-.3px;
+  font-variant-numeric:tabular-nums;line-height:16px;height:16px;white-space:nowrap}
+.tl-wbar-sub{font-size:9.5px;font-weight:800;color:var(--text3);
   font-variant-numeric:tabular-nums;line-height:12px;height:12px;white-space:nowrap}
 
 .tl-wbar-col.tl-wbar-none .tl-wbar-amt{font-weight:700;color:var(--text3)}
@@ -1563,9 +1625,10 @@ body.dark .tl-wbar-hit:hover .tl-wbar-stack{
    half-descender the font reserves and never uses here. */
 .tl-wbar-q{position:absolute;left:50%;transform:translateX(-50%);
   box-sizing:border-box;padding-top:5px;
-  font-style:normal;font-size:10px;font-weight:900;line-height:1;z-index:3;
-  width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-  background:var(--amber-lt);color:var(--amber);border:1px solid var(--amber)}
+  font-style:normal;font-size:11px;font-weight:900;line-height:1;z-index:3;
+  width:19px;height:19px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  background:var(--amber-lt);color:var(--amber);border:1.5px solid var(--amber);
+  box-shadow:0 1px 3px rgba(112,64,0,.24)}
 /* ── Mileage: trip rows ── */
 .mil-day-trip{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line)}
 .mil-day-trip:last-child{border-bottom:none}

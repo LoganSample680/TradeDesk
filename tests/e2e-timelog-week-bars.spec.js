@@ -93,7 +93,9 @@ test.describe('week bars: markup', () => {
 
   test('seven columns, one per calendar day, in calendar order', async ({ page }) => {
     const r = await page.evaluate(() => ({
-      dows: [...document.querySelectorAll('.tl-wbar-dow')].map(el => el.textContent),
+      // firstChild: the label's own text, without the › chevron that follows
+      // it on an openable column.
+      dows: [...document.querySelectorAll('.tl-wbar-dow')].map(el => el.firstChild.textContent),
       cols: document.querySelectorAll('.tl-wbar-col').length,
     }));
     expect(r.cols).toBe(7);
@@ -111,9 +113,9 @@ test.describe('week bars: markup', () => {
     });
     // Same ruler for every day.
     expect(new Set(r.map(x => x.plot)).size).toBe(1);
-    // Nothing logged Sun and Mon.
-    expect(r[0].bar).toBeLessThanOrEqual(3);
-    expect(r[1].bar).toBeLessThanOrEqual(3);
+    // Nothing logged Sun and Mon: the 4px min-height baseline and nothing more.
+    expect(r[0].bar).toBeLessThanOrEqual(4);
+    expect(r[1].bar).toBeLessThanOrEqual(4);
     // Fri (11h54) is the tallest and still has headroom under the ceiling.
     const bars = r.map(x => x.bar);
     expect(Math.max(...bars)).toBe(r[5].bar);
@@ -202,13 +204,19 @@ test.describe('week bars: markup', () => {
         // The bar goes DOWN a level now, to that day, instead of switching a
         // chip in a picker that no longer exists.
         drills: (b.getAttribute('onclick') || '').includes("_tlDrillTo('day'"),
+        empty: b.closest('.tl-wbar-col').classList.contains('tl-wbar-none'),
+        disabled: b.getAttribute('aria-disabled') === 'true',
         w: Math.round(b.getBoundingClientRect().width),
         h: Math.round(b.getBoundingClientRect().height),
       })));
     r.forEach(b => {
       expect(b.tag).toBe('BUTTON');
       expect(b.type).toBe('button');
-      expect(b.drills).toBe(true);
+      // AMENDED 2026-09-04 (10.4, design handoff): a column with no minutes
+      // does NOTHING when tapped. No click, no chevron, no haptic, and it says
+      // so, so the affordance never lies. Every column with hours still drills.
+      expect(b.drills).toBe(!b.empty);
+      expect(b.disabled).toBe(b.empty);
       // WCAG 2.5.8: 24px minimum target, both axes.
       expect(b.w).toBeGreaterThanOrEqual(24);
       expect(b.h).toBeGreaterThanOrEqual(24);
@@ -216,6 +224,124 @@ test.describe('week bars: markup', () => {
     });
     expect(r[0].aria).toContain('nothing logged');
     expect(r[3].aria).toContain('unaccounted');
+  });
+
+  // ── The 2026-09-04 design handoff ───────────────────────────────────────
+  test.describe('bars as doors', () => {
+    test('158px in three places, and they agree', async ({ page }) => {
+      const r = await page.evaluate(() => ({
+        js: _TL_BAR_H,
+        plot: Math.round(document.querySelector('.tl-wbar-plot').getBoundingClientRect().height),
+        area: Math.round(document.querySelector('.tl-wbar-plotarea').getBoundingClientRect().height),
+        grid: Math.round(document.querySelector('.tl-wbar-grid').getBoundingClientRect().height),
+        // The guide overlay and the bars share a top edge, tile padding included.
+        top: Math.round(document.querySelector('.tl-wbar-plotarea').getBoundingClientRect().top),
+        plotTop: Math.round(document.querySelector('.tl-wbar-plot').getBoundingClientRect().top),
+      }));
+      expect([r.js, r.plot, r.area, r.grid]).toEqual([158, 158, 158, 158]);
+      expect(Math.abs(r.top - r.plotTop)).toBeLessThanOrEqual(1);
+    });
+
+    test('gridlines and one shared floor sit behind the bars; the per-column baseline is gone', async ({ page }) => {
+      const r = await page.evaluate(() => ({
+        lines: document.querySelectorAll('.tl-wbar-grid i').length,
+        floor: document.querySelectorAll('.tl-wbar-grid b').length,
+        z: getComputedStyle(document.querySelector('.tl-wbar-grid')).zIndex,
+        guideZ: getComputedStyle(document.querySelector('.tl-wbar-plotarea')).zIndex,
+        plotShadow: getComputedStyle(document.querySelector('.tl-wbar-plot')).boxShadow,
+      }));
+      expect(r.lines).toBe(3);
+      expect(r.floor).toBe(1);
+      expect(Number(r.z)).toBeLessThan(Number(r.guideZ));
+      expect(r.plotShadow).toBe('none');
+    });
+
+    test('a chevron marks exactly the columns that open', async ({ page }) => {
+      const r = await page.evaluate(() => [...document.querySelectorAll('.tl-wbar-col')].map(c => ({
+        empty: c.classList.contains('tl-wbar-none'),
+        go: !!c.querySelector('.tl-wbar-go'),
+        cursor: getComputedStyle(c.querySelector('.tl-wbar-hit')).cursor,
+      })));
+      r.forEach(c => {
+        expect(c.go).toBe(!c.empty);
+        expect(c.cursor).toBe(c.empty ? 'default' : 'pointer');
+      });
+      expect(r.filter(c => c.go).length).toBe(5);
+    });
+
+    test('the key under the chart lists only the buckets on it, from _TL_BUCKETS', async ({ page }) => {
+      const r = await page.evaluate(() => ({
+        key: [...document.querySelectorAll('.tl-wbar-key span')].map(s => s.textContent.trim()),
+        all: _TL_BUCKETS.map(b => b.label),
+      }));
+      expect(r.key.length).toBeGreaterThan(0);
+      r.key.forEach(k => expect(r.all).toContain(k));
+    });
+
+    test('the zoom comes out of the column you tapped, and coming back rings it', async ({ page }) => {
+      const r = await page.evaluate(async () => {
+        const felt = [];
+        const saved = window._tdHaptic; window._tdHaptic = k => felt.push(k);
+        try {
+          const cols = [...document.querySelectorAll('.tl-wbar-col')];
+          const thu = cols[4];                     // Thursday, an openable column
+          thu.querySelector('.tl-wbar-hit').click();
+          await new Promise(r2 => setTimeout(r2, 50));
+          const body = document.querySelector('.tl-drill-body');
+          const down = { level: _tlDrill.level, x: body.style.getPropertyValue('--tl-drill-x'),
+                         cls: body.className };
+          _tlDrillUp();
+          await new Promise(r2 => setTimeout(r2, 50));
+          const body2 = document.querySelector('.tl-drill-body');
+          const seam = [...document.querySelectorAll('.tl-wbar-col')].map(c => !!c.querySelector('.tl-wbar-seam'));
+          const up = { level: _tlDrill.level, x: body2.style.getPropertyValue('--tl-drill-x'), cls: body2.className, seam };
+          // A sideways step anchors nothing and is a tick.
+          _tlDrillStep(-1, _tlLastRows);
+          await new Promise(r2 => setTimeout(r2, 50));
+          const side = { x: document.querySelector('.tl-drill-body').style.getPropertyValue('--tl-drill-x') };
+          return { down, up, side, felt };
+        } finally { window._tdHaptic = saved; }
+      });
+      expect(r.down.level).toBe('day');
+      expect(r.down.cls).toContain('tl-mbars-down');
+      // Thursday is the 5th of 7: its centre is (4 + .5) / 7.
+      expect(parseFloat(r.down.x)).toBeCloseTo(64.29, 1);
+      expect(r.up.level).toBe('week');
+      expect(r.up.cls).toContain('tl-mbars-up');
+      expect(parseFloat(r.up.x)).toBeCloseTo(64.29, 1);
+      expect(r.up.seam).toEqual([false, false, false, false, true, false, false]);
+      expect(r.side.x).toBe('');
+      expect(r.felt).toEqual(['tap', 'tick', 'tick']);
+    });
+
+    test('an empty column is silent: no haptic, no move', async ({ page }) => {
+      const r = await page.evaluate(async () => {
+        const felt = [];
+        const saved = window._tdHaptic; window._tdHaptic = k => felt.push(k);
+        try {
+          document.querySelectorAll('.tl-wbar-col')[0].querySelector('.tl-wbar-hit').click();   // Sunday, nothing logged
+          await new Promise(r2 => setTimeout(r2, 50));
+          return { level: _tlDrill.level, felt };
+        } finally { window._tdHaptic = saved; }
+      });
+      expect(r.level).toBe('week');
+      expect(r.felt).toEqual([]);
+    });
+
+    test('the origin helpers never throw on junk', async ({ page }) => {
+      const r = await page.evaluate(() => {
+        const out = [];
+        for (const x of [null, undefined, {}, { closest: () => null }, document.body]) {
+          try { _tlDrillFrom(x); out.push('ok'); } catch (e) { out.push('THREW'); }
+        }
+        _tlDrillX = NaN; out.push(_tlDrillXStyle());
+        _tlDrillX = 150; out.push(_tlDrillXStyle());
+        _tlDrillX = 50; out.push(_tlDrillXStyle());
+        _tlDrillX = null;
+        return out;
+      });
+      expect(r).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', '', '', ' style="--tl-drill-x:50.00%"']);
+    });
   });
 
   test('the chart is an ordered list of days', async ({ page }) => {

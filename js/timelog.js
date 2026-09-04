@@ -1539,7 +1539,11 @@ function _tlBarAmtParts(min){
   // A clean hour says one thing, not "8h" over a lonely "0m".
   return {top:h+'h',sub:m?m+'m':''};
 }
-const _TL_BAR_H=92;             // px of drawable column, matches .tl-wbar-plot
+// 158px (design handoff 2026-09-04), and it lives in THREE places that must
+// move together: this, .tl-wbar-plot and .tl-wbar-plotarea in index.html. If
+// the plotarea and the plot disagree, the guide line stops landing on the
+// bars. tests/e2e-timelog-week-bars.spec.js reads all three.
+const _TL_BAR_H=158;            // px of drawable column, matches .tl-wbar-plot
 const _TL_BAR_GUIDE_MIN=8*60;   // the 8-hour line
 const _TL_BAR_FLOOR=4*60;       // a light week still shows its shape
 // Bar heights need a ceiling to scale against. Scaling to the tallest day alone
@@ -1681,9 +1685,21 @@ function _tlBarsHtml(groups,opts){
     // on the guide's own "40h" label (§15.1: nothing overlaps). Past 86% it
     // rides just inside the bar's top edge instead, where the amber ring keeps
     // it readable against any segment colour.
-    // 78, not 86: the badge is drawn ABOVE its anchor, so the anchor plus its
-    // own 15px has to fit inside the 92px plot. 86% left it five pixels out.
-    const qb=Math.min(h,78);
+    // 88 at 158px (was 78 at 92px): the badge is drawn ABOVE its anchor, so
+    // the anchor plus its own height has to fit inside the plot. Its 19px is
+    // 12% of 158, so 88 sits it just under the top of a tall bar as intended.
+    let qb=Math.min(h,88);
+    // AND NEVER ON THE GUIDE'S OWN LABEL (§15.1, tests/e2e-timelog-month
+    // "the unanswered badge never leaves the chart"). The label is a pill
+    // riding the guide line now, and a bar that tops out near the guide would
+    // put the badge straight through it. Inside that band the badge drops to
+    // just under the line, in the bar, where the amber ring keeps it legible.
+    // Only the LAST column can reach the pill (it sits at right:0), and the
+    // badge is a band from qb up to qb plus its own ~12%, the pill a band
+    // ~6% either side of the line. Elsewhere the badge stays where the rule
+    // above put it, just over the top of its bar.
+    const gPct=(gMin>0&&gMin<=ceil)?gMin/ceil*100:-1;
+    if(gPct>=0&&i===list.length-1&&qb+12>gPct-6&&qb<gPct+6)qb=Math.max(0,gPct-20);
     const q=gapMin
       ?'<i class="tl-wbar-q" style="bottom:calc('+qb.toFixed(2)+'% + 3px)" '+
         'title="'+escHtml(fm(gapMin)+' unaccounted, tap to answer')+'">?</i>'
@@ -1695,14 +1711,23 @@ function _tlBarsHtml(groups,opts){
     const stopTag=(stops>0&&h>=26)
       ?'<i class="tl-wbar-n" aria-hidden="true">'+stops+'</i>'
       :'';
+    // OPENABLE means it has minutes and a level below it. Only then does the
+    // column get a click, a chevron and a pointer; an empty column does
+    // nothing at all (no haptic either, it never reaches _tlDrillTo), so the
+    // affordance never lies. The click is prefixed with _tlDrillFrom(this) so
+    // the zoom that follows can grow out of THIS column.
+    const opens=!!(e.min&&g.onclick&&o.level!=='day');
+    const seam=!!(g.key&&_tlSeamKey&&String(g.key)===String(_tlSeamKey));
+    if(seam)_tlDrillX=((i+0.5)/list.length*100);
     return '<li class="tl-wbar-col'+(e.min?'':' tl-wbar-none')+'">'+
-      '<button type="button" class="tl-wbar-hit" aria-label="'+escHtml(aria+
-          (stops?', '+stops+' stop'+(stops===1?'':'s'):''))+'" '+
-        'onclick="'+escHtml(String(g.onclick||''))+'">'+
+      '<button type="button" class="tl-wbar-hit'+(seam?' tl-wbar-seam':'')+'" aria-label="'+escHtml(aria+
+          (stops?', '+stops+' stop'+(stops===1?'':'s'):''))+'"'+
+        (opens?' onclick="_tlDrillFrom(this);'+escHtml(String(g.onclick))+'"':' aria-disabled="true"')+'>'+
         '<span class="tl-wbar-plot">'+q+
           '<span class="tl-wbar-stack" style="height:'+h.toFixed(2)+'%">'+segs+stopTag+'</span>'+
         '</span>'+
-        '<span class="tl-wbar-dow">'+escHtml(String(g.label||''))+'</span>'+
+        '<span class="tl-wbar-dow">'+escHtml(String(g.label||''))+
+          (opens?'<span class="tl-wbar-go" aria-hidden="true">\u203a</span>':'')+'</span>'+
         // The hours are TEXT under every column, so the comparison the chart
         // makes by height is also there in words (1.4.1), and a column that is
         // simply short is never mistaken for one that failed to record.
@@ -1715,13 +1740,48 @@ function _tlBarsHtml(groups,opts){
       '</button>'+
     '</li>';
   }).join('');
-  return '<div class="tl-wbar-wrap">'+
+  // Behind the bars: three gridlines and one shared floor. In front: the guide.
+  const grid='<div class="tl-wbar-grid" aria-hidden="true">'+
+    '<i style="bottom:25%"></i><i style="bottom:50%"></i><i style="bottom:75%"></i><b></b></div>';
+  // The key, only for the buckets actually on screen. Read from _TL_BUCKETS,
+  // never retyped, so a renamed bucket renames here too.
+  const present=_TL_BUCKETS.filter(b=>folds.some(f=>(f[b.k]||0)>0));
+  const key=present.length?'<div class="tl-wbar-key">'+present.map(b=>
+    '<span><i style="background:'+b.c+'"></i>'+escHtml(b.label)+'</span>').join('')+'</div>':'';
+  return '<div class="tl-wbar-wrap'+(o.level?' tl-wbar-'+String(o.level):'')+'">'+
+    grid+
     '<div class="tl-wbar-plotarea">'+guide+'</div>'+
-    '<ol class="tl-wbar" style="grid-template-columns:repeat('+list.length+',minmax(0,1fr))">'+
+    '<ol class="tl-wbar'+(list.length>8?' tl-wbar-dense':'')+'" style="grid-template-columns:repeat('+list.length+',minmax(0,1fr))">'+
       cols+
     '</ol>'+
+    key+
     (o.share||'')+
   '</div>';
+}
+// ── The zoom comes out of the bar you touched ──────────────────────────────
+// Design handoff 2026-09-04. Transient and presentational, never on _tlDrill:
+// the tapped column's horizontal centre (for --tl-drill-x) and, coming back
+// up, the key of the column being returned to (for the td-seam ring).
+let _tlDrillX=null;
+let _tlSeamKey=null;
+function _tlDrillFrom(el){
+  try{
+    const li=el&&el.closest?el.closest('li'):null;
+    const ol=li&&li.parentElement;
+    if(!ol)return;
+    const kids=[...ol.children];
+    const idx=kids.indexOf(li);
+    if(idx>=0&&kids.length)_tlDrillX=((idx+0.5)/kids.length*100);
+  }catch(_e){}
+}
+// The style attribute the render writes onto .tl-drill-body. Empty when no
+// column anchored this move (an arrow, a first paint), so the origin falls
+// back to the centre.
+function _tlDrillXStyle(){
+  // typeof, not Number(): Number(null) is 0, which would anchor every arrow
+  // step on the left edge instead of falling back to the centre.
+  const x=(typeof _tlDrillX==='number')?_tlDrillX:NaN;
+  return Number.isFinite(x)&&x>=0&&x<=100?' style="--tl-drill-x:'+x.toFixed(2)+'%"':'';
 }
 // A WEEK: seven days, guided at 8 hours.
 function _tlWeekBarsHtml(weekRows,days,cacheKey,opts){
@@ -1744,11 +1804,12 @@ function _tlWeekBarsHtml(weekRows,days,cacheKey,opts){
     'onclick="_tlShareWeekAt(\''+escHtml(String(cacheKey))+'\')">'+
     (typeof svgIcon==='function'?svgIcon('⬆',{size:12}):'')+' Send this week</button>';
   return _tlBarsHtml(dayList.map((d,i)=>({
+    key:d,
     label:(typeof _tlDayShort==='function'?_tlDayShort(d):d).slice(0,1),
     aria:(typeof _tlDayFullLabel==='function'?_tlDayFullLabel(d):d),
     rows:byDay[d]||[],
     onclick:'_tlDrillTo(\'day\',\''+String(d)+'\')'
-  })),{guideMin:_TL_BAR_GUIDE_MIN,guideLabel:'8h',share});
+  })),{guideMin:_TL_BAR_GUIDE_MIN,guideLabel:'8h',share,level:'week'});
 }
 // A MONTH: one bar per week, guided at 40 hours.
 //
@@ -1792,9 +1853,11 @@ function _tlMonthBarsHtml(monthRows,mo,scope,uid){
   // it. Restricting the characters is both safe and idempotent.
   const su=String(uid||'').replace(/[^0-9a-zA-Z_-]/g,'');
   return _tlBarsHtml(weeks.map(wk=>({
-    // "Aug 23" reads as the week it starts, which is how a contractor names a
-    // week out loud. The full label is on the accordion this scrolls to.
-    label:_tlWeekShortLabel(wk),
+    key:wk,
+    // A RANGE, not a start date (design handoff 2026-09-04). A bare "8/23"
+    // under a bar covering seven days read as one day's total; "23–29" is a
+    // span, which is what the bar is. Crossing a month it says both months.
+    label:_tlWeekRangeLabel(wk),
     aria:(typeof _tlWeekLabel==='function'?_tlWeekLabel(wk):wk),
     rows:byWeek[wk],
     onclick:su?('_tlDrillPerson(\''+su+'\',\''+String(wk)+'\')')
@@ -1807,7 +1870,17 @@ function _tlMonthBarsHtml(monthRows,mo,scope,uid){
     // The cost is deliberate: a light month draws short bars, which is the
     // true answer, and the hours are printed under every column anyway.
   })),{guideMin:_TL_MONTH_GUIDE_MIN,guideLabel:'40h',share,
-      floorMin:_TL_MONTH_FLOOR});
+      floorMin:_TL_MONTH_FLOOR,level:'month'});
+}
+// "23–29" inside one month, "Aug 30–Sep 5" across a boundary. No spaces round
+// the dash so a six-column month still fits a 320px phone.
+function _tlWeekRangeLabel(wk){
+  const s=new Date(String(wk||'')+'T00:00:00');
+  if(isNaN(s.getTime()))return String(wk||'');
+  const e=new Date(s);e.setDate(e.getDate()+6);
+  if(s.getMonth()===e.getMonth())return s.getDate()+'\u2013'+e.getDate();
+  const f=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  return f(s)+'\u2013'+f(e);
 }
 // "8/23" for a weekly column: short enough for six columns on a 320px phone,
 // and unambiguous because the month picker above already names the month.
@@ -1953,6 +2026,9 @@ function _tlWeekMonth(wk){
 }
 function _tlDrillTo(level,key,dir){
   const uid=_tlDrill.uid,was=_tlDrill.level;
+  // Captured BEFORE the reassignment below wipes them: coming back up rings
+  // the column you came out of, and that column's key is the level you left.
+  const wasDay=_tlDrill.day,wasWk=_tlDrill.wk;
   if(level==='month')_tlDrill={level:'month',mo:key||_tlDrill.mo,wk:null,day:null,uid:null};
   // The week and month a key sits in are DERIVED from the key, never carried
   // over from whatever happened to be on screen. Owner, 2026-08-31: "week day
@@ -1974,6 +2050,18 @@ function _tlDrillTo(level,key,dir){
   // caller asked for even when the level happens to be the same.
   _tlMonthDir=(dir==='fwd'||dir==='back')?dir
     :(b>a)?'down':(b<a)?'up':'';
+  // Coming back UP zooms into the column you came out of and rings it. The
+  // key of that column is the level you just left; the render finds it and
+  // sets --tl-drill-x from its index. Down keeps the x _tlDrillFrom already
+  // recorded from the tap; sideways anchors nothing and falls back to centre.
+  if(_tlMonthDir==='up'){_tlSeamKey=(was==='day')?wasDay:(was==='week')?wasWk:null;_tlDrillX=null;}
+  else _tlSeamKey=null;
+  if(_tlMonthDir!=='down'&&_tlMonthDir!=='up')_tlDrillX=null;
+  // The feel lands on the same frame as the zoom (design handoff 2026-09-04),
+  // through the app's one hook: 'tap' for a drill (a control committed),
+  // 'tick' for sideways or up (a small thing happened). A disabled arrow or an
+  // empty column never reaches here, so they stay silent.
+  try{if(typeof _tdHaptic==='function')_tdHaptic(_tlMonthDir==='down'?'tap':'tick');}catch(_e){}
   // FROM MEMORY, and this is the whole of the second defect. Owner,
   // 2026-08-31: "like almost 2 seconds to change a day, thats awful." Every
   // drill tap came back through renderTimeLog, which opens by AWAITING
@@ -2942,7 +3030,7 @@ async function renderTimeLog(opts){
         backLabel:'All crew',share:false}):null;
       if(lv){
         el.innerHTML=lv.head+
-          '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+'">'+lv.body+'</div>';
+          '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+'"'+_tlDrillXStyle()+'>'+lv.body+'</div>';
         if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
         return;
       }
@@ -2958,7 +3046,7 @@ async function renderTimeLog(opts){
       // other: without the class, the one screen you return to was the one
       // screen that just appeared.
       '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+
-        '" style="margin-top:8px">'+_tlEmpAccHtml(selMo,teamRows,cid,selfUid,selMo)+'</div>';
+        '" style="margin-top:8px'+(_tlDrillXStyle()?';'+_tlDrillXStyle().slice(8,-1):'')+'">'+_tlEmpAccHtml(selMo,teamRows,cid,selfUid,selMo)+'</div>';
     if(shareEl){shareEl.style.display='none';shareEl.innerHTML='';}
     return;
   }
@@ -2972,7 +3060,7 @@ async function renderTimeLog(opts){
   // The slide direction rides as a class so the animation is pure CSS and the
   // JS never touches a style property (§8.5).
   el.innerHTML=head+
-    '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+'">'+body+'</div>';
+    '<div class="tl-drill-body'+(_tlMonthDir?' tl-mbars-'+_tlMonthDir:'')+'"'+_tlDrillXStyle()+'>'+body+'</div>';
   // The page-level Share button is GONE. It said "this calendar week", which
   // on a screen that now carries Send this month and Send this week (the one
   // you are actually looking at) was a third Send button meaning a fourth
