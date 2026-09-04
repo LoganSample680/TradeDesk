@@ -368,7 +368,37 @@ function geoDeriveDay(input) {
       break;
     }
 
-    const endFix = at(j.endTs) || _gdSettledFixAfter(fixes, j.endTs, nextStart, opts.parkedFixMaxMs, opts.maxFixAccM);
+    // WHERE HE STOPPED BEATS WHERE HE LAST WAS ON THE ROAD (owner 2026-09-04:
+    // "none of these drives show the immediate drives he's had from court to
+    // Oakley when there was no core motion flip in between").
+    //
+    // Jack's 31 August, and the reason a 4.4 mile run to his dad's shop came
+    // out as a seven-hour drive. He left home at 07:11 and the tape flipped
+    // out of automotive at 07:50:34. Two fixes sit near that flip:
+    //
+    //     07:48:18   3,190 ft from the shop   still on the road
+    //     07:53:19      30 ft from the shop   parked at the shop
+    //
+    // `at()` takes the nearest fix in TIME and does not care which side of the
+    // flip it falls on, so the road fix won by 29 seconds, resolved to no
+    // fence, and the arrival was discarded as a personal stop. The chain then
+    // rolled on until 14:08, swallowing a real 37-minute visit to the shop
+    // inside a row labelled "drive". `_gdSettledFixAfter`, written for exactly
+    // this, never ran, because `at()` had already returned something.
+    //
+    // The two candidates were never equivalent. A fix BEFORE the end of a
+    // drive is by definition still moving; a fix AFTER the flip, with no
+    // automotive between it and the flip (nextStart bounds that), is where the
+    // truck came to rest, however late the phone got round to reporting it.
+    // His drive pings land every five minutes, so the arrival fix is routinely
+    // later than the last road fix is early, and the road fix wins almost
+    // every time.
+    //
+    // So the arrival is resolved the same way the departure already is:
+    // _gdParkedFixBefore names the origin from where the truck SAT, and this
+    // is its mirror. `at()` stays as the fallback for a journey with nothing
+    // after it at all.
+    const endFix = _gdSettledFixAfter(fixes, j.endTs, nextStart, opts.parkedFixMaxMs, opts.maxFixAccM) || at(j.endTs);
     const toFence = fenceOf(endFix);
     const autoMs = j.endTs - j.startTs;
 

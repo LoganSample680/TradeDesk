@@ -1080,6 +1080,74 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── The arrival fix beats the last road fix ─────────────────────────────
+  // Jack's 31 August, from his own rows. He left home at 07:11 and the tape
+  // flipped out of automotive at 07:50:34. His drive pings land every five
+  // minutes, so the two fixes either side of that flip were:
+  //
+  //     07:48:18   3,190 ft from the shop   still on the road
+  //     07:53:19      30 ft from the shop   parked at the shop
+  //
+  // The road fix was 29 seconds nearer in time, `at()` took it, it matched no
+  // fence, and the arrival was filed as a personal stop. The chain rolled on
+  // to 14:08 and the rail drew "DRIVE TIME, 1200 SW Oakley Ave, 7:09 AM to
+  // 2:08 PM", with a real 37-minute visit to the shop buried inside it
+  // (owner: "none of these drives show the immediate drives he's had from
+  // court to Oakley when there was no core motion flip in between").
+  test.describe('the arrival fix beats the last road fix', () => {
+    const JHOME = { id: 'place-1787361092921077', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
+    const DADS  = { id: 'place-1788216906515011', kind: 'shop', name: '1200 SW Oakley Ave', lat: 39.0456577, lng: -95.7151106 };
+    const JF = { lat: JHOME.lat, lng: JHOME.lng };
+    const DF = { lat: DADS.lat, lng: DADS.lng };
+    // 3,190 ft short of the shop: his real 07:48 fix, on Oakley heading north.
+    const NEARLY = { lat: DADS.lat - 0.00876, lng: DADS.lng };
+    const JFENCES = [JHOME, DADS];
+
+    // The exact shape: flip out of automotive at :50:34, road fix at :48:18,
+    // parked fix at :53:19. One leg, home to the shop, and a dwell there.
+    test('a direct run home to the shop is one leg, not a swallowed stop', async () => {
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(7, 11, 28), 'automotive'), mo(T(7, 50, 34), 'onFoot'),
+                    mo(T(15, 0), 'automotive'), mo(T(15, 25), 'onFoot')];
+      const fixes = [fix(T(7, 0), JF), fix(T(7, 11, 28), JF), fix(T(7, 23), NEARLY),
+                     fix(T(7, 48, 18), NEARLY), fix(T(7, 53, 19), DF), fix(T(8, 30), DF),
+                     fix(T(15, 0), DF), fix(T(15, 25), JF), fix(T(16, 30), JF)];
+      const r = await run(page, base({ tape, fixes, fences: JFENCES, nowMs: T(18, 0) }));
+      expect(r.legs.map(l => [l.from.name, l.to.name, l.stops])).toEqual([
+        ['7402 SW 22nd Ct', '1200 SW Oakley Ave', 0],
+        ['1200 SW Oakley Ave', '7402 SW 22nd Ct', 0]]);
+      // The visit is a shop row of its own, not minutes inside a drive.
+      expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)]))
+        .toEqual([['shop', '12:50', '20:00']]);   // starts at the FLIP, not at the late fix
+      // And the leg stops where he stopped, not where he last was on the road.
+      expect(r.legs[0].endTs).toBe(T(7, 50, 34));
+    });
+
+    // The guard on the old behaviour: with ONLY the road fix, there is no
+    // arrival to find and the journey is still an unresolved stop. This is
+    // what makes the test above about the fix that exists, not about loosening
+    // the fence.
+    test('with no fix after the flip at all, nothing is invented', async () => {
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(7, 11, 28), 'automotive'), mo(T(7, 50, 34), 'onFoot')];
+      const fixes = [fix(T(7, 0), JF), fix(T(7, 11, 28), JF), fix(T(7, 48, 18), NEARLY)];
+      const r = await run(page, base({ tape, fixes, fences: JFENCES, nowMs: T(9, 0) }));
+      expect(r.legs).toEqual([]);
+      expect(r.dwells).toEqual([]);
+    });
+
+    // A fix BEFORE the flip is still moving even when it is very close in
+    // time, so it must not win over a later parked one. One second before
+    // versus twelve minutes after: the parked fix still names the fence.
+    test('one second before the flip does not beat twelve minutes after', async () => {
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(7, 11, 28), 'automotive'), mo(T(7, 50, 34), 'onFoot'),
+                    mo(T(15, 0), 'automotive'), mo(T(15, 25), 'onFoot')];
+      const fixes = [fix(T(7, 0), JF), fix(T(7, 11, 28), JF), fix(T(7, 50, 33), NEARLY),
+                     fix(T(8, 2, 30), DF), fix(T(15, 0), DF), fix(T(15, 25), JF), fix(T(16, 30), JF)];
+      const r = await run(page, base({ tape, fixes, fences: JFENCES, nowMs: T(18, 0) }));
+      expect(r.legs.map(l => [l.from.name, l.to.name])).toEqual([
+        ['7402 SW 22nd Ct', '1200 SW Oakley Ave'], ['1200 SW Oakley Ave', '7402 SW 22nd Ct']]);
+    });
+  });
+
   test('no console errors across the deriver', async () => {
     assertNoErrors(page, 'geo-derive');
   });
