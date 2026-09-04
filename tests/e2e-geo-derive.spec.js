@@ -1275,6 +1275,92 @@ test.describe('geo-derive: the day deriver', () => {
       expect(rows.td_mileage[0].calc_method).toContain('derived-');
     });
 
+    // ── A stop must be still ────────────────────────────────────────────
+    // Owner 2026-09-04: "no way somebody ever hops from a drive to a damn
+    // bike lol."
+    //
+    // His 3 September, 2:43 to 2:53pm: the tape flipped automotive, cycling,
+    // automotive six times while the phone moved 6,309 ft and then 6,469 ft
+    // between the supposed stops, about 40 mph. Splitting on every gap drew
+    // six one-minute drives and five stops out of one continuous drive.
+    test.describe('a stop must be still', () => {
+      const FAR1 = { lat: 39.0369, lng: -95.7051 };   // ~1.2 mi along the road
+      const FAR2 = { lat: 39.0255, lng: -95.6876 };   // ~1.2 mi further
+
+      test('a flip-flop with the truck still moving is one drive, not six', async () => {
+        // automotive, cycling, automotive, cycling, automotive: three segments
+        // separated by gaps of 20 and 30 seconds, with real movement across
+        // both.
+        const t = [mo(T(11, 0), 'onFoot'),
+          mo(T(14, 44), 'automotive'), mo(T(14, 47, 20), 'cycling'),
+          mo(T(14, 47, 40), 'automotive'), mo(T(14, 49, 10), 'cycling'),
+          mo(T(14, 49, 40), 'automotive'), mo(T(14, 56), 'onFoot')];
+        const f = [fix(T(14, 44, 5), { lat: DS.lat, lng: DS.lng }),
+          fix(T(14, 47, 10), FAR1), fix(T(14, 47, 50), FAR2),
+          fix(T(14, 49), FAR2), fix(T(14, 49, 50), { lat: JH.lat, lng: JH.lng }),
+          fix(T(14, 56, 5), { lat: JH.lat, lng: JH.lng }), fix(T(15, 30), { lat: JH.lat, lng: JH.lng })];
+        const rows = await page.evaluate((inp) => {
+          const r = geoDeriveDay(inp);
+          return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+        }, base({ tape: t, fixes: f, fences: F, nowMs: T(18, 0) }));
+        const drives = rows.job_time_entries.filter(x => x.source === 'drive');
+        const stops = rows.job_time_entries.filter(x => x.source === 'unsaved');
+        expect(drives.length, 'one drive all along').toBe(1);
+        expect(stops.length, 'and no stop invented from a bad label').toBe(0);
+        // It absorbs the gaps, so the minutes and the span it prints agree.
+        expect([drives[0].arrived_at.slice(11, 16), drives[0].departed_at.slice(11, 16)]).toEqual(['19:44', '19:56']);
+        expect(drives[0].minutes).toBe(12);
+      });
+
+      test('a real stop in one spot still splits the drive', async () => {
+        // Same shape, but the fixes on both sides of the gap sit together.
+        const HERE = { lat: 39.0369, lng: -95.7051 };
+        const t = [mo(T(11, 0), 'onFoot'),
+          mo(T(14, 44), 'automotive'), mo(T(14, 47), 'onFoot'),
+          mo(T(14, 48), 'automotive'), mo(T(14, 56), 'onFoot')];
+        const f = [fix(T(14, 44, 5), { lat: DS.lat, lng: DS.lng }),
+          fix(T(14, 46, 50), HERE), fix(T(14, 48, 10), HERE),
+          fix(T(14, 56, 5), { lat: JH.lat, lng: JH.lng }), fix(T(15, 30), { lat: JH.lat, lng: JH.lng })];
+        const rows = await page.evaluate((inp) => {
+          const r = geoDeriveDay(inp);
+          return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+        }, base({ tape: t, fixes: f, fences: F, nowMs: T(18, 0) }));
+        expect(rows.job_time_entries.filter(x => x.source === 'drive').length).toBe(2);
+        expect(rows.job_time_entries.filter(x => x.source === 'unsaved').length).toBe(1);
+      });
+
+      test('a long gap is a stop even with no fix anywhere near it', async () => {
+        // Nobody drives for an hour with the tape saying cycling. Ten minutes
+        // is stillEndMs, the same number the journey builder parks a truck on.
+        const t = [mo(T(11, 0), 'onFoot'),
+          mo(T(12, 4), 'automotive'), mo(T(12, 18), 'cycling'),
+          mo(T(13, 30), 'automotive'), mo(T(13, 45), 'onFoot')];
+        const f = [fix(T(12, 4, 5), { lat: DS.lat, lng: DS.lng }),
+          fix(T(13, 45, 5), { lat: JH.lat, lng: JH.lng }), fix(T(14, 30), { lat: JH.lat, lng: JH.lng })];
+        const rows = await page.evaluate((inp) => {
+          const r = geoDeriveDay(inp);
+          return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+        }, base({ tape: t, fixes: f, fences: F, nowMs: T(18, 0) }));
+        expect(rows.job_time_entries.filter(x => x.source === 'drive').length).toBe(2);
+        expect(rows.job_time_entries.filter(x => x.source === 'unsaved')
+          .map(x => x.minutes)).toEqual([72]);
+      });
+
+      test('a short gap with no fixes at all is not a stop: nothing is invented', async () => {
+        const t = [mo(T(11, 0), 'onFoot'),
+          mo(T(12, 4), 'automotive'), mo(T(12, 18), 'cycling'),
+          mo(T(12, 20), 'automotive'), mo(T(12, 40), 'onFoot')];
+        const f = [fix(T(12, 4, 5), { lat: DS.lat, lng: DS.lng }),
+          fix(T(12, 40, 5), { lat: JH.lat, lng: JH.lng }), fix(T(13, 30), { lat: JH.lat, lng: JH.lng })];
+        const rows = await page.evaluate((inp) => {
+          const r = geoDeriveDay(inp);
+          return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+        }, base({ tape: t, fixes: f, fences: F, nowMs: T(18, 0) }));
+        expect(rows.job_time_entries.filter(x => x.source === 'drive').length).toBe(1);
+        expect(rows.job_time_entries.filter(x => x.source === 'unsaved').length).toBe(0);
+      });
+    });
+
     // ── His 9:17, the one that was mashed against the shop ──────────────
     // Owner 2026-09-04: "917 am job site mashed against the shop with no
     // drive between it, why?"

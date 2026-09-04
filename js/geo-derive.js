@@ -53,6 +53,10 @@
 //      wheels-turning minutes) and a dwell opens at the destination.
 //   5. Destination not saved: the journey is PENDING. Nothing is written. The
 //      next journey continues the chain under the FIRST journey's id.
+//   5b. A gap between two automotive segments is a STOP only if the phone can
+//      be shown to have stayed put across it: the gap is stillEndMs or longer,
+//      or the fixes bracketing it are within a fence radius of each other.
+//      Otherwise it was one drive and the classifier was wrong.
 //   6. A pending chain that later reaches a saved fence collapses to ONE leg:
 //      first saved origin to this fence, direct-route miles, drive minutes =
 //      the automotive segments only (a stop is not drive time).
@@ -413,7 +417,6 @@ function geoDeriveDay(input) {
       }
       chain = { id: j.id, originFence: fromFence, startTs: j.startTs, autoMs: 0, stops: 0, drives: [] };
     }
-    chain.autoMs += autoMs;
     // EACH DRIVE KEEPS ITS OWN SPAN (owner 2026-09-04). A chain through
     // unsaved stops is not one drive: his 1 September ran shop, four
     // customers, home, and the tape flipped onFoot or still at every one of
@@ -422,7 +425,35 @@ function geoDeriveDay(input) {
     // the direct route (rule 6, and his rule that an unsaved address is never
     // a mileage endpoint); only the TIME stops pretending he was driving the
     // whole while.
-    chain.drives.push([j.startTs, j.endTs, autoMs]);
+    //
+    // A STOP MUST BE STILL (owner 2026-09-04: "no way somebody ever hops from
+    // a drive to a damn bike"). Splitting on every gap between automotive
+    // segments trusted the classifier absolutely, and it should not be
+    // trusted: his 3 September, 2:43 to 2:53pm, flipped automotive, cycling,
+    // automotive six times while the phone moved 6,309 ft and then 6,469 ft
+    // between the supposed stops, about 40 mph. He never got out of the truck,
+    // and the day drew six one-minute drives and five stops.
+    //
+    // So a gap splits the drive only when the phone can be SHOWN to have
+    // stayed put across it, the same corroboration _gdStayedPut already
+    // demands of a departure. No evidence means no stop, which is the posture
+    // of the rest of this file. Deliberately not a speed floor: a gap with one
+    // fix or none has no speed to measure, and a four-minute crawl through a
+    // lot at 3 mph is still a drive.
+    const prevSeg = chain.drives[chain.drives.length - 1];
+    const merge = prevSeg && !_gdStopProved(fixes, prevSeg[1], j.startTs, opts);
+    if (merge) {
+      // One drive all along. It absorbs the gap, so the row's minutes and the
+      // span it prints stay the same number, and the stop it was going to be
+      // is taken back off the count.
+      chain.autoMs += j.endTs - prevSeg[1];
+      prevSeg[1] = j.endTs;
+      prevSeg[2] = prevSeg[1] - prevSeg[0];
+      if (chain.stops > 0) chain.stops -= 1;
+    } else {
+      chain.autoMs += autoMs;
+      chain.drives.push([j.startTs, j.endTs, autoMs]);
+    }
 
     if (!toFence) {
       // Pending: a personal stop, or somewhere not saved. Held, not written.
@@ -646,6 +677,33 @@ function _gdStayedPut(fixes, fence, sinceTs, nowMs, opts) {
     if (++outside >= 2) return false;
   }
   return proof;
+}
+
+// Did he actually STOP between these two driving segments?
+//
+// Two ways to prove it, and both use a number this file already has rather
+// than inventing a third:
+//   - the gap is stillEndMs or longer, the same "a truck that sits this long
+//     has parked" threshold the journey builder uses; or
+//   - the last fix before it and the first fix after it are within radiusFt of
+//     each other, which is what "the same place" means everywhere else here.
+// Neither provable means it was one drive: this never invents a stop.
+function _gdStopProved(fixes, gapStart, gapEnd, opts) {
+  if (!(gapEnd > gapStart)) return false;
+  const still = (opts && Number(opts.stillEndMs) > 0) ? Number(opts.stillEndMs) : GEO_DERIVE_DEFAULTS.stillEndMs;
+  if (gapEnd - gapStart >= still) return true;
+  const r = (opts && Number(opts.radiusFt) > 0) ? Number(opts.radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
+  const maxAcc = (opts && Number(opts.maxFixAccM) > 0) ? Number(opts.maxFixAccM) : GEO_DERIVE_DEFAULTS.maxFixAccM;
+  const ok = f => f && f.lat != null && f.lng != null && typeof f.ts === 'number' &&
+    (f.acc == null || Number(f.acc) <= maxAcc);
+  let before = null, after = null;
+  for (const f of (fixes || [])) {
+    if (!ok(f)) continue;
+    if (f.ts <= gapStart) { if (!before || f.ts > before.ts) before = f; }
+    else if (f.ts >= gapEnd) { if (!after || f.ts < after.ts) after = f; }
+  }
+  if (!before || !after) return false;
+  return _gdMiles(before, after) * 5280 <= r;
 }
 
 function _gdPresence(fixes, fence, radiusFt, maxAccM) {
