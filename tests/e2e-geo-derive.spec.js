@@ -1339,13 +1339,19 @@ test.describe('geo-derive: the day deriver', () => {
 
       test('a real stop in one spot still splits the drive', async () => {
         // Same shape, but the fixes on both sides of the gap sit together.
+        //
+        // The gap is THREE minutes, widened from one on 2026-09-04. A
+        // one-minute gap is below the stop floor now (see "a one-minute gap
+        // is not a stop" below), so the old fixture was testing the split
+        // through a case that no longer writes a row at all. A real stop is
+        // what this test is about, so the fixture is a real stop.
         const HERE = { lat: 39.0369, lng: -95.7051 };
         const t = [mo(T(11, 0), 'onFoot'),
           mo(T(14, 44), 'automotive'), mo(T(14, 47), 'onFoot'),
-          mo(T(14, 48), 'automotive'), mo(T(14, 56), 'onFoot')];
+          mo(T(14, 50), 'automotive'), mo(T(14, 58), 'onFoot')];
         const f = [fix(T(14, 44, 5), { lat: DS.lat, lng: DS.lng }),
-          fix(T(14, 46, 50), HERE), fix(T(14, 48, 10), HERE),
-          fix(T(14, 56, 5), { lat: JH.lat, lng: JH.lng }), fix(T(15, 30), { lat: JH.lat, lng: JH.lng })];
+          fix(T(14, 46, 50), HERE), fix(T(14, 50, 10), HERE),
+          fix(T(14, 58, 5), { lat: JH.lat, lng: JH.lng }), fix(T(15, 30), { lat: JH.lat, lng: JH.lng })];
         const rows = await page.evaluate((inp) => {
           const r = geoDeriveDay(inp);
           return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
@@ -1384,6 +1390,38 @@ test.describe('geo-derive: the day deriver', () => {
         expect(rows.job_time_entries.filter(x => x.source === 'drive').length).toBe(1);
         expect(rows.job_time_entries.filter(x => x.source === 'unsaved').length).toBe(0);
       });
+    });
+
+    // A MINUTE IS NOT A STOP (owner 2026-09-04). His 3 September drew a
+    // 14:47-14:48 unsaved stop with ONE fix in it, zero feet of movement, and
+    // its two bracketing fixes at the identical coordinate: the tail of the
+    // automotive/cycling flip-flop, where one gap happened to have both ends
+    // in the same spot so "a stop must be still" said stop.
+    test('a one-minute gap is not a stop; two minutes is', async () => {
+      const HERE = { lat: 39.0369, lng: -95.7051 };
+      const day = (gapMin) => {
+        const out = T(14, 44 + 6 + gapMin);
+        return {
+          tape: [mo(T(11, 0), 'onFoot'),
+            mo(T(14, 44), 'automotive'), mo(T(14, 50), 'onFoot'),
+            mo(T(14, 50 + gapMin), 'automotive'), mo(T(14, 58 + gapMin), 'onFoot')],
+          fixes: [fix(T(14, 44, 5), { lat: DS.lat, lng: DS.lng }),
+            fix(T(14, 49, 50), HERE), fix(T(14, 50 + gapMin, 10), HERE),
+            fix(T(14, 58 + gapMin, 5), { lat: JH.lat, lng: JH.lng }),
+            fix(T(15, 30), { lat: JH.lat, lng: JH.lng })],
+        };
+      };
+      const rowsFor = async (gapMin) => page.evaluate((inp) => {
+        const r = geoDeriveDay(inp);
+        return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+      }, base(Object.assign({ fences: F, nowMs: T(18, 0) }, day(gapMin))));
+      const one = await rowsFor(1);
+      expect(one.job_time_entries.filter(t => t.source === 'unsaved'), 'a minute is noise').toEqual([]);
+      const two = await rowsFor(2);
+      expect(two.job_time_entries.filter(t => t.source === 'unsaved').length, 'two minutes is a stop').toBe(1);
+      // The drives on both sides are untouched either way.
+      expect(one.job_time_entries.filter(t => t.source === 'drive').length).toBe(2);
+      expect(two.job_time_entries.filter(t => t.source === 'drive').length).toBe(2);
     });
 
     // ── His 9:17, the one that was mashed against the shop ──────────────

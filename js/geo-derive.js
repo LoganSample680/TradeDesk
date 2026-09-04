@@ -1068,9 +1068,22 @@ function geoDeriveRows(result, ids) {
     // No name and no address, deliberately: an unsaved stop is never given
     // one. What it carries is that it happened, when, and for how long, which
     // is what a stop count and a windshield-time number are made of.
+    // A MINUTE IS NOT A STOP (owner 2026-09-04, on his 3 September rail).
+    // The floor was 60s and it let one artifact through: 14:47 to 14:48, a
+    // single fix, zero feet of movement, and its two bracketing fixes at the
+    // identical coordinate. It is the tail of the automotive/cycling
+    // flip-flop, where one gap happened to have both ends in the same spot,
+    // so "a stop must be still" said stop. A one-minute stop proved by a
+    // single fix is noise.
+    //
+    // minLegMs, not a new number: it is already this file's "too short to be
+    // a thing" threshold for a leg, and it means the same here. The default
+    // rather than opts.minLegMs because geoDeriveRows is a pure shaper and
+    // takes no options; nothing overrides it today.
+    const stopMin = GEO_DERIVE_DEFAULTS.minLegMs;
     for (let i = 0; i + 1 < segs.length; i++) {
       const a = Number(segs[i][1]), b = Number(segs[i + 1][0]);
-      if (!(a > 0 && b - a >= 60000)) continue;
+      if (!(a > 0 && b - a >= stopMin)) continue;
       time.push({ contractor_user_id: cid, employee_user_id: uid, job_id: null,
         arrived_at: iso(a), departed_at: iso(b),
         minutes: Math.round((b - a) / 60000),
