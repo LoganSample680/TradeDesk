@@ -56,8 +56,10 @@
 //   6. A pending chain that later reaches a saved fence collapses to ONE leg:
 //      first saved origin to this fence, direct-route miles, drive minutes =
 //      the automotive segments only (a stop is not drive time).
-//   7. Same fence both ends (with or without personal stops between) is a
-//      round trip: no leg.
+//   7. Same fence both ends is a round trip: NO MILEAGE, ever. If a stop
+//      happened between them, the drive time rows are still written and the
+//      hole between them is an unsaved job site (owner 2026-09-04). A
+//      same-fence loop with no stop in it writes nothing at all.
 //   8. A chain still pending at the end of the day writes nothing. The manual
 //      clock covers it, and the blend already shows that remainder as Manual
 //      time.
@@ -432,10 +434,39 @@ function geoDeriveDay(input) {
     const collapsed = chain.stops > 0;
     const sameSpot = _gdSameFence(chain.originFence, toFence);
     const tooShort = !collapsed && autoMs < opts.minLegMs;
-    if (!sameSpot && !tooShort) {
+    // RULE 7 AMENDED (owner 2026-09-04: "917 am job site mashed against the
+    // shop with no drive between it, why?").
+    //
+    // Rule 7 exists so a round trip never fabricates a mileage row between two
+    // endpoints that are the same fence. That is still exactly right, and
+    // nothing below changes it. What was wrong was that it threw away the
+    // DRIVING too. His 1 September: out of his dad's shop at 9:17, thirty-one
+    // minutes and ten and a half miles of continuous breadcrumbs, an hour
+    // parked out there on foot, twenty-six minutes back, shop again at 11:20.
+    // Because both ends were the shop the whole leg was dropped, so the rail
+    // drew one flat "unsaved job site" over two hours and three minutes with
+    // two real drives buried inside it.
+    //
+    // A round trip THROUGH a stop now writes its drive time rows and leaves
+    // the hole between them for the clock-remainder rule to name, the same
+    // shape as any other unsaved stop. It writes NO mileage: the place he
+    // actually went was never saved, and an unsaved address is never a mileage
+    // endpoint ("we make no inferences here, this app was built to survive a
+    // IRS audit"). A same-fence loop with NO stop in it is still nothing at
+    // all, which is what rule 7 was written for.
+    //
+    // SCOPED TO A FENCE THAT IS NOT HIS HOUSE. Leaving work and coming back to
+    // work is work, whatever was in the middle. Leaving the HOUSE and coming
+    // back to the house with nothing saved between is Jack's 6:30 gym run, and
+    // there is no evidence anywhere in the tape that says otherwise: rule 12
+    // keeps the house off the clock and "we make no inferences here."
+    const roundTrip = sameSpot && collapsed && !_gdIsHouse(chain.originFence, fences, opts.radiusFt);
+    if ((!sameSpot || roundTrip) && !tooShort) {
       const a = chain.originFence, b = toFence;
       let miles, milesFrom;
-      if (collapsed) {
+      if (roundTrip) {
+        miles = 0; milesFrom = 'none';
+      } else if (collapsed) {
         const d = directMiles ? Number(directMiles(a, b)) : NaN;
         miles = d > 0 ? d : _gdMiles(a, b);
         milesFrom = d > 0 ? 'routed' : 'straight';
@@ -449,7 +480,7 @@ function geoDeriveDay(input) {
         startTs: chain.startTs, endTs: j.endTs,
         minutes: Math.round(chain.autoMs / 60000),
         miles: Math.round(miles * 10) / 10, milesFrom,
-        collapsed, stops: chain.stops,
+        collapsed, stops: chain.stops, roundTrip,
         // The driving segments, in order. One entry unless a stop split them.
         drives: chain.drives.slice(),
         // What the phone actually saw between the two flips, for the map and
@@ -765,6 +796,13 @@ function _gdShopIsHome(fence, fences, radiusFt) {
   return (fences || []).some(f => f && String(f.kind) === 'home_office' && f.lat != null && f.lng != null &&
     _gdMiles(fence, f) * 5280 <= r);
 }
+// Somebody's own address: a home office, or a shop sharing its spot with one.
+// Two rules already needed this exact test (rule 11's "a day with no work in
+// it" and rule 7's round trip), so it is one function, not two spellings.
+function _gdIsHouse(fence, fences, radiusFt) {
+  if (!fence) return false;
+  return String(fence.kind) === 'home_office' || _gdShopIsHome(fence, fences, radiusFt);
+}
 // Rule 12: THE HOUSE IS NEVER ON THE CLOCK (owner 2026-09-04, naming what a
 // crew member's automatic day should hold: "all Jack should see automatic are
 // straight drives from his home office to his dads shop and back, that's really
@@ -830,8 +868,7 @@ function _gdEndOfDay(dwells, fences, opts, open, driving, legs) {
     // real shop does (owner rule: shop time always counts), so a day of shop,
     // house, shop is a working day and rule 10's "inside the working day the
     // house is a stop" applies to the middle of it.
-    const notHome = f => !!f && !(String(f.kind) === 'home_office' ||
-      (String(f.kind) === 'shop' && _gdShopIsHome(f, fences, opts.radiusFt)));
+    const notHome = f => !!f && !_gdIsHouse(f, fences, opts.radiusFt);
     const workLeg = (legs || []).some(l => l && (notHome(l.from) || notHome(l.to)));
     if (workLeg) return dwells;
     // Only a shop that is the house is left to cut: rule 12 already removed
@@ -952,6 +989,10 @@ function geoDeriveRows(result, ids) {
         dest_place: (i === segs.length - 1) ? (l.to.name || null) : null,
         client_key: segs.length > 1 ? (l.id + ':' + i) : l.id, source: 'drive' });
     });
+    // A round trip writes time but never mileage (rule 7 as amended): both of
+    // its endpoints are the same fence, and the place between them was never
+    // saved.
+    if (l.roundTrip) continue;
     miles.push({
       id: l.id, legKey: l.id, gps: true, date: result.day,
       from: l.from.addr || l.from.name || '', from_name: l.from.name || '',
