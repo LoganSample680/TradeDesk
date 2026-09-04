@@ -309,15 +309,34 @@ function _tlBlendManual(rows){
     //   app deleting proven work, which is the opposite of this rule's intent.
     //
     // A drive home is neither. It is a commute, it is not his dad's time, and
-    // it is the only thing the owner pointed at. A job site after the
-    // clock-out goes with it: this pass is what named those minutes in the
-    // first place, off a clock that has since ended, so it cannot keep
-    // claiming them.
+    // it is the only thing the owner pointed at.
+    //
+    // AND ONLY A DRIVE HOME (owner 2026-09-04, immediately after: "clock out
+    // could be done for the day but what if we have another automted drive
+    // after, from fence to fence we got more drive time and more time on
+    // site"). He is right and a blanket cut would have deleted it. Clocking
+    // out is not a promise never to work again: a man can knock off, get
+    // called back, and drive shop to client at six. That drive lands at a
+    // saved WORK fence and the visit after it is real work the phone watched,
+    // exactly like the client visit that outlives a clock.
+    //
+    // So the destination decides. Heading to the house, or to nowhere the
+    // business saved, is the commute. Heading anywhere else is going back to
+    // work, and it stands.
     const _cutoff=Math.max.apply(null,manual.map(m=>m.b));
+    const _homeNames=(typeof places!=='undefined'&&Array.isArray(places))
+      ? places.filter(p=>p&&String(p.kind)==='home_office'&&p.name)
+              .map(p=>String(p.name).trim().toLowerCase())
+      : [];
+    const _headingHome=r=>{
+      const d=String((r&&r.clientName)||'').trim().toLowerCase();
+      if(!d)return true;                       // nowhere saved: not a trip back to work
+      return _homeNames.indexOf(d)>=0;
+    };
     const _cuttable=r=>{
-      if(!r||r.source==='manual')return false;
-      if(r.rawSource==='site')return true;
-      return r.source==='auto'&&!!r.rawSource&&typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(r.rawSource);
+      if(!r||r.source!=='auto'||!r.rawSource)return false;
+      if(typeof _geoIsDriveSource!=='function'||!_geoIsDriveSource(r.rawSource))return false;
+      return _headingHome(r);
     };
     if(_cutoff>0){
       for(let i=list.length-1;i>=0;i--){

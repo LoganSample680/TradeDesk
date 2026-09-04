@@ -3402,6 +3402,13 @@ test.describe('timelog.js: exhaustive coverage', () => {
     // Date.now(), so the wall clock can never decide the outcome (§5.2.2).
     const rowsFor = (entries, manual) => page.evaluate(async ([es, ms]) => {
       const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+      const keepP = places.slice();
+      // The clock-out cutoff asks "is this drive heading home", and it answers
+      // by looking for a home_office in `places`. Without one seeded, nothing
+      // is ever the house and the cutoff can never fire.
+      places.length = 0;
+      places.push({ id: 'p-home', name: '7402 SW 22nd Ct', kind: 'home_office', lat: 39.0257, lon: -95.7939 });
+      places.push({ id: 'p-shop', name: '1200 SW Oakley Ave', kind: 'shop', lat: 39.0457, lon: -95.7151 });
       window.timeEntries = ms;
       const orig = window._fetchCrewLabor;
       window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
@@ -3411,10 +3418,11 @@ test.describe('timelog.js: exhaustive coverage', () => {
         return { paid: _tlPaidMin(day),
                  rows: day.map(r => ({ src: r.source, raw: r.rawSource || '', m: r.minutes,
                                        unpaid: !!r.unpaid, blended: r.blendedMin || 0,
-                                       detail: r.detail || '' })) };
+                                       detail: r.detail || '', end: r.endTime || '' })) };
       } finally {
         window._fetchCrewLabor = orig;
         window.timeEntries = keepT;
+        places.length = 0; keepP.forEach(p => places.push(p));
       }
     }, [entries, manual]);
 
@@ -3601,20 +3609,29 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // 7 of the 106 minutes it spanned were on the clock, so 7/106 of its 64.
       expect(drive.m).toBe(4);
       // And the row itself ends at the clock-out, not at 11:24.
-      const ends = await page.evaluate(async ([es, ms]) => {
-        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
-        window.timeEntries = ms;
-        const orig = window._fetchCrewLabor;
-        window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
-        try {
-          const day = (await _timeLogRows(null)).filter(r => r.date === '2026-09-01');
-          const d = day.find(r => r.rawSource === 'drive');
-          return d ? d.endTime : null;
-        } finally { window._fetchCrewLabor = orig; window.timeEntries = keepT; }
-      }, [[A('place', [8, 0], [9, 0], 60),
-           { employee_user_id: 'jack', minutes: 64, source: 'drive', dest_place: '7402 SW 22nd Ct',
-             arrived_at: at(9, 38), departed_at: at(11, 24) }], CLOCK([8, 0], [9, 45], 105)]);
-      expect(ends).toBe(at(9, 45));
+      expect(drive.end).toBe(at(9, 45));
+    });
+
+    // CLOCKING OUT IS NOT A PROMISE NEVER TO WORK AGAIN (owner 2026-09-04:
+    // "clock out could be done for the day but what if we have another
+    // automted drive after, from fence to fence we got more drive time and
+    // more time on site"). A man can knock off, get called back, and drive
+    // shop to client at six. That drive lands somewhere the business saved,
+    // and the visit after it is real work the phone watched.
+    test('a drive back to WORK after the clock-out stands, only the drive home is cut', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        { employee_user_id: 'jack', minutes: 20, source: 'drive', dest_place: '1200 SW Oakley Ave',
+          arrived_at: at(18, 0), departed_at: at(18, 20) },
+        A('place', [18, 20], [19, 0], 40),
+        { employee_user_id: 'jack', minutes: 25, source: 'drive', dest_place: '7402 SW 22nd Ct',
+          arrived_at: at(19, 0), departed_at: at(19, 25) },
+      ], CLOCK([8, 0], [16, 0], 480));
+      const drives = r.rows.filter(x => x.raw === 'drive');
+      expect(drives.length, 'the one to the shop lives, the one home does not').toBe(1);
+      expect(drives[0].m).toBe(20);
+      // And the visit it delivered him to is untouched.
+      expect(r.rows.filter(x => x.raw === 'place' && x.m === 40).length).toBe(1);
     });
 
     // A CLIENT VISIT IS NOT A COMMUTE. The rule the owner set on 2026-09-01,
@@ -3696,7 +3713,11 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // drive after clocking out normally does.
       const r = await rowsFor([A('place', [8, 0], [10, 0], 120),
                                { employee_user_id: 'jack', minutes: 30, source: 'drive',
-                                 dest_place: 'John Doe',
+                                 // HOME, not a client. A drive to a client after
+                                 // the clock-out is going back to work and stands
+                                 // (its own test above); only the run home is the
+                                 // commute this test is about.
+                                 dest_place: '7402 SW 22nd Ct',
                                  arrived_at: at(10, 0), departed_at: at(10, 30) }],
                               CLOCK([8, 0], [10, 0], 120));
       const man = r.rows.find(x => x.src === 'manual');
