@@ -3674,6 +3674,30 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(drive.end).toBe(at(9, 45));
     });
 
+    // THE REGRESSION GUARD. This exact case shipped broken for three commits
+    // on 2026-09-04. The cutoff asks "was he heading home" and answered it by
+    // reading the row's NAME: an unnamed drive was empty, and empty counted as
+    // "nowhere saved, cut it." Then unnamed drives were given the words
+    // "Destination not saved" and every one of them silently stopped being
+    // cuttable. Jack's 31 August ran 46 minutes past his 3:45pm clock-out and
+    // his day came out 614 paid against a 470-minute clock.
+    //
+    // The rule now reads destUnsaved, the raw fact on the row. A label must
+    // never decide a rule (same class as the 2026-08-29 split-bar bug).
+    test('a drive with no saved destination is still cut, whatever it is CALLED', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        // dest_place null: exactly what the deriver writes for a segment that
+        // ended at a stop nobody saved.
+        { employee_user_id: 'jack', minutes: 54, source: 'drive', dest_place: null,
+          arrived_at: at(9, 38), departed_at: at(10, 31) },
+      ], CLOCK([8, 0], [9, 45], 105));
+      const drive = r.rows.find(x => x.raw === 'drive');
+      expect(drive, 'the seven minutes he drove while on the clock').toBeTruthy();
+      expect(drive.end, 'cut at the clock-out, not at 10:31').toBe(at(9, 45));
+      expect(drive.m).toBeLessThan(54);
+    });
+
     // CLOCKING OUT IS NOT A PROMISE NEVER TO WORK AGAIN (owner 2026-09-04:
     // "clock out could be done for the day but what if we have another
     // automted drive after, from fence to fence we got more drive time and

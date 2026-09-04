@@ -333,8 +333,14 @@ function _tlBlendManual(rows){
               .map(p=>String(p.name).trim().toLowerCase())
       : [];
     const _headingHome=r=>{
+      // destUnsaved is the RAW fact (js/timelog.js _timeLogRows), not the
+      // label. Testing the label here is what broke this on 2026-09-04: an
+      // unnamed drive stopped reading as empty the moment it was given the
+      // words "Destination not saved", and every one of them stopped being
+      // cuttable.
+      if(r&&r.destUnsaved)return true;         // nowhere saved: not a trip back to work
       const d=String((r&&r.clientName)||'').trim().toLowerCase();
-      if(!d)return true;                       // nowhere saved: not a trip back to work
+      if(!d)return true;
       return _homeNames.indexOf(d)>=0;
     };
     const _cuttable=r=>{
@@ -610,7 +616,15 @@ async function _timeLogRows(sinceISO){
       // The server row id and its raw source, so a wrong GPS clock can be
       // corrected in place (owner rule 2026-08-24). rawSource is the raw
       // column, unlike `detail` which is the friendly label.
-      rawId:e.id!=null?e.id:null,rawSource:e.source||''
+      rawId:e.id!=null?e.id:null,rawSource:e.source||'',
+      // A RAW FACT, NOT THE LABEL. The clock-out cutoff asks "was he heading
+      // home" and used to answer it by looking at clientName, which was empty
+      // on a drive nobody could name. Naming that drive "Destination not
+      // saved" (owner 2026-09-04) silently un-cut every one of them: his 31
+      // August ran 46 minutes past a 3:45pm clock-out. Same class as the 2026
+      // -08-29 split-bar bug, a rule keyed on a friendly label, so the fix is
+      // the same: carry the fact on the row and test that.
+      destUnsaved:_unnamedDrive
     });
   });
   const _cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
