@@ -536,6 +536,31 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.open && r.open.kind).toBe('home_office');
     });
 
+    // Owner 2026-09-04, on his 31 August rail: two Office rows, 5:48 to 5:49
+    // and 5:49 to 6:00. He backgrounded the app and reopened it eleven seconds
+    // later. That is one sitting at the desk, and the rail drew two.
+    test('a blink between two app sessions is one Office row, not two', async () => {
+      const tape = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot'), mo(T(17, 0), 'driving'), mo(T(17, 16), 'onFoot')];
+      const fixes = [fix(T(9, 0, 5), SHOP), fix(T(9, 20, 5), DOE), fix(T(17, 0, 5), DOE), fix(T(17, 16, 5), HFIX), fix(T(18, 0), HFIX), fix(T(19, 30), HFIX), fix(T(21, 0), HFIX)];
+      const appEvents = [app(T(17, 48), 'active'), app(T(17, 49, 14), 'background'),
+        app(T(17, 49, 25), 'active'), app(T(18, 0), 'background')];
+      const r = await run(page, base({ tape, fixes, fences: F, appEvents }));
+      const office = r.dwells.filter(d => d.kind === 'office');
+      expect(office.map(d => [hm(d.startTs), hm(d.endTs)])).toEqual([['22:48', '23:00']]);
+      expect(office[0].minutes).toBe(12);
+    });
+
+    // But a real break between two sittings stays two rows: the glue is a
+    // blink, not a nap.
+    test('half an hour away from the desk is still two Office rows', async () => {
+      const tape = [mo(T(8, 0), 'onFoot'), mo(T(9, 0), 'driving'), mo(T(9, 20), 'onFoot'), mo(T(17, 0), 'driving'), mo(T(17, 16), 'onFoot')];
+      const fixes = [fix(T(9, 0, 5), SHOP), fix(T(9, 20, 5), DOE), fix(T(17, 0, 5), DOE), fix(T(17, 16, 5), HFIX), fix(T(18, 0), HFIX), fix(T(19, 30), HFIX), fix(T(21, 0), HFIX)];
+      const appEvents = [app(T(17, 30), 'active'), app(T(17, 45), 'background'),
+        app(T(18, 15), 'active'), app(T(18, 40), 'background')];
+      const r = await run(page, base({ tape, fixes, fences: F, appEvents }));
+      expect(r.dwells.filter(d => d.kind === 'office').length).toBe(2);
+    });
+
     // Regression (owner 2026-09-03). app-relaunch used to count as the app
     // being open. A relaunch is a new PROCESS, and iOS starts one on its own
     // for a geofence crossing, a significant-change wake or a silent push,

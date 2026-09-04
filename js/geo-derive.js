@@ -798,11 +798,18 @@ function _gdOffice(dwells, open, journeys, fixes, fences, appEvents, dayStart, d
       .concat(dwells.filter(d => _gdSameFence(d.fence, home)).map(d => [d.startTs, d.endTs]))
       .concat(open && _gdSameFence(open.fence, home) ? [[open.sinceTs, Math.min(nowMs, dayEnd)]] : []);
     let office = _gdIntersect(appOpen, presence);
-    // Merge touching or overlapping office spans.
+    // Merge touching, overlapping, or barely-separated office spans.
+    //
+    // Barely-separated matters (owner 2026-09-04, on his 31 August rail: two
+    // Office rows, 5:48 to 5:49 and 5:49 to 6:00). He backgrounded the app and
+    // reopened it eleven seconds later, which is one sitting at the desk, not
+    // two. A minute is the same floor the spans themselves are filtered on
+    // just below, so nothing survives here that would not survive there.
+    const GLUE = 60000;
     const merged = [];
     for (const sp of office) {
       const last = merged[merged.length - 1];
-      if (last && sp[0] <= last[1]) last[1] = Math.max(last[1], sp[1]); else merged.push(sp.slice());
+      if (last && sp[0] - last[1] <= GLUE) last[1] = Math.max(last[1], sp[1]); else merged.push(sp.slice());
     }
     office = merged.filter(([a, b]) => b - a >= 60000);
     if (!office.length) continue;

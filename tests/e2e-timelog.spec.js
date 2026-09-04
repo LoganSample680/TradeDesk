@@ -3698,6 +3698,62 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(drive.m).toBeLessThan(54);
     });
 
+    // Owner 2026-09-04, on his 31 August rail: a paid "Unsaved address" at
+    // 4:31pm against a 3:45pm clock-out, and 566 minutes paid on a
+    // 470-minute clock. The cutoff was written when an unsaved stop could
+    // only come from inside a running clock; the deriver writes them off the
+    // fences now.
+    test('an unsaved stop after the clock-out is dropped, and one straddling it is cut', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        { employee_user_id: 'jack', minutes: 30, source: 'unsaved', dest_place: null,
+          arrived_at: at(9, 30), departed_at: at(10, 0) },   // straddles 9:45
+        { employee_user_id: 'jack', minutes: 39, source: 'unsaved', dest_place: null,
+          arrived_at: at(16, 31), departed_at: at(17, 10) }, // wholly after
+      ], CLOCK([8, 0], [9, 45], 105));
+      const stops = r.rows.filter(x => x.raw === 'unsaved');
+      expect(stops.length, 'the late one is gone entirely').toBe(1);
+      expect(stops[0].end, 'and the straddler ends at the clock-out').toBe(at(9, 45));
+      expect(stops[0].m).toBeLessThan(30);
+    });
+
+    // A SAVED FENCE STILL OUTLIVES THE CLOCK. The 2026-09-01 rule ("the
+    // fences are what happened") is untouched: a shop or a client visit is
+    // evidence of work in its own right. Only a stop nobody saved depends on
+    // the clock to be work at all.
+    test('a saved place after the clock-out is untouched', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        A('place', [16, 0], [17, 0], 60),
+      ], CLOCK([8, 0], [9, 45], 105));
+      expect(r.rows.filter(x => x.raw === 'place' && x.m === 60).length).toBe(2);
+    });
+
+    // Owner 2026-09-04: two "What was this time?" rows on his 31 August, both
+    // after he had clocked out. The gap row asks about time the day has a
+    // claim on; once the clock is out there is nothing to ask.
+    test('no gap question after the clock-out', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        A('place', [12, 0], [13, 0], 60),      // clock ends 9:45, so this hole
+        A('place', [16, 0], [17, 0], 60),      // and this one are both past it
+      ], CLOCK([8, 0], [9, 45], 105));
+      // Inside the clock the remainder rule already names the time (it becomes
+      // an Unsaved address), so a gap can only ever fall outside the clock,
+      // and outside the clock there is nothing to ask about.
+      expect(r.rows.filter(x => x.raw === 'unaccounted').length).toBe(0);
+      // The two saved places still count, deliberately: a fence is evidence of
+      // work in its own right (2026-09-01). Only the QUESTION goes away.
+    });
+
+    test('a day with no clock at all keeps every gap: nothing said the day was over', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        A('place', [16, 0], [17, 0], 60),
+      ], []);
+      expect(r.rows.filter(x => x.raw === 'unaccounted').length).toBe(1);
+    });
+
     // CLOCKING OUT IS NOT A PROMISE NEVER TO WORK AGAIN (owner 2026-09-04:
     // "clock out could be done for the day but what if we have another
     // automted drive after, from fence to fence we got more drive time and

@@ -213,6 +213,14 @@ function _tlFillUnaccounted(rows,cid){
   const out=rows.slice();
   Object.keys(byDay).forEach(k=>{
     const day=byDay[k].sort((x,y)=>Date.parse(x.startTime)-Date.parse(y.startTime));
+    // NO QUESTIONS AFTER HE CLOCKED OUT (owner 2026-09-04, on his 31 August
+    // rail: two "What was this time?" rows sitting at 3:45pm and 5:10pm, after
+    // a 3:45 clock-out). The gap row exists to ask about time the day has a
+    // claim on. Once the clock is out the day has no claim, so there is
+    // nothing to ask: the evening is his. A day with no clock at all keeps
+    // every gap, because then nothing said the day was over.
+    const _clockEnd=day.reduce((mx,r)=>(r&&r.source==='manual'&&r.endTime)
+      ? Math.max(mx,Date.parse(r.endTime)||0) : mx,0);
     // Walk a high-water mark, not just the previous row: two rows that
     // overlap (a drive and the visit it lands in) must not manufacture a
     // negative gap, and a short row nested inside a long one must not split
@@ -222,7 +230,6 @@ function _tlFillUnaccounted(rows,cid){
     for(let i=1;i<day.length;i++){
       const r=day[i];
       const a=Date.parse(r.startTime),b=Date.parse(r.endTime);
-      const gap=a-mark;
       // Two Office rows back to back (js/geo-derive.js _gdOffice): each one is
       // bounded by an app-open flip and an app-background flip (owner
       // 2026-09-03, "time should start when app flips open and stop and
@@ -230,14 +237,17 @@ function _tlFillUnaccounted(rows,cid){
       // app being closed, proven by those same flips, not a mystery: "No
       // location or motion on record" would be a lie about a fact we have.
       const _bothOffice=markRow.rawSource==='place-office'&&r.rawSource==='place-office';
-      if(gap>=_TL_UNACCOUNTED_MIN_MS&&!_bothOffice){
+      // Trimmed at the clock-out, or dropped entirely when it starts after it.
+      const _end=(_clockEnd>0&&_clockEnd<a)?_clockEnd:a;
+      const _gap=_end-mark;
+      if(_gap>=_TL_UNACCOUNTED_MIN_MS&&!_bothOffice){
         out.push({
           id:'u'+k+'_'+mark,rawId:null,source:'unaccounted',rawSource:'unaccounted',
-          date:r.date,minutes:Math.round(gap/60000),
+          date:r.date,minutes:Math.round(_gap/60000),
           personName:r.personName,personUid:r.personUid||null,
           clientName:'Unaccounted for',addr:'',jobName:'',clientKey:null,
           unpaid:true,detail:'No location or motion on record',
-          startTime:new Date(mark).toISOString(),endTime:r.startTime
+          startTime:new Date(mark).toISOString(),endTime:new Date(_end).toISOString()
         });
       }
       if(b>mark){mark=b;markRow=r;}
@@ -345,6 +355,17 @@ function _tlBlendManual(rows){
     };
     const _cuttable=r=>{
       if(!r||r.source!=='auto'||!r.rawSource)return false;
+      // A STOP NOBODY SAVED IS CUT TOO (owner 2026-09-04, on his 31 August:
+      // 566 paid against a 470-minute clock). The cutoff was written when
+      // an unsaved stop could only come from INSIDE a running clock, so
+      // trimming drives was enough. The deriver writes them now, straight off
+      // the fences, and his 4:31pm stop sat 46 minutes past a 3:45 clock-out
+      // and was paid. A saved fence still outlives the clock, deliberately
+      // ("the fences are what happened", 2026-09-01): a shop or a client is
+      // evidence of work. An unsaved stop is evidence of nothing but that the
+      // truck was parked, so the clock is the only thing that could have made
+      // it work, and he ended it.
+      if(r.rawSource==='unsaved')return true;
       if(typeof _geoIsDriveSource!=='function'||!_geoIsDriveSource(r.rawSource))return false;
       return _headingHome(r);
     };
