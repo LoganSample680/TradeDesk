@@ -3583,6 +3583,75 @@ test.describe('timelog.js: exhaustive coverage', () => {
         'a wrong clock-out is as common as a wrong clock-in').toContain('tl-rail-edit');
     });
 
+    // ── The clock-out is a hard cutoff ────────────────────────────────────
+    // Owner 2026-09-04, on Jack's 31 August: "his day shouldve ended at his
+    // clock out of 345 pm, no way a drive can extend past that."
+    //
+    // The real shape: he clocked out at 3:45 PM and the drive row ran to 5:24,
+    // because he sat somewhere for 49 minutes on the way home and the leg
+    // spans the stop. None of that is his dad's time.
+    test('a drive straddling the clock-out is cut at it, minutes and all', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        { employee_user_id: 'jack', minutes: 64, source: 'drive', dest_place: '7402 SW 22nd Ct',
+          arrived_at: at(9, 38), departed_at: at(11, 24) },
+      ], CLOCK([8, 0], [9, 45], 105));
+      const drive = r.rows.find(x => x.raw === 'drive');
+      expect(drive, 'the part he drove while still on the clock').toBeTruthy();
+      // 7 of the 106 minutes it spanned were on the clock, so 7/106 of its 64.
+      expect(drive.m).toBe(4);
+      // And the row itself ends at the clock-out, not at 11:24.
+      const ends = await page.evaluate(async ([es, ms]) => {
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
+        try {
+          const day = (await _timeLogRows(null)).filter(r => r.date === '2026-09-01');
+          const d = day.find(r => r.rawSource === 'drive');
+          return d ? d.endTime : null;
+        } finally { window._fetchCrewLabor = orig; window.timeEntries = keepT; }
+      }, [[A('place', [8, 0], [9, 0], 60),
+           { employee_user_id: 'jack', minutes: 64, source: 'drive', dest_place: '7402 SW 22nd Ct',
+             arrived_at: at(9, 38), departed_at: at(11, 24) }], CLOCK([8, 0], [9, 45], 105)]);
+      expect(ends).toBe(at(9, 45));
+    });
+
+    // A CLIENT VISIT IS NOT A COMMUTE. The rule the owner set on 2026-09-01,
+    // "the fences are what happened; the clock adds nothing," still stands:
+    // work the phone watched him do outlives a clock he forgot to stop.
+    test('a work dwell that outlives the clock is untouched', async () => {
+      const r = await rowsFor([A('place', [8, 0], [14, 0], 360)], CLOCK([8, 0], [10, 0], 120));
+      const place = r.rows.find(x => x.raw === 'place');
+      expect(place.m, 'six hours the phone actually watched').toBe(360);
+      expect(r.paid).toBe(360);
+    });
+
+    // Rule 10's Office rows are after the clock-out BY DESIGN (owner
+    // 2026-09-02: office is "for true app time after hours, that's it"), so
+    // the cutoff must not touch them.
+    test('an evening Office row survives the cutoff, because that is what it is for', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        { employee_user_id: 'jack', minutes: 20, source: 'place-office', dest_place: '7402 SW 22nd Ct',
+          arrived_at: at(19, 0), departed_at: at(19, 20) },
+      ], CLOCK([8, 0], [16, 0], 480));
+      const off = r.rows.find(x => x.raw === 'place-office');
+      expect(off, 'paperwork at home in the evening').toBeTruthy();
+      expect(off.m).toBe(20);
+    });
+
+    // No clock, no cutoff: nothing has said when the day ended.
+    test('with no clock at all nothing is cut', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        { employee_user_id: 'jack', minutes: 30, source: 'drive', dest_place: 'X',
+          arrived_at: at(18, 0), departed_at: at(18, 30) },
+      ], []);
+      expect(r.rows.some(x => x.raw === 'drive')).toBe(true);
+      expect(r.paid).toBe(90);
+    });
+
     test('the fences keep their own labels: the clock is the bracket, not the record', async () => {
       const r = await rowsFor([
         A('drive', [8, 0], [8, 30], 30),
@@ -3596,9 +3665,22 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.paid, 'exactly the clock').toBe(120);
     });
 
-    test('a fence outside the clock is never deducted from it', async () => {
-      // He clocked out and then drove. That drive is real, it is inside the
-      // working day, and the clock never claimed it, so both stand in full.
+    test('a drive after the clock-out is a commute, and is cut at the clock-out', async () => {
+      // REVERSED 2026-09-04 (10.4). This used to read "He clocked out and then
+      // drove. That drive is real, it is inside the working day, and the clock
+      // never claimed it, so both stand in full," and it asserted the drive
+      // survived at its full 30 minutes.
+      //
+      // The owner overturned it on Jack's 31 August, where the drive row ran an
+      // hour and a half past a 3:45 PM clock-out: "his day shouldve ended at
+      // his clock out of 345 pm, no way a drive can extend past that ... after
+      // 338 pm is a hard cutoff cause he clocked out." Once a man is off the
+      // clock the drive home is a commute, and nobody pays for a commute.
+      //
+      // Only drives and unsaved job sites are cut. The rule this test used to
+      // carry still holds for everything else: a client visit that outlives
+      // the clock is work he forgot to clock, and 'fences that exceed the clock
+      // never drive the day negative' below still proves it.
       //
       // FIXTURE NOTE, and it is the rule and not a workaround: the drive is
       // placed AFTER the anchoring place row rather than before it. A lone
@@ -3621,9 +3703,9 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // The place fully covers the clock, so the clock keeps nothing.
       expect(man.blended, 'only what is inside the window').toBe(120);
       expect(man.m).toBe(0);
-      expect(r.rows.some(x => x.raw === 'drive' && x.m === 30),
-        'the drive after the clock stands in full').toBe(true);
-      expect(r.paid).toBe(150);
+      expect(r.rows.some(x => x.raw === 'drive'),
+        'a drive that begins after the clock-out is gone entirely').toBe(false);
+      expect(r.paid, 'the clock, and nothing after it').toBe(120);
     });
 
     test('a partial overlap is charged in proportion, not in full', async () => {

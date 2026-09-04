@@ -279,6 +279,64 @@ function _tlBlendManual(rows){
     // this one at least matches how a person reads down a day.
     const manual=list.filter(x=>x.r.source==='manual'&&!x.r.unpaid).sort((x,y)=>x.a-y.a);
     if(!manual.length)return;
+
+    // THE CLOCK-OUT IS A HARD CUTOFF (owner 2026-09-04, on Jack's 31 August:
+    // "his day shouldve ended at his clock out of 345 pm, no way a drive can
+    // extend past that ... after 338 pm is a hard cutoff cause he clocked
+    // out").
+    //
+    // He clocked out at 3:45 PM. The drive row ran to 5:24, an hour and a half
+    // past it, because he sat somewhere for 49 minutes on the way and the leg
+    // spans the stop. Whatever the leg is doing, none of it is his dad's time:
+    // once a man is off the clock the day is over, and a row that keeps going
+    // is the app arguing with him about when he stopped working.
+    //
+    // Straddling rows are cut at the cutoff and their minutes prorated by the
+    // span they keep, exactly the way the blend below prorates coverage. A row
+    // that starts after it is gone.
+    //
+    // WHAT GETS CUT, AND WHAT DELIBERATELY DOES NOT. Only DRIVES and unsaved
+    // JOB SITES. Two other rules already stand here and neither is overturned:
+    //
+    //   Rule 10 (js/geo-derive.js) writes Office rows ONLY outside the working
+    //   day, from the app being open at the home office in the evening. They
+    //   are after the clock-out by definition, which is the entire point of
+    //   them, and the owner signed that off on 2026-09-02.
+    //
+    //   "The fences are what happened; the clock adds nothing" (owner
+    //   2026-09-01). A client visit that outlives the clock is work he forgot
+    //   to clock, and the phone watched him do it. Cutting that would be the
+    //   app deleting proven work, which is the opposite of this rule's intent.
+    //
+    // A drive home is neither. It is a commute, it is not his dad's time, and
+    // it is the only thing the owner pointed at. A job site after the
+    // clock-out goes with it: this pass is what named those minutes in the
+    // first place, off a clock that has since ended, so it cannot keep
+    // claiming them.
+    const _cutoff=Math.max.apply(null,manual.map(m=>m.b));
+    const _cuttable=r=>{
+      if(!r||r.source==='manual')return false;
+      if(r.rawSource==='site')return true;
+      return r.source==='auto'&&!!r.rawSource&&typeof _geoIsDriveSource==='function'&&_geoIsDriveSource(r.rawSource);
+    };
+    if(_cutoff>0){
+      for(let i=list.length-1;i>=0;i--){
+        const x=list[i];
+        if(!_cuttable(x.r))continue;
+        if(x.a>=_cutoff){
+          const at=rows.indexOf(x.r);
+          if(at>=0)rows.splice(at,1);
+          list.splice(i,1);
+          continue;
+        }
+        if(x.b>_cutoff){
+          const span=Math.max(1,x.b-x.a);
+          x.r.minutes=Math.max(0,Math.round((x.r.minutes||0)*((_cutoff-x.a)/span)));
+          x.r.endTime=new Date(_cutoff).toISOString();
+          x.b=_cutoff;
+        }
+      }
+    }
     // WHAT THE CLOCK ALREADY PAID FOR (owner 2026-09-01: "unpaid is wrong, it
     // was paid"). He is right and the row was arguing with itself: the day
     // totals the clock, the clock's minutes cover every hour it brackets, and
