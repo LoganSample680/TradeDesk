@@ -917,11 +917,18 @@ async function _openFixAutoEntry(rowId){
   // Business time, not the phone's: prefilling in the device's zone would hand
   // someone a wrong baseline to "correct" from the moment they left the state.
   const toLocalInput=iso=>_tlBizInputValue(iso);
-  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('✏',{size:18})+' Fix clock times</div>'+
+  // Titled and labelled exactly like the manual dialog (js/jobs.js
+  // _openEditTimeEntry) so the two read as one screen. Only the subtitle
+  // differs, and it earns its place: it says where these times came from.
+  // No Delete here, deliberately, and it is not an oversight: a derived row
+  // is rewritten by the next rebuild, so a delete button would look like it
+  // worked and then quietly undo itself. The way to remove one is to correct
+  // the day it came from.
+  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('✏',{size:18})+' Edit time entry</div>'+
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(who)+', tracked by GPS</div>'+
-    '<div class="f" style="margin-bottom:12px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Clock in</label>'+
+    '<div class="f" style="margin-bottom:12px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Start</label>'+
       '<input type="datetime-local" id="tlf-start" value="'+toLocalInput(row.arrived_at)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
-    '<div class="f" style="margin-bottom:16px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Clock out</label>'+
+    '<div class="f" style="margin-bottom:16px"><label style="font-size:11px;font-weight:700;color:var(--text3)">End</label>'+
       '<input type="datetime-local" id="tlf-end" value="'+toLocalInput(row.departed_at||row.arrived_at)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
     '<div id="tlf-err" style="display:none;font-size:11px;color:#A32D2D;margin-bottom:10px">End must be after start.</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
@@ -1306,8 +1313,16 @@ function _tlRailRow(r){
   // there is still exactly one edit experience (§7.3).
   const edit=(typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
     ?'<button type="button" class="tl-rail-edit" onclick="_openEditTimeEntry('+r.rawId+')">Edit</button>'
+    // ONE WORD, NOT TWO (owner 2026-09-04: "for anything marked as a fix can
+    // we remove the fix code and just do edit like we do for manual clock ins
+    // and outs?"). A GPS row lives in job_time_entries and a manual clock in
+    // the local timeEntries array, so the two handlers cannot become one, but
+    // none of that is the person's problem. On the rail they are the same row
+    // with the same control, and calling one of them "Fix" made correcting a
+    // tracked visit read like owning up to a fault rather than editing an
+    // entry. Same word, same dialog title, same field labels.
     :(typeof _tlCanFixAuto==='function'&&_tlCanFixAuto(r)&&r.rawId!=null)
-    ?'<button type="button" class="tl-rail-edit" onclick="_openFixAutoEntry(\''+escHtml(String(r.rawId))+'\')">Fix</button>'
+    ?'<button type="button" class="tl-rail-edit" onclick="_openFixAutoEntry(\''+escHtml(String(r.rawId))+'\')">Edit</button>'
     :'';
   const dur='<div class="tl-rail-dur'+((r.unpaid||isGap)?' mute':'')+'">'+(r.live?'':escHtml(fm(r.minutes||0)))+
     (edit?'<span class="tl-rail-editwrap">'+edit+'</span>':'')+'</div>';

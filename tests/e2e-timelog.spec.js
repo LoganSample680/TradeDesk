@@ -737,6 +737,33 @@ test.describe('timelog.js: exhaustive coverage', () => {
   // app woke at 9:37 and stamped the close with `now`, and nothing in the app
   // could correct it. On-site GPS rows are now fixable by anyone with payroll
   // permission; drive rows and unpaid stops are not.
+  // ONE WORD, NOT TWO (owner 2026-09-04: "for anything marked as a fix can we
+  // remove the fix code and just do edit like we do for manual clock ins and
+  // outs?"). The two handlers stay separate because the rows live in different
+  // tables; what the person sees must not.
+  test('a GPS row and a manual clock offer the same word and the same dialog', async () => {
+    const out = await page.evaluate(() => {
+      const R = o => Object.assign({ source: 'auto', rawId: 'x1', rawSource: 'place',
+        unpaid: false, minutes: 30, date: '2026-08-12', clientName: 'A place' }, o);
+      const saved = window._canViewComp;
+      window._canViewComp = () => true;
+      try {
+        const auto = (typeof _tlRailRow === 'function') ? String(_tlRailRow(R({}))) : '';
+        return { auto, hasFix: /\bFix<\/button>/.test(auto), hasEdit: /\bEdit<\/button>/.test(auto) };
+      } finally { window._canViewComp = saved; }
+    });
+    if (out.auto) {
+      expect(out.hasFix, 'the word "Fix" is gone from the rail').toBe(false);
+      expect(out.hasEdit, 'and the control reads Edit, like a manual clock').toBe(true);
+    }
+    // The dialog says the same thing the manual one does.
+    const src = await page.evaluate(() => String(_openFixAutoEntry));
+    expect(src).toContain('Edit time entry');
+    expect(src).not.toContain('Fix clock times');
+    expect(src).toContain('>Start</label>');
+    expect(src).toContain('>End</label>');
+  });
+
   test.describe('_tlCanFixAuto / _openFixAutoEntry', () => {
     const withComp = (fn) => page.evaluate(async (body) => {
       const saved = window._canViewComp;
