@@ -337,6 +337,69 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
     expect(r.pending).toBeNull();
   });
 
+  // OWNER LEAVES, EMPLOYEE ARRIVES (owner 2026-09-04: "for a employee its the
+  // arrival to the first saved geo fence that begins the day ... hes a
+  // employee running this for his dad, so his clock in should start the moment
+  // he closes his first fence").
+  //
+  // Same evidence, two roles, two answers. An owner pulling off his own
+  // driveway is already working. An employee driving from his own house to his
+  // employer's shop is commuting, and nobody pays for a commute.
+  //
+  // Jack's 31 August is the case that settles it: the mirror would have
+  // offered 07:09, when he left his own drive, and he hand-clocked 07:55, two
+  // minutes after reaching Oakley. Forty-six minutes apart, because he ran an
+  // errand across town on the way, and none of it was his dad's.
+  test('morning mirror, employee: the arrival at the fence is the clock-in, not the departure', async () => {
+    const dep = START, arr = START + 11 * 60000;
+    const r = await page.evaluate(async ({ dep, arr, SHOP_FENCE, HOME_FENCE }) => {
+      // _isEmployee is a top-level `let` in js/data.js, not a window property,
+      // so it only moves by bare assignment. window._isEmployee = true creates
+      // a second, unrelated thing and the code under test never sees it.
+      const keep = _isEmployee, keepT = timeEntries.slice();
+      _isEmployee = true;
+      // The specs share one page, and the owner-case mirror above already
+      // confirmed a clock for today. _dayEndHasEntryToday would refuse this
+      // one on that alone, so the day is cleared back to empty first.
+      timeEntries.length = 0;
+      try { _dayEndCancel(); } catch (_e) {}
+      window._activeTimer = null;
+      const old = Date.now() - 3 * 86400000;
+      // Whose clock it is changes with the hat: _tlLoggedByInfo stamps a crew
+      // member's own uid where an owner's entries carry null, so a null-uid
+      // seed would not count as "this person uses the clock" once _isEmployee
+      // is on, and the mirror would refuse before it ever reached the rule.
+      const mine = _tlLoggedByInfo().loggedByUid;
+      timeEntries.push({ id: 8009, job_id: null, date: _geoDayKeyOf(old, _geoBizTz()),
+        start_time: new Date(old).toISOString(), end_time: new Date(old + 3600000).toISOString(),
+        minutes: 60, logged_by_uid: mine, logged_by_name: 'Jack Sample', open: false });
+      try {
+        const dwell = { id: 'd9', name: SHOP_FENCE.name, kind: 'shop', sinceTs: arr, fence: SHOP_FENCE };
+        const res = { legs: [{ id: 'l9', from: HOME_FENCE, to: SHOP_FENCE, startTs: dep, endTs: arr }], journeys: [] };
+        const ret = _dayEndOnDwell(dwell, res);
+        await new Promise((k) => setTimeout(k, 60));
+        const p = _dayEndPending();
+        const calls = window.__td.calls.filter((c) => c.name === 'schedule').map((c) => c.args);
+        const ok = _dayEndConfirm();
+        const e = timeEntries.find((x) => x.open);
+        return { ret, p, calls, ok, start: e && e.start_time };
+      } finally {
+        _isEmployee = keep;
+        timeEntries.length = 0; keepT.forEach(x => timeEntries.push(x));
+        window._activeTimer = null;
+        try { _dayEndCancel(); } catch (_e) {}
+      }
+    }, { dep, arr, SHOP_FENCE, HOME_FENCE });
+    expect(r.ret).toBe('new');
+    // The ARRIVAL, eleven minutes after the owner's answer would have been.
+    expect(r.p).toMatchObject({ kind: 'start', startMs: arr, where: SHOP_FENCE.name });
+    expect(r.p.startMs).not.toBe(dep);
+    expect(r.calls[0].body).toContain('7:55 AM');
+    // And the clock it writes on confirm starts there too, not at the drive.
+    expect(r.ok).toBe(true);
+    expect(r.start).toBe(new Date(arr).toISOString());
+  });
+
   test('morning mirror: Undo removes the entry it created', async () => {
     const dep = START, arr = START + 11 * 60000;
     const r = await page.evaluate(({ dep, arr, SHOP_FENCE, HOME_FENCE }) => {

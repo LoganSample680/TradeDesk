@@ -224,8 +224,26 @@ function _dayEndOnDwell(dwell,res){
       const leg=legs.find(l=>l&&l.to&&dwell.fence&&String(l.to.id)===String(dwell.fence.id)&&Number(l.endTs)===Number(dwell.sinceTs))||null;
       if(!leg||!leg.from||String(leg.from.kind)!=='home_office')return false;
       const cur=_dayEndRead();
-      if(cur&&cur.kind==='start'&&cur.startMs===Number(leg.startTs))return true;
-      const startMs=Number(leg.startTs);
+      // WHOSE DRIVE OUT IS IT? (owner 2026-09-04: "for a employee its the
+      // arrival to the first saved geo fence that begins the day.")
+      //
+      // An OWNER leaving his own home office is already working: the drive out
+      // is his, on his own clock, and it stays part of the day, which is what
+      // makes it symmetric with the day-end proposing the arrival back home.
+      //
+      // An EMPLOYEE driving from his own house to his employer's shop is
+      // commuting, and nobody pays for a commute. Jack's 31 August is the case
+      // that settles it: the mirror would have offered 07:09, when he pulled
+      // off his own driveway, and he hand-clocked 07:55, two minutes after
+      // arriving at the shop. Those are 46 minutes apart because he ran an
+      // errand across town on the way, and none of it was his employer's.
+      //
+      // So the two roles get two different starts, from the same evidence: the
+      // owner's day opens when the truck leaves, the employee's when it
+      // arrives somewhere the business saved.
+      const _crew=(typeof _isEmployee!=='undefined')&&!!_isEmployee;
+      const startMs=_crew?Number(dwell.sinceTs):Number(leg.startTs);
+      if(cur&&cur.kind==='start'&&cur.startMs===startMs)return true;
       const name=_dayEndFirstName();
       _dayEndWrite({kind:'start',startMs,day:todayKey(),madeAt:Date.now(),where:String(dwell.name||'')});
       _notifySchedule('daystart',name?('Hey '+name+'!'):'Your day','Looks like you started at '+_dayEndFmt(startMs)+'. Tap to clock in.',0);
