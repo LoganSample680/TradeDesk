@@ -127,7 +127,65 @@ function _dayEndNoteDay(dayKey,res){
     const keys=Object.keys(m).sort();
     while(keys.length>8)delete m[keys.shift()];
     try{localStorage.setItem(_DAY_END_ARR_KEY,JSON.stringify(m));}catch(_e){}
+    _dayEndSnapClockIn(dayKey,res);
     return _dayEndStale()==='new';
+  }catch(_e){return false;}
+}
+// THE CLOCK-IN MOVES BACK TO THE ARRIVAL (owner 2026-09-04: "08/31 his manual
+// clock in should edit itself to his shop time arrival").
+//
+// His 31 August: the shop row starts 07:50, when the truck stopped at his
+// dad's, and his hand-typed clock-in says 07:55. Five minutes of him standing
+// in the yard, off the clock, because tapping the button is not the thing that
+// starts a day. His rule for whose day starts when is already settled: "for a
+// employee its the arrival to the first saved geo fence that begins the day."
+// So the fence is right and the tap is late, and the tap is what moves.
+//
+// BACKWARDS ONLY, and never forwards. An arrival AFTER the clock-in would mean
+// he claimed time before he got anywhere, and pulling his start forward would
+// be the app deleting hours he entered by hand. That is a conversation, not an
+// edit, and it is what the unaccounted row is for.
+//
+// A NOTE ON A RULE THIS BENDS. js/day-end.js otherwise proposes and waits:
+// "the phone PROPOSES, the person confirms, nothing moves on its own" (owner
+// 2026-09-02, on the auto clock-OUT). This edits without asking, because the
+// owner asked for it in those words and because the two cases are not alike: a
+// clock-out guesses that a day is over and can be wrong about the future,
+// while an arrival that already happened is a fact, and moving to it only ever
+// gives time back. The edit is stamped like any other (edited_at, edited_by)
+// so the change is visible on the entry rather than silent.
+function _dayEndSnapClockIn(dayKey,res){
+  try{
+    if(typeof timeEntries==='undefined'||!Array.isArray(timeEntries))return false;
+    if(!(typeof _isEmployee!=='undefined'&&_isEmployee))return false;   // an owner's drive out is already his day
+    const dwells=(res&&Array.isArray(res.dwells))?res.dwells:[];
+    let first=null;
+    for(const d of dwells){
+      if(!d||!(Number(d.startTs)>0))continue;
+      const k=String(d.kind||'');
+      if(k==='home_office'||k==='office')continue;                      // the house never starts a workday
+      if(!first||Number(d.startTs)<first)first=Number(d.startTs);
+    }
+    if(!(first>0))return false;
+    const{loggedByUid}=_tlLoggedByInfo();
+    let moved=false;
+    timeEntries.forEach(e=>{
+      if(!e||e.date!==dayKey||e.open)return;
+      if((e.logged_by_uid||null)!==loggedByUid)return;
+      const a=Date.parse(e.start_time||''),b=Date.parse(e.end_time||'');
+      if(!(a>0&&b>a)||a<=first)return;
+      if(first<Date.parse(dayKey+'T00:00:00Z')-86400000)return;          // junk day key
+      e.start_time=new Date(first).toISOString();
+      e.minutes=Math.max(0,Math.round((b-first)/60000));
+      e.edited_at=new Date().toISOString();
+      e.edited_by_name=(typeof getOwnerName==='function'&&getOwnerName())||e.logged_by_name||'';
+      moved=true;
+    });
+    if(moved){
+      try{if(typeof supaSaveDebounced==='function')supaSaveDebounced();}catch(_e){}
+      try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
+    }
+    return moved;
   }catch(_e){return false;}
 }
 // My open entry that started before today's business day, or null.

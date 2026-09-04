@@ -400,6 +400,78 @@ test.describe('Day end: the phone proposes, the person confirms', () => {
     expect(r.start).toBe(new Date(arr).toISOString());
   });
 
+  // ── The clock-in moves back to the arrival ──────────────────────────────
+  // Owner 2026-09-04: "08/31 his manual clock in should edit itself to his
+  // shop time arrival." His shop row starts 07:50 and his hand-typed clock-in
+  // says 07:55: five minutes standing in his dad's yard, off the clock,
+  // because tapping the button is not the thing that starts a day.
+  test.describe('a crew clock-in snaps back to the first work arrival', () => {
+    const DK = '2026-09-02';
+    const T = (h, m) => Date.parse(DK + 'T' + String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':00Z');
+    const run = (entries, dwells, crew) => page.evaluate(([es, ds, isCrew, dk]) => {
+      const keepT = timeEntries.slice(), keepE = _isEmployee;
+      _isEmployee = isCrew;
+      timeEntries.length = 0;
+      const mine = _tlLoggedByInfo().loggedByUid;
+      es.forEach(e => timeEntries.push(Object.assign({ logged_by_uid: mine, open: false }, e)));
+      try {
+        _dayEndSnapClockIn(dk, { dwells: ds });
+        return timeEntries.map(e => ({ id: e.id, start: e.start_time, min: e.minutes, edited: !!e.edited_at }));
+      } finally {
+        timeEntries.length = 0; keepT.forEach(x => timeEntries.push(x));
+        _isEmployee = keepE;
+      }
+    }, [entries, dwells, crew, DK]);
+
+    const CLOCK = (s, e, min) => ({ id: 77, date: DK, job_id: null,
+      start_time: new Date(s).toISOString(), end_time: new Date(e).toISOString(), minutes: min });
+
+    test('his 31 August: 07:55 becomes 07:50, and the five minutes come back', async () => {
+      const r = await run([CLOCK(T(12, 55), T(20, 45), 470)],
+                          [{ kind: 'shop', startTs: T(12, 50), endTs: T(14, 44) }], true);
+      expect(r[0].start).toBe(new Date(T(12, 50)).toISOString());
+      expect(r[0].min, 'five minutes longer than he typed').toBe(475);
+      expect(r[0].edited, 'stamped, not silent').toBe(true);
+    });
+
+    // BACKWARDS ONLY. An arrival after the clock-in would mean he claimed time
+    // before he got anywhere, and pulling his start forward would be the app
+    // deleting hours he entered by hand.
+    test('an arrival AFTER the clock-in never pulls it forward', async () => {
+      const r = await run([CLOCK(T(12, 0), T(20, 0), 480)],
+                          [{ kind: 'shop', startTs: T(13, 0), endTs: T(14, 0) }], true);
+      expect(r[0].start).toBe(new Date(T(12, 0)).toISOString());
+      expect(r[0].min).toBe(480);
+      expect(r[0].edited).toBe(false);
+    });
+
+    // The house never starts a workday (rule 12, and his own rule about which
+    // fence counts), so a home dwell earlier than the shop is not the anchor.
+    test('a home or office dwell is not the arrival that starts the day', async () => {
+      const r = await run([CLOCK(T(12, 55), T(20, 45), 470)], [
+        { kind: 'home_office', startTs: T(11, 0), endTs: T(12, 0) },
+        { kind: 'office', startTs: T(11, 30), endTs: T(11, 45) },
+        { kind: 'shop', startTs: T(12, 50), endTs: T(14, 44) },
+      ], true);
+      expect(r[0].start, 'the shop, not the house').toBe(new Date(T(12, 50)).toISOString());
+    });
+
+    // An OWNER's drive out is already his day (the morning mirror proposes his
+    // departure), so nothing about his clock moves here.
+    test('an owner clock is left alone', async () => {
+      const r = await run([CLOCK(T(12, 55), T(20, 45), 470)],
+                          [{ kind: 'shop', startTs: T(12, 50), endTs: T(14, 44) }], false);
+      expect(r[0].start).toBe(new Date(T(12, 55)).toISOString());
+      expect(r[0].edited).toBe(false);
+    });
+
+    test('a day with no work dwell at all leaves every clock untouched', async () => {
+      const r = await run([CLOCK(T(12, 55), T(20, 45), 470)], [], true);
+      expect(r[0].start).toBe(new Date(T(12, 55)).toISOString());
+      expect(r[0].edited).toBe(false);
+    });
+  });
+
   test('morning mirror: Undo removes the entry it created', async () => {
     const dep = START, arr = START + 11 * 60000;
     const r = await page.evaluate(({ dep, arr, SHOP_FENCE, HOME_FENCE }) => {
