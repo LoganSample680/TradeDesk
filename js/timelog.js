@@ -1387,8 +1387,7 @@ function _tlRailHeadHtml(rows,label,noTotal){
 // Nothing about the numbers changes: _tlBlendManual still makes the row carry
 // only what the fences did not explain, so the day still totals the clock.
 // This is only where the clock is drawn.
-function _tlClockCapHtml(r,which,clockedMin){
-  const fm=typeof _fmtMin==='function'?_fmtMin:(mm=>mm+'m');
+function _tlClockCapHtml(r,which){
   const isIn=which==='in';
   const t=_tlFmtTime(isIn?r.startTime:r.endTime)||'—';
   // The same edit control the clock row carried, kept on the OPENING cap: a
@@ -1401,8 +1400,18 @@ function _tlClockCapHtml(r,which,clockedMin){
   const edit=(typeof _tlCanEdit==='function'&&_tlCanEdit(r)&&r.rawId!=null)
     ?'<button type="button" class="tl-rail-edit" onclick="_openEditTimeEntry('+r.rawId+')">Edit</button>'
     :'';
-  const dur=isIn?''
-    :'<div class="tl-rail-dur">'+escHtml(fm(clockedMin))+'</div>';
+  // NEITHER CAP CARRIES A NUMBER (owner 2026-09-04: "we dont have a time on
+  // clocked in calculated, dont think we should show a clocked out time stamp
+  // either, the day total is at the top under the data").
+  //
+  // The clock-out cap printed the clock's own minutes plus what the blend
+  // handed back, and took a clockedMin argument for it. On his 3 September
+  // that read 8h 53m against a header of 9h 6m: two different totals for one
+  // day, on one screen, and the one on the cap is the one nobody asked for.
+  // The header already states the day and breaks it down by bucket. A cap is a
+  // MARK ON THE SPINE saying when he started and when he stopped, and it needs
+  // no arithmetic of its own. The argument went with the number (§7): both
+  // callers stop computing something nothing reads.
   // AND SO DOES THE LONG-PRESS DELETE (§7.2). It lived on the manual row this
   // cap replaces, and moving where a clock is drawn was never a decision to
   // remove the only way to delete one. Same attributes, same handler, on the
@@ -1424,7 +1433,7 @@ function _tlClockCapHtml(r,which,clockedMin){
         escHtml(isIn?'Clocked in':'Clocked out')+'</span>'+
       (edit?'<div class="tl-rail-sub">'+edit+'</div>':'')+
     '</div>'+
-    (isIn?'<div class="tl-rail-dur"></div>':dur)+
+    '<div class="tl-rail-dur"></div>'+
   '</li>';
 }
 function _tlDayRailHtml(rows){
@@ -1448,7 +1457,7 @@ function _tlDayRailHtml(rows){
     for(let i=open.length-1;i>=0;i--){
       const c=open[i];
       if(beforeMs!=null&&Date.parse(c.endTime)>beforeMs)continue;
-      out.push(_tlClockCapHtml(c,'out',(c.minutes||0)+(Number(c.blendedMin)||0)));
+      out.push(_tlClockCapHtml(c,'out'));
       open.splice(i,1);
     }
   };
@@ -1456,7 +1465,7 @@ function _tlDayRailHtml(rows){
     const st=Date.parse(r.startTime||'')||null;
     closeDue(st);
     if(clocks.indexOf(r)>=0){
-      out.push(_tlClockCapHtml(r,'in',0));
+      out.push(_tlClockCapHtml(r,'in'));
       open.push(r);
       return;   // the clock itself is the bracket; it is never a row too
     }

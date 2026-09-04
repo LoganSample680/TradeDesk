@@ -3682,6 +3682,36 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(drive.end).toBe(at(9, 45));
     });
 
+    // Owner 2026-09-04, looking at his 3 September rail: "we dont have a time
+    // on clocked in calculated, dont think we should show a clocked out time
+    // stamp either, the day total is at the top under the data." The clock-out
+    // cap read 8h 53m against a header of 9h 6m: two totals for one day on one
+    // screen, and the cap's was the one nobody asked for.
+    test('neither clock cap carries a number, at either end', async () => {
+      const html = await page.evaluate(async ([es, ms]) => {
+        const keepT = timeEntries.slice();
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
+        try {
+          const day = (await _timeLogRows(null)).filter(r => r.date === '2026-09-01');
+          return _tlDayRailHtml(day);
+        } finally { window._fetchCrewLabor = orig; window.timeEntries = keepT; }
+      }, [[A('place', [8, 0], [9, 0], 60)], CLOCK([8, 0], [16, 0], 480)]);
+      // Both caps are drawn.
+      expect(html).toContain('Clocked in');
+      expect(html).toContain('Clocked out');
+      // And every cap's amount slot is empty.
+      const caps = html.match(/<li class="tl-rail-row tl-rail-cap[\s\S]*?<\/li>/g) || [];
+      expect(caps.length, 'an opening cap and a closing cap').toBe(2);
+      caps.forEach(c => {
+        const dur = (c.match(/tl-rail-dur[^>]*>([\s\S]*?)</) || [])[1] || '';
+        expect(dur.trim(), 'a cap states when, never how much').toBe('');
+      });
+      // The clock's own minutes are not printed anywhere on a cap either.
+      caps.forEach(c => expect(c).not.toMatch(/\d+h\s*\d*m|\b\d+m\b/));
+    });
+
     // THE REGRESSION GUARD. This exact case shipped broken for three commits
     // on 2026-09-04. The cutoff asks "was he heading home" and answered it by
     // reading the row's NAME: an unnamed drive was empty, and empty counted as
@@ -3979,10 +4009,14 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(html).toContain('data-kind="clock-out"');
       expect(html).toContain('Clocked in');
       expect(html).toContain('Clocked out');
-      // The clock's own total rides the closing cap, where a person looks for
-      // it: 100 left + 338 explained = the 7h 18m actually clocked.
-      expect(html).toContain('>7h 18m<');
-      // ...and the leftover is NOT drawn as a competing row any more.
+      // REVERSED 2026-09-04 (10.4). This used to assert the clock's own total
+      // rode the closing cap: 100 left + 338 explained = 7h 18m. The owner
+      // killed it looking at his 3 September rail, where that number read
+      // 8h 53m against a header of 9h 6m ("the day total is at the top under
+      // the data"). Two totals for one day on one screen, and the cap's is the
+      // one nobody asked for. A cap states WHEN, never how much.
+      expect(html).not.toContain('>7h 18m<');
+      // ...and the leftover is still NOT drawn as a competing row.
       expect(html).not.toContain('>1h 40m<');
       expect(html).not.toContain('tracked below');
       // The work sits BETWEEN the caps, which is the whole shape.
