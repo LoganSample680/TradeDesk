@@ -1167,7 +1167,14 @@ test.describe('geo-derive: the day deriver', () => {
     test('a direct run home to the shop is one leg, not a swallowed stop', async () => {
       const tape = [mo(T(7, 0), 'onFoot'), mo(T(7, 11, 28), 'automotive'), mo(T(7, 50, 34), 'onFoot'),
                     mo(T(15, 0), 'automotive'), mo(T(15, 25), 'onFoot')];
-      const fixes = [fix(T(7, 0), JF), fix(T(7, 11, 28), JF), fix(T(7, 23), NEARLY),
+      // The 7:23 point is where he ACTUALLY was, not a second copy of the 7:48
+      // road fix. His real tape that morning reports every five minutes and he
+      // moved 1,700 to 12,000 ft between every pair; two identical points
+      // twenty-five minutes apart never happened, and since 2026-09-04 the
+      // deriver reads that (correctly) as a parked truck and splits the drive.
+      const ENROUTE = { lat: 39.02966, lng: -95.70546 };
+      const fixes = [fix(T(7, 0), JF), fix(T(7, 11, 28), JF), fix(T(7, 23), ENROUTE),
+                     fix(T(7, 43, 17), { lat: 39.05528, lng: -95.68768 }),
                      fix(T(7, 48, 18), NEARLY), fix(T(7, 53, 19), DF), fix(T(8, 30), DF),
                      fix(T(15, 0), DF), fix(T(15, 25), JF), fix(T(16, 30), JF)];
       const r = await run(page, base({ tape, fixes, fences: JFENCES, nowMs: T(18, 0) }));
@@ -1424,6 +1431,128 @@ test.describe('geo-derive: the day deriver', () => {
       expect(two.job_time_entries.filter(t => t.source === 'drive').length).toBe(2);
     });
 
+    // ── A parked truck ends the drive, whatever the tape says ───────────
+    // Owner 2026-09-04: "if it stays automotive or drive, dont want a drive
+    // through it to stop it and break it up, but would want it to break it up
+    // if a phone gets left and hasnt changed state."
+    //
+    // His 3 September, 1:55 to 2:53pm: two back-to-back drives with nothing
+    // between them, because CoreMotion never left automotive in that stretch.
+    // The fixes knew: he sat at his dad's shop for ten minutes in the middle
+    // of it.
+    test.describe('a parked truck ends the drive', () => {
+      // A third saved fence so a drive can start at one saved place, park at
+      // the shop in the middle, and go on to another: a journey out of an
+      // UNSAVED origin writes no leg by rule 5, so a fixture that starts
+      // nowhere tests nothing about drives.
+      const CUST = { id: 'c-far', kind: 'client', clientId: 77, name: 'Far client', lat: 39.0700, lng: -95.6800 };
+      const FF = F.concat([CUST]);
+
+      test('sitting in one spot for ten minutes inside a drive splits it', async () => {
+        const t = [mo(T(11, 0), 'onFoot'), mo(T(13, 55), 'automotive'), mo(T(14, 53), 'onFoot')];
+        // Home, moving, parked at the shop for twelve minutes, then on to a client.
+        const f = [fix(T(13, 55, 5), { lat: JH.lat, lng: JH.lng }), fix(T(14, 0), { lat: 39.0400, lng: -95.7500 }),
+          fix(T(14, 5), { lat: DS.lat, lng: DS.lng }), fix(T(14, 10), { lat: DS.lat, lng: DS.lng }),
+          fix(T(14, 17), { lat: DS.lat, lng: DS.lng }),
+          fix(T(14, 25), { lat: 39.0600, lng: -95.7000 }),
+          fix(T(14, 53, 5), { lat: CUST.lat, lng: CUST.lng }), fix(T(15, 30), { lat: CUST.lat, lng: CUST.lng })];
+        const r = await run(page, base({ tape: t, fixes: f, fences: FF, nowMs: T(18, 0) }));
+        // The shop stop it could never see before is a dwell now.
+        // The client at the end is the OPEN tail, not a dwell: rule 9 needs a
+        // departure before a visit is a row.
+        expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)]))
+          .toEqual([['shop', '19:05', '19:17']]);
+        expect(r.open && r.open.name).toBe('Far client');
+        const rows = await page.evaluate((res) => geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' }), r);
+        expect(rows.job_time_entries.filter(x => x.source === 'drive').length, 'two drives, not one').toBe(2);
+        // Home to shop, shop to client: two legs where there was one.
+        expect(r.legs.map(l => [l.from.name, l.to.name]))
+          .toEqual([['7402 SW 22nd Ct', '1200 SW Oakley Ave'], ['1200 SW Oakley Ave', 'Far client']]);
+      });
+
+      // A LONG SILENCE ACROSS THE SHOP, ENDING SOMEWHERE ELSE, IS NOT A STOP.
+      // Owner 2026-09-04: "thats 67 times jacks phone set still on a drive for
+      // 5-10 minutes?" No, and the question killed a rule. Measured on his own
+      // week: of 67 gaps in the five-to-ten minute band inside drives, 63 show
+      // him MOVING, a median of two miles across the gap. Even at ten minutes
+      // and over, one of the six was him covering 4.8 miles at 22 mph with the
+      // radio asleep. A gap is the tracker failing, not the truck stopping.
+      test('a silence that ends somewhere else is the tracker failing, not a stop', async () => {
+        const t = [mo(T(11, 0), 'onFoot'), mo(T(13, 55), 'automotive'), mo(T(14, 53), 'onFoot')];
+        const f = [fix(T(13, 55, 5), { lat: JH.lat, lng: JH.lng }), fix(T(14, 0), { lat: 39.0400, lng: -95.7500 }),
+          fix(T(14, 5), { lat: DS.lat, lng: DS.lng }),
+          // thirty minutes of nothing, and he comes back four miles away
+          fix(T(14, 35), { lat: 39.0600, lng: -95.7000 }),
+          fix(T(14, 53, 5), { lat: CUST.lat, lng: CUST.lng }), fix(T(15, 30), { lat: CUST.lat, lng: CUST.lng })];
+        const r = await run(page, base({ tape: t, fixes: f, fences: FF, nowMs: T(18, 0) }));
+        expect(r.dwells, 'no shop stop invented from a hole').toEqual([]);
+        expect(r.open && r.open.name).toBe('Far client');
+      });
+
+      // The same hole, with the far end in the SAME place: that is one cluster
+      // and it is a stop.
+      test('a silence that ends where it began is a stop', async () => {
+        const t = [mo(T(11, 0), 'onFoot'), mo(T(13, 55), 'automotive'), mo(T(14, 53), 'onFoot')];
+        const f = [fix(T(13, 55, 5), { lat: JH.lat, lng: JH.lng }), fix(T(14, 0), { lat: 39.0400, lng: -95.7500 }),
+          fix(T(14, 5), { lat: DS.lat, lng: DS.lng }),
+          fix(T(14, 35), { lat: DS.lat, lng: DS.lng }),        // thirty minutes later, same spot
+          fix(T(14, 53, 5), { lat: CUST.lat, lng: CUST.lng }), fix(T(15, 30), { lat: CUST.lat, lng: CUST.lng })];
+        const r = await run(page, base({ tape: t, fixes: f, fences: FF, nowMs: T(18, 0) }));
+        expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)]))
+          .toEqual([['shop', '19:05', '19:35']]);
+      });
+
+      // DRIVING PAST IS NOT STOPPING. Measured on his own week: 14 fixes landed
+      // inside a fence during a drive with the next fix OUTSIDE it seconds
+      // later, one of them two seconds. A rule keyed on the fence would have
+      // manufactured all 14; this one is keyed on stillness and manufactures
+      // none.
+      test('driving straight past a fence never splits the drive', async () => {
+        const t = [mo(T(11, 0), 'onFoot'), mo(T(13, 55), 'automotive'), mo(T(14, 20), 'onFoot')];
+        const f = [fix(T(13, 55, 5), { lat: JH.lat, lng: JH.lng }), fix(T(14, 0), { lat: 39.0400, lng: -95.7500 }),
+          fix(T(14, 5), { lat: DS.lat, lng: DS.lng }),          // inside the shop fence
+          fix(T(14, 5, 4), { lat: 39.0470, lng: -95.7250 }),    // four seconds later, gone
+          fix(T(14, 10), { lat: 39.0600, lng: -95.7000 }),
+          fix(T(14, 20, 5), { lat: CUST.lat, lng: CUST.lng }), fix(T(15, 30), { lat: CUST.lat, lng: CUST.lng })];
+        const r = await run(page, base({ tape: t, fixes: f, fences: FF, nowMs: T(18, 0) }));
+        expect(r.dwells, 'he drove past the shop, he did not stop').toEqual([]);
+        expect(r.open && r.open.name).toBe('Far client');
+        const rows = await page.evaluate((res) => geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' }), r);
+        expect(rows.job_time_entries.filter(x => x.source === 'drive').length).toBe(1);
+      });
+
+      // FIVE MINUTES IS THE WRONG NUMBER, measured. On his real week a
+      // five-minute floor split 72 drives; ten split 7, every one genuine.
+      // The five-minute holes are the phone dropping the drive window, not the
+      // truck stopping. This threshold is therefore hostage to the ping rate.
+      test('a gap under the threshold is the tracker breathing, not a stop', async () => {
+        const t = [mo(T(11, 0), 'onFoot'), mo(T(13, 55), 'automotive'), mo(T(14, 20), 'onFoot')];
+        const f = [fix(T(13, 55, 5), { lat: JH.lat, lng: JH.lng }), fix(T(14, 0), { lat: 39.0400, lng: -95.7500 }),
+          fix(T(14, 8), { lat: 39.0600, lng: -95.7000 }),   // an eight-minute hole, moving
+          fix(T(14, 20, 5), { lat: CUST.lat, lng: CUST.lng }), fix(T(15, 30), { lat: CUST.lat, lng: CUST.lng })];
+        const r = await run(page, base({ tape: t, fixes: f, fences: FF, nowMs: T(18, 0) }));
+        const rows = await page.evaluate((res) => geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' }), r);
+        expect(rows.job_time_entries.filter(x => x.source === 'drive').length, 'one drive').toBe(1);
+      });
+
+      test('an open journey with one fix is never split: the tail owns that', async () => {
+        const t = [mo(T(11, 0), 'onFoot'), mo(T(13, 55), 'automotive')];
+        const f = [fix(T(13, 55, 5), { lat: DS.lat, lng: DS.lng })];
+        const r = await run(page, base({ tape: t, fixes: f, fences: FF, nowMs: T(18, 0) }));
+        expect(r.legs).toEqual([]);
+        expect(r.pending && r.pending.origin.name).toBe('1200 SW Oakley Ave');
+      });
+
+      test('junk fixes never throw and never split', async () => {
+        const t = [mo(T(11, 0), 'onFoot'), mo(T(13, 55), 'automotive'), mo(T(14, 20), 'onFoot')];
+        const r = await page.evaluate((inp) => {
+          try { return { ok: true, n: geoDeriveDay(inp).legs.length }; }
+          catch (e) { return { ok: false, e: String(e) }; }
+        }, base({ tape: t, fixes: [null, { ts: NaN }, { ts: T(14, 0), lat: 'x', lng: null }], fences: FF, nowMs: T(18, 0) }));
+        expect(r.ok).toBe(true);
+      });
+    });
+
     // ── His 9:17, the one that was mashed against the shop ──────────────
     // Owner 2026-09-04: "917 am job site mashed against the shop with no
     // drive between it, why?"
@@ -1439,7 +1568,14 @@ test.describe('geo-derive: the day deriver', () => {
       const t3 = [mo(T(8, 0), 'onFoot'),
         mo(T(9, 17), 'automotive'), mo(T(9, 48), 'walking'),
         mo(T(10, 51), 'automotive'), mo(T(11, 20), 'onFoot')];
-      const f3 = [fix(T(9, 17, 5), { lat: DS.lat, lng: DS.lng }), fix(T(9, 30), OUT917),
+      // Breadcrumbs ALONG the way, not just at the far end. His real 9:17 drive
+      // reported every few seconds; a fixture that jumps to the destination and
+      // sits there is a fixture of a truck already parked, and since 2026-09-04
+      // the deriver reads it that way (a phone that has not moved for
+      // stillEndMs has arrived, whatever the tape says).
+      const MID1 = { lat: 39.0500, lng: -95.7800 }, MID2 = { lat: 39.0650, lng: -95.8300 };
+      const f3 = [fix(T(9, 17, 5), { lat: DS.lat, lng: DS.lng }),
+        fix(T(9, 24), MID1), fix(T(9, 32), MID2), fix(T(9, 40), OUT917),
         fix(T(9, 48, 5), OUT917), fix(T(10, 25), OUT917), fix(T(10, 51, 5), OUT917),
         fix(T(11, 20, 5), { lat: DS.lat, lng: DS.lng }), fix(T(12, 0), { lat: DS.lat, lng: DS.lng })];
       const rows = await page.evaluate((inp) => {

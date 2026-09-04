@@ -251,7 +251,60 @@ function _gdPathMiles(fixes, a, b, maxAccM, endpoints, maxMph) {
 // Starts on foot -> auto. Ends on the first foot after it, or on a still
 // stretch longer than stillEndMs (the truck parked and the phone stayed in
 // it). Still shorter than that is a red light and does not split a drive.
-function _gdJourneys(tape, personId, opts, dayStart, dayEnd, nowMs) {
+// A PARKED TRUCK ENDS THE DRIVE, WHATEVER THE TAPE SAYS.
+//
+// Owner 2026-09-04: "if it stays automotive or drive, dont want a drive
+// through it to stop it and break it up, but would want it to break it up if
+// a phone gets left and hasnt changed state."
+//
+// Jack's 3 September, 1:55 to 2:53pm, came out as two back-to-back drives with
+// nothing between them. CoreMotion never left automotive in that whole stretch,
+// so the journey builder, which ends a journey on a foot or a long still flip,
+// had nothing to end on. The fixes knew: he was 66 ft from his dad's shop at
+// 2:14 and then the phone said nothing for THIRTY MINUTES. A truck does not go
+// quiet for half an hour on the road.
+//
+// This is the mirror of _gdStayedPut. That uses "the phone is still producing
+// fixes in the same spot" to REFUSE a phantom departure; the same evidence
+// asserts an arrival here. It works on STILLNESS, and stillness means one
+// thing only: the phone is in the same place before and after. Two other
+// readings were tried against his real week and both are wrong.
+//
+// NOT "a fix landed inside a fence". He drives past his own shop: 14 fixes
+// landed inside a fence mid-drive in one week across two accounts, one of them
+// two seconds before a fix outside it. That rule would have invented 14 stops.
+//
+// NOT "the phone went quiet". A silence is not evidence of anything, which the
+// data says plainly. Of the six gaps of ten minutes or more inside a drive that
+// week, five were the phone sitting at one spot and ONE was Jack covering 4.8
+// miles at 22 mph with the radio asleep. Below ten minutes it is worse: of 67
+// gaps in the five-to-ten minute band, 63 show him MOVING, a median of two
+// miles across the gap. A gap is the tracker failing, not the truck stopping,
+// and the only way to tell them apart is where he was on the far side of it.
+//
+// So the test is a CLUSTER: consecutive fixes within a fence radius of each
+// other spanning stillEndMs. That covers the long silence too, because a fix,
+// a thirty-minute hole and a fix at the same spot is one cluster, while the
+// same hole with the far end four miles away is not.
+function _gdParkedSplit(j, fixes, opts) {
+  const still = (Number(opts.stillEndMs) > 0) ? Number(opts.stillEndMs) : GEO_DERIVE_DEFAULTS.stillEndMs;
+  const r = (Number(opts.radiusFt) > 0) ? Number(opts.radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
+  const maxAcc = (Number(opts.maxFixAccM) > 0) ? Number(opts.maxFixAccM) : GEO_DERIVE_DEFAULTS.maxFixAccM;
+  const end = (typeof j.endTs === 'number') ? j.endTs : Infinity;
+  const inside = (fixes || []).filter(f => f && f.lat != null && f.lng != null &&
+    typeof f.ts === 'number' && f.ts >= j.startTs && f.ts <= end &&
+    (f.acc == null || Number(f.acc) <= maxAcc)).sort((a, b) => a.ts - b.ts);
+  for (let i = 0; i < inside.length; i++) {
+    // How long did it sit in this one spot?
+    let k = i;
+    while (k + 1 < inside.length && _gdMiles(inside[i], inside[k + 1]) * 5280 <= r) k++;
+    if (inside[k].ts - inside[i].ts >= still) return [inside[i].ts, inside[k].ts];
+    i = k;
+  }
+  return null;
+}
+
+function _gdJourneys(tape, personId, opts, dayStart, dayEnd, nowMs, fixes) {
   const t = (Array.isArray(tape) ? tape : [])
     .map(x => x && typeof x.ts === 'number' ? { ts: x.ts, k: _gdKind(x.kind), id: x.id } : null)
     .filter(x => x && x.k).sort((a, b) => a.ts - b.ts);
@@ -275,9 +328,23 @@ function _gdJourneys(tape, personId, opts, dayStart, dayEnd, nowMs) {
     if (stillFor >= opts.stillEndMs) { cur.endTs = x.ts; out.push(cur); cur = null; }
   }
   if (cur) { cur.endTs = null; cur.open = true; out.push(cur); }
+  // Split every journey the fixes say was interrupted, however many times.
+  // Bounded by the fix count: each pass consumes at least one fix.
+  const split = [];
+  for (const j of out) {
+    let head = j, guard = 0;
+    while (guard++ < 200) {
+      const cut = _gdParkedSplit(head, fixes, opts);
+      if (!cut || !(cut[0] > head.startTs) || !(head.endTs == null || cut[1] < head.endTs)) break;
+      split.push({ startTs: head.startTs, id: head.id, endTs: cut[0] });
+      head = { startTs: cut[1], id: _gdJourneyId(personId, cut[1], null),
+        endTs: head.endTs, open: head.open };
+    }
+    split.push(head);
+  }
   // "The next geo fence you arrive at THAT DAY": a journey that ends after
   // midnight is still open as far as this day is concerned.
-  return out.filter(j => j.startTs >= dayStart && j.startTs < dayEnd)
+  return split.filter(j => j.startTs >= dayStart && j.startTs < dayEnd)
     .map(j => (j.endTs != null && j.endTs >= dayEnd) ? { startTs: j.startTs, id: j.id, endTs: null, open: true } : j);
 }
 
@@ -308,7 +375,7 @@ function geoDeriveDay(input) {
   if (!(dayStart > 0 && dayEnd > dayStart)) return empty;
   const directMiles = typeof inp.directMiles === 'function' ? inp.directMiles : null;
 
-  const journeys = _gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs);
+  const journeys = _gdJourneys(inp.tape, inp.personId, opts, dayStart, dayEnd, nowMs, fixes);
   const dwells = [], legs = [];
   const at = ts => _gdFixNear(fixes, ts, opts.fixWindowMs, opts.maxFixAccM);
   const fenceOf = fix => fix ? geoFenceAt(fix, fences, opts.radiusFt) : null;
