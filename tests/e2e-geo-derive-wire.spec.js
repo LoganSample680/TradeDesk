@@ -78,6 +78,135 @@ test.describe('geo-derive wiring', () => {
 
   });
 
+  // ── Where the clock was tapped ────────────────────────────────────────
+  // Owner 2026-09-04: "does clock in and clock out button surface a gps ping
+  // where it happened? it should." It did not: clockIn wrote a timeEntries row
+  // with a timestamp and nothing else.
+  test.describe('the clock leaves a ping', () => {
+    const arm = (page, opts) => page.evaluate((o) => {
+      window.__posts = [];
+      window.__geoErr = null;
+      const realFetch = window.fetch;
+      window.fetch = async (url, init) => {
+        if (String(url).indexOf('/functions/v1/ingest-geo') >= 0) {
+          window.__posts.push({ url: String(url), body: JSON.parse((init && init.body) || '{}'),
+            auth: (init && init.headers && init.headers.Authorization) || '' });
+          return { ok: true, json: async () => ({ ok: true }) };
+        }
+        return realFetch(url, init);
+      };
+      window.__restore = () => { window.fetch = realFetch; };
+      navigator.geolocation.getCurrentPosition = (ok, err) => {
+        if (o.deny) { if (err) err({ code: 1 }); return; }
+        ok({ coords: { latitude: 39.0456577, longitude: -95.7151106, accuracy: 8 } });
+      };
+      window._geoCanStamp = async () => !o.noPerm;
+      window._supa = window._supa || {};
+      window._supa.auth = { getSession: async () => ({ data: o.noSession ? {} : { session: { access_token: 'tok-1' } } }) };
+      window.supaEnabled = () => !o.offline;
+    }, opts || {});
+    const drain = async (page) => { await page.waitForTimeout(120); };
+    const posts = (page) => page.evaluate(() => { const p = window.__posts; window.__restore && window.__restore(); return p; });
+
+    test('clocking in posts one clock-in event with the coordinates', async () => {
+      await arm(page, {});
+      await page.evaluate(() => { _geoClockPing('in'); });
+      await drain(page);
+      const p = await posts(page);
+      expect(p.length).toBe(1);
+      expect(p[0].auth).toBe('Bearer tok-1');
+      expect(p[0].body.events.length).toBe(1);
+      const ev = p[0].body.events[0];
+      expect(ev.type).toBe('clock-in');
+      expect([ev.lat, ev.lng]).toEqual([39.045658, -95.715111]);
+      expect(ev.ts).toBeGreaterThan(0);
+      // THE PING IS NOT AN ADDRESS. Nothing on it can steer the deriver or
+      // the reader (owner 2026-09-04: the clock stays a placeholder that says
+      // "grab everything in between" and no more).
+      expect(ev.regionId).toBeUndefined();
+      expect(ev.dest_place).toBeUndefined();
+      expect(ev.name).toBeUndefined();
+    });
+
+    test('clocking out posts a clock-out event', async () => {
+      await arm(page, {});
+      await page.evaluate(() => { _geoClockPing('out'); });
+      await drain(page);
+      const p = await posts(page);
+      expect(p.length).toBe(1);
+      expect(p[0].body.events[0].type).toBe('clock-out');
+    });
+
+    // A CLOCK MUST NEVER FAIL BECAUSE LOCATION DID. Every one of these is a
+    // silent no-op, never a throw and never a blocked clock.
+    for (const [name, o] of [['permission not granted', { noPerm: true }],
+                             ['location denied at the prompt', { deny: true }],
+                             ['no session', { noSession: true }],
+                             ['offline / supabase disabled', { offline: true }]]) {
+      test('no ping and no error when ' + name, async () => {
+        await arm(page, o);
+        const threw = await page.evaluate(() => {
+          try { _geoClockPing('in'); return false; } catch (e) { return true; }
+        });
+        await drain(page);
+        expect(threw).toBe(false);
+        expect((await posts(page)).length).toBe(0);
+      });
+    }
+
+    test('junk in is a no-op, never a throw', async () => {
+      await arm(page, {});
+      const threw = await page.evaluate(() => {
+        try { _geoClockPing(); _geoClockPing(null); _geoClockPing(7); _geoClockPing({}); return false; }
+        catch (e) { return true; }
+      });
+      await drain(page);
+      expect(threw).toBe(false);
+      // Anything that is not 'out' is a clock-in: there are only two ends.
+      const p = await posts(page);
+      expect(p.every(x => x.body.events[0].type === 'clock-in')).toBe(true);
+    });
+
+    // The WIRING, not just the function: it is the clock buttons that have to
+    // call it, and only when the time was actually kept.
+    test('clockIn pings, clockOut pings, and a discarded session does not', async () => {
+      const r = await page.evaluate(() => {
+        const seen = [];
+        const real = window._geoClockPing;
+        window._geoClockPing = (k) => seen.push(k);
+        const keepT = timeEntries.slice(), keepJ = jobs.slice();
+        const savedToast = window.showToast, savedBan = window.showClockBanner, savedHide = window.hideClockBanner;
+        window.showToast = () => {}; window.showClockBanner = () => {}; window.hideClockBanner = () => {};
+        try {
+          clockIn(null, null, null);
+          const afterIn = seen.slice();
+          clockOut(true, true);
+          const afterOut = seen.slice();
+          clockIn(null, null, null);
+          clockOut(false, true);          // discarded: not a clock-out anybody made
+          return { afterIn, afterOut, all: seen.slice() };
+        } finally {
+          window._geoClockPing = real;
+          window.showToast = savedToast; window.showClockBanner = savedBan; window.hideClockBanner = savedHide;
+          timeEntries.length = 0; keepT.forEach(x => timeEntries.push(x));
+          jobs.length = 0; keepJ.forEach(x => jobs.push(x));
+        }
+      });
+      expect(r.afterIn).toEqual(['in']);
+      expect(r.afterOut).toEqual(['in', 'out']);
+      expect(r.all, 'the discard adds an in and no out').toEqual(['in', 'out', 'in']);
+    });
+
+    // The deriver may use them: both are live getCurrentPosition reads taken
+    // at the tap, which is the exact test _GEO_FRESH_FIX_TYPES applies.
+    test('the deriver counts a clock ping as a fresh fix', async () => {
+      const types = await page.evaluate(() => _GEO_FRESH_FIX_TYPES.slice());
+      expect(types).toContain('fix');
+      expect(types).toContain('clock-in');
+      expect(types).toContain('clock-out');
+    });
+  });
+
   test.describe('the fix log', () => {
     test('keeps what the phone saw, in order, without the same fix twice', async () => {
       const r = await page.evaluate(() => {
@@ -500,9 +629,13 @@ test.describe('geo-derive wiring', () => {
       // it carries whatever the phone last resolved: 343 ft off on the owner's
       // own John Doe visit, past the 300 ft fence, which manufactured the
       // phantom exits behind "geo_replace_day: 4 overlapping pair(s)".
+      // AMENDED 2026-09-04: the two clock pings joined the list. They are the
+      // same kind of thing as 'fix', a live getCurrentPosition read taken at
+      // the moment of the tap, which is exactly the test this filter applies.
+      // A fence row, a motion row and a push-ping still never qualify.
       const ins = r.calls.filter(c => c[0] === 'in');
       expect(ins.length).toBeGreaterThan(0);
-      ins.forEach(c => expect(c).toEqual(['in', 'type', ['fix']]));
+      ins.forEach(c => expect(c).toEqual(['in', 'type', ['fix', 'clock-in', 'clock-out']]));
       expect(r.sorted).toBe(true);
       expect(r.last.acc).toBe(7);
     });

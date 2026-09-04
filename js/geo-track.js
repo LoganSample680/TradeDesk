@@ -3122,6 +3122,60 @@ async function _geoCanStamp(){
   if(st==='unsupported'){try{return localStorage.getItem(_GEO_GRANTED_KEY)==='1';}catch(_e){return false;}}
   return false;
 }
+// WHERE THE CLOCK WAS TAPPED (owner 2026-09-04: "does clock in and clock out
+// button surface a gps ping where it happened? it should").
+//
+// It did not. clockIn (js/jobs.js) wrote a timeEntries row with a timestamp
+// and nothing else, and clockOut closed the same row with a timestamp. A
+// clock was a bare pair of times with no idea where it happened, which is
+// exactly the person who needs it most: the one with no fences and no saved
+// addresses, whose clock is the only thing that knows the day ran at all.
+//
+// One live read per tap, posted as its own geo_event. Four things come out of
+// it: the day gets a real start and end coordinate with no fence anywhere, an
+// address becomes offerable ("you clock in here most days"), the clock and the
+// fence corroborate each other when both exist, and the deriver gains two
+// trustworthy positions (they are LIVE reads, which is the whole test
+// _GEO_FRESH_FIX_TYPES applies).
+//
+// THE PING IS NOT AN ADDRESS, and that distinction is the point. The clock
+// stays inert: no name, no dest_place, nothing the deriver or the reader can
+// steer on. It says "grab everything between these two times" and no more.
+// A clock that names a place is what produced Jack's 3 September, where a
+// two-field edit claimed he sat at his own house for nine hours.
+//
+// Fire and forget, always. A clock must never fail, stall, or wait because
+// location was slow, denied or off.
+function _geoClockPing(kind){
+  try{
+    if(!navigator.geolocation)return;
+    if(!window._supa||!window._supaUser)return;
+    if(typeof supaEnabled!=='function'||!supaEnabled())return;
+    const type=kind==='out'?'clock-out':'clock-in';
+    _geoCanStamp().then(ok=>{
+      if(!ok)return;
+      navigator.geolocation.getCurrentPosition(pos=>{
+        try{
+          const ev={type,ts:Date.now(),
+            lat:+pos.coords.latitude.toFixed(6),lng:+pos.coords.longitude.toFixed(6)};
+          const devId=(typeof _initDeviceId==='function')?_initDeviceId():'';
+          // The same edge function the plugin flushes to, on the JS side's own
+          // JWT (ingest-geo reads Authorization first, the device key second).
+          // Client inserts into geo_events are denied by RLS on purpose.
+          _supa.auth.getSession().then(({data})=>{
+            const tok=data&&data.session&&data.session.access_token;
+            if(!tok)return;
+            fetch(_SUPA_DIRECT_URL+'/functions/v1/ingest-geo',{
+              method:'POST',
+              headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok},
+              body:JSON.stringify({device_id:devId,events:[ev]})
+            }).catch(()=>{});
+          }).catch(()=>{});
+        }catch(_e){}
+      },()=>{},{enableHighAccuracy:true,maximumAge:0,timeout:10000});
+    }).catch(()=>{});
+  }catch(_e){}
+}
 function _stampGeo(rec,done,fieldPrefix){
   if(!rec)return;
   // fieldPrefix lets a caller record a live GPS fix WITHOUT overwriting the
@@ -6234,7 +6288,11 @@ async function _geoDeriveTape(sinceMs){
 // refused write means the whole day never lands. Only 'fix' carries a position
 // the deriver can trust; a push-ping still counts as a wake and still triggers
 // the derive, it just no longer claims to know where the phone is.
-const _GEO_FRESH_FIX_TYPES=['fix'];
+// clock-in and clock-out join 'fix' because they are the same thing: a
+// getCurrentPosition read taken at that instant, never a last-known position
+// replayed from a wake (owner 2026-09-04). They are also the only position
+// evidence at all on a day whose owner has saved no fences.
+const _GEO_FRESH_FIX_TYPES=['fix','clock-in','clock-out'];
 const _GEO_FETCH_PAGE=1000;
 const _GEO_FETCH_PAGES=40;
 async function _geoPageAll(build){

@@ -818,14 +818,22 @@ test.describe('timelog.js: exhaustive coverage', () => {
       }
     }, [row, endIso]);
 
-    test('correcting the clock-out writes the new span and re-keys it as human-set', async () => {
+    // AMENDED 2026-09-04 (10.4). This used to assert client_key was renamed to
+    // 'fixed-af7136c6'. That rename was the whole problem: it severed the row
+    // from the derived row it corrected, so a rebuild could not find it again
+    // and geo_replace_day had to protect it by SPAN, dropping every derived
+    // row that overlapped. Jack's 3 September lost sixteen of seventeen rows
+    // to a two-field edit. The key stays; fixed_at is the mark, and the
+    // rebuild carries the times across onto the same row.
+    test('correcting the clock-out writes the new span and marks it human-set, keeping its identity', async () => {
       const r = await drive(REAL, '2026-08-12T22:15:00Z');
       expect(r.opened).toBe(true);
       expect(r.updates.length).toBe(1);
       expect(r.updates[0].id).toBe('af7136c6');
       expect(r.updates[0].patch.departed_at).toBe('2026-08-12T22:15:00.000Z');
       expect(r.updates[0].patch.minutes).toBe(249);
-      expect(r.updates[0].patch.client_key, 'the fixed- key is what stops every sweep from widening it again').toBe('fixed-af7136c6');
+      expect(r.updates[0].patch.client_key, 'the key is the row identity and must survive the correction').toBe(undefined);
+      expect(typeof r.updates[0].patch.fixed_at, 'the mark a rebuild reads instead').toBe('string');
     });
 
     test('a correction can never create a 24h+ entry or cross midnight', async () => {

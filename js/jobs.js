@@ -449,6 +449,11 @@ function clockIn(jobId,scopeId,scopeLabel){
   if(typeof _liveActClockIn==='function')_liveActClockIn(_activeTimer);
   renderJobsPage&&renderJobsPage();
   renderDash&&renderDash();
+  // Where the tap happened (owner 2026-09-04). Fire and forget, after the row
+  // and the banner: a clock never waits on location and never fails because of
+  // it. See _geoClockPing (js/geo-track.js) for what the ping is and, just as
+  // importantly, what it deliberately is not.
+  if(typeof _geoClockPing==='function')_geoClockPing('in');
   showToast('Clocked in · '+(scopeLabel||jobName),'⏱');
 }
 
@@ -490,6 +495,10 @@ function clockOut(saveEntry,silent){
   }
   _activeTimer=null;
   hideClockBanner();
+  // Only when the time was actually kept. A discarded session (saveEntry
+  // false, a switch between jobs) is not a clock-out anybody made and must
+  // not leave a mark where it happened.
+  if(saveEntry!==false&&typeof _geoClockPing==='function')_geoClockPing('out');
   renderJobsPage&&renderJobsPage();
   renderDash&&setTimeout(renderDash,300);
 }

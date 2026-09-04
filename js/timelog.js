@@ -948,11 +948,23 @@ async function _saveFixedAutoEntry(rowId){
   if(typeof _bizDateStr==='function'&&_bizDateStr(start)!==_bizDateStr(end))return bad('An entry has to start and end on the same day.');
   if(!window._supa||!window._supaUser)return bad('Not connected.');
   try{
-    // client_key moves to a 'fixed-' key: that is what tells every sweep
-    // (dedup, merge) this row is a human clock record now and must never be
-    // widened, trimmed, or folded into a neighbor again.
+    // THE ROW KEEPS ITS IDENTITY (owner 2026-09-04: "we need to merge manual
+    // and automatic and it fits").
+    //
+    // This used to rename client_key to 'fixed-'+rowId. That severed the row
+    // from the derived row it was correcting, so a rebuild could never find it
+    // again and geo_replace_day had to protect it by SPAN instead: it dropped
+    // every derived row overlapping it. Jack's 3 September is the bill. He set
+    // 7:45am to 4:45pm on a home-office row, and sixteen of the seventeen rows
+    // his tape produced that day, every drive, the shop time, every unsaved
+    // stop, were thrown away for overlapping his two-field edit.
+    //
+    // The key stays. fixed_at is the mark, and the rebuild carries these times
+    // across onto the same row (20260909_geo_replace_day_merge.sql), the way
+    // it already carries a hand-set vehicle and purpose across a re-derived
+    // mileage leg. The correction sticks and the evidence still lands.
     const{error}=await _supa.from('job_time_entries')
-      .update({arrived_at:start.toISOString(),departed_at:end.toISOString(),minutes:mins,client_key:'fixed-'+rowId})
+      .update({arrived_at:start.toISOString(),departed_at:end.toISOString(),minutes:mins,fixed_at:new Date().toISOString()})
       .eq('id',String(rowId));
     if(error)return bad('Could not save, try again.');
   }catch(_e){return bad('Could not save, try again.');}
