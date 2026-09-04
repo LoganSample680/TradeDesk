@@ -382,12 +382,21 @@ test.describe('week bars: sharing a week as text', () => {
     expect(t).toContain('Driving 2h 51m');
   });
 
-  test('an unanswered hole is named on the day it belongs to', async ({ page }) => {
-    // A number somebody is about to act on has to say when it is incomplete.
+  // AMENDED 2026-09-04 (10.4). This used to require the day line to name its
+  // unanswered hole. Owner: "we shouldnt show that at all in the text, just
+  // the days worked the day, the hours then the total at the bottom broken
+  // down to on site, shop, drive." The hole is a question for the person whose
+  // day it is, asked on the rail where they can answer it; in a message to
+  // somebody else it reads as an apology for the number beside it. It is still
+  // on the rail and still out of the total, which is the part that matters.
+  test('an unanswered hole never reaches the message', async ({ page }) => {
     const t = await page.evaluate(([rows, days]) => _tlWeekShareText(rows, days[0]),
       [WEEK_ROWS, WEEK_DAYS]);
-    expect(t).toContain('Wed 8/26: 6h 5m (45m unaccounted)');
-    expect((t.match(/unaccounted/g) || []).length).toBe(1);
+    expect(t).toContain('Wed 8/26: 6h 5m');
+    expect(t).not.toMatch(/unaccounted/i);
+    // The day still carries only its PAID minutes, so dropping the label never
+    // quietly folded the hole into the number beside it.
+    expect(t).not.toContain('Wed 8/26: 6h 50m');
   });
 
   test('it sends the week ON SCREEN, not whatever week today falls in', async ({ page }) => {

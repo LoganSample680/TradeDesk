@@ -410,7 +410,11 @@ test.describe('month bars: pure helpers', () => {
     expect(t).not.toMatch(/ {2,}/);
     expect(t.split('\n').every(l => l.length <= 72)).toBe(true);
     expect(t).toContain('August 2026');
-    expect(t).toContain('Wk Aug 23 – 29: 39h 27m (45m unaccounted)');
+    // AMENDED 2026-09-04 (10.4), with the week share: the owner asked for the
+    // unaccounted suffix gone from both messages. Still out of the total, and
+    // still asked on the rail where it can be answered.
+    expect(t).toContain('Wk Aug 23 – 29: 39h 27m');
+    expect(t).not.toMatch(/unaccounted/i);
     // The fixture also carries September. A message headed "August 2026" must
     // total August, so the function filters by the month it is labelling
     // rather than trusting whatever the caller handed it.

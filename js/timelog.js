@@ -1848,9 +1848,10 @@ function _tlMonthShareText(rows,mo){
   const lines=Object.keys(byWeek).sort().map(wk=>{
     const min=_tlPaidMin(byWeek[wk]);
     if(!min)return '';
-    const gap=byWeek[wk].filter(r=>_tlRailKind(r)==='gap').reduce((s,r)=>s+(r.minutes||0),0);
+    // No unaccounted here either (owner 2026-09-04, "strip it there to"), for
+    // the same reason as the week share above.
     return (typeof _tlWeekLabel==='function'?String(_tlWeekLabel(wk)).replace(/^Week of /,'Wk '):wk)+
-      ': '+fm(min)+(gap?' ('+fm(gap)+' unaccounted)':'');
+      ': '+fm(min);
   }).filter(Boolean);
   const e=_tlBucketFold(list);
   const split=_TL_BUCKETS.filter(b=>(e[b.k]||0)>0).map(b=>b.label+' '+fm(e[b.k])).join(', ');
@@ -2646,10 +2647,16 @@ function _tlWeekShareText(rows,wkStart){
     const dayRows=byDay[d]||[];
     const min=_tlPaidMin(dayRows);
     if(!min)return;
-    // An unanswered hole is called out on the day it belongs to. A number
-    // somebody is about to act on should say when it is still incomplete.
-    const gap=dayRows.filter(r=>_tlRailKind(r)==='gap').reduce((s,r)=>s+(r.minutes||0),0);
-    lines.push(_tlDayShort(d)+': '+fm(min)+(gap?' ('+fm(gap)+' unaccounted)':''));
+    // NO UNACCOUNTED IN THE TEXT (owner 2026-09-04: "we shouldnt show that at
+    // all in the text, just the days worked the day, the hours then the total
+    // at the bottom broken down to on site, shop, drive").
+    //
+    // It used to append "(1h 12m unaccounted)" to a day. That is a question
+    // for the person whose day it is, asked on the rail where they can answer
+    // it; in a text message to somebody else it reads as an apology for the
+    // number it sits next to. The hole is still on the rail and still out of
+    // the total, which is the part that matters.
+    lines.push(_tlDayShort(d)+': '+fm(min));
   });
   const e=_tlBucketFold(list);
   const split=_TL_BUCKETS.filter(b=>(e[b.k]||0)>0).map(b=>b.label+' '+fm(e[b.k])).join(', ');
