@@ -280,10 +280,130 @@ test.describe('geo-derive wiring', () => {
         _geoAppLogPush(t(10), 'active'); _geoAppLogPush(t(11), 'background');
         const res = await _geoDeriveDayNow(day, null);
         const q = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]');
-        return { res: res && res.dwells.map(d => [d.kind, d.minutes]), q: q.map(x => x.args.p_time.map(r => r.source)) };
+        return { res: res && res.dwells.map(d => [d.kind, d.minutes]), q: q.map(x => x.args.p_time.map(r => r.source)),
+          sweep: q.map(x => x.args.p_sweep) };
       });
       expect(r.res).toEqual([['office', 60]]);
       expect(r.q).toEqual([['place-office']]);
+      // NO TAPE, NO SWEEP: the office row may be added, but this derive had no
+      // motion history for the day, so it must not be allowed to retire
+      // anything geo_replace_day already holds for it.
+      expect(r.sweep).toEqual([false]);
+    });
+  });
+
+  // ── The tape belongs to whoever has been carrying the phone ─────────────
+  // Owner 2026-09-04: "say jack signs out of this device and onto another,
+  // what happens to the deriver if he signs on a new device or a shared ipad
+  // that others use? How do we ensure we dont re-derive rows that arent
+  // accurate?"
+  test.describe('the tape belongs to whoever has been carrying the phone', () => {
+    const TAPE = [
+      { ts: Date.parse('2026-08-25T13:00:00Z'), kind: 'automotive' },
+      { ts: Date.parse('2026-08-25T13:30:00Z'), kind: 'onFoot' },
+      { ts: Date.parse('2026-09-01T13:00:00Z'), kind: 'automotive' },
+      { ts: Date.parse('2026-09-01T13:30:00Z'), kind: 'onFoot' },
+    ];
+    const withTape = () => page.evaluate((T) => {
+      window.__realTd = window._geoTdPlugin;
+      window._geoTdPlugin = () => ({ motionSince: async ({ sinceMs }) => ({ available: true, transitions: T.filter(t => t.ts >= (sinceMs || 0)) }) });
+    }, TAPE);
+    const restore = () => page.evaluate(() => { window._geoTdPlugin = window.__realTd; localStorage.removeItem('zp3_geo_tape_owner'); });
+
+    test('a brand-new device has no usable history for yesterday, and today from now on', async () => {
+      await withTape();
+      try {
+        const r = await page.evaluate(async () => {
+          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_derive_ver');
+          const savedUser = window._supaUser; window._supaUser = { id: 'jack' };
+          try {
+            const before = await _geoDeriveTape(0);       // no claim yet: trusts nothing older than now
+            _geoTapeClaim();
+            const o = JSON.parse(localStorage.getItem('zp3_geo_tape_owner'));
+            const after = await _geoDeriveTape(0);
+            return { before: before.length, after: after.length, uid: o.uid, sinceRecent: Date.now() - o.since < 5000 };
+          } finally { window._supaUser = savedUser; }
+        });
+        expect(r.before, 'nothing before the claim').toBe(0);
+        expect(r.after, 'the past week of somebody else\'s phone is not his').toBe(0);
+        expect(r.uid).toBe('jack');
+        expect(r.sinceRecent, 'the claim starts now, not last week').toBe(true);
+      } finally { await restore(); }
+    });
+
+    test('a phone that was already deriving keeps its seven-day window across the upgrade', async () => {
+      await withTape();
+      try {
+        const r = await page.evaluate(async () => {
+          localStorage.removeItem('zp3_geo_tape_owner');
+          localStorage.setItem('zp3_geo_derive_ver', 'older-build');
+          const savedUser = window._supaUser; window._supaUser = { id: 'jack' };
+          try {
+            _geoTapeClaim();
+            const o = JSON.parse(localStorage.getItem('zp3_geo_tape_owner'));
+            const days = (Date.now() - o.since) / 86400000;
+            return { days, seen: (await _geoDeriveTape(0)).map(t => t.ts) };
+          } finally { window._supaUser = savedUser; localStorage.removeItem('zp3_geo_derive_ver'); }
+        });
+        expect(Math.round(r.days)).toBe(7);
+        // Only the Sept 1 pair is inside a seven-day window from today-ish
+        // (the fixture is dated; what matters is the window is seven days,
+        // not zero and not forever).
+        expect(r.seen.every(ts => ts >= Date.now() - 7 * 86400000 - 60000)).toBe(true);
+      } finally { await restore(); }
+    });
+
+    test('somebody else signing in takes the phone: the previous claim is over', async () => {
+      await withTape();
+      try {
+        const r = await page.evaluate(async () => {
+          localStorage.removeItem('zp3_geo_tape_owner'); localStorage.removeItem('zp3_geo_derive_ver');
+          const savedUser = window._supaUser;
+          try {
+            window._supaUser = { id: 'jack' }; _geoTapeClaim();
+            const jack1 = JSON.parse(localStorage.getItem('zp3_geo_tape_owner'));
+            window._supaUser = { id: 'dad' }; _geoTapeClaim();
+            const dad = JSON.parse(localStorage.getItem('zp3_geo_tape_owner'));
+            // Jack again, later: a fresh claim, never the old one back.
+            window._supaUser = { id: 'jack' }; _geoTapeClaim();
+            const jack2 = JSON.parse(localStorage.getItem('zp3_geo_tape_owner'));
+            // and a signed-in person who is NOT the owner reads no tape at all
+            window._supaUser = { id: 'dad' };
+            const dadReads = (await _geoDeriveTape(0)).length;
+            return { jack1: jack1.uid, dad: dad.uid, jack2: jack2.uid, fresh: jack2.since >= dad.since, dadReads };
+          } finally { window._supaUser = savedUser; }
+        });
+        expect([r.jack1, r.dad, r.jack2]).toEqual(['jack', 'dad', 'jack']);
+        expect(r.fresh, 'a new claim, not the old one resurrected').toBe(true);
+        expect(r.dadReads, 'not the owner, not their tape').toBe(0);
+      } finally { await restore(); }
+    });
+
+    test('no signed-in user claims nothing and reads nothing', async () => {
+      await withTape();
+      try {
+        const r = await page.evaluate(async () => {
+          localStorage.removeItem('zp3_geo_tape_owner');
+          const savedUser = window._supaUser; window._supaUser = null;
+          try { _geoTapeClaim(); return { key: localStorage.getItem('zp3_geo_tape_owner'), n: (await _geoDeriveTape(0)).length }; }
+          finally { window._supaUser = savedUser; }
+        });
+        expect(r.key).toBeNull();
+        expect(r.n).toBe(0);
+      } finally { await restore(); }
+    });
+
+    test('junk in the claim slot is ignored, never a throw', async () => {
+      const r = await page.evaluate(async () => {
+        const out = [];
+        for (const junk of ['{INVALID', '{"uid":"jack"}', '{"since":5}', '[]', 'null']) {
+          localStorage.setItem('zp3_geo_tape_owner', junk);
+          try { out.push(_geoTapeOwner() === null && typeof _geoTapeSince() === 'number'); } catch (e) { out.push('THREW'); }
+        }
+        localStorage.removeItem('zp3_geo_tape_owner');
+        return out;
+      });
+      expect(r).toEqual([true, true, true, true, true]);
     });
   });
 
@@ -338,6 +458,7 @@ test.describe('geo-derive wiring', () => {
       const it = r.q[0];
       expect(it.rpc).toBe('geo_replace_day');
       expect(it.key).toBe('rpc:2026-09-01');
+      expect(it.args.p_sweep, 'the tape covered the day, so the sweep is allowed').toBe(true);
       expect(it.args.p_day).toBe(DAY);
       expect(it.args.p_employee).toBe(await page.evaluate(() => _supaUser.id));
       expect(it.args.p_day_start).toBe('2026-09-01T05:00:00.000Z');

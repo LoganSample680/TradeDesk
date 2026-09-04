@@ -5896,6 +5896,7 @@ const _GEO_SHOP_DUP_OVERLAP_MS=240000; // 4 min: a real back-to-back handoff can
 function _geoTrackInit(){
   if(!S.teamTracking)return;                 // tracking not enabled for the company
   if(!_supaUser)return;
+  _geoTapeClaim();                           // this person owns this phone's tape from now
   _geoDeriveRebuildSoon();
   _geoOnsiteTickStart();
   setTimeout(()=>{try{_geoTapeDriveCheck('boot');}catch(_e){}},1500);
@@ -6257,13 +6258,60 @@ function _geoDeriveFences(dayKey){
 
 // The coprocessor's own history. Empty on any build without it, and an
 // empty tape is a reason to do NOTHING, never a reason to write an empty day.
+// ── The tape belongs to whoever has been carrying the phone ──────────────
+// Owner 2026-09-04: "say jack signs out of this device and onto another,
+// what happens to the deriver if he signs on a new device or a shared ipad
+// that others use? How do we ensure we dont re-derive rows that arent
+// accurate?"
+//
+// Nothing did. CoreMotion's history is the DEVICE's: it says what this phone
+// did for the last seven days, and has no idea who was holding it. The
+// rebuild read that history and stamped it with whoever was signed in, so a
+// crew member signing into the shop iPad would have had the iPad's week
+// written over his own, and geo_replace_day would have swept his real rows
+// to make room. A brand-new phone was the same hole with an empty tape.
+//
+// One owner per device, from the moment they signed in. The stamp is the
+// device's, not the person's: when somebody else signs in it moves to them
+// and the previous person's claim on this phone is over. A derive only ever
+// sees tape from the claim onward, so a new device has no usable history for
+// yesterday and writes nothing for it (the sweep is gated on tape coverage
+// in _geoDeriveDayNow), while today derives from now on as it always did.
+//
+// A phone that was already deriving before this shipped is a single-user
+// phone by construction (nobody else has ever signed in on it, or there
+// would be no derive-version key), so it keeps its seven-day window rather
+// than losing last week to the upgrade. Anything with no history starts now.
+const _GEO_TAPE_OWNER_KEY='zp3_geo_tape_owner';
+function _geoTapeOwner(){
+  try{const o=JSON.parse(localStorage.getItem(_GEO_TAPE_OWNER_KEY)||'null');return (o&&o.uid&&Number(o.since)>0)?o:null;}catch(_e){return null;}
+}
+function _geoTapeClaim(){
+  if(!_supaUser||!_supaUser.id)return;
+  try{
+    const cur=_geoTapeOwner();
+    if(cur&&cur.uid===_supaUser.id)return;
+    const prior=!cur&&!!localStorage.getItem(_GEO_DERIVE_VER_KEY);
+    const since=prior?Date.now()-_GEO_DERIVE_DAYS*86400000:Date.now();
+    localStorage.setItem(_GEO_TAPE_OWNER_KEY,JSON.stringify({uid:_supaUser.id,since}));
+  }catch(_e){}
+}
+// The earliest tape moment this signed-in person may read on this device.
+// No claim at all (a test, a boot that has not reached init) trusts nothing
+// older than this instant, which is the safe way to be wrong.
+function _geoTapeSince(){
+  const o=_geoTapeOwner();
+  if(o&&_supaUser&&o.uid===_supaUser.id)return Number(o.since);
+  return Date.now();
+}
 async function _geoDeriveTape(sinceMs){
   try{
     const Td=(typeof _geoTdPlugin==='function')?_geoTdPlugin():null;
     if(!Td||typeof Td.motionSince!=='function')return [];
-    const r=await Td.motionSince({sinceMs:Number(sinceMs)||0});
+    const floor=Math.max(Number(sinceMs)||0,_geoTapeSince());
+    const r=await Td.motionSince({sinceMs:floor});
     if(!r||!r.available||!Array.isArray(r.transitions))return [];
-    return r.transitions.filter(t=>t&&typeof t.ts==='number'&&t.kind);
+    return r.transitions.filter(t=>t&&typeof t.ts==='number'&&t.kind&&t.ts>=floor);
   }catch(_e){return [];}
 }
 
@@ -6542,10 +6590,17 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     _geoDeriveApplyMileage(dayKey,rows.td_mileage);
     try{if(typeof renderAllMileage==='function'&&document.getElementById('mil-table'))renderAllMileage();}catch(_e){}
     await _geoDeriveRouteMiles(rows.td_mileage);
+    // NO TAPE, NO SWEEP (owner 2026-09-04: "cant risk data going away ever").
+    // A derive without the phone's own motion history for this day (a
+    // laptop, a new phone, a shared iPad before this person's claim) may
+    // still ADD what it can prove from the app log, a Sunday of invoicing at
+    // the home office, but it may never retire a row it cannot see the
+    // evidence for. geo_replace_day skips its sweeps when p_sweep is false.
     _geoEnqueueRpc(dayKey,{
       p_contractor:_geoCid(),p_employee:_supaUser.id,p_day:dayKey,
       p_day_start:new Date(b.start).toISOString(),p_day_end:new Date(b.end).toISOString(),
       p_time:rows.job_time_entries,p_shop:rows.shop_time_entries,p_miles:rows.td_mileage,
+      p_sweep:!!tapeCovers,
     });
     _geoDeriveApplyMileage(dayKey,rows.td_mileage);
     // Every derived day tells js/day-end.js where it ended, so a clock that
