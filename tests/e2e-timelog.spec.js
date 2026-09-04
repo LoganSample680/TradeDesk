@@ -3426,6 +3426,117 @@ test.describe('timelog.js: exhaustive coverage', () => {
                                       arrived_at: at(s[0], s[1]), departed_at: at(e[0], e[1]) });
 
 
+    // ── The clock remainder is an unsaved job site ────────────────────────
+    // Owner 2026-09-04: "if we see a manual clock in, and then there's
+    // unaccounted for time after, meaning he's not inside a shop fence and is
+    // still clocked in and not back home at his office, that means that
+    // unaccounted for time is a unsaved job site."
+    //
+    // Jack's 1 September, from his own rows: a 438-minute clock, two shop
+    // visits and two drives, and 2h 3m in the middle that the rail simply did
+    // not mention. It was paid the whole time, sitting in the clock's
+    // remainder with no name on it.
+    test('the stretch no fence covered becomes a job site', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        A('place', [12, 0], [13, 0], 60),
+      ], CLOCK([8, 0], [13, 0], 300));
+      const site = r.rows.find(x => x.raw === 'site');
+      expect(site, 'the three hours between the two visits').toBeTruthy();
+      expect(site.m).toBe(180);
+      expect(site.detail).toBe('Address not saved');
+      expect(site.unpaid).toBe(false);
+    });
+
+    // The half that keeps payroll honest, and the reason the clock HANDS the
+    // minutes over instead of keeping them: _tlPaidMin sums every row that is
+    // not unpaid, so naming time must never also add it.
+    test('naming the remainder changes no total', async () => {
+      const rows = [A('place', [8, 0], [9, 0], 60), A('place', [12, 0], [13, 0], 60)];
+      const r = await rowsFor(rows, CLOCK([8, 0], [13, 0], 300));
+      expect(r.paid, 'exactly the clock, before and after').toBe(300);
+      const clock = r.rows.find(x => x.src === 'manual');
+      const site = r.rows.find(x => x.raw === 'site');
+      expect(clock.m + site.m + 120, 'the clock gave up what the site took').toBe(300);
+    });
+
+    // His own escape hatch, and it needs no new UI.
+    test('a gap between two clocks is nobody job site, it is still a question', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        A('place', [12, 0], [13, 0], 60),
+      ], [
+        { id: 1, date: D, open: false, job_id: null, minutes: 60, start_time: at(8, 0),
+          end_time: at(9, 0), logged_by_uid: 'jack', logged_by_name: 'Jack' },
+        { id: 2, date: D, open: false, job_id: null, minutes: 60, start_time: at(12, 0),
+          end_time: at(13, 0), logged_by_uid: 'jack', logged_by_name: 'Jack' },
+      ]);
+      expect(r.rows.some(x => x.raw === 'site'), 'lunch is a clock out, not a guess').toBe(false);
+      expect(r.rows.some(x => x.raw === 'unaccounted')).toBe(true);
+    });
+
+    // NO CLOCK, NO CLAIM. Nothing has asserted work, so nothing is named.
+    test('an untracked stretch with no clock over it stays a question', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        A('place', [12, 0], [13, 0], 60),
+      ], []);
+      expect(r.rows.some(x => x.raw === 'site')).toBe(false);
+      expect(r.rows.find(x => x.raw === 'unaccounted').unpaid).toBe(true);
+    });
+
+    // NO EVIDENCE, NO CLAIM (owner: "we make no inferences here"). Jack's 2
+    // September: signed out at 08:17, so the day holds a clock and nothing
+    // else. A whole shift named "job site" off a clock alone would be exactly
+    // the inference this app must not make.
+    test('a clock with nothing tracked under it at all is left alone', async () => {
+      const r = await rowsFor([], CLOCK([8, 0], [16, 0], 480));
+      expect(r.rows.some(x => x.raw === 'site')).toBe(false);
+      expect(r.rows.find(x => x.src === 'manual').m).toBe(480);
+      expect(r.paid).toBe(480);
+    });
+
+    // A sliver between two tracked rows is rounding, not a site visit.
+    test('a few minutes between two rows is not a job site', async () => {
+      const r = await rowsFor([
+        A('place', [8, 0], [9, 0], 60),
+        A('place', [9, 2], [10, 0], 58),
+      ], CLOCK([8, 0], [10, 0], 120));
+      expect(r.rows.some(x => x.raw === 'site')).toBe(false);
+    });
+
+    // NOTHING IS INFERRED ABOUT WHERE (owner: "un saved mileage legs no they
+    // cant and I wont do it ... this app was built to survive a IRS audit").
+    test('a job site claims no address, and the rail says so out loud', async () => {
+      const out = await page.evaluate(async ([es, ms]) => {
+        const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
+        window.timeEntries = ms;
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
+        try {
+          const day = (await _timeLogRows(null)).filter(r => r.date === '2026-09-01');
+          const site = day.find(r => r.rawSource === 'site');
+          return { addr: site.addr, key: site.clientKey, name: site.clientName,
+                   mileage: (typeof mileage !== 'undefined' && Array.isArray(mileage))
+                     ? mileage.filter(m => m && m.date === '2026-09-01').length : 0,
+                   html: _tlDayRailHtml(day) };
+        } finally { window._fetchCrewLabor = orig; window.timeEntries = keepT; }
+      }, [[A('place', [8, 0], [9, 0], 60), A('place', [12, 0], [13, 0], 60)], CLOCK([8, 0], [13, 0], 300)]);
+      expect(out.addr).toBe('');
+      expect(out.key).toBe(null);
+      expect(out.name).toBe('Job site');
+      expect(out.mileage, 'naming time never writes a mileage leg').toBe(0);
+      expect(out.html).toContain('Job site');
+      expect(out.html).toContain('Address not saved');
+      // It must never read as the geofenced kind, which is what an audit turns
+      // on. The two real 'place' rows in this fixture DO say "On site", so the
+      // check is that the job-site row itself does not: its own block carries
+      // the JOB SITE tag and the address disclaimer, never the saved-client one.
+      const block = out.html.slice(out.html.indexOf('Job site') - 400,
+                                   out.html.indexOf('Address not saved') + 40);
+      expect(block).not.toContain('On site');
+    });
+
     test('the fences keep their own labels: the clock is the bracket, not the record', async () => {
       const r = await rowsFor([
         A('drive', [8, 0], [8, 30], 30),
@@ -3476,7 +3587,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
                               CLOCK([7, 42], [17, 0], 558));
       const man = r.rows.find(x => x.src === 'manual');
       expect(man.blended).toBe(2);
-      expect(man.m).toBe(556);
+      // The proportional charge is what this test is about and it is unchanged
+      // at 2. What changed on 2026-09-04 is where the REST of the clock goes:
+      // it used to sit on the clock row as 556 anonymous minutes, and is now
+      // handed to a named job-site row (owner's rule, above). The number that
+      // must not move is the day's total, and it does not.
+      expect(man.m + (r.rows.find(x => x.raw === 'site') || { m: 0 }).m).toBe(556);
       expect(r.paid, 'the clock, plus the 18 minutes that ran before it').toBe(576);
     });
 
@@ -3492,7 +3608,14 @@ test.describe('timelog.js: exhaustive coverage', () => {
       ], CLOCK([8, 0], [17, 0], 540));
       const man = r.rows.find(x => x.src === 'manual');
       expect(man.blended, 'only the place, never the lunch').toBe(60);
-      expect(man.m).toBe(480);
+      // Same 2026-09-04 change: the 480 minutes the clock used to hold
+      // anonymously are now named as job-site stretches around the lunch. The
+      // lunch itself is STILL not deducted, which is what this test guards,
+      // and the day still totals what it did.
+      const sites = r.rows.filter(x => x.raw === 'site').reduce((n, x) => n + x.m, 0);
+      expect(man.m + sites).toBe(480);
+      expect(r.rows.some(x => x.raw === 'stop' && x.m === 30),
+        'the lunch is still its own row, undeducted').toBe(true);
     });
 
     test('fences that exceed the clock never drive the day negative', async () => {

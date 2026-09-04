@@ -179,6 +179,8 @@ const _TL_GAP_ABSORB_MAX_MS=30*60000;
 // below is for what survives that: a two-minute seam between a drive and an
 // arrival is rounding, not a hole worth a line of its own.
 const _TL_UNACCOUNTED_MIN_MS=5*60000;
+// A sliver of clock between two tracked rows is rounding, not a job site.
+const _TL_SITE_MIN_MIN=5;
 // ONE PERSON, ONE BUCKET (owner 2026-08-30: "when I marked it as break unpaid
 // it kept adding a row").
 //
@@ -319,6 +321,74 @@ function _tlBlendManual(rows){
       // with no explanation is the "silently missing chunk" he objected to;
       // this names where the rest of it went.
       m.r.detail=fm(covered)+' of this is tracked below';
+    });
+
+    // WHAT IS LEFT OF THE CLOCK IS AN UNSAVED JOB SITE (owner 2026-09-04: "if
+    // we see a manual clock in, and then there's unaccounted for time after,
+    // meaning he's not inside a shop fence and is still clocked in and not
+    // back home at his office, that means that unaccounted for time is a
+    // unsaved job site").
+    //
+    // The remainder above was already PAID and always has been, it just had no
+    // name: Jack's 31 August showed a 470-minute clock as "298m" with "2h 52m
+    // of this is tracked below" and nothing anywhere saying where the other
+    // 298 minutes went. On an account whose customers are yards nobody saved,
+    // that silent remainder IS the working day.
+    //
+    // The clock is his own statement that he was working; no fence says only
+    // that nobody saved the address. So the stretches of the clock no tracked
+    // row covers become rows of their own, and the clock hands them its
+    // minutes rather than keeping them anonymous. The day totals exactly the
+    // same before and after: this names time, it never adds any.
+    //
+    // NOTHING IS INFERRED ABOUT WHERE (owner, same message: "un saved mileage
+    // legs no they cant and I wont do it, we make no inferences here, this app
+    // was built to survive a IRS audit"). No address, no coordinates, no
+    // mileage leg, and the row says "Address not saved" out loud. A deduction
+    // still needs a saved address at both ends.
+    //
+    // The escape hatch is his and needs no new UI: clock OUT and back IN, and
+    // the stretch between the two clocks belongs to neither, so it stays a
+    // real hole for _tlFillUnaccounted to ask about. Lunch is a clock out, not
+    // a guess this code makes.
+    manual.forEach(m=>{
+      if(!(m.r.minutes>0))return;
+      // Spans, not minutes. A tracked row covers the wall-clock stretch it
+      // brackets; how many minutes it claims is a different number and is
+      // already handled above.
+      const busy=list.filter(x=>x.r.source!=='manual'&&(x.r.minutes||0)>0&&x.b>m.a&&x.a<m.b)
+        .map(x=>[Math.max(m.a,x.a),Math.min(m.b,x.b)]).sort((p,q)=>p[0]-q[0]);
+      const merged=[];
+      busy.forEach(sp=>{
+        const last=merged[merged.length-1];
+        if(last&&sp[0]<=last[1])last[1]=Math.max(last[1],sp[1]);else merged.push(sp.slice());
+      });
+      const free=[];
+      let at=m.a;
+      merged.forEach(([a,b])=>{ if(a>at)free.push([at,a]); at=Math.max(at,b); });
+      if(at<m.b)free.push([at,m.b]);
+      let handed=0;
+      free.forEach(([a,b],i)=>{
+        const mins=Math.round((b-a)/60000);
+        if(mins<_TL_SITE_MIN_MIN||handed+mins>m.r.minutes)return;
+        handed+=mins;
+        rows.push({
+          id:'site'+k+'_'+a,rawId:null,source:'site',rawSource:'site',
+          date:m.r.date,minutes:mins,
+          personName:m.r.personName,personUid:m.r.personUid||null,
+          clientName:'Job site',addr:'',jobName:'',clientKey:null,
+          unpaid:false,detail:'Address not saved',
+          startTime:new Date(a).toISOString(),endTime:new Date(b).toISOString()
+        });
+      });
+      if(!handed)return;
+      // The clock hands the minutes over rather than being asked for them
+      // twice. _tlPaidMin sums every row that is not unpaid, so the day total must
+      // come out identical: what the clock loses here, the site rows carry.
+      m.r.minutes=Math.max(0,m.r.minutes-handed);
+      const tracked=Number(m.r.blendedMin)||0;
+      m.r.detail=tracked?fm(tracked+handed)+' of this is tracked below'
+                        :fm(handed)+' of this is tracked below';
     });
   });
   return rows;
@@ -889,6 +959,7 @@ function _tlRailKind(r){
   if(r.rawSource==='place-load')return 'load';
   if(r.rawSource==='place-office')return 'office';
   if(r.rawSource==='place-home')return 'home';
+  if(r.rawSource==='site')return 'site';
   // Same raw-column-first rule as _tlRow, and for the same reason: the
   // friendly label is not a stable key.
   if(r.source==='auto'&&((typeof _geoIsDriveSource==='function'&&r.rawSource)
@@ -921,6 +992,11 @@ const _TL_RAIL_META={
   // classifies it (his own rule: "doesnt get included in time unless
   // classified, i.e. lunch, breaks, business trips").
   off:   {c:'var(--text3)',      icon:'🕐', word:'Manual time'},
+  // Inside a running clock, at no fence anybody saved. It IS work, the clock
+  // says so, but an audit has to tell it apart from a geofenced client: 'On
+  // site' is a saved address, 'Job site' is one nobody saved, and the row
+  // prints "Address not saved" underneath rather than implying a location.
+  site:  {c:'var(--blue)',       icon:'📍', word:'Job site'},
   manual:{c:'var(--text3)',      icon:'▶',  word:'Manual'},
   gap:   {c:'var(--border2)',    icon:'❓', word:'Unaccounted'}
 };
@@ -1004,8 +1080,15 @@ function _tlRailRow(r){
     // is already on the row underneath. Falling back to the address is still
     // right when there is no name at all, which is what a supply run looks
     // like.
+    // A JOB SITE HAS NO NAME, AND SAYING SO IS THE POINT. The tag already
+    // reads JOB SITE, so repeating it as the title would be the same
+    // duplication the gap row avoids, and it would leave the row with nothing
+    // anywhere admitting the address was never saved. An audit turns on
+    // exactly that distinction: 'On site' over a saved client, this over a
+    // stretch the clock vouched for and no fence could name.
     const ttl=leg?((leg.from_name||'—')+' → '+(leg.to_name||r.clientName||'—'))
-                 :(_bareName||r.addr||(r.source==='manual'?'Clocked in':m.word));
+                 :(kind==='site'?(r.detail||'Address not saved')
+                 :(_bareName||r.addr||(r.source==='manual'?'Clocked in':m.word)));
     // THE SUB-LINE IS THE CLOCK, AND ONLY THE CLOCK (owner 2026-08-30: "why
     // put tradedesk shop under the sub title that already says it ... can
     // just do the start and end time under there").

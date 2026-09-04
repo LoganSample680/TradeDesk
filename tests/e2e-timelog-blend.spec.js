@@ -5,12 +5,23 @@
 // with automatic stops that day, need manual to mingle with automatic time
 // logs cleanly."
 //
-// The rule (owner 2026-09-01, kept): the clock is the outer bracket and the
+// The rule (owner 2026-09-01): the clock is the outer bracket and the
 // automatic rows are the detail. Every automatic row inside the clock keeps
-// its own minutes; the clock keeps only what nothing explains, and that
-// remainder reads as Manual time. Nothing is counted twice, the day totals
-// the clock when the clock brackets everything, and an untracked stretch
-// (a client the app has no fence for) is exactly the remainder.
+// its own minutes; the clock keeps only what nothing explains. Nothing is
+// counted twice and the day totals the clock when the clock brackets
+// everything.
+//
+// AMENDED 2026-09-04. That remainder used to read as "Manual time", which
+// said nothing at all about a stretch that on Jack's account IS the working
+// day: 2h 3m of his 1 September sat in it with no name. The owner drew the
+// rule out: "if we see a manual clock in, and then there's unaccounted for
+// time after, meaning he's not inside a shop fence and is still clocked in
+// and not back home at his office, that means that unaccounted for time is a
+// unsaved job site." So the remainder is now handed to named Job site rows
+// and the clock gives up those minutes rather than holding them anonymously.
+//
+// THE TOTAL IS THE INVARIANT, and every test below still asserts it: naming
+// time must never add any. What moved is only which row carries it.
 //
 // With the deriver in front of it the blend's input is a clean partition:
 // no overlaps, no duplicates, no round trips to withdraw first. So this is
@@ -74,14 +85,23 @@ test.describe('manual clock over a derived day', () => {
     const auto = r.filter(x => x.src !== 'manual');
     const clock = r.find(x => x.src === 'manual');
     // Every automatic row keeps its own minutes.
+    // The leading 12:30-12:52 is the 22 minutes of clock before his first
+    // drive: clocked in, not yet anywhere the fences know. Under the
+    // 2026-09-04 rule that is a Job site like any other uncovered stretch.
     expect(auto.map(x => [x.t, x.min])).toEqual([
+      ['12:30-12:52', 22],
       ['12:52-13:03', 11], ['13:03-17:21', 258], ['17:21-17:31', 10], ['17:31-18:17', 46],
       ['18:17-18:25', 8], ['18:25-22:08', 223], ['22:08-22:16', 8],
+      // And the trailing 14 minutes after his last drive home, before he
+      // clocked out. 22 + 14 is exactly the 36 the clock used to hold unnamed.
+      ['22:16-22:30', 14],
     ]);
     // The clock ran 600 minutes; 564 of them are itemised below it.
     expect(clock).toBeTruthy();
     expect(clock.blended).toBe(564);
-    expect(clock.min).toBe(36);
+    // The 36 minutes nothing itemised are now a Job site rather than sitting
+    // unnamed on the clock (2026-09-04). Same minutes, named row.
+    expect(clock.min + r.filter(x => x.raw === 'site').reduce((n, x) => n + x.min, 0)).toBe(36);
     // And the day totals the clock, not the clock plus the fences.
     const total = r.reduce((s, x) => s + (x.unpaid ? 0 : x.min), 0);
     expect(total).toBe(600);
@@ -97,9 +117,15 @@ test.describe('manual clock over a derived day', () => {
     const clock = r.find(x => x.src === 'manual');
     expect(clock.blended).toBe(95 + 222);
     // 7:42 to 3:00 is 438 minutes; the fences explain 317; the client with no
-    // fence is the 121 that remain, and they read as Manual time.
-    expect(clock.min).toBe(121);
-    expect(clock.kind).toBe('manual');
+    // fence is the 121 that remain. This is the exact case the owner named on
+    // 2026-09-04, so those 121 minutes now say what they are instead of
+    // reading as anonymous Manual time.
+    const site = r.find(x => x.raw === 'site');
+    expect(site, 'the untracked client in the middle').toBeTruthy();
+    expect(site.min).toBe(121);
+    expect(site.kind).toBe('site');
+    expect(site.name).toBe('Job site');
+    expect(clock.min).toBe(0);
     // The drive before the clock is its own paid row, untouched by the blend.
     const drive = r.find(x => x.raw === 'drive');
     expect([drive.min, drive.unpaid]).toEqual([22, false]);
@@ -114,7 +140,8 @@ test.describe('manual clock over a derived day', () => {
     const r = await render(entries, [], [[T(9, 0), T(12, 0)]]);
     const clock = r.find(x => x.src === 'manual');
     expect(clock.blended).toBe(60);
-    expect(clock.min).toBe(120);
+    // The two hours of clock the fence did not reach are a Job site now.
+    expect(clock.min + r.filter(x => x.raw === 'site').reduce((n, x) => n + x.min, 0)).toBe(120);
     const total = r.reduce((s, x) => s + x.min, 0);
     expect(total).toBe(120 + 120);
   });
@@ -123,7 +150,20 @@ test.describe('manual clock over a derived day', () => {
     const entries = [row('d1', 'client', T(8, 0), T(9, 0)), row('d2', 'client', T(14, 0), T(15, 0))];
     const r = await render(entries, [], [[T(7, 0), T(10, 0)], [T(13, 0), T(16, 0)]]);
     const clocks = r.filter(x => x.src === 'manual');
-    expect(clocks.map(c => [c.blended, c.min])).toEqual([[60, 120], [60, 120]]);
+    // Each clock still blends only its own hour, and each hands its own
+    // remaining two hours to a Job site of its own: the point of the test is
+    // that neither clock reaches into the other, and it still holds.
+    expect(clocks.map(c => c.blended)).toEqual([60, 60]);
+    // FOUR job sites, not two, and that is right: each clock has an hour of
+    // fence in its middle, so each leaves a free hour either side of it. The
+    // point of this test is that neither clock reaches into the other, and
+    // that is what the split proves.
+    const sites = r.filter(x => x.raw === 'site');
+    expect(sites.map(x => [x.t, x.min])).toEqual([
+      ['12:00-13:00', 60], ['14:00-15:00', 60],
+      ['18:00-19:00', 60], ['20:00-21:00', 60],
+    ]);
+    clocks.forEach(c => expect(c.min).toBe(0));
   });
 
   test('a fence wider than the clock never drives the clock below zero', async () => {
