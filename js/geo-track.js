@@ -6596,11 +6596,21 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     // still ADD what it can prove from the app log, a Sunday of invoicing at
     // the home office, but it may never retire a row it cannot see the
     // evidence for. geo_replace_day skips its sweeps when p_sweep is false.
+    //
+    // AND ONLY WHEN THIS PHONE OWNED THE WHOLE DAY. Owner 2026-09-04, walking
+    // it through: "I sign out and sign in on jacks phone, we both have
+    // different core motions, what happens." The claim starts at the swap, so
+    // the tape says nothing about the morning; the morning's rows came from
+    // the other phone, they are not in this derive's set, and a sweep would
+    // have retired them. A partial day may add and refresh, never retire.
+    // Tomorrow's rebuild, with the claim covering the whole of today, sweeps
+    // it properly.
+    const tapeOwned=_geoTapeSince()<=b.start-2*3600000;
     _geoEnqueueRpc(dayKey,{
       p_contractor:_geoCid(),p_employee:_supaUser.id,p_day:dayKey,
       p_day_start:new Date(b.start).toISOString(),p_day_end:new Date(b.end).toISOString(),
       p_time:rows.job_time_entries,p_shop:rows.shop_time_entries,p_miles:rows.td_mileage,
-      p_sweep:!!tapeCovers,
+      p_sweep:!!(tapeCovers&&tapeOwned),
     });
     _geoDeriveApplyMileage(dayKey,rows.td_mileage);
     // Every derived day tells js/day-end.js where it ended, so a clock that

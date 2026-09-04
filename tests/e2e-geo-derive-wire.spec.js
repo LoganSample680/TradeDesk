@@ -436,6 +436,9 @@ test.describe('geo-derive wiring', () => {
       window.clients = [{ id: 1788214075432, name: 'John Doe', addr: '2950 SW McClure Rd' }];
       localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 1788214075432: { addr: '2950 SW McClure Rd', lat: DOE.lat, lon: DOE.lng } }));
       window._geoDeriveTape = async () => tape;
+      // This phone has been this person's since long before the day: the
+      // normal case, and the one in which a sweep is allowed at all.
+      localStorage.setItem('zp3_geo_tape_owner', JSON.stringify({ uid: _supaUser.id, since: Date.parse('2026-08-01T00:00:00Z') }));
       window._geoDrainQueue = () => {};   // hold the queue so it can be inspected
       window._routeDistance = async () => ({ miles: 0, mins: 0 });   // no router unless a test brings one
       _geoFixLogPush(T[0], SHOP.lat, SHOP.lng, 5);
@@ -468,6 +471,25 @@ test.describe('geo-derive wiring', () => {
       expect(it.args.p_shop).toEqual([]);
       expect(it.args.p_miles).toHaveLength(2);
       expect(it.args.p_miles[0].legKey).toBe(it.args.p_time[1].client_key);
+    });
+
+    // Owner 2026-09-04, walking it through: "I sign out and sign in on jacks
+    // phone, we both have different core motions, what happens." The claim
+    // starts at the swap. The morning's rows came from the other phone and are
+    // not in this derive's set; a sweep would have retired them.
+    test('a phone claimed part-way through the day may add, never retire', async () => {
+      await seed();
+      const r = await page.evaluate(async (DAY) => {
+        window.mileage = [];
+        // Claimed at 10am on the day itself.
+        localStorage.setItem('zp3_geo_tape_owner', JSON.stringify({ uid: _supaUser.id, since: Date.parse(DAY + 'T15:00:00Z') }));
+        const res = await _geoDeriveDayNow(DAY, null);
+        const q = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]');
+        return { rows: q[0] && q[0].args.p_time.length, sweep: q[0] && q[0].args.p_sweep, derived: !!res };
+      }, DAY);
+      expect(r.derived).toBe(true);
+      expect(r.rows, 'what it can prove still lands').toBeGreaterThan(0);
+      expect(r.sweep, 'but nothing from before the claim is retired').toBe(false);
     });
 
     test('a second derive of the same day replaces the item, never stacks a second', async () => {
