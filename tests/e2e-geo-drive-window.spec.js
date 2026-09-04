@@ -572,7 +572,14 @@ test.describe('Drive window: the correlation that turns the radio up', () => {
     // had not measured. On the owner's own John Doe visit that cache sat 343 ft
     // out, past the 300 ft fence, and the phantom exits it manufactured were
     // what made geo_replace_day refuse the day for overlapping pairs.
-    expect(r.types).toEqual(['fix']);
+    //
+    // clock-in and clock-out joined it 2026-09-04. They pass the same test
+    // push-ping failed: each is a getCurrentPosition read taken at the instant
+    // of the tap, never a cached position replayed from a wake. The rule this
+    // list encodes is unchanged, and wake-move is still not in it.
+    expect(r.types).toEqual(['fix', 'clock-in', 'clock-out']);
+    expect(r.types, 'a cached position never qualifies').not.toContain('push-ping');
+    expect(r.types).not.toContain('wake-move');
   });
 
   // Owner 2026-09-03: the history query knew he was driving at 16:08:06, the
