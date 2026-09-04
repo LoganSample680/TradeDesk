@@ -93,6 +93,11 @@ function _tlSourceLabel(source){
   // tools in the truck.
   if(s==='place-load')return 'Loading time';
   if(s==='place-office')return 'Office';
+  // Somebody's own address, so the rail stops calling a house a job site
+  // (owner 2026-09-03, on Jack's rail: "why is his own address showing as on
+  // site?"). It used to arrive as a bare 'place', the same bucket a supply
+  // house lands in, and the row had nothing left to say otherwise.
+  if(s==='place-home')return 'Home';
   if(s==='place')return '';
   if(s==='manual')return 'GPS clock';
   // "Unaccounted", not "Unpaid" (owner, 2026-09-01: "skip the paid versus
@@ -883,6 +888,7 @@ function _tlRailKind(r){
   if(r.source==='shop')return 'shop';
   if(r.rawSource==='place-load')return 'load';
   if(r.rawSource==='place-office')return 'office';
+  if(r.rawSource==='place-home')return 'home';
   // Same raw-column-first rule as _tlRow, and for the same reason: the
   // friendly label is not a stable key.
   if(r.source==='auto'&&((typeof _geoIsDriveSource==='function'&&r.rawSource)
@@ -900,6 +906,12 @@ const _TL_RAIL_META={
   shop:  {c:'#0E6B6B',           icon:'🔧', word:'Shop time'},
   load:  {c:'#6D28D9',           icon:'📦', word:'Loading time'},
   office:{c:'#0E6B6B',           icon:'📋', word:'Office'},
+  // A stretch at somebody's own address. It reads as its own thing rather
+  // than as 'On site', which is what a house was drawn as when a home_office
+  // dwell arrived as a bare 'place' (owner 2026-09-03, on Jack's rail). Grey,
+  // like the other buckets that are not asserted work: being home is not a
+  // claim about the day, it is just where the phone was.
+  home:  {c:'var(--text3)',      icon:'🏠', word:'Home'},
   // NOT 'Break', and not a knife and fork (owner 2026-09-01, on his afternoon:
   // "that was a untracked address that should have shown grey as manual time").
   // An anonymous stop between fences is time the app cannot place. Calling it a

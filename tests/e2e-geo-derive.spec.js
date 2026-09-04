@@ -879,6 +879,40 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.dwells.map(d => [d.kind, d.minutes, !!d.wrapped])).toEqual([['shop', 490, false]]);
     });
 
+    // Jack's day, 2026-09-03: home, the gym, home. The gym has no fence, so
+    // that journey stays pending and writes no leg (rule 5), leaving a day
+    // with no work anywhere in it. The exemption directly above then returned
+    // every base dwell untouched, HOUSE included, and his own address came out
+    // on the rail as time on site. It is right for a yard and wrong for a
+    // house, which is why this only ever showed on his account: the owner's
+    // days always hold a client, so the rule ran for him.
+    test("home, an unsaved stop, and home again is not a shift", async () => {
+      const JHOME = { id: 'place-jackhome', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
+      const JFIX = { lat: JHOME.lat, lng: JHOME.lng };
+      const GYM = { lat: JHOME.lat + 0.03, lng: JHOME.lng };   // no fence anywhere near it
+      const tape = [mo(T(6, 0), 'onFoot'), mo(T(6, 30), 'driving'), mo(T(6, 45), 'onFoot'),
+                    mo(T(7, 30), 'driving'), mo(T(7, 45), 'onFoot')];
+      const fixes = [fix(T(6, 0), JFIX), fix(T(6, 30, 5), JFIX), fix(T(6, 45, 5), GYM),
+                     fix(T(7, 0), GYM), fix(T(7, 30, 5), GYM), fix(T(7, 45, 5), JFIX), fix(T(9, 0), JFIX)];
+      const r = await run(page, base({ tape, fixes, fences: [JHOME], nowMs: T(10, 0) }));
+      expect(r.legs).toEqual([]);                                    // the gym is not saved
+      expect(r.dwells.filter(d => d.kind === 'home_office')).toEqual([]);
+    });
+
+    // The other half of that line: a day whose only fences are a REAL yard and
+    // a house is still a working day, because shop time always counts. Only
+    // somebody's own address fails to make a day a shift.
+    test('a day at a real yard is still a shift even with a stop at the house', async () => {
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(7, 30), 'driving'), mo(T(7, 50), 'onFoot'),
+                    mo(T(11, 0), 'driving'), mo(T(11, 20), 'onFoot'),
+                    mo(T(12, 0), 'driving'), mo(T(12, 20), 'onFoot'), mo(T(16, 0), 'driving'), mo(T(16, 20), 'onFoot')];
+      const fixes = [fix(T(7, 30, 5), HFIX), fix(T(7, 50, 5), YFIX), fix(T(11, 0, 5), YFIX),
+                     fix(T(11, 20, 5), HFIX), fix(T(12, 0, 5), HFIX), fix(T(12, 20, 5), YFIX),
+                     fix(T(16, 0, 5), YFIX), fix(T(16, 20, 5), HFIX), fix(T(17, 0), HFIX)];
+      const r = await run(page, base({ tape, fixes, fences: [YARD, HOME] }));
+      expect(r.dwells.filter(d => d.kind === 'shop').length).toBeGreaterThan(0);
+    });
+
     // Owner 2026-09-02, 4:30pm: "that was all shop time; office throws in
     // after the fact for true app time after hours, that's it." His 12:37
     // with the app open at the shop (the house) came out as a two-minute

@@ -516,7 +516,7 @@ function geoDeriveDay(input) {
   // Rule 10: paperwork at the home office.
   const carved = _gdOffice(dwells, open, journeys, fixes, fences, inp.appEvents, dayStart, dayEnd, nowMs, opts);
   // Rule 11: the day ends with the last real work.
-  const ended = _gdEndOfDay(carved, fences, opts, open, journeys.some(j => j && j.open));
+  const ended = _gdEndOfDay(carved, fences, opts, open, journeys.some(j => j && j.open), legs);
 
   return {
     day: inp.day || '',
@@ -732,9 +732,45 @@ function _gdShopIsHome(fence, fences, radiusFt) {
 // time. The evening rule still holds: once the drive has ended, at home or
 // at a stop that never resolves, the base dwell after the last work is not
 // a row.
-function _gdEndOfDay(dwells, fences, opts, open, driving) {
+function _gdEndOfDay(dwells, fences, opts, open, driving, legs) {
   const work = dwells.filter(d => !_gdIsBaseKind(d.kind) && d.kind !== 'office');
-  if (!work.length) return dwells;                       // a yard-only day is a shift
+  // A day with no work anywhere in it. "A yard-only day is a shift" is right
+  // for a YARD and wrong for a house, and the difference had never been drawn
+  // here: the exemption returned every base dwell untouched, house included.
+  //
+  // It only shows up on an account whose days can contain no work at all.
+  // Jack's do (2026-09-03): home, the gym, home. The gym has no fence, so that
+  // journey writes nothing, he ends the day with zero client/job/supply
+  // dwells, this line bails out, and every stretch at his own address is kept
+  // and rendered as time on site. The owner's own days always hold a client
+  // dwell, so the rule runs for him and drops his base dwells, which is why
+  // this looked account-specific rather than like a rule with a hole in it.
+  //
+  // A shop that is not somebody's house keeps the exemption. A home office,
+  // or a shop sharing its spot with one, does not: a day spent entirely at
+  // your own house with no work in it is not a shift.
+  if (!work.length) {
+    // "No work" has to mean no work ANYWHERE, not merely no work DWELL. A day
+    // can hold a real client visit that never becomes a dwell of its own,
+    // because rule 9 drops the first and last stretch: drive from a client to
+    // the house and back and the client is only ever an endpoint. Rule 10 is
+    // explicit that inside the working day the house is a legitimate stop, so
+    // dropping it there would be wrong.
+    //
+    // A leg touching a non-base fence is that proof. Jack's day has none:
+    // home, the gym, home, and the gym has no fence, so the journey stays
+    // pending and writes no leg at all.
+    // The only place that does not count as work is somebody's own house. A
+    // real shop does (owner rule: shop time always counts), so a day of shop,
+    // house, shop is a working day and rule 10's "inside the working day the
+    // house is a stop" applies to the middle of it.
+    const notHome = f => !!f && !(String(f.kind) === 'home_office' ||
+      (String(f.kind) === 'shop' && _gdShopIsHome(f, fences, opts.radiusFt)));
+    const workLeg = (legs || []).some(l => l && (notHome(l.from) || notHome(l.to)));
+    if (workLeg) return dwells;
+    return dwells.filter(d => !(String(d.kind) === 'home_office' ||
+      (String(d.kind) === 'shop' && _gdShopIsHome(d.fence, fences, opts.radiusFt))));
+  }
   const openWork = !!(open && !_gdIsBaseKind(open.kind) && open.kind !== 'office');
   if (openWork || driving) return dwells;                // the day is not over
   const lastWorkEnd = Math.max.apply(null, work.map(d => d.endTs));
@@ -802,7 +838,13 @@ function geoDeriveRows(result, ids) {
     time.push(Object.assign(base, {
       job_id: f.jobId != null ? String(f.jobId) : null,
       dest_place: f.jobId != null ? null : (d.name || null),
+      // A home office keeps its identity. It used to fall through to 'place',
+      // the same bucket a supply house or any saved stop lands in, so the
+      // Time Log had nothing left to tell somebody's own address apart from a
+      // job site and drew it as time on site (owner 2026-09-03, looking at
+      // Jack's rail: "why is his own address showing as on site?").
       source: d.kind === 'office' ? 'place-office'
+        : d.kind === 'home_office' ? 'place-home'
         : (f.jobId != null ? 'geofence' : (f.clientId != null ? 'client' : 'place')),
     }));
   }
