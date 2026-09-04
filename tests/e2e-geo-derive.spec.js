@@ -1148,6 +1148,92 @@ test.describe('geo-derive: the day deriver', () => {
     });
   });
 
+  // ── One row per drive, not one per chain ────────────────────────────────
+  // Owner 2026-09-04: "right, in between it logs the time as a unsaved job
+  // site."
+  //
+  // Jack's 1 September, from his own tape. He left his dad's shop at 12:04 and
+  // reached his house at 3:18, and in between he stopped at four customers
+  // nobody has saved. CoreMotion flipped at every one of them: still 12:18,
+  // onFoot 12:46 and 12:51, still 13:12, walking 13:55, onFoot and running
+  // 14:30. Eight flips, four stops, nothing missing from the evidence.
+  //
+  // The rail drew ONE 58-minute drive spanning three hours and eleven minutes.
+  test.describe('a chain through unsaved stops is many drives', () => {
+    const JH = { id: 'p-jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
+    const DS = { id: 'p-ds', kind: 'shop', name: '1200 SW Oakley Ave', lat: 39.0456577, lng: -95.7151106 };
+    const F = [JH, DS];
+    // His four real customers that afternoon, none of them saved.
+    const C1 = { lat: 39.03034, lng: -95.75969 };
+    const C2 = { lat: 39.00083, lng: -95.73308 };
+    const C3 = { lat: 38.98390, lng: -95.72172 };
+    const C4 = { lat: 38.99297, lng: -95.72918 };
+
+    // 12:04 shop -> C1 -> C2 -> C3 -> C4 -> home 15:18, in Central hours.
+    const tape = [
+      mo(T(11, 0), 'onFoot'),
+      mo(T(12, 4), 'automotive'), mo(T(12, 15), 'onFoot'),
+      mo(T(13, 4), 'automotive'), mo(T(13, 9), 'still'),
+      mo(T(13, 45), 'automotive'), mo(T(13, 55), 'walking'),
+      mo(T(14, 24), 'automotive'), mo(T(14, 30), 'onFoot'),
+      mo(T(14, 59), 'automotive'), mo(T(15, 18), 'onFoot'),
+    ];
+    const fixes = [
+      fix(T(12, 4, 5), { lat: DS.lat, lng: DS.lng }), fix(T(12, 15, 5), C1), fix(T(12, 40), C1),
+      fix(T(13, 4, 5), C1), fix(T(13, 9, 5), C2), fix(T(13, 30), C2),
+      fix(T(13, 45, 5), C2), fix(T(13, 55, 5), C3), fix(T(14, 10), C3),
+      fix(T(14, 24, 5), C3), fix(T(14, 30, 5), C4), fix(T(14, 45), C4),
+      fix(T(14, 59, 5), C4), fix(T(15, 18, 5), { lat: JH.lat, lng: JH.lng }), fix(T(16, 0), { lat: JH.lat, lng: JH.lng }),
+    ];
+
+    test('five drives are five rows, and the standing between them is left for the clock to name', async () => {
+      const rows = await page.evaluate((inp) => {
+        const r = geoDeriveDay(inp);
+        return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+      }, base({ tape, fixes, fences: F, nowMs: T(18, 0) }));
+      const drives = rows.job_time_entries.filter(t => t.source === 'drive');
+      expect(drives.length, 'shop to C1 to C2 to C3 to C4 to home').toBe(5);
+      // No row spans a stop any more: each ends where the tape said he got out.
+      expect(drives.map(d => [d.arrived_at.slice(11, 16), d.departed_at.slice(11, 16)])).toEqual([
+        ['17:04', '17:15'], ['18:04', '18:09'], ['18:45', '18:55'],
+        ['19:24', '19:30'], ['19:59', '20:18'],
+      ]);
+      // Only the last one has reached anywhere with a name on it.
+      expect(drives.map(d => d.dest_place)).toEqual([null, null, null, null, '7402 SW 22nd Ct']);
+      // Unique keys, or geo_replace_day would upsert them over each other.
+      expect(new Set(drives.map(d => d.client_key)).size).toBe(5);
+    });
+
+    // THE MILES DO NOT SPLIT. One row, the direct route, between two SAVED
+    // fences. An unsaved customer is never a mileage endpoint (owner: "un
+    // saved mileage legs no they cant and I wont do it").
+    test('the miles stay one leg between the two saved ends', async () => {
+      const rows = await page.evaluate((inp) => {
+        const r = geoDeriveDay(inp);
+        return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+      }, base({ tape, fixes, fences: F, nowMs: T(18, 0) }));
+      expect(rows.td_mileage.length, 'one leg, not five').toBe(1);
+      expect(rows.td_mileage[0].from_name).toBe('1200 SW Oakley Ave');
+      expect(rows.td_mileage[0].to_name).toBe('7402 SW 22nd Ct');
+      expect(rows.td_mileage[0].calc_method).toContain('derived-');
+    });
+
+    // A clean run with nothing in between is still ONE row: this must not
+    // shatter an ordinary drive.
+    test('a drive with no stop in it is still a single row', async () => {
+      const t2 = [mo(T(11, 0), 'onFoot'), mo(T(12, 4), 'automotive'), mo(T(12, 20), 'onFoot')];
+      const f2 = [fix(T(12, 4, 5), { lat: DS.lat, lng: DS.lng }),
+                  fix(T(12, 20, 5), { lat: JH.lat, lng: JH.lng }), fix(T(13, 0), { lat: JH.lat, lng: JH.lng })];
+      const rows = await page.evaluate((inp) => {
+        const r = geoDeriveDay(inp);
+        return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+      }, base({ tape: t2, fixes: f2, fences: F, nowMs: T(15, 0) }));
+      const drives = rows.job_time_entries.filter(t => t.source === 'drive');
+      expect(drives.length).toBe(1);
+      expect(drives[0].dest_place).toBe('7402 SW 22nd Ct');
+    });
+  });
+
   test('no console errors across the deriver', async () => {
     assertNoErrors(page, 'geo-derive');
   });

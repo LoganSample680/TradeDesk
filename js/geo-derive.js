@@ -363,7 +363,7 @@ function geoDeriveDay(input) {
 
     if (j.open) {
       // Still driving. Nothing to write yet; the chain (if any) stays open.
-      if (!chain && fromFence) chain = { id: j.id, originFence: fromFence, startTs: j.startTs, autoMs: 0, stops: 0, openSince: j.startTs };
+      if (!chain && fromFence) chain = { id: j.id, originFence: fromFence, startTs: j.startTs, autoMs: 0, stops: 0, drives: [], openSince: j.startTs };
       else if (chain) chain.openSince = j.startTs;
       break;
     }
@@ -409,9 +409,18 @@ function geoDeriveDay(input) {
         if (toFence) arrived = { fence: toFence, ts: j.endTs, journeyId: j.id };
         continue;
       }
-      chain = { id: j.id, originFence: fromFence, startTs: j.startTs, autoMs: 0, stops: 0 };
+      chain = { id: j.id, originFence: fromFence, startTs: j.startTs, autoMs: 0, stops: 0, drives: [] };
     }
     chain.autoMs += autoMs;
+    // EACH DRIVE KEEPS ITS OWN SPAN (owner 2026-09-04). A chain through
+    // unsaved stops is not one drive: his 1 September ran shop, four
+    // customers, home, and the tape flipped onFoot or still at every one of
+    // them. Collapsed to a single row it read as one 58-minute drive from
+    // 12:04 to 3:00 with four job sites inside it. The MILES still collapse to
+    // the direct route (rule 6, and his rule that an unsaved address is never
+    // a mileage endpoint); only the TIME stops pretending he was driving the
+    // whole while.
+    chain.drives.push([j.startTs, j.endTs, autoMs]);
 
     if (!toFence) {
       // Pending: a personal stop, or somewhere not saved. Held, not written.
@@ -441,6 +450,8 @@ function geoDeriveDay(input) {
         minutes: Math.round(chain.autoMs / 60000),
         miles: Math.round(miles * 10) / 10, milesFrom,
         collapsed, stops: chain.stops,
+        // The driving segments, in order. One entry unless a stop split them.
+        drives: chain.drives.slice(),
         // What the phone actually saw between the two flips, for the map and
         // for the route button. A collapsed leg spans the personal stop too,
         // which is the honest picture of where the truck went; the MILES on
@@ -904,9 +915,43 @@ function geoDeriveRows(result, ids) {
     }));
   }
   for (const l of (result && result.legs) || []) {
-    time.push({ contractor_user_id: cid, employee_user_id: uid, job_id: null,
-      arrived_at: iso(l.startTs), departed_at: iso(l.endTs), minutes: l.minutes,
-      dest_place: l.to.name || null, client_key: l.id, source: 'drive' });
+    // ONE ROW PER DRIVE, NOT ONE PER CHAIN (owner 2026-09-04: "right, in
+    // between it logs the time as a unsaved job site").
+    //
+    // A leg through unsaved stops used to write a single row spanning the lot
+    // of it. His 1 September: shop at 12:04, four customers, home at 3:18, and
+    // the rail drew one 58-minute drive across three hours and eleven minutes
+    // with 139 minutes of standing at customers buried inside it. The tape had
+    // flipped onFoot, walking, running or still at every one of those four
+    // stops; nothing was missing from the evidence, the row was just the wrong
+    // shape.
+    //
+    // Now each driving segment is its own row and the holes between them are
+    // left alone, which is exactly what the clock-remainder rule in
+    // js/timelog.js is for: uncovered time inside a running clock comes back
+    // as "Unsaved job site". So the naming needed no new code, only room to
+    // work in.
+    //
+    // THE MILES DO NOT SPLIT. There is still one mileage row per leg, at the
+    // direct route between two SAVED fences (rule 6, and his rule that an
+    // unsaved address is never a mileage endpoint: "we make no inferences
+    // here, this app was built to survive a IRS audit"). Time and mileage stop
+    // being the same row, which is the whole change.
+    const segs = (Array.isArray(l.drives) && l.drives.length) ? l.drives
+      : [[l.startTs, l.endTs, (l.minutes || 0) * 60000]];
+    segs.forEach((sg, i) => {
+      const a = Number(sg[0]), b = Number(sg[1]);
+      if (!(a > 0 && b > a)) return;
+      time.push({ contractor_user_id: cid, employee_user_id: uid, job_id: null,
+        arrived_at: iso(a), departed_at: iso(b),
+        minutes: Math.max(1, Math.round(Number(sg[2] || (b - a)) / 60000)),
+        // Only the LAST segment actually reaches the destination; the ones
+        // before it end at a stop nobody saved, and naming them for where he
+        // eventually ended up would be the inference this rule exists to
+        // avoid.
+        dest_place: (i === segs.length - 1) ? (l.to.name || null) : null,
+        client_key: segs.length > 1 ? (l.id + ':' + i) : l.id, source: 'drive' });
+    });
     miles.push({
       id: l.id, legKey: l.id, gps: true, date: result.day,
       from: l.from.addr || l.from.name || '', from_name: l.from.name || '',
