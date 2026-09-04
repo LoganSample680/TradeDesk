@@ -99,6 +99,10 @@ function _tlSourceLabel(source){
   // house lands in, and the row had nothing left to say otherwise.
   if(s==='place-home')return 'Home';
   if(s==='place')return '';
+  // A stop between two drives that no fence could name. The label states the
+  // fact and nothing more: the app knows he got out of the truck and knows
+  // for how long, and it does not know where.
+  if(s==='unsaved')return 'Address not saved';
   if(s==='manual')return 'GPS clock';
   // "Unaccounted", not "Unpaid" (owner, 2026-09-01: "skip the paid versus
   // unpaid stuff out"). The app does not know whether this gets paid and is
@@ -453,7 +457,7 @@ function _tlBlendManual(rows){
           id:'site'+k+'_'+a,rawId:null,source:'site',rawSource:'site',
           date:m.r.date,minutes:mins,
           personName:m.r.personName,personUid:m.r.personUid||null,
-          clientName:'Job site',addr:'',jobName:'',clientKey:null,
+          clientName:'Unsaved address',addr:'',jobName:'',clientKey:null,
           unpaid:false,detail:'Address not saved',
           startTime:new Date(a).toISOString(),endTime:new Date(b).toISOString()
         });
@@ -577,7 +581,11 @@ async function _timeLogRows(sinceISO){
     // drive leg ended); without it the row showed a bare '-' with nothing
     // to tell you what it was (owner report: reads as unlabeled noise). A
     // real job always wins when job_id resolved to one.
-    const clientName=(info.clientName!=='-')?info.clientName:(e.dest_place||info.clientName);
+    // An unsaved stop between two drives has no name and never gets one, so
+    // it says exactly that rather than falling through to the bare '-' every
+    // job_id:null row used to draw (owner 2026-09-04: "Unsaved Address").
+    const clientName=String(e.source||'')==='unsaved'?'Unsaved address'
+      :(info.clientName!=='-')?info.clientName:(e.dest_place||info.clientName);
     rows.push({
       id:'a'+e.job_id+'_'+e.employee_user_id+'_'+e.arrived_at,
       source:'auto',date:(typeof _bizDateStr==='function')?_bizDateStr(new Date(e.arrived_at)):e.arrived_at.slice(0,10),
@@ -1050,7 +1058,7 @@ function _tlRailKind(r){
   if(r.rawSource==='place-load')return 'load';
   if(r.rawSource==='place-office')return 'office';
   if(r.rawSource==='place-home')return 'home';
-  if(r.rawSource==='site')return 'site';
+  if(r.rawSource==='site'||r.rawSource==='unsaved')return 'site';
   // Same raw-column-first rule as _tlRow, and for the same reason: the
   // friendly label is not a stable key.
   if(r.source==='auto'&&((typeof _geoIsDriveSource==='function'&&r.rawSource)
@@ -1083,16 +1091,20 @@ const _TL_RAIL_META={
   // classifies it (his own rule: "doesnt get included in time unless
   // classified, i.e. lunch, breaks, business trips").
   off:   {c:'var(--text3)',      icon:'🕐', word:'Manual time'},
-  // Inside a running clock, at no fence anybody saved. It IS work, the clock
-  // says so, but an audit has to tell it apart from a geofenced client: 'On
-  // site' is a saved address, 'Job site' is one nobody saved, and the row
-  // prints "Address not saved" underneath rather than implying a location.
-  // "job site should say unsaved job site" (owner 2026-09-04). UNSAVED is the
-  // load-bearing word: an audit turns on telling a geofenced client apart from
-  // a stretch the clock vouched for that no fence could name, and 'Job site'
-  // alone did not carry that. The tag says it, so the row prints no title of
+  // A stop at no fence anybody saved. Two things land here and they mean the
+  // same thing: the gap between two driving segments, written by the deriver
+  // (source 'unsaved'), and the remainder of a running manual clock that no
+  // tracked row covered (source 'site').
+  //
+  // ADDRESS, not job site (owner 2026-09-04): "rather than unsaved job site do
+  // we say Unsaved Address." He is right, and it is not only tone. Half of
+  // these are a supply house, a gate, a dump run; calling every one of them a
+  // job site asserts a reason nobody supplied, which is the same mistake
+  // 'Break' made on the grey bucket above. UNSAVED is the load-bearing word:
+  // an audit turns on telling a geofenced client apart from a stretch nothing
+  // could name. The row prints "Address not saved" underneath and no title of
   // its own, the same way the gap row refuses to repeat its own tag.
-  site:  {c:'var(--blue)',       icon:'📍', word:'Unsaved job site'},
+  site:  {c:'var(--blue)',       icon:'📍', word:'Unsaved address'},
   manual:{c:'var(--text3)',      icon:'▶',  word:'Manual'},
   gap:   {c:'var(--border2)',    icon:'❓', word:'Unaccounted'}
 };

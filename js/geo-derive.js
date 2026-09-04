@@ -989,6 +989,28 @@ function geoDeriveRows(result, ids) {
         dest_place: (i === segs.length - 1) ? (l.to.name || null) : null,
         client_key: segs.length > 1 ? (l.id + ':' + i) : l.id, source: 'drive' });
     });
+    // EVERY STOP IS A ROW (owner 2026-09-04): "we should be logging every flip
+    // to onsite unsaved address and every drive with times in between."
+    //
+    // The gap between two driving segments is a place he got out of the truck
+    // that nobody saved. It used to be written by nothing at all, and only
+    // appeared on the rail because the clock-remainder rule in js/timelog.js
+    // happened to find a hole inside a running manual clock. That made a stop
+    // visible only when somebody had clocked in, and invisible on a day the
+    // fences alone described. The deriver already knows exactly where these
+    // are, so it writes them, and the reader is back to reading.
+    //
+    // No name and no address, deliberately: an unsaved stop is never given
+    // one. What it carries is that it happened, when, and for how long, which
+    // is what a stop count and a windshield-time number are made of.
+    for (let i = 0; i + 1 < segs.length; i++) {
+      const a = Number(segs[i][1]), b = Number(segs[i + 1][0]);
+      if (!(a > 0 && b - a >= 60000)) continue;
+      time.push({ contractor_user_id: cid, employee_user_id: uid, job_id: null,
+        arrived_at: iso(a), departed_at: iso(b),
+        minutes: Math.round((b - a) / 60000),
+        dest_place: null, client_key: l.id + ':s' + i, source: 'unsaved' });
+    }
     // A round trip writes time but never mileage (rule 7 as amended): both of
     // its endpoints are the same fence, and the place between them was never
     // saved.

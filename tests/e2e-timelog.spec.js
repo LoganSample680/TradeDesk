@@ -3434,6 +3434,41 @@ test.describe('timelog.js: exhaustive coverage', () => {
                                       arrived_at: at(s[0], s[1]), departed_at: at(e[0], e[1]) });
 
 
+    // ── The deriver's own unsaved stops ───────────────────────────────────
+    // Owner 2026-09-04: "we should be logging every flip to onsite unsaved
+    // address and every drive with times in between."
+    //
+    // A stop between two driving segments now arrives as a row of its own
+    // (source 'unsaved', js/geo-derive.js) instead of only showing up when a
+    // manual clock happened to be running over it. The reader has to draw it
+    // exactly like the clock-remainder kind, because they are the same thing.
+    test('a stop the deriver wrote reads as an unsaved address, and is paid', async () => {
+      const out = await page.evaluate(async ([es]) => {
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
+        try {
+          const day = (await _timeLogRows(null)).filter(r => r.date === '2026-09-01');
+          const u = day.find(r => r.rawSource === 'unsaved');
+          return { found: !!u, name: u && u.clientName, detail: u && u.detail,
+                   unpaid: !!(u && u.unpaid), paid: _tlPaidMin(day),
+                   html: _tlDayRailHtml(day) };
+        } finally { window._fetchCrewLabor = orig; }
+      }, [[
+        Object.assign(A('drive', [9, 17], [9, 48], 31), { dest_place: null }),
+        Object.assign(A('unsaved', [9, 48], [10, 51], 63), { dest_place: null }),
+        A('drive', [10, 51], [11, 20], 29),
+      ]]);
+      expect(out.found).toBe(true);
+      // No manual clock anywhere in this fixture: the fences alone said it.
+      expect(out.name).toBe('Unsaved address');
+      expect(out.detail).toBe('Address not saved');
+      // It is work. The clock is not what makes it work; getting out of the
+      // truck between two drives is.
+      expect(out.unpaid).toBe(false);
+      expect(out.paid, '31 + 63 + 29').toBe(123);
+      expect(out.html).toContain('Unsaved address');
+    });
+
     // ── The clock remainder is an unsaved job site ────────────────────────
     // Owner 2026-09-04: "if we see a manual clock in, and then there's
     // unaccounted for time after, meaning he's not inside a shop fence and is
@@ -3515,7 +3550,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
     // NOTHING IS INFERRED ABOUT WHERE (owner: "un saved mileage legs no they
     // cant and I wont do it ... this app was built to survive a IRS audit").
-    test('a job site claims no address, and the rail says so out loud', async () => {
+    test('an unsaved stop claims no address, and the rail says so out loud', async () => {
       const out = await page.evaluate(async ([es, ms]) => {
         const keepT = (typeof timeEntries !== 'undefined') ? timeEntries.slice() : [];
         window.timeEntries = ms;
@@ -3532,17 +3567,20 @@ test.describe('timelog.js: exhaustive coverage', () => {
       }, [[A('place', [8, 0], [9, 0], 60), A('place', [12, 0], [13, 0], 60)], CLOCK([8, 0], [13, 0], 300)]);
       expect(out.addr).toBe('');
       expect(out.key).toBe(null);
-      expect(out.name).toBe('Job site');
+      // ADDRESS, not job site (owner 2026-09-04: "rather than unsaved job site
+      // do we say Unsaved Address"). Half of these are a supply house or a
+      // gate, and calling every one of them a job site asserts a reason
+      // nobody supplied.
+      expect(out.name).toBe('Unsaved address');
       expect(out.mileage, 'naming time never writes a mileage leg').toBe(0);
-      // The tag carries the whole statement (owner 2026-09-04: "job site
-      // should say unsaved job site"), and the row prints no title of its own
-      // rather than repeating it.
-      expect(out.html).toContain('Unsaved job site');
+      // The tag carries the whole statement and the row prints no title of its
+      // own rather than repeating it.
+      expect(out.html).toContain('Unsaved address');
       // It must never read as the geofenced kind, which is what an audit turns
       // on. The two real 'place' rows in this fixture DO say "On site", so the
-      // check is that the job-site row itself does not: its own block carries
-      // the JOB SITE tag and the address disclaimer, never the saved-client one.
-      const i = out.html.indexOf('Unsaved job site');
+      // check is that the unsaved row itself does not: its own block carries
+      // that tag and the address disclaimer, never the saved-client one.
+      const i = out.html.indexOf('Unsaved address');
       expect(out.html.slice(i, i + 300)).not.toContain('On site');
     });
 

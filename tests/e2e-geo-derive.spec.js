@@ -1238,6 +1238,29 @@ test.describe('geo-derive: the day deriver', () => {
       expect(new Set(drives.map(d => d.client_key)).size).toBe(5);
     });
 
+    // EVERY STOP IS A ROW (owner 2026-09-04): "we should be logging every flip
+    // to onsite unsaved address and every drive with times in between."
+    test('the four stops between the five drives are four rows of their own', async () => {
+      const rows = await page.evaluate((inp) => {
+        const r = geoDeriveDay(inp);
+        return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+      }, base({ tape, fixes, fences: F, nowMs: T(18, 0) }));
+      const stops = rows.job_time_entries.filter(t => t.source === 'unsaved');
+      expect(stops.map(t => [t.arrived_at.slice(11, 16), t.departed_at.slice(11, 16)])).toEqual([
+        ['17:15', '18:04'], ['18:09', '18:45'], ['18:55', '19:24'], ['19:30', '19:59'],
+      ]);
+      // Never named and never addressed: an unsaved stop is not given a place.
+      expect(stops.every(t => t.dest_place === null && t.job_id === null)).toBe(true);
+      // Unique keys, or geo_replace_day would upsert them over each other.
+      expect(new Set(stops.map(t => t.client_key)).size).toBe(4);
+      // And they never collide with the drives around them.
+      const all = rows.job_time_entries.slice().sort((a, b) => Date.parse(a.arrived_at) - Date.parse(b.arrived_at));
+      for (let i = 1; i < all.length; i++) {
+        expect(Date.parse(all[i].arrived_at), 'no overlap, or the writer refuses the day')
+          .toBeGreaterThanOrEqual(Date.parse(all[i - 1].departed_at));
+      }
+    });
+
     // THE MILES DO NOT SPLIT. One row, the direct route, between two SAVED
     // fences. An unsaved customer is never a mileage endpoint (owner: "un
     // saved mileage legs no they cant and I wont do it").
@@ -1281,6 +1304,10 @@ test.describe('geo-derive: the day deriver', () => {
       // The first ends at a stop nobody saved; the second genuinely reaches
       // the shop, which is saved, so it says so.
       expect(drives.map(d => d.dest_place)).toEqual([null, '1200 SW Oakley Ave']);
+      // The hour he stood out there is its own row between them.
+      const stops = rows.job_time_entries.filter(t => t.source === 'unsaved');
+      expect(stops.map(t => [t.arrived_at.slice(11, 16), t.departed_at.slice(11, 16)]))
+        .toEqual([['14:48', '15:51']]);
       // And nothing enters the IRS log for a trip with no saved far end.
       expect(rows.td_mileage).toEqual([]);
     });

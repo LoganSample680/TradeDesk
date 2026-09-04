@@ -124,7 +124,9 @@ test.describe('manual clock over a derived day', () => {
     expect(site, 'the untracked client in the middle').toBeTruthy();
     expect(site.min).toBe(121);
     expect(site.kind).toBe('site');
-    expect(site.name).toBe('Job site');
+    // Renamed 2026-09-04: "rather than unsaved job site do we say Unsaved
+    // Address." Half of these are a supply house or a gate.
+    expect(site.name).toBe('Unsaved address');
     expect(clock.min).toBe(0);
     // The drive before the clock is its own paid row, untouched by the blend.
     const drive = r.find(x => x.raw === 'drive');
