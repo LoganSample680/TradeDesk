@@ -1470,6 +1470,55 @@ test.describe('geo-derive: the day deriver', () => {
       expect(two.job_time_entries.filter(t => t.source === 'drive').length).toBe(2);
     });
 
+    // THE RUN, NOT THE SAMPLE, and A REPEAT IS NOT A NEW READING. Both fall
+    // out of his 2 September 1:00pm drive: "I know the drive leg should be a
+    // lot longer then that."
+    test.describe('a sleeping phone', () => {
+      const JH = { id: 'p-jh', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
+      const DS = { id: 'p-ds', kind: 'shop', name: '1200 SW Oakley Ave', lat: 39.0456577, lng: -95.7151106 };
+      const F = [JH, DS];
+
+      test('consecutive stills are one stretch of stillness, not two short ones', async () => {
+        // CoreMotion re-states 'still' while nothing changes. Measuring one
+        // sample to the NEXT ENTRY read the re-statement as the truck moving:
+        // his 12:52:37 still ran to 13:07:01 automotive, fourteen and a half
+        // minutes parked, logged as 7m26s and 6m58s, so neither reached the
+        // ten-minute floor and the drive swallowed the whole shop visit.
+        const t = [mo(T(12, 30), 'onFoot'), mo(T(12, 37), 'automotive'),
+          mo(T(12, 52), 'still'), mo(T(13, 0), 'still'), mo(T(13, 7), 'automotive'),
+          mo(T(13, 25), 'onFoot')];
+        const f = [fix(T(12, 36), { lat: JH.lat, lng: JH.lng }),
+          fix(T(12, 52, 30), { lat: DS.lat, lng: DS.lng }),
+          fix(T(13, 7, 30), { lat: DS.lat, lng: DS.lng }),
+          fix(T(13, 25, 5), { lat: JH.lat, lng: JH.lng }), fix(T(14, 30), { lat: JH.lat, lng: JH.lng })];
+        const r = await run(page, base({ tape: t, fixes: f, fences: F, nowMs: T(18, 0) }));
+        expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)]),
+          'the shop visit the two stills used to hide').toEqual([['shop', '17:52', '18:07']]);
+      });
+
+      test('the arrival is the first fix that says something new', async () => {
+        // The first row after a journey ends is often a verbatim restatement
+        // of the last one on the approach. His sat 605 ft from his dad's shop
+        // against a 600 ft fence: five feet, and the arrival resolved to
+        // nowhere, so the chain never closed and the day derived nothing. The
+        // next fix is a real reading, 14 ft from the shop.
+        const NEAR = { lat: 39.0442, lng: -95.7155 };   // ~605 ft short of DS
+        const t = [mo(T(12, 30), 'onFoot'), mo(T(12, 37), 'automotive'),
+          mo(T(12, 52), 'still'), mo(T(13, 0), 'still'), mo(T(13, 7), 'automotive'),
+          mo(T(13, 25), 'onFoot')];
+        const f = [fix(T(12, 36), { lat: JH.lat, lng: JH.lng }),
+          fix(T(12, 49, 55), NEAR),
+          fix(T(13, 0, 2), NEAR),                       // the stale repeat
+          fix(T(13, 0, 47), { lat: DS.lat, lng: DS.lng }),
+          fix(T(13, 25, 5), { lat: JH.lat, lng: JH.lng }), fix(T(14, 30), { lat: JH.lat, lng: JH.lng })];
+        const r = await run(page, base({ tape: t, fixes: f, fences: F, nowMs: T(18, 0) }));
+        expect(r.dwells.map(d => d.kind), 'the shop, not nowhere').toEqual(['shop']);
+        expect(r.legs.map(l => [l.from.name, l.to.name]))
+          .toEqual([['7402 SW 22nd Ct', '1200 SW Oakley Ave'],
+            ['1200 SW Oakley Ave', '7402 SW 22nd Ct']]);
+      });
+    });
+
     // A MINUTE IS NOT A DRIVE EITHER (owner 2026-09-04, his 2 September).
     // The phone sat at one coordinate from 8:03am to 12:32pm and CoreMotion
     // twitched automotive for one minute at 8:17. That drew two unsaved
@@ -1553,14 +1602,80 @@ test.describe('geo-derive: the day deriver', () => {
         // The shop stop it could never see before is a dwell now.
         // The client at the end is the OPEN tail, not a dwell: rule 9 needs a
         // departure before a visit is a row.
+        // AMENDED 2026-09-04 (10.4). This used to end the dwell at 19:17, the
+        // last fix of the still run. That is only where the READINGS stopped:
+        // the truck is still in the yard until something shows it moved, which
+        // here is the 19:25 fix a mile away. Same fixture, same stop, the
+        // twelve minutes the fixes happened to cover are now the twenty
+        // minutes he was actually parked. His 3 September is the real case:
+        // fixes at the shop at 2:03 and 2:14, silence, and the tape flipping
+        // at 2:43, which used to draw a 29-minute drive through half an hour
+        // of him standing in the yard.
         expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)]))
-          .toEqual([['shop', '19:05', '19:17']]);
+          .toEqual([['shop', '19:05', '19:25']]);
         expect(r.open && r.open.name).toBe('Far client');
         const rows = await page.evaluate((res) => geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' }), r);
         expect(rows.job_time_entries.filter(x => x.source === 'drive').length, 'two drives, not one').toBe(2);
         // Home to shop, shop to client: two legs where there was one.
         expect(r.legs.map(l => [l.from.name, l.to.name]))
           .toEqual([['7402 SW 22nd Ct', '1200 SW Oakley Ave'], ['1200 SW Oakley Ave', 'Far client']]);
+      });
+
+      // NOBODY DRIVES A MILE IN FIFTEEN SECONDS. Owner 2026-09-04, on his 2
+      // September 1:00pm drive: "I know the drive leg should be a lot longer
+      // then that." A sleeping phone restates its last position verbatim, and
+      // two of those in a row look exactly like a parked truck. His fixes at
+      // 12:44:54 and 12:49:40 carried the same sixteen digits, then 12:49:55
+      // landed 1.3 miles north. 312 mph, so one reading is a lie, and it is
+      // the repeat.
+      test('a still run contradicted by an impossible speed is a stale reading, not a stop', async () => {
+        const t = [mo(T(11, 0), 'onFoot'), mo(T(13, 55), 'automotive'), mo(T(14, 53), 'onFoot')];
+        const f = [fix(T(13, 55, 5), { lat: JH.lat, lng: JH.lng }),
+          // Two identical readings five minutes apart: it looks parked...
+          fix(T(14, 5), { lat: 39.0400, lng: -95.7500 }), fix(T(14, 10), { lat: 39.0400, lng: -95.7500 }),
+          // ...and fifteen seconds later he is a mile and a half away.
+          fix(T(14, 10, 15), { lat: DS.lat, lng: DS.lng }),
+          fix(T(14, 53, 5), { lat: CUST.lat, lng: CUST.lng }), fix(T(15, 30), { lat: CUST.lat, lng: CUST.lng })];
+        const r = await run(page, base({ tape: t, fixes: f, fences: FF, nowMs: T(18, 0) }));
+        expect(r.dwells, 'no stop invented from a stale repeat').toEqual([]);
+        const rows = await page.evaluate((res) => geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' }), r);
+        expect(rows.job_time_entries.filter(x => x.source === 'drive').length, 'one drive all along').toBe(1);
+      });
+
+      // The same repeat, with the next fix a plausible distance away: that is
+      // a real park and it survives. This is the pair that proves the rule
+      // rejects staleness rather than repeats.
+      test('the same repeat with a plausible next fix is still a stop', async () => {
+        const t = [mo(T(11, 0), 'onFoot'), mo(T(13, 55), 'automotive'), mo(T(14, 53), 'onFoot')];
+        const f = [fix(T(13, 55, 5), { lat: JH.lat, lng: JH.lng }),
+          fix(T(14, 5), { lat: DS.lat, lng: DS.lng }), fix(T(14, 10), { lat: DS.lat, lng: DS.lng }),
+          fix(T(14, 25), { lat: 39.0600, lng: -95.7000 }),
+          fix(T(14, 53, 5), { lat: CUST.lat, lng: CUST.lng }), fix(T(15, 30), { lat: CUST.lat, lng: CUST.lng })];
+        const r = await run(page, base({ tape: t, fixes: f, fences: FF, nowMs: T(18, 0) }));
+        expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)]))
+          .toEqual([['shop', '19:05', '19:25']]);
+      });
+
+      // PARKED FOR THE REST OF THE JOURNEY. Nothing shows the truck moving
+      // before the flip that ends the journey, so there is no second segment.
+      // His 3 September: at his dad's shop from 2:03, phone asleep, and the
+      // tape does not speak again until 2:43.
+      test('nothing says it moved, so it never drove again', async () => {
+        // His shape exactly: automotive at 1:55, fixes at the shop at 2:03 and
+        // 2:14, then the phone sleeps and the tape does not speak again until
+        // the 2:43 flip. He leaves for real at 2:47.
+        const t = [mo(T(11, 0), 'onFoot'), mo(T(13, 55), 'automotive'),
+          mo(T(14, 43), 'cycling'), mo(T(14, 47), 'automotive'), mo(T(15, 10), 'onFoot')];
+        const f = [fix(T(13, 55, 5), { lat: JH.lat, lng: JH.lng }),
+          fix(T(14, 3), { lat: DS.lat, lng: DS.lng }), fix(T(14, 14), { lat: DS.lat, lng: DS.lng }),
+          fix(T(15, 10, 5), { lat: CUST.lat, lng: CUST.lng }), fix(T(16, 0), { lat: CUST.lat, lng: CUST.lng })];
+        const r = await run(page, base({ tape: t, fixes: f, fences: FF, nowMs: T(18, 0) }));
+        const rows = await page.evaluate((res) => geoDeriveRows(res, { contractorId: 'c', employeeId: 'e' }), r);
+        expect(rows.job_time_entries.filter(x => x.source === 'drive').length,
+          'the drive in and the drive out, and nothing through the middle').toBe(2);
+        expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)]),
+          'forty-four minutes in the yard, not eleven with a drive drawn through it')
+          .toEqual([['shop', '19:03', '19:47']]);
       });
 
       // A LONG SILENCE ACROSS THE SHOP, ENDING SOMEWHERE ELSE, IS NOT A STOP.

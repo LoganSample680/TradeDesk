@@ -218,14 +218,35 @@ function _gdParkedFixBefore(fixes, ts, notBeforeTs, maxAgeMs, maxAccM) {
 // The arrival's mirror: the first good fix after the walking flip and before
 // the next drive, for a phone that only woke once it had parked.
 function _gdSettledFixAfter(fixes, ts, notAfterTs, maxAgeMs, maxAccM) {
-  let best = null;
-  for (const f of fixes) {
-    if (!f || f.lat == null || f.lng == null || typeof f.ts !== 'number') continue;
-    if (f.acc != null && Number(f.acc) > maxAccM) continue;
+  // A REPEAT IS NOT A NEW READING (owner 2026-09-04, his 2 September 1:00pm
+  // drive: "I know the drive leg should be a lot longer then that").
+  //
+  // A sleeping phone restates its last position verbatim, and the first row
+  // after a journey ends is often one of those. His 2 September: the fix at
+  // 13:00:02 carries 39.04403035863875 / -95.71551566659944, the same sixteen
+  // digits as 12:49:55 on the approach, and it sits 605 ft from his dad's shop
+  // against a 600 ft fence. Five feet, and the arrival resolved to nowhere, so
+  // the chain never closed and the whole day derived nothing. The next fix,
+  // 13:00:47, is a genuinely new reading 14 ft from the shop.
+  //
+  // So the arrival is the first fix that actually SAYS something: a candidate
+  // repeating the coordinate of the fix immediately before it is skipped. It
+  // is not evidence he was not there, it is a reading that carries no
+  // information about where he settled. If every candidate is a repeat, the
+  // first one still wins, because a stale answer beats no answer.
+  const ordered = (fixes || []).filter(f => f && f.lat != null && f.lng != null &&
+    typeof f.ts === 'number' && (f.acc == null || Number(f.acc) <= maxAccM))
+    .sort((a, b) => a.ts - b.ts);
+  let best = null, fallback = null;
+  for (let i = 0; i < ordered.length; i++) {
+    const f = ordered[i];
     if (f.ts < ts || f.ts > notAfterTs || f.ts - ts > maxAgeMs) continue;
+    if (!fallback) fallback = f;
+    const prev = ordered[i - 1];
+    if (prev && prev.lat === f.lat && prev.lng === f.lng) continue;
     if (!best || f.ts < best.ts) best = f;
   }
-  return best;
+  return best || fallback;
 }
 
 // A stale coordinate riding on a fence event (a regionEnter row carries the
@@ -321,7 +342,7 @@ function _gdStillRun(fixes, from, to, minMs, opts) {
     // How long did it sit in this one spot?
     let k = i;
     while (k + 1 < inside.length && _gdMiles(inside[i], inside[k + 1]) * 5280 <= r) k++;
-    if (inside[k].ts - inside[i].ts >= minMs) return [inside[i].ts, inside[k].ts];
+    if (inside[k].ts - inside[i].ts >= minMs) return [inside[i].ts, inside[k].ts, inside[i]];
     i = k;
   }
   return null;
@@ -330,7 +351,69 @@ function _gdStillRun(fixes, from, to, minMs, opts) {
 function _gdParkedSplit(j, fixes, opts) {
   const still = (Number(opts.parkedStillMs) > 0) ? Number(opts.parkedStillMs) : GEO_DERIVE_DEFAULTS.parkedStillMs;
   const end = (typeof j.endTs === 'number') ? j.endTs : Infinity;
-  return _gdStillRun(fixes, j.startTs, end, still, opts);
+  const run = _gdStillRun(fixes, j.startTs, end, still, opts);
+  if (!run) return null;
+  // NOBODY DRIVES A MILE IN FIFTEEN SECONDS (owner 2026-09-04, his 2 September
+  // 1:00pm drive: "I know the drive leg should be a lot longer then that").
+  //
+  // A sleeping phone restates its last position verbatim, and two of those in
+  // a row look exactly like a parked truck. His 2 September: fixes at 12:44:54
+  // and 12:49:40 carrying the same sixteen digits, then 12:49:55, fifteen
+  // seconds later and 1.3 miles north. 312 mph. One of those readings is a lie
+  // and it is the repeat, so the "stop" between them never happened, and
+  // reading it as one cut a 15-minute drive to his dad's shop into two drives
+  // of 7 and 3 minutes with a phantom stop wedged between.
+  //
+  // maxMph, the file's existing "not on the road" speed, and only here: this
+  // split has no witness but the fixes. _gdStopProved is asked about a gap the
+  // TAPE already broke, so it has a second observer and keeps its evidence.
+  const maxAcc = (Number(opts.maxFixAccM) > 0) ? Number(opts.maxFixAccM) : GEO_DERIVE_DEFAULTS.maxFixAccM;
+  const lim = (Number(opts.maxMph) > 0) ? Number(opts.maxMph) : GEO_DERIVE_DEFAULTS.maxMph;
+  let next = null;
+  for (const f of (fixes || [])) {
+    if (!f || f.lat == null || f.lng == null || typeof f.ts !== 'number') continue;
+    if (f.ts <= run[1] || (f.acc != null && Number(f.acc) > maxAcc)) continue;
+    if (!next || f.ts < next.ts) next = f;
+  }
+  if (next && run[2]) {
+    const mi = _gdMiles(run[2], next), dtH = (next.ts - run[1]) / 3600000;
+    if (mi > 0.05 && (dtH <= 0 || mi / dtH > lim)) return null;
+  }
+  return run;
+}
+
+// A PARKED TRUCK STAYS PARKED UNTIL SOMETHING SAYS IT MOVED (owner 2026-09-04:
+// "would want it to break it up if a phone gets left and hasnt changed state").
+//
+// The split used to resume the drive at the LAST FIX of the still run, which
+// is only where the readings stopped, not where he pulled out. His 3
+// September: fixes 14 ft from his dad's shop at 2:03 and 2:14, then the phone
+// slept and said nothing at all until the tape flipped at 2:43. Resuming at
+// 2:14 cut a 40-minute stop at the shop down to 11 and drew a 29-minute drive
+// through the half hour he spent standing in the yard.
+//
+// So the truck sits until the first thing that shows movement: a fix outside
+// the spot it was parked in, or the tape leaving 'still'. Whichever comes
+// first, and never past the end of the journey being split.
+function _gdParkedResume(cut, fixes, tape, opts, endTs) {
+  const at = cut[2];
+  if (!at) return cut[1];
+  const r = (opts && Number(opts.radiusFt) > 0) ? Number(opts.radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
+  const maxAcc = (opts && Number(opts.maxFixAccM) > 0) ? Number(opts.maxFixAccM) : GEO_DERIVE_DEFAULTS.maxFixAccM;
+  let moved = Infinity;
+  for (const f of (fixes || [])) {
+    if (!f || f.lat == null || f.lng == null || typeof f.ts !== 'number') continue;
+    if (f.ts <= cut[1] || f.ts >= moved) continue;
+    if (f.acc != null && Number(f.acc) > maxAcc) continue;
+    if (_gdMiles(at, f) * 5280 > r) moved = f.ts;
+  }
+  let flip = Infinity;
+  for (const x of (tape || [])) { if (x.ts > cut[1] && x.k !== 'still') { flip = x.ts; break; } }
+  const back = Math.min(moved, flip);
+  // Nothing said it moved before this journey ended: it never drove again.
+  if (!isFinite(back) || back <= cut[0]) return (endTs != null) ? null : cut[1];
+  if (endTs != null && back >= endTs) return null;
+  return Math.max(back, cut[1]);
 }
 
 function _gdJourneys(tape, personId, opts, dayStart, dayEnd, nowMs, fixes) {
@@ -351,10 +434,21 @@ function _gdJourneys(tape, personId, opts, dayStart, dayEnd, nowMs, fixes) {
     }
     if (!cur) { if (x.k === 'foot') lastFoot = x.ts; continue; }
     if (x.k === 'foot') { cur.endTs = x.ts; out.push(cur); cur = null; lastFoot = x.ts; continue; }
-    // still: parked if it runs long enough before the next transition
-    const next = t[i + 1];
-    const stillFor = (next ? next.ts : nowMs) - x.ts;
-    if (stillFor >= opts.stillEndMs) { cur.endTs = x.ts; out.push(cur); cur = null; }
+    // still: parked if it runs long enough before the next transition.
+    //
+    // THE RUN, NOT THE SAMPLE (owner 2026-09-04, his 2 September 1:00pm drive:
+    // "I know the drive leg should be a lot longer then that"). CoreMotion
+    // re-states 'still' while nothing changes, and measuring one sample to the
+    // NEXT ENTRY read those re-statements as the truck moving again. His
+    // 12:52:37 still ran to 13:07:01 automotive, fourteen and a half minutes
+    // parked at his dad's shop, but it was logged as two stills 7m26s and
+    // 6m58s apart, so neither reached the ten-minute floor and the drive
+    // swallowed the whole shop visit. Consecutive stills are one stretch of
+    // stillness; the stretch is what gets measured.
+    let n = i + 1;
+    while (n < t.length && t[n].k === 'still') n++;
+    const stillFor = (n < t.length ? t[n].ts : nowMs) - x.ts;
+    if (stillFor >= opts.stillEndMs) { cur.endTs = x.ts; out.push(cur); cur = null; i = n - 1; }
   }
   if (cur) { cur.endTs = null; cur.open = true; out.push(cur); }
   // Split every journey the fixes say was interrupted, however many times.
@@ -362,14 +456,21 @@ function _gdJourneys(tape, personId, opts, dayStart, dayEnd, nowMs, fixes) {
   const split = [];
   for (const j of out) {
     let head = j, guard = 0;
-    while (guard++ < 200) {
+    while (head && guard++ < 200) {
       const cut = _gdParkedSplit(head, fixes, opts);
       if (!cut || !(cut[0] > head.startTs) || !(head.endTs == null || cut[1] < head.endTs)) break;
+      const back = _gdParkedResume(cut, fixes, t, opts, head.endTs);
       split.push({ startTs: head.startTs, id: head.id, endTs: cut[0] });
-      head = { startTs: cut[1], id: _gdJourneyId(personId, cut[1], null),
+      // PARKED FOR THE REST OF THE JOURNEY. Nothing showed the truck moving
+      // before the flip that ended this journey, so there is no second
+      // segment: it sat there until the tape said otherwise, and the dwell
+      // between this end and the next departure is the whole of it. His 3
+      // September, 2:03 to 2:43 in his dad's yard.
+      if (back == null) { head = null; break; }
+      head = { startTs: back, id: _gdJourneyId(personId, back, null),
         endTs: head.endTs, open: head.open };
     }
-    split.push(head);
+    if (head) split.push(head);
   }
   // "The next geo fence you arrive at THAT DAY": a journey that ends after
   // midnight is still open as far as this day is concerned.
