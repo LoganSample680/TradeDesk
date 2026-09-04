@@ -10178,6 +10178,25 @@ test.describe('Version consistency', () => {
     expect(result.version).toBe(result.appVersion);
   });
 
+  // The sw.js CACHE string is the THIRD copy of the version and the only one
+  // nothing guarded. It drifted on 2026-09-04: a rebase conflict took origin's
+  // version.json + sw.js (.1) and ours for cloud.js (.21), so every foreground
+  // poll saw a mismatch and reloaded the app on a 15s loop. Two long
+  // page.evaluate blocks died with "execution context was destroyed" in CI,
+  // which is how it was found, and the owner's phone would have reloaded
+  // forever. bump-version.js writes all three together; this proves they
+  // stayed together.
+  test('sw.js CACHE carries the same version as version.json', async () => {
+    const result = await page.evaluate(async () => {
+      const v = await (await fetch('/version.json?_=' + Date.now(), { cache: 'no-store' })).json();
+      const sw = await (await fetch('/sw.js?_=' + Date.now(), { cache: 'no-store' })).text();
+      const m = sw.match(/const CACHE\s*=\s*'tradedesk-([^']+)'/);
+      return { version: v.version, cache: m ? m[1] : null };
+    });
+    expect(result.cache).toBeTruthy();
+    expect(result.cache).toBe(result.version);
+  });
+
   test('APP_VERSION format is MM.DD.YY.NN', async () => {
     const v = await page.evaluate(() => typeof APP_VERSION !== 'undefined' ? APP_VERSION : null);
     expect(v).toMatch(/^\d{2}\.\d{2}\.\d{2}\.\d+$/);
