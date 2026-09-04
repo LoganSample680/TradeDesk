@@ -515,8 +515,10 @@ function geoDeriveDay(input) {
 
   // Rule 10: paperwork at the home office.
   const carved = _gdOffice(dwells, open, journeys, fixes, fences, inp.appEvents, dayStart, dayEnd, nowMs, opts);
+  // Rule 12: the house is never on the clock.
+  const housed = _gdHouseOffTheClock(carved);
   // Rule 11: the day ends with the last real work.
-  const ended = _gdEndOfDay(carved, fences, opts, open, journeys.some(j => j && j.open), legs);
+  const ended = _gdEndOfDay(housed, fences, opts, open, journeys.some(j => j && j.open), legs);
 
   return {
     day: inp.day || '',
@@ -722,6 +724,33 @@ function _gdShopIsHome(fence, fences, radiusFt) {
   return (fences || []).some(f => f && String(f.kind) === 'home_office' && f.lat != null && f.lng != null &&
     _gdMiles(fence, f) * 5280 <= r);
 }
+// Rule 12: THE HOUSE IS NEVER ON THE CLOCK (owner 2026-09-04, naming what a
+// crew member's automatic day should hold: "all Jack should see automatic are
+// straight drives from his home office to his dads shop and back, that's really
+// it then also see time log dwells at his dads shop if he stops there").
+//
+// This is CLAUDE.md 9.11 finally enforced rather than a new rule. That section
+// has said since 2026-08-30 that home office time counts only for the stretches
+// the app was actually open, and recorded that it could not be built because
+// nothing logged when the app was open. Rule 10 built that log. So the base
+// dwell at a home office stops being a row, and the ONLY way the house ever
+// contributes time is rule 10's Office carve: app open, outside the working day.
+//
+// Rule 11 had been carrying half of this by accident, and only half. It drops
+// base dwells after the last work, and since 2026-09-03 on a day holding no work
+// at all. Neither reaches the MIDDLE of a working day, which is where Jack's sat
+// (2026-09-01): home 06:28 to 07:23 Central, then the drive to his dad's shop.
+// Before the first work is not after the last, so it survived both branches and
+// the rail drew nearly an hour at his own address as time on site.
+//
+// Only kind 'home_office' is cut, which is already exactly "the house, and not
+// also the shop": the fence ranker hands a spot to the shop first, so a house
+// that is also somebody's yard comes back kind 'shop' and keeps the owner's rule
+// that shop time always counts (9.11), with rule 11 still trimming its evening.
+function _gdHouseOffTheClock(dwells) {
+  return (dwells || []).filter(d => d && String(d.kind) !== 'home_office');
+}
+
 // "After the last real work" can only be judged against everything the day
 // holds so far, and a day in progress holds more than its CLOSED dwells:
 // an open dwell at a work fence is work under way, and a truck on the road
@@ -740,15 +769,11 @@ function _gdEndOfDay(dwells, fences, opts, open, driving, legs) {
   //
   // It only shows up on an account whose days can contain no work at all.
   // Jack's do (2026-09-03): home, the gym, home. The gym has no fence, so that
-  // journey writes nothing, he ends the day with zero client/job/supply
-  // dwells, this line bails out, and every stretch at his own address is kept
-  // and rendered as time on site. The owner's own days always hold a client
-  // dwell, so the rule runs for him and drops his base dwells, which is why
-  // this looked account-specific rather than like a rule with a hole in it.
-  //
-  // A shop that is not somebody's house keeps the exemption. A home office,
-  // or a shop sharing its spot with one, does not: a day spent entirely at
-  // your own house with no work in it is not a shift.
+  // journey writes nothing and he ends the day with zero client/job/supply
+  // dwells. A shop that is not somebody's house keeps the exemption; a shop
+  // sharing its spot with a home office does not, because a day spent entirely
+  // at your own house with no work in it is not a shift. (The home office
+  // itself never reaches here any more: rule 12 cuts it first, on every day.)
   if (!work.length) {
     // "No work" has to mean no work ANYWHERE, not merely no work DWELL. A day
     // can hold a real client visit that never becomes a dwell of its own,
@@ -768,8 +793,9 @@ function _gdEndOfDay(dwells, fences, opts, open, driving, legs) {
       (String(f.kind) === 'shop' && _gdShopIsHome(f, fences, opts.radiusFt)));
     const workLeg = (legs || []).some(l => l && (notHome(l.from) || notHome(l.to)));
     if (workLeg) return dwells;
-    return dwells.filter(d => !(String(d.kind) === 'home_office' ||
-      (String(d.kind) === 'shop' && _gdShopIsHome(d.fence, fences, opts.radiusFt))));
+    // Only a shop that is the house is left to cut: rule 12 already removed
+    // every home_office dwell before this ran.
+    return dwells.filter(d => !(String(d.kind) === 'shop' && _gdShopIsHome(d.fence, fences, opts.radiusFt)));
   }
   const openWork = !!(open && !_gdIsBaseKind(open.kind) && open.kind !== 'office');
   if (openWork || driving) return dwells;                // the day is not over
@@ -838,13 +864,12 @@ function geoDeriveRows(result, ids) {
     time.push(Object.assign(base, {
       job_id: f.jobId != null ? String(f.jobId) : null,
       dest_place: f.jobId != null ? null : (d.name || null),
-      // A home office keeps its identity. It used to fall through to 'place',
-      // the same bucket a supply house or any saved stop lands in, so the
-      // Time Log had nothing left to tell somebody's own address apart from a
-      // job site and drew it as time on site (owner 2026-09-03, looking at
-      // Jack's rail: "why is his own address showing as on site?").
+      // No 'place-home' arm: rule 12 means a home_office dwell never reaches
+      // here at all, so a branch for it would be a branch that cannot run.
+      // js/timelog.js still READS 'place-home' on purpose, for the rows that
+      // already carry it and for a hand-fixed one, which geo_replace_day
+      // preserves across every re-derive.
       source: d.kind === 'office' ? 'place-office'
-        : d.kind === 'home_office' ? 'place-home'
         : (f.jobId != null ? 'geofence' : (f.clientId != null ? 'client' : 'place')),
     }));
   }

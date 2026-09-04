@@ -375,7 +375,11 @@ test.describe('geo-derive: the day deriver', () => {
         const f = [fix(T(9, 0, 5), spot(A)), fix(T(9, 20, 5), spot(B)), fix(T(11, 0, 5), spot(B)), fix(T(11, 10, 5), spot(A))];
         const r = await run(page, base({ tape: t, fixes: f, fences: [A, B] }));
         expect(r.legs.map(l => [l.from.kind, l.to.kind])).toEqual([[from, to], [to, from]]);
-        expect(r.dwells.map(d => d.kind)).toEqual([to]);
+        // The legs are the point of the matrix and they are the same for every
+        // pair. The middle dwell is not: a home office is never a row (rule 12,
+        // owner 2026-09-04), so driving there and back is two legs and nothing
+        // in between. Every other destination kind still dwells.
+        expect(r.dwells.map(d => d.kind)).toEqual(to === 'home_office' ? [] : [to]);
       });
     }
     for (const from of kinds) {
@@ -575,20 +579,30 @@ test.describe('geo-derive: the day deriver', () => {
       expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs), d.minutes])).toEqual([['office', '15:00', '16:00', 60], ['office', '16:30', '16:45', 15]]);
     });
 
-    // Until 2026-09-02 (afternoon) this expected the half hour with the app
-    // open to be carved out of the midday home dwell as Office. The owner
-    // then drew the line: "never office time unless it's outside of business
-    // hours." Inside the working day the house is a home stop, whole, and
-    // the app being open changes nothing.
-    test('inside a home dwell between two drives nothing is carved: the working day is not office hours', async () => {
+    // Two owner rulings, in order, and the test has now absorbed both.
+    //
+    // 2026-09-02 (afternoon): the half hour with the app open is NOT carved out
+    // as Office, because "never office time unless it's outside of business
+    // hours." That is the assertion on r.dwells office rows below, unchanged.
+    //
+    // 2026-09-04: the home stretch the carve would have been taken out of is
+    // not a row either. It used to stand whole, all 120 minutes of it, as a
+    // home_office dwell between the two drives. Rule 12 removed it: for a pure
+    // home office, the house is only ever the end of a leg. So an app-open
+    // stretch at home inside the working day now yields nothing at all, which
+    // is the strongest form of the same rule rather than a softening of it.
+    // (The house that is ALSO the yard is the other half of this and keeps its
+    // shop row: 'inside the working day the house is the shop' below.)
+    test('an app-open stretch at home inside the working day is no row at all: not Office, and not home either', async () => {
       const tape = [mo(T(8, 0), 'onFoot'), mo(T(11, 40), 'driving'), mo(T(12, 0), 'onFoot'), mo(T(14, 0), 'driving'), mo(T(14, 20), 'onFoot')];
       const fixes = [fix(T(11, 40, 5), DOE), fix(T(12, 0, 5), HFIX), fix(T(13, 0), HFIX), fix(T(14, 0, 5), HFIX), fix(T(14, 20, 5), DOE), fix(T(15, 0), DOE)];
       const appEvents = [app(T(12, 30), 'active'), app(T(13, 0), 'background')];
       const r = await run(page, base({ tape, fixes, fences: F, appEvents }));
-      const home = r.dwells.filter(d => _sameId(d.fence, HOMEONLY));
-      expect(home.map(d => [d.kind, hm(d.startTs), hm(d.endTs), d.minutes])).toEqual([['home_office', '17:00', '19:00', 120]]);
+      expect(r.dwells.filter(d => _sameId(d.fence, HOMEONLY))).toEqual([]);
       expect(r.dwells.filter(d => d.kind === 'office')).toEqual([]);
-      expect(home.reduce((s, d) => s + d.minutes, 0)).toBe(120);
+      // The drives that bracketed it are untouched: the house is still a real
+      // destination, it just never puts anybody on the clock.
+      expect(r.legs.map(l => [l.from.kind, l.to.kind])).toEqual([['client', 'home_office'], ['home_office', 'client']]);
       const spans = r.dwells.map(d => [d.startTs, d.endTs]).concat(r.legs.map(l => [l.startTs, l.endTs])).sort((a, b) => a[0] - b[0]);
       for (let i = 1; i < spans.length; i++) expect(spans[i][0]).toBeGreaterThanOrEqual(spans[i - 1][1]);
     });
@@ -944,6 +958,125 @@ test.describe('geo-derive: the day deriver', () => {
       const appEvents = [{ ts: T(18, 0), kind: 'active' }, { ts: T(19, 30), kind: 'background' }];
       const r = await run(page, base({ tape, fixes, fences: [SHOP, DOE, HOMEONLY], appEvents }));
       expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)])).toEqual([['client', '14:20', '22:00'], ['office', '23:00', '00:30']]);
+    });
+  });
+
+  // ── Rule 12: the house is never on the clock ────────────────────────────
+  // Owner 2026-09-04, saying what a crew member's automatic day should hold:
+  // "all Jack should see automatic are straight drives from his home office to
+  // his dads shop and back, that's really it then also see time log dwells at
+  // his dads shop if he stops there that closes itself out on departure while
+  // manual clock still runs."
+  //
+  // Jack's real geometry: a pure home office at 7402 SW 22nd Ct and his dad's
+  // shop at 1200 SW Oakley Ave, 1.9 miles apart. Nothing merges them, so his
+  // house resolves to kind 'home_office' where the owner's, which shares its
+  // spot with his yard, resolves to 'shop'. That one difference is why every
+  // one of these rules bit Jack's account and not his.
+  test.describe('the house is never on the clock', () => {
+    const JHOME = { id: 'place-1787361092921077', kind: 'home_office', name: '7402 SW 22nd Ct', lat: 39.0257251, lng: -95.7939329 };
+    const DADS  = { id: 'place-1788216906515011', kind: 'shop', name: '1200 SW Oakley Ave', lat: 39.0456577, lng: -95.7151106 };
+    const JF = { lat: JHOME.lat, lng: JHOME.lng };
+    const DF = { lat: DADS.lat, lng: DADS.lng };
+    const JFENCES = [JHOME, DADS];
+
+    // The whole ask in one day: out at 7:00, at the shop until 15:00, home.
+    test('his day is two legs and one shop dwell, and nothing else', async () => {
+      const tape = [mo(T(6, 30), 'onFoot'), mo(T(7, 0), 'driving'), mo(T(7, 25), 'onFoot'),
+                    mo(T(15, 0), 'driving'), mo(T(15, 25), 'onFoot')];
+      const fixes = [fix(T(6, 30), JF), fix(T(7, 0, 5), JF), fix(T(7, 25, 5), DF), fix(T(11, 0), DF),
+                     fix(T(15, 0, 5), DF), fix(T(15, 25, 5), JF), fix(T(16, 30), JF)];
+      const r = await run(page, base({ tape, fixes, fences: JFENCES, nowMs: T(18, 0) }));
+      expect(r.legs.map(l => [l.from.kind, l.to.kind])).toEqual([['home_office', 'shop'], ['shop', 'home_office']]);
+      expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)])).toEqual([['shop', '12:25', '20:00']]);
+    });
+
+    // The stretch rule 11 could never reach, and the one actually on his rail:
+    // 06:28 to 07:23 Central at his own address, BEFORE the first drive. Not
+    // after the last work, so the end-of-day rule kept it; the day holds real
+    // work, so the no-work rule never ran. 55 minutes of "on site" at home.
+    test('the morning at home before the first drive is not a row', async () => {
+      const tape = [mo(T(6, 0), 'onFoot'), mo(T(7, 23), 'driving'), mo(T(7, 48), 'onFoot'),
+                    mo(T(15, 0), 'driving'), mo(T(15, 25), 'onFoot')];
+      const fixes = [fix(T(6, 28), JF), fix(T(7, 0), JF), fix(T(7, 23, 5), JF), fix(T(7, 48, 5), DF),
+                     fix(T(12, 0), DF), fix(T(15, 0, 5), DF), fix(T(15, 25, 5), JF), fix(T(16, 30), JF)];
+      const r = await run(page, base({ tape, fixes, fences: JFENCES, nowMs: T(18, 0) }));
+      expect(r.dwells.filter(d => d.kind === 'home_office')).toEqual([]);
+      expect(r.dwells.map(d => d.kind)).toEqual(['shop']);
+    });
+
+    // Lunch at home in the middle of a working day: two drives out to the shop
+    // with a stretch at the house between them. Every earlier rule kept this.
+    test('home in the middle of a working day is not a row either', async () => {
+      const tape = [mo(T(6, 30), 'onFoot'), mo(T(7, 0), 'driving'), mo(T(7, 25), 'onFoot'),
+                    mo(T(11, 0), 'driving'), mo(T(11, 25), 'onFoot'),
+                    mo(T(12, 0), 'driving'), mo(T(12, 25), 'onFoot'),
+                    mo(T(16, 0), 'driving'), mo(T(16, 25), 'onFoot')];
+      const fixes = [fix(T(7, 0, 5), JF), fix(T(7, 25, 5), DF), fix(T(11, 0, 5), DF),
+                     fix(T(11, 25, 5), JF), fix(T(11, 45), JF), fix(T(12, 0, 5), JF), fix(T(12, 25, 5), DF),
+                     fix(T(16, 0, 5), DF), fix(T(16, 25, 5), JF), fix(T(17, 30), JF)];
+      const r = await run(page, base({ tape, fixes, fences: JFENCES, nowMs: T(19, 0) }));
+      expect(r.dwells.map(d => d.kind)).toEqual(['shop', 'shop']);
+      expect(r.legs.length).toBe(4);
+    });
+
+    // The shop dwell closes on ITS departure, not at the end of the day, which
+    // is the half of the ask about the dwell "closing itself out on departure."
+    test('the shop dwell ends when he leaves it, not when the day ends', async () => {
+      const tape = [mo(T(6, 30), 'onFoot'), mo(T(7, 0), 'driving'), mo(T(7, 25), 'onFoot'),
+                    mo(T(14, 10), 'driving'), mo(T(14, 35), 'onFoot')];
+      const fixes = [fix(T(7, 0, 5), JF), fix(T(7, 25, 5), DF), fix(T(10, 0), DF),
+                     fix(T(14, 10, 5), DF), fix(T(14, 35, 5), JF), fix(T(20, 0), JF)];
+      const r = await run(page, base({ tape, fixes, fences: JFENCES, nowMs: T(22, 0) }));
+      const shop = r.dwells.filter(d => d.kind === 'shop');
+      expect(shop.map(d => [hm(d.startTs), hm(d.endTs)])).toEqual([['12:25', '19:10']]);
+      // Five and a half hours parked at home afterwards adds nothing.
+      expect(r.dwells.length).toBe(1);
+    });
+
+    // Rule 10 is the ONE way the house still contributes, and rule 12 does not
+    // touch it: the carve happens first and its rows are kind 'office'.
+    test('rule 10 survives rule 12: app open at home after the last work is still Office', async () => {
+      const tape = [mo(T(6, 30), 'onFoot'), mo(T(7, 0), 'driving'), mo(T(7, 25), 'onFoot'),
+                    mo(T(15, 0), 'driving'), mo(T(15, 25), 'onFoot')];
+      const fixes = [fix(T(7, 0, 5), JF), fix(T(7, 25, 5), DF), fix(T(11, 0), DF),
+                     fix(T(15, 0, 5), DF), fix(T(15, 25, 5), JF), fix(T(19, 0), JF), fix(T(20, 0), JF)];
+      const appEvents = [{ ts: T(19, 0), kind: 'active' }, { ts: T(19, 40), kind: 'background' }];
+      const r = await run(page, base({ tape, fixes, fences: JFENCES, appEvents, nowMs: T(22, 0) }));
+      expect(r.dwells.map(d => [d.kind, hm(d.startTs), hm(d.endTs)]))
+        .toEqual([['shop', '12:25', '20:00'], ['office', '00:00', '00:40']]);
+    });
+
+    // The owner's own house is the control. It shares its spot with his yard,
+    // the ranker gives it to the shop, and "shop time always counts" (9.11)
+    // still holds: rule 12 must not reach it.
+    test('the house that is also the yard keeps its shop row', async () => {
+      const tape = [mo(T(7, 0), 'onFoot'), mo(T(7, 52), 'driving'), mo(T(8, 3), 'onFoot'),
+                    mo(T(12, 2), 'driving'), mo(T(12, 12), 'onFoot'), mo(T(16, 0), 'driving'), mo(T(16, 20), 'onFoot')];
+      const fixes = [fix(T(7, 52, 5), SHOP), fix(T(8, 3, 5), DOE), fix(T(12, 2, 5), DOE),
+                     fix(T(12, 12, 5), SHOP), fix(T(14, 0), SHOP), fix(T(16, 0, 5), SHOP), fix(T(16, 20, 5), DOE), fix(T(17, 0), DOE)];
+      const r = await run(page, base({ tape, fixes, nowMs: T(18, 0) }));
+      expect(r.dwells.filter(d => d.kind === 'shop').length).toBeGreaterThan(0);
+      expect(r.dwells.filter(d => d.kind === 'home_office')).toEqual([]);
+    });
+
+    // The rows the writer is handed: no 'place-home' arm can fire any more,
+    // because no home_office dwell reaches geoDeriveRows at all.
+    test('no row the writer produces carries a home office', async () => {
+      const tape = [mo(T(6, 30), 'onFoot'), mo(T(7, 0), 'driving'), mo(T(7, 25), 'onFoot'),
+                    mo(T(15, 0), 'driving'), mo(T(15, 25), 'onFoot')];
+      const fixes = [fix(T(7, 0, 5), JF), fix(T(7, 25, 5), DF), fix(T(11, 0), DF),
+                     fix(T(15, 0, 5), DF), fix(T(15, 25, 5), JF), fix(T(16, 30), JF)];
+      const rows = await page.evaluate((inp) => {
+        const r = geoDeriveDay(inp);
+        return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+      }, base({ tape, fixes, fences: JFENCES, nowMs: T(18, 0) }));
+      const time = rows.job_time_entries;
+      expect(time.map(t => t.source).sort()).toEqual(['drive', 'drive']);
+      expect(time.some(t => t.source === 'place-home')).toBe(false);
+      expect(rows.shop_time_entries.length).toBe(1);
+      // The drives still name the house as where they went.
+      expect(time.map(t => t.dest_place).sort()).toEqual(['1200 SW Oakley Ave', '7402 SW 22nd Ct']);
     });
   });
 
