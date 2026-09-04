@@ -3469,6 +3469,30 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(out.html).toContain('Unsaved address');
     });
 
+    // Owner 2026-09-04, on the replay of his 1 September: "I like Destination
+    // not saved." A drive segment that ends at a stop nobody saved used to
+    // print the tag's own word as its title: "DRIVE TIME / Drive time".
+    test('a drive that reached nowhere saved says so, instead of repeating its tag', async () => {
+      const out = await page.evaluate(async ([es]) => {
+        const orig = window._fetchCrewLabor;
+        window._fetchCrewLabor = async () => ({ name: { jack: 'Jack' }, entries: es, shopEntries: [] });
+        try {
+          const day = (await _timeLogRows(null)).filter(r => r.date === '2026-09-01');
+          return { names: day.filter(r => r.rawSource === 'drive').map(r => r.clientName),
+                   html: _tlDayRailHtml(day) };
+        } finally { window._fetchCrewLabor = orig; }
+      }, [[
+        Object.assign(A('drive', [9, 17], [9, 48], 31), { dest_place: null }),
+        Object.assign(A('unsaved', [9, 48], [10, 51], 63), { dest_place: null }),
+        A('drive', [10, 51], [11, 20], 29),
+      ]]);
+      // The one that arrived somewhere saved keeps its name.
+      expect(out.names).toEqual(['Destination not saved', '1200 SW Oakley Ave']);
+      expect(out.html).toContain('Destination not saved');
+      // And the tag is never its own title any more.
+      expect(out.html).not.toContain('>Drive time<');
+    });
+
     // ── The clock remainder is an unsaved job site ────────────────────────
     // Owner 2026-09-04: "if we see a manual clock in, and then there's
     // unaccounted for time after, meaning he's not inside a shop fence and is

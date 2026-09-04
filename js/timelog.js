@@ -584,7 +584,18 @@ async function _timeLogRows(sinceISO){
     // An unsaved stop between two drives has no name and never gets one, so
     // it says exactly that rather than falling through to the bare '-' every
     // job_id:null row used to draw (owner 2026-09-04: "Unsaved Address").
-    const clientName=String(e.source||'')==='unsaved'?'Unsaved address'
+    //
+    // A drive that reached nowhere saved gets the same treatment (owner
+    // 2026-09-04: "I like Destination not saved"). It used to fall all the way
+    // through to the rail's last resort, which is the tag's own word, so the
+    // row read "DRIVE TIME / Drive time": the tag repeated as its own title,
+    // and nothing anywhere admitting the far end was never saved. Every
+    // segment of a chain except the last one ends at a stop nobody saved, so
+    // this is most of them.
+    const _es=String(e.source||'');
+    const _unnamedDrive=/^drive/.test(_es)&&!e.dest_place&&info.clientName==='-';
+    const clientName=_es==='unsaved'?'Unsaved address'
+      :_unnamedDrive?'Destination not saved'
       :(info.clientName!=='-')?info.clientName:(e.dest_place||info.clientName);
     rows.push({
       id:'a'+e.job_id+'_'+e.employee_user_id+'_'+e.arrived_at,
