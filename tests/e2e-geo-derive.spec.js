@@ -1426,8 +1426,13 @@ test.describe('geo-derive: the day deriver', () => {
       expect(one.job_time_entries.filter(t => t.source === 'unsaved'), 'a minute is noise').toEqual([]);
       const two = await rowsFor(2);
       expect(two.job_time_entries.filter(t => t.source === 'unsaved').length, 'two minutes is a stop').toBe(1);
-      // The drives on both sides are untouched either way.
-      expect(one.job_time_entries.filter(t => t.source === 'drive').length).toBe(2);
+      // AMENDED 2026-09-04 (10.4). This used to expect two drives in BOTH
+      // cases. That left the one-minute case split with nothing in the middle:
+      // two drive rows back to back, which is what the owner objected to on his
+      // 3 September rail at 2:14 and 2:48. A gap that cannot become a row
+      // cannot break a drive either, so the minute merges and the two minutes
+      // does not.
+      expect(one.job_time_entries.filter(t => t.source === 'drive').length, 'one drive, not two').toBe(1);
       expect(two.job_time_entries.filter(t => t.source === 'drive').length).toBe(2);
     });
 

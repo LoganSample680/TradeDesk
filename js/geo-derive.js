@@ -757,6 +757,21 @@ function _gdStayedPut(fixes, fence, sinceTs, nowMs, opts) {
 // Neither provable means it was one drive: this never invents a stop.
 function _gdStopProved(fixes, gapStart, gapEnd, opts) {
   if (!(gapEnd > gapStart)) return false;
+  // TOO SHORT TO BE A ROW IS TOO SHORT TO SPLIT A DRIVE (owner 2026-09-04:
+  // "09/03 still show the back to back drives at 214 pm and 248, why werent
+  // either saved?").
+  //
+  // Two rules disagreed about one 55-second gap. This one said "stop": the
+  // fixes on both sides sat at the same coordinate, so the phone had stayed
+  // put, so the drive split. geoDeriveRows then refused to write the stop,
+  // because a gap under minLegMs is noise (the 14:47 artifact, fixed earlier
+  // today). The result was the split with nothing in it: two drive rows back
+  // to back, which is the exact shape he objected to in the first place.
+  //
+  // One threshold, both places. A gap that cannot become a row cannot break a
+  // drive either.
+  const legMin = (opts && Number(opts.minLegMs) > 0) ? Number(opts.minLegMs) : GEO_DERIVE_DEFAULTS.minLegMs;
+  if (gapEnd - gapStart < legMin) return false;
   const still = (opts && Number(opts.stillEndMs) > 0) ? Number(opts.stillEndMs) : GEO_DERIVE_DEFAULTS.stillEndMs;
   if (gapEnd - gapStart >= still) return true;
   const r = (opts && Number(opts.radiusFt) > 0) ? Number(opts.radiusFt) : GEO_DERIVE_DEFAULTS.radiusFt;
