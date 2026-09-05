@@ -287,6 +287,96 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    .td-boot-skel shimmer card (js/dashboard.js _dashApplySkeletons), removed in
    one swap when the sync settles. Non-destructive: the real markup stays. */
 #pg-dash>.tbar.td-boot-skel-on>*:not(.td-boot-skel),#dash-widget-root>.td-dw.td-boot-skel-on>*:not(.td-boot-skel),#dash-setup-todo.td-boot-skel-on>*:not(.td-boot-skel),#dash-hold.td-boot-skel-on>*:not(.td-boot-skel),#dash-geo-perm.td-boot-skel-on>*:not(.td-boot-skel){display:none!important}
+/* ── The Dispatch crew map (js/day-map.js) ──────────────────────────────────
+   Owner 2026-09-05: "like Life360 but better." Dark, full-bleed, with the crew
+   sheet floating over it. Deliberately a single dark world rather than a
+   themed surface: a map reads as operations in dark and as a consumer locator
+   in light, and the pins were designed against the dark ground.
+   GLASS, and the reason it is only on the chrome: blur alone is frosted
+   plastic, so every glass surface here is blur PLUS a saturation boost pulling
+   colour through from behind, a hairline light border, and a 1px inner
+   highlight where light would catch. It sits on the floating pieces and on the
+   sheet's header, never on a big panel over flat dark ground, which goes grey
+   and dead (measured against a light-glass build of the same screen). */
+.dm-wrap{position:relative;margin:0 -14px -12px}
+.dm-map{position:relative;background:#12161C;overflow:hidden}
+.dm-empty{padding:26px 20px;font-size:13px;color:#8B94A3;line-height:1.6}
+.dm-sheet{position:absolute;left:0;right:0;bottom:0;border-radius:20px 20px 0 0;overflow:hidden;
+  box-shadow:0 -10px 40px rgba(0,0,0,.45);max-height:46%;display:flex;flex-direction:column}
+.dm-sheet-top{background:rgba(16,21,28,.60);-webkit-backdrop-filter:blur(28px) saturate(190%);
+  backdrop-filter:blur(28px) saturate(190%);border-bottom:1px solid rgba(255,255,255,.10);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.16);padding:8px 0 9px;flex-shrink:0}
+.dm-grab{width:36px;height:4px;border-radius:99px;background:rgba(255,255,255,.32);margin:0 auto 9px}
+.dm-shd{display:flex;align-items:center;justify-content:space-between;padding:0 16px}
+.dm-t{font-size:15.5px;font-weight:800;letter-spacing:-.015em;color:#F4F7FA}
+.dm-live{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:800;color:#5FD69A}
+.dm-dot{width:7px;height:7px;border-radius:50%;background:#16A35C;box-shadow:0 0 0 3px rgba(22,163,92,.22)}
+.dm-sheet-body{background:var(--bg2);overflow-y:auto;overscroll-behavior:contain;
+  padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+.dm-none{padding:16px;font-size:12.5px;color:var(--text3);line-height:1.6}
+.dm-row{display:flex;align-items:flex-start;gap:11px;padding:8px 14px 9px}
+.dm-row+.dm-row{border-top:1px solid var(--border)}
+.dm-ra{width:38px;height:38px;border-radius:50%;background:#2D5DA8;color:#fff;font-size:13px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;cursor:pointer}
+.dm-ra.drive{background:#E08A1E}.dm-ra.shop{background:#59616D}
+.dm-rb{flex:1;min-width:0;cursor:pointer}
+.dm-n{display:flex;align-items:center;gap:6px;min-width:0}
+.dm-n b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dm-n b{font-size:14.5px;font-weight:800;letter-spacing:-.01em}
+.dm-chip{font-size:10px;font-weight:800;padding:2px 7px;border-radius:6px;flex-shrink:0;white-space:nowrap}
+.dm-chip.site{color:#0B5430;background:#D4ECDC}
+.dm-chip.drive{color:#704000;background:#FBE2BB}
+.dm-chip.shop{color:var(--text2);background:var(--bg3)}
+.dm-sub{font-size:12px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dm-rail{position:relative;height:5px;border-radius:99px;margin-top:7px;background:var(--bg3);overflow:hidden}
+.dm-rail i{position:absolute;top:0;bottom:0;display:block}
+.dm-rail i.dr{background:#E08A1E}.dm-rail i.st{background:#16A35C}.dm-rail i.sh{background:#8A929E}
+.dm-rc{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;margin-top:2px;max-width:96px}
+.dm-age{font-size:10.5px;font-weight:800;color:var(--text3);text-align:right;line-height:1.3}
+.dm-age.old{color:#704000}
+.dm-b{display:flex;align-items:center;gap:3px;font-size:10.5px;font-weight:800;color:var(--text3)}
+.dm-b.low{color:var(--c-red)}
+.dm-bx{width:17px;height:9px;border:1.4px solid currentColor;border-radius:2.5px;position:relative}
+.dm-bx::after{content:'';position:absolute;right:-3px;top:2px;width:1.6px;height:3px;background:currentColor;border-radius:0 1px 1px 0}
+.dm-bf{position:absolute;left:1px;top:1px;bottom:1px;background:currentColor;border-radius:1px}
+.dm-fine{font-size:10.5px;color:var(--text3);line-height:1.6;padding:10px 16px 2px}
+.dm-loc{font-size:11px;font-weight:800;border:1px solid var(--border2);background:var(--bg);border-radius:8px;
+  padding:5px 10px;color:var(--text);font-family:inherit;cursor:pointer}
+/* ── Pins ─────────────────────────────────────────────────────────────────── */
+.dm-pin,.dm-job{display:flex;flex-direction:column;align-items:center;gap:4px;line-height:1}
+/* The glide. A pin easing to its new position is what makes the map feel
+   alive; at the 220ms entrance cap (§8.4) it reads as a jump, so this is a
+   deliberate documented exception, and it is movement rather than an
+   entrance. transform only, never `all`. */
+.td-mk{transition:transform .5s cubic-bezier(.22,1,.36,1)}
+@media (prefers-reduced-motion:reduce){
+  .td-mk{transition:none}
+  .dm-pulse{animation:none}
+}
+.dm-avw{position:relative;width:46px;height:46px}
+.dm-av{position:absolute;inset:4px;border-radius:50%;background:#2D5DA8;color:#fff;font-size:13.5px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;border:2.5px solid #fff;box-shadow:0 6px 18px rgba(0,0,0,.55)}
+.dm-av.drive{background:#E08A1E}.dm-av.shop{background:#59616D}
+.dm-stale .dm-av{opacity:.55}
+.dm-prog{position:absolute;inset:0;transform:rotate(-90deg)}
+.dm-head{position:absolute;top:-7px;left:50%;transform:translateX(-50%);width:0;height:0;
+  border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:9px solid #fff;
+  filter:drop-shadow(0 1px 3px rgba(0,0,0,.5))}
+.dm-batt{position:absolute;right:-2px;bottom:0;width:14px;height:14px;border-radius:50%;
+  background:var(--c-red);border:2px solid #12161C}
+.dm-tag{font-size:10px;font-weight:800;border-radius:7px;padding:3px 8px;white-space:nowrap;color:#F2F5F9;
+  background:rgba(20,25,33,.58);-webkit-backdrop-filter:blur(18px) saturate(180%);
+  backdrop-filter:blur(18px) saturate(180%);border:1px solid rgba(255,255,255,.20);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 4px 14px rgba(0,0,0,.4)}
+.dm-jw{position:relative;display:block;width:15px;height:15px}
+.dm-jd{display:block;width:15px;height:15px;border-radius:5px;border:2px solid rgba(255,255,255,.9);
+  box-shadow:0 3px 9px rgba(0,0,0,.5)}
+.dm-jd.dm-round{border-radius:50%}
+/* The one judgement on the screen, so the one thing that moves. */
+@keyframes dm-pulse{0%{transform:scale(.7);opacity:.55}70%{opacity:0}100%{transform:scale(1.5);opacity:0}}
+.dm-pulse{position:absolute;display:block;width:44px;height:44px;border-radius:50%;border:2px solid #E08A1E;
+  top:-15px;left:-15px;animation:dm-pulse 2.4s ease-out infinite}
+.dm-jt{font-size:9.5px;font-weight:800;color:#DCE2EA;text-shadow:0 1px 6px rgba(0,0,0,.9);white-space:nowrap}
 .met:hover{box-shadow:var(--shadow-hover)}
 .met-l{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .met-v{font-family:var(--font-display);font-size:22px;font-weight:900;line-height:1;letter-spacing:-.7px;color:var(--text);overflow:hidden;white-space:nowrap}

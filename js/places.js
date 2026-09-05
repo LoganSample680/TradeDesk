@@ -616,7 +616,11 @@ function tdMapRenderKit(o){
     // detour a drawn route exists to show.
     const _items=anns.slice();
     try{if(st.obj.overlays&&st.obj.overlays.length)_items.push(...st.obj.overlays);}catch(_e3){}
-    if(_items.length)st.obj.showItems(_items,{animate:false,padding:new mapkit.Padding(40,24,40,24)});
+    // padBottom reserves the room a floating sheet takes, so framing puts every
+    // pin in the part of the map you can actually SEE. Without it the crew map
+    // centres on pins that are behind the crew list (owner render 2026-09-05).
+    const _pb=Math.max(40,+o.padBottom||40);
+    if(_items.length)st.obj.showItems(_items,{animate:false,padding:new mapkit.Padding(40,24,_pb,24)});
   }catch(_e){tdMapDestroy(st);tdMapRenderFallback(o);}
 }
 
@@ -692,8 +696,13 @@ function tdMapRenderFallback(o){
     // an avatar IS the point, it has no needle.
     const html=(typeof o.marker==='function')?o.marker(p):null;
     if(html){
-      return '<div class="td-mk" title="'+title+'" style="position:absolute;left:'+x.toFixed(2)+'%;top:'+y.toFixed(2)+
-        '%;transform:translate(-50%,-50%)">'+html+'</div>';
+      // STILL A LINK. A custom marker changes what a pin looks like, never what
+      // it does: tapping one opens Maps for directions, which on this screen is
+      // half the point of the pin. The first cut returned a bare div and
+      // silently dropped that, and e2e-day-map caught it by counting the links.
+      return '<a href="https://www.google.com/maps?q='+p.lat+','+p.lon+'" target="_blank" rel="noopener" '+
+        'class="td-mk" title="'+title+'" style="position:absolute;left:'+x.toFixed(2)+'%;top:'+y.toFixed(2)+
+        '%;transform:translate(-50%,-50%);text-decoration:none;color:inherit">'+html+'</a>';
     }
     // margin pulls the pin up its full height and left half its width, so the
     // POINT lands on the coordinate rather than the middle of the head.
