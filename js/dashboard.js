@@ -349,7 +349,7 @@ function _renderDashSupplyHold(){
 function _dashHoldSync(){
   const shell=document.getElementById('dash-hold');
   if(!shell)return 0;
-  const n=['dash-supply-hold','dash-visit-hold'].reduce((sum,id)=>{
+  const n=['dash-supply-hold','dash-visit-hold','dash-ts-hold'].reduce((sum,id)=>{
     const e=document.getElementById(id);
     return sum+((e&&e.style.display!=='none')?(Number(e.dataset.n)||0):0);
   },0);
@@ -1161,6 +1161,7 @@ function renderDash(){
   _renderDashSetupTodo();
   _renderDashSupplyHold();
   _renderDashVisitHold();
+  try{if(typeof _renderDashTsHold==='function')_renderDashTsHold();}catch(_e){}
   const _nearbyEl=document.getElementById('dash-nearby');
   if(_nearbyEl){
     // The on-site card spans the WHOLE moment (owner: persist card + time-on-site):

@@ -525,20 +525,41 @@ test.describe('week bars: sharing a week as text', () => {
     expect(t).not.toContain('Wed 8/26: 6h 50m');
   });
 
-  test('it sends the week ON SCREEN, not whatever week today falls in', async ({ page }) => {
-    // The old share was hardwired to the current calendar week: open the week
-    // of the 23rd, tap share, get this week's numbers instead.
+  // AMENDED 2026-09-05 (10.4). The button used to share straight away. Owner:
+  // "don't want to send without approving." It now opens the timesheet review
+  // (js/timesheet.js) and the text goes out only from Submit and send, stamped
+  // and linked. The week it sends is still the week ON SCREEN: the old share
+  // was hardwired to the current calendar week, and that bug stays fixed.
+  test('it sends the week ON SCREEN, not whatever week today falls in, and only once submitted', async ({ page }) => {
     const r = await page.evaluate(async () => {
       const shared = [];
       window.pwaShare = async (a) => { shared.push(a); };
-      // A WEEK KEY now. It used to read _tlWeekCache, which the accordion list
-      // populated and nothing does since the drill replaced it.
-      await _tlShareWeekAt(_tlDrill.wk);
-      return { n: shared.length, text: shared[0] && shared[0].text, key: _tlDrill.wk };
+      const saved = { supa: window._supa, user: window._supaUser };
+      window._supaUser = { id: 'e2e-user' };
+      window._supa = { rpc: async (fn, args) => ({ data: { token: 'tok_' + args.p_week_start, version: 1, submitted_at: '2026-09-05T23:42:00Z', status: 'submitted' }, error: null }),
+        from: () => { const q = { select: () => q, eq: () => q, then: (ok) => ok({ data: [], error: null }) }; return q; } };
+      // The fixture week carries Wednesday's unanswered hole, which blocks a
+      // submit by design; this test is about WHICH week goes out, so answer it.
+      const savedRows = _tlLastRows;
+      _tlLastRows = savedRows.filter(r => r.source !== 'unaccounted');
+      try {
+        const opened = await _tlShareWeekAt(_tlDrill.wk);
+        const sheetBefore = !!document.getElementById('ts-review');
+        const nBefore = shared.length;
+        await _tsSubmit(_tlDrill.wk);
+        return { opened, sheetBefore, nBefore, n: shared.length, text: shared[0] && shared[0].text, key: _tlDrill.wk,
+                 sheetAfter: !!document.getElementById('ts-review') };
+      } finally { _tlLastRows = savedRows; window._supa = saved.supa; window._supaUser = saved.user; _tsReviewClose(); _tsByWeek = {}; _tsFor = null; }
     });
+    expect(r.opened).toBe(true);
+    expect(r.sheetBefore, 'the button opens the review, it does not send').toBe(true);
+    expect(r.nBefore).toBe(0);
     expect(r.n).toBe(1);
     expect(r.text).toContain('Aug 23 – 29');
     expect(r.text).toContain('Total: 39h 27m');
+    expect(r.text).toContain('Submitted by ');
+    expect(r.text).toContain('/timesheet.html?t=tok_' + r.key);
+    expect(r.sheetAfter).toBe(false);
   });
 
   test('empty and junk input never share a misleading blank', async ({ page }) => {

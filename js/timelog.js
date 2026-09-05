@@ -1807,7 +1807,10 @@ function _tlWeekBarsHtml(weekRows,days,cacheKey,opts){
   // _tlLastRows, which in Team scope is the whole crew, so the button would
   // send everybody's hours under one person's heading. A per-person send is a
   // real feature and it needs its own builder, not this one pointed sideways.
+  // The button is the week's timesheet state (js/timesheet.js): Send this
+  // week until it is submitted, then the stamp, then Approved or Sent back.
   const share=(opts&&opts.share===false)?'':
+    (typeof _tsWeekButtonHtml==='function')?_tsWeekButtonHtml(String(cacheKey)):
     '<button type="button" class="tl-wbar-share" '+
     'onclick="_tlShareWeekAt(\''+escHtml(String(cacheKey))+'\')">'+
     (typeof svgIcon==='function'?svgIcon('⬆',{size:12}):'')+' Send this week</button>';
@@ -2771,7 +2774,7 @@ function _tlWeekShareText(rows,wkStart){
   });
   const e=_tlBucketFold(list);
   const split=_TL_BUCKETS.filter(b=>(e[b.k]||0)>0).map(b=>b.label+' '+fm(e[b.k])).join(', ');
-  const head='Hours, '+(wkStart&&typeof _tlWeekLabel==='function'
+  const head='Timesheet, '+(wkStart&&typeof _tlWeekLabel==='function'
     ?String(_tlWeekLabel(wkStart)).replace(/^Week of /,''):'this week');
   const out=[head,''];
   if(lines.length)out.push(lines.join('\n'),'');
@@ -2800,8 +2803,11 @@ async function _tlShareText(rows,wkStart,label){
 // resolved from the rows the page is already holding. One source, and it
 // cannot go stale against what is on screen.
 async function _tlShareWeekAt(wk){
+  // The chart's button opens the REVIEW (js/timesheet.js): check each day,
+  // then Submit and send. Nothing goes out unsubmitted (owner 2026-09-05).
+  if(typeof _tsReviewOpen==='function')return _tsReviewOpen(wk);
   const rows=(_tlLastRows||[]).filter(r=>r&&_tlWeekKey(r.date)===wk);
-  return _tlShareText(rows,wk,'Hours');
+  return _tlShareText(rows,wk,'Timesheet');
 }
 // The current calendar week, for the button at the bottom of the page.
 async function _tlShareWeek(){
