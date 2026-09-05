@@ -285,7 +285,7 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    each dashboard widget hides its real children behind an appended
    .td-boot-skel shimmer card (js/dashboard.js _dashApplySkeletons), removed in
    one swap when the sync settles. Non-destructive: the real markup stays. */
-#pg-dash>.tbar.td-boot-skel-on>*:not(.td-boot-skel),#dash-widget-root>.td-dw.td-boot-skel-on>*:not(.td-boot-skel),#dash-setup-todo.td-boot-skel-on>*:not(.td-boot-skel),#dash-supply-hold.td-boot-skel-on>*:not(.td-boot-skel),#dash-geo-perm.td-boot-skel-on>*:not(.td-boot-skel){display:none!important}
+#pg-dash>.tbar.td-boot-skel-on>*:not(.td-boot-skel),#dash-widget-root>.td-dw.td-boot-skel-on>*:not(.td-boot-skel),#dash-setup-todo.td-boot-skel-on>*:not(.td-boot-skel),#dash-supply-hold.td-boot-skel-on>*:not(.td-boot-skel),#dash-visit-hold.td-boot-skel-on>*:not(.td-boot-skel),#dash-geo-perm.td-boot-skel-on>*:not(.td-boot-skel){display:none!important}
 .met:hover{box-shadow:var(--shadow-hover)}
 .met-l{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .met-v{font-family:var(--font-display);font-size:22px;font-weight:900;line-height:1;letter-spacing:-.7px;color:var(--text);overflow:hidden;white-space:nowrap}
@@ -1900,6 +1900,7 @@ body.dark .tl-wbar-key{border-top-color:rgba(255,255,255,.08)}
        checklist (owner 2026-08-17: "first thing they see, clear it out and
        it's gone"). Renders only while a store run is unanswered. -->
   <div id="dash-supply-hold" style="display:none"></div>
+  <div id="dash-visit-hold" style="display:none"></div>
   <div id="dash-geo-perm" style="display:none"></div>
   <div id="dash-widget-root">
     <!-- Every REAL card is its own widget (data-dw) so it can be held-and-moved
@@ -3368,6 +3369,19 @@ body.dark .tl-wbar-key{border-top-color:rgba(255,255,255,.08)}
               <select id="set-owner-pay-type"><option value="hourly">Hourly</option><option value="salary">Salary</option></select>
               <div style="display:flex;align-items:center;gap:6px"><span style="font-size:13px;color:var(--text2);font-weight:600">$</span><input type="number" id="set-owner-pay-rate" min="0" step="0.5" placeholder="0" style="flex:1"></div>
             </div>
+          </div>
+        </div>
+        <!-- Rule 13 (js/geo-derive.js): a stop at a customer's address outside
+             these hours, with nothing scheduled and no clock running, is a
+             question on the Home screen instead of hours on the books. -->
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Work hours</div><div class="set-form-hint">A stop at a customer's address outside these hours, with nothing on the calendar and no clock running, gets asked about on Home instead of counted. Family visits stay off the books.</div></div>
+          <div class="set-form-ctrl">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+              <input type="time" id="set-wh-start" aria-label="Work hours start">
+              <input type="time" id="set-wh-end" aria-label="Work hours end">
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);font-weight:600"><input type="checkbox" id="set-wh-sat" checked> Saturdays count as work days</label>
           </div>
         </div>
       </div>

@@ -343,6 +343,101 @@ function _renderDashSupplyHold(){
       }).join('')+
     '</div>';
 }
+// ── Visits that need an answer (rule 13, js/geo-derive.js) ─────────────────
+// The receipt card's sibling, same shape and same posture (owner 2026-09-05:
+// "can we tie the family popup rule in with the receipt by places thing").
+// A stop at a customer's address the day could not vouch for is HELD: on the
+// Time Log as a question, in no total, and asked here. Working makes it a
+// real row; Personal dismisses it. Both answers are written by
+// geo_answer_visit and stick through every rebuild.
+//
+// The rows live on the server (job_time_entries, source 'client-held'), so
+// the card paints from a small cache and refreshes it in the background:
+// the dashboard renders on every paint and an awaited fetch here would be the
+// show-then-hide flash the Stripe cache above exists to prevent.
+let _visitHoldCache={at:0,rows:[],uid:null};
+const _VISIT_HOLD_TTL=60000;
+async function _visitHoldFetch(){
+  try{
+    if(!window._supa||!window._supaUser)return [];
+    const{data,error}=await _supa.from('job_time_entries')
+      .select('id,arrived_at,departed_at,minutes,dest_place,job_id')
+      .eq('employee_user_id',_supaUser.id).eq('source','client-held').is('deleted_at',null)
+      .order('arrived_at',{ascending:false}).limit(20);
+    if(error||!Array.isArray(data))return [];
+    return data;
+  }catch(_e){return [];}
+}
+function _renderDashVisitHold(){
+  const el=document.getElementById('dash-visit-hold');
+  if(!el)return;
+  const me=window._supaUser&&_supaUser.id;
+  if(!me){el.style.display='none';el.innerHTML='';return;}
+  if(_visitHoldCache.uid!==me||Date.now()-_visitHoldCache.at>_VISIT_HOLD_TTL){
+    const uid=me;
+    _visitHoldFetch().then(rows=>{
+      _visitHoldCache={at:Date.now(),rows,uid};
+      // Repaint this card only: never back into renderDash mid-paint.
+      _paintDashVisitHold(el,rows);
+    });
+  }
+  _paintDashVisitHold(el,_visitHoldCache.uid===me?_visitHoldCache.rows:[]);
+}
+function _paintDashVisitHold(el,rows){
+  if(!el)return;
+  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&r.id&&r.arrived_at);
+  if(!list.length){el.style.display='none';el.innerHTML='';return;}
+  el.style.display='block';
+  const when=r=>{
+    let w='';
+    try{const d=new Date(r.arrived_at);if(isFinite(d))w=d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}catch(_e){}
+    try{const t=bizTime(r.arrived_at).replace(/\s/g,'').replace('AM','a').replace('PM','p');if(t)w+=' · '+t;}catch(_e){}
+    return w;
+  };
+  const fm=typeof _fmtMin==='function'?_fmtMin:(m=>m+'m');
+  const name=r=>{
+    try{const info=(typeof _tlJobClientInfo==='function')?_tlJobClientInfo(r.job_id):null;
+      if(info&&info.clientName&&info.clientName!=='-')return info.clientName;}catch(_e){}
+    return r.dest_place||'A customer\'s address';
+  };
+  el.innerHTML=
+    '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden;border:1px solid var(--amber);box-shadow:0 2px 12px rgba(180,130,20,.14)">'+
+      '<div style="padding:12px 16px 10px;background:linear-gradient(135deg,rgba(180,130,20,.10),rgba(180,130,20,.02));border-bottom:1px solid var(--border)">'+
+        '<div style="display:flex;align-items:center;gap:8px">'+
+          '<span style="font-size:15px">'+svgIcon('📍',{size:15})+'</span>'+
+          '<span style="font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.01em">Visits need an answer</span>'+
+          '<span style="margin-left:auto;font-size:12px;font-weight:800;color:var(--amber)">'+list.length+' held</span>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:6px">You were at a customer\'s address outside work hours with nothing scheduled. It counts toward nothing until you answer.</div>'+
+      '</div>'+
+      list.map(r=>
+        '<div class="td-supply-visit" style="padding:12px 16px;border-bottom:1px solid var(--border)">'+
+          '<div style="font-size:13px;font-weight:800;color:var(--text)">'+escHtml(name(r))+'</div>'+
+          '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escHtml(when(r))+(r.minutes?' · '+escHtml(fm(Number(r.minutes)||0)):'')+'</div>'+
+          '<div style="display:flex;gap:8px;margin-top:8px">'+
+            '<button onclick="_visitHoldAnswer(\''+escHtml(String(r.id))+'\',\'personal\')" class="btn btn-sm" style="flex:1">Personal</button>'+
+            '<button onclick="_visitHoldAnswer(\''+escHtml(String(r.id))+'\',\'working\')" class="btn btn-sm btn-p" style="flex:1">Working</button>'+
+          '</div>'+
+        '</div>').join('')+
+    '</div>';
+}
+async function _visitHoldAnswer(id,mode){
+  const m=(mode==='working')?'working':'personal';
+  // Off the card at once; the server answer is what makes it stick.
+  _visitHoldCache={at:Date.now(),rows:(_visitHoldCache.rows||[]).filter(r=>String(r.id)!==String(id)),uid:_visitHoldCache.uid};
+  const el=document.getElementById('dash-visit-hold');
+  if(el)_paintDashVisitHold(el,_visitHoldCache.rows);
+  try{
+    if(window._supa){const{error}=await _supa.rpc('geo_answer_visit',{p_id:String(id),p_mode:m});
+      if(error)throw error;}
+    if(typeof showToast==='function')showToast(m==='working'?'Counted as work':'Kept off the books',m==='working'?'✅':'🏠');
+    try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
+  }catch(_e){
+    _visitHoldCache={at:0,rows:[],uid:null};
+    if(typeof showToast==='function')showToast('Could not save that answer, try again');
+    if(el)_renderDashVisitHold();
+  }
+}
 // Store accordion toggle. Takes the clicked header, not an id: a store's
 // name can contain characters that would need escaping into an id/selector,
 // and the element itself is all the toggle needs (mirrors the day/month
@@ -1051,6 +1146,7 @@ function renderDash(){
   renderTodayFeed();
   _renderDashSetupTodo();
   _renderDashSupplyHold();
+  _renderDashVisitHold();
   const _nearbyEl=document.getElementById('dash-nearby');
   if(_nearbyEl){
     // The on-site card spans the WHOLE moment (owner: persist card + time-on-site):
@@ -1455,7 +1551,7 @@ function _dashApplySkeletons(){
   // the always-present .td-dw widgets), so without them here they get zero shimmer
   // coverage: whatever they compute on their first paint (Stripe/QR caches included)
   // renders as final, bare content even while the rest of the dashboard is shimmering.
-  const targets=[...document.querySelectorAll('#pg-dash>.tbar'),...document.querySelectorAll('#dash-widget-root>.td-dw'),...document.querySelectorAll('#dash-setup-todo,#dash-supply-hold,#dash-geo-perm')];
+  const targets=[...document.querySelectorAll('#pg-dash>.tbar'),...document.querySelectorAll('#dash-widget-root>.td-dw'),...document.querySelectorAll('#dash-setup-todo,#dash-supply-hold,#dash-visit-hold,#dash-geo-perm')];
   targets.forEach(el=>{
     if(el.querySelector(':scope>.td-boot-skel'))return;
     const tbar=el.classList.contains('tbar');

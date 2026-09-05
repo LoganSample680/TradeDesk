@@ -6240,10 +6240,17 @@ function _geoDeriveFences(dayKey){
       out.push({id:'place-'+pl.id,kind:String(pl.kind||'other'),name:pl.name||'',lat:Number(pl.lat),lng:Number(pl.lon),addr:pl.addr||'',placeId:pl.id,radiusFt:pl.fenceFt||undefined});
     });
     const cache=(typeof _nearbyGeoCache==='function')?_nearbyGeoCache():{};
+    // A client fence says whether the calendar vouches for it that day
+    // (rule 13, js/geo-derive.js): any job or estimate for this client
+    // active on dayKey. Same _jobActiveOn the job fences below use.
+    const jl=(typeof jobs!=='undefined'&&Array.isArray(jobs)?jobs:[]);
     (typeof clients!=='undefined'&&Array.isArray(clients)?clients:[]).forEach(c=>{
       if(!c||!c.addr)return;
       const hit=cache[c.id];
-      if(hit&&hit.addr===c.addr&&hit.lat!=null)out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:Number(hit.lat),lng:Number(hit.lon),addr:c.addr,clientId:c.id});
+      if(!(hit&&hit.addr===c.addr&&hit.lat!=null))return;
+      const scheduled=jl.some(j=>j&&j.status!=='canceled'&&String(j.client_id)===String(c.id)&&
+        ((typeof _jobActiveOn==='function')?_jobActiveOn(j,dayKey):true));
+      out.push({id:'client-'+c.id,kind:'client',name:c.name||'Client',lat:Number(hit.lat),lng:Number(hit.lon),addr:c.addr,clientId:c.id,scheduled});
     });
     (typeof jobs!=='undefined'&&Array.isArray(jobs)?jobs:[]).forEach(j=>{
       if(!j||j.status==='canceled')return;
@@ -6256,6 +6263,27 @@ function _geoDeriveFences(dayKey){
   return out;
 }
 
+// This person's manual clocks that touch the day, as [start,end] ms, for
+// rule 13. The owner's own rows carry logged_by_uid null; a crew member's
+// carry their uid.
+function _geoDeriveClocks(dayStart,dayEnd){
+  try{
+    if(typeof timeEntries==='undefined'||!Array.isArray(timeEntries)||!_supaUser)return [];
+    const me=String(_supaUser.id);
+    const mine=e=>{const u=e.logged_by_uid;return u?String(u)===me:(typeof _isEmployee==='undefined'||!_isEmployee);};
+    return timeEntries.filter(e=>e&&!e.open&&e.start_time&&e.end_time&&mine(e)).map(e=>({start:Date.parse(e.start_time),end:Date.parse(e.end_time)}))
+      .filter(c=>c.start>0&&c.end>c.start&&c.end>dayStart&&c.start<dayEnd);
+  }catch(_e){return [];}
+}
+// Working hours, per company (Settings > Business). Defaults 6am to 8pm,
+// Monday to Saturday: the window that covers the forgetful contractor for
+// free, so rule 13 only ever asks about the odd-hours visits.
+function _geoWorkHours(){
+  const w=(typeof S!=='undefined'&&S&&S.workHours)||{};
+  const ok=v=>/^\d{1,2}:\d{2}$/.test(String(v||''));
+  return {start:ok(w.start)?w.start:'06:00',end:ok(w.end)?w.end:'20:00',
+    days:Array.isArray(w.days)&&w.days.length?w.days.map(Number):[1,2,3,4,5,6]};
+}
 // The coprocessor's own history. Empty on any build without it, and an
 // empty tape is a reason to do NOTHING, never a reason to write an empty day.
 // ── The tape belongs to whoever has been carrying the phone ──────────────
@@ -6575,6 +6603,9 @@ async function _geoDeriveDayNow(dayKey,serverFixes){
     const res=geoDeriveDay({
       day:dayKey,dayStart:b.start,dayEnd:b.end,personId:_supaUser.id,
       tape,fixes,appEvents,fences:_geoDeriveFences(dayKey),nowMs:Date.now(),
+      // Rule 13's two other witnesses: this person's manual clocks over the
+      // day, and the company's working hours.
+      clocks:_geoDeriveClocks(b.start,b.end),workHours:_geoWorkHours(),
     });
     // MISSING EVIDENCE IS NOT AN EMPTY DAY (owner 2026-09-02, 22:33: "my
     // mileage gone for today when I should have four trips"). The tape had

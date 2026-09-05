@@ -237,6 +237,79 @@ test.describe('Receipt-gated supply runs', () => {
     });
   });
 
+  // ── The receipt card's sibling: visits that need an answer (rule 13) ────
+  test.describe('visits need an answer', () => {
+    const ROWS = [
+      { id: 'v1', arrived_at: '2026-08-30T22:00:00Z', departed_at: '2026-08-31T01:00:00Z', minutes: 180, dest_place: 'Mom', job_id: null },
+      { id: 'v2', arrived_at: '2026-08-23T21:00:00Z', departed_at: '2026-08-23T23:00:00Z', minutes: 120, dest_place: 'Dad', job_id: null },
+    ];
+    test('the card lists each held visit with a Working and a Personal door, and hides with nothing to ask', async () => {
+      const r = await page.evaluate((rows) => {
+        const el = document.getElementById('dash-visit-hold');
+        _paintDashVisitHold(el, rows);
+        const shown = { display: el.style.display, names: [...el.querySelectorAll('.td-supply-visit')].map(v => v.firstElementChild.textContent),
+          doors: [...el.querySelectorAll('button')].map(b => b.textContent.trim()), held: /2 held/.test(el.textContent) };
+        _paintDashVisitHold(el, []);
+        return { shown, hidden: el.style.display === 'none' && el.innerHTML === '' };
+      }, ROWS);
+      expect(r.shown.display).toBe('block');
+      expect(r.shown.names).toEqual(['Mom', 'Dad']);
+      expect(r.shown.doors).toEqual(['Personal', 'Working', 'Personal', 'Working']);
+      expect(r.shown.held).toBe(true);
+      expect(r.hidden).toBe(true);
+    });
+
+    test('answering goes through geo_answer_visit and takes the visit off the card at once', async () => {
+      const r = await page.evaluate(async (rows) => {
+        const saved = { supa: window._supa, user: window._supaUser, toast: window.showToast };
+        const calls = [], toasts = [];
+        window._supa = { rpc: async (fn, args) => { calls.push([fn, args]); return { error: null }; } };
+        window._supaUser = { id: 'me' }; window.showToast = (t) => toasts.push(t);
+        try {
+          _visitHoldCache = { at: Date.now(), rows: rows.slice(), uid: 'me' };
+          const el = document.getElementById('dash-visit-hold');
+          _paintDashVisitHold(el, _visitHoldCache.rows);
+          await _visitHoldAnswer('v1', 'working');
+          const left = [...el.querySelectorAll('.td-supply-visit')].map(v => v.firstElementChild.textContent);
+          await _visitHoldAnswer('v2', 'personal');
+          return { calls, left, empty: el.style.display === 'none', toasts };
+        } finally { window._supa = saved.supa; window._supaUser = saved.user; window.showToast = saved.toast; _visitHoldCache = { at: 0, rows: [], uid: null }; }
+      }, ROWS);
+      expect(r.calls).toEqual([['geo_answer_visit', { p_id: 'v1', p_mode: 'working' }], ['geo_answer_visit', { p_id: 'v2', p_mode: 'personal' }]]);
+      expect(r.left).toEqual(['Dad']);
+      expect(r.empty).toBe(true);
+      expect(r.toasts).toEqual(['Counted as work', 'Kept off the books']);
+    });
+
+    test('a refused answer puts the visit back and says so', async () => {
+      const r = await page.evaluate(async (rows) => {
+        const saved = { supa: window._supa, user: window._supaUser, toast: window.showToast };
+        const toasts = [];
+        window._supa = { rpc: async () => ({ error: { message: 'geo_answer_visit: not your visit' } }),
+          from: () => ({ select: () => ({ eq: () => ({ eq: () => ({ is: () => ({ order: () => ({ limit: async () => ({ data: rows, error: null }) }) }) }) }) }) }) };
+        window._supaUser = { id: 'me' }; window.showToast = (t) => toasts.push(t);
+        try {
+          _visitHoldCache = { at: Date.now(), rows: rows.slice(), uid: 'me' };
+          const el = document.getElementById('dash-visit-hold');
+          _paintDashVisitHold(el, _visitHoldCache.rows);
+          await _visitHoldAnswer('v1', 'working');
+          await new Promise(r2 => setTimeout(r2, 50));
+          return { toasts, cacheCleared: _visitHoldCache.at === 0 || _visitHoldCache.rows.length === 2 };
+        } finally { window._supa = saved.supa; window._supaUser = saved.user; window.showToast = saved.toast; _visitHoldCache = { at: 0, rows: [], uid: null }; }
+      }, ROWS);
+      expect(r.toasts).toEqual(['Could not save that answer, try again']);
+      expect(r.cacheCleared).toBe(true);
+    });
+
+    test('junk in never throws', async () => {
+      const r = await page.evaluate(() => {
+        const el = document.getElementById('dash-visit-hold');
+        try { _paintDashVisitHold(el, null); _paintDashVisitHold(el, [null, {}, { id: 'x' }]); _paintDashVisitHold(null, []); return true; } catch (e) { return String(e); }
+      });
+      expect(r).toBe(true);
+    });
+  });
+
   test.describe('the scan door settles both books in one save', () => {
     test('Scan receipt opens the REAL scanner flow: camera fired, key inside the modal, vendor/date/category prefilled', async () => {
       // Owner 2026-08-26, screenshot in hand: this button opened the bare

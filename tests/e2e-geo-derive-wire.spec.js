@@ -292,6 +292,73 @@ test.describe('geo-derive wiring', () => {
     });
   });
 
+  // ── Rule 13's witnesses come from the app ───────────────────────────────
+  test.describe('rule 13 wiring', () => {
+    test('a client fence carries scheduled:true only on a day that client has a job or estimate', async () => {
+      const r = await page.evaluate(() => {
+        window.clients = [{ id: 501, name: 'Mom', addr: '1 Family Ln' }, { id: 502, name: 'Cust', addr: '2 Work St' }];
+        localStorage.setItem('zp3_nearby_geo', JSON.stringify({ 501: { addr: '1 Family Ln', lat: 39.01, lng: -95.7, lon: -95.7 }, 502: { addr: '2 Work St', lat: 39.02, lon: -95.71 } }));
+        window.jobs = [{ id: 9001, client_id: 501, name: 'Mom job', eventType: 'job', start: '2026-09-01', days: 2, status: 'upcoming' },
+                       { id: 9002, client_id: 502, name: 'Old', eventType: 'estimate', start: '2026-08-20', days: 1, status: 'upcoming' },
+                       { id: 9003, client_id: 502, name: 'Canceled', eventType: 'job', start: '2026-09-01', days: 1, status: 'canceled' }];
+        const on = _geoDeriveFences('2026-09-01').filter(f => f.kind === 'client').map(f => [f.name, !!f.scheduled]);
+        const off = _geoDeriveFences('2026-09-05').filter(f => f.kind === 'client').map(f => [f.name, !!f.scheduled]);
+        return { on, off };
+      });
+      expect(r.on).toEqual([['Mom', true], ['Cust', false]]);
+      expect(r.off).toEqual([['Mom', false], ['Cust', false]]);
+    });
+
+    test('the clocks are this person\'s own, closed, and touching the day', async () => {
+      const r = await page.evaluate(() => {
+        const savedTE = window.timeEntries, savedU = window._supaUser, savedE = window._isEmployee;
+        try {
+          window._supaUser = { id: 'me' }; window._isEmployee = false;
+          window.timeEntries = [
+            { id: 1, start_time: '2026-09-01T13:00:00Z', end_time: '2026-09-01T17:00:00Z', logged_by_uid: null },   // the owner's
+            { id: 2, start_time: '2026-09-01T13:00:00Z', end_time: '2026-09-01T17:00:00Z', logged_by_uid: 'crew' },  // somebody else's
+            { id: 3, start_time: '2026-08-20T13:00:00Z', end_time: '2026-08-20T17:00:00Z', logged_by_uid: null },   // another day
+            { id: 4, start_time: '2026-09-01T18:00:00Z', end_time: null, open: true, logged_by_uid: null },          // still running
+            null, { id: 5 },
+          ];
+          const ds = Date.parse('2026-09-01T05:00:00Z');
+          const owner = _geoDeriveClocks(ds, ds + 86400000).map(c => [new Date(c.start).toISOString(), new Date(c.end).toISOString()]);
+          window._supaUser = { id: 'crew' }; window._isEmployee = true;
+          const crew = _geoDeriveClocks(ds, ds + 86400000).length;
+          return { owner, crew };
+        } finally { window.timeEntries = savedTE; window._supaUser = savedU; window._isEmployee = savedE; }
+      });
+      expect(r.owner).toEqual([['2026-09-01T13:00:00.000Z', '2026-09-01T17:00:00.000Z']]);
+      expect(r.crew).toBe(1);
+    });
+
+    test('working hours default to 6am to 8pm Monday to Saturday, and Settings overrides them', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = S.workHours;
+        try {
+          delete S.workHours; const def = _geoWorkHours();
+          S.workHours = { start: '08:00', end: '17:00', days: [1, 2, 3, 4, 5] }; const set = _geoWorkHours();
+          S.workHours = { start: 'junk', end: '', days: [] }; const junk = _geoWorkHours();
+          // and the Settings form round-trips it
+          const si = document.getElementById('set-wh-start'), ei = document.getElementById('set-wh-end'), sa = document.getElementById('set-wh-sat');
+          let form = null;
+          // saveSettings refuses to harvest a form that was never filled (the
+          // registerDevice wipe guard), so fill it the way Settings does first.
+          if (si && ei && sa && typeof loadSettingsForm === 'function') {
+            loadSettingsForm();
+            si.value = '07:30'; ei.value = '18:00'; sa.checked = false;
+            await saveSettings(); await new Promise(r2 => setTimeout(r2, 50)); form = S.workHours;
+          }
+          return { def, set, junk, form };
+        } finally { S.workHours = saved; }
+      });
+      expect(r.def).toEqual({ start: '06:00', end: '20:00', days: [1, 2, 3, 4, 5, 6] });
+      expect(r.set).toEqual({ start: '08:00', end: '17:00', days: [1, 2, 3, 4, 5] });
+      expect(r.junk).toEqual({ start: '06:00', end: '20:00', days: [1, 2, 3, 4, 5, 6] });
+      if (r.form) expect(r.form).toEqual({ start: '07:30', end: '18:00', days: [1, 2, 3, 4, 5] });
+    });
+  });
+
   // ── The tape belongs to whoever has been carrying the phone ─────────────
   // Owner 2026-09-04: "say jack signs out of this device and onto another,
   // what happens to the deriver if he signs on a new device or a shared ipad

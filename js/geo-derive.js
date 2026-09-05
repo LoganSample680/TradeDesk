@@ -819,10 +819,12 @@ function geoDeriveDay(input) {
   const housed = _gdHouseOffTheClock(carved);
   // Rule 11: the day ends with the last real work.
   const ended = _gdEndOfDay(housed, fences, opts, open, journeys.some(j => j && j.open), legs);
+  // Rule 13: a visit the day cannot vouch for is a question, not a row.
+  const asked = _gdHeldVisits(ended, inp, dayStart);
 
   return {
     day: inp.day || '',
-    dwells: ended.filter(d => d.minutes >= 1),
+    dwells: asked.filter(d => d.minutes >= 1),
     legs,
     open,
     // Diagnostic only, never a rule: which branch decided there is nobody on
@@ -1207,6 +1209,49 @@ function _gdPath(fixes, a, b, maxAccM, endpoints, max, maxMph) {
   return path;
 }
 
+// ── Rule 13: a client visit the day cannot vouch for is a question ────────
+// Owner 2026-09-04: "He does work for me at my address. He does work for his
+// mom and her address. They're all family members ... we wouldn't want time
+// log showing her personal family visit." And, on the schedule-only version:
+// "that's easy for us but not for contractors who forget to put shit on a
+// calendar."
+//
+// A job's address is already a fence only on the days the job is active. A
+// client's address was a fence every day of the year, so Sunday dinner at
+// Mom's was "On site, 4h". Now a dwell at a client fence counts as work when
+// any ONE of these vouches for it, in order:
+//   1. something is scheduled there that day (the fence carries scheduled:true)
+//   2. a manual clock is running over it (the clock is the bracket)
+//   3. it falls inside working hours on a working day (default 6am to 8pm,
+//      Monday to Saturday; per company, Settings)
+// Anything else is HELD: it stays on the rail as a question, counts toward
+// nothing, and the dashboard card asks. "Working" makes it a real row that
+// survives every rebuild (fixed_at); "Personal" dismisses it, and that sticks
+// too. Nobody has to keep a calendar for the ordinary case; the question only
+// fires on the odd-hours visits, which are the family ones. What it still
+// cannot know, and no competitor can either: a genuinely personal weekday
+// afternoon at a client with nothing scheduled counts.
+function _gdHeldVisits(dwells, inp, dayStart) {
+  const clocks = (Array.isArray(inp.clocks) ? inp.clocks : [])
+    .map(c => c && { a: Number(c.start), b: Number(c.end) })
+    .filter(c => c && c.a > 0 && c.b > c.a);
+  const wh = inp.workHours || {};
+  const hm = v => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(v || '')); return m ? (Number(m[1]) * 60 + Number(m[2])) * 60000 : NaN; };
+  let whA = hm(wh.start), whB = hm(wh.end);
+  if (!Number.isFinite(whA)) whA = 6 * 3600000;
+  if (!Number.isFinite(whB)) whB = 20 * 3600000;
+  const days = Array.isArray(wh.days) ? wh.days.map(Number) : [1, 2, 3, 4, 5, 6];
+  const dow = new Date(String(inp.day || '') + 'T12:00:00Z').getUTCDay();
+  const workDay = Number.isFinite(dow) && days.indexOf(dow) >= 0;
+  const overlaps = (d, a, b) => Math.min(d.endTs, b) - Math.max(d.startTs, a) >= 60000;
+  return (dwells || []).map(d => {
+    if (!d || d.kind !== 'client' || !d.fence || d.fence.scheduled === true) return d;
+    if (clocks.some(c => overlaps(d, c.a, c.b))) return d;
+    if (workDay && whB > whA && overlaps(d, dayStart + whA, dayStart + whB)) return d;
+    return Object.assign({}, d, { held: true });
+  });
+}
+
 function _gdDwell(fence, startTs, endTs, journeyId, open) {
   return {
     id: (/^o-/.test(String(journeyId)) ? '' : 'd-') + String(journeyId),
@@ -1242,7 +1287,11 @@ function geoDeriveRows(result, ids) {
       // js/timelog.js still READS 'place-home' on purpose, for the rows that
       // already carry it and for a hand-fixed one, which geo_replace_day
       // preserves across every re-derive.
+      // 'client-held' is rule 13's question. The reader keeps it out of every
+      // total and the dashboard asks; geo_replace_day carries the answer
+      // (source, under fixed_at) across every rebuild after that.
       source: d.kind === 'office' ? 'place-office'
+        : d.held ? 'client-held'
         : (f.jobId != null ? 'geofence' : (f.clientId != null ? 'client' : 'place')),
     }));
   }

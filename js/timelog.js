@@ -73,6 +73,8 @@ function _tlJobClientInfo(jobId){
 function _tlSourceLabel(source){
   const s=String(source||'');
   if(/^geofence/.test(s))return '';
+  // Rule 13's question, said as a question. Answered on the Home screen.
+  if(s==='client-held')return 'Working here? Answer on Home';
   // "Drive time", "Shop time", "Loading time" (owner 2026-08-29): every badge
   // on this table names a BLOCK OF TIME, so they all end in the same word. A
   // bare gerund reads as a status the app is currently in ("Driving...") when
@@ -591,6 +593,9 @@ async function _timeLogRows(sinceISO){
   });
   (crew.entries||[]).forEach(e=>{
     if(!e.arrived_at)return;
+    // Rule 13, answered "Personal": the visit never happened as far as the
+    // log is concerned. Not hidden by CSS, not counted, not drawn.
+    if(String(e.source||'')==='dismissed')return;
     // Off-job stops (lunch, an errand) still get a row (owner request
     // 2026-08-23: "needs logged as lunches or unaccounted for time", the day
     // should read complete, not like a chunk is silently missing), but the
@@ -620,6 +625,9 @@ async function _timeLogRows(sinceISO){
     // segment of a chain except the last one ends at a stop nobody saved, so
     // this is most of them.
     const _es=String(e.source||'');
+    // Rule 13, unanswered: on the rail as a question, in no total, and the
+    // dashboard card is where it gets answered.
+    const _held=_es==='client-held';
     const _unnamedDrive=/^drive/.test(_es)&&!e.dest_place&&info.clientName==='-';
     const clientName=_es==='unsaved'?'Unsaved address'
       :_unnamedDrive?'Destination not saved'
@@ -628,7 +636,7 @@ async function _timeLogRows(sinceISO){
       id:'a'+e.job_id+'_'+e.employee_user_id+'_'+e.arrived_at,
       source:'auto',date:(typeof _bizDateStr==='function')?_bizDateStr(new Date(e.arrived_at)):e.arrived_at.slice(0,10),
       minutes:e.minutes||0,personName:crew.name[e.employee_user_id]||'Crew',personUid:e.employee_user_id,
-      clientName,addr:info.addr,jobName:info.jobName,clientKey:e.client_key||null,unpaid:isUnpaid||!!_unacctWhy,
+      clientName,addr:info.addr,jobName:info.jobName,clientKey:e.client_key||null,unpaid:isUnpaid||!!_unacctWhy||_held,
       // The reason wins when there is one. "Overnight at your own place" tells
       // the owner why twelve hours are sitting there not counting, which a
       // bare source label never could.

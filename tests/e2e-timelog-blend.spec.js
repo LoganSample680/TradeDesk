@@ -236,5 +236,27 @@ test.describe('manual clock over a derived day', () => {
     expect(r).toEqual(['function', 'function', 'undefined', 'undefined', 'undefined', 'undefined']);
   });
 
+  // Rule 13 on the rail: a held visit is a question in no total; a dismissed
+  // one is not a row at all.
+  test('a held visit is unpaid and says so; a dismissed one is gone', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = window._fetchCrewLabor;
+      try {
+        window._fetchCrewLabor = async () => ({ name: { me: 'Me' }, shopEntries: [], entries: [
+          { id: 'h1', employee_user_id: 'me', job_id: null, dest_place: 'Mom', source: 'client-held', arrived_at: '2026-08-30T22:00:00Z', departed_at: '2026-08-31T01:00:00Z', minutes: 180 },
+          { id: 'd1', employee_user_id: 'me', job_id: null, dest_place: 'Mom', source: 'dismissed',   arrived_at: '2026-08-23T22:00:00Z', departed_at: '2026-08-24T01:00:00Z', minutes: 180 },
+          { id: 'c1', employee_user_id: 'me', job_id: null, dest_place: 'Cust', source: 'client',    arrived_at: '2026-08-31T15:00:00Z', departed_at: '2026-08-31T17:00:00Z', minutes: 120 },
+        ] });
+        const rows = await _timeLogRows(null);
+        const byId = id => rows.find(x => x.rawId === id);
+        return { held: byId('h1') && { unpaid: byId('h1').unpaid, detail: byId('h1').detail, kind: _tlRailKind(byId('h1')) },
+                 dismissed: !!byId('d1'), paid: _tlPaidMin(rows) };
+      } finally { window._fetchCrewLabor = saved; }
+    });
+    expect(r.held).toEqual({ unpaid: true, detail: 'Working here? Answer on Home', kind: 'off' });
+    expect(r.dismissed).toBe(false);
+    expect(r.paid).toBe(120);
+  });
+
   test('no console errors', async () => { assertNoErrors(page, 'blend'); });
 });

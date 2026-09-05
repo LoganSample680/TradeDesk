@@ -76,6 +76,96 @@ test.describe('geo-derive: the day deriver', () => {
     expect(legs[1].supplyRunKey).toBeUndefined();
   });
 
+  // ── Rule 13: a client visit the day cannot vouch for is a question ────
+  // Owner 2026-09-04: "He does work for me at my address. He does work for
+  // his mom and her address ... we wouldn't want time log showing her
+  // personal family visit." And, on schedule-only: "not for contractors who
+  // forget to put shit on a calendar."
+  test.describe('rule 13: a visit the day cannot vouch for is held', () => {
+    // Shop -> John Doe (a CLIENT fence) -> shop, on the day given.
+    const dayOf = (iso) => {
+      const ds = Date.parse(iso + 'T05:00:00Z');
+      const t = (h, m) => ds + h * 3600000 + (m || 0) * 60000;
+      return { ds, t };
+    };
+    const visit = (iso, hFrom, hTo, over) => {
+      const { ds, t } = dayOf(iso);
+      const tape = [mo(t(hFrom - 1), 'onFoot'), mo(t(hFrom, 0), 'automotive'), mo(t(hFrom, 20), 'onFoot'),
+        mo(t(hTo, 0), 'automotive'), mo(t(hTo, 20), 'onFoot')];
+      const fixes = [fix(t(hFrom - 1, 30), { lat: SHOP.lat, lng: SHOP.lng }),
+        fix(t(hFrom, 20) + 5000, { lat: DOE.lat, lng: DOE.lng }), fix(t(hTo, 0) - 60000, { lat: DOE.lat, lng: DOE.lng }),
+        fix(t(hTo, 20) + 5000, { lat: SHOP.lat, lng: SHOP.lng }), fix(t(hTo + 1), { lat: SHOP.lat, lng: SHOP.lng })];
+      return Object.assign({ day: iso, dayStart: ds, dayEnd: ds + 86400000, personId: 'p', tape, fixes,
+        fences: [SHOP, HOME, DOE], nowMs: ds + 86400000 + 3600000 }, over || {});
+    };
+    const held = (inp) => page.evaluate((i) => {
+      const r = geoDeriveDay(i);
+      const d = r.dwells.find(x => x.kind === 'client');
+      const rows = geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' });
+      const row = rows.job_time_entries.find(x => x.dest_place === 'John Doe' || x.source === 'client-held' || x.source === 'client');
+      return { held: !!(d && d.held), source: row && row.source, minutes: d && d.minutes };
+    }, inp);
+
+    test('Sunday dinner at a customer\'s address, nothing scheduled: held', async () => {
+      const r = await held(visit('2026-08-30', 17, 20));                       // a Sunday
+      expect(r.minutes).toBeGreaterThan(100);
+      expect(r.held).toBe(true);
+      expect(r.source).toBe('client-held');
+    });
+    test('the same visit with a job on the calendar that day: work', async () => {
+      const DOE_S = Object.assign({}, DOE, { scheduled: true });
+      const r = await held(visit('2026-08-30', 17, 20, { fences: [SHOP, HOME, DOE_S] }));
+      expect(r.held).toBe(false);
+      expect(r.source).toBe('client');
+    });
+    test('the same visit with a clock running over it: work', async () => {
+      const { t } = dayOf('2026-08-30');
+      const r = await held(visit('2026-08-30', 17, 20, { clocks: [{ start: t(16), end: t(21) }] }));
+      expect(r.held).toBe(false);
+      expect(r.source).toBe('client');
+    });
+    test('a clock that does not reach the visit does not vouch for it', async () => {
+      const { t } = dayOf('2026-08-30');
+      const r = await held(visit('2026-08-30', 17, 20, { clocks: [{ start: t(8), end: t(12) }] }));
+      expect(r.held).toBe(true);
+    });
+    test('a weekday afternoon at a customer, nothing scheduled: work, by working hours', async () => {
+      const r = await held(visit('2026-09-01', 13, 16));                       // a Tuesday
+      expect(r.held).toBe(false);
+      expect(r.source).toBe('client');
+    });
+    test('a weekday night at a customer, nothing scheduled: held', async () => {
+      const r = await held(visit('2026-09-01', 21, 23));
+      expect(r.held).toBe(true);
+    });
+    test('working hours are the company\'s: 8 to 5, weekdays only, makes Saturday morning a question', async () => {
+      const wh = { start: '08:00', end: '17:00', days: [1, 2, 3, 4, 5] };
+      const sat = await held(visit('2026-08-29', 10, 12, { workHours: wh }));   // a Saturday
+      const tue = await held(visit('2026-09-01', 10, 12, { workHours: wh }));
+      const late = await held(visit('2026-09-01', 18, 20, { workHours: wh }));
+      expect(sat.held).toBe(true);
+      expect(tue.held).toBe(false);
+      expect(late.held).toBe(true);
+    });
+    test('a visit that touches the working window at all is vouched for', async () => {
+      // 7pm to 9pm on a Tuesday: the first hour is inside 6am to 8pm.
+      const r = await held(visit('2026-09-01', 19, 21));
+      expect(r.held).toBe(false);
+    });
+    test('junk hours and junk clocks fall back to the defaults, never a throw', async () => {
+      const r = await held(visit('2026-09-01', 13, 16, { workHours: { start: 'x', end: null, days: 'no' }, clocks: [null, {}, { start: 'a', end: 'b' }] }));
+      expect(r.held).toBe(false);
+    });
+    test('a job fence is never held, whatever the hour', async () => {
+      const r = await page.evaluate((i) => {
+        const r = geoDeriveDay(i);
+        return r.dwells.map(d => [d.kind, !!d.held]);
+      }, visit('2026-08-30', 17, 20, { fences: [SHOP, HOME, JOB] }));
+      expect(r.some(d => d[0] === 'job')).toBe(true);
+      expect(r.every(d => d[1] === false)).toBe(true);
+    });
+  });
+
   test('it exists, it is pure, and junk in is empty out, never a throw', async () => {
     const r = await page.evaluate(() => {
       const out = [];
