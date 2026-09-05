@@ -212,10 +212,17 @@ async function _tsSubmit(wk){
     submitted_at:data.submitted_at||new Date().toISOString(),approved_at:null,approved_name:null,rejected_at:null,reject_note:null});
   _tsByWeek[wk]=row;_tsFor=_tsUid();
   _tsReviewClose();
-  // The text: the same message as always, then the stamp and the link.
+  // The text: the same message as always, then the stamp, then what to DO
+  // with it (owner 2026-09-05: "would love something that says click below to
+  // approve or something"). A bare URL under a wall of hours reads as a
+  // reference; the line above it is what makes it a request. It says review
+  // AND approve because both are true and rejecting is a real answer: the
+  // page has both buttons, and a line that only says approve would be leading
+  // the person who has to check the hours.
   const text=_tlWeekShareText(rows,wk)+'\n\n'+
     (Number(row.version)>1?'Corrected timesheet. ':'')+
-    'Submitted by '+name+', '+_tsWhen(row.submitted_at)+'\n'+_tsLink(row.token);
+    'Submitted by '+name+', '+_tsWhen(row.submitted_at)+'\n\n'+
+    'Tap to review and approve:\n'+_tsLink(row.token);
   try{if(typeof pwaShare==='function')await pwaShare({title:'Timesheet',text});}catch(_e){}
   try{if(typeof renderTimeLog==='function'&&document.getElementById('pg-timelog')?.classList.contains('active'))renderTimeLog({cached:true});}catch(_e){}
   return text;

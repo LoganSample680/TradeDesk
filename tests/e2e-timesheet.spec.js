@@ -191,7 +191,13 @@ test.describe('Timesheet', () => {
         expect(r.text).toMatch(/^Timesheet, Aug 23/);
         expect(r.text).toContain('Total: 39h 27m');
         expect(r.text).toMatch(/\nSubmitted by Jack Sample, Sep 5, \d{1,2}:\d{2} (AM|PM)\n/);
+        // The link is a request, not a reference: the line above it says what
+        // to do (owner 2026-09-05), and the link is the last thing in the
+        // message so a phone makes the whole tail tappable.
+        expect(r.text).toContain('\n\nTap to review and approve:\n');
         expect(r.text.trim().split('\n').pop()).toBe(location_origin_placeholder());
+        expect(r.text.indexOf('Tap to review'), 'the call to action sits under the stamp, not over the hours')
+          .toBeGreaterThan(r.text.indexOf('Submitted by'));
         expect(r.sheet).toBe(false);
         expect(r.cached).toMatchObject({ status: 'submitted', token: 'tok_2026-08-23', version: 1 });
       } finally { await reblock(); }
@@ -203,6 +209,7 @@ test.describe('Timesheet', () => {
       try {
         const r = await page.evaluate(async () => { window.__rpcVersion = 2; return _tsSubmit(_tlDrill.wk); });
         expect(r).toContain('Corrected timesheet. Submitted by');
+        expect(r, 'a corrected one asks for the same thing').toContain('Tap to review and approve:');
       } finally { await reblock(); }
     });
 
