@@ -1180,7 +1180,7 @@ function _supplyRunSettleByKeys(keys){
 function resolveSupplyRun(key,mode,expenseId){
   if(mode==='personal'){
     const n=_supplyRunSettleByKeys(new Set([key]));
-    if(n){saveAll();typeof renderDash==='function'&&renderDash();}
+    if(n){saveAll();try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered();}catch(_e){}typeof renderDash==='function'&&renderDash();}
     return n;
   }
   let n=0;
@@ -1190,7 +1190,7 @@ function resolveSupplyRun(key,mode,expenseId){
     if(mode==='noreceipt'){m.noReceipt=true;}
     else if(mode==='receipt'&&expenseId!=null){m.receiptExpenseId=expenseId;}
   });
-  if(n){saveAll();typeof renderDash==='function'&&renderDash();}
+  if(n){saveAll();try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered();}catch(_e){}typeof renderDash==='function'&&renderDash();}
   return n;
 }
 // Unanswered for a week: off the books (owner 2026-08-17), same path as
@@ -1206,7 +1206,7 @@ function _supplyRunSweep(){
     if(isFinite(t)&&t<cutoff)keys.add(m.supplyRunKey);
   });
   const n=_supplyRunSettleByKeys(keys);
-  if(n)saveAll();
+  if(n){saveAll();try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered();}catch(_e){}}
   return n;
 }
 function _supplyRunPersonal(k){

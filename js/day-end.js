@@ -188,6 +188,28 @@ function _dayEndSnapClockIn(dayKey,res){
     return moved;
   }catch(_e){return false;}
 }
+// The nudge's one line. When a store run or a client visit is still waiting
+// on an answer (js/hold-nudge.js), the SAME notification asks, so the
+// arrival home is one buzz, not two (owner 2026-09-05). Nothing to ask, and
+// the body is exactly what it always was.
+function _dayEndBody(when){
+  let line='';
+  try{line=(typeof _holdNudgeLine==='function')?String(_holdNudgeLine()||''):'';}catch(_e){line='';}
+  return 'Looks like your day ended at '+when+'. '+(line?line+' ':'')+'Tap to confirm.';
+}
+// The question was answered while the proposal still stands: the scheduled
+// notification is rewritten without it. Same ids, same times, so iOS replaces
+// the pending request instead of adding a second one.
+function _dayEndRenotify(){
+  const p=_dayEndRead();
+  if(!p||p.kind!=='end'||!p.when)return false;
+  const name=_dayEndFirstName();
+  const title=name?('Hey '+name+'!'):'Your day';
+  const body=_dayEndBody(p.when);
+  _notifySchedule('dayend',title,body,Number(p.at1)||0);
+  if(Number(p.at2)>0)_notifySchedule('dayend2',title,body,Number(p.at2));
+  return true;
+}
 // My open entry that started before today's business day, or null.
 function _dayEndStaleEntry(){
   const e=_dayEndOpenEntry();
@@ -210,8 +232,8 @@ function _dayEndStale(){
     const cur=_dayEndRead();
     if(cur&&cur.kind==='end'&&String(cur.entryId)===String(e.id)&&cur.endMs===best.ms)return true;
     const name=_dayEndFirstName();
-    _dayEndWrite({kind:'end',entryId:e.id,endMs:best.ms,day:_geoDayKeyOf(best.ms,_geoBizTz()),madeAt:Date.now(),where:best.name||'the home office',stale:true});
-    _notifySchedule('dayend',name?('Hey '+name+'!'):'Your day','Looks like your day ended at '+_dayEndWhen(best.ms)+'. Tap to confirm.',0);
+    _dayEndWrite({kind:'end',entryId:e.id,endMs:best.ms,day:_geoDayKeyOf(best.ms,_geoBizTz()),madeAt:Date.now(),where:best.name||'the home office',stale:true,when:_dayEndWhen(best.ms),at1:0,at2:0});
+    _notifySchedule('dayend',name?('Hey '+name+'!'):'Your day',_dayEndBody(_dayEndWhen(best.ms)),0);
     return 'new';
   }catch(_e){return false;}
 }
@@ -266,14 +288,15 @@ function _dayEndOnDwell(dwell,res){
       if(cur&&cur.kind==='end'&&String(cur.entryId)===String(e.id)&&cur.endMs===Number(dwell.sinceTs))return true;
       const endMs=Number(dwell.sinceTs);
       const name=_dayEndFirstName();
-      const p={kind:'end',entryId:e.id,endMs,day:_dayEndTodayKey(),madeAt:Date.now(),where:String(dwell.name||'the home office')};
+      const at1=Math.max(Date.now(),endMs+_DAY_END_STILL_MS);
+      const at2=_dayEndNudgeAt(_DAY_END_NUDGE2_HOUR);
+      const p={kind:'end',entryId:e.id,endMs,day:_dayEndTodayKey(),madeAt:Date.now(),where:String(dwell.name||'the home office'),
+        when:_dayEndFmt(endMs),at1,at2:(at2>at1+60000)?at2:0};
       _dayEndWrite(p);
       const title=name?('Hey '+name+'!'):'Your day';
-      const body='Looks like your day ended at '+_dayEndFmt(endMs)+'. Tap to confirm.';
-      const at1=Math.max(Date.now(),endMs+_DAY_END_STILL_MS);
+      const body=_dayEndBody(p.when);
       _notifySchedule('dayend',title,body,at1);
-      const at2=_dayEndNudgeAt(_DAY_END_NUDGE2_HOUR);
-      if(at2>at1+60000)_notifySchedule('dayend2',title,body,at2);
+      if(p.at2)_notifySchedule('dayend2',title,body,at2);
       return 'new';
     }
     // Somewhere saved that is not the house: the morning mirror.

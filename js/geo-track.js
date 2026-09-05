@@ -6773,7 +6773,12 @@ function _geoOpenDwellPublish(dayKey,res){
     // every publish because the same dwell only proposes once; a fresh
     // proposal repaints the Home card even when the dwell itself is unchanged.
     let deNew=false;
+    // The holds are noted BEFORE day-end builds its body, so a proposal made
+    // this instant already asks about today's visits (js/hold-nudge.js).
+    try{if(typeof _holdNudgeNote==='function')_holdNudgeNote(res);}catch(_e){}
     try{if(typeof _dayEndOnDwell==='function')deNew=(_dayEndOnDwell(next,res)==='new');}catch(_e){}
+    // Then the nudge itself: the first stop after a store, the arrival home.
+    try{if(typeof _holdNudgeOnDwell==='function')_holdNudgeOnDwell(next,res);}catch(_e){}
     // The lock screen and the island show the same fact (js/live-activity.js).
     // Runs on EVERY publish, not just a changed dwell: the request is one
     // shot at the arrival instant otherwise, so a bridge that wasn't ready

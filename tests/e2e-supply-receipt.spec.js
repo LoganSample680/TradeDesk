@@ -247,16 +247,24 @@ test.describe('Receipt-gated supply runs', () => {
       const r = await page.evaluate((rows) => {
         const el = document.getElementById('dash-visit-hold');
         _paintDashVisitHold(el, rows);
+        // AMENDED 2026-09-05 (10.4): the count moved off the section and onto the
+        // one Needs-an-answer shell (#dash-hold-count) when the two cards became
+        // one (owner: "Combine them"). The section itself carries no count.
+        const shell = document.getElementById('dash-hold');
         const shown = { display: el.style.display, names: [...el.querySelectorAll('.td-supply-visit')].map(v => v.firstElementChild.textContent),
-          doors: [...el.querySelectorAll('button')].map(b => b.textContent.trim()), held: /2 held/.test(el.textContent) };
+          doors: [...el.querySelectorAll('button')].map(b => b.textContent.trim()), held: /2 held/.test(document.getElementById('dash-hold-count').textContent),
+          shellShown: shell.style.display !== 'none', noOwnCount: !/held/.test(el.textContent) };
         _paintDashVisitHold(el, []);
-        return { shown, hidden: el.style.display === 'none' && el.innerHTML === '' };
+        return { shown, hidden: el.style.display === 'none' && el.innerHTML === '', shellHidden: document.getElementById('dash-supply-hold').style.display === 'none' ? shell.style.display === 'none' : true };
       }, ROWS);
       expect(r.shown.display).toBe('block');
       expect(r.shown.names).toEqual(['Mom', 'Dad']);
       expect(r.shown.doors).toEqual(['Personal', 'Working', 'Personal', 'Working']);
       expect(r.shown.held).toBe(true);
+      expect(r.shown.shellShown).toBe(true);
+      expect(r.shown.noOwnCount, 'the count lives on the shell, not the section').toBe(true);
       expect(r.hidden).toBe(true);
+      expect(r.shellHidden, 'nothing left in either section: the whole card goes').toBe(true);
     });
 
     test('answering goes through geo_answer_visit and takes the visit off the card at once', async () => {
@@ -553,6 +561,110 @@ test.describe('Receipt-gated supply runs', () => {
       });
       expect(html).toContain('Held · receipt?');
       expect(html).toContain('>No receipt<');
+    });
+  });
+
+  // ── ONE card, two sections (owner 2026-09-05: "Combine them") ─────────────
+  // Two amber cards stacked at the top read as two alarms and pushed the money
+  // tiles off the screen. Now one shell (#dash-hold) carries the title and the
+  // count; store runs and visits are sections inside it, each with its own
+  // doors, because the answers really are different.
+  test.describe('one Needs-an-answer card', () => {
+    const VISITS = [
+      { id: 'v1', arrived_at: '2026-08-30T22:00:00Z', departed_at: '2026-08-31T01:00:00Z', minutes: 180, dest_place: 'Mom', job_id: null },
+      { id: 'v2', arrived_at: '2026-08-23T21:00:00Z', departed_at: '2026-08-23T23:00:00Z', minutes: 120, dest_place: 'Dad', job_id: null },
+    ];
+    const seedRun = () => page.evaluate(() => {
+      mileage.length = 0;
+      const key = todayKey() + '|Home Depot';
+      mileage.push({ id: _newId(), date: todayKey(), miles: 4.2, pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', created_at: new Date().toISOString() });
+      _renderDashSupplyHold();
+      return key;
+    });
+    test.afterEach(async () => {
+      await page.evaluate(() => { mileage.length = 0; _renderDashSupplyHold(); _paintDashVisitHold(document.getElementById('dash-visit-hold'), []); });
+    });
+
+    test('both kinds held: one shell, one title, the count is the SUM, each section keeps its own doors', async () => {
+      await seedRun();
+      const r = await page.evaluate((rows) => {
+        _paintDashVisitHold(document.getElementById('dash-visit-hold'), rows);
+        const shell = document.getElementById('dash-hold');
+        const secs = [...shell.querySelectorAll('.td-hold-sec-t')].map(e => e.textContent.trim());
+        return {
+          shown: shell.style.display !== 'none',
+          cards: shell.querySelectorAll('.card').length,
+          title: shell.querySelector('.td-hold-title').textContent.trim(),
+          count: document.getElementById('dash-hold-count').textContent.trim(),
+          secs,
+          storeDoors: [...document.querySelectorAll('#dash-supply-hold .td-supply-visit button')].map(b => b.textContent.trim()),
+          visitDoors: [...document.querySelectorAll('#dash-visit-hold .td-supply-visit button')].map(b => b.textContent.trim()),
+          oldTitles: /Store runs need an answer|Visits need an answer/.test(shell.textContent),
+        };
+      }, VISITS);
+      expect(r.shown).toBe(true);
+      expect(r.cards, 'one card, not one per kind').toBe(1);
+      expect(r.title).toBe('Needs an answer');
+      expect(r.count).toBe('3 held');
+      expect(r.secs).toEqual(['Store runs', 'Visits']);
+      expect(r.storeDoors).toEqual(['Personal', 'No receipt', 'Scan receipt']);
+      expect(r.visitDoors).toEqual(['Personal', 'Working', 'Personal', 'Working']);
+      expect(r.oldTitles, 'the two old card titles are gone').toBe(false);
+    });
+
+    test('the count follows the answers: 3, then 1, then the card is gone', async () => {
+      const key = await seedRun();
+      const r = await page.evaluate(async ({ rows, key }) => {
+        const saved = { supa: window._supa, user: window._supaUser, toast: window.showToast };
+        window._supa = { rpc: async () => ({ error: null }) }; window._supaUser = { id: 'me' }; window.showToast = () => {};
+        try {
+          _visitHoldCache = { at: Date.now(), rows: rows.slice(), uid: 'me' };
+          _paintDashVisitHold(document.getElementById('dash-visit-hold'), _visitHoldCache.rows);
+          const c = () => document.getElementById('dash-hold-count').textContent.trim();
+          const out = [c()];
+          await _visitHoldAnswer('v1', 'working'); await _visitHoldAnswer('v2', 'personal');
+          out.push(c());
+          resolveSupplyRun(key, 'noreceipt'); _renderDashSupplyHold();
+          out.push(c());
+          return { out, gone: document.getElementById('dash-hold').style.display === 'none' };
+        } finally { window._supa = saved.supa; window._supaUser = saved.user; window.showToast = saved.toast; _visitHoldCache = { at: 0, rows: [], uid: null }; }
+      }, { rows: VISITS, key });
+      expect(r.out).toEqual(['3 held', '1 held', '']);
+      expect(r.gone).toBe(true);
+    });
+
+    test('the shell is what the boot skeleton covers, as one card, and it sits above the money tiles', async () => {
+      await seedRun();
+      const r = await page.evaluate(() => {
+        const shell = document.getElementById('dash-hold');
+        const widgets = document.getElementById('dash-widget-root');
+        const above = !!(widgets && (shell.compareDocumentPosition(widgets) & Node.DOCUMENT_POSITION_FOLLOWING));
+        const src = _dashApplySkeletons.toString();
+        return { above, targetsShell: /#dash-hold\b/.test(src) && !/#dash-supply-hold/.test(src) && !/#dash-visit-hold/.test(src) };
+      });
+      expect(r.above).toBe(true);
+      expect(r.targetsShell, 'the skeleton shimmers the one shell, not the two sections').toBe(true);
+    });
+
+    test('layout (§15.3): no bleed and no overlapping doors at 320px', async () => {
+      await seedRun();
+      await page.setViewportSize({ width: 320, height: 700 });
+      try {
+        const r = await page.evaluate((rows) => {
+          _paintDashVisitHold(document.getElementById('dash-visit-hold'), rows);
+          const shell = document.getElementById('dash-hold');
+          const btns = [...shell.querySelectorAll('button')].map(b => b.getBoundingClientRect());
+          let overlap = false;
+          for (let i = 0; i < btns.length; i++) for (let j = i + 1; j < btns.length; j++) {
+            const a = btns[i], b = btns[j];
+            if (a.width && b.width && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) overlap = true;
+          }
+          return { bleed: document.documentElement.scrollWidth > window.innerWidth + 1, right: shell.getBoundingClientRect().right <= window.innerWidth, overlap };
+        }, VISITS);
+        expect(r.bleed).toBe(false);
+        expect(r.right).toBe(true);
+        expect(r.overlap).toBe(false);
+      } finally { await page.setViewportSize({ width: 390, height: 844 }); }
     });
   });
 

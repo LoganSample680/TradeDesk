@@ -285,7 +285,7 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    each dashboard widget hides its real children behind an appended
    .td-boot-skel shimmer card (js/dashboard.js _dashApplySkeletons), removed in
    one swap when the sync settles. Non-destructive: the real markup stays. */
-#pg-dash>.tbar.td-boot-skel-on>*:not(.td-boot-skel),#dash-widget-root>.td-dw.td-boot-skel-on>*:not(.td-boot-skel),#dash-setup-todo.td-boot-skel-on>*:not(.td-boot-skel),#dash-supply-hold.td-boot-skel-on>*:not(.td-boot-skel),#dash-visit-hold.td-boot-skel-on>*:not(.td-boot-skel),#dash-geo-perm.td-boot-skel-on>*:not(.td-boot-skel){display:none!important}
+#pg-dash>.tbar.td-boot-skel-on>*:not(.td-boot-skel),#dash-widget-root>.td-dw.td-boot-skel-on>*:not(.td-boot-skel),#dash-setup-todo.td-boot-skel-on>*:not(.td-boot-skel),#dash-hold.td-boot-skel-on>*:not(.td-boot-skel),#dash-geo-perm.td-boot-skel-on>*:not(.td-boot-skel){display:none!important}
 .met:hover{box-shadow:var(--shadow-hover)}
 .met-l{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .met-v{font-family:var(--font-display);font-size:22px;font-weight:900;line-height:1;letter-spacing:-.7px;color:var(--text);overflow:hidden;white-space:nowrap}
@@ -453,6 +453,19 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .td-supply-store.open .td-supply-store-body{max-height:900px;opacity:1}
 .td-supply-visit{padding:2px 16px 14px}
 .td-supply-visit+.td-supply-visit{border-top:1px dashed var(--border);padding-top:12px}
+/* The one Needs-an-answer card: an amber shell, a title row, then a section
+   per kind of hold. A section is a small uppercase label plus its one-line
+   why, then its rows; the second section gets a rule above it. */
+.td-hold-card{padding:0;overflow:hidden;border:1px solid var(--amber);box-shadow:0 2px 12px rgba(180,130,20,.14)}
+.td-hold-hd{display:flex;align-items:center;gap:8px;padding:12px 16px 10px;background:linear-gradient(135deg,rgba(180,130,20,.10),rgba(180,130,20,.02));border-bottom:1px solid var(--border)}
+.td-hold-title{font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.01em}
+.td-hold-count{margin-left:auto;font-size:12px;font-weight:800;color:var(--amber)}
+.td-hold-sec{padding:12px 16px 4px}
+.td-hold-sec-t{display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text2)}
+.td-hold-sec-s{font-size:11px;color:var(--text3);margin-top:4px}
+#dash-supply-hold[style*="block"]+#dash-visit-hold{border-top:1px solid var(--border)}
+.td-hold-visit{padding:10px 16px 12px}
+.td-hold-visit+.td-hold-visit{border-top:1px dashed var(--border)}
 /* Feed-card content (evidence-aligned): client NAME is the anchor, the dollar
    AMOUNT is a strong secondary beside it, one muted locator line below. On sent
    quotes the AGE/urgency line is the loud, color-coded element (the #1 unmet
@@ -1899,8 +1912,22 @@ body.dark .tl-wbar-key{border-top-color:rgba(255,255,255,.08)}
   <!-- Held supply runs: pinned above the money tiles exactly like the setup
        checklist (owner 2026-08-17: "first thing they see, clear it out and
        it's gone"). Renders only while a store run is unanswered. -->
-  <div id="dash-supply-hold" style="display:none"></div>
-  <div id="dash-visit-hold" style="display:none"></div>
+  <!-- ONE card for everything that needs an answer (owner 2026-09-05:
+       "Combine them"): a held store run (js/mileage.js) and a held client
+       visit (rule 13) share the title and the count, each keeps its own
+       doors. The two bodies keep their ids: the painters, the skeleton and
+       the tests all address the same elements. The shell shows only while a
+       section has something in it (js/dashboard.js _dashHoldSync). -->
+  <div id="dash-hold" style="display:none">
+    <div class="card td-hold-card">
+      <div class="td-hold-hd">
+        <span class="td-hold-title">Needs an answer</span>
+        <span id="dash-hold-count" class="td-hold-count"></span>
+      </div>
+      <div id="dash-supply-hold" style="display:none"></div>
+      <div id="dash-visit-hold" style="display:none"></div>
+    </div>
+  </div>
   <div id="dash-geo-perm" style="display:none"></div>
   <div id="dash-widget-root">
     <!-- Every REAL card is its own widget (data-dw) so it can be held-and-moved
@@ -4361,6 +4388,9 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/push.js"></script>
 <script src="js/live-activity.js"></script>
 <script src="js/day-end.js"></script>
+<!-- hold-nudge.js reads day-end's proposal and mileage's held runs, so it
+     loads after both. -->
+<script src="js/hold-nudge.js"></script>
 <script src="js/handoff.js"></script>
 <script src="js/voice.js"></script>
 <script src="js/equipment.js"></script>

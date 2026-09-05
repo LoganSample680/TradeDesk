@@ -288,12 +288,13 @@ function _renderDashSetupTodo(){
 function _renderDashSupplyHold(){
   const el=document.getElementById('dash-supply-hold');
   if(!el)return;
-  if(typeof pendingSupplyStores!=='function'){el.style.display='none';el.innerHTML='';return;}
+  if(typeof pendingSupplyStores!=='function'){el.style.display='none';el.innerHTML='';el.dataset.n='0';_dashHoldSync();return;}
   if(typeof _supplyRunSweep==='function')_supplyRunSweep();
   const stores=pendingSupplyStores();
   const totalRuns=stores.reduce((s,st)=>s+st.count,0);
-  if(!stores.length){el.style.display='none';el.innerHTML='';return;}
+  if(!stores.length){el.style.display='none';el.innerHTML='';el.dataset.n='0';_dashHoldSync();return;}
   el.style.display='block';
+  el.dataset.n=String(totalRuns);
   const when=(run)=>{
     let w=run.date;
     try{
@@ -308,16 +309,14 @@ function _renderDashSupplyHold(){
     }
     return w;
   };
+  // A SECTION of the one Needs-an-answer card (#dash-hold), not a card of
+  // its own (owner 2026-09-05: "Combine them"). The shell owns the title and
+  // the count; this owns the store accordions and their three doors.
   el.innerHTML=
-    '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden;border:1px solid var(--amber);box-shadow:0 2px 12px rgba(180,130,20,.14)">'+
-      '<div style="padding:12px 16px 10px;background:linear-gradient(135deg,rgba(180,130,20,.10),rgba(180,130,20,.02));border-bottom:1px solid var(--border)">'+
-        '<div style="display:flex;align-items:center;gap:8px">'+
-          '<span style="font-size:15px">'+svgIcon('🧾',{size:15})+'</span>'+
-          '<span style="font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.01em">Store runs need an answer</span>'+
-          '<span style="margin-left:auto;font-size:12px;font-weight:800;color:var(--amber)">'+totalRuns+' held</span>'+
-        '</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-top:6px">Mileage stays out of your deduction until you answer. Scan the receipt and the miles and the expense are both done in one shot.</div>'+
-      '</div>'+
+    '<div class="td-hold-sec">'+
+      '<div class="td-hold-sec-t">'+svgIcon('🧾',{size:13})+'<span>Store runs</span></div>'+
+      '<div class="td-hold-sec-s">Mileage stays out of your deduction until you answer. Scan the receipt and the miles and the expense are both done in one shot.</div>'+
+    '</div>'+
       stores.map((store,idx)=>{
         const openClass=idx===0?' open':'';
         return '<div class="td-supply-store'+openClass+'">'+
@@ -340,8 +339,24 @@ function _renderDashSupplyHold(){
             }).join('')+
           '</div>'+
         '</div>';
-      }).join('')+
-    '</div>';
+      }).join('');
+  _dashHoldSync();
+}
+// The one card both holds live in (index.html #dash-hold). Each section
+// paints itself and reports its count in data-n; this shows the shell only
+// while something is inside and puts the total in its corner. Idempotent,
+// called by both painters, never calls back into renderDash.
+function _dashHoldSync(){
+  const shell=document.getElementById('dash-hold');
+  if(!shell)return 0;
+  const n=['dash-supply-hold','dash-visit-hold'].reduce((sum,id)=>{
+    const e=document.getElementById(id);
+    return sum+((e&&e.style.display!=='none')?(Number(e.dataset.n)||0):0);
+  },0);
+  const c=document.getElementById('dash-hold-count');
+  if(c)c.textContent=n?(n+' held'):'';
+  shell.style.display=n?'block':'none';
+  return n;
 }
 // ── Visits that need an answer (rule 13, js/geo-derive.js) ─────────────────
 // The receipt card's sibling, same shape and same posture (owner 2026-09-05:
@@ -361,7 +376,7 @@ async function _visitHoldFetch(){
   try{
     if(!window._supa||!window._supaUser)return [];
     const{data,error}=await _supa.from('job_time_entries')
-      .select('id,arrived_at,departed_at,minutes,dest_place,job_id').is('deleted_at',null)
+      .select('id,arrived_at,departed_at,minutes,dest_place,job_id,client_key').is('deleted_at',null)
       .eq('employee_user_id',_supaUser.id).eq('source','client-held')
       .order('arrived_at',{ascending:false}).limit(20);
     if(error||!Array.isArray(data))return [];
@@ -386,8 +401,9 @@ function _renderDashVisitHold(){
 function _paintDashVisitHold(el,rows){
   if(!el)return;
   const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&r.id&&r.arrived_at);
-  if(!list.length){el.style.display='none';el.innerHTML='';return;}
+  if(!list.length){el.style.display='none';el.innerHTML='';el.dataset.n='0';_dashHoldSync();return;}
   el.style.display='block';
+  el.dataset.n=String(list.length);
   const when=r=>{
     let w='';
     try{const d=new Date(r.arrived_at);if(isFinite(d))w=d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}catch(_e){}
@@ -400,29 +416,26 @@ function _paintDashVisitHold(el,rows){
       if(info&&info.clientName&&info.clientName!=='-')return info.clientName;}catch(_e){}
     return r.dest_place||'A customer\'s address';
   };
+  // The other section of #dash-hold (see _renderDashSupplyHold).
   el.innerHTML=
-    '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden;border:1px solid var(--amber);box-shadow:0 2px 12px rgba(180,130,20,.14)">'+
-      '<div style="padding:12px 16px 10px;background:linear-gradient(135deg,rgba(180,130,20,.10),rgba(180,130,20,.02));border-bottom:1px solid var(--border)">'+
-        '<div style="display:flex;align-items:center;gap:8px">'+
-          '<span style="font-size:15px">'+svgIcon('📍',{size:15})+'</span>'+
-          '<span style="font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.01em">Visits need an answer</span>'+
-          '<span style="margin-left:auto;font-size:12px;font-weight:800;color:var(--amber)">'+list.length+' held</span>'+
-        '</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-top:6px">You were at a customer\'s address outside work hours with nothing scheduled. It counts toward nothing until you answer.</div>'+
-      '</div>'+
+    '<div class="td-hold-sec">'+
+      '<div class="td-hold-sec-t">'+svgIcon('📍',{size:13})+'<span>Visits</span></div>'+
+      '<div class="td-hold-sec-s">You were at a customer\'s address outside work hours with nothing scheduled. It counts toward nothing until you answer.</div>'+
+    '</div>'+
       list.map(r=>
-        '<div class="td-supply-visit" style="padding:12px 16px;border-bottom:1px solid var(--border)">'+
+        '<div class="td-supply-visit td-hold-visit">'+
           '<div style="font-size:13px;font-weight:800;color:var(--text)">'+escHtml(name(r))+'</div>'+
           '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escHtml(when(r))+(r.minutes?' · '+escHtml(fm(Number(r.minutes)||0)):'')+'</div>'+
           '<div style="display:flex;gap:8px;margin-top:8px">'+
             '<button onclick="_visitHoldAnswer(\''+escHtml(String(r.id))+'\',\'personal\')" class="btn btn-sm" style="flex:1">Personal</button>'+
             '<button onclick="_visitHoldAnswer(\''+escHtml(String(r.id))+'\',\'working\')" class="btn btn-sm btn-p" style="flex:1">Working</button>'+
           '</div>'+
-        '</div>').join('')+
-    '</div>';
+        '</div>').join('');
+  _dashHoldSync();
 }
 async function _visitHoldAnswer(id,mode){
   const m=(mode==='working')?'working':'personal';
+  const row=(_visitHoldCache.rows||[]).find(r=>r&&String(r.id)===String(id))||null;
   // Off the card at once; the server answer is what makes it stick.
   _visitHoldCache={at:Date.now(),rows:(_visitHoldCache.rows||[]).filter(r=>String(r.id)!==String(id)),uid:_visitHoldCache.uid};
   const el=document.getElementById('dash-visit-hold');
@@ -431,6 +444,7 @@ async function _visitHoldAnswer(id,mode){
     if(window._supa){const{error}=await _supa.rpc('geo_answer_visit',{p_id:String(id),p_mode:m});
       if(error)throw error;}
     if(typeof showToast==='function')showToast(m==='working'?'Counted as work':'Kept off the books',m==='working'?'✅':'🏠');
+    try{if(typeof _holdNudgeAnswered==='function')_holdNudgeAnswered(row&&row.client_key);}catch(_e){}
     try{if(typeof _tlLiveRefresh==='function')_tlLiveRefresh();}catch(_e){}
   }catch(_e){
     _visitHoldCache={at:0,rows:[],uid:null};
@@ -1546,12 +1560,12 @@ function _dashApplySkeletons(){
   // removable .td-boot-skel card appended and a class that hides its real
   // children (CSS rule next to .td-skel in index.html). The greeting bar is
   // included: EVERYTHING shimmers until the sync settles (owner 2026-08-10).
-  // dash-setup-todo/dash-supply-hold/dash-geo-perm are siblings of #dash-widget-root
+  // dash-setup-todo/dash-hold/dash-geo-perm are siblings of #dash-widget-root
   // (their own display:none/block toggle controls whether they exist at all, unlike
   // the always-present .td-dw widgets), so without them here they get zero shimmer
   // coverage: whatever they compute on their first paint (Stripe/QR caches included)
   // renders as final, bare content even while the rest of the dashboard is shimmering.
-  const targets=[...document.querySelectorAll('#pg-dash>.tbar'),...document.querySelectorAll('#dash-widget-root>.td-dw'),...document.querySelectorAll('#dash-setup-todo,#dash-supply-hold,#dash-visit-hold,#dash-geo-perm')];
+  const targets=[...document.querySelectorAll('#pg-dash>.tbar'),...document.querySelectorAll('#dash-widget-root>.td-dw'),...document.querySelectorAll('#dash-setup-todo,#dash-hold,#dash-geo-perm')];
   targets.forEach(el=>{
     if(el.querySelector(':scope>.td-boot-skel'))return;
     const tbar=el.classList.contains('tbar');
