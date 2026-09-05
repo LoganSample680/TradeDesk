@@ -104,12 +104,19 @@ test.describe('month bars: the ruler and the shape', () => {
         const plot = c.querySelector('.tl-wbar-plot').getBoundingClientRect();
         return { w: Math.round(b.width), hitW: Math.round(hit.width), plotH: Math.round(plot.height) };
       });
+      // WAIT FOR THE MOTION TO END, not for 300ms. The drill is a zoom now
+      // (td-drill-up scales from 1.08), and getBoundingClientRect reports the
+      // transformed box: on WebKit in CI the 300ms sleep landed inside the
+      // zoom and a 46px bar measured 50. Same mechanism as settleBars.
+      const settled = async () => { if (typeof document.getAnimations === 'function')
+        await Promise.all(document.getAnimations().map(a => a.finished.catch(() => {}))); };
+      await settled();
       const month = shot();                       // four weekly bars
       _tlDrillTo('week', '2026-08-23');
-      await new Promise(r2 => setTimeout(r2, 300));
+      await settled();
       const week = shot();                        // seven daily bars
       _tlDrillTo('month', '2026-09');             // September holds ONE week
-      await new Promise(r2 => setTimeout(r2, 300));
+      await settled();
       const one = shot();
       return { month, week, one };
     });
