@@ -420,7 +420,7 @@ function _paintDashVisitHold(el,rows){
   el.innerHTML=
     '<div class="td-hold-sec">'+
       '<div class="td-hold-sec-t">'+svgIcon('📍',{size:13})+'<span>Visits</span></div>'+
-      '<div class="td-hold-sec-s">Outside work hours at a family or customer address, with nothing scheduled. It counts toward nothing until you answer.</div>'+
+      '<div class="td-hold-sec-s">Outside work hours at a family address, with nothing scheduled. It counts toward nothing until you answer.</div>'+
     '</div>'+
       list.map(r=>
         '<div class="td-supply-visit td-hold-visit">'+
