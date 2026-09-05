@@ -10,14 +10,15 @@
 -- version at the same link, marked corrected. Rejected reopens the week.
 --
 -- One row per person per week. The token is the whole secret of the public
--- page: 16 random bytes, unguessable, never listed anywhere anon can read.
-
-create extension if not exists pgcrypto;
+-- page: two random uuids, 256 bits, unguessable, never listed anywhere anon
+-- can read. Core gen_random_uuid(), not pgcrypto: on the hosted project the
+-- extension lives in the `extensions` schema and is not on the search path
+-- when a table default is compiled (deploy run 80, 2026-09-05).
 
 create table if not exists td_timesheets (
   id                 uuid primary key default gen_random_uuid(),
   token              text not null unique
-                     default translate(encode(gen_random_bytes(16), 'base64'), '+/=', '-_'),
+                     default replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', ''),
   contractor_user_id uuid not null references auth.users(id) on delete cascade,
   employee_user_id   uuid not null references auth.users(id) on delete cascade,
   week_start         date not null,
