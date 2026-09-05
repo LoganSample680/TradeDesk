@@ -1528,6 +1528,132 @@ test.describe('geo-derive wiring', () => {
     });
   });
 
+  // ── The ping carries what the map needs ───────────────────────────────────
+  // Owner 2026-09-05: "like Life360 but better." A ping used to be a position
+  // and nothing else, so the map could only draw a dot with an age on it.
+  test.describe('the ping says more than where', () => {
+    const withState = (setup) => page.evaluate(({ setup }) => {
+      const saved = { job: _geoCurrentJob, shop: _geoWasInShop, place: _geoCurrentPlace,
+                      mph: _geoDriveMph, started: _geoDriveStartedAt, moving: _geoDriveMovingAt,
+                      origin: _geoLegOrigin, dwell: window._geoOpenDwell, batt: _geoBattPeek,
+                      win: _geoDriveWinAt };
+      _geoCurrentJob = null; _geoWasInShop = false; _geoCurrentPlace = null;
+      _geoDriveMph = 0; _geoDriveStartedAt = null; _geoDriveMovingAt = 0; _geoLegOrigin = null;
+      _geoDriveWinAt = 0;
+      window._geoOpenDwell = null;
+      if (setup.job) _geoCurrentJob = setup.job;
+      if (setup.shop) _geoWasInShop = true;
+      if (setup.place) _geoCurrentPlace = setup.place;
+      if (setup.dwell) window._geoOpenDwell = setup.dwell;
+      if (setup.origin) _geoLegOrigin = setup.origin;
+      // The drive WINDOW is what the event-driven engine actually raises; the
+      // watcher-based _geoDriving() stays false because the new engine keeps
+      // the watcher off between drives. Both paths are covered below.
+      if (setup.driving) { _geoDriveWinAt = Date.now(); _geoDriveMph = setup.mph || 0; }
+      if (setup.batt !== undefined) _geoBattPeek = () => (setup.batt === null ? null : { level: setup.batt, charging: false });
+
+      let sent = null;
+      const savedSupa = window._supa, savedUser = window._supaUser;
+      window._supaUser = { id: 'emp-uid' };
+      window._supa = { from: () => ({ insert: (row) => { sent = row; return { then: (a) => { a(); return { catch: () => {} }; } }; } }) };
+      const state = _geoPingState();
+      const dest = _geoPingDest(state);
+      _geoWritePing({ lat: 41.5, lng: -88.1 }, 12);
+      window._supa = savedSupa; window._supaUser = savedUser;
+
+      _geoCurrentJob = saved.job; _geoWasInShop = saved.shop; _geoCurrentPlace = saved.place;
+      _geoDriveMph = saved.mph; _geoDriveStartedAt = saved.started; _geoDriveMovingAt = saved.moving;
+      _geoLegOrigin = saved.origin; window._geoOpenDwell = saved.dwell; _geoBattPeek = saved.batt;
+      _geoDriveWinAt = saved.win;
+      return { state, dest, sent };
+    }, { setup });
+
+    test('standing on a job writes state site and names it', async () => {
+      const r = await withState({ job: 9001, dwell: { id: 'd', kind: 'client', name: 'Kitchen repaint, Alvarez', sinceTs: Date.now(), journeyId: 'j7' } });
+      expect(r.state).toBe('site');
+      expect(r.dest).toBe('Kitchen repaint, Alvarez');
+      expect(r.sent.state).toBe('site');
+      expect(r.sent.journey_id).toBe('j7');
+      expect(r.sent.job_id).toBe('9001');
+    });
+
+    test('driving beats every fence, and carries the speed', async () => {
+      const r = await withState({ driving: true, mph: 42.4, job: 9001, origin: { name: 'TradeDesk shop' } });
+      expect(r.state, 'a truck on the road is not standing at the job it just left').toBe('drive');
+      expect(r.sent.speed_mph, 'rounded, not a float on a pin').toBe(42);
+      expect(r.dest).toBe('from TradeDesk shop');
+    });
+
+    test('the watcher-based drive banner counts too, not just the window', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { w: _geoWatchId, s: _geoDriveStartedAt, m: _geoDriveMovingAt, win: _geoDriveWinAt, job: _geoCurrentJob };
+        _geoDriveWinAt = 0; _geoCurrentJob = 9001;
+        _geoWatchId = 99; _geoDriveStartedAt = new Date().toISOString(); _geoDriveMovingAt = Date.now();
+        const state = _geoPingState();
+        _geoWatchId = saved.w; _geoDriveStartedAt = saved.s; _geoDriveMovingAt = saved.m;
+        _geoDriveWinAt = saved.win; _geoCurrentJob = saved.job;
+        return state;
+      });
+      expect(r, 'the old engine says driving through the watcher').toBe('drive');
+    });
+
+    test('speed is written only on a drive: a pocket reading at a job is noise', async () => {
+      const r = await withState({ job: 9001, mph: 3 });
+      expect(r.state).toBe('site');
+      expect(r.sent.speed_mph).toBe(null);
+    });
+
+    test('the shop beats a saved place, and a place beats a job', async () => {
+      const a = await withState({ shop: true, place: 'p1', job: 9001 });
+      expect(a.state).toBe('shop');
+      const b = await withState({ place: 'p1', job: 9001 });
+      expect(b.state).toBe('place');
+    });
+
+    test('the open dwell is the fallback when no fence resolved', async () => {
+      const r = await withState({ dwell: { id: 'd', kind: 'shop', name: 'The yard', sinceTs: Date.now() } });
+      expect(r.state).toBe('shop');
+      expect(r.dest).toBe('The yard');
+    });
+
+    test('nothing resolved writes nulls, exactly like every row before today', async () => {
+      const r = await withState({});
+      expect(r.state).toBe(null);
+      expect(r.sent.state).toBe(null);
+      expect(r.sent.dest).toBe(null);
+      expect(r.sent.journey_id).toBe(null);
+      expect(r.sent.speed_mph).toBe(null);
+      expect(r.sent.lat).toBe(41.5);
+    });
+
+    test('battery rides the last stats read, never a fresh plugin call', async () => {
+      const r = await withState({ job: 9001, batt: 0.41 });
+      expect(r.sent.battery).toBe(0.41);
+      const none = await withState({ job: 9001, batt: null });
+      expect(none.sent.battery, 'unreadable stays unreadable, never a fake 100%').toBe(null);
+    });
+
+    test('junk state never throws and never poisons the row', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { dwell: window._geoOpenDwell, job: _geoCurrentJob };
+        const out = [];
+        for (const d of [null, {}, { kind: 'nonsense' }, { name: 123 }, { journeyId: {} }]) {
+          window._geoOpenDwell = d; _geoCurrentJob = null;
+          try { out.push(typeof _geoPingState()); } catch (e) { out.push('THREW'); }
+          try { _geoPingDest(_geoPingState()); } catch (e) { out.push('THREW'); }
+        }
+        window._geoOpenDwell = saved.dwell; _geoCurrentJob = saved.job;
+        return out;
+      });
+      expect(r).not.toContain('THREW');
+    });
+
+    test('the label is capped so one long job name cannot bloat every row', async () => {
+      const r = await withState({ dwell: { id: 'd', kind: 'client', name: 'x'.repeat(400), sinceTs: Date.now() } });
+      expect(r.dest.length).toBe(120);
+    });
+  });
+
   test.describe('the sweep guard (js/cloud.js)', () => {
     test('a derived GPS leg is never sweep-eligible, on either row shape', async () => {
       const r = await page.evaluate(() => [

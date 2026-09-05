@@ -1861,13 +1861,86 @@ async function _geoOnPing(pos){
   }
   }finally{_geoPingBusy=false;}
 }
+// ── What the ping says, beyond where ────────────────────────────────────────
+//
+// Owner 2026-09-05, on the Dispatch map: "like Life360 but better." Life360
+// puts a dot at an address. The engine standing here already knows which job
+// this is, how long they have been on it, whether they are driving and how
+// fast, and how much battery the reporting phone has left. Every one of those
+// is free at this instant and impossible to reconstruct later, so the ping
+// carries them.
+//
+// ONE ORDER OF RESOLUTION, and it is the one the on-site card already uses
+// (js/dashboard.js): driving beats a fence, the shop beats a saved place,
+// a place beats a job, and the deriver's open dwell is the fallback for a
+// session that has resolved where it is without a fence of its own (7.3).
+// Anything unresolved writes null, which is exactly what every row before
+// today is, and the map draws those as a plain position.
+function _geoPingState(){
+  try{
+    // TWO WAYS TO KNOW, because they answer different questions and the new
+    // engine only reliably says yes to the second. _geoDriving() gates on a
+    // live watcher, because its job is deciding whether to paint the DRIVING
+    // banner. The event-driven engine keeps the watcher off and runs a drive
+    // WINDOW instead (_geoDriveWinAt), which is the engine's own statement
+    // that a drive is happening right now. Either one is enough here: a truck
+    // on the road is not standing at the job it just left, whichever half of
+    // the engine noticed.
+    const _drv=(typeof _geoDriving==='function'&&_geoDriving())||
+               (typeof _geoDriveWindowOn==='function'&&_geoDriveWindowOn());
+    if(_drv)return 'drive';
+    if(typeof _geoWasInShop!=='undefined'&&_geoWasInShop)return 'shop';
+    if(typeof _geoCurrentPlace!=='undefined'&&_geoCurrentPlace)return 'place';
+    if(typeof _geoCurrentJob!=='undefined'&&_geoCurrentJob)return 'site';
+    const d=(typeof window!=='undefined')?window._geoOpenDwell:null;
+    const k=d&&String(d.kind||'');
+    if(k==='client'||k==='job')return 'site';
+    if(k==='shop')return 'shop';
+    if(k==='place')return 'place';
+    return null;
+  }catch(_e){return null;}
+}
+// The label a human reads on the pin. Display only: the map never joins on it,
+// so a rename tomorrow cannot orphan a row. Deliberately NOT a guess at where a
+// drive is HEADED, which the engine does not know: the map infers that from the
+// dispatch board and shows it as an expectation, not as a fact reported here.
+function _geoPingDest(state){
+  try{
+    const d=(typeof window!=='undefined')?window._geoOpenDwell:null;
+    if(d&&d.name)return String(d.name).slice(0,120);
+    if(state==='drive'){
+      const o=(typeof _geoLegOrigin!=='undefined')&&_geoLegOrigin;
+      const n=o&&(o.name||o.label);
+      return n?('from '+String(n)).slice(0,120):null;
+    }
+    if(state==='shop')return (typeof S!=='undefined'&&S&&S.bname)?String(S.bname).slice(0,120):'the shop';
+    return null;
+  }catch(_e){return null;}
+}
 function _geoWritePing(here,acc){
   if(!_supa||!_supaUser)return;
   try{
+    const state=_geoPingState();
+    // Speed only means anything on a drive. A 3 mph reading from a phone in a
+    // pocket at a job site is noise, and on a map it reads as a truck creeping
+    // down the street.
+    let mph=null;
+    if(state==='drive'&&typeof _geoDriveMph==='number'&&isFinite(_geoDriveMph)&&_geoDriveMph>0){
+      mph=Math.round(_geoDriveMph);
+    }
+    // Already in hand from the last stats() read (_geoRefreshBattery). No extra
+    // plugin call on the ping path: this runs on every fix and must stay cheap.
+    let batt=null;
+    try{const b=(typeof _geoBattPeek==='function')?_geoBattPeek():null;
+        if(b&&typeof b.level==='number'&&b.level>=0)batt=b.level;}catch(_e2){}
+    const d=(typeof window!=='undefined')?window._geoOpenDwell:null;
     _supa.from('location_pings').insert({
       contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
       lat:here.lat,lon:here.lng,accuracy:acc,
-      job_id:_geoCurrentJob?String(_geoCurrentJob):null,ts:new Date().toISOString()
+      job_id:_geoCurrentJob?String(_geoCurrentJob):null,ts:new Date().toISOString(),
+      state:state,dest:_geoPingDest(state),
+      journey_id:(d&&d.journeyId)?String(d.journeyId):null,
+      speed_mph:mph,battery:batt
     }).then(()=>{},()=>{});
   }catch(_e){}
 }
