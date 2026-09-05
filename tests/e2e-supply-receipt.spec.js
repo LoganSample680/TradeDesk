@@ -286,7 +286,8 @@ test.describe('Receipt-gated supply runs', () => {
         const saved = { supa: window._supa, user: window._supaUser, toast: window.showToast };
         const toasts = [];
         window._supa = { rpc: async () => ({ error: { message: 'geo_answer_visit: not your visit' } }),
-          from: () => ({ select: () => ({ eq: () => ({ eq: () => ({ is: () => ({ order: () => ({ limit: async () => ({ data: rows, error: null }) }) }) }) }) }) }) };
+          // order-agnostic chain: the filter order is the soft-delete lint's business, not this test's
+          from: () => { const q = { select: () => q, eq: () => q, is: () => q, order: () => q, limit: async () => ({ data: rows, error: null }) }; return q; } };
         window._supaUser = { id: 'me' }; window.showToast = (t) => toasts.push(t);
         try {
           _visitHoldCache = { at: Date.now(), rows: rows.slice(), uid: 'me' };

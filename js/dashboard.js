@@ -361,8 +361,8 @@ async function _visitHoldFetch(){
   try{
     if(!window._supa||!window._supaUser)return [];
     const{data,error}=await _supa.from('job_time_entries')
-      .select('id,arrived_at,departed_at,minutes,dest_place,job_id')
-      .eq('employee_user_id',_supaUser.id).eq('source','client-held').is('deleted_at',null)
+      .select('id,arrived_at,departed_at,minutes,dest_place,job_id').is('deleted_at',null)
+      .eq('employee_user_id',_supaUser.id).eq('source','client-held')
       .order('arrived_at',{ascending:false}).limit(20);
     if(error||!Array.isArray(data))return [];
     return data;
