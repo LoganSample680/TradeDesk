@@ -514,18 +514,36 @@ function tdMapRenderKit(o){
   // every render leaks the old one's tile requests and DOM.
   let host=document.getElementById(hostId);
   if(!host||st.host!==host){
-    body.innerHTML='<div id="'+hostId+'" style="height:'+height+'px;border-radius:var(--r);overflow:hidden;border:1px solid var(--border)"></div>'+
-      (o.hint?'<div style="font-size:10px;color:var(--text3);line-height:1.6;margin-top:8px">'+o.hint+'</div>':'');
+    body.innerHTML='<div id="'+hostId+'" style="height:'+height+'px;'+
+      (o.dark?'':'border-radius:var(--r);border:1px solid var(--border);')+'overflow:hidden"></div>'+
+      (o.hint?'<div style="font-size:10px;color:'+(o.dark?'#8B94A3':'var(--text3)')+';line-height:1.6;margin-top:8px">'+o.hint+'</div>':'');
     host=document.getElementById(hostId);
     tdMapDestroy(st);
     try{
-      st.obj=new mapkit.Map(host,{
+      const _mkOpts={
         showsCompass:mapkit.FeatureVisibility.Hidden,
         showsScale:mapkit.FeatureVisibility.Adaptive,
         showsMapTypeControl:false,
         showsZoomControl:true,
         showsUserLocationControl:true,
-      });
+      };
+      // DARK, on request only (owner 2026-09-05, the Dispatch crew map): a dark
+      // map reads as operations rather than as a consumer locator, and it is
+      // what makes coloured avatar pins pop. Every other caller is unchanged.
+      if(o.dark&&mapkit.Map&&mapkit.Map.ColorSchemes){
+        _mkOpts.colorScheme=mapkit.Map.ColorSchemes.Dark;
+      }
+      // Apple's own points of interest compete with ours. A dispatch map wants
+      // the crew and the work, not every coffee shop between them.
+      if(o.hidePOI){
+        try{
+          if(typeof mapkit.PointOfInterestFilter!=='undefined'&&
+             typeof mapkit.PointOfInterestFilter.excludingAllCategories!=='undefined'){
+            _mkOpts.pointOfInterestFilter=mapkit.PointOfInterestFilter.excludingAllCategories;
+          }
+        }catch(_ep){}
+      }
+      st.obj=new mapkit.Map(host,_mkOpts);
       st.host=host;
     }catch(_e){tdMapDestroy(st);tdMapRenderFallback(o);return;}
   }
@@ -538,6 +556,22 @@ function tdMapRenderKit(o){
     // gate. Removed and redrawn with the annotations so a re-render (a filter
     // toggle, a locate) never stacks overlays.
     try{st.obj.removeOverlays(st.obj.overlays||[]);}catch(_e2){}
+    // MANY paths, each with its own colour and opacity: the crew map draws one
+    // trail per journey and fades the older stretches, so direction and
+    // recency read without any animation (owner 2026-09-05). `path` stays the
+    // single-route case every other caller passes.
+    if(Array.isArray(o.paths)&&typeof mapkit.PolylineOverlay==='function'){
+      o.paths.forEach(seg=>{
+        const pts2=(seg&&Array.isArray(seg.path))?seg.path.filter(q=>Array.isArray(q)&&isFinite(q[0])&&isFinite(q[1])):null;
+        if(!pts2||pts2.length<2)return;
+        try{
+          st.obj.addOverlay(new mapkit.PolylineOverlay(pts2.map(q=>new mapkit.Coordinate(q[0],q[1])),{
+            style:new mapkit.Style({lineWidth:(+seg.width||4),lineJoin:'round',lineCap:'round',
+              strokeColor:(seg.color||'#2D5DA8'),strokeOpacity:(seg.opacity==null?0.85:+seg.opacity)}),
+          }));
+        }catch(_es){}
+      });
+    }
     const path=Array.isArray(o.path)?o.path:null;
     if(path&&path.length>=2&&typeof mapkit.PolylineOverlay==='function'){
       const coords=path.map(q=>new mapkit.Coordinate(q[0],q[1]));
@@ -549,12 +583,28 @@ function tdMapRenderKit(o){
     }
     const anns=pts.map(p=>{
       const stl=(o.style&&o.style[p.type])||{c:'#666',glyph:''};
-      const a=new mapkit.MarkerAnnotation(new mapkit.Coordinate(p.lat,p.lon),{
-        color:stl.c,
-        glyphText:stl.glyph||'',
-        title:p.label||p.type,
-        subtitle:p.date||'',
-      });
+      let a;
+      // A CUSTOM MARKER, when the caller has one. MarkerAnnotation is a pin
+      // with a colour and a letter; an avatar with a progress ring, a heading
+      // arrow and a battery pip is none of those. The factory returns the
+      // element and mapkit anchors it, so the SAME html renders here and in the
+      // fallback plot below and the two screens cannot drift (7.3).
+      const html=(typeof o.marker==='function')?o.marker(p):null;
+      if(html&&typeof mapkit.Annotation==='function'){
+        a=new mapkit.Annotation(new mapkit.Coordinate(p.lat,p.lon),()=>{
+          const el=document.createElement('div');
+          el.className='td-mk';
+          el.innerHTML=html;
+          return el;
+        },{title:p.label||p.type,subtitle:p.date||'',anchorOffset:new DOMPoint(0,0)});
+      }else{
+        a=new mapkit.MarkerAnnotation(new mapkit.Coordinate(p.lat,p.lon),{
+          color:stl.c,
+          glyphText:stl.glyph||'',
+          title:p.label||p.type,
+          subtitle:p.date||'',
+        });
+      }
       if(typeof o.onSelect==='function')a.addEventListener('select',()=>o.onSelect(p));
       return a;
     });
@@ -602,6 +652,24 @@ function tdMapRenderFallback(o){
   // Drawn as one SVG polyline under the pins, in the same percentage space the
   // pins use, so tiles or no tiles the line and the markers always agree.
   let routeSvg='';
+  // Multi-path trails, the same option the tile path honours, so the crew map
+  // looks the same with or without Apple's tiles.
+  if(Array.isArray(o.paths)&&o.paths.length){
+    const segs=o.paths.map(seg=>{
+      const q2=(seg&&Array.isArray(seg.path))?seg.path.filter(q=>Array.isArray(q)&&isFinite(q[0])&&isFinite(q[1])):null;
+      if(!q2||q2.length<2)return '';
+      const poly=q2.map(q=>{
+        const x=((q[1]-minLon)/spanLon)*100;
+        const y=100-((q[0]-minLat)/spanLat)*100;
+        return x.toFixed(2)+','+y.toFixed(2);
+      }).join(' ');
+      return '<polyline points="'+poly+'" fill="none" stroke="'+(seg.color||'#2D5DA8')+'" '+
+        'stroke-width="'+(+seg.width||4)+'" stroke-linejoin="round" stroke-linecap="round" '+
+        'vector-effect="non-scaling-stroke" opacity="'+(seg.opacity==null?0.85:+seg.opacity)+'"/>';
+    }).join('');
+    if(segs)routeSvg+='<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" '+
+      'style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">'+segs+'</svg>';
+  }
   if(path){
     const poly=path.map(q=>{
       const x=((q[1]-minLon)/spanLon)*100;
@@ -619,6 +687,14 @@ function tdMapRenderFallback(o){
     const y=100-((p.lat-minLat)/spanLat)*100;   // north at the top
     const st=style[p.type]||{c:'var(--text3)'};
     const title=escHtml((p.label||p.type)+(p.date?' · '+p.date:''));
+    // Same factory the tile path uses, so one definition of what a pin looks
+    // like serves both. Centred on the coordinate rather than hung above it:
+    // an avatar IS the point, it has no needle.
+    const html=(typeof o.marker==='function')?o.marker(p):null;
+    if(html){
+      return '<div class="td-mk" title="'+title+'" style="position:absolute;left:'+x.toFixed(2)+'%;top:'+y.toFixed(2)+
+        '%;transform:translate(-50%,-50%)">'+html+'</div>';
+    }
     // margin pulls the pin up its full height and left half its width, so the
     // POINT lands on the coordinate rather than the middle of the head.
     return '<a href="https://www.google.com/maps?q='+p.lat+','+p.lon+'" target="_blank" rel="noopener" title="'+title+'" '+
@@ -627,16 +703,32 @@ function tdMapRenderFallback(o){
   }).join('');
   let widthMi=0;
   try{widthMi=_haversineMiles({lat:minLat,lng:minLon},{lat:minLat,lng:maxLon});}catch(_e){}
+  // The dark plot is the same drawing with the roads and the ground inverted,
+  // so a caller asking for a dark map gets one whether or not Apple's tiles are
+  // available, and the pins that were designed against dark still read.
+  const _h=(+o.height>0)?+o.height:280;
+  const _ground=o.dark
+    ? 'background:#12161C'
+    : 'background:linear-gradient(0deg,var(--bg2) 0%,var(--bg) 100%)';
+  const _grid=o.dark
+    ? 'background-image:linear-gradient(#1D242E 1px,transparent 1px),linear-gradient(90deg,#1D242E 1px,transparent 1px);background-size:25% 25%;opacity:.9'
+    : 'background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:25% 25%;opacity:.4';
+  const _hint=o.dark?'color:#8B94A3':'color:var(--text3)';
   body.innerHTML=
-    '<div style="position:relative;height:280px;border:1px solid var(--border);border-radius:var(--r);background:'+
-      'linear-gradient(0deg,var(--bg2) 0%,var(--bg) 100%);overflow:hidden;margin-bottom:10px">'+
-      '<div style="position:absolute;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:25% 25%;opacity:.4"></div>'+
+    // NO id here, deliberately. hostId is the tile host, and both this screen
+    // and the Places map use its presence to mean "Apple tiles are live" (the
+    // licence test in e2e-day-map does exactly that). Reusing it on the plot
+    // would make the fallback claim to be tiles.
+    '<div style="position:relative;height:'+_h+'px;'+
+      (o.dark?'':'border:1px solid var(--border);')+'border-radius:'+(o.dark?'0':'var(--r)')+';'+_ground+';overflow:hidden;'+
+      (o.dark?'':'margin-bottom:10px')+'">'+
+      '<div style="position:absolute;inset:0;'+_grid+'"></div>'+
       '<div style="position:absolute;top:'+(_GEO_PIN_H+2)+'px;left:14px;right:14px;bottom:14px">'+routeSvg+dots+'</div>'+
     '</div>'+
-    '<div style="font-size:10px;color:var(--text3);line-height:1.6">'+
+    (o.hideHint?'':'<div style="font-size:10px;'+_hint+';line-height:1.6">'+
       (widthMi>0.1?'Area shown: about '+(widthMi<10?widthMi.toFixed(1):Math.round(widthMi))+' miles across. ':'')+
       'Tap any pin to open it in Maps.'+
-    '</div>';
+    '</div>');
 }
 
 // ── The Places screen (Books → Places) ────────────────────────────────────
