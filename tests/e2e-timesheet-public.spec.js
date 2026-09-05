@@ -214,6 +214,75 @@ test.describe('The public timesheet page', () => {
     expect(r.page).toBe(true);
   });
 
+  // ── Read only, and it is a PROPERTY of the page, not a list of stubs ─────
+  // Owner 2026-09-05: "the person with the link can update logs." The page was
+  // read-only by stubbing the two edit gates, and the gap chips are gated by a
+  // different question that answers "mine" for a row carrying no person, which
+  // is exactly how an owner's own manual clocks arrive. A day of those offered
+  // three live buttons and one tap moved the week from 4h to 7h on screen.
+  const CLOCKS_ONLY = Object.assign({}, DATA, {
+    time: [], shop: [],
+    manual: [
+      { id: 'm1', date: '2026-08-25', start_time: '2026-08-25T12:00:00Z', end_time: '2026-08-25T14:00:00Z', minutes: 120, logged_by_uid: null, logged_by_name: 'Jack Sample', open: false },
+      { id: 'm2', date: '2026-08-25', start_time: '2026-08-25T17:00:00Z', end_time: '2026-08-25T19:00:00Z', minutes: 120, logged_by_uid: null, logged_by_name: 'Jack Sample', open: false },
+    ],
+  });
+
+  test('a day of the owner\'s own clocks offers NO answer buttons, and the hole is still stated', async ({ page }) => {
+    await openPage(page, CLOCKS_ONLY);
+    await page.evaluate(() => _tlDrillTo('day', '2026-08-25'));
+    await page.waitForFunction(() => !!document.querySelector('#tsp-body .tl-rail'));
+    const r = await page.evaluate(() => ({
+      chips: document.querySelectorAll('#tsp-body .tl-rail-chip').length,
+      readOnly: _tlReadOnly(),
+      mine: _tlRowIsMine({ personUid: null }),
+      asks: document.querySelector('#tsp-body .tl-rail').textContent.includes('What was this time?'),
+      says: document.querySelector('#tsp-body .tl-rail-sub') && document.querySelector('#tsp-body .tl-rail-sub').textContent.trim(),
+      total: document.querySelector('#tsp-body .tl-monav-tot').textContent.trim(),
+    }));
+    expect(r.readOnly).toBe(true);
+    expect(r.mine, 'a row with nobody on it is not the viewer\'s').toBe(false);
+    expect(r.chips, 'nothing on a shared timesheet is answerable').toBe(0);
+    expect(r.asks, 'the hole is still shown: it is what the approver needs to see').toBe(true);
+    expect(r.says).toBe('Jack has not answered this yet');
+    expect(r.total).toBe('4h');
+  });
+
+  test('the writer itself refuses on the link page: the total cannot be moved', async ({ page }) => {
+    await openPage(page, CLOCKS_ONLY);
+    await page.evaluate(() => _tlDrillTo('day', '2026-08-25'));
+    await page.waitForFunction(() => !!document.querySelector('#tsp-body .tl-rail'));
+    const r = await page.evaluate(async () => {
+      const before = { entries: timeEntries.length, total: document.querySelector('#tsp-body .tl-monav-tot').textContent.trim() };
+      // Called directly, as any viewer could from a console.
+      _tlAddUnaccounted('2026-08-25T14:00:00Z', '2026-08-25T17:00:00Z', 'work');
+      _tlAddUnaccounted('2026-08-25T14:00:00Z', '2026-08-25T17:00:00Z', 'personal');
+      await _tspRender();
+      return { before, entries: timeEntries.length, total: document.querySelector('#tsp-body .tl-monav-tot').textContent.trim() };
+    });
+    expect(r.entries, 'no row is written').toBe(r.before.entries);
+    expect(r.total, 'and the hours on screen do not move').toBe(r.before.total);
+  });
+
+  test('every gate answers no, and the only handlers on the page navigate', async ({ page }) => {
+    await openPage(page, DATA);
+    await page.evaluate(() => _tlDrillTo('day', '2026-08-25'));
+    await page.waitForFunction(() => !!document.querySelector('#tsp-body .tl-rail'));
+    const r = await page.evaluate(() => ({
+      canEdit: _tlCanEdit({ source: 'manual', personUid: null }),
+      canFix: _tlCanFixAuto({ source: 'auto', rawId: 1, rawSource: 'geofence', unpaid: false }),
+      mine: _tlRowIsMine({ personUid: null }),
+      junk: [_tlCanEdit(null), _tlCanFixAuto(null), _tlRowIsMine(null)],
+      handlers: [...document.querySelectorAll('#tsp-body [onclick]')].map(e => e.getAttribute('onclick')),
+    }));
+    expect(r.canEdit).toBe(false);
+    expect(r.canFix).toBe(false);
+    expect(r.mine).toBe(false);
+    expect(r.junk).toEqual([false, false, false]);
+    // Navigation only: nothing on the shared page calls a writer.
+    r.handlers.forEach((h) => expect(h, h).toMatch(/^_tlDrill(To|Up|Step)\(/));
+  });
+
   test('layout (§15.3): no bleed, no overlapping controls at 320px and 390px', async ({ page }) => {
     for (const w of [320, 390]) {
       await page.setViewportSize({ width: w, height: 800 });

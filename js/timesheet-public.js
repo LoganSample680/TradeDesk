@@ -14,14 +14,17 @@
 // One RPC in (timesheet_public, by token), one RPC out (timesheet_decide).
 // The token is the whole secret of the page and it lives only in the URL.
 
+// READ ONLY, DECLARED ONCE. js/timelog.js asks _tlReadOnly() before it offers
+// any action at all, so nothing here has to remember to stub the next gate.
+window._tlViewOnly=true;
+
 // ── The globals js/timelog.js expects (js/data.js defines them in the app) ──
 var S={bname:'',bizTz:'America/Chicago',ownerName:'',hapticsOff:true};
 var clients=[],bids=[],jobs=[],mileage=[],timeEntries=[];
 var _supaUser=null,_contractorUserId=null,_isEmployee=false,_employeeRecord=null;
 var _tsp={token:'',data:null,jobs:{},name:'',busy:false};
 
-function _tlCanEdit(){return false;}
-function _tlCanFixAuto(){return false;}
+// Belt and braces only: _tlReadOnly() above is the guard that matters.
 function _canViewComp(){return false;}
 function bizTz(){return S.bizTz;}
 function _bizTzName(){return S.bizTz;}

@@ -866,7 +866,25 @@ function setTimeLogYear(yr){_tlYear=String(yr);renderTimeLog();}
 // scope, and the gap chips need the same question for a different reason (see
 // _tlRailGapBody). Two copies of a permission predicate is how one of them
 // ends up wrong and nobody notices which (§7.3).
+// ── READ ONLY MEANS NO ACTIONS, ANYWHERE (owner 2026-09-05) ────────────────
+// "the person with the link can update logs."
+//
+// timesheet.html loads this file as is and was made read-only by stubbing the
+// two EDIT gates (_tlCanEdit, _tlCanFixAuto). The gap chips are gated by a
+// different question, _tlRowIsMine, and that one answers "mine" for a row with
+// no person on it, which is exactly how an owner's own manual clocks arrive.
+// So on a day of the owner's own clocks the link page offered "What was this
+// time?" with three live buttons, and one tap moved the week from 4h to 7h on
+// screen. It never saved (there is no saveAll and no session there), but a
+// timesheet nobody can trust to hold still while it is being read is not a
+// timesheet, and a screenshot of it is a doctored record.
+//
+// Stubbing predicates one at a time is how the next one gets missed. The page
+// declares itself read-only ONCE and this file asks that before offering
+// anything at all, so an action added later is covered by construction.
+function _tlReadOnly(){return typeof window!=='undefined'&&window._tlViewOnly===true;}
 function _tlRowIsMine(r){
+  if(_tlReadOnly())return false;
   if(!r||typeof r!=='object')return false;
   const isEmp=typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser;
   const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||
@@ -883,7 +901,8 @@ function _tlRowIsMine(r){
   return isEmp?uid===selfUid:(uid===null||uid===selfUid);
 }
 function _tlCanEdit(r){
-  if(r.source!=='manual')return false;
+  if(_tlReadOnly())return false;
+  if(!r||r.source!=='manual')return false;
   if(typeof _canViewComp==='function'&&_canViewComp())return true;
   const myUid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
   return r.personUid===myUid;
@@ -900,7 +919,8 @@ function _tlCanEdit(r){
 // Payroll permission is required, same gate the Team view already uses:
 // correcting a clock is a money decision, never a field worker's own call.
 function _tlCanFixAuto(r){
-  if(r.source!=='auto'||r.rawId==null||r.unpaid)return false;
+  if(_tlReadOnly())return false;
+  if(!r||r.source!=='auto'||r.rawId==null||r.unpaid)return false;
   const s=String(r.rawSource||'');
   if(!(/^(geofence|place)$/.test(s)||/^(geofence|place)-/.test(s)))return false;
   return !!(typeof _canViewComp==='function'&&_canViewComp());
@@ -1043,6 +1063,9 @@ function _tlBreakIsPaid(mins){
 // policy above), 'personal' (never paid). The default preserves the original
 // one-button behavior exactly, so the old Add button keeps working unchanged.
 function _tlAddUnaccounted(startIso,endIso,kind){
+  // Nobody reading a shared timesheet writes on it, however they got here.
+  // The chips are already withheld above; this is the door itself locked.
+  if(_tlReadOnly())return;
   const a=Date.parse(startIso),b=Date.parse(endIso);
   if(!(a>0&&b>a))return;
   if(typeof timeEntries==='undefined'||!Array.isArray(timeEntries))return;
@@ -1221,9 +1244,12 @@ function _tlRailGapBody(r){
   // withheld.
   if(!_tlRowIsMine(r)){
     const who=String(r.personName||'').trim().split(/\s+/)[0];
+    // The hole is still stated on a shared timesheet, because an unanswered
+    // hole is exactly what the person approving hours needs to see. Only the
+    // buttons are withheld.
     return '<div class="tl-rail-ttl">What was this time?</div>'+
-      '<div class="tl-rail-sub">'+escHtml(who?'Only '+who+' can answer this':
-        'Only the person who logged it can answer this')+'</div>';
+      '<div class="tl-rail-sub">'+escHtml(_tlReadOnly()?(who?who+' has not answered this yet':'Not answered yet')
+        :who?'Only '+who+' can answer this':'Only the person who logged it can answer this')+'</div>';
   }
   // No title line: the tag above already reads "Between jobs" and printing it
   // twice is the kind of duplication that makes a dense day harder to scan.
