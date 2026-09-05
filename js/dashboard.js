@@ -414,13 +414,13 @@ function _paintDashVisitHold(el,rows){
   const name=r=>{
     try{const info=(typeof _tlJobClientInfo==='function')?_tlJobClientInfo(r.job_id):null;
       if(info&&info.clientName&&info.clientName!=='-')return info.clientName;}catch(_e){}
-    return r.dest_place||'A customer\'s address';
+    return r.dest_place||'A saved address';
   };
   // The other section of #dash-hold (see _renderDashSupplyHold).
   el.innerHTML=
     '<div class="td-hold-sec">'+
       '<div class="td-hold-sec-t">'+svgIcon('📍',{size:13})+'<span>Visits</span></div>'+
-      '<div class="td-hold-sec-s">You were at a customer\'s address outside work hours with nothing scheduled. It counts toward nothing until you answer.</div>'+
+      '<div class="td-hold-sec-s">Outside work hours at a family or customer address, with nothing scheduled. It counts toward nothing until you answer.</div>'+
     '</div>'+
       list.map(r=>
         '<div class="td-supply-visit td-hold-visit">'+

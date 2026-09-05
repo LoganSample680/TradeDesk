@@ -69,7 +69,7 @@ function _holdNudgeNote(res){
     held.forEach(d=>{
       const id=String(d.id);
       if(st.answered.indexOf(id)>=0||st.visits.some(v=>v&&v.id===id))return;
-      st.visits.push({id,name:String(d.name||(d.fence&&d.fence.name)||'a customer').slice(0,40)});
+      st.visits.push({id,name:String(d.name||(d.fence&&d.fence.name)||'someone').slice(0,40)});
     });
     _holdWrite(st);
     return st.visits.length;
