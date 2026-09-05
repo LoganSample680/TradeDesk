@@ -2897,6 +2897,120 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(r.meal).toBe('Break · unpaid');
     });
 
+    // ── Personal takes the time OFF the day (owner 2026-09-05) ────────────
+    // "when I click personal why does it fill a clock in clock out? It
+    // shouldn't, that should just make it disappear." The rail draws every
+    // manual row with both ends as a clock, so all three answers used to draw
+    // a CLOCKED IN / CLOCKED OUT bracket, and on Personal that bracketed time
+    // the person had just said was not work.
+    test('Personal draws NOTHING on the rail: no clock cap, no row, while Work and Break still draw', async () => {
+      const r = await page.evaluate(() => {
+        const span = { startTime: '2026-08-27T15:03:00.000Z', endTime: '2026-08-27T15:43:00.000Z',
+          date: '2026-08-27', minutes: 40, personName: 'L', personUid: null, source: 'manual' };
+        const draw = (extra) => {
+          const d = document.createElement('div');
+          d.innerHTML = _tlDayRailHtml([Object.assign({ id: 'x' }, span, extra)]);
+          return { html: d.innerHTML.trim(), caps: d.querySelectorAll('.tl-rail-cap, .tl-clock-cap').length,
+            rows: d.querySelectorAll('.tl-rail > li').length, text: d.textContent };
+        };
+        return {
+          personal: draw({ unpaid: true, dismissed: true, detail: 'Personal time (unpaid)' }),
+          work: draw({ unpaid: false, dismissed: false, detail: 'Added from unaccounted time' }),
+          brk: draw({ unpaid: true, dismissed: false, detail: 'Break (unpaid)' }),
+        };
+      });
+      expect(r.personal.html, 'the day simply does not draw it').toBe('');
+      expect(r.personal.text).not.toMatch(/Clocked (in|out)/i);
+      expect(r.work.rows + r.work.caps, 'a work answer is still on the day').toBeGreaterThan(0);
+      expect(r.brk.rows, 'a break is still a row').toBeGreaterThan(0);
+    });
+
+    test('the answer is still WRITTEN, so the hole never comes back', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { te: timeEntries.slice(), save: window.saveAll, cloud: window.supaSaveToCloud,
+                        toast: window.showToast, render: window.renderTimeLog };
+        try {
+          window.saveAll = () => {}; window.supaSaveToCloud = () => {};
+          window.showToast = () => {}; window.renderTimeLog = () => {};
+          const before = [
+            { id: 'v1', personUid: null, date: '2026-08-28', minutes: 99, unpaid: false, source: 'auto',
+              startTime: '2026-08-28T15:35:00Z', endTime: '2026-08-28T17:14:00Z' },
+            { id: 'v2', personUid: null, date: '2026-08-28', minutes: 16, unpaid: false, source: 'auto',
+              startTime: '2026-08-28T18:58:00Z', endTime: '2026-08-28T19:14:00Z' },
+          ];
+          const gap = _tlFillUnaccounted(before.slice()).find(x => x.source === 'unaccounted');
+          const n = timeEntries.length;
+          _tlAddUnaccounted(gap.startTime, gap.endTime, 'personal');
+          const e = timeEntries[timeEntries.length - 1];
+          // The row the reader would build from it, then the same fill again.
+          const answered = before.concat([{ id: 'm' + e.id, source: 'manual', date: e.date, minutes: e.minutes,
+            personUid: null, unpaid: e.unpaid, dismissed: _tlIsPersonalGap(e),
+            startTime: e.start_time, endTime: e.end_time }]);
+          return { wrote: timeEntries.length - n, personal: e.personal, unpaid: e.unpaid,
+            dismissed: _tlIsPersonalGap(e),
+            askedAgain: _tlFillUnaccounted(answered).filter(x => x.source === 'unaccounted').length,
+            drawn: _tlDayRailHtml(answered.filter(x => x.date === '2026-08-28')).match(/Clocked/gi) };
+        } finally {
+          timeEntries.length = 0; saved.te.forEach(x => timeEntries.push(x));
+          window.saveAll = saved.save; window.supaSaveToCloud = saved.cloud;
+          window.showToast = saved.toast; window.renderTimeLog = saved.render;
+        }
+      });
+      expect(r.wrote, 'the answer is a real row, it is what makes it stick').toBe(1);
+      expect(r.personal).toBe(true);
+      expect(r.unpaid).toBe(true);
+      expect(r.dismissed).toBe(true);
+      expect(r.askedAgain, 'the question is answered, not re-asked').toBe(0);
+      expect(r.drawn, 'and nothing on the rail says he clocked in').toBe(null);
+    });
+
+    test('answering again flips the mark both ways', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { te: timeEntries.slice(), save: window.saveAll, cloud: window.supaSaveToCloud,
+                        toast: window.showToast, render: window.renderTimeLog };
+        try {
+          window.saveAll = () => {}; window.supaSaveToCloud = () => {};
+          window.showToast = () => {}; window.renderTimeLog = () => {};
+          const a = '2026-08-29T15:03:00.000Z', b = '2026-08-29T15:43:00.000Z';
+          const n = timeEntries.length;
+          _tlAddUnaccounted(a, b, 'break');
+          const asBreak = _tlIsPersonalGap(timeEntries[timeEntries.length - 1]);
+          _tlAddUnaccounted(a, b, 'personal');
+          const asPersonal = _tlIsPersonalGap(timeEntries[timeEntries.length - 1]);
+          _tlAddUnaccounted(a, b, 'work');
+          const back = _tlIsPersonalGap(timeEntries[timeEntries.length - 1]);
+          return { asBreak, asPersonal, back, rows: timeEntries.length - n };
+        } finally {
+          timeEntries.length = 0; saved.te.forEach(x => timeEntries.push(x));
+          window.saveAll = saved.save; window.supaSaveToCloud = saved.cloud;
+          window.showToast = saved.toast; window.renderTimeLog = saved.render;
+        }
+      });
+      expect(r.asBreak).toBe(false);
+      expect(r.asPersonal).toBe(true);
+      expect(r.back, 'changing your mind back puts the time on the day again').toBe(false);
+      expect(r.rows, 'one span, one row, however many times it is answered').toBe(1);
+    });
+
+    test('a row answered before the mark existed is recognised by its label', async () => {
+      const r = await page.evaluate(() => ({
+        legacy: _tlIsPersonalGap({ fromGap: true, unpaid: true, scope_label: 'Personal time (unpaid)' }),
+        legacyByLabel: _tlIsPersonalGap({ scope_label: 'Personal time (unpaid)' }),
+        brk: _tlIsPersonalGap({ fromGap: true, scope_label: 'Break (unpaid)' }),
+        work: _tlIsPersonalGap({ fromGap: true, scope_label: 'Added from unaccounted time' }),
+        // A running clock is never withdrawn, even carrying the mark: hiding
+        // an open clock off the rail is the one failure here that costs a day.
+        open: _tlIsPersonalGap({ personal: true, open: true }),
+        junk: [null, undefined, 'x', 42, {}].map(_tlIsPersonalGap),
+      }));
+      expect(r.legacy).toBe(true);
+      expect(r.legacyByLabel).toBe(true);
+      expect(r.brk).toBe(false);
+      expect(r.work).toBe(false);
+      expect(r.open, 'a running clock is never withdrawn off the rail').toBe(false);
+      expect(r.junk).toEqual([false, false, false, false, false]);
+    });
+
     // The whole point of an unpaid answer: it must stay out of the paid total,
     // through the SAME unpaid path a geofenced lunch already uses.
     test('a personal answer writes an unpaid row that no paid total counts', async () => {

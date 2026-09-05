@@ -535,6 +535,10 @@ async function _timeLogRows(sinceISO){
       // geofenced lunch already uses (_tlPaidMin, _tlComputeOT), never a
       // second kind of not-paid.
       unpaid:e.unpaid===true,
+      // Answered "Personal": on no rail, in no total, and never asked again.
+      // It stays in the ROWS so _tlFillUnaccounted sees the span covered; the
+      // rail is where it disappears (_tlDayRailHtml).
+      dismissed:_tlIsPersonalGap(e),
       startTime:e.start_time||null,endTime:e.end_time||null
     });
   });
@@ -1068,10 +1072,13 @@ function _tlAddUnaccounted(startIso,endIso,kind){
     const keep=same[same.length-1];
     same.slice(0,-1).forEach(e=>{const i=timeEntries.indexOf(e);if(i>=0)timeEntries.splice(i,1);});
     keep.minutes=mins;keep.unpaid=unpaid;keep.scope_label=label;keep.fromGap=true;
+    // Answering again can turn a Break into a Personal, or back, so the mark
+    // is set from THIS answer every time rather than only added.
+    keep.personal=(k==='personal');
     if(typeof saveAll==='function')saveAll();
     if(typeof supaSaveToCloud==='function')supaSaveToCloud();
-    if(typeof showToast==='function')showToast('Changed to '+
-      (k==='break'?('break, '+(unpaid?'unpaid':'paid')):k==='personal'?'personal, unpaid':'work time'),'⏱');
+    if(typeof showToast==='function')showToast(k==='personal'?'Taken off the day':
+      ('Changed to '+(k==='break'?('break, '+(unpaid?'unpaid':'paid')):'work time')),k==='personal'?'🏠':'⏱');
     if(typeof renderTimeLog==='function')renderTimeLog();
     return;
   }
@@ -1084,6 +1091,9 @@ function _tlAddUnaccounted(startIso,endIso,kind){
     start_time:new Date(a).toISOString(),end_time:new Date(b).toISOString(),
     minutes:mins,scope_id:null,scope_label:label,
     unpaid,
+    // Personal is a withdrawal, not a claim: the reader drops it off the rail
+    // entirely (_tlIsPersonalGap). Work and Break stay rows.
+    personal:k==='personal',
     // So the trim sweep can recognise its own rows without pattern-matching a
     // label that copy changes will eventually move.
     fromGap:true,
@@ -1091,9 +1101,10 @@ function _tlAddUnaccounted(startIso,endIso,kind){
   });
   if(typeof saveAll==='function')saveAll();
   if(typeof supaSaveToCloud==='function')supaSaveToCloud();
-  if(typeof showToast==='function')showToast(
-    (typeof _fmtMin==='function'?_fmtMin(mins):mins+'m')+' logged as '+
-    (k==='break'?('break, '+(unpaid?'unpaid':'paid')):k==='personal'?'personal, unpaid':'work time'),'⏱');
+  if(typeof showToast==='function')showToast(k==='personal'
+    ? ((typeof _fmtMin==='function'?_fmtMin(mins):mins+'m')+' taken off the day')
+    : ((typeof _fmtMin==='function'?_fmtMin(mins):mins+'m')+' logged as '+
+       (k==='break'?('break, '+(unpaid?'unpaid':'paid')):'work time')),k==='personal'?'🏠':'⏱');
   // The gap row is derived, so it simply stops existing on the next build:
   // the span is now covered by a real row and no hole remains to report.
   if(typeof renderTimeLog==='function')renderTimeLog();
@@ -1462,7 +1473,10 @@ function _tlClockCapHtml(r,which){
 function _tlDayRailHtml(rows){
   // A null row is not a segment, and drawing a blank one would hang a phantom
   // node off the spine at a time nothing happened. Dropped, not rendered.
-  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object')
+  // A withdrawn hole is not a row and not a clock: Personal took the time off
+  // the day, so the day does not draw it (owner 2026-09-05). It is still in
+  // the rows the gap filler saw, which is why the question does not come back.
+  const list=(Array.isArray(rows)?rows:[]).filter(r=>r&&typeof r==='object'&&!r.dismissed)
     .sort((a,b)=>String(a.startTime||'').localeCompare(String(b.startTime||'')));
   if(!list.length)return '';
   // Only a clock with both ends can bracket anything. An entry still running,
@@ -2269,6 +2283,35 @@ function _tlIsGapAnswer(e){
   if(!e||e.open)return false;
   if(e.fromGap===true)return true;
   return _TL_GAP_LABEL_RE.test(String(e.scope_label||''));
+}
+// PERSONAL MEANS GONE (owner 2026-09-05: "when I click personal why does it
+// fill a clock in clock out? It shouldn't, that should just make it
+// disappear").
+//
+// All three answers to a hole wrote the same kind of row, and the rail draws
+// every manual row that has both ends as a CLOCK: so saying "that was not
+// work" drew a CLOCKED IN and a CLOCKED OUT around it, which is the opposite
+// of what was said. Work and Break are still rows, because they are still
+// claims about the day. Personal is not a claim, it is a withdrawal.
+//
+// The row is still WRITTEN, and that is the point of keeping it: it is the
+// record of the answer, it syncs to the other devices, and it is what stops
+// _tlFillUnaccounted asking the same question again tomorrow. It just never
+// reaches the rail. Same shape as rule 13's 'dismissed' visit, which the
+// reader already drops the same way, for the same reason (§7.3).
+//
+// The label matters as well as the flag: rows answered before this change
+// carry no flag, and they must stop drawing a clock too.
+function _tlIsPersonalGap(e){
+  if(!e||typeof e!=='object')return false;
+  // A RUNNING CLOCK IS NEVER WITHDRAWN, whatever else the row carries. This
+  // function decides what the rail does not draw, and hiding somebody's open
+  // clock is the one mistake here that costs a day. _tlAddUnaccounted only
+  // ever writes open:false, so this guards the corrupt and the legacy row,
+  // and it is the same first line _tlIsGapAnswer already opens with.
+  if(e.open)return false;
+  if(e.personal===true)return true;
+  return _tlIsGapAnswer(e)&&/^Personal time/.test(String(e.scope_label||''));
 }
 // Subtract every covered stretch from [a,b], returning what is left.
 function _tlSubtractCovered(a,b,covers){
