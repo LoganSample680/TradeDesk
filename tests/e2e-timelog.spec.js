@@ -673,6 +673,70 @@ test.describe('timelog.js: exhaustive coverage', () => {
         expect(g.withClock, 'and a clock over it was never a hole in the first place').toBe(0);
       });
 
+      test('the tail after the last real work is not asked about', async () => {
+        // The owner's own Thursday: a drive that ends at the shop, then a one
+        // minute Office row eleven minutes later. The gap between them is the
+        // house dwell rule 12 deletes on purpose, not a mystery.
+        const d = await page.evaluate(() => todayKey());
+        const g = await page.evaluate(({ d }) => {
+          const prev = S.workHours;
+          const base = Date.parse(d + 'T00:00:00');
+          const iso = (m) => new Date(base + m * 60000).toISOString();
+          S.workHours = { start: '06:00', end: '20:00', days: [0, 1, 2, 3, 4, 5, 6] };
+          const out = _tlFillUnaccounted([
+            { id: 'x', personUid: 'jack', date: d, minutes: 20, unpaid: false, source: 'auto',
+              rawSource: 'drive', personName: 'Jack', startTime: iso(16 * 60), endTime: iso(16 * 60 + 21) },
+            { id: 'y', personUid: 'jack', date: d, minutes: 1, unpaid: false, source: 'auto',
+              rawSource: 'place-office', personName: 'Jack', startTime: iso(16 * 60 + 32), endTime: iso(16 * 60 + 33) },
+          ]).filter(x => x.source === 'unaccounted');
+          S.workHours = prev;
+          return out;
+        }, { d });
+        expect(g.length, 'the work of the day was already over').toBe(0);
+      });
+
+      test('a hole BETWEEN two work rows is untouched by that rule', async () => {
+        const d = await page.evaluate(() => todayKey());
+        const g = await page.evaluate(({ d }) => {
+          const prev = S.workHours;
+          const base = Date.parse(d + 'T00:00:00');
+          const iso = (h) => new Date(base + h * 3600000).toISOString();
+          S.workHours = { start: '06:00', end: '20:00', days: [0, 1, 2, 3, 4, 5, 6] };
+          const out = _tlFillUnaccounted([
+            { id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto',
+              rawSource: 'drive', personName: 'Jack', startTime: iso(8), endTime: iso(9) },
+            { id: 'y', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto',
+              rawSource: 'visit', personName: 'Jack', startTime: iso(11), endTime: iso(12) },
+          ]).filter(x => x.source === 'unaccounted');
+          S.workHours = prev;
+          return out;
+        }, { d });
+        expect(g.length, 'the day was still going, so it is still a question').toBe(1);
+        expect(g[0].minutes).toBe(120);
+      });
+
+      test('a day of nothing but Office rows clips nothing', async () => {
+        const d = await page.evaluate(() => todayKey());
+        const g = await page.evaluate(({ d }) => {
+          const prev = S.workHours;
+          const base = Date.parse(d + 'T00:00:00');
+          const iso = (h) => new Date(base + h * 3600000).toISOString();
+          S.workHours = { start: '06:00', end: '20:00', days: [0, 1, 2, 3, 4, 5, 6] };
+          // Two Office rows with a third row between them that is neither:
+          // no real work anywhere, so the rule has no end to clip to and the
+          // window is the only thing deciding.
+          const out = _tlFillUnaccounted([
+            { id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto',
+              rawSource: 'place-office', personName: 'Jack', startTime: iso(8), endTime: iso(9) },
+            { id: 'z', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto',
+              rawSource: 'place-office', personName: 'Jack', startTime: iso(11), endTime: iso(12) },
+          ]).filter(x => x.source === 'unaccounted');
+          S.workHours = prev;
+          return out;
+        }, { d });
+        expect(g.length, 'two Office rows are the app being closed, never a question').toBe(0);
+      });
+
       test('a day nobody works asks nothing unless a clock says otherwise', async () => {
         const d = await page.evaluate(() => todayKey());
         const g = await page.evaluate(({ d }) => {

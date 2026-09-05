@@ -203,9 +203,10 @@ const _TL_SITE_MIN_MIN=5;
 // one person they actually are.
 // ── A hole is only a question inside a workday, and only for a while ───────
 //
-// Owner 2026-09-05: "how do we prevent unaccounted for time outright?" Three
-// rules do most of it. The deriver closes what the tape can vouch for (rule
-// 14, js/geo-derive.js). These two decide what is worth ASKING about.
+// Owner 2026-09-05: "how do we prevent unaccounted for time outright?" The
+// deriver closes what the tape can vouch for (js/geo-derive.js). The rules
+// here decide what is left worth ASKING about: the window, the age, and the
+// end of the day's real work.
 //
 // THE WINDOW. Time nobody claimed is not a question. A stretch at nine at
 // night, on a day whose work ended at five, is his evening: asking about it
@@ -268,6 +269,22 @@ function _tlFillUnaccounted(rows,cid){
     // any more: it already pays nothing, so leaving it on the rail forever is
     // noise and nothing else. It stops being asked; no row is written and
     // nothing is decided on anybody's behalf.
+    // AND NOTHING AFTER THE LAST REAL WORK (owner 2026-09-05, on his own
+    // Thursday rail: a 10-minute question sitting between a drive that ended
+    // at the shop at 4:21 and a one-minute Office row at 4:32). The drive was
+    // the last work of that day. What came after it was him at his desk with
+    // the app open, and the house dwell around it is deleted on purpose
+    // (rule 12, js/geo-derive.js), so the hole the reader found was a hole
+    // the deriver made by design. The day already ended; asking about its
+    // tail is the same mistake the window rule fixes, one row further in.
+    //
+    // Real work is a drive, a visit, a shop, a clock: anything the day has a
+    // claim on. Office is not (a desk is not a job), and neither is time
+    // already taken off the day as personal. A day with no real work at all
+    // clips nothing, so a day of pure Office rows behaves exactly as before.
+    const _isWork=r=>!!r&&r.source!=='unaccounted'&&r.rawSource!=='place-office'
+      &&!r.dismissed&&!r.personal;
+    const _workEnd=day.reduce((mx,r)=>_isWork(r)?Math.max(mx,Date.parse(r.endTime)||0):mx,0);
     const _win=_tlWorkWindow(day);
     const _stale=(()=>{
       const t=Date.parse(String(day[0].date||'')+'T12:00:00');
@@ -294,8 +311,9 @@ function _tlFillUnaccounted(rows,cid){
       // Clipped to the working day: what falls outside it was never claimed
       // and is not a question. No window at all (a day nobody works, with no
       // clock on it) asks nothing.
+      const _stop=_workEnd>0?Math.min(_end,_workEnd):_end;
       const _from=_win?Math.max(mark,_win[0]):mark;
-      const _to=_win?Math.min(_end,_win[1]):_end;
+      const _to=_win?Math.min(_stop,_win[1]):_stop;
       const _gap=_to-_from;
       if(_gap>=_TL_UNACCOUNTED_MIN_MS&&!_bothOffice&&_win&&!_stale){
         out.push({
