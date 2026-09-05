@@ -695,6 +695,131 @@ test.describe('Wake region set for the dead app', () => {
   });
 
 
+  // ── Park state survives a reload, so the off-switch stays reachable ───────
+  //
+  // Measured on the owner's own phone 2026-09-05: 118 fixes in one hour from
+  // five locations, gaps of exactly 30.0s, for four and a half hours. The iOS
+  // 17 wake stream doing its job while armed, with nothing able to disarm it.
+  // The ON is durable (UserDefaults, re-armed by the plugin on relaunch); the
+  // OFF was a plain JS `let` that a reload wiped.
+  test.describe('the park off-switch is as durable as the on-switch', () => {
+    const boot = (setup) => page.evaluate(({ setup }) => {
+      const saved = { td: _geoTdPlugin, park: _geoParkModeOn, spot: _geoParkSpot,
+                      user: window._supaUser, restored: window._geoParkRestored };
+      window.__wake = [];
+      _geoTdPlugin = () => ({ setWakeOnMove: async (a) => { window.__wake.push(a); return a; } });
+      window._supaUser = { id: 'owner-uid' };
+      _geoParkModeOn = false; _geoParkSpot = null;
+      window._geoParkRestored = false;
+      localStorage.removeItem('zp3_geo_park');
+      // Built INSIDE the page: the page clock is pinned and the runner's is not,
+      // so an absolute stamp from the test side would be hours off (5.2.2).
+      if (setup.store) {
+        localStorage.setItem('zp3_geo_park', JSON.stringify({
+          spot: { lat: 41.5, lng: -88.1, name: setup.name || '' },
+          at: Date.now() - (setup.ageMs || 0),
+          uid: setup.uid || 'owner-uid',
+        }));
+      }
+      const ok = _geoParkRestore();
+      const out = { ok, park: _geoParkModeOn, spot: _geoParkSpot,
+                    wake: window.__wake.slice(), left: localStorage.getItem('zp3_geo_park') };
+      _geoTdPlugin = saved.td; _geoParkModeOn = saved.park; _geoParkSpot = saved.spot;
+      window._supaUser = saved.user; window._geoParkRestored = saved.restored;
+      localStorage.removeItem('zp3_geo_park');
+      return out;
+    }, { setup });
+
+    test('a park written down comes back, and nothing is disarmed', async () => {
+      const r = await boot({ store: true, ageMs: 60000, name: 'TradeDesk shop' });
+      expect(r.ok).toBe(true);
+      expect(r.park, 'JS believes it is parked again, so park-exit can run').toBe(true);
+      expect(r.spot.name).toBe('TradeDesk shop');
+      expect(r.wake.length, 'a real park must never be disarmed on boot').toBe(0);
+    });
+
+    test('no park stored: the plugin is told to drop the stream', async () => {
+      const r = await boot({});
+      expect(r.ok).toBe(false);
+      expect(r.park).toBe(false);
+      expect(r.wake, 'the phone must not hold a stream this session knows nothing about')
+        .toEqual([{ on: false }]);
+    });
+
+    test('a park older than the shift is not a park', async () => {
+      const r = await boot({ store: true, ageMs: 13 * 3600000 });
+      expect(r.ok, 'a weekend at the shop must not restore on Monday').toBe(false);
+      expect(r.wake).toEqual([{ on: false }]);
+      expect(r.left, 'and the stale record is cleared').toBe(null);
+    });
+
+    test("another login's park is not mine", async () => {
+      const r = await boot({ store: true, ageMs: 60000, uid: 'somebody-else' });
+      expect(r.ok).toBe(false);
+      expect(r.wake).toEqual([{ on: false }]);
+    });
+
+    test('junk in storage disarms rather than throwing or restoring', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { td: _geoTdPlugin, park: _geoParkModeOn, restored: window._geoParkRestored, user: window._supaUser };
+        window._supaUser = { id: 'owner-uid' };
+        const out = [];
+        for (const junk of ['{BROKEN{{', 'null', '[]', '{"at":"nope"}', '{}']) {
+          window.__wake = [];
+          _geoTdPlugin = () => ({ setWakeOnMove: async (a) => { window.__wake.push(a); return a; } });
+          _geoParkModeOn = false; window._geoParkRestored = false;
+          localStorage.setItem('zp3_geo_park', junk);
+          let threw = false;
+          try { out.push({ ok: _geoParkRestore(), wake: window.__wake.length }); } catch (e) { threw = true; }
+          if (threw) { out.push('THREW'); break; }
+        }
+        localStorage.removeItem('zp3_geo_park');
+        _geoTdPlugin = saved.td; _geoParkModeOn = saved.park;
+        window._geoParkRestored = saved.restored; window._supaUser = saved.user;
+        return out;
+      });
+      expect(r).not.toContain('THREW');
+      expect(r.every(x => x.ok === false && x.wake === 1), 'every junk shape ends with the stream dropped').toBe(true);
+    });
+
+    test('it runs at most once per page load', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { td: _geoTdPlugin, park: _geoParkModeOn, restored: window._geoParkRestored, user: window._supaUser };
+        window._supaUser = { id: 'owner-uid' };
+        window.__wake = [];
+        _geoTdPlugin = () => ({ setWakeOnMove: async (a) => { window.__wake.push(a); return a; } });
+        _geoParkModeOn = false; window._geoParkRestored = false;
+        localStorage.removeItem('zp3_geo_park');
+        const a = _geoParkRestore(), b = _geoParkRestore(), c = _geoParkRestore();
+        const n = window.__wake.length;
+        _geoTdPlugin = saved.td; _geoParkModeOn = saved.park;
+        window._geoParkRestored = saved.restored; window._supaUser = saved.user;
+        return { a, b, c, n };
+      });
+      expect(r.b).toBe(false);
+      expect(r.c).toBe(false);
+      expect(r.n, 'one disarm, not one per caller').toBe(1);
+    });
+
+    test('entering park writes it down, exiting park forgets it', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { park: _geoParkModeOn, user: window._supaUser, td: _geoTdPlugin };
+        window._supaUser = { id: 'owner-uid' };
+        _geoTdPlugin = () => ({ stopAll: async () => {} });
+        localStorage.removeItem('zp3_geo_park');
+        _geoParkPersist({ lat: 41.5, lng: -88.1, name: 'shop' });
+        const wrote = JSON.parse(localStorage.getItem('zp3_geo_park') || 'null');
+        _geoParkModeOn = true;
+        _geoExitParkMode();
+        const after = localStorage.getItem('zp3_geo_park');
+        _geoParkModeOn = saved.park; window._supaUser = saved.user; _geoTdPlugin = saved.td;
+        return { wrote: !!(wrote && wrote.spot && wrote.spot.name === 'shop'), after };
+      });
+      expect(r.wrote).toBe(true);
+      expect(r.after, 'a park that ended must not restore on the next boot').toBe(null);
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 
 

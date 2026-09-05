@@ -777,6 +777,10 @@ function _geoRestoreOpen(){
   // not the fence machine's, and it must come back even on a day the fence
   // machine had nothing open.
   _geoRestoreDwell();
+  // Park state, for the same reason and at the same moment: the plugin's side
+  // of park survived the reload, so JS's side has to as well or the off-switch
+  // is unreachable (see _geoParkRestore).
+  _geoParkRestore();
   try{
     const s=JSON.parse(localStorage.getItem(_GEO_OPEN_KEY)||'null');
     if(!s||s.uid!==((_supaUser&&_supaUser.id)||null))return;
@@ -4291,6 +4295,80 @@ function _geoPingBurst(){
   }catch(_e){return false;}
 }
 let _geoParkSpot=null;   // where to center the region when the countdown fires
+// ── Park mode has to survive a reload, because the plugin's side does ───────
+//
+// THE BUG THIS EXISTS TO KILL (owner's own phone, 2026-09-05, measured on the
+// server rather than guessed): 118 GPS fixes in one hour from five distinct
+// locations, gaps of exactly 30.0 seconds, for four and a half hours. That is
+// the iOS 17 wake stream's own throttle (wakeFixThrottleMs) doing precisely
+// what it is designed to do while armed and not stationary. The stream was not
+// misbehaving. Nothing could turn it off.
+//
+// The asymmetry is the whole defect: the ON is DURABLE and the OFF is
+// EPHEMERAL. setWakeOnMove({on:true}) writes td_geo_wake_on_move to
+// UserDefaults and the plugin re-arms the stream from it on every relaunch
+// (TdGeoPlugin.load). The only thing that clears it is stopAll, and stopAll is
+// reachable from exactly two places in normal use: _geoExitParkMode, which
+// opens with `if(!_geoParkModeOn)return`, and stopGeoTracking, which runs on
+// sign-out. _geoParkModeOn is a plain `let` that resets to false on every page
+// load. So one reload, and the phone is holding a stream JS no longer believes
+// in and can never take back. His started at the 12:10 UAT roll, which
+// force-reloads the app through the version watchdog.
+//
+// So park state is now written down, in the same shape and with the same
+// judgement _geoPersistOpen already uses (7.3): keyed by login, and judged
+// stale on the last confirmation rather than on when it started.
+const _GEO_PARK_KEY='zp3_geo_park';
+// A park older than this was not a park, it was an app that died parked and
+// came back to a different day. Longer than the heartbeat's 12h ttl would let
+// a weekend at the shop restore as a live park on Monday morning.
+const _GEO_PARK_MAX_AGE_MS=12*3600000;
+function _geoParkPersist(spot){
+  try{
+    localStorage.setItem(_GEO_PARK_KEY,JSON.stringify({
+      spot:(spot&&isFinite(spot.lat)&&isFinite(spot.lng))?{lat:spot.lat,lng:spot.lng,name:spot.name||''}:null,
+      at:Date.now(),uid:(_supaUser&&_supaUser.id)||null
+    }));
+  }catch(_e){}
+}
+function _geoParkForget(){try{localStorage.removeItem(_GEO_PARK_KEY);}catch(_e){}}
+function _geoParkStored(){
+  try{
+    const s=JSON.parse(localStorage.getItem(_GEO_PARK_KEY)||'null');
+    if(!s)return null;
+    if(s.uid!==((_supaUser&&_supaUser.id)||null))return null;
+    if(!(Date.now()-Number(s.at)<_GEO_PARK_MAX_AGE_MS))return null;
+    return s;
+  }catch(_e){return null;}
+}
+// Boot. Either JS remembers the park and can therefore end it properly, or it
+// does not, in which case the phone must not be left holding a stream nobody
+// owns. THE OFF IS NOW AS DURABLE AS THE ON, which is the actual fix; the
+// restore above is what keeps that safe, because without it every background
+// relaunch would disarm a park that is genuinely still running.
+function _geoParkRestore(){
+  try{
+    if(window._geoParkRestored)return false;
+    window._geoParkRestored=true;
+    const s=_geoParkStored();
+    if(s){
+      _geoParkModeOn=true;
+      if(s.spot)_geoParkSpot=s.spot;
+      _geoParkNote('park-restored',s.spot&&s.spot.name?s.spot.name:'');
+      return true;
+    }
+    // Nothing stored, or stale, or another login's: make sure the plugin is not
+    // still holding one from a session this one knows nothing about.
+    _geoParkForget();
+    const Td=_geoTdPlugin();
+    if(Td&&typeof Td.setWakeOnMove==='function'){
+      Promise.resolve(Td.setWakeOnMove({on:false})).then(()=>{
+        _geoParkNote('wake-disarm','no park on this boot');
+      },()=>{});
+    }
+    return false;
+  }catch(_e){return false;}
+}
 // ── The shift heartbeat, armed at every chance JS gets ──────────────────────
 // Owner report 2026-08-27 (live device, morning at a job): zero heartbeat
 // events all day. The only call site was _geoEnterParkMode, and park mode only
@@ -4413,6 +4491,7 @@ function _geoEnterParkMode(spot){
   Promise.resolve(_armCall)
     .then((r)=>{
       _geoParkModeOn=true;
+      _geoParkPersist(spot);
       _geoParkNote('park-on','armed='+((r&&r.armed)!=null?r.armed:'?'));
       // Parked is when the phone goes to sleep, and asleep is when CoreMotion
       // cannot reach it (owner 2026-09-02: the 12:02 departure, flip on the
@@ -4460,6 +4539,7 @@ function _geoExitParkMode(){
   _geoClearParkTimer();
   if(!_geoParkModeOn)return;
   _geoParkModeOn=false;
+  _geoParkForget();
   // Fresh observation window on wake: if this exit was a real drive the next
   // fixes clear the quiet clock; if it was a walk out of the region, GPS gets
   // four minutes to confirm and then parks again at the new spot.
@@ -5436,6 +5516,7 @@ function stopGeoTracking(){
   // woken by the previous account's fence.
   _geoClearParkTimer();
   _geoParkModeOn=false;
+  _geoParkForget();
   _geoFenceEnteredAtMs=null;
   _geoQuietSinceMs=null;_geoParkPrevFix=null;
   // Before stopAll, so the window's own state machine unwinds through the one
