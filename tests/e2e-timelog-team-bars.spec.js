@@ -38,14 +38,18 @@ test.describe('team: the card opens onto that person', () => {
       const card = [...document.querySelectorAll('.bk-week')]
         .find(c => (c.textContent || '').includes('Jose'));
       return {
-        labels: [...card.querySelectorAll('.tl-wbar-dow')].map(e => e.textContent),
+        // firstChild: the label's own text, without the › chevron span that
+        // follows it on an openable column.
+        labels: [...card.querySelectorAll('.tl-wbar-dow')].map(e => e.firstChild.textContent),
         drills: [...card.querySelectorAll('.tl-wbar-hit')]
           .map(b => b.getAttribute('onclick')),
       };
     });
     // Jose worked the week of 8/2 and the week of 8/23. The owner's own four
     // weeks are on the owner's card, not this one.
-    expect(r.labels).toEqual(['8/2', '8/23']);
+    // AMENDED 2026-09-05 (10.4, design handoff): a week is a RANGE now, not
+    // the date it starts on. Same two weeks, named as spans.
+    expect(r.labels).toEqual(['2\u20138', '23\u201329']);
     r.drills.forEach(d => expect(d).toContain("_tlDrillPerson('crew-jose'"));
   });
 
