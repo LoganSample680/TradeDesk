@@ -220,17 +220,27 @@ test.describe('The public timesheet page', () => {
   // different question that answers "mine" for a row carrying no person, which
   // is exactly how an owner's own manual clocks arrive. A day of those offered
   // three live buttons and one tap moved the week from 4h to 7h on screen.
+  // THIS week, not the book's. Every other test here is about the chrome and
+  // the buttons, so a fixed week is fine for them. This one needs the rail to
+  // still be ASKING about the hole, and a hole stops being asked after a week
+  // (js/timelog.js, owner 2026-09-05), so a fixture in August would prove the
+  // opposite of what it says by the time anyone read it.
+  const NOW = new Date();
+  const SUN = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - NOW.getDay());
+  const D2 = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const THIS_WEEK = D2(SUN);
+  const MID = D2(new Date(SUN.getFullYear(), SUN.getMonth(), SUN.getDate() + 2));   // Tuesday
   const CLOCKS_ONLY = Object.assign({}, DATA, {
-    time: [], shop: [],
+    week_start: THIS_WEEK, time: [], shop: [],
     manual: [
-      { id: 'm1', date: '2026-08-25', start_time: '2026-08-25T12:00:00Z', end_time: '2026-08-25T14:00:00Z', minutes: 120, logged_by_uid: null, logged_by_name: 'Jack Sample', open: false },
-      { id: 'm2', date: '2026-08-25', start_time: '2026-08-25T17:00:00Z', end_time: '2026-08-25T19:00:00Z', minutes: 120, logged_by_uid: null, logged_by_name: 'Jack Sample', open: false },
+      { id: 'm1', date: MID, start_time: MID + 'T12:00:00Z', end_time: MID + 'T14:00:00Z', minutes: 120, logged_by_uid: null, logged_by_name: 'Jack Sample', open: false },
+      { id: 'm2', date: MID, start_time: MID + 'T17:00:00Z', end_time: MID + 'T19:00:00Z', minutes: 120, logged_by_uid: null, logged_by_name: 'Jack Sample', open: false },
     ],
   });
 
   test('a day of the owner\'s own clocks offers NO answer buttons, and the hole is still stated', async ({ page }) => {
     await openPage(page, CLOCKS_ONLY);
-    await page.evaluate(() => _tlDrillTo('day', '2026-08-25'));
+    await page.evaluate((d) => _tlDrillTo('day', d), MID);
     await page.waitForFunction(() => !!document.querySelector('#tsp-body .tl-rail'));
     const r = await page.evaluate(() => ({
       chips: document.querySelectorAll('#tsp-body .tl-rail-chip').length,
@@ -250,7 +260,7 @@ test.describe('The public timesheet page', () => {
 
   test('the writer itself refuses on the link page: the total cannot be moved', async ({ page }) => {
     await openPage(page, CLOCKS_ONLY);
-    await page.evaluate(() => _tlDrillTo('day', '2026-08-25'));
+    await page.evaluate((d) => _tlDrillTo('day', d), MID);
     await page.waitForFunction(() => !!document.querySelector('#tsp-body .tl-rail'));
     const r = await page.evaluate(async () => {
       const before = { entries: timeEntries.length, total: document.querySelector('#tsp-body .tl-monav-tot').textContent.trim() };

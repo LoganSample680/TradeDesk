@@ -541,22 +541,31 @@ test.describe('timelog.js: exhaustive coverage', () => {
   // Log jumped from one visit straight to the next and the day silently
   // failed to add up.
   test.describe('unaccounted time is shown, never hidden', () => {
-    const JACK = () => ([
-      { id: 'd1', personUid: 'jack', date: '2026-08-28', minutes: 3, unpaid: false, source: 'auto',
-        startTime: '2026-08-28T14:46:00Z', endTime: '2026-08-28T14:49:00Z' },   // house -> Laurie's
-      { id: 'v1', personUid: 'jack', date: '2026-08-28', minutes: 11, unpaid: false, source: 'auto',
-        startTime: '2026-08-28T14:49:00Z', endTime: '2026-08-28T15:00:00Z' },   // at Laurie's
-      { id: 'v2', personUid: 'jack', date: '2026-08-28', minutes: 99, unpaid: false, source: 'auto',
-        startTime: '2026-08-28T15:35:00Z', endTime: '2026-08-28T17:14:00Z' },   // back at Laurie's
-      { id: 'v3', personUid: 'jack', date: '2026-08-28', minutes: 16, unpaid: false, source: 'auto',
-        startTime: '2026-08-28T18:58:00Z', endTime: '2026-08-28T19:14:00Z' },   // back again
-      { id: 'd2', personUid: 'jack', date: '2026-08-28', minutes: 4, unpaid: false, source: 'auto',
-        startTime: '2026-08-28T19:14:00Z', endTime: '2026-08-28T19:18:00Z' },   // Laurie's -> home
+    // TODAY, not a date in the book. These tests ask what counts as a hole,
+    // and the calendar was never part of that question. It became part of it
+    // when a hole stopped being asked about after a week (rule 3, owner
+    // 2026-09-05): a fixture written on a fixed day answers "is this stale"
+    // instead, and answers it differently every day the suite runs, which is
+    // exactly the class §5.2.2 exists to keep out. The times are unchanged
+    // and sit inside the working day, so the window rule does not decide
+    // these either. Both new rules get their own tests below.
+    const D = () => page.evaluate(() => todayKey());
+    const JACK = (d) => ([
+      { id: 'd1', personUid: 'jack', date: d, minutes: 3, unpaid: false, source: 'auto',
+        startTime: d + 'T14:46:00Z', endTime: d + 'T14:49:00Z' },   // house -> Laurie's
+      { id: 'v1', personUid: 'jack', date: d, minutes: 11, unpaid: false, source: 'auto',
+        startTime: d + 'T14:49:00Z', endTime: d + 'T15:00:00Z' },   // at Laurie's
+      { id: 'v2', personUid: 'jack', date: d, minutes: 99, unpaid: false, source: 'auto',
+        startTime: d + 'T15:35:00Z', endTime: d + 'T17:14:00Z' },   // back at Laurie's
+      { id: 'v3', personUid: 'jack', date: d, minutes: 16, unpaid: false, source: 'auto',
+        startTime: d + 'T18:58:00Z', endTime: d + 'T19:14:00Z' },   // back again
+      { id: 'd2', personUid: 'jack', date: d, minutes: 4, unpaid: false, source: 'auto',
+        startTime: d + 'T19:14:00Z', endTime: d + 'T19:18:00Z' },   // Laurie's -> home
     ]);
     const fill = rows => page.evaluate(r => _tlFillUnaccounted(r), rows);
 
     test('the day reads in order with every hole named, and nothing is merged', async () => {
-      const r = await fill(JACK());
+      const r = await fill(JACK(await D()));
       const day = r.slice().sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
       // Exactly the owner's sequence: drive, arrival, hole, arrival, hole,
       // arrival, drive home. Seven lines, and the day ends.
@@ -574,8 +583,173 @@ test.describe('timelog.js: exhaustive coverage', () => {
       expect(day.reduce((n, x) => n + x.minutes, 0)).toBe(span);
     });
 
+    // ── Rules 1 and 3: what is worth ASKING about (owner 2026-09-05) ──────
+    // "how do we prevent unaccounted for time outright?" A hole is only a
+    // question inside a working day, and only while somebody could still
+    // answer it. Neither rule changes an hour of pay: a hole has never
+    // counted. They decide what is put on the screen as a question.
+    test.describe('a hole is only a question inside the workday', () => {
+      const hole = (d, a, b, extra) => page.evaluate(({ d, a, b, extra }) => _tlFillUnaccounted([
+        Object.assign({ id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto',
+          personName: 'Jack', startTime: d + 'T' + a, endTime: d + 'T' + b }, (extra && extra.first) || {}),
+        Object.assign({ id: 'y', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto',
+          personName: 'Jack', startTime: d + 'T' + (extra && extra.c || '00:00:00Z'), endTime: d + 'T' + (extra && extra.e || '00:00:00Z') }, (extra && extra.second) || {}),
+      ]).filter(x => x.source === 'unaccounted'), { d, a, b, extra });
+
+      test('inside work hours it is still asked', async () => {
+        const d = await page.evaluate(() => todayKey());
+        const g = await hole(d, '13:00:00Z', '14:00:00Z', { c: '16:00:00Z', e: '17:00:00Z' });
+        expect(g.length).toBe(1);
+        expect(g[0].minutes).toBe(120);
+      });
+
+      test('after the working day it is his evening, and nothing is asked', async () => {
+        const d = await page.evaluate(() => todayKey());
+        // 20:00Z to 23:00Z is 3pm to 6pm Central on the fixture's own clock,
+        // well past a 20:00 finish only when the window says so, so set the
+        // window explicitly rather than relying on where the runner sits.
+        const g = await page.evaluate(({ d }) => {
+          const prev = S.workHours;
+          S.workHours = { start: '06:00', end: '10:00', days: [0, 1, 2, 3, 4, 5, 6] };
+          const out = _tlFillUnaccounted([
+            { id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: d + 'T20:00:00Z', endTime: d + 'T21:00:00Z' },
+            { id: 'y', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: d + 'T23:00:00Z', endTime: d + 'T23:59:00Z' },
+          ]).filter(x => x.source === 'unaccounted');
+          S.workHours = prev;
+          return out;
+        }, { d });
+        expect(g.length, 'time nobody claimed is not a question').toBe(0);
+      });
+
+      test('a hole that straddles the end of the day is CLIPPED, not dropped', async () => {
+        const d = await page.evaluate(() => todayKey());
+        const g = await page.evaluate(({ d }) => {
+          const prev = S.workHours;
+          // Window ends 14:00 local. The hole runs 13:00 to 17:00 local.
+          const base = Date.parse(d + 'T00:00:00');
+          const iso = (h) => new Date(base + h * 3600000).toISOString();
+          S.workHours = { start: '06:00', end: '14:00', days: [0, 1, 2, 3, 4, 5, 6] };
+          const out = _tlFillUnaccounted([
+            { id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: iso(12), endTime: iso(13) },
+            { id: 'y', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: iso(17), endTime: iso(18) },
+          ]).filter(x => x.source === 'unaccounted');
+          S.workHours = prev;
+          return out.map(x => ({ min: x.minutes, end: x.endTime, cap: iso(14) }));
+        }, { d });
+        expect(g.length).toBe(1);
+        expect(g[0].min, 'only the hour inside the working day is asked about').toBe(60);
+        expect(g[0].end).toBe(g[0].cap);
+      });
+
+      test('a clock over the stretch means there was never a hole to ask about', async () => {
+        const d = await page.evaluate(() => todayKey());
+        const g = await page.evaluate(({ d }) => {
+          const prev = S.workHours;
+          const base = Date.parse(d + 'T00:00:00');
+          const iso = (h) => new Date(base + h * 3600000).toISOString();
+          S.workHours = { start: '06:00', end: '14:00', days: [0, 1, 2, 3, 4, 5, 6] };
+          const rows = [
+            { id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: iso(19), endTime: iso(20) },
+            { id: 'y', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: iso(22), endTime: iso(23) },
+          ];
+          const without = _tlFillUnaccounted(rows.slice()).filter(x => x.source === 'unaccounted').length;
+          // The same night with a clock over it. The clock is one of the rows
+          // the walk below sees, so the stretch is covered and no hole is
+          // ever found: this is why the window needs no widening for it.
+          const withClock = _tlFillUnaccounted(rows.concat([
+            { id: 'c', personUid: 'jack', date: d, minutes: 240, unpaid: false, source: 'manual', personName: 'Jack',
+              startTime: iso(19), endTime: iso(23) },
+          ])).filter(x => x.source === 'unaccounted').length;
+          S.workHours = prev;
+          return { without, withClock };
+        }, { d });
+        expect(g.without, 'outside the set hours with nothing claimed: silence').toBe(0);
+        expect(g.withClock, 'and a clock over it was never a hole in the first place').toBe(0);
+      });
+
+      test('a day nobody works asks nothing unless a clock says otherwise', async () => {
+        const d = await page.evaluate(() => todayKey());
+        const g = await page.evaluate(({ d }) => {
+          const prev = S.workHours;
+          const dow = new Date(Date.parse(d + 'T12:00:00')).getDay();
+          S.workHours = { start: '00:00', end: '23:59', days: [0, 1, 2, 3, 4, 5, 6].filter(x => x !== dow) };
+          const out = _tlFillUnaccounted([
+            { id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: d + 'T13:00:00Z', endTime: d + 'T14:00:00Z' },
+            { id: 'y', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: d + 'T16:00:00Z', endTime: d + 'T17:00:00Z' },
+          ]).filter(x => x.source === 'unaccounted').length;
+          S.workHours = prev;
+          return out;
+        }, { d });
+        expect(g).toBe(0);
+      });
+
+      test('a week later nobody is going to remember, so it stops being asked', async () => {
+        const g = await page.evaluate(() => {
+          // Every day is a working day here, so this test moves ONE thing:
+          // how old the day is. Six days ago can be a Sunday, and a day
+          // nobody works answers nothing for a different reason entirely.
+          const prev = S.workHours;
+          S.workHours = { start: '00:00', end: '23:59', days: [0, 1, 2, 3, 4, 5, 6] };
+          const day = (n) => dateKey(new Date(Date.now() - n * 86400000));
+          const holes = (n) => {
+            const d = day(n);
+            return _tlFillUnaccounted([
+              { id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+                startTime: d + 'T13:00:00Z', endTime: d + 'T14:00:00Z' },
+              { id: 'y', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+                startTime: d + 'T16:00:00Z', endTime: d + 'T17:00:00Z' },
+            ]).filter(x => x.source === 'unaccounted').length;
+          };
+          const out = { today: holes(0), six: holes(6), nine: holes(9), thirty: holes(30) };
+          S.workHours = prev;
+          return out;
+        });
+        expect(g.today).toBe(1);
+        expect(g.six, 'still this week, still worth asking').toBe(1);
+        expect(g.nine).toBe(0);
+        expect(g.thirty).toBe(0);
+      });
+
+      test('nothing is written and no hour moves: the rules only decide what is asked', async () => {
+        const r = await page.evaluate(() => {
+          const before = timeEntries.length;
+          const prev = S.workHours;
+          S.workHours = { start: '00:00', end: '23:59', days: [0, 1, 2, 3, 4, 5, 6] };
+          const d = dateKey(new Date(Date.now() - 30 * 86400000));
+          const rows = [
+            { id: 'x', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: d + 'T13:00:00Z', endTime: d + 'T14:00:00Z' },
+            { id: 'y', personUid: 'jack', date: d, minutes: 60, unpaid: false, source: 'auto', personName: 'Jack',
+              startTime: d + 'T16:00:00Z', endTime: d + 'T17:00:00Z' },
+          ];
+          const out = _tlFillUnaccounted(rows.slice());
+          S.workHours = prev;
+          return { wrote: timeEntries.length - before, paid: _tlPaidMin(out), rows: out.length };
+        });
+        expect(r.wrote, 'no row is written on anybody\'s behalf').toBe(0);
+        expect(r.paid, 'the two real hours are untouched').toBe(120);
+        expect(r.rows).toBe(2);
+      });
+
+      test('_tlWorkWindow: junk in, nothing stranded', async () => {
+        const r = await page.evaluate(() => [
+          _tlWorkWindow(null), _tlWorkWindow([]), _tlWorkWindow([null]),
+          _tlWorkWindow([{ date: 'nope', startTime: 'x' }]),
+        ].map(x => x === null || Array.isArray(x)));
+        expect(r).toEqual([true, true, true, true]);
+      });
+    });
+
     test('a gap row is display only: never paid, never editable, never fixable', async () => {
-      const r = await fill(JACK());
+      const r = await fill(JACK(await D()));
       const gap = r.find(x => x.source === 'unaccounted');
       const flags = await page.evaluate(g => ({
         edit: _tlCanEdit(g), fix: _tlCanFixAuto(g),
@@ -588,31 +762,32 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
     test('rounding seams and overlaps never manufacture a hole', async () => {
       const r = await page.evaluate(() => {
+        const D = todayKey();
         const base = (id, a, b, extra) => Object.assign({
-          id, personUid: 'jack', date: '2026-08-28', unpaid: false, source: 'auto',
+          id, personUid: 'jack', date: D, unpaid: false, source: 'auto',
           minutes: Math.round((Date.parse(b) - Date.parse(a)) / 60000), startTime: a, endTime: b,
         }, extra || {});
         return {
           // A 3-minute seam is rounding, under the 5-minute floor.
           seam: _tlFillUnaccounted([
-            base('x', '2026-08-28T14:00:00Z', '2026-08-28T15:00:00Z'),
-            base('y', '2026-08-28T15:03:00Z', '2026-08-28T16:00:00Z'),
+            base('x', D + 'T14:00:00Z', D + 'T15:00:00Z'),
+            base('y', D + 'T15:03:00Z', D + 'T16:00:00Z'),
           ]).filter(x => x.source === 'unaccounted').length,
           // A drive that overlaps the visit it lands in must not produce a
           // negative gap, and a short row nested inside a long one must not
           // split the long one's remainder into two phantom holes.
           nested: _tlFillUnaccounted([
-            base('long', '2026-08-28T14:00:00Z', '2026-08-28T18:00:00Z'),
-            base('inner', '2026-08-28T15:00:00Z', '2026-08-28T15:30:00Z'),
+            base('long', D + 'T14:00:00Z', D + 'T18:00:00Z'),
+            base('inner', D + 'T15:00:00Z', D + 'T15:30:00Z'),
           ]).filter(x => x.source === 'unaccounted').length,
           overlap: _tlFillUnaccounted([
-            base('a', '2026-08-28T14:00:00Z', '2026-08-28T15:10:00Z'),
-            base('b', '2026-08-28T15:00:00Z', '2026-08-28T16:00:00Z'),
+            base('a', D + 'T14:00:00Z', D + 'T15:10:00Z'),
+            base('b', D + 'T15:00:00Z', D + 'T16:00:00Z'),
           ]).filter(x => x.source === 'unaccounted').length,
           // Two people on the same day never bleed into each other.
           twoPeople: _tlFillUnaccounted([
-            base('p1', '2026-08-28T14:00:00Z', '2026-08-28T15:00:00Z'),
-            Object.assign(base('p2', '2026-08-28T19:00:00Z', '2026-08-28T20:00:00Z'), { personUid: 'other' }),
+            base('p1', D + 'T14:00:00Z', D + 'T15:00:00Z'),
+            Object.assign(base('p2', D + 'T19:00:00Z', D + 'T20:00:00Z'), { personUid: 'other' }),
           ]).filter(x => x.source === 'unaccounted').length,
         };
       });
@@ -666,11 +841,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
         try {
           window.saveAll = () => {}; window.supaSaveToCloud = () => {};
           window.showToast = () => {}; window.renderTimeLog = () => {};
+          const D = todayKey();
           const rows = _tlFillUnaccounted([
-            { id: 'v1', personUid: null, date: '2026-08-28', minutes: 99, unpaid: false, source: 'auto',
-              startTime: '2026-08-28T15:35:00Z', endTime: '2026-08-28T17:14:00Z' },
-            { id: 'v2', personUid: null, date: '2026-08-28', minutes: 16, unpaid: false, source: 'auto',
-              startTime: '2026-08-28T18:58:00Z', endTime: '2026-08-28T19:14:00Z' },
+            { id: 'v1', personUid: null, date: D, minutes: 99, unpaid: false, source: 'auto',
+              startTime: D + 'T15:35:00Z', endTime: D + 'T17:14:00Z' },
+            { id: 'v2', personUid: null, date: D, minutes: 16, unpaid: false, source: 'auto',
+              startTime: D + 'T18:58:00Z', endTime: D + 'T19:14:00Z' },
           ]);
           const gap = rows.find(x => x.source === 'unaccounted');
           // Before: the hole is on the page but contributes nothing paid.
@@ -685,7 +861,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
             wrote: timeEntries.length - before,
             addedMin: added.minutes, addedStart: added.start_time, addedEnd: added.end_time,
             addedDate: added.date, addedJob: added.job_id, addedOpen: added.open,
-            addedLabel: added.scope_label,
+            addedLabel: added.scope_label, day: D,
           };
         } finally {
           timeEntries.length = 0; saved.te.forEach(x => timeEntries.push(x));
@@ -700,8 +876,8 @@ test.describe('timelog.js: exhaustive coverage', () => {
       // Adding writes ONE manual row covering exactly the hole.
       expect(r.wrote).toBe(1);
       expect(r.addedMin).toBe(104);
-      expect(r.addedStart).toBe('2026-08-28T17:14:00.000Z');
-      expect(r.addedEnd).toBe('2026-08-28T18:58:00.000Z');
+      expect(r.addedStart).toBe(r.day + 'T17:14:00.000Z');
+      expect(r.addedEnd).toBe(r.day + 'T18:58:00.000Z');
       expect(r.addedJob, 'nothing is invented about WHICH job it was').toBe(null);
       expect(r.addedOpen).toBe(false);
       expect(r.addedLabel).toBe('Added from unaccounted time');
@@ -2932,11 +3108,12 @@ test.describe('timelog.js: exhaustive coverage', () => {
         try {
           window.saveAll = () => {}; window.supaSaveToCloud = () => {};
           window.showToast = () => {}; window.renderTimeLog = () => {};
+          const D = todayKey();
           const before = [
-            { id: 'v1', personUid: null, date: '2026-08-28', minutes: 99, unpaid: false, source: 'auto',
-              startTime: '2026-08-28T15:35:00Z', endTime: '2026-08-28T17:14:00Z' },
-            { id: 'v2', personUid: null, date: '2026-08-28', minutes: 16, unpaid: false, source: 'auto',
-              startTime: '2026-08-28T18:58:00Z', endTime: '2026-08-28T19:14:00Z' },
+            { id: 'v1', personUid: null, date: D, minutes: 99, unpaid: false, source: 'auto',
+              startTime: D + 'T15:35:00Z', endTime: D + 'T17:14:00Z' },
+            { id: 'v2', personUid: null, date: D, minutes: 16, unpaid: false, source: 'auto',
+              startTime: D + 'T18:58:00Z', endTime: D + 'T19:14:00Z' },
           ];
           const gap = _tlFillUnaccounted(before.slice()).find(x => x.source === 'unaccounted');
           const n = timeEntries.length;
@@ -2949,7 +3126,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
           return { wrote: timeEntries.length - n, personal: e.personal, unpaid: e.unpaid,
             dismissed: _tlIsPersonalGap(e),
             askedAgain: _tlFillUnaccounted(answered).filter(x => x.source === 'unaccounted').length,
-            drawn: _tlDayRailHtml(answered.filter(x => x.date === '2026-08-28')).match(/Clocked/gi) };
+            drawn: _tlDayRailHtml(answered.filter(x => x.date === D)).match(/Clocked/gi) };
         } finally {
           timeEntries.length = 0; saved.te.forEach(x => timeEntries.push(x));
           window.saveAll = saved.save; window.supaSaveToCloud = saved.cloud;
@@ -3192,16 +3369,17 @@ test.describe('timelog.js: exhaustive coverage', () => {
           const CID = 'contractor-uid';
           // His real shape: GPS rows carry the contractor uid, the manual
           // answer carries null the way every owner-logged entry does.
-          const gps = (a, b) => ({ personUid: CID, date: '2026-08-27', personName: 'L',
+          const D = todayKey();
+          const gps = (a, b) => ({ personUid: CID, date: D, personName: 'L',
             startTime: a, endTime: b, source: 'auto' });
           const rows = [
-            gps('2026-08-27T13:00:00.000Z', '2026-08-27T14:00:00.000Z'),
-            gps('2026-08-27T15:00:00.000Z', '2026-08-27T16:00:00.000Z'),
+            gps(D + 'T13:00:00.000Z', D + 'T14:00:00.000Z'),
+            gps(D + 'T15:00:00.000Z', D + 'T16:00:00.000Z'),
           ];
           const holes = (rs) => _tlFillUnaccounted(rs, CID).filter(x => x.source === 'unaccounted');
           const before = holes(rows).length;
-          const answered = rows.concat([{ personUid: null, date: '2026-08-27', personName: 'L',
-            startTime: '2026-08-27T14:00:00.000Z', endTime: '2026-08-27T15:00:00.000Z',
+          const answered = rows.concat([{ personUid: null, date: D, personName: 'L',
+            startTime: D + 'T14:00:00.000Z', endTime: D + 'T15:00:00.000Z',
             source: 'manual', unpaid: true }]);
           return { before, after: holes(answered).length };
         });
@@ -3211,13 +3389,14 @@ test.describe('timelog.js: exhaustive coverage', () => {
 
       test('a crew member answering their own hole is still their own person', async () => {
         const r = await page.evaluate(() => {
+          const D = todayKey();
           const gap = (uid) => _tlFillUnaccounted([
-            { personUid: 'crew-1', date: '2026-08-27', personName: 'A', source: 'auto',
-              startTime: '2026-08-27T13:00:00.000Z', endTime: '2026-08-27T14:00:00.000Z' },
-            { personUid: 'crew-1', date: '2026-08-27', personName: 'A', source: 'auto',
-              startTime: '2026-08-27T15:00:00.000Z', endTime: '2026-08-27T16:00:00.000Z' },
-            { personUid: uid, date: '2026-08-27', personName: 'A', source: 'manual',
-              startTime: '2026-08-27T14:00:00.000Z', endTime: '2026-08-27T15:00:00.000Z' },
+            { personUid: 'crew-1', date: D, personName: 'A', source: 'auto',
+              startTime: D + 'T13:00:00.000Z', endTime: D + 'T14:00:00.000Z' },
+            { personUid: 'crew-1', date: D, personName: 'A', source: 'auto',
+              startTime: D + 'T15:00:00.000Z', endTime: D + 'T16:00:00.000Z' },
+            { personUid: uid, date: D, personName: 'A', source: 'manual',
+              startTime: D + 'T14:00:00.000Z', endTime: D + 'T15:00:00.000Z' },
           ], 'contractor-uid').filter(x => x.source === 'unaccounted').length;
           return { own: gap('crew-1'), someoneElse: gap('crew-2') };
         });

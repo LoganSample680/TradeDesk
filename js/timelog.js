@@ -201,6 +201,46 @@ const _TL_SITE_MIN_MIN=5;
 // _tlEmpWeekAgg already had the rule (`r.personUid||cid`); this walk did not.
 // Same fold here, so a null-uid owner row and a contractor-uid GPS row are the
 // one person they actually are.
+// ── A hole is only a question inside a workday, and only for a while ───────
+//
+// Owner 2026-09-05: "how do we prevent unaccounted for time outright?" Three
+// rules do most of it. The deriver closes what the tape can vouch for (rule
+// 14, js/geo-derive.js). These two decide what is worth ASKING about.
+//
+// THE WINDOW. Time nobody claimed is not a question. A stretch at nine at
+// night, on a day whose work ended at five, is his evening: asking about it
+// is the app pretending the day never finished. So a hole is clipped to the
+// working day and only what survives is asked about.
+//
+// The window is the work hours on the account: the same setting rule 13
+// reads, so there is one answer in the app to "when is this person working."
+//
+// A CLOCK NEEDS NO HELP FROM THIS. A clock that covers a stretch leaves no
+// gap to find at all (the walk below is a high-water mark, and the clock is
+// one of the rows it walks), and after the clock is out _clockEnd already
+// refuses to ask. Widening the window by the clock was in the first cut of
+// this and was removed once it turned out never to change an answer.
+//
+// So the setting is what matters, and it is the honest place for it: a crew
+// on nights sets their hours once and their holes are asked about like
+// anybody else's. A day of the week nobody works has no window at all, and
+// asks nothing.
+const _TL_HOLE_ASK_DAYS=7;
+function _tlWorkWindow(dayRows){
+  const day=(Array.isArray(dayRows)?dayRows:[]).filter(r=>r&&r.startTime);
+  if(!day.length)return null;
+  const base=Date.parse(String(day[0].date||'')+'T00:00:00');
+  let a=null,b=null;
+  if(isFinite(base)){
+    const w=(typeof _geoWorkHours==='function')?_geoWorkHours():{start:'06:00',end:'20:00',days:[1,2,3,4,5,6]};
+    const hm=v=>{const m=/^(\d{1,2}):(\d{2})$/.exec(String(v||''));return m?(Number(m[1])*60+Number(m[2]))*60000:NaN;};
+    const s=hm(w.start),e=hm(w.end);
+    const dow=new Date(base).getDay();
+    const works=!Array.isArray(w.days)||w.days.indexOf(dow)>=0;
+    if(works&&isFinite(s)&&isFinite(e)&&e>s){a=base+s;b=base+e;}
+  }
+  return (a!=null&&b!=null&&b>a)?[a,b]:null;
+}
 function _tlFillUnaccounted(rows,cid){
   if(!Array.isArray(rows)||!rows.length)return rows;
   const who=r=>String((r&&r.personUid)||cid||'owner');
@@ -223,6 +263,16 @@ function _tlFillUnaccounted(rows,cid){
     // every gap, because then nothing said the day was over.
     const _clockEnd=day.reduce((mx,r)=>(r&&r.source==='manual'&&r.endTime)
       ? Math.max(mx,Date.parse(r.endTime)||0) : mx,0);
+    // The workday this day's holes are clipped to, and whether anyone is
+    // still going to answer one. A hole older than a week is nobody's memory
+    // any more: it already pays nothing, so leaving it on the rail forever is
+    // noise and nothing else. It stops being asked; no row is written and
+    // nothing is decided on anybody's behalf.
+    const _win=_tlWorkWindow(day);
+    const _stale=(()=>{
+      const t=Date.parse(String(day[0].date||'')+'T12:00:00');
+      return isFinite(t)&&(Date.now()-t)>_TL_HOLE_ASK_DAYS*86400000;
+    })();
     // Walk a high-water mark, not just the previous row: two rows that
     // overlap (a drive and the visit it lands in) must not manufacture a
     // negative gap, and a short row nested inside a long one must not split
@@ -241,15 +291,20 @@ function _tlFillUnaccounted(rows,cid){
       const _bothOffice=markRow.rawSource==='place-office'&&r.rawSource==='place-office';
       // Trimmed at the clock-out, or dropped entirely when it starts after it.
       const _end=(_clockEnd>0&&_clockEnd<a)?_clockEnd:a;
-      const _gap=_end-mark;
-      if(_gap>=_TL_UNACCOUNTED_MIN_MS&&!_bothOffice){
+      // Clipped to the working day: what falls outside it was never claimed
+      // and is not a question. No window at all (a day nobody works, with no
+      // clock on it) asks nothing.
+      const _from=_win?Math.max(mark,_win[0]):mark;
+      const _to=_win?Math.min(_end,_win[1]):_end;
+      const _gap=_to-_from;
+      if(_gap>=_TL_UNACCOUNTED_MIN_MS&&!_bothOffice&&_win&&!_stale){
         out.push({
-          id:'u'+k+'_'+mark,rawId:null,source:'unaccounted',rawSource:'unaccounted',
+          id:'u'+k+'_'+_from,rawId:null,source:'unaccounted',rawSource:'unaccounted',
           date:r.date,minutes:Math.round(_gap/60000),
           personName:r.personName,personUid:r.personUid||null,
           clientName:'Unaccounted for',addr:'',jobName:'',clientKey:null,
           unpaid:true,detail:'No location or motion on record',
-          startTime:new Date(mark).toISOString(),endTime:new Date(_end).toISOString()
+          startTime:new Date(_from).toISOString(),endTime:new Date(_to).toISOString()
         });
       }
       if(b>mark){mark=b;markRow=r;}
