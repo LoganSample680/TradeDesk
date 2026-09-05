@@ -1055,7 +1055,7 @@ async function _geoOnPing(pos){
   // downstream in this handler clocks off nowMs, so the whole fence machine
   // honors it instead of whenever this handler happened to run.
   const nowMs=(pos&&pos.__tdTs)||Date.now();
-  if(nowMs-_geoLastPingTs>60000){_geoLastPingTs=nowMs;_geoWritePing(here,acc);}
+  if(nowMs-_geoLastPingTs>60000){_geoLastPingTs=nowMs;_geoWritePing(here,acc,nowMs);}
   // Every fix, from every source (web watcher, native watcher, TdGeo burst,
   // replayed buffer), funnels through here, so this is the one honest place to
   // tell anybody waiting on a FRESH position that one just arrived. Push to
@@ -1921,7 +1921,79 @@ function _geoPingDest(state){
     return null;
   }catch(_e){return null;}
 }
-function _geoWritePing(here,acc){
+// Never the future. A device clock running fast would otherwise put a crew pin
+// ahead of now and hold the top of every "newest first" read forever.
+function _geoPingTs(atMs){
+  const now=Date.now();
+  const t=(typeof atMs==='number'&&isFinite(atMs)&&atMs>0)?Math.min(atMs,now):now;
+  return new Date(t).toISOString();
+}
+// ── The radio budget watchdog (owner 2026-09-05) ────────────────────────────
+//
+// Tonight's leak ran for four and a half hours on his phone and no test could
+// have caught it: the plugin was doing exactly what it had been told, and the
+// only symptom was an indicator he happened to notice. What WOULD have caught
+// it in half an hour is the app watching its own radio.
+//
+// The plugin already counts the seconds (stats().gpsOnMs, the number the engine
+// comparison panel prints). Nothing ever read it in anger. So: take a baseline,
+// and on each 30-minute push-ping compare how much radio time was spent against
+// how much wall time passed. A drive legitimately spends near 100%, so a window
+// containing any drive is not judged at all; what is left is radio burned while
+// nobody was driving, which is the entire shape of the bug.
+//
+// It reports, it never acts. Turning the radio off from here would be a second
+// engine making decisions about the first (§17), and the whole point is that
+// the deriver stays the only one deciding. This just makes the leak loud.
+const _GEO_RADIO_KEY='zp3_geo_radio';
+const _GEO_RADIO_MIN_WINDOW_MS=25*60000;   // shorter than this and one burst skews it
+const _GEO_RADIO_SHARE=0.5;                // half the wall clock with no drive is not normal
+let _geoRadioSawDrive=false;               // set by the drive window, cleared at each baseline
+function _geoRadioBaseline(gpsOnMs){
+  try{
+    localStorage.setItem(_GEO_RADIO_KEY,JSON.stringify({at:Date.now(),gps:+gpsOnMs||0}));
+    _geoRadioSawDrive=false;
+  }catch(_e){}
+}
+async function _geoRadioCheck(){
+  try{
+    const Td=_geoTdPlugin();
+    if(!Td||typeof Td.stats!=='function')return null;
+    const st=await Td.stats();
+    const gps=+((st&&st.gpsOnMs)||0);
+    let prev=null;
+    try{prev=JSON.parse(localStorage.getItem(_GEO_RADIO_KEY)||'null');}catch(_e2){}
+    if(!prev||!isFinite(+prev.at)||!isFinite(+prev.gps)||+prev.gps>gps){
+      // No baseline, or the counter was reset under us (stats({reset:true}), a
+      // reinstall). Start again rather than reporting a nonsense delta.
+      _geoRadioBaseline(gps);
+      return null;
+    }
+    const wall=Date.now()-(+prev.at);
+    if(wall<_GEO_RADIO_MIN_WINDOW_MS)return null;
+    const spent=gps-(+prev.gps);
+    const share=wall>0?(spent/wall):0;
+    const sawDrive=_geoRadioSawDrive||_geoDriveWindowOn();
+    _geoRadioBaseline(gps);
+    if(sawDrive)return null;                      // a drive owns the radio, by design
+    if(share<_GEO_RADIO_SHARE)return null;
+    const detail=Math.round(spent/60000)+'m radio / '+Math.round(wall/60000)+'m idle';
+    _geoParkNote('radio-budget',detail);
+    try{if(window._obs&&typeof window._obs.track==='function')window._obs.track('radio_budget',detail.slice(0,60));}catch(_e3){}
+    return {share,spent,wall,detail};
+  }catch(_e){return null;}
+}
+// `atMs` is the moment the FIX was taken, not the moment this row is written.
+//
+// Owner's own account, 2026-09-05: 257 pings landed inside 1.35 seconds,
+// across 191 distinct positions. That was four and a half hours of buffered
+// fixes draining after a reload, and every one of them was stamped
+// `new Date()`, so 191 historical positions all claimed to be current. On the
+// crew map that is one pin teleporting across the county. Live it never showed,
+// because the 60s throttle upstream means one row per minute; it only appears
+// on a replay, which is exactly when it matters least to be wrong and most to
+// be believed.
+function _geoWritePing(here,acc,atMs){
   if(!_supa||!_supaUser)return;
   try{
     const state=_geoPingState();
@@ -1941,7 +2013,7 @@ function _geoWritePing(here,acc){
     _supa.from('location_pings').insert({
       contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
       lat:here.lat,lon:here.lng,accuracy:acc,
-      job_id:_geoCurrentJob?String(_geoCurrentJob):null,ts:new Date().toISOString(),
+      job_id:_geoCurrentJob?String(_geoCurrentJob):null,ts:_geoPingTs(atMs),
       state:state,dest:_geoPingDest(state),
       journey_id:(d&&d.journeyId)?String(d.journeyId):null,
       speed_mph:mph,battery:batt
@@ -4203,6 +4275,7 @@ function _geoDriveWindowClose(why){
   _geoDriveWinAt=0;_geoDriveWinWhy='';_geoDriveWinAskedAt=0;
   const Td=_geoTdPlugin();
   try{if(Td&&typeof Td.setSampling==='function')Promise.resolve(Td.setSampling({mode:'coarse',reason:String(why||'js')})).catch(()=>{});}catch(_e){}
+  _geoRadioSawDrive=true;   // this window contained a drive; the radio was earned
   _geoParkNote('drive-window-off',String(why||''));
   try{if(typeof _liveActDrive==='function')_liveActDrive();}catch(_e){}
   return true;
@@ -5004,6 +5077,7 @@ async function _geoTdEvent(ev,replay){
       if(typeof ev.lat==='number'&&typeof ev.lng==='number')_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
     }
     if(!replay&&ev.type==='push-ping')_geoPingBurst();
+    if(!replay&&ev.type==='push-ping')_geoRadioCheck();
     if(!replay&&ev.type==='push-ping')_geoBgUpdateCheck();
     // And the day is re-derived on the same push, so an open dwell that a
     // fix has since left gets closed without waiting for a flip.

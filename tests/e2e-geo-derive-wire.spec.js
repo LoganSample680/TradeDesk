@@ -1654,6 +1654,147 @@ test.describe('geo-derive wiring', () => {
     });
   });
 
+  // ── The ping is stamped when the FIX happened ─────────────────────────────
+  // Owner's account 2026-09-05: 257 pings inside 1.35 seconds across 191
+  // distinct positions, a buffered replay all claiming to be current.
+  test.describe('a ping carries the moment of its fix', () => {
+    const write = (offsetMs) => page.evaluate(({ offsetMs }) => {
+      let sent = null;
+      const savedSupa = window._supa, savedUser = window._supaUser;
+      window._supaUser = { id: 'emp-uid' };
+      window._supa = { from: () => ({ insert: (row) => { sent = row; return { then: (a) => { a(); return { catch: () => {} }; } }; } }) };
+      const now = Date.now();
+      _geoWritePing({ lat: 41.5, lng: -88.1 }, 10, offsetMs == null ? undefined : now + offsetMs);
+      window._supa = savedSupa; window._supaUser = savedUser;
+      return { ts: sent && sent.ts, now };
+    }, { offsetMs });
+
+    test('a replayed fix from two hours ago is stamped two hours ago', async () => {
+      const r = await write(-2 * 3600000);
+      const drift = r.now - Date.parse(r.ts);
+      expect(drift).toBeGreaterThan(2 * 3600000 - 5000);
+      expect(drift).toBeLessThan(2 * 3600000 + 5000);
+    });
+
+    test('a live fix is stamped now', async () => {
+      const r = await write(0);
+      expect(Math.abs(r.now - Date.parse(r.ts))).toBeLessThan(2000);
+    });
+
+    test('no moment given still writes a valid row, stamped now', async () => {
+      const r = await write(null);
+      expect(isFinite(Date.parse(r.ts))).toBe(true);
+      expect(Math.abs(r.now - Date.parse(r.ts))).toBeLessThan(2000);
+    });
+
+    test('a clock running fast can never put a pin in the future', async () => {
+      const r = await write(60 * 60000);
+      expect(Date.parse(r.ts), 'clamped to now, or it owns the top of every newest-first read')
+        .toBeLessThanOrEqual(r.now + 1000);
+    });
+
+    test('junk moments fall back to now instead of writing null', async () => {
+      const r = await page.evaluate(() => {
+        const savedSupa = window._supa, savedUser = window._supaUser;
+        window._supaUser = { id: 'emp-uid' };
+        const out = [];
+        for (const bad of [NaN, -1, 0, 'nope', {}, Infinity]) {
+          let sent = null;
+          window._supa = { from: () => ({ insert: (row) => { sent = row; return { then: (a) => { a(); return { catch: () => {} }; } }; } }) };
+          _geoWritePing({ lat: 41.5, lng: -88.1 }, 10, bad);
+          out.push(sent && isFinite(Date.parse(sent.ts)));
+        }
+        window._supa = savedSupa; window._supaUser = savedUser;
+        return out;
+      });
+      expect(r.every(Boolean)).toBe(true);
+    });
+  });
+
+  // ── The radio budget watchdog ─────────────────────────────────────────────
+  // The leak ran four and a half hours because nothing was watching. The
+  // plugin already counted the seconds; nothing ever read them in anger.
+  test.describe('the radio budget watchdog', () => {
+    const run = (setup) => page.evaluate(async ({ setup }) => {
+      const saved = { td: _geoTdPlugin, drive: _geoDriveWinAt, saw: _geoRadioSawDrive, obs: window._obs };
+      window.__tracked = [];
+      window._obs = { track: (n, d) => window.__tracked.push([n, d]) };
+      _geoTdPlugin = () => ({ stats: async () => ({ gpsOnMs: setup.gpsNow }) });
+      _geoDriveWinAt = setup.driving ? Date.now() : 0;
+      _geoRadioSawDrive = !!setup.sawDrive;
+      localStorage.removeItem('zp3_geo_radio');
+      if (setup.base) {
+        localStorage.setItem('zp3_geo_radio', JSON.stringify({ at: Date.now() - setup.ageMs, gps: setup.gpsBase }));
+      }
+      const res = await _geoRadioCheck();
+      const out = { res, tracked: window.__tracked.slice(),
+                    stored: JSON.parse(localStorage.getItem('zp3_geo_radio') || 'null') };
+      _geoTdPlugin = saved.td; _geoDriveWinAt = saved.drive;
+      _geoRadioSawDrive = saved.saw; window._obs = saved.obs;
+      localStorage.removeItem('zp3_geo_radio');
+      return out;
+    }, { setup });
+
+    test('radio on for most of an idle hour is reported', async () => {
+      const r = await run({ base: true, ageMs: 60 * 60000, gpsBase: 0, gpsNow: 55 * 60000 });
+      expect(r.res, 'the leak is named, not swallowed').not.toBe(null);
+      expect(r.tracked[0][0]).toBe('radio_budget');
+      expect(r.tracked[0][1]).toContain('55m radio');
+    });
+
+    test('a window containing a drive is never judged', async () => {
+      const r = await run({ base: true, ageMs: 60 * 60000, gpsBase: 0, gpsNow: 55 * 60000, sawDrive: true });
+      expect(r.res, 'a drive earns the radio, by design').toBe(null);
+      expect(r.tracked.length).toBe(0);
+    });
+
+    test('a drive open right now is also not judged', async () => {
+      const r = await run({ base: true, ageMs: 60 * 60000, gpsBase: 0, gpsNow: 55 * 60000, driving: true });
+      expect(r.res).toBe(null);
+    });
+
+    test('a normal idle hour says nothing', async () => {
+      const r = await run({ base: true, ageMs: 60 * 60000, gpsBase: 0, gpsNow: 3 * 60000 });
+      expect(r.res).toBe(null);
+      expect(r.tracked.length).toBe(0);
+    });
+
+    test('a short window is not judged, one burst would skew it', async () => {
+      const r = await run({ base: true, ageMs: 10 * 60000, gpsBase: 0, gpsNow: 9 * 60000 });
+      expect(r.res).toBe(null);
+    });
+
+    test('no baseline takes one instead of reporting a nonsense delta', async () => {
+      const r = await run({ gpsNow: 900000 });
+      expect(r.res).toBe(null);
+      expect(r.stored.gps).toBe(900000);
+    });
+
+    test('a counter reset under us re-baselines rather than reporting negative', async () => {
+      const r = await run({ base: true, ageMs: 60 * 60000, gpsBase: 5000000, gpsNow: 12000 });
+      expect(r.res).toBe(null);
+      expect(r.stored.gps).toBe(12000);
+    });
+
+    test('every check re-baselines, so one window is never counted twice', async () => {
+      const r = await run({ base: true, ageMs: 60 * 60000, gpsBase: 0, gpsNow: 55 * 60000 });
+      expect(r.stored.gps).toBe(55 * 60000);
+    });
+
+    test('no plugin, no throw, no report', async () => {
+      const r = await page.evaluate(async () => {
+        const saved = _geoTdPlugin;
+        _geoTdPlugin = () => null;
+        let threw = false, res;
+        try { res = await _geoRadioCheck(); } catch (e) { threw = true; }
+        _geoTdPlugin = saved;
+        return { threw, res };
+      });
+      expect(r.threw).toBe(false);
+      expect(r.res).toBe(null);
+    });
+  });
+
   test.describe('the sweep guard (js/cloud.js)', () => {
     test('a derived GPS leg is never sweep-eligible, on either row shape', async () => {
       const r = await page.evaluate(() => [
