@@ -1422,6 +1422,112 @@ test.describe('geo-derive wiring', () => {
     });
   });
 
+  // ── The 30-minute ping takes a real fix, during work ──────────────────────
+  // Owner 2026-09-05, on the live crew map: the ping used to carry only a
+  // cached position the deriver refuses to trust. It now buys one burst,
+  // and only while there is work to see.
+  test.describe('the 30-minute ping buys a real fix', () => {
+    // The plugin and the drive-window clock are module-level bindings, not
+    // window properties: assigned bare, the way every other geo spec does it.
+    const setup = (over) => page.evaluate(({ over }) => {
+      const saved = { hours: S.workHours, td: _geoTdPlugin, win: _geoDriveWinAt };
+      S.workHours = { start: '00:00', end: '23:59', days: [0, 1, 2, 3, 4, 5, 6] };
+      window._geoOpenDwell = null;
+      _geoDriveWinAt = 0;
+      _geoPingBurstAt = 0;
+      window.__bursts = [];
+      _geoTdPlugin = () => ({ burstFix: async (a) => { window.__bursts.push(a); return a; } });
+      if (over && over.hours) S.workHours = over.hours;
+      if (over && over.dwell) window._geoOpenDwell = over.dwell;
+      if (over && over.driving) _geoDriveWinAt = Date.now();
+      const why = _geoPingBurstOk();
+      const fired = _geoPingBurst();
+      const out = { why, fired, n: window.__bursts.length, secs: window.__bursts[0] && window.__bursts[0].seconds };
+      S.workHours = saved.hours; _geoTdPlugin = saved.td; _geoDriveWinAt = saved.win;
+      window._geoOpenDwell = null;
+      return out;
+    }, { over });
+
+    test('inside work hours, away from home, it fires one 12 second burst', async () => {
+      const r = await setup({});
+      expect(r.why, 'nothing stands in the way').toBe('');
+      expect(r.fired).toBe(true);
+      expect(r.n).toBe(1);
+      expect(r.secs).toBe(12);
+    });
+
+    test('at home it does not fire, whatever the hour', async () => {
+      const r = await setup({ dwell: { id: 'h', sinceTs: Date.now(), atHome: true } });
+      expect(r.why).toBe('home');
+      expect(r.n, 'a phone in the driveway is not a crew map').toBe(0);
+    });
+
+    test('outside work hours it does not fire', async () => {
+      const r = await setup({ hours: { start: '06:00', end: '06:01', days: [0, 1, 2, 3, 4, 5, 6] } });
+      expect(['off-hours', 'off-day']).toContain(r.why);
+      expect(r.n).toBe(0);
+    });
+
+    test('on a day nobody works it does not fire', async () => {
+      const r = await page.evaluate(() => {
+        const prev = S.workHours;
+        const dow = new Date().getDay();
+        S.workHours = { start: '00:00', end: '23:59', days: [0, 1, 2, 3, 4, 5, 6].filter(d => d !== dow) };
+        window._geoOpenDwell = null; _geoDriveWinAt = 0;
+        const why = _geoPingBurstOk();
+        S.workHours = prev;
+        return why;
+      });
+      expect(r).toBe('off-day');
+    });
+
+    test('an open drive window outranks it: the window is already better', async () => {
+      const r = await setup({ driving: true });
+      expect(r.why).toBe('drive');
+      expect(r.n).toBe(0);
+    });
+
+    test('two pings inside ten minutes buy one burst, not two', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { hours: S.workHours, td: _geoTdPlugin, win: _geoDriveWinAt };
+        S.workHours = { start: '00:00', end: '23:59', days: [0, 1, 2, 3, 4, 5, 6] };
+        window._geoOpenDwell = null; _geoDriveWinAt = 0; _geoPingBurstAt = 0;
+        window.__bursts = [];
+        _geoTdPlugin = () => ({ burstFix: async (a) => { window.__bursts.push(a); return a; } });
+        const a = _geoPingBurst(), b = _geoPingBurst(), c = _geoPingBurst();
+        S.workHours = saved.hours; _geoTdPlugin = saved.td; _geoDriveWinAt = saved.win;
+        return { a, b, c, n: window.__bursts.length };
+      });
+      expect(r.a).toBe(true);
+      expect(r.b).toBe(false);
+      expect(r.c).toBe(false);
+      expect(r.n).toBe(1);
+    });
+
+    test('the push-ping itself still claims no position', async () => {
+      // The whole reason the ping went blind. The burst is a SEPARATE fix
+      // event; nothing here re-trusts the ping's own cached coordinates.
+      const r = await page.evaluate(() => _GEO_FRESH_FIX_TYPES.slice());
+      expect(r).not.toContain('push-ping');
+      expect(r).toContain('fix');
+    });
+
+    test('no plugin, no throw', async () => {
+      const r = await page.evaluate(() => {
+        const saved = { hours: S.workHours, td: _geoTdPlugin, win: _geoDriveWinAt };
+        S.workHours = { start: '00:00', end: '23:59', days: [0, 1, 2, 3, 4, 5, 6] };
+        window._geoOpenDwell = null; _geoDriveWinAt = 0; _geoPingBurstAt = 0;
+        _geoTdPlugin = () => null;
+        let threw = false, out = null;
+        try { out = _geoPingBurst(); } catch (e) { threw = true; }
+        _geoTdPlugin = saved.td; S.workHours = saved.hours; _geoDriveWinAt = saved.win;
+        return { threw, out };
+      });
+      expect(r.threw).toBe(false);
+      expect(r.out).toBe(false);
+    });
+  });
+
   test.describe('the sweep guard (js/cloud.js)', () => {
     test('a derived GPS leg is never sweep-eligible, on either row shape', async () => {
       const r = await page.evaluate(() => [

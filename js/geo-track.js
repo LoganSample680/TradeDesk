@@ -4155,6 +4155,68 @@ function _geoDriveConfirm(ev){
   _geoDriveWindowClose('confirm-idle');
   return 'idle';
 }
+// ── The 30-minute ping takes a REAL fix, during work (owner 2026-09-05) ─────
+//
+// "I thought the 30 minute was a gps ping to grab the current location."
+// It was not. The push carries whatever position CLLocationManager happened to
+// be holding, and the deriver was taught to ignore that on purpose: on
+// 2026-09-03 the cached point sat 343 ft from where he was standing, outside
+// the 300 ft fence, so every ping read as a departure and a re-entry, which is
+// what produced "geo_replace_day: 4 overlapping pair(s)" and a refused write.
+// A refused write loses the whole day.
+//
+// Making the ping blind fixed the phantom crossings. Making it ACCURATE fixes
+// them better, and it is what the live crew map needs: a position somebody can
+// act on every half hour, not just at the fence edges.
+//
+// So the ping now buys one burst. The push-ping's own coordinates are still
+// never trusted (nothing above this changes): the burst produces a separate
+// 'fix' event, which is the only type the deriver takes a position from.
+//
+// PAID FOR ONLY DURING WORK. Twelve seconds every half hour is about 1h35m of
+// radio over ten days, against a 3h16m total, and there is no reason to spend
+// any of it on a phone sitting at home overnight. Two conditions, both already
+// facts this file owns, neither of them a new setting:
+//   * inside the account's work hours for today (_geoWorkHours, the same one
+//     rule 13 and the Time Log's hole rule read), and
+//   * not standing at the home pin, which the deriver already reports on the
+//     open dwell as atHome. That survives a reload now, so this rule survives
+//     one too.
+// A drive window already owns the radio at a far better tier, so this stands
+// down entirely while one is open.
+const _GEO_PING_BURST_S=12;
+const _GEO_PING_BURST_GAP_MS=10*60000;
+let _geoPingBurstAt=0;
+function _geoPingBurstOk(){
+  try{
+    if(_geoDriveWinAt)return 'drive';            // the window is already better than a burst
+    const d=(typeof window!=='undefined')?window._geoOpenDwell:null;
+    if(d&&d.atHome)return 'home';
+    const w=_geoWorkHours();
+    const now=new Date();
+    if(Array.isArray(w.days)&&w.days.length&&w.days.indexOf(now.getDay())<0)return 'off-day';
+    const hm=v=>{const m=/^(\d{1,2}):(\d{2})$/.exec(String(v||''));return m?Number(m[1])*60+Number(m[2]):NaN;};
+    const cur=now.getHours()*60+now.getMinutes();
+    const a=hm(w.start),b=hm(w.end);
+    if(!(isFinite(a)&&isFinite(b)&&b>a))return 'no-window';
+    if(cur<a||cur>=b)return 'off-hours';
+    return '';
+  }catch(_e){return 'err';}
+}
+function _geoPingBurst(){
+  try{
+    const why=_geoPingBurstOk();
+    if(why){_geoParkNote('ping-burst-skip',why);return false;}
+    const now=Date.now();
+    if(now-_geoPingBurstAt<_GEO_PING_BURST_GAP_MS)return false;
+    _geoPingBurstAt=now;
+    const Td=_geoTdPlugin();
+    if(!Td||typeof Td.burstFix!=='function')return false;
+    Promise.resolve(Td.burstFix({seconds:_GEO_PING_BURST_S})).catch(()=>{});
+    _geoParkNote('ping-burst',_GEO_PING_BURST_S+'s');
+    return true;
+  }catch(_e){return false;}
+}
 let _geoParkSpot=null;   // where to center the region when the countdown fires
 // ── The shift heartbeat, armed at every chance JS gets ──────────────────────
 // Owner report 2026-08-27 (live device, morning at a job): zero heartbeat
@@ -4788,6 +4850,7 @@ async function _geoTdEvent(ev,replay){
       if(!replay&&ev.type==='app-active'){_geoDeriveRebuildIfStale();_geoTapeDriveCheck('active');_geoDeriveLiveSoon('app-active');}
       if(typeof ev.lat==='number'&&typeof ev.lng==='number')_geoFixLogPush(Number(ev.ts)||Date.now(),ev.lat,ev.lng,ev.acc);
     }
+    if(!replay&&ev.type==='push-ping')_geoPingBurst();
     if(!replay&&ev.type==='push-ping')_geoBgUpdateCheck();
     // And the day is re-derived on the same push, so an open dwell that a
     // fix has since left gets closed without waiting for a flip.
