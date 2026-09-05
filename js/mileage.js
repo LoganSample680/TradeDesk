@@ -1153,21 +1153,24 @@ function pendingSupplyStores(){
     return {name,visits,count:visits.length,latestAt};
   }).sort((a,b)=>(b.latestAt||'').localeCompare(a.latestAt||''));
 }
-// The shared delete path for held rows (owner 2026-08-17: Personal clears
-// the trip from the log entirely, it never really belonged in the business
-// account, so unlike No receipt/Scan receipt it is not kept-but-marked).
-// Routed through _userDelete so every removed id is recorded as an EXPLICIT
-// delete (js/cloud.js), which is what lets the sweep remove it on every
-// other device instead of the sync engine resurrecting it.
-function _supplyRunDeleteByKeys(keys){
+// The shared "off the books" path for held rows. AMENDED 2026-09-05: it used
+// to DELETE (owner 2026-08-17, "Personal clears the trip from the log
+// entirely"), and that was right when the engine wrote the leg once. A held
+// leg is a DERIVED leg now, and the deriver owns it: the next rebuild of that
+// day re-derives the same journey id, geo_replace_day clears the tombstone
+// and re-inserts it, and the run is held again as if nobody ever answered.
+// A delete is not a stable answer to a row the deriver will write again.
+// personal:true is. deductibleTrips/reimbursableTrips already keep personal
+// rows out of every total (the "unbroken odometer story" note above), the
+// carry-across in js/geo-track.js and geo_replace_day both preserve the mark
+// and drop the hold, so the answer sticks through every rebuild on every
+// device. The toast still says "kept off the books", which is what happens.
+function _supplyRunSettleByKeys(keys){
   let n=0;
-  const del=()=>{
-    mileage=mileage.filter(m=>{
-      if(m&&m.pendingReceipt&&m.supplyRunKey&&keys.has(m.supplyRunKey)){n++;return false;}
-      return true;
-    });
-  };
-  if(typeof _userDelete==='function')_userDelete(del);else del();
+  (mileage||[]).forEach(m=>{
+    if(!m||!m.pendingReceipt||!m.supplyRunKey||!keys.has(m.supplyRunKey))return;
+    delete m.pendingReceipt;m.personal=true;n++;
+  });
   return n;
 }
 // The three doors. 'personal' deletes the held rows outright. 'noreceipt'
@@ -1176,7 +1179,7 @@ function _supplyRunDeleteByKeys(keys){
 // proved it.
 function resolveSupplyRun(key,mode,expenseId){
   if(mode==='personal'){
-    const n=_supplyRunDeleteByKeys(new Set([key]));
+    const n=_supplyRunSettleByKeys(new Set([key]));
     if(n){saveAll();typeof renderDash==='function'&&renderDash();}
     return n;
   }
@@ -1190,8 +1193,8 @@ function resolveSupplyRun(key,mode,expenseId){
   if(n){saveAll();typeof renderDash==='function'&&renderDash();}
   return n;
 }
-// Unanswered for a week: it disappears (owner 2026-08-17), same delete path
-// as tapping Personal by hand. No renderDash here on purpose, the sweep runs
+// Unanswered for a week: off the books (owner 2026-08-17), same path as
+// tapping Personal by hand. No renderDash here on purpose, the sweep runs
 // INSIDE the dashboard's own render pass (_renderDashSupplyHold), and calling
 // back into renderDash from there would re-enter it mid-paint.
 function _supplyRunSweep(){
@@ -1202,7 +1205,7 @@ function _supplyRunSweep(){
     const t=Date.parse((m.date||'')+'T12:00:00');
     if(isFinite(t)&&t<cutoff)keys.add(m.supplyRunKey);
   });
-  const n=_supplyRunDeleteByKeys(keys);
+  const n=_supplyRunSettleByKeys(keys);
   if(n)saveAll();
   return n;
 }
@@ -2654,11 +2657,11 @@ function _milRenderTripList(shown,yr){
       const metaTxt=[durTxt,clockLine].filter(Boolean).join(' · ');
       // Supply-run state, one small line under the numbers: held rows are
       // waiting on the dashboard receipt card; a no-receipt row shows how it
-      // resolved so the log reads honestly at a glance. Personal has no badge
-      // here because Personal deletes the row (owner 2026-08-17): it never
-      // reaches this list.
+      // resolved so the log reads honestly at a glance; a personal row stays
+      // in the log (2026-09-05, see _supplyRunSettleByKeys) and says so.
       const stateBadge=r.pendingReceipt?'<div style="font-size:10px;font-weight:800;color:#F59E0B">Held · receipt?</div>'
-        :(r.noReceipt?'<div style="font-size:10px;font-weight:700;color:var(--text3)">No receipt</div>':'');
+        :(r.noReceipt?'<div style="font-size:10px;font-weight:700;color:var(--text3)">No receipt</div>'
+        :(r.personal?'<div style="font-size:10px;font-weight:700;color:var(--text3)">Personal · off the books</div>':''));
       return '<div class="mil-day-trip'+needsClass+'" data-lp-id="'+r.id+'" data-lp-type="mileage" data-lp-label="'+escHtml((r.from_name||r.from||'Start')+' → '+(r.to_name||r.to||'End')+' · '+(r.miles||0).toFixed(1)+' mi')+'">'+
         '<div class="mil-day-trip-route">'+
           '<div class="mil-route-spine"><div class="mil-route-pin-s"></div><div class="mil-route-spine-line"></div><div class="mil-route-pin-e"></div></div>'+

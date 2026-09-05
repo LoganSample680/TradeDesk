@@ -87,35 +87,59 @@ test.describe('Receipt-gated supply runs', () => {
       return key;
     });
 
-    test('Personal: clears the held rows from the log ENTIRELY, not just marked', async () => {
+    // AMENDED 2026-09-05 (10.4). Personal used to DELETE the held rows (owner
+    // 2026-08-17). A held leg is a derived leg now and the deriver owns it: the
+    // next rebuild re-derives the same journey id, geo_replace_day clears the
+    // tombstone and re-inserts it, and the run comes back held. A delete is
+    // not a stable answer to a row that will be written again; personal:true
+    // is, and every money total already excludes it. The row stays in the
+    // log, off the books, which is what the toast has always said.
+    test('Personal: marks the held rows personal and keeps them in the log, off the books', async () => {
       const key = await seedHeld();
       const out = await page.evaluate((k) => {
         const before = mileage.length;
         const n = resolveSupplyRun(k, 'personal');
-        return { n, before, after: mileage.length, gone: mileage.every(m => m.supplyRunKey !== k) };
+        const rows = mileage.filter(m => m.supplyRunKey === k);
+        return { n, before, after: mileage.length,
+          marked: rows.every(m => m.personal === true && !m.pendingReceipt),
+          offBooks: deductibleTrips(mileage).length === 0 && reimbursableTrips(mileage).length === 0,
+          heldGone: pendingSupplyRuns().length === 0 };
       }, key);
       expect(out.n).toBe(2);
       expect(out.before).toBe(2);
-      expect(out.after, 'Personal deletes, it does not mark').toBe(0);
-      expect(out.gone).toBe(true);
+      expect(out.after, 'the log keeps its odometer story').toBe(2);
+      expect(out.marked).toBe(true);
+      expect(out.offBooks, 'and no total counts them').toBe(true);
+      expect(out.heldGone, 'and the card has nothing left to ask').toBe(true);
     });
 
-    test('Personal deletion is recorded as an explicit delete for cross-device sync', async () => {
-      // Routed through _userDelete (cloud.js), which diffs every synced
-      // array's ids before/after and records whatever disappeared into
-      // _locallyDeletedIds.td_mileage. That set is what stops the sync
-      // sweep from resurrecting the rows on another device: without it,
-      // Personal would look identical to a row nobody ever deleted.
-      const key = await seedHeld();
-      const out = await page.evaluate((k) => {
-        const ids = mileage.filter(m => m.supplyRunKey === k).map(m => String(m.id));
-        resolveSupplyRun(k, 'personal');
-        const tracked = typeof _locallyDeletedIds !== 'undefined' && _locallyDeletedIds.td_mileage
-          ? ids.every(id => _locallyDeletedIds.td_mileage.has(id)) : null;
-        return { tracked, stillThere: mileage.some(m => m.supplyRunKey === k) };
-      }, key);
-      expect(out.stillThere).toBe(false);
-      if (out.tracked !== null) expect(out.tracked, 'both deleted ids land in the explicit-delete set').toBe(true);
+    test('an answered run stays answered when the deriver writes the same leg again', async () => {
+      // The carry-across in js/geo-track.js: whatever the person answered
+      // rides onto the re-derived leg, and the fresh hold is dropped.
+      const out = await page.evaluate(() => {
+        mileage.length = 0;
+        const day = todayKey(), key = day + '|Home Depot';
+        const leg = (extra) => Object.assign({ id: 'j-x-1', legKey: 'j-x-1', gps: true, date: day, miles: 4,
+          pendingReceipt: true, supplyRunKey: key, purpose: 'Supply run', startedIso: new Date().toISOString() }, extra || {});
+        const results = {};
+        for (const [name, answer] of [['personal', 'personal'], ['noreceipt', 'noreceipt'], ['receipt', 'receipt']]) {
+          mileage.length = 0;
+          _geoDeriveApplyMileage(day, [leg()]);
+          resolveSupplyRun(key, answer, answer === 'receipt' ? 777001 : undefined);
+          _geoDeriveApplyMileage(day, [leg()]);          // the rebuild
+          const m = mileage.find(x => x.id === 'j-x-1');
+          results[name] = { held: !!m.pendingReceipt, personal: !!m.personal, noReceipt: !!m.noReceipt, exp: m.receiptExpenseId };
+        }
+        // And a run nobody answered stays held through a rebuild.
+        mileage.length = 0;
+        _geoDeriveApplyMileage(day, [leg()]); _geoDeriveApplyMileage(day, [leg()]);
+        results.unanswered = { held: !!mileage[0].pendingReceipt, n: mileage.length };
+        return results;
+      });
+      expect(out.personal).toEqual({ held: false, personal: true, noReceipt: false, exp: undefined });
+      expect(out.noreceipt).toEqual({ held: false, personal: false, noReceipt: true, exp: undefined });
+      expect(out.receipt).toEqual({ held: false, personal: false, noReceipt: false, exp: 777001 });
+      expect(out.unanswered).toEqual({ held: true, n: 1 });
     });
 
     test('No receipt: commits as business carrying the noReceipt flag', async () => {
@@ -177,18 +201,27 @@ test.describe('Receipt-gated supply runs', () => {
   });
 
   test.describe('the 7-day sweep', () => {
-    test('a week-old unanswered run disappears; a fresh one stays held', async () => {
+    // AMENDED 2026-09-05 (10.4): off the books, not deleted, for the reason
+    // on _supplyRunSettleByKeys. The week-old run is marked personal and
+    // leaves the card; the fresh one stays held.
+    test('a week-old unanswered run goes off the books; a fresh one stays held', async () => {
       const out = await page.evaluate(() => {
         mileage.length = 0;
         const day = (n) => { const d = new Date(Date.now() - n * 86400000); return dateKey(d); };
         mileage.push({ id: _newId(), date: day(8), miles: 3, pendingReceipt: true, supplyRunKey: day(8) + '|Ace', created_at: new Date().toISOString() });
         mileage.push({ id: _newId(), date: day(2), miles: 3, pendingReceipt: true, supplyRunKey: day(2) + '|Ace2', created_at: new Date().toISOString() });
         const n = _supplyRunSweep();
-        return { n, rows: mileage.length, freshStillHeld: mileage[0] && mileage[0].pendingReceipt === true };
+        const stale = mileage[0], fresh = mileage[1];
+        return { n, rows: mileage.length,
+          staleSettled: !!stale && stale.personal === true && !stale.pendingReceipt,
+          freshStillHeld: !!fresh && fresh.pendingReceipt === true && !fresh.personal,
+          onCard: pendingSupplyRuns().length };
       });
-      expect(out.n, 'the sweep removed the stale row').toBe(1);
-      expect(out.rows, 'it disappears, it is not left behind marked').toBe(1);
+      expect(out.n, 'the sweep settled the stale row').toBe(1);
+      expect(out.rows, 'off the books, still in the log').toBe(2);
+      expect(out.staleSettled).toBe(true);
       expect(out.freshStillHeld).toBe(true);
+      expect(out.onCard, 'only the fresh one is still asked about').toBe(1);
     });
 
     test('a corrupt date cannot crash the sweep or be swept', async () => {

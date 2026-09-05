@@ -1335,7 +1335,7 @@ function geoDeriveRows(result, ids) {
     // its endpoints are the same fence, and the place between them was never
     // saved.
     if (l.roundTrip) continue;
-    miles.push({
+    miles.push(Object.assign({
       id: l.id, legKey: l.id, gps: true, date: result.day,
       from: l.from.addr || l.from.name || '', from_name: l.from.name || '',
       to: l.to.addr || l.to.name || '', to_name: l.to.name || '',
@@ -1356,7 +1356,17 @@ function geoDeriveRows(result, ids) {
       client_name: l.to.clientId != null ? (l.to.name || '') : '',
       purpose: l.to.kind === 'shop' ? 'Shop' : (l.to.kind === 'supply' ? 'Supply run' : (l.to.clientId != null || l.to.jobId != null ? 'Client Consult' : 'Business')),
       notes: '', start: 0, end: 0, vehicle: '',
-    });
+    }, l.to.kind === 'supply' ? {
+      // THE RECEIPT IS THE PROOF, NOT THE DESTINATION (owner design
+      // 2026-08-17, and owner 2026-09-05: "the receipt thing didn't stay
+      // alive from my Home Depot run"). A leg that ends at a supply place is
+      // HELD until the dashboard card gets its answer: scan the receipt, no
+      // receipt, or personal. The engine used to set this; the one-writer
+      // rewrite (2959bb3) deleted the engine and nothing set it again, so his
+      // 28 August Home Depot leg landed as a plain Supply run and the card
+      // never showed. The key is what the card groups visits by.
+      pendingReceipt: true, supplyRunKey: String(result.day || '') + '|' + (l.to.name || 'Store'),
+    } : {}));
   }
   return { job_time_entries: time, shop_time_entries: shop, td_mileage: miles };
 }

@@ -55,6 +55,27 @@ test.describe('geo-derive: the day deriver', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
+  // THE RECEIPT IS THE PROOF (owner 2026-09-05: "the receipt thing didn't
+  // stay alive from my Home Depot run"). A leg that ends at a supply place is
+  // written held, keyed by day and store, so the dashboard card can ask.
+  test('a leg to a supply place is held for its receipt; any other leg is not', async () => {
+    const t = [mo(T(7, 50), 'automotive'), mo(T(8, 5), 'onFoot'), mo(T(9, 0), 'automotive'), mo(T(9, 20), 'onFoot')];
+    const f = [fix(T(7, 49), { lat: SHOP.lat, lng: SHOP.lng }),
+      fix(T(8, 5, 5), { lat: HD.lat, lng: HD.lng }), fix(T(8, 30), { lat: HD.lat, lng: HD.lng }),
+      fix(T(9, 20, 5), { lat: DOE.lat, lng: DOE.lng }), fix(T(10, 0), { lat: DOE.lat, lng: DOE.lng })];
+    const rows = await page.evaluate((inp) => {
+      const r = geoDeriveDay(inp);
+      return JSON.parse(JSON.stringify(geoDeriveRows(r, { contractorId: 'c', employeeId: 'e' })));
+    }, base({ tape: t, fixes: f, nowMs: T(12, 0) }));
+    const legs = rows.td_mileage;
+    expect(legs.map(l => l.to_name)).toEqual(['The Home Depot', 'John Doe']);
+    expect(legs[0].pendingReceipt).toBe(true);
+    expect(legs[0].supplyRunKey).toBe('2026-09-01|The Home Depot');
+    expect(legs[0].purpose).toBe('Supply run');
+    expect(legs[1].pendingReceipt).toBeUndefined();
+    expect(legs[1].supplyRunKey).toBeUndefined();
+  });
+
   test('it exists, it is pure, and junk in is empty out, never a throw', async () => {
     const r = await page.evaluate(() => {
       const out = [];

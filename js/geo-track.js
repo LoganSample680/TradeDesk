@@ -6389,7 +6389,11 @@ function _geoEnqueueRpc(dayKey,args){
 // person set on a GPS leg (vehicle, purpose, notes) rides across by id.
 function _geoDeriveApplyMileage(dayKey,derived){
   if(typeof mileage==='undefined'||!Array.isArray(mileage))return;
-  const keep=['vehicle','vehicleId','purpose','notes','receiptId','deductible'];
+  // The three receipt answers ride across too (owner 2026-09-05): a held
+  // supply run that was answered must not come back held on the next
+  // rebuild. Any answer present means the hold is dropped.
+  const keep=['vehicle','vehicleId','purpose','notes','receiptId','deductible','noReceipt','receiptExpenseId','personal'];
+  const answered=r=>!!(r&&(r.noReceipt||r.receiptExpenseId!=null||r.personal));
   const byId={};
   mileage.forEach(m=>{if(m&&m.id!=null)byId[String(m.id)]=m;});
   const ids=new Set((derived||[]).map(m=>String(m.id)));
@@ -6401,6 +6405,7 @@ function _geoDeriveApplyMileage(dayKey,derived){
     const old=byId[String(m.id)];
     const row=Object.assign({},m);
     if(old)keep.forEach(k=>{if(old[k]!=null&&old[k]!=='')row[k]=old[k];});
+    if(answered(row))delete row.pendingReceipt;
     const at=mileage.findIndex(x=>x&&String(x.id)===String(m.id));
     if(at>=0)mileage[at]=Object.assign(mileage[at],row);else mileage.push(row);
   });
