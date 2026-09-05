@@ -702,6 +702,58 @@ function _geoPersistOpen(hiddenAt){
   }catch(_e){}
 }
 function _geoClearOpen(){try{localStorage.removeItem(_GEO_OPEN_KEY);}catch(_e){}}
+// ── The open dwell survives a reload, same as the open entry above ───────────
+//
+// Owner 2026-09-05: "the onsite card shows arrived and a counting timer, but
+// if the app reboots or we roll UAT or force close it, it loses it."
+//
+// window._geoOpenDwell is what draws that card (js/dashboard.js), the Live
+// Activity (js/live-activity.js) and the Time Log's open row. It was written
+// by the deriver and nowhere else, so a reload came back with it undefined
+// and the card fell through to "Not clocked in" until the boot rebuild
+// finished, seconds later at best.
+//
+// The card already had a rescue for this, zp3_nearby_snap, but it is a frozen
+// copy of the card's HTML and it is skipped the moment a fix has been seen
+// (js/dashboard.js). A parked phone gets a fix from the significant-change
+// wake almost immediately on boot, so on exactly the reboot the owner is
+// describing the snapshot is cancelled and the rebuild is not done yet.
+// Nothing paints the card in that window.
+//
+// So persist the FACT, not a picture of it: the same shape _geoPersistOpen
+// already uses for the fence machine's open entry (7.3), keyed by login and
+// day. The first render then draws from real state and the timer ticks off
+// its own sinceTs. The rebuild that lands moments later republishes and
+// overwrites it, or publishes null and clears it, so a restored dwell is
+// never the final word on anything.
+const _GEO_DWELL_KEY='zp3_geo_dwell';
+function _geoPersistDwell(d){
+  try{
+    if(!d||!(Number(d.sinceTs)>0)){localStorage.removeItem(_GEO_DWELL_KEY);return;}
+    localStorage.setItem(_GEO_DWELL_KEY,JSON.stringify({
+      d:d,at:Date.now(),uid:(_supaUser&&_supaUser.id)||null,day:todayKey()
+    }));
+  }catch(_e){}
+}
+// Freshness is judged on the SAVE, not on the dwell. A dwell that began at
+// 07:00 is perfectly good at 15:00 if the app was alive to confirm it a
+// minute ago; the same dwell read off a phone that has been dead since
+// lunch is a guess. 45 minutes is the cap zp3_nearby_snap already uses for
+// the same judgement, and there is no reason for this file to invent a
+// second number.
+const _GEO_DWELL_MAX_AGE_MS=2700000;
+function _geoRestoreDwell(){
+  try{
+    if(window._geoOpenDwell)return false;   // live state wins, same rule as the open entry
+    const s=JSON.parse(localStorage.getItem(_GEO_DWELL_KEY)||'null');
+    if(!s||!s.d||!(Number(s.d.sinceTs)>0))return false;
+    if(s.uid!==((_supaUser&&_supaUser.id)||null))return false;
+    if(s.day!==todayKey())return false;
+    if(!(Date.now()-Number(s.at)<_GEO_DWELL_MAX_AGE_MS))return false;
+    window._geoOpenDwell=s.d;
+    return true;
+  }catch(_e){return false;}
+}
 function _geoRestoreOpen(){
   // One-shot per session, same pattern as the mileage sweeps (js/mileage.js
   // _milePersonalStopSweep/_mileMotionHealSweep): this used to only ever get
@@ -721,6 +773,10 @@ function _geoRestoreOpen(){
   // state for real, the second call is a harmless no-op.
   if(window._geoOpenRestored)return;
   window._geoOpenRestored=true;
+  // Independent of the snapshot below: the open dwell is the deriver's fact,
+  // not the fence machine's, and it must come back even on a day the fence
+  // machine had nothing open.
+  _geoRestoreDwell();
   try{
     const s=JSON.parse(localStorage.getItem(_GEO_OPEN_KEY)||'null');
     if(!s||s.uid!==((_supaUser&&_supaUser.id)||null))return;
@@ -6742,6 +6798,7 @@ function _geoOpenDwellPublish(dayKey,res){
     const prev=window._geoOpenDwell||null;
     const same=(!prev&&!next)||(prev&&next&&prev.id===next.id&&prev.sinceTs===next.sinceTs);
     window._geoOpenDwell=next;
+    _geoPersistDwell(next);
     // Report the DERIVER'S VERDICT, not just what the card did with it.
     // Standing inside a fence with no on-site card and no Live Activity, the
     // liveact_* events said only that nothing asked for a card; they could not

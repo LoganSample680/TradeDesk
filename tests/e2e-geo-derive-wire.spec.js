@@ -1269,6 +1269,159 @@ test.describe('geo-derive wiring', () => {
     });
   });
 
+  // ── The open dwell survives a reload ──────────────────────────────────────
+  // Owner 2026-09-05: the on-site card's Arrived stamp and its counting timer
+  // were lost on a reboot, a UAT roll or a force close. The card draws off
+  // window._geoOpenDwell, which only the deriver wrote, so a reload came back
+  // with nothing until the boot rebuild finished.
+  test.describe('the open dwell survives a reload', () => {
+    const seed = (over) => page.evaluate(({ over }) => {
+      localStorage.removeItem('zp3_geo_dwell');
+      window._geoOpenDwell = null;
+      const now = Date.now();
+      const d = Object.assign({ id: 'd1', name: 'John Doe', kind: 'client', sinceTs: now - 3600000,
+                                atHome: false, sinceIso: new Date(now - 3600000).toISOString(),
+                                journeyId: 'j1', fence: null }, (over && over.d) || {});
+      localStorage.setItem('zp3_geo_dwell', JSON.stringify(Object.assign({
+        d, at: now, uid: (window._supaUser && window._supaUser.id) || null, day: todayKey(),
+      }, (over && over.wrap) || {})));
+      window._geoOpenDwell = null;
+      const ok = _geoRestoreDwell();
+      return { ok, name: window._geoOpenDwell && window._geoOpenDwell.name,
+               since: window._geoOpenDwell && window._geoOpenDwell.sinceTs };
+    }, { over });
+
+    test('publishing writes it down, and a fresh boot reads it back', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.removeItem('zp3_geo_dwell');
+        const now = Date.now();
+        _geoOpenDwellPublish(todayKey(), { open: { id: 'd9', name: 'John Doe', kind: 'client',
+          sinceTs: now - 1800000, journeyId: 'j9' }, dwells: [], legs: [], journeys: [] });
+        const wrote = JSON.parse(localStorage.getItem('zp3_geo_dwell') || 'null');
+        window._geoOpenDwell = null;              // the reload
+        const ok = _geoRestoreDwell();
+        return { wrote: !!(wrote && wrote.d && wrote.d.id === 'd9'),
+                 ok, back: window._geoOpenDwell && window._geoOpenDwell.id,
+                 since: window._geoOpenDwell && window._geoOpenDwell.sinceTs };
+      });
+      expect(r.wrote, 'the publish persists the dwell').toBe(true);
+      expect(r.ok).toBe(true);
+      expect(r.back, 'the same dwell comes back after the reload').toBe('d9');
+      expect(r.since, 'and its arrival instant is intact, so the timer counts from the right moment')
+        .toBeGreaterThan(0);
+    });
+
+    test('a publish with nothing open clears it, so a card cannot resurrect', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.setItem('zp3_geo_dwell', JSON.stringify({ d: { id: 'x', sinceTs: Date.now() },
+          at: Date.now(), uid: (window._supaUser && window._supaUser.id) || null, day: todayKey() }));
+        _geoOpenDwellPublish(todayKey(), { open: null, dwells: [], legs: [], journeys: [] });
+        const raw = localStorage.getItem('zp3_geo_dwell');
+        window._geoOpenDwell = null;
+        return { raw, ok: _geoRestoreDwell(), after: window._geoOpenDwell };
+      });
+      expect(r.raw, 'nothing open means nothing stored').toBe(null);
+      expect(r.ok).toBe(false);
+      expect(r.after).toBe(null);
+    });
+
+    test('live state always wins: a restore never clobbers a running dwell', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.setItem('zp3_geo_dwell', JSON.stringify({ d: { id: 'stale', name: 'Old', sinceTs: Date.now() - 60000 },
+          at: Date.now(), uid: (window._supaUser && window._supaUser.id) || null, day: todayKey() }));
+        window._geoOpenDwell = { id: 'live', name: 'Now', sinceTs: Date.now() };
+        const ok = _geoRestoreDwell();
+        const out = { ok, id: window._geoOpenDwell.id };
+        window._geoOpenDwell = null;
+        return out;
+      });
+      expect(r.ok).toBe(false);
+      expect(r.id).toBe('live');
+    });
+
+    test("another login's dwell is not mine", async () => {
+      const r = await seed({ wrap: { uid: 'somebody-else' } });
+      expect(r.ok).toBe(false);
+    });
+
+    test('yesterday is not today', async () => {
+      const r = await seed({ wrap: { day: '2020-01-01' } });
+      expect(r.ok, 'a dwell from another day never paints today\'s card').toBe(false);
+    });
+
+    test('a phone that has been dead for an hour is a guess, not a fact', async () => {
+      // The age is computed INSIDE the page: the page clock is pinned and the
+      // runner's is not, so an absolute stamp built on this side would be off
+      // by the pin's offset (CLAUDE.md 5.2.2).
+      const r = await page.evaluate(() => {
+        const now = Date.now();
+        localStorage.setItem('zp3_geo_dwell', JSON.stringify({
+          d: { id: 'old', name: 'John Doe', kind: 'client', sinceTs: now - 3600000 },
+          at: now - 60 * 60000, uid: (window._supaUser && window._supaUser.id) || null, day: todayKey() }));
+        window._geoOpenDwell = null;
+        const ok = _geoRestoreDwell();
+        const out = { ok, after: window._geoOpenDwell };
+        window._geoOpenDwell = null;
+        localStorage.removeItem('zp3_geo_dwell');
+        return out;
+      });
+      expect(r.ok, 'freshness is judged on the last confirmation, not on the arrival').toBe(false);
+      expect(r.after).toBe(null);
+    });
+
+    test('a dwell confirmed a minute ago comes back even if it started this morning', async () => {
+      const r = await page.evaluate(() => {
+        const now = Date.now();
+        localStorage.setItem('zp3_geo_dwell', JSON.stringify({
+          d: { id: 'am', name: 'John Doe', kind: 'client', sinceTs: now - 8 * 3600000 },
+          at: now - 60000, uid: (window._supaUser && window._supaUser.id) || null, day: todayKey() }));
+        window._geoOpenDwell = null;
+        const ok = _geoRestoreDwell();
+        const out = { ok, since: window._geoOpenDwell && window._geoOpenDwell.sinceTs, now };
+        window._geoOpenDwell = null;
+        return out;
+      });
+      expect(r.ok, 'an all-day visit is not stale just because it is long').toBe(true);
+      expect(r.now - r.since).toBeGreaterThan(7 * 3600000);
+    });
+
+    test('junk in storage never throws and never paints', async () => {
+      const r = await page.evaluate(() => {
+        const cases = ['{BROKEN{{', 'null', '[]', '{"d":null}', '{"d":{"sinceTs":0}}', '{"d":{}}'];
+        const out = [];
+        for (const c of cases) {
+          localStorage.setItem('zp3_geo_dwell', c);
+          window._geoOpenDwell = null;
+          let threw = false;
+          try { out.push(_geoRestoreDwell()); } catch (e) { threw = true; out.push('THREW'); }
+          if (threw) break;
+        }
+        localStorage.removeItem('zp3_geo_dwell');
+        window._geoOpenDwell = null;
+        return out;
+      });
+      expect(r.every(x => x === false), 'every junk shape declines quietly').toBe(true);
+    });
+
+    test('_geoRestoreOpen brings the dwell back too, on a day with no open entry', async () => {
+      const r = await page.evaluate(() => {
+        const now = Date.now();
+        localStorage.removeItem('zp3_geo_open');       // the fence machine has nothing open
+        localStorage.setItem('zp3_geo_dwell', JSON.stringify({
+          d: { id: 'boot', name: 'John Doe', kind: 'client', sinceTs: now - 900000 },
+          at: now, uid: (window._supaUser && window._supaUser.id) || null, day: todayKey() }));
+        window._geoOpenDwell = null;
+        window._geoOpenRestored = false;               // one-shot guard, re-armed for this test
+        _geoRestoreOpen();
+        const out = { id: window._geoOpenDwell && window._geoOpenDwell.id };
+        window._geoOpenDwell = null;
+        localStorage.removeItem('zp3_geo_dwell');
+        return out;
+      });
+      expect(r.id, 'the boot restore is where the card gets its state back').toBe('boot');
+    });
+  });
+
   test.describe('the sweep guard (js/cloud.js)', () => {
     test('a derived GPS leg is never sweep-eligible, on either row shape', async () => {
       const r = await page.evaluate(() => [
